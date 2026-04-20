@@ -1,0 +1,26 @@
+######## AI Sidecar Bridge Command Policy ########
+#
+# This policy is enforced by plugins/aiSidecarBridge/aiSidecarBridge.pl
+# before dispatching any command to OpenKore.
+#
+# mode:
+# - allowlist : command root must exist in aiSidecarPolicy_allow_*
+# - denylist  : command root allowed unless denied by aiSidecarPolicy_deny_*
+aiSidecarPolicy_mode allowlist
+
+# Conservative allow list for first production slice.
+aiSidecarPolicy_allow_0 ai
+aiSidecarPolicy_allow_1 move
+aiSidecarPolicy_allow_2 macro
+aiSidecarPolicy_allow_3 eventMacro
+aiSidecarPolicy_allow_4 talknpc
+aiSidecarPolicy_allow_5 take
+
+# Always blocked (even in denylist mode) for safety.
+aiSidecarPolicy_deny_0 quit
+aiSidecarPolicy_deny_1 plugin
+aiSidecarPolicy_deny_2 reload
+aiSidecarPolicy_deny_3 eval
+aiSidecarPolicy_deny_4 conf
+aiSidecarPolicy_deny_5 send
+

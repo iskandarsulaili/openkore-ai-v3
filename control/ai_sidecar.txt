@@ -1,0 +1,52 @@
+######## AI Sidecar Bridge Control ########
+# Local bridge plugin: aiSidecarBridge
+#
+# Design goals:
+# - fail-open: OpenKore keeps running even when sidecar is down
+# - bounded and low-latency local HTTP calls only
+# - OpenKore remains authoritative for command execution
+
+# Master switch for the bridge plugin.
+aiSidecar_enable 1
+
+# Local sidecar base URL (HTTP only for this local IPC slice).
+aiSidecar_baseUrl http://127.0.0.1:18081
+
+# Contract metadata fields.
+aiSidecar_contractVersion v1
+aiSidecar_source openkore-bridge
+
+# Tight timeouts in milliseconds.
+aiSidecar_connectTimeoutMs 40
+aiSidecar_ioTimeoutMs 90
+
+# Snapshot push behavior.
+aiSidecar_snapshotEnabled 1
+aiSidecar_snapshotIntervalMs 500
+
+# Poll when disconnected (0 recommended for conservative operation).
+aiSidecar_pollWhenDisconnected 0
+
+# Action polling behavior.
+aiSidecar_actionPollEnabled 1
+aiSidecar_pollIntervalMs 250
+
+# Acknowledgement behavior.
+aiSidecar_ackEnabled 1
+aiSidecar_ackRetryMs 500
+aiSidecar_ackMaxAgeMs 5000
+
+# Registration retry interval.
+aiSidecar_registerRetryMs 5000
+
+# Telemetry push behavior.
+aiSidecar_telemetryEnabled 1
+aiSidecar_telemetryIntervalMs 1000
+
+# Bounded payload safeguards.
+aiSidecar_maxRawChars 256
+aiSidecar_maxCommandLength 160
+
+# Extra bridge logs (1=enabled, 0=minimal).
+aiSidecar_verbose 1
+
