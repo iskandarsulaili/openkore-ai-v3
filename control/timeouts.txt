@@ -26,11 +26,11 @@ poseidon_wait_reply 15
 # Activate AI after x seconds after the map's loaded
 ai 1
 
-ai_move_retry 0.4
-ai_move_giveup 1.2
+ai_move_retry 0.25
+ai_move_giveup 1
 
-ai_homunculus_standby 2
-ai_mercenary_standby 2
+ai_homunculus_standby 0.5
+ai_mercenary_standby 0.5
 
 # Send the attack packet every x seconds, if it hasn't been send already
 ai_attack 1
@@ -49,6 +49,9 @@ ai_attack_auto 0.5
 ai_homunculus_attack_auto 0.5
 ai_mercenary_attack_auto 0.5
 
+ai_attack_route_adjust 0.3
+ai_homunculus_route_adjust 0.3
+ai_mercenary_route_adjust 0.3
 
 # Ignore monster for x seconds if there is no route to it
 ai_attack_failedLOS 12
