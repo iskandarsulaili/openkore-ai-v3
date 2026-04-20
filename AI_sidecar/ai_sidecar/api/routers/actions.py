@@ -33,15 +33,34 @@ def queue_action(
             expires_at=proposal.created_at + timedelta(seconds=settings.action_default_ttl_seconds),
         )
 
-    accepted, status, action_id = runtime.queue_action(proposal=proposal, bot_id=payload.meta.bot_id)
+    accepted, status, action_id, reason = runtime.queue_action(proposal=proposal, bot_id=payload.meta.bot_id)
     logger.info(
         "action_queue_result",
-        extra={"event": "action_queue_result", "bot_id": payload.meta.bot_id},
+        extra={
+            "event": "action_queue_result",
+            "bot_id": payload.meta.bot_id,
+            "accepted": accepted,
+            "status": str(status),
+            "reason": reason,
+        },
     )
+
+    if accepted:
+        message = "action queued"
+    else:
+        reason_map = {
+            "idempotent_duplicate": "idempotent duplicate",
+            "conflict_key_blocked": "conflict key blocked by higher-priority action",
+            "action_already_expired": "action already expired",
+            "queue_full": "queue full",
+            "queue_full_lower_priority": "queue full and action priority too low",
+        }
+        message = reason_map.get(reason, reason)
+
     return QueueActionResponse(
         ok=True,
         accepted=accepted,
-        message="action queued" if accepted else "idempotent duplicate",
+        message=message,
         bot_id=payload.meta.bot_id,
         action_id=action_id,
         status=status,
@@ -57,23 +76,12 @@ def next_action(
     action = runtime.next_action(payload.meta.bot_id)
     elapsed_ms = runtime.latency_router.end("actions.next", started)
 
-    if action is None:
-        return NextActionResponse(
-            ok=True,
-            bot_id=payload.meta.bot_id,
-            poll_id=payload.poll_id,
-            has_action=False,
-            action=NoopActionPayload(
-                action_id="noop",
-                kind="noop",
-                command="",
-                conflict_key=None,
-                expires_at=datetime.now(UTC) + timedelta(seconds=1),
-            ),
-            reason="no_action_available",
-        )
+    if action is not None and not runtime.latency_router.within_budget(elapsed_ms):
+        runtime.rollback_action_dispatch(action.action_id)
+        action = None
 
-    if not runtime.latency_router.within_budget(elapsed_ms):
+    if action is None:
+        reason = "latency_budget_exceeded" if not runtime.latency_router.within_budget(elapsed_ms) else "no_action_available"
         return NextActionResponse(
             ok=True,
             bot_id=payload.meta.bot_id,
@@ -86,7 +94,7 @@ def next_action(
                 conflict_key=None,
                 expires_at=datetime.now(UTC) + timedelta(seconds=1),
             ),
-            reason="latency_budget_exceeded",
+            reason=reason,
         )
 
     return NextActionResponse(

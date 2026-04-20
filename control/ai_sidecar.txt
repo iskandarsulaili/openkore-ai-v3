@@ -47,6 +47,12 @@ aiSidecar_telemetryIntervalMs 1000
 aiSidecar_maxRawChars 256
 aiSidecar_maxCommandLength 160
 
+# Macro hot-reload orchestration (through safe built-in bridge flow).
+aiSidecar_macroReloadEnabled 1
+aiSidecar_macroFile ai_sidecar_generated_macros.txt
+aiSidecar_eventMacroFile ai_sidecar_generated_eventmacros.txt
+aiSidecar_macroPluginName macro
+aiSidecar_eventMacroPluginName eventMacro
+
 # Extra bridge logs (1=enabled, 0=minimal).
 aiSidecar_verbose 1
-

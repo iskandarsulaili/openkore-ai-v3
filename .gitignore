@@ -49,3 +49,8 @@ tables/**/npcs.txt
 tables/**/monsters.txt
 *.xpm
 *.weight
+
+# AI sidecar runtime-generated macro artifacts
+control/ai_sidecar_generated_macros.txt
+control/ai_sidecar_generated_eventmacros.txt
+control/ai_sidecar_macro_manifest.json

@@ -15,6 +15,14 @@ class ActionStatus(StrEnum):
     acknowledged = "acknowledged"
     expired = "expired"
     dropped = "dropped"
+    superseded = "superseded"
+
+
+class ActionPriorityTier(StrEnum):
+    reflex = "reflex"
+    tactical = "tactical"
+    strategic = "strategic"
+    macro_management = "macro_management"
 
 
 class ActionProposal(BaseModel):
@@ -23,6 +31,7 @@ class ActionProposal(BaseModel):
     action_id: str = Field(min_length=1, max_length=128)
     kind: str = Field(default="command", min_length=1, max_length=64)
     command: str = Field(min_length=0, max_length=256)
+    priority_tier: ActionPriorityTier = ActionPriorityTier.strategic
     conflict_key: str | None = Field(default=None, max_length=128)
     created_at: datetime
     expires_at: datetime

@@ -169,6 +169,11 @@ sub _load_bridge_config {
 		aiSidecar_telemetryIntervalMs => 1000,
 		aiSidecar_maxRawChars => 256,
 		aiSidecar_maxCommandLength => 160,
+		aiSidecar_macroReloadEnabled => 1,
+		aiSidecar_macroFile => 'ai_sidecar_generated_macros.txt',
+		aiSidecar_eventMacroFile => 'ai_sidecar_generated_eventmacros.txt',
+		aiSidecar_macroPluginName => 'macro',
+		aiSidecar_eventMacroPluginName => 'eventMacro',
 		aiSidecar_verbose => 1,
 	);
 
@@ -235,6 +240,7 @@ sub _attempt_register {
 			'bridge_action_poll',
 			'bridge_action_ack',
 			'bridge_telemetry_push',
+			'bridge_macro_reload_orchestration',
 		],
 		attributes => {
 			reason => $reason,
@@ -361,11 +367,14 @@ sub _execute_action {
 	my $action_id = $action->{action_id} || 'unknown_action';
 	my $kind = lc($action->{kind} || 'command');
 	my $command = defined $action->{command} ? $action->{command} : '';
+	my $metadata = ref($action->{metadata}) eq 'HASH' ? $action->{metadata} : {};
 	my $started = _now_ms();
 
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
 
-	if ($kind ne 'command') {
+	if ($kind eq 'macro_reload') {
+		($success, $result_code, $msg) = _execute_macro_reload_action($metadata);
+	} elsif ($kind ne 'command') {
 		($success, $result_code, $msg) = (0, 'unsupported_kind', "unsupported action kind '$kind'");
 	} elsif ($command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
@@ -384,6 +393,8 @@ sub _execute_action {
 	}
 
 	my $latency_ms = _now_ms() - $started;
+	my $event_name = $kind eq 'macro_reload' ? 'macro_reload_executed' : 'action_executed';
+	my $category = $kind eq 'macro_reload' ? 'macro' : 'action';
 	push @ack_queue, {
 		queued_at => _now_ms(),
 		action_id => $action_id,
@@ -396,12 +407,97 @@ sub _execute_action {
 
 	_emit_telemetry(
 		$success ? 'info' : 'warning',
-		'action',
-		'action_executed',
+		$category,
+		$event_name,
 		$msg,
 		{ observed_latency_ms => $latency_ms + 0 },
-		{ result_code => $result_code },
+		{ result_code => $result_code, kind => $kind },
 	);
+}
+
+sub _execute_macro_reload_action {
+	my ($metadata) = @_;
+
+	if (!_cfg_bool('aiSidecar_macroReloadEnabled', 1)) {
+		return (0, 'macro_reload_disabled', 'macro reload orchestration disabled by bridge config');
+	}
+
+	my $macro_file = _safe_control_filename(
+		$metadata->{macro_file} || _cfg('aiSidecar_macroFile', 'ai_sidecar_generated_macros.txt'),
+		'ai_sidecar_generated_macros.txt',
+	);
+	my $event_macro_file = _safe_control_filename(
+		$metadata->{event_macro_file} || _cfg('aiSidecar_eventMacroFile', 'ai_sidecar_generated_eventmacros.txt'),
+		'ai_sidecar_generated_eventmacros.txt',
+	);
+	my $macro_plugin = _safe_plugin_name(
+		$metadata->{macro_plugin} || _cfg('aiSidecar_macroPluginName', 'macro'),
+		'macro',
+	);
+	my $event_macro_plugin = _safe_plugin_name(
+		$metadata->{event_macro_plugin} || _cfg('aiSidecar_eventMacroPluginName', 'eventMacro'),
+		'eventMacro',
+	);
+
+	my @commands = (
+		"conf macro_file $macro_file",
+		"plugin reload $macro_plugin",
+		"conf eventMacro_file $event_macro_file",
+		"plugin reload $event_macro_plugin",
+	);
+
+	foreach my $safe_command (@commands) {
+		my ($ok, $err) = _run_safe_openkore_command($safe_command);
+		if (!$ok) {
+			return (0, 'macro_reload_failed', "macro reload step failed for '$safe_command': $err");
+		}
+	}
+
+	my $publication_id = defined $metadata->{publication_id} ? _trim($metadata->{publication_id}, 64) : '';
+	my $version = defined $metadata->{version} ? _trim($metadata->{version}, 64) : '';
+	my $suffix = '';
+	$suffix .= " publication_id=$publication_id" if $publication_id ne '';
+	$suffix .= " version=$version" if $version ne '';
+
+	return (1, 'ok', "macro and eventMacro hot reload completed through existing OpenKore command pathways$suffix");
+}
+
+sub _run_safe_openkore_command {
+	my ($command) = @_;
+	my $ok = eval { Commands::run($command); 1; };
+	if ($ok) {
+		debug "[aiSidecarBridge] executed safe command '$command'\n", 'aiSidecarBridge', 2;
+		return (1, '');
+	}
+
+	my $err = $@ || 'command execution failure';
+	return (0, _trim($err, 220));
+}
+
+sub _safe_control_filename {
+	my ($candidate, $default) = @_;
+	$candidate = $default if !defined $candidate || $candidate eq '';
+	$candidate =~ s/^\s+//;
+	$candidate =~ s/\s+$//;
+
+	if ($candidate =~ m{[\\/]} || $candidate !~ /^[A-Za-z0-9_.-]+$/) {
+		return $default;
+	}
+
+	return $candidate;
+}
+
+sub _safe_plugin_name {
+	my ($candidate, $default) = @_;
+	$candidate = $default if !defined $candidate || $candidate eq '';
+	$candidate =~ s/^\s+//;
+	$candidate =~ s/\s+$//;
+
+	if ($candidate =~ m{[\\/]} || $candidate !~ /^[A-Za-z0-9_.:-]+$/) {
+		return $default;
+	}
+
+	return $candidate;
 }
 
 sub _flush_ack_queue {

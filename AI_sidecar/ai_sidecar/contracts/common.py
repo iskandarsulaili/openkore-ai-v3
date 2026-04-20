@@ -38,6 +38,7 @@ class NoopActionPayload(BaseModel):
     action_id: str = "noop"
     kind: str = "noop"
     command: str = ""
+    priority_tier: str | None = None
     conflict_key: str | None = None
     expires_at: datetime | None = None
-
+    metadata: dict[str, object] = Field(default_factory=dict)

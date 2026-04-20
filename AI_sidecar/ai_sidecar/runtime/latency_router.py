@@ -50,6 +50,7 @@ class LatencyRouter:
     ) -> tuple[T, float, bool]:
         started = self.begin()
         used_fallback = False
+        result: T
         try:
             result = operation()
         except Exception:
