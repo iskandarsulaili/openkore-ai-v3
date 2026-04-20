@@ -69,6 +69,8 @@ class BotRegistrationRequest(BaseModel):
 
     meta: ContractMeta
     bot_name: str | None = None
+    role: str | None = Field(default=None, max_length=64)
+    assignment: str | None = Field(default=None, max_length=128)
     capabilities: list[str] = Field(default_factory=list)
     attributes: dict[str, str] = Field(default_factory=dict)
 
@@ -80,3 +82,6 @@ class BotRegistrationResponse(BaseModel):
     registered: bool = True
     bot_id: str
     seen_at: datetime
+    role: str | None = None
+    assignment: str | None = None
+    liveness_state: str = "online"

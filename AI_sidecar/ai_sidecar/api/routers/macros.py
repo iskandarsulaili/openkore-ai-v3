@@ -67,6 +67,8 @@ def publish_macros(
             "bot_id": target_bot_id,
             "published": True,
             "reload_queued": bool(data.get("reload_queued", False)),
+            "publication_id": str(data.get("publication_id") or ""),
+            "version": str(data.get("version") or ""),
         },
     )
 

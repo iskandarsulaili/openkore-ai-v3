@@ -40,4 +40,29 @@ class TelemetryIngestResponse(BaseModel):
     ok: bool = True
     accepted: int
     dropped: int
+    queued_for_retry: int = 0
 
+
+class TelemetryIncident(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    bot_id: str
+    timestamp: datetime
+    level: str
+    category: str
+    event: str
+    message: str
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
+class TelemetrySummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    window_minutes: int
+    window_since: datetime
+    total_events: int
+    levels: dict[str, int] = Field(default_factory=dict)
+    top_events: list[dict[str, object]] = Field(default_factory=list)
+    recent_incidents: list[TelemetryIncident] = Field(default_factory=list)

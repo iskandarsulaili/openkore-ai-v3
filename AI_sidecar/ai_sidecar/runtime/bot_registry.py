@@ -44,3 +44,6 @@ class BotRegistry:
         with self._lock:
             return len(self._bots)
 
+    def list(self) -> list[BotRecord]:
+        with self._lock:
+            return list(self._bots.values())

@@ -22,8 +22,7 @@ def register_bot(
     payload: BotRegistrationRequest,
     runtime: RuntimeState = Depends(get_runtime),
 ) -> BotRegistrationResponse:
-    record = runtime.bot_registry.upsert(payload.meta.bot_id)
-    runtime.incr("bot_registrations")
+    registration = runtime.register_bot(payload)
     logger.info(
         "bot_registered",
         extra={"event": "bot_registered", "bot_id": payload.meta.bot_id},
@@ -32,7 +31,10 @@ def register_bot(
         ok=True,
         registered=True,
         bot_id=payload.meta.bot_id,
-        seen_at=record.last_seen_at,
+        seen_at=registration["seen_at"],
+        role=registration.get("role"),
+        assignment=registration.get("assignment"),
+        liveness_state=str(registration.get("liveness_state") or "online"),
     )
 
 
@@ -53,4 +55,3 @@ def ingest_snapshot(
         bot_id=payload.meta.bot_id,
         tick_id=payload.tick_id,
     )
-

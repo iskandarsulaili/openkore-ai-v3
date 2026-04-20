@@ -54,3 +54,8 @@ tables/**/monsters.txt
 control/ai_sidecar_generated_macros.txt
 control/ai_sidecar_generated_eventmacros.txt
 control/ai_sidecar_macro_manifest.json
+
+# AI sidecar local runtime persistence + caches
+AI_sidecar/data/
+AI_sidecar/**/*.sqlite
+AI_sidecar/**/__pycache__/

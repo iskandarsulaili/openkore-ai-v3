@@ -73,7 +73,7 @@ def next_action(
     runtime: RuntimeState = Depends(get_runtime),
 ) -> NextActionResponse:
     started = runtime.latency_router.begin()
-    action = runtime.next_action(payload.meta.bot_id)
+    action = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
     elapsed_ms = runtime.latency_router.end("actions.next", started)
 
     if action is not None and not runtime.latency_router.within_budget(elapsed_ms):
