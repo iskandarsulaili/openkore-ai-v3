@@ -1,0 +1,149 @@
+# OpenKore Job Build Definitions (Table-Driven, NO HARDCODING)
+# Format: job_class build_name stat_priority_1 stat_priority_2 stat_priority_3 stat_priority_4 stat_priority_5 stat_priority_6
+# Used by AI Service for dynamic stat allocation across ALL job classes
+# 
+# Stat Priority Order: Each job/build has 6 stats ranked by importance
+# Stats: STR AGI VIT DEX INT LUK
+# 
+# ================================================================
+# NOVICE CLASS (Base class for all paths)
+# ================================================================
+Novice default STR DEX VIT AGI INT LUK
+Novice balanced STR AGI VIT DEX INT LUK
+
+# ================================================================
+# SWORDSMAN CLASS (Tank/Melee DPS paths)
+# ================================================================
+Swordman agi_knight AGI STR VIT DEX INT LUK
+Swordman vit_knight VIT STR DEX AGI INT LUK
+Swordman str_knight STR DEX AGI VIT INT LUK
+Swordman balanced STR VIT DEX AGI INT LUK
+
+# Knight (2nd Job)
+Knight agi_knight AGI STR VIT DEX INT LUK
+Knight vit_knight VIT STR DEX AGI INT LUK
+Knight str_knight STR DEX AGI VIT INT LUK
+Knight balanced STR VIT DEX AGI INT LUK
+
+# Crusader (2nd Job)
+Crusader holy_tank VIT DEX INT STR AGI LUK
+Crusader balanced VIT STR DEX INT AGI LUK
+
+# ================================================================
+# MAGE CLASS (Magic DPS paths)
+# ================================================================
+Mage magic_dps INT DEX VIT AGI STR LUK
+Mage support INT VIT DEX AGI STR LUK
+Mage balanced INT DEX VIT AGI STR LUK
+
+# Wizard (2nd Job)
+Wizard magic_dps INT DEX VIT AGI STR LUK
+Wizard balanced INT DEX VIT AGI STR LUK
+
+# Sage (2nd Job)
+Sage support INT DEX VIT AGI STR LUK
+Sage balanced INT DEX VIT AGI STR LUK
+
+# ================================================================
+# ARCHER CLASS (Ranged DPS paths)
+# ================================================================
+Archer dex_hunter DEX AGI STR VIT INT LUK
+Archer balanced DEX AGI VIT STR INT LUK
+
+# Hunter (2nd Job)
+Hunter dex_hunter DEX AGI STR VIT INT LUK
+Hunter trapper DEX INT VIT AGI STR LUK
+Hunter balanced DEX AGI VIT STR INT LUK
+
+# Bard/Dancer (2nd Job)
+Bard support DEX INT VIT AGI STR LUK
+Dancer support DEX INT VIT AGI STR LUK
+
+# ================================================================
+# ACOLYTE CLASS (Support/Healer paths)
+# ================================================================
+Acolyte support_priest INT VIT DEX AGI STR LUK
+Acolyte battle_priest INT DEX STR VIT AGI LUK
+Acolyte balanced INT DEX VIT AGI STR LUK
+
+# Priest (2nd Job)
+Priest support INT VIT DEX AGI STR LUK
+Priest battle INT DEX STR VIT AGI LUK
+Priest balanced INT DEX VIT AGI STR LUK
+
+# Monk (2nd Job)
+Monk combo_monk STR AGI VIT DEX INT LUK
+Monk tank_monk VIT STR DEX AGI INT LUK
+Monk balanced STR VIT AGI DEX INT LUK
+
+# ================================================================
+# THIEF CLASS (Evasion/Crit DPS paths)
+# ================================================================
+Thief crit_assassin LUK AGI STR DEX VIT INT
+Thief agi_rogue AGI DEX STR VIT INT LUK
+Thief balanced AGI DEX STR VIT LUK INT
+
+# Assassin (2nd Job)
+Assassin crit_burst LUK AGI STR DEX VIT INT
+Assassin katar_mastery STR AGI VIT DEX INT LUK
+Assassin balanced AGI STR DEX VIT LUK INT
+
+# Rogue (2nd Job)
+Rogue strip_build DEX AGI STR VIT INT LUK
+Rogue balanced AGI DEX STR VIT INT LUK
+
+# ================================================================
+# MERCHANT CLASS (Economy/Tank/Utility paths)
+# ================================================================
+Merchant tank_blacksmith VIT STR DEX AGI INT LUK
+Merchant str_blacksmith STR DEX VIT AGI INT LUK
+Merchant balanced STR VIT DEX AGI INT LUK
+
+# Blacksmith (2nd Job)
+Blacksmith forger VIT STR DEX AGI INT LUK
+Blacksmith battle STR DEX VIT AGI INT LUK
+Blacksmith balanced STR VIT DEX AGI INT LUK
+
+# Alchemist (2nd Job)
+Alchemist brewer INT DEX VIT AGI STR LUK
+Alchemist homunculus INT VIT DEX AGI STR LUK
+Alchemist balanced INT DEX VIT AGI STR LUK
+
+# ================================================================
+# SUPER NOVICE (Extended Class)
+# ================================================================
+Super_Novice balanced STR AGI VIT DEX INT LUK
+Super_Novice all_rounder STR DEX VIT AGI INT LUK
+
+# ================================================================
+# TAEKWON CLASSES (Extended Classes)
+# ================================================================
+Taekwon kick_master STR AGI VIT DEX INT LUK
+Taekwon balanced STR AGI VIT DEX INT LUK
+
+Star_Gladiator solar STR AGI DEX VIT INT LUK
+Star_Gladiator lunar AGI STR DEX VIT INT LUK
+Star_Gladiator stellar STR AGI VIT DEX INT LUK
+
+Soul_Linker support INT DEX VIT AGI STR LUK
+Soul_Linker balanced INT DEX VIT AGI STR LUK
+
+# ================================================================
+# GUNSLINGER & NINJA (Extended Classes)
+# ================================================================
+Gunslinger dex_gunner DEX AGI STR VIT INT LUK
+Gunslinger balanced DEX AGI VIT STR INT LUK
+
+Ninja magic_ninja INT DEX AGI VIT STR LUK
+Ninja physical_ninja STR AGI DEX VIT INT LUK
+Ninja balanced DEX AGI INT VIT STR LUK
+
+# ================================================================
+# NOTES FOR AI SERVICE:
+# - Load this table at startup
+# - Parse each line to get job_class, build_name, and stat priorities
+# - Use stat priorities for dynamic allocation (NO HARDCODING)
+# - First stat = highest priority, last stat = lowest priority
+# - If job/build not found, use "Novice default" as fallback
+# - Support for all job classes ensures scalability
+# ================================================================

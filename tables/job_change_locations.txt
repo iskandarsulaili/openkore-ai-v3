@@ -1,0 +1,37 @@
+# Job Change Quest Locations
+# Format: target_job | map | coordinates | description | requirements
+#
+# 1st Class Changes (Novice → 1st)
+Swordman | izlude_in | 74 172 | Swordman Guild (Izlude) | Level 10, Job 10
+Archer | payon_in02 | 64 71 | Archer Guild (Payon) | Level 10, Job 10
+Thief | moc_prydb1 | 42 133 | Thief Guild (Morroc Underground) | Level 10, Job 10
+Acolyte | prt_church | 184 41 | Church (Prontera) | Level 10, Job 10
+Merchant | alberta_in | 53 43 | Merchant Guild (Alberta) | Level 10, Job 10
+Mage | geffen_in | 163 98 | Mage Guild (Geffen) | Level 10, Job 10
+Super Novice | aldeba_in | 223 167 | Super Novice Guild (Aldebaran) | Level 45, Job 10 Novice
+
+# 2nd Class Changes (1st → 2nd)
+# Swordman Branch
+Knight | prt_in | 88 101 | Chivalry (Prontera) | Swordman Job 40
+Crusader | prt_castle | 45 169 | Crusader Guild (Prontera Castle) | Swordman Job 40
+
+# Archer Branch
+Hunter | hu_in01 | 386 373 | Hunter Guild (Hugel) | Archer Job 40
+Bard | comodo | 226 123 | Bard Guild (Comodo) | Archer Job 40 (Male)
+Dancer | comodo | 193 151 | Dancer Guild (Comodo) | Archer Job 40 (Female)
+
+# Thief Branch
+Assassin | in_moc_16 | 19 33 | Assassin Guild (Morroc) | Thief Job 40
+Rogue | in_rogue | 363 123 | Rogue Guild (Pharos Lighthouse) | Thief Job 40
+
+# Acolyte Branch  
+Priest | prt_church | 16 41 | Church (Prontera) | Acolyte Job 40
+Monk | monk_in | 99 58 | Monk Monastery (St. Capitolina Abbey) | Acolyte Job 40
+
+# Merchant Branch
+Blacksmith | ein_in01 | 18 28 | Blacksmith Guild (Einbroch) | Merchant Job 40
+Alchemist | alde_alche | 27 185 | Alchemist Guild (Aldebaran) | Merchant Job 40
+
+# Mage Branch
+Wizard | gef_tower | 106 35 | Geffen Tower | Mage Job 40
+Sage | yuno_in03 | 154 35 | Sage Castle (Juno) | Mage Job 40
