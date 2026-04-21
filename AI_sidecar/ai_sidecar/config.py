@@ -31,6 +31,8 @@ class SidecarSettings(BaseSettings):
     telemetry_backlog_max_events: int = Field(default=10000, ge=100, le=200000)
 
     latency_budget_ms: int = Field(default=12, ge=1, le=500)
+    reflex_latency_budget_ms: int = Field(default=100, ge=10, le=1000)
+    reflex_trigger_history_per_bot: int = Field(default=1000, ge=100, le=20000)
 
     sqlite_path: str = "AI_sidecar/data/sidecar.sqlite"
     sqlite_busy_timeout_ms: int = Field(default=300, ge=50, le=10000)

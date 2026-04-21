@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from ai_sidecar.contracts.actions import ActionProposal, ActionStatus
+from ai_sidecar.contracts.events import NormalizedEvent
 from ai_sidecar.contracts.state import BotStateSnapshot
 from ai_sidecar.contracts.telemetry import TelemetryEvent
 from ai_sidecar.persistence.db import SQLiteDB
@@ -13,6 +14,7 @@ from ai_sidecar.persistence.models import (
     ActionRecord,
     AuditEventRecord,
     BotIdentityRecord,
+    EventJournalRecord,
     MacroPublicationRecord,
     MemoryEpisodeRecord,
     MemorySemanticRecord,
@@ -874,6 +876,92 @@ class MemoryRepository:
         return int(row["c"]) if row else 0
 
 
+class EventJournalRepository:
+    def __init__(self, db: SQLiteDB, max_history_per_bot: int) -> None:
+        self._db = db
+        self._max_history_per_bot = max_history_per_bot
+
+    def append(self, event: NormalizedEvent) -> None:
+        now = utc_now()
+        self._db.execute(
+            """
+            INSERT INTO ingest_events(
+                event_id, bot_id, observed_at, ingested_at,
+                event_family, event_type, severity, source_hook,
+                correlation_id, text, tags_json, numeric_json,
+                payload_json, event_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(event_id) DO NOTHING
+            """,
+            (
+                event.event_id,
+                event.meta.bot_id,
+                to_iso(event.observed_at),
+                to_iso(now),
+                event.event_family.value,
+                event.event_type,
+                event.severity.value,
+                event.source_hook,
+                event.correlation_id,
+                event.text,
+                to_json(event.tags),
+                to_json(event.numeric),
+                to_json(event.payload),
+                to_json(event.model_dump(mode="json")),
+            ),
+        )
+        self._trim_history(event.meta.bot_id)
+
+    def list_recent(self, *, bot_id: str, limit: int) -> list[EventJournalRecord]:
+        rows = self._db.fetchall(
+            "SELECT * FROM ingest_events WHERE bot_id=? ORDER BY observed_at DESC, id DESC LIMIT ?",
+            (bot_id, limit),
+        )
+        return [self._to_record(row) for row in rows]
+
+    def count(self, *, bot_id: str | None = None) -> int:
+        if bot_id:
+            row = self._db.fetchone("SELECT COUNT(*) AS c FROM ingest_events WHERE bot_id=?", (bot_id,))
+        else:
+            row = self._db.fetchone("SELECT COUNT(*) AS c FROM ingest_events")
+        return int(row["c"]) if row else 0
+
+    def _trim_history(self, bot_id: str) -> None:
+        self._db.execute(
+            """
+            DELETE FROM ingest_events
+            WHERE bot_id=?
+              AND id NOT IN (
+                SELECT id
+                FROM ingest_events
+                WHERE bot_id=?
+                ORDER BY observed_at DESC, id DESC
+                LIMIT ?
+              )
+            """,
+            (bot_id, bot_id, self._max_history_per_bot),
+        )
+
+    def _to_record(self, row: object) -> EventJournalRecord:
+        return EventJournalRecord(
+            id=int(row["id"]),
+            event_id=row["event_id"],
+            bot_id=row["bot_id"],
+            observed_at=from_iso(row["observed_at"]),
+            ingested_at=from_iso(row["ingested_at"]),
+            event_family=row["event_family"],
+            event_type=row["event_type"],
+            severity=row["severity"],
+            source_hook=row["source_hook"],
+            correlation_id=row["correlation_id"],
+            text=row["text"] or "",
+            tags=dict(from_json(row["tags_json"])),
+            numeric=dict(from_json(row["numeric_json"])),
+            payload=dict(from_json(row["payload_json"])),
+            event=dict(from_json(row["event_json"])),
+        )
+
+
 @dataclass(slots=True)
 class SidecarRepositories:
     bots: BotRepository
@@ -883,6 +971,7 @@ class SidecarRepositories:
     macros: MacroRepository
     audit: AuditRepository
     memory: MemoryRepository
+    events: EventJournalRepository
 
 
 def create_repositories(
@@ -905,4 +994,5 @@ def create_repositories(
         macros=MacroRepository(db),
         audit=AuditRepository(db, max_history=audit_history),
         memory=MemoryRepository(db),
+        events=EventJournalRepository(db, max_history_per_bot=snapshot_history_per_bot),
     )

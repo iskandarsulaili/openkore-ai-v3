@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from ai_sidecar.api.routers import acknowledgements, actions, fleet, health, ingest, macros, telemetry
+from ai_sidecar.api.routers import acknowledgements, actions, fleet, health, ingest, ingest_v2, macros, reflex, state_v2, telemetry
 from ai_sidecar.config import settings
 from ai_sidecar.lifecycle import create_runtime
 from ai_sidecar.logging_setup import configure_logging
@@ -36,6 +36,9 @@ def create_app() -> FastAPI:
     app.include_router(macros.router)
     app.include_router(telemetry.router)
     app.include_router(fleet.router)
+    app.include_router(ingest_v2.router)
+    app.include_router(state_v2.router)
+    app.include_router(reflex.router)
     return app
 
 

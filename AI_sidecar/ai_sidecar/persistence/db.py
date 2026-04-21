@@ -147,6 +147,27 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         FOREIGN KEY(memory_id) REFERENCES memory_semantic_records(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS ingest_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL UNIQUE,
+        bot_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        event_family TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        source_hook TEXT,
+        correlation_id TEXT,
+        text TEXT NOT NULL,
+        tags_json TEXT NOT NULL,
+        numeric_json TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        event_json TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ingest_events_bot_ts ON ingest_events(bot_id, observed_at DESC, id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ingest_events_family_type ON ingest_events(event_family, event_type)",
 )
 
 
@@ -221,4 +242,3 @@ class SQLiteDB:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
         return conn
-

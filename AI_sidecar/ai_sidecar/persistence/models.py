@@ -113,3 +113,21 @@ class MemorySemanticRecord:
     vector: list[float]
     norm: float
 
+
+@dataclass(slots=True)
+class EventJournalRecord:
+    id: int
+    event_id: str
+    bot_id: str
+    observed_at: datetime
+    ingested_at: datetime
+    event_family: str
+    event_type: str
+    severity: str
+    source_hook: str | None
+    correlation_id: str | None
+    text: str
+    tags: dict[str, str]
+    numeric: dict[str, float]
+    payload: dict[str, object]
+    event: dict[str, object]

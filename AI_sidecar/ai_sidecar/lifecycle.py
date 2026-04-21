@@ -10,10 +10,31 @@ from uuid import uuid4
 
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionAckRequest, ActionPriorityTier, ActionProposal, ActionStatus
+from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.contracts.events import (
+    ActorDeltaPushRequest,
+    ChatStreamIngestRequest,
+    ConfigDoctrineFingerprintRequest,
+    EventFamily,
+    EventBatchIngestRequest,
+    EventSeverity,
+    IngestAcceptedResponse,
+    NormalizedEvent,
+    QuestTransitionRequest,
+)
 from ai_sidecar.contracts.macros import MacroPublishRequest
+from ai_sidecar.contracts.reflex import ReflexRule
+from ai_sidecar.contracts.reflex import ReflexBreakerStatusView, ReflexTriggerRecord
 from ai_sidecar.contracts.state import BotRegistrationRequest, BotStateSnapshot
+from ai_sidecar.contracts.state_graph import EnrichedWorldState
 from ai_sidecar.contracts.telemetry import TelemetryEvent, TelemetryIngestResponse
 from ai_sidecar.domain.macro_compiler import MacroCompiler, MacroPublisher
+from ai_sidecar.ingestion.event_journal import EventJournal
+from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
+from ai_sidecar.ingestion.adapters.chat_adapter import chat_stream_to_events
+from ai_sidecar.ingestion.adapters.config_adapter import config_update_to_events
+from ai_sidecar.ingestion.adapters.quest_adapter import quest_transition_to_events
+from ai_sidecar.ingestion.normalizer_bus import NormalizerBus
 from ai_sidecar.memory.embeddings import LocalSemanticEmbedder
 from ai_sidecar.memory.episodic_store import EpisodicMemoryStore
 from ai_sidecar.memory.retrieval import (
@@ -31,6 +52,7 @@ from ai_sidecar.runtime.action_queue import ActionQueue
 from ai_sidecar.runtime.bot_registry import BotRegistry
 from ai_sidecar.runtime.latency_router import LatencyRouter
 from ai_sidecar.runtime.snapshot_cache import SnapshotCache
+from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -113,6 +135,8 @@ class RuntimeState:
     memory: MemoryRetrievalService
     audit_trail: AuditTrail | None
     repositories: SidecarRepositories | None
+    normalizer_bus: NormalizerBus
+    reflex_engine: ReflexRuleEngine
     sqlite_path: Path | None
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
@@ -134,6 +158,7 @@ class RuntimeState:
     def register_bot(self, payload: BotRegistrationRequest) -> dict[str, object]:
         bot_id = payload.meta.bot_id
         in_memory = self.bot_registry.upsert(bot_id)
+        self.reflex_engine.ensure_bot(bot_id=bot_id)
 
         persisted = self._safe_persist(
             "register_bot",
@@ -187,12 +212,14 @@ class RuntimeState:
 
         self._safe_persist(
             "persist_snapshot",
-            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=snapshot.tick_id, liveness_state="online"),
+            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=snapshot.tick_id, liveness_state="online")
+            if self.repositories
+            else None,
             bot_id=bot_id,
         )
         self._safe_persist(
             "persist_snapshot_history",
-            lambda: self.repositories.snapshots.save_snapshot(snapshot),
+            lambda: self.repositories.snapshots.save_snapshot(snapshot) if self.repositories else None,
             bot_id=bot_id,
         )
 
@@ -217,6 +244,133 @@ class RuntimeState:
             ),
             bot_id=bot_id,
         )
+        snapshot_event = NormalizedEvent(
+            meta=snapshot.meta,
+            observed_at=snapshot.observed_at,
+            event_family=EventFamily.snapshot,
+            event_type="snapshot.compact",
+            source_hook="v1.ingest.snapshot",
+            text="snapshot ingested",
+            numeric={
+                "hp": float(snapshot.vitals.hp or 0),
+                "hp_max": float(snapshot.vitals.hp_max or 0),
+                "sp": float(snapshot.vitals.sp or 0),
+                "sp_max": float(snapshot.vitals.sp_max or 0),
+                "x": float(snapshot.position.x or 0),
+                "y": float(snapshot.position.y or 0),
+                "zeny": float(snapshot.inventory.zeny or 0),
+                "item_count": float(snapshot.inventory.item_count or 0),
+            },
+            tags={
+                "tick_id": snapshot.tick_id,
+                "map": snapshot.position.map or "",
+                "ai_sequence": snapshot.combat.ai_sequence or "",
+            },
+            payload=snapshot.model_dump(mode="json"),
+        )
+        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=snapshot.meta, events=[snapshot_event]))
+        self._evaluate_reflex_events(
+            bot_id=bot_id,
+            events=self._accepted_events(events=[snapshot_event], event_ids=result.event_ids),
+            source="snapshot",
+        )
+
+    def ingest_event_batch(self, payload: EventBatchIngestRequest) -> IngestAcceptedResponse:
+        result = self.normalizer_bus.ingest_batch(payload)
+        self._evaluate_reflex_events(
+            bot_id=payload.meta.bot_id,
+            events=self._accepted_events(events=payload.events, event_ids=result.event_ids),
+            source="v2.event",
+        )
+        return result
+
+    def ingest_actor_delta(self, payload: ActorDeltaPushRequest) -> IngestAcceptedResponse:
+        events = actor_delta_to_events(payload)
+        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=payload.meta, events=events))
+        self._evaluate_reflex_events(
+            bot_id=payload.meta.bot_id,
+            events=self._accepted_events(events=events, event_ids=result.event_ids),
+            source="v2.actors",
+        )
+        return result
+
+    def ingest_chat_stream(self, payload: ChatStreamIngestRequest) -> IngestAcceptedResponse:
+        events = chat_stream_to_events(payload)
+        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=payload.meta, events=events))
+        self._evaluate_reflex_events(
+            bot_id=payload.meta.bot_id,
+            events=self._accepted_events(events=events, event_ids=result.event_ids),
+            source="v2.chat",
+        )
+        return result
+
+    def ingest_config_update(self, payload: ConfigDoctrineFingerprintRequest) -> IngestAcceptedResponse:
+        events = config_update_to_events(payload)
+        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=payload.meta, events=events))
+        self._evaluate_reflex_events(
+            bot_id=payload.meta.bot_id,
+            events=self._accepted_events(events=events, event_ids=result.event_ids),
+            source="v2.config",
+        )
+        return result
+
+    def ingest_quest_transition(self, payload: QuestTransitionRequest) -> IngestAcceptedResponse:
+        events = quest_transition_to_events(payload)
+        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=payload.meta, events=events))
+        self._evaluate_reflex_events(
+            bot_id=payload.meta.bot_id,
+            events=self._accepted_events(events=events, event_ids=result.event_ids),
+            source="v2.quest",
+        )
+        return result
+
+    def enriched_state(self, *, bot_id: str) -> EnrichedWorldState:
+        return self.normalizer_bus.enriched_state(bot_id=bot_id)
+
+    def normalized_state_graph(self, *, bot_id: str) -> dict[str, object]:
+        return self.normalizer_bus.debug_graph(bot_id=bot_id)
+
+    def recent_ingest_events(self, *, bot_id: str, limit: int = 100) -> list[dict[str, object]]:
+        return self.normalizer_bus.recent_events(bot_id=bot_id, limit=limit)
+
+    def upsert_reflex_rule(self, *, bot_id: str, rule: ReflexRule) -> tuple[bool, str]:
+        try:
+            self.reflex_engine.upsert_rule(bot_id=bot_id, rule=rule)
+            self._audit(
+                level="info",
+                event_type="reflex_rule_upsert",
+                summary="reflex rule upserted",
+                bot_id=bot_id,
+                payload={"rule_id": rule.rule_id, "enabled": rule.enabled, "priority": rule.priority},
+            )
+            return True, "rule_saved"
+        except Exception as exc:
+            logger.exception(
+                "reflex_rule_upsert_failed",
+                extra={"event": "reflex_rule_upsert_failed", "bot_id": bot_id, "rule_id": rule.rule_id},
+            )
+            return False, str(exc)
+
+    def list_reflex_rules(self, *, bot_id: str) -> list[ReflexRule]:
+        return self.reflex_engine.list_rules(bot_id=bot_id)
+
+    def enable_reflex_rule(self, *, bot_id: str, rule_id: str, enabled: bool) -> bool:
+        changed = self.reflex_engine.set_rule_enabled(bot_id=bot_id, rule_id=rule_id, enabled=enabled)
+        if changed:
+            self._audit(
+                level="info",
+                event_type="reflex_rule_enable",
+                summary="reflex rule enablement updated",
+                bot_id=bot_id,
+                payload={"rule_id": rule_id, "enabled": enabled},
+            )
+        return changed
+
+    def recent_reflex_triggers(self, *, bot_id: str, limit: int = 100) -> list[ReflexTriggerRecord]:
+        return self.reflex_engine.recent_triggers(bot_id=bot_id, limit=limit)
+
+    def reflex_breakers(self, *, bot_id: str) -> list[ReflexBreakerStatusView]:
+        return self.reflex_engine.list_breakers(bot_id=bot_id)
 
     def queue_action(self, proposal: ActionProposal, bot_id: str) -> tuple[bool, ActionStatus, str, str]:
         accepted, status, action_id, reason = self.action_queue.enqueue(bot_id, proposal)
@@ -230,7 +384,9 @@ class RuntimeState:
                     proposal=proposal,
                     status=status,
                     status_reason=reason,
-                ),
+                )
+                if self.repositories
+                else None,
                 bot_id=bot_id,
             )
 
@@ -258,6 +414,24 @@ class RuntimeState:
                 "reason": reason,
             },
         )
+        self._emit_runtime_event(
+            bot_id=bot_id,
+            event_family=EventFamily.action,
+            event_type="action.queue_decision",
+            severity=EventSeverity.info if accepted else EventSeverity.warning,
+            text=f"queue decision accepted={accepted} status={status.value} reason={reason}",
+            numeric={"accepted": 1.0 if accepted else 0.0},
+            payload={
+                "action_id": action_id,
+                "requested_action_id": proposal.action_id,
+                "kind": proposal.kind,
+                "status": status.value,
+                "reason": reason,
+                "priority_tier": proposal.priority_tier.value,
+                "conflict_key": proposal.conflict_key,
+                "idempotency_key": proposal.idempotency_key,
+            },
+        )
         return accepted, status, action_id, reason
 
     def next_action(self, bot_id: str, poll_id: str | None = None) -> ActionProposal | None:
@@ -265,7 +439,9 @@ class RuntimeState:
         self.incr("actions_polled", bot_id=bot_id)
         self._safe_persist(
             "touch_bot_poll",
-            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=None, liveness_state="online"),
+            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=None, liveness_state="online")
+            if self.repositories
+            else None,
             bot_id=bot_id,
         )
 
@@ -273,7 +449,9 @@ class RuntimeState:
         if proposal is not None:
             self._safe_persist(
                 "mark_action_dispatched",
-                lambda: self.repositories.actions.mark_dispatched(action_id=proposal.action_id, poll_id=poll_id),
+                lambda: self.repositories.actions.mark_dispatched(action_id=proposal.action_id, poll_id=poll_id)
+                if self.repositories
+                else None,
                 bot_id=bot_id,
             )
             self._safe_memory(
@@ -286,6 +464,19 @@ class RuntimeState:
                     metadata={"phase": "dispatch", "poll_id": poll_id},
                 ),
                 bot_id=bot_id,
+            )
+            self._emit_runtime_event(
+                bot_id=bot_id,
+                event_family=EventFamily.action,
+                event_type="action.dispatched",
+                severity=EventSeverity.info,
+                text="action dispatched",
+                payload={
+                    "action_id": proposal.action_id,
+                    "poll_id": poll_id,
+                    "kind": proposal.kind,
+                    "priority_tier": proposal.priority_tier.value,
+                },
             )
         return proposal
 
@@ -313,7 +504,9 @@ class RuntimeState:
                     result_code=ack.result_code,
                     message=ack.message,
                     poll_id=ack.poll_id,
-                ),
+                )
+                if self.repositories
+                else None,
                 bot_id=ack.meta.bot_id,
             )
             self._safe_memory(
@@ -340,7 +533,111 @@ class RuntimeState:
                 "status": status.value,
             },
         )
+        self._emit_runtime_event(
+            bot_id=ack.meta.bot_id,
+            event_family=EventFamily.action,
+            event_type="action.acknowledged",
+            severity=EventSeverity.info if ack.success else EventSeverity.warning,
+            text=f"action ack success={ack.success} result={ack.result_code}",
+            numeric={"success": 1.0 if ack.success else 0.0, "observed_latency_ms": float(ack.observed_latency_ms or 0.0)},
+            payload={
+                "action_id": ack.action_id,
+                "poll_id": ack.poll_id,
+                "success": ack.success,
+                "result_code": ack.result_code,
+                "message": ack.message,
+                "status": status.value,
+            },
+        )
+        self.reflex_engine.handle_ack(
+            bot_id=ack.meta.bot_id,
+            action_id=ack.action_id,
+            success=ack.success,
+            result_code=ack.result_code,
+            message=ack.message,
+        )
         return acknowledged, status
+
+    def _accepted_events(self, *, events: list[NormalizedEvent], event_ids: list[str]) -> list[NormalizedEvent]:
+        if not events:
+            return []
+        if not event_ids:
+            return []
+        accepted = set(event_ids)
+        return [item for item in events if item.event_id in accepted]
+
+    def _evaluate_reflex_events(self, *, bot_id: str, events: list[NormalizedEvent], source: str) -> None:
+        if not events:
+            return
+
+        filtered_events = [
+            item
+            for item in events
+            if not (
+                item.meta.source == "sidecar-runtime"
+                and item.event_family == EventFamily.action
+                and item.event_type.startswith("action.")
+            )
+        ]
+        if not filtered_events:
+            return
+
+        started = self.latency_router.begin()
+        records = self.reflex_engine.evaluate_events(
+            bot_id=bot_id,
+            events=filtered_events,
+            get_enriched_state=lambda *, bot_id=bot_id: self.enriched_state(bot_id=bot_id),
+            queue_action=self.queue_action,
+            publish_macros=self.publish_macros,
+        )
+        elapsed_ms = self.latency_router.end("reflex.evaluate", started)
+
+        if elapsed_ms > float(settings.reflex_latency_budget_ms):
+            self._audit(
+                level="warning",
+                event_type="reflex_latency_budget_exceeded",
+                summary="reflex evaluation exceeded latency budget",
+                bot_id=bot_id,
+                payload={
+                    "elapsed_ms": elapsed_ms,
+                    "budget_ms": settings.reflex_latency_budget_ms,
+                    "source": source,
+                    "event_count": len(filtered_events),
+                },
+            )
+
+        if not records:
+            return
+
+        self.incr("reflex_triggers_total", n=len(records), bot_id=bot_id)
+        emitted_total = sum(1 for item in records if item.emitted)
+        suppressed_total = sum(1 for item in records if item.suppressed)
+        if emitted_total:
+            self.incr("reflex_actions_emitted", n=emitted_total, bot_id=bot_id)
+        if suppressed_total:
+            self.incr("reflex_actions_suppressed", n=suppressed_total, bot_id=bot_id)
+
+        for record in records:
+            self._audit(
+                level="warning" if record.suppressed else "info",
+                event_type="reflex_trigger",
+                summary=f"reflex {record.outcome} for rule {record.rule_id}",
+                bot_id=bot_id,
+                payload={
+                    "trigger_id": record.trigger_id,
+                    "rule_id": record.rule_id,
+                    "event_id": record.event_id,
+                    "event_type": record.event_type,
+                    "suppressed": record.suppressed,
+                    "suppression_reason": record.suppression_reason,
+                    "emitted": record.emitted,
+                    "execution_target": record.execution_target,
+                    "action_id": record.action_id,
+                    "latency_ms": record.latency_ms,
+                    "outcome": record.outcome,
+                    "detail": record.detail,
+                },
+            )
 
     def ingest_telemetry(self, bot_id: str, events: list[TelemetryEvent]) -> TelemetryIngestResponse:
         result = self.telemetry_store.push(bot_id, events)
@@ -363,6 +660,29 @@ class RuntimeState:
                 "batch_size": len(events),
             },
         )
+
+        if events:
+            for item in events:
+                severity = EventSeverity.info
+                if item.level.value == "debug":
+                    severity = EventSeverity.debug
+                elif item.level.value == "warning":
+                    severity = EventSeverity.warning
+                elif item.level.value == "error":
+                    severity = EventSeverity.error
+                self._emit_runtime_event(
+                    bot_id=bot_id,
+                    event_family=EventFamily.telemetry,
+                    event_type=f"telemetry.{item.category}.{item.event}",
+                    severity=severity,
+                    text=item.message,
+                    numeric={key: float(value) for key, value in item.metrics.items()},
+                    payload={
+                        "category": item.category,
+                        "event": item.event,
+                        "tags": item.tags,
+                    },
+                )
         return result
 
     def telemetry_operational_summary(self, *, bot_id: str | None = None) -> dict[str, object]:
@@ -413,6 +733,14 @@ class RuntimeState:
                 bot_id=target_bot_id,
                 payload={"error": str(exc)},
             )
+            self._emit_runtime_event(
+                bot_id=target_bot_id,
+                event_family=EventFamily.macro,
+                event_type="macro.publish_failed",
+                severity=EventSeverity.error,
+                text=f"macro publication failed: {exc}",
+                payload={"error": str(exc)},
+            )
             return False, None, f"macro publication failed: {exc}"
 
         publication_info: dict[str, object] = {
@@ -441,7 +769,9 @@ class RuntimeState:
                     "catalog_file": publication_info["catalog_file"],
                     "manifest_file": publication_info["manifest_file"],
                 },
-            ),
+            )
+            if self.repositories
+            else None,
             bot_id=target_bot_id,
         )
 
@@ -501,6 +831,20 @@ class RuntimeState:
                 "publication_id": compiled.publication_id,
                 "version": compiled.version,
                 "reload_queued": publication_info["reload_queued"],
+            },
+        )
+        self._emit_runtime_event(
+            bot_id=target_bot_id,
+            event_family=EventFamily.macro,
+            event_type="macro.published",
+            severity=EventSeverity.info,
+            text=f"published macro bundle {compiled.version}",
+            payload={
+                "publication_id": compiled.publication_id,
+                "version": compiled.version,
+                "reload_queued": publication_info["reload_queued"],
+                "reload_action_id": publication_info["reload_action_id"],
+                "reload_reason": publication_info["reload_reason"],
             },
         )
         return True, publication_info, "macro artifacts published"
@@ -799,6 +1143,46 @@ class RuntimeState:
             )
             return default
 
+    def _emit_runtime_event(
+        self,
+        *,
+        bot_id: str,
+        event_family: EventFamily,
+        event_type: str,
+        severity: EventSeverity,
+        text: str,
+        numeric: dict[str, float] | None = None,
+        payload: dict[str, object] | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> None:
+        try:
+            meta = ContractMeta(
+                contract_version=settings.contract_version,
+                source="sidecar-runtime",
+                bot_id=bot_id,
+            )
+            event = NormalizedEvent(
+                meta=meta,
+                event_family=event_family,
+                event_type=event_type,
+                severity=severity,
+                text=text,
+                numeric=dict(numeric or {}),
+                payload=dict(payload or {}),
+                tags=dict(tags or {}),
+            )
+            result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=meta, events=[event]))
+            self._evaluate_reflex_events(
+                bot_id=bot_id,
+                events=self._accepted_events(events=[event], event_ids=result.event_ids),
+                source="runtime_event",
+            )
+        except Exception:
+            logger.exception(
+                "runtime_event_emit_failed",
+                extra={"event": "runtime_event_emit_failed", "bot_id": bot_id, "event_type": event_type},
+            )
+
 
 def create_runtime() -> RuntimeState:
     workspace_root = Path(__file__).resolve().parents[2]
@@ -895,6 +1279,13 @@ def create_runtime() -> RuntimeState:
         memory=MemoryRetrievalService(provider=provider),
         audit_trail=audit_trail,
         repositories=repositories,
+        normalizer_bus=NormalizerBus.create(event_journal=EventJournal(repository=repositories.events if repositories else None)),
+        reflex_engine=ReflexRuleEngine(
+            workspace_root=workspace_root,
+            contract_version=settings.contract_version,
+            action_ttl_seconds=settings.action_default_ttl_seconds,
+            trigger_history_per_bot=settings.reflex_trigger_history_per_bot,
+        ),
         sqlite_path=sqlite_path if repositories is not None else None,
         persistence_degraded=persistence_degraded,
     )
