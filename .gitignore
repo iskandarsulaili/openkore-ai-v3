@@ -63,8 +63,6 @@ AI_sidecar/.env
 AI_sidecar/venv/
 AI_sidecar/.venv/
 AI_sidecar/*.egg-info/
-.ai-sidecar-runtime/
-ai-sidecar-launcher.env
 benchmark-results.txt
 
 # Local temporary stubs used for isolated plugin syntax checks
