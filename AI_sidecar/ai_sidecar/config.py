@@ -86,5 +86,8 @@ class SidecarSettings(BaseSettings):
     planner_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
     planner_retries: int = Field(default=2, ge=0, le=8)
 
+    crewai_enabled: bool = True
+    crewai_verbose: bool = False
+
 
 settings = SidecarSettings()

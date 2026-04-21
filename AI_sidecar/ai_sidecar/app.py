@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from ai_sidecar.api.routers import (
     acknowledgements,
     actions,
+    crewai_v2,
     fleet,
     health,
     ingest,
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(reflex.router)
     app.include_router(planner_v2.router)
     app.include_router(providers_v2.router)
+    app.include_router(crewai_v2.router)
     return app
 
 

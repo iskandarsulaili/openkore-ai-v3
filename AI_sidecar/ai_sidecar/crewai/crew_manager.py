@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from threading import RLock
+from time import perf_counter
+from typing import Any
+
+from ai_sidecar.contracts.crewai import (
+    CrewAgentDescriptor,
+    CrewAgentsResponse,
+    CrewCoordinateRequest,
+    CrewCoordinateResponse,
+    CrewStatusResponse,
+    CrewStrategizeRequest,
+    CrewStrategizeResponse,
+)
+from ai_sidecar.crewai.agents import create_agent_by_id
+from ai_sidecar.crewai.agents.manager_agent import create_manager_agent
+from ai_sidecar.crewai.config import AGENT_PROFILES, CREW_TOOL_NAMES
+from ai_sidecar.crewai.llm_adapter import ProviderBackedCrewLLM
+from ai_sidecar.crewai.tasks import build_collaborative_tasks
+from ai_sidecar.crewai.tools import CrewToolFacade, build_crewai_tools
+from ai_sidecar.planner.schemas import PlanHorizon, PlannerPlanRequest
+
+
+@dataclass(slots=True)
+class CrewManager:
+    runtime: Any
+    model_router: Any
+    enabled: bool = True
+    verbose: bool = False
+    _lock: RLock = field(default_factory=RLock, init=False, repr=False)
+    _active_runs: int = field(default=0, init=False, repr=False)
+    _counters: dict[str, int] = field(default_factory=dict, init=False, repr=False)
+    _crewai_available: bool = field(default=False, init=False, repr=False)
+    _init_error: str = field(default="", init=False, repr=False)
+    _tool_facade: CrewToolFacade = field(init=False, repr=False)
+    _tool_map: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._counters = {
+            "strategize_calls": 0,
+            "coordinate_calls": 0,
+            "success": 0,
+            "failures": 0,
+        }
+        self._tool_facade = CrewToolFacade(runtime=self.runtime)
+        try:
+            import crewai  # noqa: F401
+
+            self._crewai_available = True
+            self._tool_map = build_crewai_tools(facade=self._tool_facade)
+        except Exception as exc:
+            self._crewai_available = False
+            self._init_error = str(exc)
+            self._tool_map = {}
+
+    def agents(self) -> CrewAgentsResponse:
+        rows = [
+            CrewAgentDescriptor(
+                agent_id=item.agent_id,
+                role=item.role,
+                goal=item.goal,
+                tools=list(item.tools),
+                enabled=self.enabled,
+            )
+            for item in AGENT_PROFILES
+        ]
+        return CrewAgentsResponse(ok=True, total_agents=len(rows), agents=rows)
+
+    def status(self) -> CrewStatusResponse:
+        with self._lock:
+            active_runs = self._active_runs
+            counters = dict(self._counters)
+        data = self.agents()
+        return CrewStatusResponse(
+            ok=True,
+            generated_at=datetime.now(UTC),
+            crew_available=self._crewai_available,
+            crewai_enabled=self.enabled,
+            active_runs=active_runs,
+            counters=counters,
+            agents=data.agents,
+        )
+
+    def execute_tool(self, *, bot_id: str, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
+        return self._tool_facade.execute(bot_id=bot_id, tool_name=tool_name, arguments=arguments)
+
+    async def strategize(self, payload: CrewStrategizeRequest) -> CrewStrategizeResponse:
+        started = perf_counter()
+        with self._lock:
+            self._active_runs += 1
+            self._counters["strategize_calls"] += 1
+        try:
+            agent_outputs, consolidated_output, errors = await self._run_crew_pipeline(
+                bot_id=payload.meta.bot_id,
+                trace_id=payload.meta.trace_id,
+                objective=payload.objective,
+                task_hint="strategic_planning",
+                required_agents=[],
+            )
+            planner_response = await self.runtime.planner_plan(
+                PlannerPlanRequest(
+                    meta=payload.meta,
+                    objective=payload.objective,
+                    horizon=payload.horizon,
+                    force_replan=payload.force_replan,
+                    max_steps=payload.max_steps,
+                )
+            )
+            ok = planner_response.ok and not errors
+            message = "strategized" if ok else "strategize_degraded"
+            with self._lock:
+                self._counters["success" if ok else "failures"] += 1
+            return CrewStrategizeResponse(
+                ok=ok,
+                message=message,
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                objective=payload.objective,
+                agent_outputs=agent_outputs,
+                consolidated_output=consolidated_output,
+                planner_response=planner_response,
+                duration_ms=(perf_counter() - started) * 1000.0,
+                errors=errors,
+            )
+        finally:
+            with self._lock:
+                self._active_runs = max(0, self._active_runs - 1)
+
+    async def coordinate(self, payload: CrewCoordinateRequest) -> CrewCoordinateResponse:
+        started = perf_counter()
+        with self._lock:
+            self._active_runs += 1
+            self._counters["coordinate_calls"] += 1
+        try:
+            objective = payload.objective or payload.task
+            agent_outputs, consolidated_output, errors = await self._run_crew_pipeline(
+                bot_id=payload.meta.bot_id,
+                trace_id=payload.meta.trace_id,
+                objective=objective,
+                task_hint=payload.task,
+                required_agents=list(payload.required_agents),
+            )
+            planner_response = await self.runtime.planner_plan(
+                PlannerPlanRequest(
+                    meta=payload.meta,
+                    objective=objective,
+                    horizon=PlanHorizon.tactical,
+                    force_replan=False,
+                    max_steps=12,
+                )
+            )
+            ok = planner_response.ok and not errors
+            message = "coordinated" if ok else "coordinate_degraded"
+            with self._lock:
+                self._counters["success" if ok else "failures"] += 1
+            return CrewCoordinateResponse(
+                ok=ok,
+                message=message,
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                task=payload.task,
+                agent_outputs=agent_outputs,
+                consolidated_output=consolidated_output,
+                planner_response=planner_response,
+                duration_ms=(perf_counter() - started) * 1000.0,
+                errors=errors,
+            )
+        finally:
+            with self._lock:
+                self._active_runs = max(0, self._active_runs - 1)
+
+    async def _run_crew_pipeline(
+        self,
+        *,
+        bot_id: str,
+        trace_id: str,
+        objective: str,
+        task_hint: str,
+        required_agents: list[str],
+    ) -> tuple[list[dict[str, object]], str, list[str]]:
+        if not self.enabled:
+            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_disabled", ["crewai_disabled"]
+        if not self._crewai_available:
+            err = self._init_error or "crewai_not_installed"
+            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_unavailable", [err]
+
+        try:
+            from crewai import Crew, Process
+
+            llm = ProviderBackedCrewLLM(
+                model="router",
+                model_router=self.model_router,
+                workload="strategic_planning",
+                timeout_seconds=float(getattr(self.runtime, "planner_service", None) and 45.0 or 45.0),
+                max_retries=1,
+                bot_id=bot_id,
+                trace_id=trace_id,
+            )
+            allowed = set(required_agents) if required_agents else {item.agent_id for item in AGENT_PROFILES}
+            selected_profiles = [item for item in AGENT_PROFILES if item.agent_id in allowed]
+            if not selected_profiles:
+                selected_profiles = list(AGENT_PROFILES)
+
+            agents_by_id: dict[str, Any] = {}
+            for profile in selected_profiles:
+                tools = [self._tool_map[name] for name in profile.tools if name in self._tool_map]
+                agents_by_id[profile.agent_id] = create_agent_by_id(
+                    agent_id=profile.agent_id,
+                    llm=llm,
+                    tools=tools,
+                    verbose=self.verbose,
+                )
+
+            manager_tools = [self._tool_map[name] for name in CREW_TOOL_NAMES if name in self._tool_map]
+            manager = create_manager_agent(llm=llm, tools=manager_tools, verbose=self.verbose)
+
+            tasks = build_collaborative_tasks(objective=objective, task_hint=task_hint, agents_by_id=agents_by_id)
+            crew = Crew(
+                agents=list(agents_by_id.values()),
+                tasks=tasks,
+                manager_agent=manager,
+                process=Process.hierarchical,
+                planning=True,
+                verbose=self.verbose,
+            )
+            result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
+            consolidated = str(getattr(result, "raw", "") or str(result))
+            task_outputs = list(getattr(result, "tasks_output", []) or [])
+            rows: list[dict[str, object]] = []
+            for item in task_outputs:
+                rows.append(
+                    {
+                        "task_name": getattr(item, "name", None),
+                        "agent": str(getattr(item, "agent", "")),
+                        "summary": str(getattr(item, "summary", "")),
+                        "raw": str(getattr(item, "raw", "")),
+                        "json": dict(getattr(item, "json_dict", {}) or {}),
+                    }
+                )
+            if not rows:
+                rows = self._fallback_outputs(bot_id=bot_id, objective=objective)
+            return rows, consolidated, []
+        except Exception as exc:
+            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_execution_failed", [str(exc)]
+
+    def _fallback_outputs(self, *, bot_id: str, objective: str) -> list[dict[str, object]]:
+        state = self._tool_facade.get_bot_state(bot_id=bot_id)
+        feasibility = self._tool_facade.evaluate_plan_feasibility(bot_id=bot_id, plan={"objective": objective, "risk_score": 0.35})
+        rows: list[dict[str, object]] = []
+        for profile in AGENT_PROFILES:
+            rows.append(
+                {
+                    "task_name": f"task_{profile.agent_id}",
+                    "agent": profile.role,
+                    "summary": f"Fallback synthesis for {profile.role}",
+                    "raw": (
+                        f"objective={objective}; queue_depth={state.get('queue_depth')}; "
+                        f"feasible={feasibility.get('feasible')}"
+                    ),
+                    "json": {
+                        "agent_id": profile.agent_id,
+                        "objective": objective,
+                        "queue_depth": state.get("queue_depth"),
+                        "feasible": feasibility.get("feasible"),
+                    },
+                }
+            )
+        return rows
+

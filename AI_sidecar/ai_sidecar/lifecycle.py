@@ -14,6 +14,16 @@ import httpx
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionAckRequest, ActionPriorityTier, ActionProposal, ActionStatus
 from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.contracts.crewai import (
+    CrewAgentsResponse,
+    CrewCoordinateRequest,
+    CrewCoordinateResponse,
+    CrewStatusResponse,
+    CrewStrategizeRequest,
+    CrewStrategizeResponse,
+    CrewToolExecuteRequest,
+    CrewToolExecuteResponse,
+)
 from ai_sidecar.contracts.events import (
     ActorDeltaPushRequest,
     ChatStreamIngestRequest,
@@ -31,6 +41,7 @@ from ai_sidecar.contracts.reflex import ReflexBreakerStatusView, ReflexTriggerRe
 from ai_sidecar.contracts.state import BotRegistrationRequest, BotStateSnapshot
 from ai_sidecar.contracts.state_graph import EnrichedWorldState
 from ai_sidecar.contracts.telemetry import TelemetryEvent, TelemetryIngestResponse
+from ai_sidecar.crewai import CrewManager
 from ai_sidecar.domain.macro_compiler import MacroCompiler, MacroPublisher
 from ai_sidecar.ingestion.event_journal import EventJournal
 from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
@@ -267,6 +278,7 @@ class RuntimeState:
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
     planner_service: PlannerService | None = None
+    crew_manager: CrewManager | None = None
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
     persistence_degraded: bool = False
@@ -1272,6 +1284,64 @@ class RuntimeState:
             return PlannerStatusResponse(ok=True, bot_id=bot_id, planner_healthy=False, counters={})
         return self.planner_service.status(bot_id=bot_id)
 
+    async def crewai_strategize(self, payload: CrewStrategizeRequest) -> CrewStrategizeResponse:
+        if self.crew_manager is None:
+            return CrewStrategizeResponse(
+                ok=False,
+                message="crewai_unavailable",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                objective=payload.objective,
+                errors=["crewai_unavailable"],
+            )
+        return await self.crew_manager.strategize(payload)
+
+    async def crewai_coordinate(self, payload: CrewCoordinateRequest) -> CrewCoordinateResponse:
+        if self.crew_manager is None:
+            return CrewCoordinateResponse(
+                ok=False,
+                message="crewai_unavailable",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                task=payload.task,
+                errors=["crewai_unavailable"],
+            )
+        return await self.crew_manager.coordinate(payload)
+
+    def crewai_agents(self) -> CrewAgentsResponse:
+        if self.crew_manager is None:
+            return CrewAgentsResponse(ok=False, total_agents=0, agents=[])
+        return self.crew_manager.agents()
+
+    def crewai_status(self) -> CrewStatusResponse:
+        if self.crew_manager is None:
+            return CrewStatusResponse(ok=False, crew_available=False, crewai_enabled=False, active_runs=0, counters={}, agents=[])
+        return self.crew_manager.status()
+
+    def crewai_execute_tool(self, payload: CrewToolExecuteRequest) -> CrewToolExecuteResponse:
+        if self.crew_manager is None:
+            return CrewToolExecuteResponse(
+                ok=False,
+                message="crewai_unavailable",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                tool_name=payload.tool_name,
+                result={},
+            )
+        result = self.crew_manager.execute_tool(
+            bot_id=payload.meta.bot_id,
+            tool_name=payload.tool_name,
+            arguments=payload.arguments,
+        )
+        return CrewToolExecuteResponse(
+            ok=bool(result.get("ok", True)),
+            message=str(result.get("message") or "ok"),
+            trace_id=payload.meta.trace_id,
+            bot_id=payload.meta.bot_id,
+            tool_name=payload.tool_name,
+            result=result,
+        )
+
     async def providers_health(self, *, bot_id: str) -> list[dict[str, object]]:
         if self.model_router is None:
             return []
@@ -1651,6 +1721,13 @@ def create_runtime() -> RuntimeState:
         reflection_writer=ReflectionWriter(memory_service=runtime.memory),
     )
     runtime.planner_service = planner_service
+    crew_manager = CrewManager(
+        runtime=runtime,
+        model_router=model_router,
+        enabled=settings.crewai_enabled,
+        verbose=settings.crewai_verbose,
+    )
+    runtime.crew_manager = crew_manager
 
     runtime._audit(
         level="warning" if persistence_degraded else "info",
@@ -1669,6 +1746,8 @@ def create_runtime() -> RuntimeState:
             "memory_embedding_model": requested_embedding_model,
             "providers_enabled": sorted(provider_adapters.keys()),
             "planner_enabled": planner_service is not None,
+            "crewai_enabled": settings.crewai_enabled,
+            "crewai_available": crew_manager.status().crew_available,
         },
     )
     logger.info(
