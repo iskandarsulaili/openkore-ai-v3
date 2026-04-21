@@ -39,7 +39,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword
+adminPassword taudelid
 callSign
 commandPrefix ;
 callSignGM 0
@@ -611,8 +611,8 @@ attackSkillSlot {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -695,8 +695,8 @@ doCommand {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -749,8 +749,8 @@ useSelf_skill {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -807,8 +807,8 @@ partySkill {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -911,8 +911,8 @@ equipAuto {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -956,8 +956,8 @@ useSelf_item {
 	mercenary_whenIdle
 	mercenary_whenNotIdle
 	onAction
-    inQueue
-    notInQueue
+	inQueue
+	notInQueue
 	whenStatusActive
 	whenStatusInactive
 	whenFollowing
@@ -1073,4 +1073,4 @@ avoidObstaclesDefaultPortals {
 	drop_destination_when_near_dist 3
 }
 
-
+macro_orphans terminate

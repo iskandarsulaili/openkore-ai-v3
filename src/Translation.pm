@@ -24,6 +24,10 @@
 package Translation;
 
 use strict;
+
+our @EXPORT = qw(T TF);
+our $_translation;
+
 use Exporter;
 use base qw(Exporter);
 use FindBin qw($RealBin);
@@ -32,10 +36,6 @@ use I18N;
 use utf8;
 
 XSTools::bootModule("Translation");
-
-
-our @EXPORT = qw(T TF);
-our $_translation;
 
 use constant DEFAULT_PODIR => "$RealBin/src/po";
 

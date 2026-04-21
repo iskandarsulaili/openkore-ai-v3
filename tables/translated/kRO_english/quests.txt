@@ -8388,7 +8388,7 @@ Take the half flower you collected to Mezai.#
 #
 
 5937#[Standby] Flower Room's Work#SG_FEEL#QUE_NOIMAGE#
-Flower Room's CompanyDo not overwork. When you're done with one task, get plenty of rest! If you want to do the next job after the waiting time,go to <NAVI>[President Mezai]<INFO>rachel,70,135,0,101,0</INFO></NAVI>¿ª √£æ∆∞°∫∏me.#
+Flower Room's CompanyDo not overwork. When you're done with one task, get plenty of rest! If you want to do the next job after the waiting time,go to <NAVI>[President Mezai]<INFO>rachel,70,135,0,101,0</INFO></NAVI>√Ä¬ª √É¬£¬æ√Ü¬∞¬°¬∫¬∏me.#
 Reset at 04:00#
 
 5938#Half Flower Gathering#SG_FEEL#QUE_NOIMAGE#
@@ -8532,7 +8532,7 @@ I joined the Eagle Patrol.When you're ready to go on patrol, let's go to the <NA
 #
 
 5973#[Standby] Patrol with Irwin#SG_FEEL#QUE_NOIMAGE#
-Together with the Eagle Patrol.Finished patrolling Frozen Scale Hill.If you want to participate in the patrol tomorrow, go to the <NAVI>[Guard Captain]<INFO>icecastle,23,115,0,101,0</INFO></NAVI>¿ª √£æ∆∞°me.#
+Together with the Eagle Patrol.Finished patrolling Frozen Scale Hill.If you want to participate in the patrol tomorrow, go to the <NAVI>[Guard Captain]<INFO>icecastle,23,115,0,101,0</INFO></NAVI>√Ä¬ª √É¬£¬æ√Ü¬∞¬°me.#
 Reset at 04:00#
 
 5974#Patrol with Irwin(1)#SG_FEEL#QUE_NOIMAGE#
@@ -13284,7 +13284,7 @@ After delivering the box, let's go back to Geffen and report it to Lily You.#
 Report to Lily You#
 
 8306#There are children studying in Yuno#SG_FEEL#QUE_NOIMAGE#
-The tag on the cold box that Lilyyu asked for is°∞ to Yuno-Juni and Tres.#
+The tag on the cold box that Lilyyu asked for is¬°¬∞ to Yuno-Juni and Tres.#
 Cold Box Delivery#
 
 8307#Let's go back to Gefen#SG_FEEL#QUE_NOIMAGE#
@@ -14284,7 +14284,7 @@ I don't know what will happen if I run into someone while spending more time. Le
 Go to the Temple Lobby#
 
 8713#Temple Closure (10)#SG_FEEL#QUE_NOIMAGE#
-πThe door opened safely and I was able to get out. Let's talk with <NAVI>[Priest Nema]<INFO>rachel,116,174,0,101,0</INFO></NAVI>.#
+¬πThe door opened safely and I was able to get out. Let's talk with <NAVI>[Priest Nema]<INFO>rachel,116,174,0,101,0</INFO></NAVI>.#
 Talk to Priest Nema#
 
 8714#Temple Closure (11)#SG_FEEL#QUE_NOIMAGE#
@@ -16991,11 +16991,11 @@ Deliver the last supply box to Alberto#
 You've delivered the last supply box to Alberto. Go back to Instructor Lugen.#
 Lugen#
 
-11099#To My Friend°¶#SG_FEEL#QUE_NOIMAGE#
+11099#To My Friend¬°¬¶#SG_FEEL#QUE_NOIMAGE#
 Lugen asked you to deliver a letter to his friend Otto who is working on the barrier in the west.#
 Otto#
 
-11100#To My Friend°¶#SG_FEEL#QUE_NOIMAGE#
+11100#To My Friend¬°¬¶#SG_FEEL#QUE_NOIMAGE#
 Otto asked you to bring his letter to Lugen and to tell him that he will be visiting him when he gets his next vacation.#
 Lugen#
 
@@ -21316,7 +21316,7 @@ Show Home Tree's leaf and encourage Etran. Although Robert's refusal to receive 
 Revisiting Etran#
 
 12301#Two remaining friends#SG_FEEL#QUE_NOIMAGE#
-Robert and Etran will carry out their destinies until the end. Until the land of the past (although present for them¢Æ|) becomes the abundant land of the present. Talk to Hiel and Clever who made the encounters possible.#
+Robert and Etran will carry out their destinies until the end. Until the land of the past (although present for them¬¢¬Æ|) becomes the abundant land of the present. Talk to Hiel and Clever who made the encounters possible.#
 Two remaining friends#
 
 12302#Salim Hamid#SG_FEEL#QUE_NOIMAGE#
@@ -22360,7 +22360,7 @@ I accepted Ardor's request. Even if you complete a request, you cannot receive a
 Resets at 4 AM#
 
 12610#Cleaning complete!#SG_FEEL#QUE_NOIMAGE#
-You can't let uninvited bugs run wild in your beautiful garden. You successfully completed todayís cleaning.#
+You can't let uninvited bugs run wild in your beautiful garden. You successfully completed today‚Äôs cleaning.#
 Resets at 4 AM#
 
 12611#Interview completed#SG_FEEL#QUE_NOIMAGE#
@@ -22476,23 +22476,23 @@ I received a request to kill 150 contaminated spirits, which are rapidly increas
 Forgotten Memories, Area 2, Defeat Contaminated Spirits#
 
 12639#Serpen's Request 3#SG_FEEL#QUE_NOIMAGE#
-After obtaining 10 Wrath of Polluted Agni, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Letís go around each area of forgotten memories and search for them.#
+After obtaining 10 Wrath of Polluted Agni, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Let‚Äôs go around each area of forgotten memories and search for them.#
 Obtain 10 Wrath of Polluted Agni#
 
 12640#Serpen's Request 4#SG_FEEL#QUE_NOIMAGE#
-After obtaining 10 Wrath of Polluted Aqua, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Letís go around each area of forgotten memories and search for them.#
+After obtaining 10 Wrath of Polluted Aqua, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Let‚Äôs go around each area of forgotten memories and search for them.#
 Obtain 10 Wrath of Polluted Aqua#
 
 12641#Serpen's Request 5#SG_FEEL#QUE_NOIMAGE#
-After obtaining 10 Wrath of Polluted Ventus, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Letís go around each area of forgotten memories and search for them.#
+After obtaining 10 Wrath of Polluted Ventus, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Let‚Äôs go around each area of forgotten memories and search for them.#
 Obtain 10 Wrath of Polluted Ventus#
 
 12642#Serpen's Request 6#SG_FEEL#QUE_NOIMAGE#
-After obtaining 10 Wrath of Polluted Tera, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Letís go around each area of forgotten memories and search for them.#
+After obtaining 10 Wrath of Polluted Tera, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Let‚Äôs go around each area of forgotten memories and search for them.#
 Obtain 10 Wrath of Polluted Tera#
 
 12643#Serpen's Request 7#SG_FEEL#QUE_NOIMAGE#
-After obtaining 10 Wrath of Polluted Spirit, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Letís go around each area of forgotten memories and search for them.#
+After obtaining 10 Wrath of Polluted Spirit, I was asked to seal them inside the <NAVI>[Spirit Complaint Terminal]<INFO>t_garden,124,122,0,101,0</INFO></NAVI>. Let‚Äôs go around each area of forgotten memories and search for them.#
 Obtain 20 Wrath of Polluted Spirit#
 
 13000#RWC 2011Card Gathering#SG_FEEL#QUE_NOIMAGE#
@@ -26184,7 +26184,7 @@ You have to safely catch the wild boars that have already come down to the villa
 10 wild boars captured#
 
 14984#Waiting: Hungry Boar#SG_FEEL#QUE_NOIMAGE#
-Now I have to clean the boar trap. After the dawn, come back to <NAVI>me<INFO>alberta,152,198,0,101,0</INFO></NAVI> Ÿæ Óø?#
+Now I have to clean the boar trap. After the dawn, come back to <NAVI>me<INFO>alberta,152,198,0,101,0</INFO></NAVI> √ô¬æ √Æ¬ø?#
 Reset at 04:00#
 
 14985#Preparation of water extracts#SG_FEEL#QUE_NOIMAGE#
@@ -28280,7 +28280,7 @@ This quest is a daily quest, and you can receive it again when the waiting time 
 Reset at 04:00#
 
 16528#Data Backup#SG_FEEL#QUE_NOIMAGE#
-Daily maintenance of the chip is required. Let's go to the Secret Wings <NAVI>[Researcher]<INFO>sp_rudus4,192,204,0,101,0</INFO></NAVI>ø°∞‘ √£æ∆∞° ∫∏me.#
+Daily maintenance of the chip is required. Let's go to the Secret Wings <NAVI>[Researcher]<INFO>sp_rudus4,192,204,0,101,0</INFO></NAVI>¬ø¬°¬∞√î √É¬£¬æ√Ü¬∞¬° ¬∫¬∏me.#
 Talk with the Researcher#
 
 16529#Abandoned Lab Amicitia#SG_FEEL#QUE_NOIMAGE#
@@ -28389,7 +28389,7 @@ Talk to Gudra#
 
 16555#Dina's Story#SG_FEEL#QUE_NOIMAGE#
 Go to <NAVI>[Dinar]<INFO>wolfvill,106,224,0,101,0</INFO></NAVI> with the notebook Gudra gave you and write down the amazing story Dina tells you.#
-µ≥™∏£øÕ ¥Î»≠#
+¬µ√∞¬≥¬™¬∏¬£¬ø√ç ¬¥√´√à¬≠#
 
 16556#Amira's Story#SG_FEEL#QUE_NOIMAGE#
 Go to <NAVI>[Amira]<INFO>wolfvill,180,204,0,101,0</INFO></NAVI> with the notebook Gudra gave you and write down the stories of the mysterious gods that Amira tells you.#
@@ -30421,7 +30421,7 @@ Wait for a while#
 
 17306#The President#SG_FEEL#QUE_NOIMAGE#
 Tell <NAVI>[Galstein]<INFO>lighthalzen,179,170,0,101,0</INFO></NAVI> in Lighthalzen that the secret wings can no longer be maintained.#
-Galsteinø°∞‘#
+Galstein¬ø¬°¬∞√î#
 
 17307#Gatekeeper of Lasagna Cave#SG_FEEL#QUE_NOIMAGE#
 Go find <NAVI>[Festival Director]<INFO>lasagna,81,201,0,101,0,</INFO></NAVI> and leave quickly for Lasagna Cave!#
@@ -30660,7 +30660,7 @@ The boiler is said to have already stopped working. Let's report back to <NAVI>[
 Go to Rookie#
 
 17366#So suddenly?#SG_FEEL#QUE_NOIMAGE#
-It is said that if you step on the wrong drain while cleaning, it will fall into the lake instead of the sewage treatment plant, so there might be something. Take a look at <NAVI>[±◊∞˜]<INFO>ba_bath,165,43,0,101,0</INFO></NAVI> and come back.#
+It is said that if you step on the wrong drain while cleaning, it will fall into the lake instead of the sewage treatment plant, so there might be something. Take a look at <NAVI>[¬±√ó¬∞√∑]<INFO>ba_bath,165,43,0,101,0</INFO></NAVI> and come back.#
 Explore the Lake#
 
 17367#Take Countermeasures#SG_FEEL#QUE_NOIMAGE#
@@ -30800,7 +30800,7 @@ Let's go to the last <NAVI>[Villain]<INFO>aldebaran,138,181,0,101,0</INFO></NAVI
 Winter Snacks for Villains 3#
 
 17401#Stop Time#SG_FEEL#QUE_NOIMAGE#
-Now let°Øs go back to the Clock Tower and stop the <NAVI>[Villain Boss]<INFO>aldebaran,159,127,0,101,0</INFO></NAVI>  from executing their plan!#
+Now let¬°¬Øs go back to the Clock Tower and stop the <NAVI>[Villain Boss]<INFO>aldebaran,159,127,0,101,0</INFO></NAVI>  from executing their plan!#
 Go to the Clock Tower#
 
 17402#Need Attention#SG_FEEL#QUE_NOIMAGE#
@@ -30836,7 +30836,7 @@ When you hold the Black Key, it trembles faintly and you feel a weak force. Let'
 Where the power leads to#
 
 17414#Secrets of the Thanatos Tower#SG_FEEL#QUE_NOIMAGE#
-Show the obtained notebook to <NAVI>[Bled Conceed]<INFO>tha_t02,231,161,0,101,0</INFO></NAVI>ø°∞‘ ∫∏ø©¡÷me.#
+Show the obtained notebook to <NAVI>[Bled Conceed]<INFO>tha_t02,231,161,0,101,0</INFO></NAVI>¬ø¬°¬∞√î ¬∫¬∏¬ø¬©√Å√ñme.#
 Go to Bled Conceed#
 
 17415#Request accepted#SG_FEEL#QUE_NOIMAGE#
@@ -32316,7 +32316,7 @@ You can receive the quest again from 'Lime Evenor' summoned using a booster call
 Reset at 04:00#
 
 18100#Special Delivery Request 3#SG_FEEL#QUE_NOIMAGE#
-Collect 10x <ITEM>[Poison Spore]<INFO>7033</INFO></ITEM>, 10x <ITEM>[Worm Peeling]<INFO>955</INFO></ITEM>, 10x <ITEM>[Insect Feeler]<INFO>928</INFO></ITEM> 10∞≥∏¶ and deliver it to 'Lime Evenor' through a booster call.  The items of the quest can be obtained from the Prontera Culvert.#
+Collect 10x <ITEM>[Poison Spore]<INFO>7033</INFO></ITEM>, 10x <ITEM>[Worm Peeling]<INFO>955</INFO></ITEM>, 10x <ITEM>[Insect Feeler]<INFO>928</INFO></ITEM> 10¬∞¬≥¬∏¬¶ and deliver it to 'Lime Evenor' through a booster call.  The items of the quest can be obtained from the Prontera Culvert.#
 10x Poison Spore, 10x Worm Peeling, 10x Insect Feeler#
 
 18101#[Standby] Special Delivery Request 3#SG_FEEL#QUE_NOIMAGE#
@@ -33363,7 +33363,7 @@ Defeat 100 Water elemental monsters of level 200 or higherAfter defeating them, 
 #
 
 19116#Pisrik's Research (1)#SG_FEEL#QUE_NOIMAGE#
-If you supply me with the materials I need right now, I'll teach you what I can make in return. The materials I need right now are...¢∫<ITEM>[Yellow Gemstone]<INFO>715</INFO></ITEM> x 5,¢∫<ITEM>[Empty Potion Bottle]<INFO>1093</INFO></ITEM> x 4,¢∫<ITEM>[Heart of Mermaid]<INFO>950</INFO></ITEM> x 10,¢∫<ITEM>[Powder of Butterfly Wing]<INFO>1057</INFO></ITEM> x 10   Once you have all the materials, take them to <NAVI>[Pisrik]<INFO>yuno_in04,33,108,0,101,0</INFO></NAVI>.#
+If you supply me with the materials I need right now, I'll teach you what I can make in return. The materials I need right now are...¬¢¬∫<ITEM>[Yellow Gemstone]<INFO>715</INFO></ITEM> x 5,¬¢¬∫<ITEM>[Empty Potion Bottle]<INFO>1093</INFO></ITEM> x 4,¬¢¬∫<ITEM>[Heart of Mermaid]<INFO>950</INFO></ITEM> x 10,¬¢¬∫<ITEM>[Powder of Butterfly Wing]<INFO>1057</INFO></ITEM> x 10   Once you have all the materials, take them to <NAVI>[Pisrik]<INFO>yuno_in04,33,108,0,101,0</INFO></NAVI>.#
 #
 
 19117#Pisrik's Research (2-1)#SG_FEEL#QUE_NOIMAGE#
@@ -33375,7 +33375,7 @@ My experiment doesn't seem to be going well as expected. Could you get me just o
 1 Carnivorous Plant's Seed#
 
 19119#Pisrik's Research (3)#SG_FEEL#QUE_NOIMAGE#
-Um... I'm sorry, but could you get me a pair of glasses that look like the ones I've been wearing? I can't see anything in front of me, so I can't move. I'd be really grateful if you could help me with this.   Get <ITEM>[Sphinx Glasses]<INFO>2243</INFO></ITEM> and take them to <NAVI>[Pisrik]<INFO>yuno_in04,33,108,0,101,0</INFO></NAVI>.^FF0000°ÿ Please be careful not to have other Sphinx Glasses in your inventory in use.^000000#
+Um... I'm sorry, but could you get me a pair of glasses that look like the ones I've been wearing? I can't see anything in front of me, so I can't move. I'd be really grateful if you could help me with this.   Get <ITEM>[Sphinx Glasses]<INFO>2243</INFO></ITEM> and take them to <NAVI>[Pisrik]<INFO>yuno_in04,33,108,0,101,0</INFO></NAVI>.^FF0000¬°√ò Please be careful not to have other Sphinx Glasses in your inventory in use.^000000#
 1 Sphinx Glasses#
 
 19120#Bard's Song (1)#SG_FEEL#QUE_NOIMAGE#
@@ -33383,11 +33383,11 @@ I'm concerned about the words of a timid young man who liked the <ITEM>[Tropical
 Information Gathering#
 
 19121#Bard's Song (1)#SG_FEEL#QUE_NOIMAGE#
-Bard <NAVI>[Raiot]<INFO>morocc_in,169,72,0,101,0</INFO></NAVI> met at the Morroc Tavern claims not to be a friend of the bard and doesn't want to talk to me. A young bard crying in Geffen? What could he mean?  °ÿ You must clear the <NAVI>[Bard's Song Quest]<INFO>geffen,132,38,0,101,0</INFO></NAVI> in Geffen.#
+Bard <NAVI>[Raiot]<INFO>morocc_in,169,72,0,101,0</INFO></NAVI> met at the Morroc Tavern claims not to be a friend of the bard and doesn't want to talk to me. A young bard crying in Geffen? What could he mean?  ¬°√ò You must clear the <NAVI>[Bard's Song Quest]<INFO>geffen,132,38,0,101,0</INFO></NAVI> in Geffen.#
 #
 
 19122#Bard's Song (2)#SG_FEEL#QUE_NOIMAGE#
-Raiot... Is he not going to tell me easily?Is there a place where I can go through the tree branches? Niflheim?Should I get five eggs from Ihire in Niflheim?  Find Ihire in Niflheim and get 5 <ITEM>[Eggs]<INFO>574</INFO></ITEM> to bring to <NAVI>[Raiot]<INFO>morocc_in,169,72,0,101,0</INFO></NAVI>.  ¢∫Ihire's Spawning Locations<NAVI>[Location]<INFO>niflheim,239,70,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,185,205,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,85,203,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,149,81,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,209,144,0,101,0</INFO></NAVI>^FF0000°ÿ In the City of the Dead, there is no way out.^000000#
+Raiot... Is he not going to tell me easily?Is there a place where I can go through the tree branches? Niflheim?Should I get five eggs from Ihire in Niflheim?  Find Ihire in Niflheim and get 5 <ITEM>[Eggs]<INFO>574</INFO></ITEM> to bring to <NAVI>[Raiot]<INFO>morocc_in,169,72,0,101,0</INFO></NAVI>.  ¬¢¬∫Ihire's Spawning Locations<NAVI>[Location]<INFO>niflheim,239,70,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,185,205,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,85,203,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,149,81,0,101,0</INFO></NAVI>/<NAVI>[Location]<INFO>niflheim,209,144,0,101,0</INFO></NAVI>^FF0000¬°√ò In the City of the Dead, there is no way out.^000000#
 5 Ihire's Eggs#
 
 19123#Bard's Song (2)#SG_FEEL#QUE_NOIMAGE#
@@ -33395,115 +33395,115 @@ Strange?! I thought I got five eggs from Ihire? If you want to learn the skill, 
 1 Ihire Doll#
 
 19124#Unfading News (1)#SG_FEEL#QUE_NOIMAGE#
-Geffen's Ford Leslie is worried because a worker who went to work in Britoria hasn't sent any news.  ¢∫Go to [Britoria] and look for a knight named ^0000FFSlarti^191240.#
+Geffen's Ford Leslie is worried because a worker who went to work in Britoria hasn't sent any news.  ¬¢¬∫Go to [Britoria] and look for a knight named ^0000FFSlarti^191240.#
 Find Knight Slarti#
 
 19125#Unfading News (2)#SG_FEEL#QUE_NOIMAGE#
-Injured <NAVI>[Slarti]<INFO>gef_fild13,297,242,0,101,0</INFO></NAVI> is unable to regain his composure. To help him regain consciousness...  ¢∫Get 1 <ITEM>[Red Potion]<INFO>909</INFO></ITEM>.#
+Injured <NAVI>[Slarti]<INFO>gef_fild13,297,242,0,101,0</INFO></NAVI> is unable to regain his composure. To help him regain consciousness...  ¬¢¬∫Get 1 <ITEM>[Red Potion]<INFO>909</INFO></ITEM>.#
 Give a Red Potion to Slarti#
 
 19126#Unfading News (3)#SG_FEEL#QUE_NOIMAGE#
-Slarti tried to take the report and a request for the knight's departure from him, but was attacked by goblin poison. Without an antidote, the wounds won't heal.  ¢∫Bring the antidote ingredients to <NAVI>[Ford]<INFO>geffen,110,117,0,101,0</INFO></NAVI> in Geffen.#
+Slarti tried to take the report and a request for the knight's departure from him, but was attacked by goblin poison. Without an antidote, the wounds won't heal.  ¬¢¬∫Bring the antidote ingredients to <NAVI>[Ford]<INFO>geffen,110,117,0,101,0</INFO></NAVI> in Geffen.#
 To Ford...#
 
 19127#Unfading News (4)#SG_FEEL#QUE_NOIMAGE#
-The goblin poison won't heal without an antidote. Priest <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera can make the antidote.  ¢∫Go to <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera to get the remedy.#
+The goblin poison won't heal without an antidote. Priest <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera can make the antidote.  ¬¢¬∫Go to <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera to get the remedy.#
 To Arthur...#
 
 19128#Unfading News (5)#SG_FEEL#QUE_NOIMAGE#
-<NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera needs ingredients for the goblin poison antidote. He provided the ingredients. Get the ingredients.  ¢∫Ingredients for the remedy:<ITEM>[Grapes]<INFO>514</INFO></ITEM> x 1, <ITEM>[Unripe Apple]<INFO>619</INFO></ITEM> x 1, <ITEM>[Empty Bottle]<INFO>713</INFO></ITEM> x 3,<ITEM>[Jellopy]<INFO>909</INFO></ITEM> x 5, <ITEM>[Squishy Liquid]<INFO>938</INFO></ITEM> x 20,<ITEM>[Coal]<INFO>1003</INFO></ITEM> x 1, <ITEM>[Sapha]<INFO>7053</INFO></ITEM> x 3#
+<NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera needs ingredients for the goblin poison antidote. He provided the ingredients. Get the ingredients.  ¬¢¬∫Ingredients for the remedy:<ITEM>[Grapes]<INFO>514</INFO></ITEM> x 1, <ITEM>[Unripe Apple]<INFO>619</INFO></ITEM> x 1, <ITEM>[Empty Bottle]<INFO>713</INFO></ITEM> x 3,<ITEM>[Jellopy]<INFO>909</INFO></ITEM> x 5, <ITEM>[Squishy Liquid]<INFO>938</INFO></ITEM> x 20,<ITEM>[Coal]<INFO>1003</INFO></ITEM> x 1, <ITEM>[Sapha]<INFO>7053</INFO></ITEM> x 3#
 Remedy Ingredients#
 
 19129#Unfading News (6)#SG_FEEL#QUE_NOIMAGE#
-<NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera is making a goblin poison antidote.  ¢∫Check if the remedy is ready.#
+<NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> in Prontera is making a goblin poison antidote.  ¬¢¬∫Check if the remedy is ready.#
 Check the Remedy#
 
 19130#Unfading News (7)#SG_FEEL#QUE_NOIMAGE#
-The goblin poison antidote is complete.  ¢∫Take the antidote to <NAVI>[Slarti]<INFO>gef_fild13,297,242,0,101,0</INFO></NAVI> before the remedy loses its efficacy.#
+The goblin poison antidote is complete.  ¬¢¬∫Take the antidote to <NAVI>[Slarti]<INFO>gef_fild13,297,242,0,101,0</INFO></NAVI> before the remedy loses its efficacy.#
 To Britoria...#
 
 19131#Unfading News (7)#SG_FEEL#QUE_NOIMAGE#
-Did I arrive too late?The remedy given to Slarti had no effect.  ¢∫Ask <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> to make the remedy again.#
+Did I arrive too late?The remedy given to Slarti had no effect.  ¬¢¬∫Ask <NAVI>[Arthur]<INFO>prt_church,87,125,0,101,0</INFO></NAVI> to make the remedy again.#
 To Arthur...#
 
 19132#Ethics of Life (1)#SG_FEEL#QUE_NOIMAGE#
-I tried talking to Kelassus, the authority on the ethics of life in Hoomaclues, but he ignored me. They say he doesn't usually talk to anyone... Maybe?  ¢∫Keep talking to <NAVI>[Kelassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
+I tried talking to Kelassus, the authority on the ethics of life in Hoomaclues, but he ignored me. They say he doesn't usually talk to anyone... Maybe?  ¬¢¬∫Keep talking to <NAVI>[Kelassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
 #
 
 19133#Ethics of Life (2)#SG_FEEL#QUE_NOIMAGE#
-To inherit the knowledge of Hoomaclues from Kelassus, it seems that I need to learn about Hoomaclues first.  ¢∫Ask <NAVI>[Scratched]<INFO>lhz_in01,225,122,0,101,0</INFO></NAVI> about Hoomaclues.#
+To inherit the knowledge of Hoomaclues from Kelassus, it seems that I need to learn about Hoomaclues first.  ¬¢¬∫Ask <NAVI>[Scratched]<INFO>lhz_in01,225,122,0,101,0</INFO></NAVI> about Hoomaclues.#
 #
 
 19134#Ethics of Life (3)#SG_FEEL#QUE_NOIMAGE#
-Scratched introduced me to Keshibian, who knows a lot about Call Hoomaclues.  ¢∫Ask <NAVI>[Keshibian]<INFO>lhz_in01,204,138,0,101,0</INFO></NAVI> about Call Hoomaclues.#
+Scratched introduced me to Keshibian, who knows a lot about Call Hoomaclues.  ¬¢¬∫Ask <NAVI>[Keshibian]<INFO>lhz_in01,204,138,0,101,0</INFO></NAVI> about Call Hoomaclues.#
 #
 
 19135#Ethics of Life (4)#SG_FEEL#QUE_NOIMAGE#
-Keshibian introduced me to Bruncher, who knows a lot about FF0000Resurrection Hoomaclues^000000 skill.   ¢∫Ask <NAVI>[Bruncher]<INFO>lhz_in02,278,273,0,101,0</INFO></NAVI> about Resurrection Hoomaclues.#
+Keshibian introduced me to Bruncher, who knows a lot about FF0000Resurrection Hoomaclues^000000 skill.   ¬¢¬∫Ask <NAVI>[Bruncher]<INFO>lhz_in02,278,273,0,101,0</INFO></NAVI> about Resurrection Hoomaclues.#
 #
 
 19136#Ethics of Life (5)#SG_FEEL#QUE_NOIMAGE#
-I learned about the Hoomaclues skills: Hoomaclues Rest, Call Hoomaclues, and Resurrection Hoomaclues.   ¢∫Ask <NAVI>[Kelassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI> to teach you about Ethics of Life.#
+I learned about the Hoomaclues skills: Hoomaclues Rest, Call Hoomaclues, and Resurrection Hoomaclues.   ¬¢¬∫Ask <NAVI>[Kelassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI> to teach you about Ethics of Life.#
 #
 
 19137#Ethics of Life (6)#SG_FEEL#QUE_NOIMAGE#
-Hoomaclues is one life, and to break Kellassus's stubbornness that humans shouldn't play around, what should I do?   ¢∫Should I even meet <NAVI>[Kellassus's Family]<INFO>lhz_in03,106,34,0,101,0</INFO></NAVI>?#
+Hoomaclues is one life, and to break Kellassus's stubbornness that humans shouldn't play around, what should I do?   ¬¢¬∫Should I even meet <NAVI>[Kellassus's Family]<INFO>lhz_in03,106,34,0,101,0</INFO></NAVI>?#
 #
 
 19138#Ethics of Life (7)#SG_FEEL#QUE_NOIMAGE#
-After meeting Kellassus's son, I thought of a way to change his mind.   ¢∫Try talking to <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
+After meeting Kellassus's son, I thought of a way to change his mind.   ¬¢¬∫Try talking to <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
 #
 
 19139#Ethics of Life (8)#SG_FEEL#QUE_NOIMAGE#
-Kellassus seems to be deep in thought after hearing me.   ¢∫Keep talking to <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
+Kellassus seems to be deep in thought after hearing me.   ¬¢¬∫Keep talking to <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
 #
 
 19140#Ethics of Life (9)#SG_FEEL#QUE_NOIMAGE#
-Kellassus seems to have finished sorting out his thoughts.   ¢∫Learn Ethics of Life from <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
+Kellassus seems to have finished sorting out his thoughts.   ¬¢¬∫Learn Ethics of Life from <NAVI>[Kellassus]<INFO>lhz_in01,224,140,0,101,0</INFO></NAVI>.#
 #
 
 19141#Charge Attack (1)#SG_FEEL#QUE_NOIMAGE#
-Knight Esophe of Prontera's 7th Knight Division suggests observing their training if you want to know the truth about the division.   ¢∫Observe [Knight Training]<INFO>prontera,69,351,0,101,0</INFO></NAVI>.#
+Knight Esophe of Prontera's 7th Knight Division suggests observing their training if you want to know the truth about the division.   ¬¢¬∫Observe [Knight Training]<INFO>prontera,69,351,0,101,0</INFO></NAVI>.#
 Observe Knight Training#
 
 19142#Charge Attack (2)#SG_FEEL#QUE_NOIMAGE#
-I observed the training of the Knight Division, as Esophe suggested.   ¢∫Return to <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
+I observed the training of the Knight Division, as Esophe suggested.   ¬¢¬∫Return to <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
 #
 
 19143#Charge Attack (3)#SG_FEEL#QUE_NOIMAGE#
-Esophe seems to have lost all his passion and enthusiasm. He mentioned something about hearing about Esophe's early days during the observation. I need to collect some items like 5 Candy and 3 Witherless Roses for a beginner knight. Should I pick them up?   ¢∫Collect 5 <ITEM>[Candy]<INFO>530</INFO></ITEM> and 3 <ITEM>[Witherless Roses]<INFO>748</INFO></ITEM> and take them to <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
+Esophe seems to have lost all his passion and enthusiasm. He mentioned something about hearing about Esophe's early days during the observation. I need to collect some items like 5 Candy and 3 Witherless Roses for a beginner knight. Should I pick them up?   ¬¢¬∫Collect 5 <ITEM>[Candy]<INFO>530</INFO></ITEM> and 3 <ITEM>[Witherless Roses]<INFO>748</INFO></ITEM> and take them to <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
 For the discouraged knight#
 
 19144#Charge Attack (4)#SG_FEEL#QUE_NOIMAGE#
-Esophe says he will pass on the skills he developed after his research.   ¢∫Learn the skill from <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
+Esophe says he will pass on the skills he developed after his research.   ¬¢¬∫Learn the skill from <NAVI>[Esophe]<INFO>prt_in,85,99,0,101,0</INFO></NAVI>.#
 #
 
 19145#Monk's Technique (1)#SG_FEEL#QUE_NOIMAGE#
-Monks created the skill called Rendition by putting all their might into it. Do you know how to use Rendition? If you want to use it, you should go to <NAVI>[A Fool Monk]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI>.   ¢∫Visit <NAVI>[A Fool Monk]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI> who can perform Rendition.#
+Monks created the skill called Rendition by putting all their might into it. Do you know how to use Rendition? If you want to use it, you should go to <NAVI>[A Fool Monk]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI>.   ¬¢¬∫Visit <NAVI>[A Fool Monk]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI> who can perform Rendition.#
 #
 
 19146#Monk's Technique (2)#SG_FEEL#QUE_NOIMAGE#
-If you want to do something, you should let go of your desires. Perhaps...?   ¢∫Dispose of all items related to desires and visit <NAVI>[Monk-in-Training]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI>.^FF0000°ÿThis quest can only be completed after reducing your carry weight to 0.^000000#
+If you want to do something, you should let go of your desires. Perhaps...?   ¬¢¬∫Dispose of all items related to desires and visit <NAVI>[Monk-in-Training]<INFO>prt_monk,270,198,0,101,0</INFO></NAVI>.^FF0000¬°√òThis quest can only be completed after reducing your carry weight to 0.^000000#
 #
 
 19147#Monk's Technique (3)#SG_FEEL#QUE_NOIMAGE#
-I learned Rendition. Now, can I also learn Rendition?   ¢∫Visit <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
+I learned Rendition. Now, can I also learn Rendition?   ¬¢¬∫Visit <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
 #
 
 19148#Monk's Technique (4)#SG_FEEL#QUE_NOIMAGE#
-Prove that you can use your strength correctly.   ¢∫Collect 20 <ITEM>[Plant Stems]<INFO>905</INFO></ITEM> and 3 <ITEM>[Sprouts]<INFO>711</INFO></ITEM>¢∫Visit <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
+Prove that you can use your strength correctly.   ¬¢¬∫Collect 20 <ITEM>[Plant Stems]<INFO>905</INFO></ITEM> and 3 <ITEM>[Sprouts]<INFO>711</INFO></ITEM>¬¢¬∫Visit <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
 #
 
 19149#Monk's Technique (5)#SG_FEEL#QUE_NOIMAGE#
-You have proven your qualification to use strength correctly.   ¢∫Learn Rendition from <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
+You have proven your qualification to use strength correctly.   ¬¢¬∫Learn Rendition from <NAVI>[Master Monk]<INFO>monk_test,316,69,0,101,0</INFO></NAVI>.#
 #
 
 19150#Sacrifice#SG_FEEL#QUE_NOIMAGE#
-Do you know the skill 'Redemptio'? Redemptio is a sacrifice skill, which means that you will become incapacitated in battle instead of saving your party members. Please don't forget that point.   ¢∫Learn the Resurrection skill at level 1 or higher, collect 20 <ITEM>[Blue Gemstone]<INFO>717</INFO></ITEM>, and 30 <ITEM>[Holy Water]<INFO>523</INFO></ITEM>¢∫With the ingredients, visit <NAVI>[Linus Nun]<INFO>prt_church,111,112,0,101,0</INFO></NAVI>.#
+Do you know the skill 'Redemptio'? Redemptio is a sacrifice skill, which means that you will become incapacitated in battle instead of saving your party members. Please don't forget that point.   ¬¢¬∫Learn the Resurrection skill at level 1 or higher, collect 20 <ITEM>[Blue Gemstone]<INFO>717</INFO></ITEM>, and 30 <ITEM>[Holy Water]<INFO>523</INFO></ITEM>¬¢¬∫With the ingredients, visit <NAVI>[Linus Nun]<INFO>prt_church,111,112,0,101,0</INFO></NAVI>.#
 #
 
 19151#Greedy Forging (1)#SG_FEEL#QUE_NOIMAGE#
-Once you bring the materials, I'll prepare the ambitious ^FF0000Greedy Forging^000000 skill for you.¢∫1 <ITEM>[Steel Hammer]<INFO>613</INFO></ITEM>¢∫1 <ITEM>[Detrimindextrose]<INFO>971</INFO></ITEM>¢∫1 <ITEM>[Steel]<INFO>999</INFO></ITEM>¢∫5 <ITEM>[Coal]<INFO>1003</INFO></ITEM>¢∫500 Zeny   After obtaining all the materials, take them to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
+Once you bring the materials, I'll prepare the ambitious ^FF0000Greedy Forging^000000 skill for you.¬¢¬∫1 <ITEM>[Steel Hammer]<INFO>613</INFO></ITEM>¬¢¬∫1 <ITEM>[Detrimindextrose]<INFO>971</INFO></ITEM>¬¢¬∫1 <ITEM>[Steel]<INFO>999</INFO></ITEM>¬¢¬∫5 <ITEM>[Coal]<INFO>1003</INFO></ITEM>¬¢¬∫500 Zeny   After obtaining all the materials, take them to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
 Materials for learning the skill#
 
 19152#Greedy Forging (2)#SG_FEEL#QUE_NOIMAGE#
@@ -33511,7 +33511,7 @@ I'll create the test materials for the skill. Please wait for a moment.   After 
 Please wait for a moment.#
 
 19153#Greedy Forging (3)#SG_FEEL#QUE_NOIMAGE#
-Give me one more chance; I can really do it well!¢∫1 <ITEM>[Steel]<INFO>999</INFO></ITEM>¢∫3 <ITEM>[Coal]<INFO>1003</INFO></ITEM>   After obtaining all the materials, take them to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
+Give me one more chance; I can really do it well!¬¢¬∫1 <ITEM>[Steel]<INFO>999</INFO></ITEM>¬¢¬∫3 <ITEM>[Coal]<INFO>1003</INFO></ITEM>   After obtaining all the materials, take them to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
 #
 
 19154#Greedy Forging (4)#SG_FEEL#QUE_NOIMAGE#
@@ -33519,7 +33519,7 @@ This time, I'll do it really well. Please wait for a moment.   After waiting for
 Please wait for a moment.#
 
 19155#Greedy Forging (5)#SG_FEEL#QUE_NOIMAGE#
-I think you'll need to bring a new steel hammer now.¢∫1 <ITEM>[Steel Hammer]<INFO>613</INFO></ITEM>   After obtaining a new steel hammer, take it to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
+I think you'll need to bring a new steel hammer now.¬¢¬∫1 <ITEM>[Steel Hammer]<INFO>613</INFO></ITEM>   After obtaining a new steel hammer, take it to <NAVI>[Archie]<INFO>geffen,178,72,0,101,0</INFO></NAVI>.#
 #
 
 19156#Greedy Forging (6)#SG_FEEL#QUE_NOIMAGE#
@@ -33547,7 +33547,7 @@ Listen to the explanation given by <NAVI>[Orlito Joveng]<INFO>icas_in,100,62,0,1
 Listen to the explanation#
 
 19162#Today's Watchword#SG_FEEL#QUE_NOIMAGE#
-According to the Eagle Patrol regulations, I received today's watchword from Orlito Joveng. It seems that verbally received watchwords will expire at 04:00.°ÿ If you forget the watchword, you can listen to it again by talking to <NAVI>[Orlito Joveng]<INFO>icas_in,100,62,0,101,0</INFO></NAVI>.#
+According to the Eagle Patrol regulations, I received today's watchword from Orlito Joveng. It seems that verbally received watchwords will expire at 04:00.¬°√ò If you forget the watchword, you can listen to it again by talking to <NAVI>[Orlito Joveng]<INFO>icas_in,100,62,0,101,0</INFO></NAVI>.#
 Expiration at 04:00#
 
 19163#[Standby] Spy Search#SG_FEEL#QUE_NOIMAGE#

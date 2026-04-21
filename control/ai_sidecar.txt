@@ -16,9 +16,9 @@ aiSidecar_baseUrl http://127.0.0.1:18081
 aiSidecar_contractVersion v1
 aiSidecar_source openkore-bridge
 
-# Tight timeouts in milliseconds.
-aiSidecar_connectTimeoutMs 40
-aiSidecar_ioTimeoutMs 90
+# Tight-but-stable local IPC timeouts in milliseconds.
+aiSidecar_connectTimeoutMs 250
+aiSidecar_ioTimeoutMs 1500
 
 # Snapshot push behavior.
 aiSidecar_snapshotEnabled 1

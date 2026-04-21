@@ -59,6 +59,11 @@ control/ai_sidecar_macro_manifest.json
 AI_sidecar/data/
 AI_sidecar/**/*.sqlite
 AI_sidecar/**/__pycache__/
+AI_sidecar/.env
+AI_sidecar/venv/
+AI_sidecar/.venv/
+AI_sidecar/*.egg-info/
+benchmark-results.txt
 
 # Local temporary stubs used for isolated plugin syntax checks
 .tmp_perl_stubs/

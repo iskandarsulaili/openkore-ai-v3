@@ -8,7 +8,6 @@ use FileParsers qw(parseConfigFile);
 use Globals qw(%config $char $field @ai_seq $net);
 use IO::Socket::INET;
 use Log qw(debug message warning);
-use Misc qw(calcPosition);
 use Network;
 use Plugins;
 use Settings;
@@ -591,7 +590,15 @@ sub _build_snapshot_payload {
 	my ($x, $y);
 	my $map = '';
 	if ($char) {
-		my $pos = eval { calcPosition($char) };
+		my $pos = eval {
+			if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+				return $char->{pos_to};
+			}
+			if ($char->{pos} && ref $char->{pos} eq 'HASH') {
+				return $char->{pos};
+			}
+			return undef;
+		};
 		if ($pos) {
 			$x = $pos->{x};
 			$y = $pos->{y};
