@@ -16,6 +16,7 @@ from ai_sidecar.api.routers import (
     ingest_v2,
     macros,
     ml_subconscious_v2,
+    observability_v2,
     planner_v2,
     providers_v2,
     reflex,
@@ -25,6 +26,7 @@ from ai_sidecar.api.routers import (
 from ai_sidecar.config import settings
 from ai_sidecar.lifecycle import create_runtime
 from ai_sidecar.logging_setup import configure_logging
+from ai_sidecar.observability import install_fastapi_tracing
 
 
 @asynccontextmanager
@@ -45,6 +47,8 @@ def create_app() -> FastAPI:
         docs_url=docs_url,
         redoc_url=redoc_url,
     )
+    if settings.observability_enable_tracing:
+        install_fastapi_tracing(app)
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(actions.router)
@@ -60,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(crewai_v2.router)
     app.include_router(ml_subconscious_v2.router)
     app.include_router(fleet_v2.router)
+    app.include_router(observability_v2.router)
     return app
 
 

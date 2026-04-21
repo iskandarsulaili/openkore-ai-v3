@@ -19,6 +19,13 @@ class SidecarSettings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True
     enable_docs: bool = True
+    observability_enable_metrics: bool = True
+    observability_enable_tracing: bool = True
+    observability_trace_max_traces: int = Field(default=5000, ge=100, le=200000)
+    observability_trace_max_events_per_trace: int = Field(default=200, ge=10, le=2000)
+    observability_incident_max_open: int = Field(default=2000, ge=100, le=100000)
+    observability_explainability_max_records: int = Field(default=10000, ge=500, le=200000)
+    security_doctrine_denylist: str = "exploit,dupe,rmt,botting service"
 
     contract_version: str = "v1"
 

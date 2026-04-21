@@ -93,7 +93,14 @@ from ai_sidecar.memory.retrieval import (
 )
 from ai_sidecar.memory.semantic_store import SemanticMemoryStore
 from ai_sidecar.observability.audit import AuditTrail
+from ai_sidecar.observability.audit_logger import ObservabilityAuditLogger
+from ai_sidecar.observability.doctrine_manager import DoctrineManager
+from ai_sidecar.observability.explainability import ExplainabilityStore
+from ai_sidecar.observability.incident_taxonomy import IncidentRegistry
 from ai_sidecar.observability.metrics import DurableTelemetryIngestor
+from ai_sidecar.observability.metrics_collector import SLOMetricsCollector
+from ai_sidecar.observability.security_auditor import SecurityAuditor
+from ai_sidecar.observability.tracing import TraceStore
 from ai_sidecar.ml_subconscious import (
     GuardedPromotionPipeline,
     LabelingPipeline,
@@ -333,10 +340,19 @@ class RuntimeState:
     fleet_constraint_state: ConstraintIngestionState | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
+    observability_audit: ObservabilityAuditLogger | None = None
+    slo_metrics: SLOMetricsCollector | None = None
+    trace_store: TraceStore | None = None
+    incident_registry: IncidentRegistry | None = None
+    explainability: ExplainabilityStore | None = None
+    security_auditor: SecurityAuditor | None = None
+    doctrine_manager: DoctrineManager | None = None
     _fleet_role_lock: RLock = field(default_factory=RLock)
     _fleet_roles: dict[str, RoleManager] = field(default_factory=dict)
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
+    _action_kind_index: dict[str, str] = field(default_factory=dict)
+    _bot_plan_family: dict[str, str] = field(default_factory=dict)
     persistence_degraded: bool = False
 
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
@@ -347,6 +363,9 @@ class RuntimeState:
             lambda: self.repositories.telemetry.increment_counter(bot_id=bot_id or "fleet", name=key, delta=n),
             bot_id=bot_id,
         )
+
+    def _trace_id_for_bot(self, bot_id: str, *, prefix: str = "runtime") -> str:
+        return f"{prefix}-{bot_id}-{uuid4().hex[:12]}"
 
     def counter_snapshot(self) -> dict[str, int]:
         with self._counter_lock:
@@ -406,6 +425,24 @@ class RuntimeState:
         self.bot_registry.upsert(bot_id, snapshot.tick_id)
         self.snapshot_cache.set(snapshot)
         self.incr("snapshots_ingested", bot_id=bot_id)
+
+        if self.slo_metrics is not None:
+            plan_family = self._bot_plan_family.get(bot_id, "unknown")
+            raw = dict(snapshot.raw)
+            exp_value = float(
+                raw.get("exp")
+                or raw.get("base_exp")
+                or raw.get("experience")
+                or raw.get("experience_total")
+                or 0.0
+            )
+            self.slo_metrics.record_economy(
+                bot_id=bot_id,
+                plan_family=plan_family,
+                zeny=float(snapshot.inventory.zeny or 0.0),
+                exp_value=exp_value,
+                observed_at=snapshot.observed_at,
+            )
 
         self._safe_persist(
             "persist_snapshot",
@@ -599,6 +636,16 @@ class RuntimeState:
         accepted, status, action_id, reason = self.action_queue.enqueue(bot_id, proposal)
         self.incr("actions_queued", bot_id=bot_id)
 
+        if self.slo_metrics is not None:
+            self.slo_metrics.record_queue_decision(
+                tier=proposal.priority_tier.value,
+                status=status.value,
+                reason=reason,
+            )
+            self.slo_metrics.set_queue_backlog(tier=proposal.priority_tier.value, depth=self.action_queue.count(bot_id))
+
+        self._action_kind_index[action_id] = proposal.kind
+
         if action_id == proposal.action_id:
             self._safe_persist(
                 "persist_action_proposal",
@@ -718,6 +765,10 @@ class RuntimeState:
     def acknowledge(self, ack: ActionAckRequest) -> tuple[bool, ActionStatus]:
         self.incr("actions_acknowledged", bot_id=ack.meta.bot_id)
         acknowledged, status = self.action_queue.acknowledge(ack.action_id, ack.success, ack.message)
+
+        if self.slo_metrics is not None:
+            action_kind = self._action_kind_index.get(ack.action_id, "unknown")
+            self.slo_metrics.record_ack(source=ack.meta.source, action_kind=action_kind, success=ack.success)
         if acknowledged:
             self._safe_persist(
                 "mark_action_acknowledged",
@@ -815,6 +866,9 @@ class RuntimeState:
         )
         elapsed_ms = self.latency_router.end("reflex.evaluate", started)
 
+        if self.slo_metrics is not None:
+            self.slo_metrics.observe_latency(domain="reflex", elapsed_ms=elapsed_ms)
+
         if elapsed_ms > float(settings.reflex_latency_budget_ms):
             self._audit(
                 level="warning",
@@ -861,6 +915,26 @@ class RuntimeState:
                     "detail": record.detail,
                 },
             )
+
+            if self.explainability is not None:
+                self.explainability.add(
+                    kind="reflex",
+                    bot_id=bot_id,
+                    trace_id=self._trace_id_for_bot(bot_id, prefix="reflex"),
+                    summary=f"rule={record.rule_id} outcome={record.outcome}",
+                    details={
+                        "event_type": record.event_type,
+                        "suppressed": record.suppressed,
+                        "suppression_reason": record.suppression_reason,
+                        "execution_target": record.execution_target,
+                        "action_id": record.action_id,
+                        "latency_ms": record.latency_ms,
+                        "detail": record.detail,
+                    },
+                )
+
+            if self.slo_metrics is not None and (record.suppression_reason.startswith("open") or "breaker" in record.suppression_reason):
+                self.slo_metrics.record_breaker(family="reflex", key=record.rule_id, state="open")
 
         if self.ml_observer is not None:
             try:
@@ -932,6 +1006,12 @@ class RuntimeState:
 
         if events:
             for item in events:
+                if self.slo_metrics is not None:
+                    if "death" in item.event.lower() or "death" in item.category.lower():
+                        self.slo_metrics.record_death(
+                            map_name=str(item.tags.get("map") or item.tags.get("map_name") or "unknown"),
+                            doctrine_version=str(item.tags.get("doctrine_version") or "unknown"),
+                        )
                 severity = EventSeverity.info
                 if item.level.value == "debug":
                     severity = EventSeverity.debug
@@ -983,6 +1063,32 @@ class RuntimeState:
 
     def publish_macros(self, request: MacroPublishRequest) -> tuple[bool, dict[str, object] | None, str]:
         target_bot_id = request.target_bot_id or request.meta.bot_id
+
+        if self.security_auditor is not None:
+            macro_lines = [line for routine in request.macros for line in routine.lines]
+            macro_lines.extend(line for routine in request.event_macros for line in routine.lines)
+            automacro_conditions = [line for item in request.automacros for line in item.conditions]
+            allowed, reason = self.security_auditor.validate_macro_policy(
+                macro_lines=macro_lines,
+                automacro_conditions=automacro_conditions,
+            )
+            if not allowed:
+                self.security_auditor.record(
+                    kind="macro_policy_violation",
+                    source="publish_macros",
+                    bot_id=target_bot_id,
+                    detail=reason,
+                    severity="error",
+                )
+                self._audit(
+                    level="error",
+                    event_type="macro_publish_security_blocked",
+                    summary="macro publication blocked by security policy",
+                    bot_id=target_bot_id,
+                    payload={"reason": reason},
+                )
+                return False, None, reason
+
         try:
             compiled = self.macro_compiler.compile(
                 macros=request.macros,
@@ -1116,6 +1222,8 @@ class RuntimeState:
                 "reload_reason": publication_info["reload_reason"],
             },
         )
+        if self.slo_metrics is not None:
+            self.slo_metrics.record_macro_publish(version=str(compiled.version), success=True)
         return True, publication_info, "macro artifacts published"
 
     def list_bots(self) -> list[dict[str, object]]:
@@ -1920,6 +2028,38 @@ class RuntimeState:
                 confidence=confidence,
             )
 
+        if self.slo_metrics is not None:
+            self.slo_metrics.record_shadow(
+                family=payload.model_family.value,
+                matched=bool(shadow.get("matched", False)),
+                confidence=float(confidence),
+            )
+        if self.explainability is not None:
+            self.explainability.add(
+                kind="ml_shadow",
+                bot_id=payload.meta.bot_id,
+                trace_id=payload.meta.trace_id,
+                summary=f"family={payload.model_family.value} matched={bool(shadow.get('matched', False))}",
+                details={
+                    "model_version": model_version,
+                    "confidence": float(confidence),
+                    "planned": shadow.get("planned"),
+                    "predicted": shadow.get("predicted"),
+                },
+            )
+        if self.trace_store is not None:
+            self.trace_store.add_event(
+                trace_id=payload.meta.trace_id,
+                name="ml.predict",
+                attributes={
+                    "bot_id": payload.meta.bot_id,
+                    "family": payload.model_family.value,
+                    "model_version": model_version,
+                    "confidence": float(confidence),
+                    "matched": bool(shadow.get("matched", False)),
+                },
+            )
+
         return MLPredictResponse(
             ok=True,
             message="predicted",
@@ -2124,6 +2264,51 @@ class RuntimeState:
                     extra={"event": "ml_planner_observation_failed", "bot_id": payload.meta.bot_id, "trace_id": payload.meta.trace_id},
                 )
 
+        self._bot_plan_family[payload.meta.bot_id] = payload.horizon.value
+        if self.slo_metrics is not None:
+            self.slo_metrics.observe_latency(domain="planner", elapsed_ms=float(result.latency_ms))
+            ml_shadow_rows = result.route.get("ml_shadow") if isinstance(result.route, dict) else None
+            if isinstance(ml_shadow_rows, dict):
+                for family, item in ml_shadow_rows.items():
+                    if not isinstance(item, dict):
+                        continue
+                    shadow = item.get("shadow")
+                    if not isinstance(shadow, dict):
+                        continue
+                    self.slo_metrics.record_shadow(
+                        family=str(family),
+                        matched=bool(shadow.get("matched", False)),
+                        confidence=float(shadow.get("confidence") or 0.0),
+                    )
+        if self.explainability is not None:
+            self.explainability.add(
+                kind="planner",
+                bot_id=payload.meta.bot_id,
+                trace_id=payload.meta.trace_id,
+                summary=f"provider={result.provider} model={result.model} ok={result.ok}",
+                details={
+                    "objective": payload.objective,
+                    "horizon": payload.horizon.value,
+                    "provider": result.provider,
+                    "model": result.model,
+                    "ok": result.ok,
+                    "latency_ms": float(result.latency_ms),
+                },
+            )
+        if self.trace_store is not None:
+            self.trace_store.add_event(
+                trace_id=payload.meta.trace_id,
+                name="planner.plan",
+                attributes={
+                    "bot_id": payload.meta.bot_id,
+                    "horizon": payload.horizon.value,
+                    "provider": result.provider,
+                    "model": result.model,
+                    "ok": result.ok,
+                    "latency_ms": float(result.latency_ms),
+                },
+            )
+
         return result
 
     async def planner_replan(self, payload: PlannerPlanRequest) -> PlannerResponse:
@@ -2262,6 +2447,38 @@ class RuntimeState:
                 policy_version="unavailable",
             )
         decision = self.model_router.decide(workload=payload.workload)
+        if self.slo_metrics is not None:
+            self.slo_metrics.record_provider_route(
+                workload=payload.workload,
+                provider=decision.selected_provider,
+                model=decision.selected_model,
+            )
+        trace_id = self._trace_id_for_bot("fleet", prefix="provider")
+        if self.explainability is not None:
+            self.explainability.add(
+                kind="provider_route",
+                bot_id="fleet",
+                trace_id=trace_id,
+                summary=f"workload={payload.workload} provider={decision.selected_provider}",
+                details={
+                    "workload": payload.workload,
+                    "selected_provider": decision.selected_provider,
+                    "selected_model": decision.selected_model,
+                    "fallback_chain": list(decision.fallback_chain),
+                    "policy_version": decision.policy_version,
+                },
+            )
+        if self.trace_store is not None:
+            self.trace_store.add_event(
+                trace_id=trace_id,
+                name="providers.route",
+                attributes={
+                    "workload": payload.workload,
+                    "provider": decision.selected_provider,
+                    "model": decision.selected_model,
+                    "policy_version": decision.policy_version,
+                },
+            )
         return ProviderRouteResponse(
             ok=True,
             workload=payload.workload,
@@ -2293,6 +2510,207 @@ class RuntimeState:
             "rules": policy.rules,
         }
 
+    def observability_metrics_text(self) -> str:
+        if self.slo_metrics is None:
+            return ""
+        return self.slo_metrics.render_prometheus()
+
+    def observability_recent_traces(self, *, limit: int = 50) -> list[dict[str, object]]:
+        if self.trace_store is None:
+            return []
+        return self.trace_store.recent(limit=limit)
+
+    def observability_trace(self, *, trace_id: str) -> list[dict[str, object]]:
+        if self.trace_store is None:
+            return []
+        return self.trace_store.get_trace(trace_id=trace_id)
+
+    def observability_incidents(self, *, include_closed: bool = False, limit: int = 100) -> list[dict[str, object]]:
+        if self.incident_registry is None:
+            return []
+        return self.incident_registry.list_incidents(include_closed=include_closed, limit=limit)
+
+    def observability_ack_incident(self, *, incident_id: str, assignee: str = "") -> dict[str, object]:
+        if self.incident_registry is None:
+            return {"ok": False, "message": "incident_registry_unavailable", "incident_id": incident_id}
+        result = self.incident_registry.ack(incident_id=incident_id, assignee=assignee)
+        self._audit(
+            level="info" if bool(result.get("ok")) else "warning",
+            event_type="incident_ack",
+            summary="incident acknowledged" if bool(result.get("ok")) else "incident acknowledge failed",
+            bot_id=None,
+            payload={"incident_id": incident_id, "assignee": assignee, "result": dict(result)},
+        )
+        return result
+
+    def observability_escalate_incident(self, *, incident_id: str, assignee: str = "") -> dict[str, object]:
+        if self.incident_registry is None:
+            return {"ok": False, "message": "incident_registry_unavailable", "incident_id": incident_id}
+        result = self.incident_registry.escalate(incident_id=incident_id, assignee=assignee)
+        self._audit(
+            level="warning" if bool(result.get("ok")) else "error",
+            event_type="incident_escalate",
+            summary="incident escalated" if bool(result.get("ok")) else "incident escalation failed",
+            bot_id=None,
+            payload={"incident_id": incident_id, "assignee": assignee, "result": dict(result)},
+        )
+        return result
+
+    def observability_explainability(
+        self,
+        *,
+        kind: str | None = None,
+        bot_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        if self.explainability is None:
+            return []
+        return self.explainability.list(kind=kind, bot_id=bot_id, trace_id=trace_id, limit=limit)
+
+    def observability_security_violations(self, *, limit: int = 100) -> list[dict[str, object]]:
+        if self.security_auditor is None:
+            return []
+        return self.security_auditor.recent(limit=limit)
+
+    def observability_doctrine_active(self) -> dict[str, object]:
+        if self.doctrine_manager is None:
+            return {"ok": False, "message": "doctrine_manager_unavailable"}
+        return {"ok": True, "doctrine": self.doctrine_manager.active()}
+
+    def observability_doctrine_versions(self, *, limit: int = 50) -> dict[str, object]:
+        if self.doctrine_manager is None:
+            return {"ok": False, "message": "doctrine_manager_unavailable", "versions": []}
+        return {
+            "ok": True,
+            "versions": self.doctrine_manager.list_versions(limit=limit),
+            "active": self.doctrine_manager.active(),
+        }
+
+    def observability_doctrine_publish(
+        self,
+        *,
+        version: str,
+        policy: dict[str, object],
+        canary_percentage: float,
+        activate: bool,
+        author: str = "",
+        trace_id: str | None = None,
+    ) -> dict[str, object]:
+        if self.doctrine_manager is None:
+            return {"ok": False, "message": "doctrine_manager_unavailable"}
+
+        if self.security_auditor is not None:
+            allowed, reason = self.security_auditor.validate_doctrine(doctrine=policy)
+            if not allowed:
+                self.security_auditor.record(
+                    kind="doctrine_policy_violation",
+                    source="observability_doctrine_publish",
+                    bot_id="fleet",
+                    detail=reason,
+                    severity="error",
+                )
+                self._audit(
+                    level="error",
+                    event_type="doctrine_publish_blocked",
+                    summary="doctrine publish blocked by security policy",
+                    bot_id=None,
+                    payload={"version": version, "reason": reason},
+                )
+                return {"ok": False, "message": reason, "version": version}
+
+        result = self.doctrine_manager.publish(
+            version=version,
+            policy=policy,
+            canary_percentage=canary_percentage,
+            activate=activate,
+            author=author,
+        )
+
+        level = "info" if bool(result.get("ok")) else "warning"
+        self._audit(
+            level=level,
+            event_type="doctrine_publish",
+            summary="doctrine published" if bool(result.get("ok")) else "doctrine publish failed",
+            bot_id=None,
+            payload={
+                "version": version,
+                "activate": activate,
+                "canary_percentage": float(canary_percentage),
+                "author": author,
+                "result": dict(result),
+            },
+        )
+        tid = trace_id or self._trace_id_for_bot("fleet", prefix="doctrine")
+        if self.trace_store is not None:
+            self.trace_store.add_event(
+                trace_id=tid,
+                name="doctrine.publish",
+                attributes={
+                    "ok": bool(result.get("ok")),
+                    "version": version,
+                    "activate": activate,
+                    "canary_percentage": float(canary_percentage),
+                },
+            )
+        if self.explainability is not None:
+            self.explainability.add(
+                kind="doctrine",
+                bot_id="fleet",
+                trace_id=tid,
+                summary=f"doctrine publish version={version} ok={bool(result.get('ok'))}",
+                details={
+                    "activate": activate,
+                    "canary_percentage": float(canary_percentage),
+                    "author": author,
+                    "result": dict(result),
+                },
+            )
+        return result
+
+    def observability_doctrine_rollback(
+        self,
+        *,
+        target_version: str | None = None,
+        author: str = "",
+        trace_id: str | None = None,
+    ) -> dict[str, object]:
+        if self.doctrine_manager is None:
+            return {"ok": False, "message": "doctrine_manager_unavailable"}
+
+        result = self.doctrine_manager.rollback(target_version=target_version)
+        level = "warning" if bool(result.get("ok")) else "error"
+        self._audit(
+            level=level,
+            event_type="doctrine_rollback",
+            summary="doctrine rolled back" if bool(result.get("ok")) else "doctrine rollback failed",
+            bot_id=None,
+            payload={
+                "target_version": target_version,
+                "author": author,
+                "result": dict(result),
+            },
+        )
+        tid = trace_id or self._trace_id_for_bot("fleet", prefix="doctrine")
+        if self.trace_store is not None:
+            self.trace_store.add_event(
+                trace_id=tid,
+                name="doctrine.rollback",
+                attributes={
+                    "ok": bool(result.get("ok")),
+                    "target_version": target_version or "",
+                },
+            )
+        if self.explainability is not None:
+            self.explainability.add(
+                kind="doctrine",
+                bot_id="fleet",
+                trace_id=tid,
+                summary=f"doctrine rollback target={target_version or 'previous'} ok={bool(result.get('ok'))}",
+                details={"author": author, "result": dict(result)},
+            )
+        return result
+
     def _audit(
         self,
         *,
@@ -2302,15 +2720,23 @@ class RuntimeState:
         bot_id: str | None,
         payload: dict[str, object],
     ) -> None:
-        if self.audit_trail is None:
+        if self.observability_audit is not None:
+            self.observability_audit.record(
+                level=level,
+                event_type=event_type,
+                summary=summary,
+                bot_id=bot_id,
+                payload=payload,
+            )
             return
-        self.audit_trail.record(
-            level=level,
-            event_type=event_type,
-            summary=summary,
-            bot_id=bot_id,
-            payload=payload,
-        )
+        if self.audit_trail is not None:
+            self.audit_trail.record(
+                level=level,
+                event_type=event_type,
+                summary=summary,
+                bot_id=bot_id,
+                payload=payload,
+            )
 
     def _safe_persist(
         self,
@@ -2580,6 +3006,26 @@ def create_runtime() -> RuntimeState:
     ml_promotion = GuardedPromotionPipeline()
     ml_macro_distiller = MacroDistillationEngine()
 
+    denylist = [item.strip() for item in settings.security_doctrine_denylist.split(",") if item.strip()]
+    trace_store = (
+        TraceStore(
+            max_traces=settings.observability_trace_max_traces,
+            max_events_per_trace=settings.observability_trace_max_events_per_trace,
+        )
+        if settings.observability_enable_tracing
+        else None
+    )
+    incident_registry = IncidentRegistry(max_open=settings.observability_incident_max_open)
+    explainability_store = ExplainabilityStore(max_records=settings.observability_explainability_max_records)
+    security_auditor = SecurityAuditor(doctrine_denylist=denylist)
+    doctrine_manager = DoctrineManager()
+    slo_metrics = SLOMetricsCollector() if settings.observability_enable_metrics else None
+    observability_audit = ObservabilityAuditLogger(
+        audit_trail=audit_trail,
+        incident_registry=incident_registry,
+        security_auditor=security_auditor,
+    )
+
     fleet_sync_client = FleetSyncClient(
         base_url=settings.fleet_central_base_url,
         timeout_seconds=settings.fleet_request_timeout_seconds,
@@ -2623,6 +3069,13 @@ def create_runtime() -> RuntimeState:
         fleet_constraint_state=fleet_constraint_state,
         fleet_outcome_reporter=fleet_outcome_reporter,
         fleet_conflict_resolver=fleet_conflict_resolver,
+        observability_audit=observability_audit,
+        slo_metrics=slo_metrics,
+        trace_store=trace_store,
+        incident_registry=incident_registry,
+        explainability=explainability_store,
+        security_auditor=security_auditor,
+        doctrine_manager=doctrine_manager,
     )
 
     planner_service = PlannerService(
