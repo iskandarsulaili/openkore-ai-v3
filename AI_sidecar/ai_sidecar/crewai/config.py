@@ -19,6 +19,7 @@ CREW_TOOL_NAMES: tuple[str, ...] = (
     "generate_macro_template",
     "evaluate_plan_feasibility",
     "coordinate_with_fleet",
+    "ml_shadow_predict",
 )
 
 
@@ -116,4 +117,3 @@ MANAGER_PROFILE = AgentProfile(
     ),
     tools=CREW_TOOL_NAMES,
 )
-

@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.macros import EventAutomacro, MacroRoutine
+from ai_sidecar.contracts.ml_subconscious import MLPredictRequest, ModelFamily
 
 
 @dataclass(slots=True)
@@ -147,6 +149,44 @@ class CrewToolFacade:
             "coordinated": rows,
         }
 
+    def ml_shadow_predict(
+        self,
+        *,
+        bot_id: str,
+        model_family: str,
+        objective: str = "",
+        planner_choice: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        planner_payload = dict(planner_choice or {})
+        try:
+            family = ModelFamily(model_family)
+        except Exception:
+            return {
+                "ok": False,
+                "bot_id": bot_id,
+                "message": f"invalid_model_family:{model_family}",
+                "allowed_families": [item.value for item in ModelFamily],
+            }
+
+        request = MLPredictRequest(
+            meta=ContractMeta(contract_version=settings.contract_version, source="crewai_tool", bot_id=bot_id),
+            model_family=family,
+            state_features={},
+            context={"objective": objective},
+            planner_choice=planner_payload,
+        )
+        response = self.runtime.ml_predict(request)
+        return {
+            "ok": response.ok,
+            "bot_id": bot_id,
+            "family": family.value,
+            "model_version": response.model_version,
+            "recommendation": response.recommendation,
+            "confidence": response.confidence,
+            "shadow": response.shadow,
+            "message": response.message,
+        }
+
     def execute(self, *, bot_id: str, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         tool = tool_name.strip()
         args = dict(arguments)
@@ -179,5 +219,13 @@ class CrewToolFacade:
                 bot_id=str(args.get("bot_id") or bot_id),
                 action=str(args.get("action") or ""),
                 target_bots=list(target_bots) if isinstance(target_bots, list) else [],
+            )
+        if tool == "ml_shadow_predict":
+            planner_choice = args.get("planner_choice")
+            return self.ml_shadow_predict(
+                bot_id=str(args.get("bot_id") or bot_id),
+                model_family=str(args.get("model_family") or ""),
+                objective=str(args.get("objective") or ""),
+                planner_choice=dict(planner_choice) if isinstance(planner_choice, dict) else {},
             )
         return {"ok": False, "bot_id": bot_id, "message": f"unknown_tool:{tool}"}

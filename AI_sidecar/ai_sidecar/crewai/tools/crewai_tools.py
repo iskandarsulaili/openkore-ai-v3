@@ -38,6 +38,13 @@ class CoordinateWithFleetInput(BaseModel):
     target_bots: list[str] = Field(default_factory=list)
 
 
+class MLShadowPredictInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+    model_family: str = Field(..., min_length=1, max_length=128)
+    objective: str = Field(default="", max_length=512)
+    planner_choice: dict[str, object] = Field(default_factory=dict)
+
+
 def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
     from crewai.tools import BaseTool
 
@@ -89,6 +96,21 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
         def _run(self, bot_id: str, action: str, target_bots: list[str]) -> str:
             return str(facade.coordinate_with_fleet(bot_id=bot_id, action=action, target_bots=target_bots))
 
+    class MLShadowPredictTool(BaseTool):
+        name: str = "ml_shadow_predict"
+        description: str = "Get ML subconscious recommendation in shadow mode for comparison against planner choice."
+        args_schema: type[BaseModel] = MLShadowPredictInput
+
+        def _run(self, bot_id: str, model_family: str, objective: str = "", planner_choice: dict[str, object] | None = None) -> str:
+            return str(
+                facade.ml_shadow_predict(
+                    bot_id=bot_id,
+                    model_family=model_family,
+                    objective=objective,
+                    planner_choice=dict(planner_choice or {}),
+                )
+            )
+
     return {
         "get_bot_state": GetBotStateTool(),
         "query_memory": QueryMemoryTool(),
@@ -96,5 +118,5 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
         "generate_macro_template": GenerateMacroTemplateTool(),
         "evaluate_plan_feasibility": EvaluatePlanFeasibilityTool(),
         "coordinate_with_fleet": CoordinateWithFleetTool(),
+        "ml_shadow_predict": MLShadowPredictTool(),
     }
-

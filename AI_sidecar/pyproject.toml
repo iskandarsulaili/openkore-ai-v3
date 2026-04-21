@@ -13,6 +13,7 @@ dependencies = [
   "uvicorn[standard]>=0.30.0",
   "pydantic>=2.8.0",
   "pydantic-settings>=2.4.0",
+  "scikit-learn>=1.7.1",
   "crewai==1.14.2",
   "openmemory-py>=1.3.2",
 ]

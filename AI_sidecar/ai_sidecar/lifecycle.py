@@ -36,6 +36,22 @@ from ai_sidecar.contracts.events import (
     QuestTransitionRequest,
 )
 from ai_sidecar.contracts.macros import MacroPublishRequest
+from ai_sidecar.contracts.ml_subconscious import (
+    MLDistillMacroRequest,
+    MLDistillMacroResponse,
+    MLModelsResponse,
+    MLObserveRequest,
+    MLObserveResponse,
+    MLPerformanceResponse,
+    MLPredictRequest,
+    MLPredictResponse,
+    MLPromoteRequest,
+    MLPromoteResponse,
+    MLTrainRequest,
+    MLTrainResponse,
+    MLTrainingEpisode,
+    ModelFamily,
+)
 from ai_sidecar.contracts.reflex import ReflexRule
 from ai_sidecar.contracts.reflex import ReflexBreakerStatusView, ReflexTriggerRecord
 from ai_sidecar.contracts.state import BotRegistrationRequest, BotStateSnapshot
@@ -60,6 +76,15 @@ from ai_sidecar.memory.retrieval import (
 from ai_sidecar.memory.semantic_store import SemanticMemoryStore
 from ai_sidecar.observability.audit import AuditTrail
 from ai_sidecar.observability.metrics import DurableTelemetryIngestor
+from ai_sidecar.ml_subconscious import (
+    GuardedPromotionPipeline,
+    LabelingPipeline,
+    MacroDistillationEngine,
+    ModelRegistry,
+    ObservationCapture,
+    ShadowModeEvaluator,
+    TrainingHarness,
+)
 from ai_sidecar.planner.context_assembler import PlannerContextAssembler
 from ai_sidecar.planner.intent_synthesizer import IntentSynthesizer
 from ai_sidecar.planner.macro_synthesizer import MacroSynthesizer
@@ -279,6 +304,13 @@ class RuntimeState:
     model_router: ModelRouter | None = None
     planner_service: PlannerService | None = None
     crew_manager: CrewManager | None = None
+    ml_observer: ObservationCapture | None = None
+    ml_labeling: LabelingPipeline | None = None
+    ml_registry: ModelRegistry | None = None
+    ml_training: TrainingHarness | None = None
+    ml_shadow: ShadowModeEvaluator | None = None
+    ml_promotion: GuardedPromotionPipeline | None = None
+    ml_macro_distiller: MacroDistillationEngine | None = None
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
     persistence_degraded: bool = False
@@ -780,6 +812,52 @@ class RuntimeState:
                 },
             )
 
+        if self.ml_observer is not None:
+            try:
+                state_features = self._ml_state_features(bot_id=bot_id)
+                for record in records:
+                    success = bool(record.emitted and not record.suppressed)
+                    rule_confidence = 0.9 if success else (0.7 if not record.suppressed else 0.4)
+                    safety_flags: list[str] = []
+                    if record.suppressed:
+                        safety_flags.append("rule_suppressed")
+                    if record.suppression_reason:
+                        safety_flags.append(str(record.suppression_reason))
+                    episode = MLTrainingEpisode(
+                        episode_id=f"reflex-{record.trigger_id}",
+                        bot_id=bot_id,
+                        state_features=state_features,
+                        decision_source="rule",
+                        decision_payload={
+                            "rule_id": record.rule_id,
+                            "event_type": record.event_type,
+                            "execution_target": record.execution_target,
+                            "rule_confidence": rule_confidence,
+                            "outcome": record.outcome,
+                        },
+                        executed_action={
+                            "action_id": record.action_id,
+                            "execution_target": record.execution_target,
+                            "detail": record.detail,
+                        },
+                        outcome={
+                            "success": success,
+                            "reward": 0.0,
+                            "latency_ms": float(record.latency_ms),
+                            "side_effects": [str(record.suppression_reason)] if record.suppression_reason else [],
+                        },
+                        safety_flags=safety_flags,
+                        macro_version="",
+                    )
+                    observed, _, _ = self.ml_observer.capture(episode)
+                    if self.ml_labeling is not None:
+                        self.ml_labeling.label_episode(observed)
+            except Exception:
+                logger.exception(
+                    "ml_reflex_observation_failed",
+                    extra={"event": "ml_reflex_observation_failed", "bot_id": bot_id, "source": source},
+                )
+
     def ingest_telemetry(self, bot_id: str, events: list[TelemetryEvent]) -> TelemetryIngestResponse:
         result = self.telemetry_store.push(bot_id, events)
         if result.accepted:
@@ -1228,10 +1306,394 @@ class RuntimeState:
             bot_id=bot_id,
         )
 
+    def _ml_state_features(self, *, bot_id: str, fallback: dict[str, object] | None = None) -> dict[str, object]:
+        if fallback:
+            return dict(fallback)
+        try:
+            state = self.enriched_state(bot_id=bot_id)
+            return {
+                "feature_values": dict(state.features.values),
+                "feature_labels": dict(state.features.labels),
+                "feature_raw": dict(state.features.raw),
+                "risk": {
+                    "danger_score": float(state.risk.danger_score),
+                    "death_risk_score": float(state.risk.death_risk_score),
+                    "pvp_risk_score": float(state.risk.pvp_risk_score),
+                    "anomaly_flags": list(state.risk.anomaly_flags),
+                },
+                "encounter": {
+                    "in_encounter": bool(state.encounter.in_encounter),
+                    "nearby_hostiles": int(state.encounter.nearby_hostiles),
+                    "nearby_allies": int(state.encounter.nearby_allies),
+                    "risk_score": float(state.encounter.risk_score),
+                },
+                "navigation": {
+                    "route_status": str(state.navigation.route_status),
+                    "stuck_score": float(state.navigation.stuck_score),
+                    "map": state.navigation.map,
+                },
+                "inventory": {
+                    "zeny": int(state.inventory.zeny or 0),
+                    "item_count": int(state.inventory.item_count),
+                    "overweight_ratio": float(state.inventory.overweight_ratio or 0.0),
+                },
+                "social": {
+                    "recent_chat_count": int(state.social.recent_chat_count),
+                    "private_messages_5m": int(state.social.private_messages_5m),
+                },
+            }
+        except Exception:
+            logger.exception("ml_state_features_failed", extra={"event": "ml_state_features_failed", "bot_id": bot_id})
+            return {}
+
+    def _ml_planner_choices(self, response: PlannerResponse) -> dict[ModelFamily, dict[str, object]]:
+        plan = response.strategic_plan
+        if plan is None:
+            return {
+                ModelFamily.encounter_classifier: {},
+                ModelFamily.loot_ranker: {},
+                ModelFamily.route_recovery_classifier: {},
+                ModelFamily.npc_dialogue_predictor: {},
+                ModelFamily.risk_anomaly_detector: {},
+                ModelFamily.memory_retrieval_ranker: {},
+            }
+
+        steps = list(plan.steps or [])
+        loot_step = next((item for item in steps if (item.kind or "").lower() in {"loot", "collect"}), None)
+        route_step = next((item for item in steps if (item.kind or "").lower() in {"travel", "move", "route"}), None)
+        npc_step = next((item for item in steps if (item.kind or "").lower() in {"npc", "dialog", "dialogue", "quest"}), None)
+        combat_step = next((item for item in steps if (item.kind or "").lower() in {"combat", "fight", "attack"}), None)
+
+        if plan.risk_score >= 0.7:
+            encounter_profile = "safe"
+        elif combat_step is not None:
+            encounter_profile = "aggressive"
+        else:
+            encounter_profile = "balanced"
+
+        return {
+            ModelFamily.encounter_classifier: {"combat_profile": encounter_profile},
+            ModelFamily.loot_ranker: {"loot_item": loot_step.target if loot_step is not None else ""},
+            ModelFamily.route_recovery_classifier: {
+                "stuck_strategy": route_step.fallbacks[0] if route_step is not None and route_step.fallbacks else "repath"
+            },
+            ModelFamily.npc_dialogue_predictor: {"npc_branch": npc_step.target if npc_step is not None else "default"},
+            ModelFamily.risk_anomaly_detector: {"risk_label": "anomaly" if plan.risk_score >= 0.85 else "normal"},
+            ModelFamily.memory_retrieval_ranker: {
+                "memory_id": str((response.memory_writeback.metadata or {}).get("plan_id") if response.memory_writeback else "")
+            },
+        }
+
+    def ml_observe(self, payload: MLObserveRequest) -> MLObserveResponse:
+        if self.ml_observer is None:
+            return MLObserveResponse(
+                ok=False,
+                message="ml_unavailable",
+                trace_id=payload.meta.trace_id,
+                episode_id=payload.episode.episode_id,
+                bot_id=payload.episode.bot_id,
+            )
+
+        episode = payload.episode
+        if not episode.state_features:
+            episode = episode.model_copy(update={"state_features": self._ml_state_features(bot_id=episode.bot_id)})
+
+        captured, reward, breakdown = self.ml_observer.capture(episode)
+        labels_count = 0
+        if self.ml_labeling is not None:
+            labels_count = len(self.ml_labeling.label_episode(captured))
+
+        self._safe_memory(
+            "capture_ml_observation_memory",
+            lambda: self.memory.capture_action(
+                bot_id=captured.bot_id,
+                action_id=f"ml-observe:{captured.episode_id}",
+                kind="ml_observe",
+                message=f"ml observation captured reward={reward:.3f} labels={labels_count}",
+                metadata={"episode_id": captured.episode_id, "decision_source": captured.decision_source.value},
+            ),
+            bot_id=captured.bot_id,
+        )
+
+        return MLObserveResponse(
+            ok=True,
+            message="observed",
+            trace_id=payload.meta.trace_id,
+            episode_id=captured.episode_id,
+            bot_id=captured.bot_id,
+            reward=reward,
+            reward_breakdown=breakdown,
+            labels_generated=labels_count,
+        )
+
+    def ml_train(self, payload: MLTrainRequest) -> MLTrainResponse:
+        if self.ml_training is None:
+            return MLTrainResponse(
+                ok=False,
+                message="ml_unavailable",
+                trace_id=payload.meta.trace_id,
+                model_family=payload.model_family,
+            )
+
+        version, trained, metrics, ab = self.ml_training.train(
+            family=payload.model_family,
+            bot_id=payload.bot_id,
+            incremental=payload.incremental,
+            max_samples=payload.max_samples,
+        )
+        ok = bool(version)
+        return MLTrainResponse(
+            ok=ok,
+            message="trained" if ok else "insufficient_training_data",
+            trace_id=payload.meta.trace_id,
+            model_family=payload.model_family,
+            model_version=version,
+            trained_samples=trained,
+            metrics=metrics,
+            ab_test=ab,
+        )
+
+    def ml_models(self) -> MLModelsResponse:
+        if self.ml_registry is None:
+            return MLModelsResponse(ok=False, models=[])
+        return self.ml_registry.list_models()
+
+    def ml_predict(self, payload: MLPredictRequest) -> MLPredictResponse:
+        if self.ml_training is None:
+            return MLPredictResponse(
+                ok=False,
+                message="ml_unavailable",
+                trace_id=payload.meta.trace_id,
+                model_family=payload.model_family,
+            )
+
+        state_features = dict(payload.state_features)
+        if not state_features:
+            state_features = self._ml_state_features(bot_id=payload.meta.bot_id)
+
+        model_version, recommendation, confidence = self.ml_training.predict(
+            family=payload.model_family,
+            state_features=state_features,
+            context=payload.context,
+        )
+
+        shadow: dict[str, object] = {"mode": "shadow_only", "matched": False, "planned": "", "predicted": ""}
+        if self.ml_shadow is not None:
+            shadow = self.ml_shadow.compare(
+                bot_id=payload.meta.bot_id,
+                trace_id=payload.meta.trace_id,
+                family=payload.model_family,
+                model_version=model_version,
+                planner_choice=payload.planner_choice,
+                recommendation=recommendation,
+                confidence=confidence,
+            )
+
+        return MLPredictResponse(
+            ok=True,
+            message="predicted",
+            trace_id=payload.meta.trace_id,
+            model_family=payload.model_family,
+            model_version=model_version,
+            recommendation=recommendation,
+            confidence=confidence,
+            shadow=shadow,
+        )
+
+    def ml_promote(self, payload: MLPromoteRequest) -> MLPromoteResponse:
+        if self.ml_promotion is None:
+            return MLPromoteResponse(
+                ok=False,
+                message="ml_unavailable",
+                trace_id=payload.meta.trace_id,
+                model_family=payload.model_family,
+                promotion={},
+            )
+        if self.ml_registry is not None:
+            self.ml_registry.activate_version(family=payload.model_family, version=payload.model_version)
+        state = self.ml_promotion.configure(
+            family=payload.model_family,
+            model_version=payload.model_version,
+            canary_percentage=payload.canary_percentage,
+            rollback_threshold=payload.rollback_threshold,
+            scope=payload.scope,
+        )
+        return MLPromoteResponse(
+            ok=True,
+            message="promotion_updated",
+            trace_id=payload.meta.trace_id,
+            model_family=payload.model_family,
+            promotion=state,
+        )
+
+    def ml_performance(self) -> MLPerformanceResponse:
+        shadow_metrics = self.ml_shadow.metrics() if self.ml_shadow is not None else {}
+        promotion_metrics = self.ml_promotion.metrics() if self.ml_promotion is not None else {}
+        training_metrics = {
+            "training": self.ml_training.metrics() if self.ml_training is not None else {},
+            "labels": self.ml_labeling.counters() if self.ml_labeling is not None else {},
+            "observations": self.ml_observer.counters() if self.ml_observer is not None else {},
+            "distillation": self.ml_macro_distiller.stats() if self.ml_macro_distiller is not None else {},
+        }
+        return MLPerformanceResponse(
+            ok=True,
+            shadow_metrics=shadow_metrics,
+            promotion_metrics=promotion_metrics,
+            training_metrics=training_metrics,
+        )
+
+    def ml_distill_macro(self, payload: MLDistillMacroRequest) -> MLDistillMacroResponse:
+        if self.ml_macro_distiller is None or self.ml_observer is None:
+            return MLDistillMacroResponse(
+                ok=False,
+                message="ml_unavailable",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.bot_id or payload.meta.bot_id,
+            )
+
+        target_bot = payload.bot_id or payload.meta.bot_id
+        episodes = self.ml_observer.recent(bot_id=target_bot, limit=5000)
+        if payload.episode_ids:
+            allowed = set(payload.episode_ids)
+            episodes = [item for item in episodes if item.episode_id in allowed]
+
+        result = self.ml_macro_distiller.distill(
+            meta=payload.meta,
+            episodes=episodes,
+            min_support=payload.min_support,
+            max_steps=payload.max_steps,
+            enqueue_reload=payload.enqueue_reload,
+            publish_macro=self.publish_macros,
+        )
+        return MLDistillMacroResponse(
+            ok=bool(result.get("ok")),
+            message=str(result.get("message") or "distilled"),
+            trace_id=payload.meta.trace_id,
+            bot_id=str(result.get("bot_id") or target_bot),
+            proposal_id=str(result.get("proposal_id") or ""),
+            support=int(result.get("support") or 0),
+            success_rate=float(result.get("success_rate") or 0.0),
+            macro=dict(result.get("macro") or {}),
+            automacro=dict(result.get("automacro") or {}),
+            publication=dict(result.get("publication") or {}) if result.get("publication") is not None else None,
+        )
+
     async def planner_plan(self, payload: PlannerPlanRequest) -> PlannerResponse:
         if self.planner_service is None:
             return PlannerResponse(ok=False, message="planner_unavailable", trace_id=payload.meta.trace_id)
-        return await self.planner_service.plan(payload)
+        result = await self.planner_service.plan(payload)
+
+        if self.ml_observer is not None:
+            try:
+                safety_flags: list[str] = []
+                try:
+                    state_for_flags = self.enriched_state(bot_id=payload.meta.bot_id)
+                    if state_for_flags.risk.anomaly_flags:
+                        safety_flags.extend([str(item) for item in state_for_flags.risk.anomaly_flags])
+                except Exception:
+                    logger.exception(
+                        "ml_safety_state_read_failed",
+                        extra={"event": "ml_safety_state_read_failed", "bot_id": payload.meta.bot_id},
+                    )
+
+                try:
+                    breakers = self.reflex_breakers(bot_id=payload.meta.bot_id)
+                    if any((item.state or "").lower() != "closed" for item in breakers):
+                        safety_flags.append("reflex_breaker_open")
+                except Exception:
+                    logger.exception(
+                        "ml_safety_breaker_read_failed",
+                        extra={"event": "ml_safety_breaker_read_failed", "bot_id": payload.meta.bot_id},
+                    )
+
+                episode = MLTrainingEpisode(
+                    episode_id=f"planner-{uuid4().hex[:24]}",
+                    bot_id=payload.meta.bot_id,
+                    state_features=self._ml_state_features(bot_id=payload.meta.bot_id),
+                    decision_source="llm",
+                    decision_payload={
+                        "objective": payload.objective,
+                        "horizon": payload.horizon.value,
+                        "provider": result.provider,
+                        "model": result.model,
+                        "route": dict(result.route),
+                        "risk_score": float(result.strategic_plan.risk_score) if result.strategic_plan is not None else 0.0,
+                    },
+                    executed_action=(
+                        result.strategic_plan.recommended_actions[0].model_dump(mode="json")
+                        if result.strategic_plan is not None and result.strategic_plan.recommended_actions
+                        else {}
+                    ),
+                    outcome={
+                        "success": bool(result.ok),
+                        "reward": float(result.learning_label.reward) if result.learning_label is not None else 0.0,
+                        "latency_ms": float(result.latency_ms),
+                        "side_effects": [],
+                    },
+                    safety_flags=(["self_critic_rejected"] if not result.ok else []) + safety_flags,
+                    macro_version=(
+                        str((result.route.get("macro_publish") or {}).get("publication", {}).get("version") or "")
+                        if isinstance(result.route, dict)
+                        else ""
+                    ),
+                )
+                observed, _, _ = self.ml_observer.capture(episode)
+                if self.ml_labeling is not None:
+                    self.ml_labeling.label_episode(observed)
+
+                if self.ml_training is not None and self.ml_shadow is not None:
+                    planner_choices = self._ml_planner_choices(result)
+                    shadow_rows: dict[str, object] = {}
+                    for family, planner_choice in planner_choices.items():
+                        model_version, recommendation, confidence = self.ml_training.predict(
+                            family=family,
+                            state_features=observed.state_features,
+                            context={"objective": payload.objective, "horizon": payload.horizon.value},
+                        )
+                        shadow = self.ml_shadow.compare(
+                            bot_id=payload.meta.bot_id,
+                            trace_id=payload.meta.trace_id,
+                            family=family,
+                            model_version=model_version,
+                            planner_choice=planner_choice,
+                            recommendation=recommendation,
+                            confidence=confidence,
+                        )
+                        shadow_rows[family.value] = {
+                            "model_version": model_version,
+                            "recommendation": recommendation,
+                            "shadow": shadow,
+                        }
+
+                        if self.ml_promotion is not None:
+                            promotion = self.ml_promotion.should_execute(
+                                family=family,
+                                bot_id=payload.meta.bot_id,
+                                trace_id=payload.meta.trace_id,
+                                confidence=confidence,
+                                safety_flags=safety_flags,
+                                context={
+                                    "map": observed.state_features.get("navigation", {}).get("map")
+                                    if isinstance(observed.state_features.get("navigation"), dict)
+                                    else None,
+                                },
+                            )
+                            self.ml_promotion.record_outcome(
+                                family=family,
+                                executed=bool(promotion.get("allowed")),
+                                success=bool(result.ok),
+                            )
+
+                    route = dict(result.route)
+                    route["ml_shadow"] = shadow_rows
+                    result = result.model_copy(update={"route": route})
+            except Exception:
+                logger.exception(
+                    "ml_planner_observation_failed",
+                    extra={"event": "ml_planner_observation_failed", "bot_id": payload.meta.bot_id, "trace_id": payload.meta.trace_id},
+                )
+
+        return result
 
     async def planner_replan(self, payload: PlannerPlanRequest) -> PlannerResponse:
         replanned = payload.model_copy(update={"force_replan": True})
@@ -1679,6 +2141,14 @@ def create_runtime() -> RuntimeState:
         initial_rules=policy_rules,
     )
 
+    ml_registry = ModelRegistry(workspace_root=workspace_root)
+    ml_observer = ObservationCapture(workspace_root=workspace_root)
+    ml_labeling = LabelingPipeline()
+    ml_training = TrainingHarness(labels=ml_labeling, registry=ml_registry)
+    ml_shadow = ShadowModeEvaluator()
+    ml_promotion = GuardedPromotionPipeline()
+    ml_macro_distiller = MacroDistillationEngine()
+
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
         workspace_root=workspace_root,
@@ -1702,6 +2172,13 @@ def create_runtime() -> RuntimeState:
         sqlite_path=sqlite_path if repositories is not None else None,
         persistence_degraded=persistence_degraded,
         model_router=model_router,
+        ml_observer=ml_observer,
+        ml_labeling=ml_labeling,
+        ml_registry=ml_registry,
+        ml_training=ml_training,
+        ml_shadow=ml_shadow,
+        ml_promotion=ml_promotion,
+        ml_macro_distiller=ml_macro_distiller,
     )
 
     planner_service = PlannerService(
@@ -1748,6 +2225,8 @@ def create_runtime() -> RuntimeState:
             "planner_enabled": planner_service is not None,
             "crewai_enabled": settings.crewai_enabled,
             "crewai_available": crew_manager.status().crew_available,
+            "ml_subconscious_enabled": True,
+            "ml_models_registered": len(runtime.ml_models().models) if runtime.ml_registry is not None else 0,
         },
     )
     logger.info(

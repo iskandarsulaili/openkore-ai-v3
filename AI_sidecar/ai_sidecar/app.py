@@ -14,6 +14,7 @@ from ai_sidecar.api.routers import (
     ingest,
     ingest_v2,
     macros,
+    ml_subconscious_v2,
     planner_v2,
     providers_v2,
     reflex,
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(planner_v2.router)
     app.include_router(providers_v2.router)
     app.include_router(crewai_v2.router)
+    app.include_router(ml_subconscious_v2.router)
     return app
 
 
