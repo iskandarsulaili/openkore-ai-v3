@@ -77,6 +77,7 @@ from ai_sidecar.runtime.action_queue import ActionQueue
 from ai_sidecar.runtime.bot_registry import BotRegistry
 from ai_sidecar.runtime.latency_router import LatencyRouter
 from ai_sidecar.runtime.snapshot_cache import SnapshotCache
+from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 
 logger = logging.getLogger(__name__)
@@ -263,7 +264,9 @@ class RuntimeState:
     repositories: SidecarRepositories | None
     normalizer_bus: NormalizerBus
     reflex_engine: ReflexRuleEngine
-    sqlite_path: Path | None
+    sqlite_path: Path | None = None
+    model_router: ModelRouter | None = None
+    planner_service: PlannerService | None = None
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
     persistence_degraded: bool = False
@@ -1213,6 +1216,120 @@ class RuntimeState:
             bot_id=bot_id,
         )
 
+    async def planner_plan(self, payload: PlannerPlanRequest) -> PlannerResponse:
+        if self.planner_service is None:
+            return PlannerResponse(ok=False, message="planner_unavailable", trace_id=payload.meta.trace_id)
+        return await self.planner_service.plan(payload)
+
+    async def planner_replan(self, payload: PlannerPlanRequest) -> PlannerResponse:
+        replanned = payload.model_copy(update={"force_replan": True})
+        return await self.planner_plan(replanned)
+
+    async def planner_promote_macro(self, payload: PlannerMacroPromoteRequest) -> PlannerResponse:
+        if self.planner_service is None:
+            return PlannerResponse(ok=False, message="planner_unavailable", trace_id=payload.meta.trace_id)
+        result = await self.planner_service.promote_macro(payload)
+        proposal = result.macro_proposal
+        if not result.ok or proposal is None:
+            return result
+
+        ok, publication, message = self.publish_macros(
+            MacroPublishRequest(
+                meta=payload.meta,
+                target_bot_id=payload.meta.bot_id,
+                macros=proposal.macros,
+                event_macros=proposal.event_macros,
+                automacros=proposal.automacros,
+                enqueue_reload=True,
+            )
+        )
+        route = dict(result.route)
+        route["macro_publish"] = {
+            "ok": ok,
+            "message": message,
+            "publication": publication,
+        }
+        return result.model_copy(
+            update={
+                "message": "macro_promoted" if ok else "macro_promotion_publish_failed",
+                "route": route,
+            }
+        )
+
+    def planner_explain(self, payload: PlannerExplainRequest) -> dict[str, object]:
+        if self.planner_service is None:
+            return {
+                "ok": False,
+                "bot_id": payload.meta.bot_id,
+                "trace_id": payload.meta.trace_id,
+                "message": "planner_unavailable",
+                "rationale": "",
+            }
+        return self.planner_service.explain(payload)
+
+    def planner_status(self, *, bot_id: str) -> PlannerStatusResponse:
+        if self.planner_service is None:
+            return PlannerStatusResponse(ok=True, bot_id=bot_id, planner_healthy=False, counters={})
+        return self.planner_service.status(bot_id=bot_id)
+
+    async def providers_health(self, *, bot_id: str) -> list[dict[str, object]]:
+        if self.model_router is None:
+            return []
+        rows = await self.model_router.health(bot_id=bot_id)
+        return [
+            {
+                "provider": item.provider,
+                "available": item.available,
+                "latency_ms": item.latency_ms,
+                "models": list(item.models),
+                "breaker_state": item.breaker_state,
+                "message": item.message,
+            }
+            for item in rows
+        ]
+
+    def provider_route(self, payload: ProviderRouteRequest) -> ProviderRouteResponse:
+        if self.model_router is None:
+            return ProviderRouteResponse(
+                ok=False,
+                workload=payload.workload,
+                selected_provider="none",
+                selected_model="",
+                fallback_chain=[],
+                policy_version="unavailable",
+            )
+        decision = self.model_router.decide(workload=payload.workload)
+        return ProviderRouteResponse(
+            ok=True,
+            workload=payload.workload,
+            selected_provider=decision.selected_provider,
+            selected_model=decision.selected_model,
+            fallback_chain=decision.fallback_chain,
+            policy_version=decision.policy_version,
+        )
+
+    def provider_policy(self) -> dict[str, object]:
+        if self.model_router is None:
+            return {"ok": False, "version": "unavailable", "updated_at": datetime.now(UTC), "rules": {}}
+        policy = self.model_router.current_policy()
+        return {
+            "ok": True,
+            "version": policy.version,
+            "updated_at": policy.updated_at,
+            "rules": policy.rules,
+        }
+
+    def update_provider_policy(self, payload: ProviderPolicyUpdateRequest) -> dict[str, object]:
+        if self.model_router is None:
+            return {"ok": False, "version": "unavailable", "updated_at": datetime.now(UTC), "rules": {}}
+        policy = self.model_router.update_policy(rules=payload.rules)
+        return {
+            "ok": True,
+            "version": policy.version,
+            "updated_at": policy.updated_at,
+            "rules": policy.rules,
+        }
+
     def _audit(
         self,
         *,
@@ -1366,17 +1483,57 @@ def create_runtime() -> RuntimeState:
             memory_provider_error = str(exc)
             logger.exception("memory_fallback_repo_init_failed", extra={"event": "memory_fallback_repo_init_failed"})
 
+    base_embedder = LocalSemanticEmbedder(settings.memory_embedding_dimensions)
+    semantic_embedder = base_embedder
+    embedding_mode = settings.memory_embedding_mode.lower().strip()
+    embedding_provider = settings.memory_embedding_provider.lower().strip()
+    requested_embedding_model = settings.memory_embedding_model.strip()
+
+    if embedding_mode == "provider":
+        provider_model = requested_embedding_model or _provider_embedding_model(embedding_provider)
+        if embedding_provider in {"ollama", "openai", "deepseek"} and provider_model:
+            semantic_embedder = ProviderSemanticEmbedder(
+                dimensions=settings.memory_embedding_dimensions,
+                fallback=base_embedder,
+                embed_texts=lambda texts, provider_name=embedding_provider, model_name=provider_model: _provider_embed_sync(
+                    provider_name,
+                    model=model_name,
+                    texts=texts,
+                    timeout_seconds=min(settings.planner_timeout_seconds, settings.llm_timeout_seconds),
+                ),
+            )
+            logger.info(
+                "memory_embedding_provider_enabled",
+                extra={
+                    "event": "memory_embedding_provider_enabled",
+                    "provider": embedding_provider,
+                    "model": provider_model,
+                },
+            )
+        else:
+            logger.warning(
+                "memory_embedding_provider_invalid_config_fallback_local",
+                extra={
+                    "event": "memory_embedding_provider_invalid_config_fallback_local",
+                    "provider": embedding_provider,
+                    "model": provider_model,
+                },
+            )
+
     if memory_repo is not None:
         fallback_provider = SQLiteMemoryProvider(
             episodic=EpisodicMemoryStore(repository=memory_repo),
             semantic=SemanticMemoryStore(
                 repository=memory_repo,
-                embedder=LocalSemanticEmbedder(settings.memory_embedding_dimensions),
+                embedder=semantic_embedder,
                 candidates=settings.memory_semantic_candidates,
             ),
         )
     else:
-        fallback_provider = InMemoryMemoryProvider(dimensions=settings.memory_embedding_dimensions)
+        fallback_provider = InMemoryMemoryProvider(
+            dimensions=settings.memory_embedding_dimensions,
+            embedder=semantic_embedder,
+        )
         persistence_degraded = True
 
     provider = fallback_provider
@@ -1391,6 +1548,66 @@ def create_runtime() -> RuntimeState:
         if backend == "openmemory" and not openmemory_provider.enabled:
             persistence_degraded = True
             memory_provider_error = openmemory_provider.init_error
+
+    guard = PromptGuard(max_prompt_chars=settings.llm_prompt_max_chars)
+    provider_breaker = ReflexCircuitBreaker()
+    telemetry_push = telemetry_store.push
+
+    provider_adapters: dict[str, object] = {}
+    if settings.provider_ollama_enabled:
+        provider_adapters["ollama"] = OllamaAdapter(
+            base_url=settings.provider_ollama_base_url,
+            default_model=settings.provider_ollama_default_model,
+            embedding_model=settings.provider_ollama_embedding_model,
+            guard=guard,
+            breaker=provider_breaker,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+            telemetry_push=telemetry_push,
+        )
+    if settings.provider_openai_enabled:
+        provider_adapters["openai"] = OpenAIAdapter(
+            base_url=settings.provider_openai_base_url,
+            api_key=settings.provider_openai_api_key,
+            default_model=settings.provider_openai_default_model,
+            embedding_model=settings.provider_openai_embedding_model,
+            guard=guard,
+            breaker=provider_breaker,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+            telemetry_push=telemetry_push,
+        )
+    if settings.provider_deepseek_enabled:
+        provider_adapters["deepseek"] = DeepseekAdapter(
+            base_url=settings.provider_deepseek_base_url,
+            api_key=settings.provider_deepseek_api_key,
+            default_model=settings.provider_deepseek_default_model,
+            embedding_model=settings.provider_deepseek_embedding_model,
+            guard=guard,
+            breaker=provider_breaker,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+            telemetry_push=telemetry_push,
+        )
+
+    policy_rules = _build_provider_policy_rules()
+    if settings.provider_policy_json.strip():
+        try:
+            override_rules = json.loads(settings.provider_policy_json)
+            if isinstance(override_rules, dict):
+                for workload, config in override_rules.items():
+                    if isinstance(config, dict):
+                        policy_rules[str(workload)] = {
+                            "providers": [str(item) for item in list(config.get("providers") or [])],
+                            "models": dict(config.get("models") or {}),
+                        }
+        except Exception:
+            logger.exception("provider_policy_json_parse_failed", extra={"event": "provider_policy_json_parse_failed"})
+
+    model_router = ModelRouter(
+        providers=provider_adapters,
+        initial_rules=policy_rules,
+    )
 
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
@@ -1414,7 +1631,27 @@ def create_runtime() -> RuntimeState:
         ),
         sqlite_path=sqlite_path if repositories is not None else None,
         persistence_degraded=persistence_degraded,
+        model_router=model_router,
     )
+
+    planner_service = PlannerService(
+        runtime=runtime,
+        context_assembler=PlannerContextAssembler(runtime=runtime),
+        intent_synthesizer=IntentSynthesizer(),
+        plan_generator=PlanGenerator(
+            model_router=model_router,
+            planner_timeout_seconds=settings.planner_timeout_seconds,
+            planner_retries=settings.planner_retries,
+        ),
+        self_critic=SelfCritic(
+            tactical_budget_ms=settings.planner_tactical_budget_ms,
+            strategic_budget_ms=settings.planner_strategic_budget_ms,
+        ),
+        macro_synthesizer=MacroSynthesizer(),
+        reflection_writer=ReflectionWriter(memory_service=runtime.memory),
+    )
+    runtime.planner_service = planner_service
+
     runtime._audit(
         level="warning" if persistence_degraded else "info",
         event_type="runtime_initialized",
@@ -1427,6 +1664,11 @@ def create_runtime() -> RuntimeState:
             "memory_backend": backend,
             "telemetry_backlog_enabled": True,
             "memory_provider_error": memory_provider_error,
+            "memory_embedding_mode": embedding_mode,
+            "memory_embedding_provider": embedding_provider,
+            "memory_embedding_model": requested_embedding_model,
+            "providers_enabled": sorted(provider_adapters.keys()),
+            "planner_enabled": planner_service is not None,
         },
     )
     logger.info(

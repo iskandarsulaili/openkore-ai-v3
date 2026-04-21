@@ -425,3 +425,103 @@ Implemented breaker families:
 - social
 - fleet
 - queue
+
+## Planner routes (`/v2/planner`)
+
+The planner layer is LLM-backed and schema-constrained. It assembles enriched state + memory context, generates strategic/tactical plans, self-critiques outputs, and can promote stable plans into macro artifacts.
+
+### `POST /v2/planner/plan`
+
+Request model: `PlannerPlanRequest`
+
+Core fields:
+
+- `meta`
+- `objective`
+- `horizon` (`tactical | strategic | reflection`)
+- `force_replan`
+- `max_steps`
+
+Response model: `PlannerResponse`
+
+Includes:
+
+- `strategic_plan`
+- `tactical_bundle`
+- optional `macro_proposal`
+- optional `memory_writeback`
+- provider/model/latency/route metadata
+
+### `POST /v2/planner/replan`
+
+Request model: `PlannerPlanRequest`
+
+Behavior:
+
+- same contract as `/plan`
+- runtime forces `force_replan=True` before plan generation
+
+Response model: `PlannerResponse`
+
+### `POST /v2/planner/explain`
+
+Request model: `PlannerExplainRequest`
+
+Returns latest planner rationale for the bot (or no-history payload when planner has not produced prior plans).
+
+### `POST /v2/planner/promote-macro`
+
+Request model: `PlannerMacroPromoteRequest`
+
+Behavior:
+
+- generates/derives macro candidate from planning output
+- attempts publication using existing macro publication pipeline
+
+Response model: `PlannerResponse` with macro publication details embedded in `route.macro_publish`.
+
+### `GET /v2/planner/status/{bot_id}`
+
+Response model: `PlannerStatusResponse`
+
+Includes planner health, last provider/model/plan id, objective, and planner counters.
+
+## Provider routing/control routes (`/v2/providers`)
+
+These routes expose provider health, route decisions, and policy management used by planner workloads and embedding workloads.
+
+### `GET /v2/providers/health`
+
+Query parameters:
+
+- optional `bot_id` (default: `fleet`)
+
+Returns per-provider health snapshots:
+
+- availability
+- latency
+- visible models
+- breaker state
+- provider message
+
+### `POST /v2/providers/route`
+
+Request model: `ProviderRouteRequest`
+
+Response model: `ProviderRouteResponse`
+
+Returns selected provider/model plus fallback chain for the requested workload.
+
+### `GET /v2/providers/policy`
+
+Returns active routing policy object:
+
+- `version`
+- `updated_at`
+- `rules`
+
+### `PUT /v2/providers/policy`
+
+Request model: `ProviderPolicyUpdateRequest`
+
+Merges rule updates into existing in-memory policy and returns the updated policy payload.

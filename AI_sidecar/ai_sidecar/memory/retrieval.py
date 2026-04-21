@@ -9,7 +9,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
-from ai_sidecar.memory.embeddings import LocalSemanticEmbedder
+from ai_sidecar.memory.embeddings import LocalSemanticEmbedder, SemanticEmbedder
 from ai_sidecar.memory.episodic_store import EpisodicMemoryStore
 from ai_sidecar.memory.semantic_store import SemanticMemoryStore
 
@@ -246,8 +246,8 @@ class OpenMemoryProvider(MemoryProvider):
 
 
 class InMemoryMemoryProvider(MemoryProvider):
-    def __init__(self, *, dimensions: int) -> None:
-        self._embedder = LocalSemanticEmbedder(dimensions)
+    def __init__(self, *, dimensions: int, embedder: SemanticEmbedder | None = None) -> None:
+        self._embedder = embedder or LocalSemanticEmbedder(dimensions)
         self._lock = RLock()
         self._episodes: dict[str, list[dict[str, object]]] = {}
         self._semantic: dict[str, list[dict[str, object]]] = {}

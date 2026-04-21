@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from ai_sidecar.memory.embeddings import LocalSemanticEmbedder
+from ai_sidecar.memory.embeddings import SemanticEmbedder
 from ai_sidecar.persistence.models import MemorySemanticRecord
 from ai_sidecar.persistence.repositories import MemoryRepository
 
 
 class SemanticMemoryStore:
-    def __init__(self, *, repository: MemoryRepository, embedder: LocalSemanticEmbedder, candidates: int) -> None:
+    def __init__(self, *, repository: MemoryRepository, embedder: SemanticEmbedder, candidates: int) -> None:
         self._repository = repository
         self._embedder = embedder
         self._candidates = candidates
@@ -74,4 +74,3 @@ class SemanticMemoryStore:
 
     def count(self, *, bot_id: str) -> int:
         return self._repository.count_semantic(bot_id=bot_id)
-

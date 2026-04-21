@@ -44,6 +44,9 @@ class PlannerService:
     self_critic: SelfCritic
     macro_synthesizer: MacroSynthesizer
     reflection_writer: ReflectionWriter
+    _lock: RLock = field(init=False, repr=False)
+    _state: dict[str, _PlannerBotState] = field(init=False, repr=False)
+    _counters: dict[str, int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._lock = RLock()
@@ -262,4 +265,3 @@ class PlannerService:
     def counters(self) -> dict[str, int]:
         with self._lock:
             return dict(self._counters)
-
