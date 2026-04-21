@@ -33,6 +33,29 @@ class PlannerContextAssembler:
             "constraints": state_payload.get("fleet_intent", {}).get("constraints", {}),
         }
 
+        fleet_coordination: dict[str, object] = {
+            "mode": "local",
+            "doctrine_version": doctrine.get("doctrine_version") or "local",
+            "constraints": {},
+            "blackboard": {},
+        }
+        try:
+            central_constraints = self.runtime.fleet_constraints(bot_id=bot_id)
+            fleet_coordination["mode"] = central_constraints.mode
+            fleet_coordination["doctrine_version"] = central_constraints.doctrine_version
+            fleet_coordination["constraints"] = dict(central_constraints.constraints)
+            doctrine["doctrine_version"] = central_constraints.doctrine_version
+            doctrine["constraints"] = dict(central_constraints.constraints)
+        except Exception:
+            pass
+
+        try:
+            blackboard_view = self.runtime.fleet_blackboard(bot_id=bot_id)
+            fleet_coordination["mode"] = blackboard_view.mode
+            fleet_coordination["blackboard"] = dict(blackboard_view.blackboard)
+        except Exception:
+            pass
+
         queue_depth = self.runtime.action_queue.count(bot_id)
         queue_info = {
             "pending_actions": queue_depth,
@@ -48,6 +71,7 @@ class PlannerContextAssembler:
             "assignment": state_payload.get("fleet_intent", {}).get("assignment"),
             "objective": state_payload.get("fleet_intent", {}).get("objective"),
             "constraints": state_payload.get("fleet_intent", {}).get("constraints", {}),
+            "coordination": fleet_coordination,
         }
 
         return PlannerContext(

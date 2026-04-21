@@ -35,6 +35,17 @@ from ai_sidecar.contracts.events import (
     NormalizedEvent,
     QuestTransitionRequest,
 )
+from ai_sidecar.contracts.fleet_v2 import (
+    FleetBlackboardLocalResponse,
+    FleetClaimRequestV2,
+    FleetClaimResponseV2,
+    FleetConstraintResponse,
+    FleetOutcomeReportRequest,
+    FleetOutcomeReportResponse,
+    FleetRoleResponse,
+    FleetSyncRequest,
+    FleetSyncResponse,
+)
 from ai_sidecar.contracts.macros import MacroPublishRequest
 from ai_sidecar.contracts.ml_subconscious import (
     MLDistillMacroRequest,
@@ -59,6 +70,13 @@ from ai_sidecar.contracts.state_graph import EnrichedWorldState
 from ai_sidecar.contracts.telemetry import TelemetryEvent, TelemetryIngestResponse
 from ai_sidecar.crewai import CrewManager
 from ai_sidecar.domain.macro_compiler import MacroCompiler, MacroPublisher
+from ai_sidecar.fleet import (
+    ConstraintIngestionState,
+    FleetConflictResolver,
+    FleetSyncClient,
+    OutcomeReporter,
+    RoleManager,
+)
 from ai_sidecar.ingestion.event_journal import EventJournal
 from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
 from ai_sidecar.ingestion.adapters.chat_adapter import chat_stream_to_events
@@ -311,6 +329,12 @@ class RuntimeState:
     ml_shadow: ShadowModeEvaluator | None = None
     ml_promotion: GuardedPromotionPipeline | None = None
     ml_macro_distiller: MacroDistillationEngine | None = None
+    fleet_sync_client: FleetSyncClient | None = None
+    fleet_constraint_state: ConstraintIngestionState | None = None
+    fleet_outcome_reporter: OutcomeReporter | None = None
+    fleet_conflict_resolver: FleetConflictResolver | None = None
+    _fleet_role_lock: RLock = field(default_factory=RLock)
+    _fleet_roles: dict[str, RoleManager] = field(default_factory=dict)
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
     persistence_degraded: bool = False
@@ -546,6 +570,32 @@ class RuntimeState:
         return self.reflex_engine.list_breakers(bot_id=bot_id)
 
     def queue_action(self, proposal: ActionProposal, bot_id: str) -> tuple[bool, ActionStatus, str, str]:
+        if (
+            proposal.priority_tier == ActionPriorityTier.strategic
+            and self.fleet_constraint_state is not None
+            and self.fleet_conflict_resolver is not None
+        ):
+            try:
+                constraints = self.fleet_conflict_resolver.resolve_constraints(
+                    constraints=self.fleet_constraint_state.constraints_for_bot(bot_id=bot_id)
+                )
+                action_metadata = dict(proposal.metadata)
+                if proposal.conflict_key:
+                    action_metadata.setdefault("conflict_key", proposal.conflict_key)
+                proposal = proposal.model_copy(
+                    update={
+                        "metadata": self.fleet_conflict_resolver.rearbitrate_action_metadata(
+                            action_metadata=action_metadata,
+                            constraints=constraints,
+                        )
+                    }
+                )
+            except Exception:
+                logger.exception(
+                    "fleet_rearbitration_failed",
+                    extra={"event": "fleet_rearbitration_failed", "bot_id": bot_id, "action_id": proposal.action_id},
+                )
+
         accepted, status, action_id, reason = self.action_queue.enqueue(bot_id, proposal)
         self.incr("actions_queued", bot_id=bot_id)
 
@@ -1281,6 +1331,387 @@ class RuntimeState:
             "telemetry_window": telemetry_window,
             "counters": counters,
         }
+
+    def _fleet_role_manager(self, *, bot_id: str) -> RoleManager:
+        with self._fleet_role_lock:
+            manager = self._fleet_roles.get(bot_id)
+            if manager is None:
+                manager = RoleManager(bot_id=bot_id)
+                self._fleet_roles[bot_id] = manager
+            return manager
+
+    def _fleet_status(self) -> dict[str, object]:
+        if self.fleet_constraint_state is None:
+            return {
+                "mode": "local",
+                "central_available": False,
+                "stale": True,
+                "last_sync_at": None,
+                "doctrine_version": "local",
+                "last_error": "fleet_constraint_state_unavailable",
+            }
+        return self.fleet_constraint_state.status()
+
+    def _fleet_constraints_for_bot(self, *, bot_id: str) -> dict[str, object]:
+        if self.fleet_constraint_state is None:
+            return {
+                "avoid": [],
+                "required": [],
+                "sources": ["local_default"],
+                "policy": {
+                    "step_1_detect_conflict": True,
+                    "step_2_compare_priority_and_lease": True,
+                    "step_3_apply_doctrine": True,
+                    "step_4_emit_constraints": True,
+                    "step_5_rearbitrate_pending_strategic": True,
+                },
+            }
+        constraints = self.fleet_constraint_state.constraints_for_bot(bot_id=bot_id)
+        if self.fleet_conflict_resolver is None:
+            return constraints
+        return self.fleet_conflict_resolver.resolve_constraints(constraints=constraints)
+
+    def _fleet_refresh_role_from_blackboard(self, *, bot_id: str, blackboard: dict[str, object]) -> None:
+        rows = blackboard.get("role_leases") if isinstance(blackboard.get("role_leases"), list) else []
+        latest: dict[str, object] | None = None
+        latest_expires: datetime | None = None
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("bot_id") or "") != bot_id:
+                continue
+            row_expires_at = item.get("expires_at")
+            row_expires: datetime | None = None
+            if isinstance(row_expires_at, datetime):
+                row_expires = row_expires_at if row_expires_at.tzinfo is not None else row_expires_at.replace(tzinfo=UTC)
+            elif isinstance(row_expires_at, str) and row_expires_at:
+                try:
+                    row_expires = datetime.fromisoformat(row_expires_at.replace("Z", "+00:00")).astimezone(UTC)
+                except Exception:
+                    row_expires = None
+
+            if latest is None:
+                latest = item
+                latest_expires = row_expires
+                continue
+
+            if row_expires is not None and (latest_expires is None or row_expires > latest_expires):
+                latest = item
+                latest_expires = row_expires
+        if latest is None:
+            return
+
+        expires_at = latest.get("expires_at")
+        expires: datetime | None = None
+        if isinstance(expires_at, datetime):
+            expires = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+        elif isinstance(expires_at, str) and expires_at:
+            try:
+                expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).astimezone(UTC)
+            except Exception:
+                expires = None
+
+        ttl_seconds = settings.action_default_ttl_seconds
+        if expires is not None:
+            ttl_seconds = max(5, int((expires - datetime.now(UTC)).total_seconds()))
+
+        self._fleet_role_manager(bot_id=bot_id).update(
+            role=(None if latest.get("role") is None else str(latest.get("role"))),
+            confidence=float(latest.get("confidence") or 0.0),
+            ttl_seconds=ttl_seconds,
+            source=str(latest.get("lease_owner") or "central"),
+        )
+
+    def fleet_sync(self, payload: FleetSyncRequest) -> FleetSyncResponse:
+        bot_id = payload.meta.bot_id
+        client = self.fleet_sync_client
+        state = self.fleet_constraint_state
+        if client is None or state is None:
+            constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+            return FleetSyncResponse(
+                ok=True,
+                mode="local",
+                central_available=False,
+                doctrine_version="local",
+                constraints=constraints,
+                blackboard={},
+                message="fleet_sync_unavailable",
+            )
+
+        ok, blackboard, reason = client.ping_blackboard()
+        if ok:
+            state.update_from_blackboard(blackboard=blackboard)
+            self._fleet_refresh_role_from_blackboard(bot_id=bot_id, blackboard=blackboard)
+            drained = self.fleet_outcome_reporter.flush_backlog() if self.fleet_outcome_reporter is not None else 0
+            status = self._fleet_status()
+            constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+            logger.info(
+                "fleet_sync_ok",
+                extra={
+                    "event": "fleet_sync_ok",
+                    "bot_id": bot_id,
+                    "mode": status.get("mode"),
+                    "doctrine_version": status.get("doctrine_version"),
+                    "backlog_flushed": drained,
+                },
+            )
+            return FleetSyncResponse(
+                ok=True,
+                mode=str(status.get("mode") or "central"),
+                central_available=bool(status.get("central_available")),
+                doctrine_version=str(status.get("doctrine_version") or "unknown"),
+                constraints=constraints,
+                blackboard=dict(blackboard) if payload.include_blackboard else {},
+                message="synced" if drained <= 0 else f"synced_backlog_flushed:{drained}",
+            )
+
+        state.mark_unavailable(reason=reason)
+        status = self._fleet_status()
+        constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+        logger.warning(
+            "fleet_sync_fallback_local",
+            extra={"event": "fleet_sync_fallback_local", "bot_id": bot_id, "reason": reason},
+        )
+        return FleetSyncResponse(
+            ok=True,
+            mode=str(status.get("mode") or "local"),
+            central_available=False,
+            doctrine_version=str(status.get("doctrine_version") or "local"),
+            constraints=constraints,
+            blackboard=state.blackboard() if payload.include_blackboard else {},
+            message=f"central_unavailable:{reason}",
+        )
+
+    def fleet_constraints(self, *, bot_id: str) -> FleetConstraintResponse:
+        status = self._fleet_status()
+        constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+        return FleetConstraintResponse(
+            ok=True,
+            bot_id=bot_id,
+            mode=str(status.get("mode") or "local"),
+            doctrine_version=str(status.get("doctrine_version") or "local"),
+            constraints=constraints,
+        )
+
+    def fleet_report_outcome(self, payload: FleetOutcomeReportRequest) -> FleetOutcomeReportResponse:
+        reporter = self.fleet_outcome_reporter
+        status = self._fleet_status()
+        if reporter is None:
+            return FleetOutcomeReportResponse(
+                ok=True,
+                accepted=True,
+                central_available=False,
+                queued_for_retry=True,
+                mode=str(status.get("mode") or "local"),
+                result={},
+            )
+
+        ok, queued_for_retry, result = reporter.report(
+            bot_id=payload.meta.bot_id,
+            event_type=payload.event_type,
+            priority_class=payload.priority_class,
+            lease_owner=payload.lease_owner,
+            conflict_key=payload.conflict_key,
+            payload=dict(payload.payload),
+        )
+        if not ok and self.fleet_constraint_state is not None:
+            self.fleet_constraint_state.mark_unavailable(reason="outcome_submit_failed")
+
+        current_status = self._fleet_status()
+        mode = "central" if ok else str(current_status.get("mode") or "local")
+        if ok:
+            self.incr("fleet_outcome_reported", bot_id=payload.meta.bot_id)
+        if queued_for_retry:
+            self.incr("fleet_outcome_queued_retry", bot_id=payload.meta.bot_id)
+
+        self._emit_runtime_event(
+            bot_id=payload.meta.bot_id,
+            event_family=EventFamily.system,
+            event_type="fleet.outcome_report",
+            severity=EventSeverity.info if ok else EventSeverity.warning,
+            text=f"fleet outcome reported event_type={payload.event_type} ok={ok}",
+            numeric={"queued_for_retry": 1.0 if queued_for_retry else 0.0},
+            payload={
+                "event_type": payload.event_type,
+                "priority_class": payload.priority_class,
+                "lease_owner": payload.lease_owner,
+                "conflict_key": payload.conflict_key,
+                "central_available": ok,
+            },
+        )
+
+        return FleetOutcomeReportResponse(
+            ok=True,
+            accepted=True,
+            central_available=ok,
+            queued_for_retry=queued_for_retry,
+            mode=mode,
+            result=result,
+        )
+
+    def fleet_role(self, *, bot_id: str) -> FleetRoleResponse:
+        if self.fleet_constraint_state is not None:
+            self._fleet_refresh_role_from_blackboard(bot_id=bot_id, blackboard=self.fleet_constraint_state.blackboard())
+        role = self._fleet_role_manager(bot_id=bot_id).current()
+        status = self._fleet_status()
+        return FleetRoleResponse(
+            ok=True,
+            bot_id=bot_id,
+            role=(None if role.get("role") is None else str(role.get("role"))),
+            confidence=float(role.get("confidence") or 0.0),
+            expires_at=(role.get("expires_at") if isinstance(role.get("expires_at"), datetime) else None),
+            source=str(role.get("source") or "local"),
+            mode=str(status.get("mode") or "local"),
+        )
+
+    def fleet_claim(self, payload: FleetClaimRequestV2) -> FleetClaimResponseV2:
+        bot_id = payload.meta.bot_id
+        client = self.fleet_sync_client
+        status = self._fleet_status()
+        if client is None:
+            return FleetClaimResponseV2(
+                ok=True,
+                accepted=True,
+                central_available=False,
+                mode=str(status.get("mode") or "local"),
+                reason="accepted_local_fallback",
+                claim={
+                    "bot_id": bot_id,
+                    "claim_type": payload.claim_type,
+                    "map_name": payload.map_name,
+                    "channel": payload.channel,
+                    "resource_type": payload.resource_type,
+                    "resource_id": payload.resource_id,
+                    "quantity": payload.quantity,
+                    "ttl_seconds": payload.ttl_seconds,
+                    "priority": payload.priority,
+                    "fallback": True,
+                },
+                conflicts=[],
+            )
+
+        ok, result, reason = client.claim(
+            bot_id=bot_id,
+            claim_type=payload.claim_type,
+            map_name=payload.map_name,
+            channel=payload.channel,
+            objective_id=payload.objective_id,
+            resource_type=payload.resource_type,
+            resource_id=payload.resource_id,
+            quantity=payload.quantity,
+            ttl_seconds=payload.ttl_seconds,
+            priority=payload.priority,
+            metadata=dict(payload.metadata),
+        )
+        if ok:
+            if self.fleet_constraint_state is not None:
+                bb_ok, blackboard, bb_reason = client.ping_blackboard()
+                if bb_ok:
+                    self.fleet_constraint_state.update_from_blackboard(blackboard=blackboard)
+                    self._fleet_refresh_role_from_blackboard(bot_id=bot_id, blackboard=blackboard)
+                else:
+                    self.fleet_constraint_state.mark_unavailable(reason=bb_reason)
+
+            current = self._fleet_status()
+            claim_domain = str(result.get("claim_domain") or ("zone" if payload.claim_type in {"territory", "map", "route"} else "resource"))
+            claim_view = {
+                "claim_id": int(result.get("claim_id") or 0),
+                "claim_domain": claim_domain,
+                "bot_id": bot_id,
+                "claim_type": payload.claim_type,
+                "map_name": payload.map_name,
+                "channel": payload.channel,
+                "resource_type": payload.resource_type,
+                "resource_id": payload.resource_id,
+                "quantity": payload.quantity,
+                "ttl_seconds": payload.ttl_seconds,
+                "priority": payload.priority,
+            }
+            conflicts = [item for item in list(result.get("conflicts") or []) if isinstance(item, dict)]
+            return FleetClaimResponseV2(
+                ok=True,
+                accepted=bool(result.get("accepted", True)),
+                central_available=True,
+                mode=str(current.get("mode") or "central"),
+                reason=str(result.get("reason") or "accepted"),
+                claim=claim_view,
+                conflicts=conflicts,
+            )
+
+        if self.fleet_constraint_state is not None:
+            self.fleet_constraint_state.mark_unavailable(reason=reason)
+        current = self._fleet_status()
+        constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+        local_conflicts: list[dict[str, object]] = []
+        conflict_key = str(payload.metadata.get("conflict_key") or "")
+        if conflict_key:
+            for item in constraints.get("avoid") if isinstance(constraints.get("avoid"), list) else []:
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("conflict_key") or "") == conflict_key:
+                    local_conflicts.append(
+                        {
+                            "type": str(item.get("type") or "local_constraint"),
+                            "key": conflict_key,
+                            "owner_bot_id": bot_id,
+                            "contender_bot_id": bot_id,
+                        }
+                    )
+
+        accepted_local = len(local_conflicts) == 0
+        return FleetClaimResponseV2(
+            ok=True,
+            accepted=accepted_local,
+            central_available=False,
+            mode=str(current.get("mode") or "local"),
+            reason=("accepted_local_fallback" if accepted_local else "conflict_detected_local"),
+            claim={
+                "claim_id": 0,
+                "claim_domain": "local",
+                "bot_id": bot_id,
+                "claim_type": payload.claim_type,
+                "map_name": payload.map_name,
+                "channel": payload.channel,
+                "resource_type": payload.resource_type,
+                "resource_id": payload.resource_id,
+                "quantity": payload.quantity,
+                "ttl_seconds": payload.ttl_seconds,
+                "priority": payload.priority,
+                "fallback": True,
+            },
+            conflicts=local_conflicts,
+        )
+
+    def fleet_blackboard(self, *, bot_id: str) -> FleetBlackboardLocalResponse:
+        client = self.fleet_sync_client
+        if client is not None and self.fleet_constraint_state is not None:
+            ok, blackboard, reason = client.ping_blackboard()
+            if ok:
+                self.fleet_constraint_state.update_from_blackboard(blackboard=blackboard)
+                self._fleet_refresh_role_from_blackboard(bot_id=bot_id, blackboard=blackboard)
+                if self.fleet_outcome_reporter is not None:
+                    self.fleet_outcome_reporter.flush_backlog()
+            else:
+                self.fleet_constraint_state.mark_unavailable(reason=reason)
+
+        status = self._fleet_status()
+        constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
+        blackboard_payload = self.fleet_constraint_state.blackboard() if self.fleet_constraint_state is not None else {}
+        local_summary = {
+            "queue_depth": self.action_queue.count(bot_id),
+            "outcome_backlog": self.fleet_outcome_reporter.backlog_size() if self.fleet_outcome_reporter is not None else 0,
+            "persistence_degraded": self.persistence_degraded,
+            "last_sync_at": status.get("last_sync_at"),
+            "last_error": status.get("last_error"),
+        }
+        return FleetBlackboardLocalResponse(
+            ok=True,
+            bot_id=bot_id,
+            mode=str(status.get("mode") or "local"),
+            constraints=constraints,
+            blackboard=blackboard_payload,
+            local_summary=local_summary,
+        )
 
     def memory_context(self, *, bot_id: str, query: str, limit: int) -> list[dict[str, object]]:
         return self._safe_memory(
@@ -2149,6 +2580,15 @@ def create_runtime() -> RuntimeState:
     ml_promotion = GuardedPromotionPipeline()
     ml_macro_distiller = MacroDistillationEngine()
 
+    fleet_sync_client = FleetSyncClient(
+        base_url=settings.fleet_central_base_url,
+        timeout_seconds=settings.fleet_request_timeout_seconds,
+        enabled=settings.fleet_central_enabled,
+    )
+    fleet_constraint_state = ConstraintIngestionState()
+    fleet_outcome_reporter = OutcomeReporter(client=fleet_sync_client)
+    fleet_conflict_resolver = FleetConflictResolver()
+
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
         workspace_root=workspace_root,
@@ -2179,6 +2619,10 @@ def create_runtime() -> RuntimeState:
         ml_shadow=ml_shadow,
         ml_promotion=ml_promotion,
         ml_macro_distiller=ml_macro_distiller,
+        fleet_sync_client=fleet_sync_client,
+        fleet_constraint_state=fleet_constraint_state,
+        fleet_outcome_reporter=fleet_outcome_reporter,
+        fleet_conflict_resolver=fleet_conflict_resolver,
     )
 
     planner_service = PlannerService(
@@ -2227,6 +2671,10 @@ def create_runtime() -> RuntimeState:
             "crewai_available": crew_manager.status().crew_available,
             "ml_subconscious_enabled": True,
             "ml_models_registered": len(runtime.ml_models().models) if runtime.ml_registry is not None else 0,
+            "fleet_central_enabled": settings.fleet_central_enabled,
+            "fleet_central_base_url": settings.fleet_central_base_url,
+            "fleet_mode": runtime.fleet_constraint_state.status().get("mode") if runtime.fleet_constraint_state is not None else "local",
+            "fleet_outcome_backlog": runtime.fleet_outcome_reporter.backlog_size() if runtime.fleet_outcome_reporter is not None else 0,
         },
     )
     logger.info(

@@ -10,6 +10,7 @@ from ai_sidecar.api.routers import (
     actions,
     crewai_v2,
     fleet,
+    fleet_v2,
     health,
     ingest,
     ingest_v2,
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(providers_v2.router)
     app.include_router(crewai_v2.router)
     app.include_router(ml_subconscious_v2.router)
+    app.include_router(fleet_v2.router)
     return app
 
 
