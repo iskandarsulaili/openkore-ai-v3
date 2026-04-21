@@ -43,8 +43,48 @@ class SidecarSettings(BaseSettings):
     memory_openmemory_mode: str = "local"
     memory_openmemory_path: str = "AI_sidecar/data/openmemory.sqlite"
     memory_embedding_dimensions: int = Field(default=384, ge=64, le=4096)
+    memory_embedding_mode: str = "local_hash"  # local_hash | provider
+    memory_embedding_provider: str = "ollama"  # ollama | openai | deepseek
+    memory_embedding_model: str = ""
     memory_semantic_candidates: int = Field(default=500, ge=20, le=5000)
     memory_default_search_limit: int = Field(default=5, ge=1, le=50)
+
+    llm_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
+    llm_max_retries: int = Field(default=2, ge=0, le=8)
+    llm_prompt_max_chars: int = Field(default=32000, ge=1024, le=200000)
+
+    provider_ollama_enabled: bool = True
+    provider_ollama_base_url: str = "http://127.0.0.1:11434"
+    provider_ollama_default_model: str = "qwen2.5:14b"
+    provider_ollama_tactical_model: str = "qwen2.5:7b"
+    provider_ollama_strategic_model: str = "qwen2.5:14b"
+    provider_ollama_reflection_model: str = "qwen2.5:14b"
+    provider_ollama_embedding_model: str = "nomic-embed-text"
+
+    provider_deepseek_enabled: bool = True
+    provider_deepseek_base_url: str = "https://api.deepseek.com/v1"
+    provider_deepseek_api_key: str = ""
+    provider_deepseek_default_model: str = "deepseek-chat"
+    provider_deepseek_tactical_model: str = "deepseek-chat"
+    provider_deepseek_strategic_model: str = "deepseek-chat"
+    provider_deepseek_reflection_model: str = "deepseek-chat"
+    provider_deepseek_embedding_model: str = "text-embedding-3-small"
+
+    provider_openai_enabled: bool = True
+    provider_openai_base_url: str = "https://api.openai.com/v1"
+    provider_openai_api_key: str = ""
+    provider_openai_default_model: str = "gpt-4o-mini"
+    provider_openai_tactical_model: str = "gpt-4o-mini"
+    provider_openai_strategic_model: str = "gpt-4o-mini"
+    provider_openai_reflection_model: str = "gpt-4o-mini"
+    provider_openai_embedding_model: str = "text-embedding-3-small"
+
+    provider_policy_json: str = ""
+
+    planner_tactical_budget_ms: int = Field(default=2000, ge=100, le=120000)
+    planner_strategic_budget_ms: int = Field(default=10000, ge=500, le=300000)
+    planner_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
+    planner_retries: int = Field(default=2, ge=0, le=8)
 
 
 settings = SidecarSettings()

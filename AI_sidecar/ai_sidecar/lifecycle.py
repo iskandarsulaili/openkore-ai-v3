@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Callable, TypeVar
 from uuid import uuid4
+
+import httpx
 
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionAckRequest, ActionPriorityTier, ActionProposal, ActionStatus
@@ -35,7 +38,7 @@ from ai_sidecar.ingestion.adapters.chat_adapter import chat_stream_to_events
 from ai_sidecar.ingestion.adapters.config_adapter import config_update_to_events
 from ai_sidecar.ingestion.adapters.quest_adapter import quest_transition_to_events
 from ai_sidecar.ingestion.normalizer_bus import NormalizerBus
-from ai_sidecar.memory.embeddings import LocalSemanticEmbedder
+from ai_sidecar.memory.embeddings import LocalSemanticEmbedder, ProviderSemanticEmbedder
 from ai_sidecar.memory.episodic_store import EpisodicMemoryStore
 from ai_sidecar.memory.retrieval import (
     InMemoryMemoryProvider,
@@ -46,6 +49,28 @@ from ai_sidecar.memory.retrieval import (
 from ai_sidecar.memory.semantic_store import SemanticMemoryStore
 from ai_sidecar.observability.audit import AuditTrail
 from ai_sidecar.observability.metrics import DurableTelemetryIngestor
+from ai_sidecar.planner.context_assembler import PlannerContextAssembler
+from ai_sidecar.planner.intent_synthesizer import IntentSynthesizer
+from ai_sidecar.planner.macro_synthesizer import MacroSynthesizer
+from ai_sidecar.planner.plan_generator import PlanGenerator
+from ai_sidecar.planner.reflection_writer import ReflectionWriter
+from ai_sidecar.planner.schemas import (
+    PlannerExplainRequest,
+    PlannerMacroPromoteRequest,
+    PlannerPlanRequest,
+    PlannerResponse,
+    PlannerStatusResponse,
+    ProviderPolicyUpdateRequest,
+    ProviderRouteRequest,
+    ProviderRouteResponse,
+)
+from ai_sidecar.planner.self_critic import SelfCritic
+from ai_sidecar.planner.service import PlannerService
+from ai_sidecar.providers.deepseek_adapter import DeepseekAdapter
+from ai_sidecar.providers.model_router import DEFAULT_POLICY_RULES, ModelRouter
+from ai_sidecar.providers.ollama_adapter import OllamaAdapter
+from ai_sidecar.providers.openai_adapter import OpenAIAdapter
+from ai_sidecar.providers.prompt_guard import PromptGuard
 from ai_sidecar.persistence.db import SQLiteDB
 from ai_sidecar.persistence.repositories import SidecarRepositories, create_repositories
 from ai_sidecar.runtime.action_queue import ActionQueue
@@ -71,6 +96,107 @@ def _resolve_path(workspace_root: Path, configured_path: str) -> Path:
     if candidate.is_absolute():
         return candidate
     return workspace_root / candidate
+
+
+def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
+    return {
+        "reflex_explain": {"providers": [], "models": {}},
+        "tactical_short_reasoning": {
+            "providers": ["ollama", "deepseek"],
+            "models": {
+                "ollama": settings.provider_ollama_tactical_model,
+                "deepseek": settings.provider_deepseek_tactical_model,
+            },
+        },
+        "strategic_planning": {
+            "providers": ["ollama", "openai", "deepseek"],
+            "models": {
+                "ollama": settings.provider_ollama_strategic_model,
+                "openai": settings.provider_openai_strategic_model,
+                "deepseek": settings.provider_deepseek_strategic_model,
+            },
+        },
+        "long_reflection": {
+            "providers": ["deepseek", "openai", "ollama"],
+            "models": {
+                "deepseek": settings.provider_deepseek_reflection_model,
+                "openai": settings.provider_openai_reflection_model,
+                "ollama": settings.provider_ollama_reflection_model,
+            },
+        },
+        "embeddings": {
+            "providers": ["ollama", "openai", "deepseek"],
+            "models": {
+                "ollama": settings.provider_ollama_embedding_model,
+                "openai": settings.provider_openai_embedding_model,
+                "deepseek": settings.provider_deepseek_embedding_model,
+            },
+        },
+    }
+
+
+def _provider_embedding_model(provider_name: str) -> str:
+    if provider_name == "ollama":
+        return settings.provider_ollama_embedding_model
+    if provider_name == "openai":
+        return settings.provider_openai_embedding_model
+    if provider_name == "deepseek":
+        return settings.provider_deepseek_embedding_model
+    return ""
+
+
+def _provider_embedding_endpoint(provider_name: str) -> tuple[str, dict[str, str], str]:
+    if provider_name == "ollama":
+        return settings.provider_ollama_base_url.rstrip("/") + "/api/embed", {"Content-Type": "application/json"}, "ollama"
+    if provider_name == "openai":
+        return (
+            settings.provider_openai_base_url.rstrip("/") + "/embeddings",
+            {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {settings.provider_openai_api_key}",
+            },
+            "openai",
+        )
+    return (
+        settings.provider_deepseek_base_url.rstrip("/") + "/embeddings",
+        {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {settings.provider_deepseek_api_key}",
+        },
+        "openai_like",
+    )
+
+
+def _provider_embed_sync(provider_name: str, *, model: str, texts: list[str], timeout_seconds: float) -> list[list[float]]:
+    if not texts:
+        return []
+    endpoint, headers, kind = _provider_embedding_endpoint(provider_name)
+    payload: dict[str, object]
+    if kind == "ollama":
+        payload = {"model": model, "input": texts, "truncate": True}
+    else:
+        payload = {"model": model, "input": texts}
+
+    with httpx.Client(timeout=timeout_seconds) as client:
+        response = client.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json() if response.content else {}
+
+    if not isinstance(data, dict):
+        return []
+    if kind == "ollama":
+        rows = data.get("embeddings") if isinstance(data.get("embeddings"), list) else []
+        return [[float(value) for value in row] for row in rows if isinstance(row, list)]
+
+    rows = data.get("data") if isinstance(data.get("data"), list) else []
+    vectors: list[list[float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        emb = row.get("embedding")
+        if isinstance(emb, list):
+            vectors.append([float(value) for value in emb])
+    return vectors
 
 
 @dataclass(slots=True)
