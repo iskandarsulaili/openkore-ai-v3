@@ -81,6 +81,8 @@ my %pending_config_keys;
 my %last_warn_at_ms;
 my $event_seq = 0;
 my $last_ai_seq_top = '';
+my $consecutive_poll_failures = 0;
+my $consecutive_v2_event_failures = 0;
 
 my $json_available = eval { require JSON::PP; 1; };
 
@@ -121,6 +123,8 @@ sub _cleanup_runtime {
 	%last_warn_at_ms = ();
 	$event_seq = 0;
 	$last_ai_seq_top = '';
+	$consecutive_poll_failures = 0;
+	$consecutive_v2_event_failures = 0;
 }
 
 sub on_start3 {
@@ -178,8 +182,9 @@ sub on_mainLoop_post {
 	}
 
 	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
-		$next_poll_at_ms = $now + _cfg_int('aiSidecar_pollIntervalMs', 250);
-		_poll_next_action();
+		my $poll_ok = _poll_next_action();
+		my $next_delay_ms = $poll_ok ? _cfg_int('aiSidecar_pollIntervalMs', 250) : _poll_failure_delay_ms();
+		$next_poll_at_ms = $now + $next_delay_ms;
 	}
 
 	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms) {
@@ -203,8 +208,9 @@ sub on_mainLoop_post {
 	}
 
 	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_eventIngestEnabled', 1) && $now >= $next_event_ingest_at_ms) {
-		$next_event_ingest_at_ms = $now + _cfg_int('aiSidecar_eventIngestIntervalMs', 500);
-		_flush_event_queue();
+		my $event_ok = _flush_event_queue();
+		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
+		$next_event_ingest_at_ms = $now + $next_delay_ms;
 	}
 }
 
@@ -436,21 +442,26 @@ sub _load_bridge_config {
 		aiSidecar_baseUrl => 'http://127.0.0.1:18081',
 		aiSidecar_contractVersion => 'v1',
 		aiSidecar_source => 'openkore-bridge',
-		aiSidecar_connectTimeoutMs => 40,
-		aiSidecar_ioTimeoutMs => 90,
+		aiSidecar_connectTimeoutMs => 180,
+		aiSidecar_ioTimeoutMs => 1200,
 		aiSidecar_snapshotEnabled => 1,
 		aiSidecar_snapshotIntervalMs => 500,
 		aiSidecar_pollWhenDisconnected => 0,
 		aiSidecar_actionPollEnabled => 1,
-		aiSidecar_pollIntervalMs => 250,
+		aiSidecar_pollIntervalMs => 300,
+		aiSidecar_pollFailureBackoffBaseMs => 600,
+		aiSidecar_pollFailureBackoffMaxMs => 6000,
+		aiSidecar_pollFailureResetRegistrationAfter => 3,
 		aiSidecar_ackEnabled => 1,
-		aiSidecar_ackRetryMs => 500,
-		aiSidecar_ackMaxAgeMs => 5000,
-		aiSidecar_registerRetryMs => 5000,
+		aiSidecar_ackRetryMs => 400,
+		aiSidecar_ackMaxAgeMs => 8000,
+		aiSidecar_registerRetryMs => 3000,
 		aiSidecar_telemetryEnabled => 1,
 		aiSidecar_telemetryIntervalMs => 1000,
 		aiSidecar_maxRawChars => 256,
 		aiSidecar_maxCommandLength => 160,
+		aiSidecar_botIdentity => '',
+		aiSidecar_botIdOverride => '',
 		aiSidecar_macroReloadEnabled => 1,
 		aiSidecar_macroFile => 'ai_sidecar_generated_macros.txt',
 		aiSidecar_eventMacroFile => 'ai_sidecar_generated_eventmacros.txt',
@@ -464,12 +475,14 @@ sub _load_bridge_config {
 		aiSidecar_eventIngestEnabled => 1,
 		aiSidecar_chatIngestEnabled => 1,
 		aiSidecar_configIngestEnabled => 1,
-		aiSidecar_eventIngestIntervalMs => 500,
-		aiSidecar_chatIngestIntervalMs => 700,
+		aiSidecar_eventIngestIntervalMs => 700,
+		aiSidecar_chatIngestIntervalMs => 900,
 		aiSidecar_configIngestIntervalMs => 2000,
+		aiSidecar_eventIngestFailureBackoffBaseMs => 1000,
+		aiSidecar_eventIngestFailureBackoffMaxMs => 10000,
 		aiSidecar_eventBatchSize => 20,
 		aiSidecar_chatBatchSize => 20,
-		aiSidecar_maxEventQueue => 300,
+		aiSidecar_maxEventQueue => 500,
 		aiSidecar_maxChatQueue => 200,
 		aiSidecar_maxEventPayloadFields => 16,
 		aiSidecar_maxEventTextChars => 220,
@@ -554,6 +567,9 @@ sub _attempt_register {
 		attributes => {
 			reason => $reason,
 			master => ($config{master} || ''),
+			identity_username => ($config{username} || ''),
+			identity_char_name => ($char ? ($char->{name} || '') : ''),
+			identity_override => _cfg('aiSidecar_botIdentity', ''),
 		},
 	};
 
@@ -652,9 +668,9 @@ sub _build_snapshot_payload {
 }
 
 sub _poll_next_action {
-	return if !_bridge_enabled();
+	return 1 if !_bridge_enabled();
 	if (!$net || $net->getState() != Network::IN_GAME) {
-		return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
+		return 1 if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
 	}
 
 	my $poll_id = _trace_id();
@@ -663,19 +679,45 @@ sub _poll_next_action {
 		poll_id => $poll_id,
 	});
 
-	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
-		$registered = 0;
-		_throttled_warning('poll_failed', '[aiSidecarBridge] action poll failed, fail-open retained.');
-		_emit_telemetry('warning', 'bridge', 'poll_failed', 'action poll failed');
-		return;
+	my $status = _http_status_code($resp);
+	if ($status < 200 || $status >= 300) {
+		$consecutive_poll_failures += 1;
+		my $backoff_ms = _poll_failure_delay_ms();
+		my $reset_after = _cfg_int('aiSidecar_pollFailureResetRegistrationAfter', 3);
+		$registered = 0 if $reset_after > 0 && $consecutive_poll_failures >= $reset_after;
+
+		my $err = _http_error_text($resp);
+		_throttled_warning(
+			'poll_failed',
+			"[aiSidecarBridge] action poll failed status=$status error=$err failures=$consecutive_poll_failures next_retry_ms=$backoff_ms (fail-open retained).",
+		);
+		_emit_telemetry(
+			'warning',
+			'bridge',
+			'poll_failed',
+			'action poll failed',
+			{
+				status => 0 + $status,
+				consecutive_failures => 0 + $consecutive_poll_failures,
+				next_retry_ms => 0 + $backoff_ms,
+			},
+			{ endpoint => '/v1/actions/next', error => $err },
+		);
+		return 0;
 	}
 
+	if ($consecutive_poll_failures > 0) {
+		debug "[aiSidecarBridge] poll recovered after $consecutive_poll_failures consecutive failures\n", 'aiSidecarBridge', 2;
+	}
+	$consecutive_poll_failures = 0;
+
 	my $json = $resp->{json};
-	return if ref($json) ne 'HASH';
-	return if !$json->{has_action};
-	return if ref($json->{action}) ne 'HASH';
+	return 1 if ref($json) ne 'HASH';
+	return 1 if !$json->{has_action};
+	return 1 if ref($json->{action}) ne 'HASH';
 
 	_execute_action($poll_id, $json->{action});
+	return 1;
 }
 
 sub _execute_action {
@@ -892,8 +934,8 @@ sub _flush_telemetry_queue {
 }
 
 sub _flush_event_queue {
-	return if !_bridge_enabled();
-	return if !@event_queue;
+	return 1 if !_bridge_enabled();
+	return 1 if !@event_queue;
 
 	my $batch_size = _cfg_int('aiSidecar_eventBatchSize', 20);
 	$batch_size = 1 if $batch_size < 1;
@@ -907,14 +949,42 @@ sub _flush_event_queue {
 	};
 
 	my $resp = _http_post_json('/v2/ingest/event', $payload);
-	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+	my $status = _http_status_code($resp);
+	if ($status < 200 || $status >= 300) {
 		unshift @event_queue, @batch;
 		my $max_queue = _cfg_int('aiSidecar_maxEventQueue', 300);
 		$max_queue = 50 if $max_queue < 50;
 		splice @event_queue, 0, @event_queue - $max_queue if @event_queue > $max_queue;
-		_throttled_warning('v2_event_failed', '[aiSidecarBridge] v2 event push failed, retaining bounded queue.');
-		return;
+
+		$consecutive_v2_event_failures += 1;
+		my $backoff_ms = _event_ingest_failure_delay_ms();
+		my $err = _http_error_text($resp);
+		my $depth = scalar(@event_queue);
+		_throttled_warning(
+			'v2_event_failed',
+			"[aiSidecarBridge] v2 event push failed status=$status error=$err failures=$consecutive_v2_event_failures queue_depth=$depth next_retry_ms=$backoff_ms (bounded queue retained).",
+		);
+		_emit_telemetry(
+			'warning',
+			'bridge',
+			'v2_event_failed',
+			'v2 event push failed',
+			{
+				status => 0 + $status,
+				consecutive_failures => 0 + $consecutive_v2_event_failures,
+				queue_depth => 0 + $depth,
+				next_retry_ms => 0 + $backoff_ms,
+			},
+			{ endpoint => '/v2/ingest/event', error => $err },
+		);
+		return 0;
 	}
+
+	if ($consecutive_v2_event_failures > 0) {
+		debug "[aiSidecarBridge] v2 event ingest recovered after $consecutive_v2_event_failures consecutive failures\n", 'aiSidecarBridge', 2;
+	}
+	$consecutive_v2_event_failures = 0;
+	return 1;
 }
 
 sub _flush_chat_queue {
@@ -1240,7 +1310,12 @@ sub _http_post_json {
 	my ($scheme, $host, $port, $base_path) = $base_url =~ m{^(https?)://([^/:]+)(?::(\d+))?(/.*)?$}i;
 	if (!$scheme || lc($scheme) ne 'http' || !$host) {
 		_throttled_warning('invalid_base_url', "[aiSidecarBridge] invalid aiSidecar_baseUrl '$base_url'; expected http://host:port");
-		return undef;
+		return {
+			status => 0,
+			error => 'invalid_base_url',
+			json => undef,
+			raw => '',
+		};
 	}
 
 	$port ||= 80;
@@ -1252,7 +1327,12 @@ sub _http_post_json {
 	my $body = eval { JSON::PP::encode_json($payload) };
 	if (!$body || $@) {
 		_throttled_warning('json_encode_failed', '[aiSidecarBridge] JSON encoding failed; request skipped.');
-		return undef;
+		return {
+			status => 0,
+			error => 'json_encode_failed',
+			json => undef,
+			raw => '',
+		};
 	}
 
 	my $connect_timeout = _cfg_int('aiSidecar_connectTimeoutMs', 40) / 1000;
@@ -1267,7 +1347,12 @@ sub _http_post_json {
 		Timeout => $connect_timeout,
 	);
 	if (!$sock) {
-		return undef;
+		return {
+			status => 0,
+			error => _trim('connect_failed:' . ($! || 'socket_open_failed'), 220),
+			json => undef,
+			raw => '',
+		};
 	}
 	$sock->autoflush(1);
 
@@ -1284,6 +1369,7 @@ sub _http_post_json {
 	);
 
 	my $raw_response = '';
+	my $io_error = '';
 	my $ok = eval {
 		local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
 		alarm($io_timeout);
@@ -1297,10 +1383,18 @@ sub _http_post_json {
 		}
 		1;
 	};
+	$io_error = $@ if !$ok;
 	alarm(0);
 	close $sock;
 	if (!$ok) {
-		return undef;
+		$io_error = _trim($io_error || 'io_failure', 220);
+		$io_error =~ s/\s+$//;
+		return {
+			status => 0,
+			error => $io_error,
+			json => undef,
+			raw => '',
+		};
 	}
 
 	my ($headers, $response_body) = split(/\r?\n\r?\n/, $raw_response, 2);
@@ -1315,9 +1409,23 @@ sub _http_post_json {
 
 	return {
 		status => $status,
+		error => '',
 		json => $json,
 		raw => $response_body,
 	};
+}
+
+sub _http_status_code {
+	my ($resp) = @_;
+	return 0 if ref($resp) ne 'HASH';
+	return int($resp->{status} || 0);
+}
+
+sub _http_error_text {
+	my ($resp) = @_;
+	return 'none' if ref($resp) ne 'HASH';
+	my $err = _trim(_scalarize($resp->{error}), 220);
+	return $err ne '' ? $err : 'none';
 }
 
 sub _command_allowed {
@@ -1353,9 +1461,64 @@ sub _meta {
 }
 
 sub _bot_id {
-	my $master = $config{master} || 'unknown_master';
-	my $identity = $char && $char->{name} ? $char->{name} : ($config{username} || 'unknown_user');
+	my $override_bot_id = _trim(_scalarize(_cfg('aiSidecar_botIdOverride', '')), 128);
+	if ($override_bot_id =~ /^([^:]+):(.+)$/) {
+		my $override_master = _normalize_identity_part($1, '');
+		my $override_identity = _normalize_identity_part($2, '');
+		if ($override_master ne '' && $override_identity ne '') {
+			return "$override_master:$override_identity";
+		}
+	}
+
+	my $master = _normalize_identity_part($config{master}, 'unknown_master');
+	my $identity_override = _normalize_identity_part(_cfg('aiSidecar_botIdentity', ''), '');
+	my $char_name = _normalize_identity_part($char && $char->{name} ? $char->{name} : '', '');
+	my $username = _normalize_identity_part($config{username}, 'unknown_user');
+	my $identity = $identity_override ne '' ? $identity_override : ($char_name ne '' ? $char_name : $username);
 	return "$master:$identity";
+}
+
+sub _normalize_identity_part {
+	my ($value, $default) = @_;
+	$value = _trim(_scalarize($value), 64);
+	$value =~ s/^\s+//;
+	$value =~ s/\s+$//;
+	$value =~ s/\s+/ /g;
+	return $default if !defined $value || $value eq '';
+	return $value;
+}
+
+sub _exp_backoff_ms {
+	my ($failures, $base_ms, $max_ms) = @_;
+	$failures = 0 + ($failures || 0);
+	$base_ms = 0 + ($base_ms || 1);
+	$max_ms = 0 + ($max_ms || $base_ms);
+	$base_ms = 1 if $base_ms < 1;
+	$max_ms = $base_ms if $max_ms < $base_ms;
+
+	return $base_ms if $failures <= 0;
+	my $power = $failures - 1;
+	$power = 8 if $power > 8;
+	my $factor = 2 ** $power;
+	my $delay = int($base_ms * $factor);
+	$delay = $max_ms if $delay > $max_ms;
+	return $delay;
+}
+
+sub _poll_failure_delay_ms {
+	return _exp_backoff_ms(
+		$consecutive_poll_failures,
+		_cfg_int('aiSidecar_pollFailureBackoffBaseMs', 600),
+		_cfg_int('aiSidecar_pollFailureBackoffMaxMs', 6000),
+	);
+}
+
+sub _event_ingest_failure_delay_ms {
+	return _exp_backoff_ms(
+		$consecutive_v2_event_failures,
+		_cfg_int('aiSidecar_eventIngestFailureBackoffBaseMs', 1000),
+		_cfg_int('aiSidecar_eventIngestFailureBackoffMaxMs', 10000),
+	);
 }
 
 sub _cfg {

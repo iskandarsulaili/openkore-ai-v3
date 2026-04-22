@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -23,6 +24,8 @@ from ai_sidecar.persistence.models import (
 )
 
 logger = logging.getLogger(__name__)
+_IDENTITY_SANITIZE_RE = re.compile(r"[^a-z0-9._-]+")
+_IDENTITY_DUP_UNDERSCORE_RE = re.compile(r"_+")
 
 
 def utc_now() -> datetime:
@@ -48,6 +51,57 @@ def to_json(value: object) -> str:
 
 def from_json(value: str) -> object:
     return json.loads(value)
+
+
+def _normalize_identity_part(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    text = _IDENTITY_SANITIZE_RE.sub("_", text)
+    text = _IDENTITY_DUP_UNDERSCORE_RE.sub("_", text)
+    return text.strip("._-")
+
+
+def canonicalize_bot_id(*, bot_id: str, bot_name: str | None, attributes: dict[str, str] | None) -> str:
+    raw = (bot_id or "").strip()
+    if not raw:
+        return raw
+
+    master, _sep, identity = raw.partition(":")
+    attrs = attributes or {}
+
+    identity_source = (
+        attrs.get("identity_override")
+        or attrs.get("identity_username")
+        or attrs.get("identity_char_name")
+        or identity
+    )
+    normalized_identity = _normalize_identity_part(identity_source)
+    if not normalized_identity:
+        normalized_identity = _normalize_identity_part(identity)
+
+    master_part = (bot_name or master or "").strip()
+    if master_part and normalized_identity:
+        return f"{master_part}:{normalized_identity}"
+    return raw
+
+
+def bot_id_aliases(*, canonical_bot_id: str, bot_name: str | None, attributes: dict[str, str] | None) -> list[str]:
+    aliases: set[str] = set()
+    canonical = canonicalize_bot_id(bot_id=canonical_bot_id, bot_name=bot_name, attributes=attributes)
+    aliases.add(canonical)
+
+    attrs = attributes or {}
+    master_part = (bot_name or canonical.partition(":")[0] or "").strip()
+    raw_identity = attrs.get("identity_override") or attrs.get("identity_username") or attrs.get("identity_char_name") or ""
+    normalized_identity = _normalize_identity_part(raw_identity)
+
+    if master_part and normalized_identity:
+        aliases.add(f"{master_part}:{normalized_identity}")
+    if master_part and raw_identity.strip():
+        aliases.add(f"{master_part}:{raw_identity.strip()}")
+
+    return sorted(item for item in aliases if item)
 
 
 class BotRepository:
@@ -122,6 +176,44 @@ class BotRepository:
             """,
             (bot_id, to_iso(now), to_iso(now), tick_id, liveness_state),
         )
+
+    def delete_bot_ids(self, *, bot_ids: list[str]) -> int:
+        unique_ids = sorted({item.strip() for item in bot_ids if item and item.strip()})
+        if not unique_ids:
+            return 0
+        placeholders = ",".join("?" for _ in unique_ids)
+        return self._db.execute(f"DELETE FROM bot_registry WHERE bot_id IN ({placeholders})", tuple(unique_ids))
+
+    def find_alias_bot_ids(
+        self,
+        *,
+        canonical_bot_id: str,
+        bot_name: str | None,
+        attributes: dict[str, str],
+    ) -> list[str]:
+        target = canonicalize_bot_id(bot_id=canonical_bot_id, bot_name=bot_name, attributes=attributes)
+        rows = self._db.fetchall(
+            "SELECT bot_id, bot_name, attributes_json FROM bot_registry WHERE bot_id <> ?",
+            (target,),
+        )
+
+        aliases: list[str] = []
+        for row in rows:
+            raw_attrs = from_json(row["attributes_json"])
+            row_attributes: dict[str, str] = {}
+            if isinstance(raw_attrs, dict):
+                row_attributes = {str(key): str(value) for key, value in raw_attrs.items()}
+            candidate_id = str(row["bot_id"])
+            candidate_name = None if row["bot_name"] is None else str(row["bot_name"])
+            candidate_target = canonicalize_bot_id(
+                bot_id=candidate_id,
+                bot_name=candidate_name,
+                attributes=row_attributes,
+            )
+            if candidate_target == target:
+                aliases.append(candidate_id)
+
+        return sorted(set(aliases))
 
     def update_assignment(
         self,

@@ -30,7 +30,7 @@ def register_bot(
     return BotRegistrationResponse(
         ok=True,
         registered=True,
-        bot_id=payload.meta.bot_id,
+        bot_id=str(registration.get("bot_id") or payload.meta.bot_id),
         seen_at=registration["seen_at"],
         role=registration.get("role"),
         assignment=registration.get("assignment"),

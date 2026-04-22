@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ai_sidecar.api.deps import get_runtime
 from ai_sidecar.config import settings
@@ -73,35 +73,49 @@ def next_action(
     runtime: RuntimeState = Depends(get_runtime),
 ) -> NextActionResponse:
     started = runtime.latency_router.begin()
-    action = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
-    elapsed_ms = runtime.latency_router.end("actions.next", started)
+    try:
+        action = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
+        elapsed_ms = runtime.latency_router.end("actions.next", started)
 
-    if action is not None and not runtime.latency_router.within_budget(elapsed_ms):
-        runtime.rollback_action_dispatch(action.action_id)
-        action = None
+        if action is not None and not runtime.latency_router.within_budget(elapsed_ms):
+            runtime.rollback_action_dispatch(action.action_id)
+            action = None
 
-    if action is None:
-        reason = "latency_budget_exceeded" if not runtime.latency_router.within_budget(elapsed_ms) else "no_action_available"
+        if action is None:
+            reason = "latency_budget_exceeded" if not runtime.latency_router.within_budget(elapsed_ms) else "no_action_available"
+            return NextActionResponse(
+                ok=True,
+                bot_id=payload.meta.bot_id,
+                poll_id=payload.poll_id,
+                has_action=False,
+                action=NoopActionPayload(
+                    action_id="noop",
+                    kind="noop",
+                    command="",
+                    conflict_key=None,
+                    expires_at=datetime.now(UTC) + timedelta(seconds=1),
+                ),
+                reason=reason,
+            )
+
         return NextActionResponse(
             ok=True,
             bot_id=payload.meta.bot_id,
             poll_id=payload.poll_id,
-            has_action=False,
-            action=NoopActionPayload(
-                action_id="noop",
-                kind="noop",
-                command="",
-                conflict_key=None,
-                expires_at=datetime.now(UTC) + timedelta(seconds=1),
-            ),
-            reason=reason,
+            has_action=True,
+            action=action,
+            reason="action_ready",
         )
-
-    return NextActionResponse(
-        ok=True,
-        bot_id=payload.meta.bot_id,
-        poll_id=payload.poll_id,
-        has_action=True,
-        action=action,
-        reason="action_ready",
-    )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "actions_next_failed",
+            extra={
+                "event": "actions_next_failed",
+                "bot_id": payload.meta.bot_id,
+                "poll_id": payload.poll_id,
+                "trace_id": payload.meta.trace_id,
+            },
+        )
+        raise HTTPException(status_code=500, detail="actions_next_failed") from None

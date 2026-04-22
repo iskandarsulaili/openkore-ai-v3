@@ -17,8 +17,8 @@ aiSidecar_contractVersion v1
 aiSidecar_source openkore-bridge
 
 # Tight-but-stable local IPC timeouts in milliseconds.
-aiSidecar_connectTimeoutMs 250
-aiSidecar_ioTimeoutMs 1500
+aiSidecar_connectTimeoutMs 180
+aiSidecar_ioTimeoutMs 1200
 
 # Snapshot push behavior.
 aiSidecar_snapshotEnabled 1
@@ -29,15 +29,22 @@ aiSidecar_pollWhenDisconnected 0
 
 # Action polling behavior.
 aiSidecar_actionPollEnabled 1
-aiSidecar_pollIntervalMs 250
+aiSidecar_pollIntervalMs 300
+aiSidecar_pollFailureBackoffBaseMs 600
+aiSidecar_pollFailureBackoffMaxMs 6000
+aiSidecar_pollFailureResetRegistrationAfter 3
 
 # Acknowledgement behavior.
 aiSidecar_ackEnabled 1
-aiSidecar_ackRetryMs 500
-aiSidecar_ackMaxAgeMs 5000
+aiSidecar_ackRetryMs 400
+aiSidecar_ackMaxAgeMs 8000
 
 # Registration retry interval.
-aiSidecar_registerRetryMs 5000
+aiSidecar_registerRetryMs 3000
+
+# Optional identity overrides for deterministic bot IDs.
+# aiSidecar_botIdentity openkoreai
+# aiSidecar_botIdOverride Asgards Glory:openkoreai
 
 # Telemetry push behavior.
 aiSidecar_telemetryEnabled 1
@@ -53,6 +60,17 @@ aiSidecar_macroFile ai_sidecar_generated_macros.txt
 aiSidecar_eventMacroFile ai_sidecar_generated_eventmacros.txt
 aiSidecar_macroPluginName macro
 aiSidecar_eventMacroPluginName eventMacro
+
+# v2 ingestion cadence and bounded buffers.
+aiSidecar_eventIngestIntervalMs 700
+aiSidecar_chatIngestIntervalMs 900
+aiSidecar_configIngestIntervalMs 2000
+aiSidecar_eventIngestFailureBackoffBaseMs 1000
+aiSidecar_eventIngestFailureBackoffMaxMs 10000
+aiSidecar_eventBatchSize 20
+aiSidecar_chatBatchSize 20
+aiSidecar_maxEventQueue 500
+aiSidecar_maxChatQueue 200
 
 # Extra bridge logs (1=enabled, 0=minimal).
 aiSidecar_verbose 1

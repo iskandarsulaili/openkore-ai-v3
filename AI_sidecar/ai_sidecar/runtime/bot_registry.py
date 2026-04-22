@@ -47,3 +47,12 @@ class BotRegistry:
     def list(self) -> list[BotRecord]:
         with self._lock:
             return list(self._bots.values())
+
+    def delete_many(self, bot_ids: list[str]) -> int:
+        removed = 0
+        with self._lock:
+            for bot_id in bot_ids:
+                if bot_id in self._bots:
+                    del self._bots[bot_id]
+                    removed += 1
+        return removed

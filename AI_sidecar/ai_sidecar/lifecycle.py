@@ -133,7 +133,7 @@ from ai_sidecar.providers.ollama_adapter import OllamaAdapter
 from ai_sidecar.providers.openai_adapter import OpenAIAdapter
 from ai_sidecar.providers.prompt_guard import PromptGuard
 from ai_sidecar.persistence.db import SQLiteDB
-from ai_sidecar.persistence.repositories import SidecarRepositories, create_repositories
+from ai_sidecar.persistence.repositories import SidecarRepositories, bot_id_aliases, canonicalize_bot_id, create_repositories
 from ai_sidecar.runtime.action_queue import ActionQueue
 from ai_sidecar.runtime.bot_registry import BotRegistry
 from ai_sidecar.runtime.latency_router import LatencyRouter
@@ -372,7 +372,40 @@ class RuntimeState:
             return dict(self.counters)
 
     def register_bot(self, payload: BotRegistrationRequest) -> dict[str, object]:
-        bot_id = payload.meta.bot_id
+        requested_bot_id = payload.meta.bot_id
+        bot_id = canonicalize_bot_id(
+            bot_id=requested_bot_id,
+            bot_name=payload.bot_name,
+            attributes=payload.attributes,
+        )
+        stale_aliases = [item for item in bot_id_aliases(canonical_bot_id=bot_id, bot_name=payload.bot_name, attributes=payload.attributes) if item != bot_id]
+        if requested_bot_id != bot_id and requested_bot_id not in stale_aliases:
+            stale_aliases.append(requested_bot_id)
+
+        if bot_id != requested_bot_id:
+            logger.warning(
+                "bot_id_canonicalized",
+                extra={
+                    "event": "bot_id_canonicalized",
+                    "requested_bot_id": requested_bot_id,
+                    "canonical_bot_id": bot_id,
+                    "bot_name": payload.bot_name,
+                },
+            )
+
+        if stale_aliases:
+            removed_in_memory = self.bot_registry.delete_many(stale_aliases)
+            if removed_in_memory > 0:
+                logger.warning(
+                    "bot_registry_in_memory_alias_cleanup",
+                    extra={
+                        "event": "bot_registry_in_memory_alias_cleanup",
+                        "bot_id": bot_id,
+                        "removed": removed_in_memory,
+                        "aliases": stale_aliases,
+                    },
+                )
+
         in_memory = self.bot_registry.upsert(bot_id)
         self.reflex_engine.ensure_bot(bot_id=bot_id)
 
@@ -391,6 +424,52 @@ class RuntimeState:
             bot_id=bot_id,
         )
 
+        alias_candidates = self._safe_persist(
+            "find_alias_bot_ids",
+            lambda: self.repositories.bots.find_alias_bot_ids(
+                canonical_bot_id=bot_id,
+                bot_name=payload.bot_name,
+                attributes=payload.attributes,
+            )
+            if self.repositories
+            else [],
+            default=[],
+            bot_id=bot_id,
+        ) or []
+        alias_removed = 0
+        if alias_candidates:
+            alias_removed = int(
+                self._safe_persist(
+                    "delete_alias_bot_ids",
+                    lambda: self.repositories.bots.delete_bot_ids(bot_ids=alias_candidates) if self.repositories else 0,
+                    default=0,
+                    bot_id=bot_id,
+                )
+                or 0
+            )
+            if alias_removed > 0:
+                logger.warning(
+                    "bot_registry_alias_cleanup",
+                    extra={
+                        "event": "bot_registry_alias_cleanup",
+                        "bot_id": bot_id,
+                        "removed": alias_removed,
+                        "aliases": alias_candidates,
+                    },
+                )
+                self._audit(
+                    level="warning",
+                    event_type="bot_registry_alias_cleanup",
+                    summary="stale bot aliases removed",
+                    bot_id=bot_id,
+                    payload={
+                        "requested_bot_id": requested_bot_id,
+                        "canonical_bot_id": bot_id,
+                        "removed": alias_removed,
+                        "aliases": alias_candidates,
+                    },
+                )
+
         self.incr("bot_registrations", bot_id=bot_id)
         self._audit(
             level="info",
@@ -398,26 +477,33 @@ class RuntimeState:
             summary="bot registered",
             bot_id=bot_id,
             payload={
+                "requested_bot_id": requested_bot_id,
+                "canonical_bot_id": bot_id,
                 "bot_name": payload.bot_name,
                 "role": payload.role,
                 "assignment": payload.assignment,
                 "capabilities": payload.capabilities,
+                "alias_cleanup_count": alias_removed,
             },
         )
 
         if persisted is not None:
             return {
+                "bot_id": bot_id,
                 "seen_at": persisted.last_seen_at,
                 "role": persisted.role,
                 "assignment": persisted.assignment,
                 "liveness_state": persisted.liveness_state,
+                "alias_cleanup_count": alias_removed,
             }
 
         return {
+            "bot_id": bot_id,
             "seen_at": in_memory.last_seen_at,
             "role": payload.role,
             "assignment": payload.assignment,
             "liveness_state": "online",
+            "alias_cleanup_count": alias_removed,
         }
 
     def ingest_snapshot(self, snapshot: BotStateSnapshot) -> None:
