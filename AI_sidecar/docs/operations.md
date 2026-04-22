@@ -55,6 +55,75 @@ Operationally important settings:
 | `OPENKORE_AI_MEMORY_BACKEND` | `sqlite`, `openmemory`, or `auto` |
 | `OPENKORE_AI_MEMORY_OPENMEMORY_PATH` | Local OpenMemory path |
 
+## Ollama Setup for Local LLM Inference
+
+The sidecar can use Ollama for local LLM inference. The default `.env.example` assumes Ollama is running on `localhost:11434` with specific models. Follow these steps to set up Ollama:
+
+### 1. Install Ollama
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+**Windows:**
+Download the installer from [ollama.ai/download](https://ollama.ai/download) and run it.
+
+### 2. Start Ollama Service
+
+**Linux/macOS (systemd):**
+```bash
+sudo systemctl enable ollama
+sudo systemctl start ollama
+```
+
+**Linux/macOS (manual):**
+```bash
+ollama serve
+```
+
+**Windows:**
+The installer creates a service that starts automatically. You can also run `ollama serve` in a terminal.
+
+### 3. Pull Required Models
+
+The default configuration expects the following models:
+- `qwen3.6:35b-a3b-q4_K_M` (for tactical, strategic, and reflection)
+- `qwen3-embedding:8b` (for embeddings)
+
+Pull them with:
+```bash
+ollama pull qwen3.6:35b-a3b-q4_K_M
+ollama pull qwen3-embedding:8b
+```
+
+Alternatively, you can use smaller models for testing:
+```bash
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+```
+
+### 4. Update Environment Configuration
+
+Ensure your `.env` file contains:
+```bash
+OPENKORE_AI_PROVIDER_OLLAMA_ENABLED=1
+OPENKORE_AI_PROVIDER_OLLAMA_BASE_URL=http://127.0.0.1:11434
+OPENKORE_AI_PROVIDER_OLLAMA_DEFAULT_MODEL=qwen3.6:35b-a3b-q4_K_M
+OPENKORE_AI_PROVIDER_OLLAMA_TACTICAL_MODEL=qwen3.6:35b-a3b-q4_K_M
+OPENKORE_AI_PROVIDER_OLLAMA_STRATEGIC_MODEL=qwen3.6:35b-a3b-q4_K_M
+OPENKORE_AI_PROVIDER_OLLAMA_REFLECTION_MODEL=qwen3.6:35b-a3b-q4_K_M
+OPENKORE_AI_PROVIDER_OLLAMA_EMBEDDING_MODEL=qwen3-embedding:8b
+```
+
+### 5. Verify Ollama Connectivity
+
+```bash
+curl http://127.0.0.1:11434/api/tags
+```
+
+The sidecar will automatically use Ollama when `OPENKORE_AI_PROVIDER_OLLAMA_ENABLED=1` and the models are available.
+
 ## OpenKore bridge control plane
 
 ### Control files
@@ -77,14 +146,16 @@ These default values come from [`control/ai_sidecar.txt`](../../control/ai_sidec
 
 | Setting | Default |
 | --- | --- |
-| connect timeout | 40 ms |
-| IO timeout | 90 ms |
+| connect timeout | 250 ms |
+| IO timeout | 1500 ms |
 | snapshot interval | 500 ms |
 | action poll interval | 250 ms |
 | acknowledgement retry | 500 ms |
 | acknowledgement max age | 5000 ms |
 | registration retry | 5000 ms |
 | telemetry flush interval | 1000 ms |
+
+> **Note:** These timeout values are configurable via [`control/ai_sidecar.txt`](../../control/ai_sidecar.txt) and may differ from the defaults shown here.
 
 ## Artifact locations
 

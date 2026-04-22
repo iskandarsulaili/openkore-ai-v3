@@ -42,11 +42,12 @@ This guide provides step-by-step instructions for installing and configuring the
 ### Cross-Platform Additional Requirements
 
 - **JSON::PP Perl Module** (Required for OpenKore bridge) - Verify with: `perl -e "use JSON::PP; print 'JSON::PP module is available\n';"`
+- **Carp::Assert Perl Module** (Required by core OpenKore) - Verify with: `perl -e "use Carp::Assert; print 'Carp::Assert module is available\n';"`
 - **Python Virtual Environment** (venv or conda)
 - **Administrative/Sudo Privileges** for system package installation
 - **Network Connectivity** for dependency downloads
 
-**Important:** The OpenKore bridge plugin requires JSON::PP to function. If this module is missing, the bridge will disable itself but OpenKore will continue running.
+**Important:** The OpenKore bridge plugin requires JSON::PP to function. If this module is missing, the bridge will disable itself but OpenKore will continue running. Core OpenKore (`openkore.pl` and `src/functions.pl`) requires Carp::Assert for runtime assertions.
 
 ---
 
@@ -195,8 +196,36 @@ cp .env.example .env
 python --version
 
 # Verify package installation
-python -c "import fastapi; import crewai; print('Dependencies installed successfully')"
+python -c "import fastapi; import crewai; import httpx; print('Dependencies installed successfully')"
 ```
+
+#### Step 6: Optional - Set up Ollama for Local LLM Inference
+
+The sidecar can use Ollama for local LLM inference. If you want to use local models instead of cloud APIs:
+
+1. **Install Ollama**:
+   ```bash
+   curl -fsSL https://ollama.ai/install.sh | sh
+   ```
+
+2. **Start Ollama service**:
+   ```bash
+   sudo systemctl enable ollama
+   sudo systemctl start ollama
+   ```
+
+3. **Pull required models** (as specified in `.env.example`):
+   ```bash
+   ollama pull qwen3.6:35b-a3b-q4_K_M
+   ollama pull qwen3-embedding:8b
+   ```
+
+4. **Verify Ollama is running**:
+   ```bash
+   curl http://127.0.0.1:11434/api/tags
+   ```
+
+The default `.env.example` already enables Ollama (`OPENKORE_AI_PROVIDER_OLLAMA_ENABLED=1`). Ensure the base URL matches your Ollama instance.
 
 ### OpenKore Installation
 
@@ -228,16 +257,17 @@ cpan install Carp::Assert
 **Linux (Ubuntu/Debian):**
 ```bash
 # Install system packages
-sudo apt install libjson-pp-perl libtime-hires-perl
+sudo apt install libjson-pp-perl libtime-hires-perl libcarp-assert-perl
 
 # Alternative using CPAN
 sudo cpan install JSON::PP
 sudo cpan install Time::HiRes
+sudo cpan install Carp::Assert
 ```
 
 #### Step 3: Verify Perl Module Installation
 ```bash
-perl -e "use JSON::PP; use Time::HiRes; print 'Perl modules installed successfully\n';"
+perl -e "use JSON::PP; use Time::HiRes; use Carp::Assert; print 'Perl modules installed successfully\n';"
 ```
 
 #### Step 4: Configure OpenKore Control Files
@@ -437,11 +467,10 @@ ps aux | grep -E "(python|perl|openkore)"
 
 2. **Service Not Starting**:
    ```bash
-   # Check logs (created at runtime in AI_sidecar/logs/ directory)
-   tail -f AI_sidecar/logs/sidecar.log 2>/dev/null || echo "Log file not found yet - service may not have started"
-   
-   # Increase log level
+   # Sidecar logs to stdout (no log file). Check the terminal where the sidecar is running.
+   # To increase log verbosity, set environment variable before starting:
    export OPENKORE_AI_LOG_LEVEL=DEBUG
+   openkore-ai-sidecar
    ```
 
 3. **Bridge Connection Failed**:
@@ -574,8 +603,9 @@ netstat -tulpn | grep :18081
 
 #### Log Analysis:
 ```bash
-# AI Sidecar logs (created at runtime)
-tail -f AI_sidecar/logs/sidecar.log 2>/dev/null || echo "AI Sidecar log not found - check if service is running"
+# AI Sidecar logs to stdout (no log file). Check the terminal where the sidecar is running.
+# To capture logs, redirect output:
+# openkore-ai-sidecar > sidecar.log 2>&1
 
 # OpenKore logs (created at runtime in logs/ directory)
 tail -f logs/openkore.log 2>/dev/null || echo "OpenKore log not found - check if OpenKore is running"
@@ -636,8 +666,8 @@ sqlite3 AI_sidecar/data/sidecar.sqlite "SELECT COUNT(*) FROM action_queue;"
    # Clean OpenKore logs (logs/ directory created at runtime)
    find logs/ -name "*.log" -mtime +7 -delete 2>/dev/null || true
    
-   # Clean AI Sidecar logs (AI_sidecar/logs/ directory created at runtime)
-   find AI_sidecar/logs/ -name "*.log" -mtime +7 -delete 2>/dev/null || true
+   # Note: AI Sidecar logs to stdout by default; no log files are created.
+   # If you redirected output to a file, clean those files manually.
    ```
 
 2. **Vacuum SQLite databases**:

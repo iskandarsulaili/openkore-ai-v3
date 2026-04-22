@@ -59,7 +59,7 @@ At `start3`, the bridge:
 - checks whether `JSON::PP` is available
 - registers control files through OpenKore `Settings`
 - loads bridge config and bridge policy
-- initializes next-run timestamps for registration, snapshot, poll, acknowledgement, and telemetry
+- initializes next-run timestamps for registration, snapshot, poll, acknowledgement, telemetry, and v2 event/chat/config ingest scheduling
 - attempts initial bot registration with `/v1/ingest/register`
 
 If `JSON::PP` is unavailable, the bridge logs a warning and disables itself without stopping OpenKore.
@@ -76,6 +76,7 @@ At `mainLoop_post`, the bridge may:
 - poll for the next action
 - flush one pending acknowledgement
 - flush a telemetry batch
+- flush v2 event, chat, and config ingest queues (when v2 features are enabled)
 
 This sequence makes action execution and acknowledgement part of the ordinary OpenKore loop instead of a separate thread.
 
@@ -92,6 +93,9 @@ OpenKore mainLoop
     -> OpenKore Commands::run(...) or macro reload safe flow
     -> POST /v1/acknowledgements/action
     -> POST /v1/telemetry/ingest
+    -> POST /v2/ingest/event (v2 event queue)
+    -> POST /v2/ingest/chat (v2 chat queue)
+    -> POST /v2/ingest/config (v2 config updates)
 
 Python sidecar
   -> RuntimeState
