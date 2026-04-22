@@ -274,10 +274,27 @@ class LLMProvider:
     def _parse_json_content(self, content: str, schema: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
         parsed = self._guard.parse_json_object(content)
         if parsed is None:
+            logger.warning(
+                "structured_parse_failed",
+                extra={
+                    "event": "structured_parse_failed",
+                    "provider": self.provider_name,
+                    "content_preview": self._guard.preview(content or ""),
+                },
+            )
             return None, "structured_parse_failed"
         try:
             self._guard.validate_schema(parsed, schema)
         except Exception as exc:
+            logger.warning(
+                "structured_schema_invalid",
+                extra={
+                    "event": "structured_schema_invalid",
+                    "provider": self.provider_name,
+                    "error": str(exc),
+                    "content_preview": self._guard.preview(content or ""),
+                },
+            )
             return None, str(exc)
         return parsed, ""
 

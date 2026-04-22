@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any
 
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerContext
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -38,6 +41,8 @@ class PlannerContextAssembler:
             "doctrine_version": doctrine.get("doctrine_version") or "local",
             "constraints": {},
             "blackboard": {},
+            "degraded": False,
+            "degradation_reasons": [],
         }
         try:
             central_constraints = self.runtime.fleet_constraints(bot_id=bot_id)
@@ -46,15 +51,43 @@ class PlannerContextAssembler:
             fleet_coordination["constraints"] = dict(central_constraints.constraints)
             doctrine["doctrine_version"] = central_constraints.doctrine_version
             doctrine["constraints"] = dict(central_constraints.constraints)
-        except Exception:
-            pass
+        except Exception as exc:
+            reason = f"fleet_constraints_unavailable:{type(exc).__name__}"
+            fleet_coordination["degraded"] = True
+            fleet_coordination["degradation_reasons"] = [
+                *list(fleet_coordination.get("degradation_reasons") or []),
+                reason,
+            ]
+            logger.exception(
+                "planner_context_fleet_constraints_failed",
+                extra={
+                    "event": "planner_context_fleet_constraints_failed",
+                    "bot_id": bot_id,
+                    "objective": objective,
+                    "reason": reason,
+                },
+            )
 
         try:
             blackboard_view = self.runtime.fleet_blackboard(bot_id=bot_id)
             fleet_coordination["mode"] = blackboard_view.mode
             fleet_coordination["blackboard"] = dict(blackboard_view.blackboard)
-        except Exception:
-            pass
+        except Exception as exc:
+            reason = f"fleet_blackboard_unavailable:{type(exc).__name__}"
+            fleet_coordination["degraded"] = True
+            fleet_coordination["degradation_reasons"] = [
+                *list(fleet_coordination.get("degradation_reasons") or []),
+                reason,
+            ]
+            logger.exception(
+                "planner_context_fleet_blackboard_failed",
+                extra={
+                    "event": "planner_context_fleet_blackboard_failed",
+                    "bot_id": bot_id,
+                    "objective": objective,
+                    "reason": reason,
+                },
+            )
 
         queue_depth = self.runtime.action_queue.count(bot_id)
         queue_info = {

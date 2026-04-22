@@ -26,6 +26,7 @@ from ai_sidecar.contracts.crewai import (
 )
 from ai_sidecar.contracts.events import (
     ActorDeltaPushRequest,
+    ActorObservation,
     ChatStreamIngestRequest,
     ConfigDoctrineFingerprintRequest,
     EventFamily,
@@ -353,6 +354,8 @@ class RuntimeState:
     counters: dict[str, int] = field(default_factory=dict)
     _action_kind_index: dict[str, str] = field(default_factory=dict)
     _bot_plan_family: dict[str, str] = field(default_factory=dict)
+    _actor_presence_by_bot: dict[str, set[str]] = field(default_factory=dict)
+    _actor_last_revision_fingerprint: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = field(default_factory=dict)
     persistence_degraded: bool = False
 
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
@@ -514,14 +517,8 @@ class RuntimeState:
 
         if self.slo_metrics is not None:
             plan_family = self._bot_plan_family.get(bot_id, "unknown")
-            raw = dict(snapshot.raw)
-            exp_value = float(
-                raw.get("exp")
-                or raw.get("base_exp")
-                or raw.get("experience")
-                or raw.get("experience_total")
-                or 0.0
-            )
+            progression = snapshot.progression
+            exp_value = float(progression.base_exp or progression.job_exp or 0.0)
             self.slo_metrics.record_economy(
                 bot_id=bot_id,
                 plan_family=plan_family,
@@ -580,11 +577,21 @@ class RuntimeState:
                 "y": float(snapshot.position.y or 0),
                 "zeny": float(snapshot.inventory.zeny or 0),
                 "item_count": float(snapshot.inventory.item_count or 0),
+                "base_level": float(snapshot.progression.base_level or 0),
+                "job_level": float(snapshot.progression.job_level or 0),
+                "base_exp": float(snapshot.progression.base_exp or 0),
+                "base_exp_max": float(snapshot.progression.base_exp_max or 0),
+                "job_exp": float(snapshot.progression.job_exp or 0),
+                "job_exp_max": float(snapshot.progression.job_exp_max or 0),
+                "job_id": float(snapshot.progression.job_id or 0),
+                "skill_points": float(snapshot.progression.skill_points or 0),
+                "stat_points": float(snapshot.progression.stat_points or 0),
             },
             tags={
                 "tick_id": snapshot.tick_id,
                 "map": snapshot.position.map or "",
                 "ai_sequence": snapshot.combat.ai_sequence or "",
+                "job_name": snapshot.progression.job_name or "",
             },
             payload=snapshot.model_dump(mode="json"),
         )
@@ -593,6 +600,50 @@ class RuntimeState:
             bot_id=bot_id,
             events=self._accepted_events(events=[snapshot_event], event_ids=result.event_ids),
             source="snapshot",
+        )
+
+        snapshot_actor_delta = self._snapshot_actor_delta_payload(snapshot=snapshot)
+        if snapshot_actor_delta is not None:
+            self.ingest_actor_delta(snapshot_actor_delta)
+
+    def _snapshot_actor_delta_payload(self, *, snapshot: BotStateSnapshot) -> ActorDeltaPushRequest | None:
+        bot_id = snapshot.meta.bot_id
+        known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
+        observed_ids: set[str] = set()
+        observations: list[ActorObservation] = []
+        default_map = snapshot.position.map
+
+        for actor in snapshot.actors:
+            actor_id = str(actor.actor_id or "").strip()
+            if not actor_id:
+                continue
+            observed_ids.add(actor_id)
+            observations.append(
+                ActorObservation(
+                    actor_id=actor_id,
+                    actor_type=str(actor.actor_type or "unknown"),
+                    name=actor.name,
+                    map=default_map,
+                    x=actor.x,
+                    y=actor.y,
+                    hp=actor.hp,
+                    hp_max=actor.hp_max,
+                    level=actor.level,
+                    relation=actor.relation,
+                    raw={},
+                )
+            )
+
+        removed_actor_ids = sorted(known_actor_ids - observed_ids)
+        if not observations and not removed_actor_ids:
+            return None
+
+        return ActorDeltaPushRequest(
+            meta=snapshot.meta,
+            observed_at=snapshot.observed_at,
+            revision=snapshot.tick_id,
+            actors=observations,
+            removed_actor_ids=removed_actor_ids,
         )
 
     def ingest_event_batch(self, payload: EventBatchIngestRequest) -> IngestAcceptedResponse:
@@ -605,11 +656,85 @@ class RuntimeState:
         return result
 
     def ingest_actor_delta(self, payload: ActorDeltaPushRequest) -> IngestAcceptedResponse:
-        events = actor_delta_to_events(payload)
+        bot_id = payload.meta.bot_id
+        observed_actor_ids = {str(item.actor_id).strip() for item in payload.actors if str(item.actor_id).strip()}
+        removed_actor_ids = {str(item).strip() for item in payload.removed_actor_ids if str(item).strip()}
+        known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
+
+        revision = str(payload.revision or "").strip()
+        revision_fingerprint = (revision, tuple(sorted(observed_actor_ids)), tuple(sorted(removed_actor_ids)))
+        if revision and self._actor_last_revision_fingerprint.get(bot_id) == revision_fingerprint:
+            logger.info(
+                "actor_delta_duplicate_revision_skipped",
+                extra={
+                    "event": "actor_delta_duplicate_revision_skipped",
+                    "bot_id": bot_id,
+                    "revision": revision,
+                    "observed": len(observed_actor_ids),
+                    "removed": len(removed_actor_ids),
+                },
+            )
+            return IngestAcceptedResponse(
+                ok=True,
+                accepted=0,
+                dropped=0,
+                bot_id=bot_id,
+                event_ids=[],
+                message="duplicate_actor_revision_skipped",
+            )
+
+        appeared_actor_ids = observed_actor_ids - known_actor_ids
+        disappeared_actor_ids = removed_actor_ids & known_actor_ids
+
+        if appeared_actor_ids or disappeared_actor_ids:
+            logger.info(
+                "actor_lifecycle_delta",
+                extra={
+                    "event": "actor_lifecycle_delta",
+                    "bot_id": bot_id,
+                    "revision": revision,
+                    "appeared_count": len(appeared_actor_ids),
+                    "disappeared_count": len(disappeared_actor_ids),
+                    "appeared_sample": sorted(list(appeared_actor_ids))[:10],
+                    "disappeared_sample": sorted(list(disappeared_actor_ids))[:10],
+                },
+            )
+
+        events = actor_delta_to_events(
+            payload,
+            appeared_actor_ids=appeared_actor_ids,
+            disappeared_actor_ids=disappeared_actor_ids,
+        )
+        if not events:
+            return IngestAcceptedResponse(
+                ok=True,
+                accepted=0,
+                dropped=0,
+                bot_id=bot_id,
+                event_ids=[],
+                message="no_actor_changes",
+            )
+
         result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=payload.meta, events=events))
+        accepted_events = self._accepted_events(events=events, event_ids=result.event_ids)
+
+        next_presence = set(known_actor_ids)
+        for event in accepted_events:
+            actor_id = str(event.payload.get("actor_id") or "").strip()
+            if not actor_id:
+                continue
+            if event.event_type in {"actor.observed", "actor.appeared"}:
+                next_presence.add(actor_id)
+            elif event.event_type in {"actor.removed", "actor.disappeared"}:
+                next_presence.discard(actor_id)
+        self._actor_presence_by_bot[bot_id] = next_presence
+
+        if revision and accepted_events:
+            self._actor_last_revision_fingerprint[bot_id] = revision_fingerprint
+
         self._evaluate_reflex_events(
-            bot_id=payload.meta.bot_id,
-            events=self._accepted_events(events=events, event_ids=result.event_ids),
+            bot_id=bot_id,
+            events=accepted_events,
             source="v2.actors",
         )
         return result
@@ -1962,6 +2087,18 @@ class RuntimeState:
                     "item_count": int(state.inventory.item_count),
                     "overweight_ratio": float(state.inventory.overweight_ratio or 0.0),
                 },
+                "progression": {
+                    "job_id": int(state.operational.job_id or 0),
+                    "job_name": str(state.operational.job_name or ""),
+                    "base_level": int(state.operational.base_level or 0),
+                    "job_level": int(state.operational.job_level or 0),
+                    "base_exp": int(state.operational.base_exp or 0),
+                    "base_exp_max": int(state.operational.base_exp_max or 0),
+                    "job_exp": int(state.operational.job_exp or 0),
+                    "job_exp_max": int(state.operational.job_exp_max or 0),
+                    "skill_points": int(state.operational.skill_points or 0),
+                    "stat_points": int(state.operational.stat_points or 0),
+                },
                 "social": {
                     "recent_chat_count": int(state.social.recent_chat_count),
                     "private_messages_5m": int(state.social.private_messages_5m),
@@ -3106,6 +3243,14 @@ def create_runtime() -> RuntimeState:
     security_auditor = SecurityAuditor(doctrine_denylist=denylist)
     doctrine_manager = DoctrineManager()
     slo_metrics = SLOMetricsCollector() if settings.observability_enable_metrics else None
+    if slo_metrics is not None:
+        model_router.set_route_metric_observer(
+            lambda workload, provider, model: slo_metrics.record_provider_route(
+                workload=workload,
+                provider=provider,
+                model=model,
+            )
+        )
     observability_audit = ObservabilityAuditLogger(
         audit_trail=audit_trail,
         incident_registry=incident_registry,

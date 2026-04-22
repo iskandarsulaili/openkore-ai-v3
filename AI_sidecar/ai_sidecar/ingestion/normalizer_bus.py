@@ -15,7 +15,7 @@ from ai_sidecar.contracts.events import (
     QuestTransitionRequest,
 )
 from ai_sidecar.contracts.state import BotStateSnapshot
-from ai_sidecar.contracts.state_graph import EnrichedWorldState
+from ai_sidecar.contracts.state_graph import EnrichedWorldState, LearningFeatureVector
 from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
 from ai_sidecar.ingestion.adapters.chat_adapter import chat_stream_to_events
 from ai_sidecar.ingestion.adapters.config_adapter import config_update_to_events
@@ -62,6 +62,7 @@ class NormalizerBus:
         return self._ingest(quest_transition_to_events(payload), bot_id=payload.meta.bot_id)
 
     def ingest_snapshot(self, snapshot: BotStateSnapshot) -> IngestAcceptedResponse:
+        prog = snapshot.progression
         event = NormalizedEvent(
             meta=snapshot.meta,
             observed_at=snapshot.observed_at,
@@ -78,21 +79,58 @@ class NormalizerBus:
                 "y": float(snapshot.position.y or 0),
                 "zeny": float(snapshot.inventory.zeny or 0),
                 "item_count": float(snapshot.inventory.item_count or 0),
+                # Progression numerics (0 when not provided — reflex rules should guard on base_level > 0)
+                "base_level": float(prog.base_level or 0),
+                "job_level": float(prog.job_level or 0),
+                "job_id": float(prog.job_id or 0),
+                "skill_points": float(prog.skill_points or 0),
             },
             tags={
                 "tick_id": snapshot.tick_id,
                 "map": snapshot.position.map or "",
                 "ai_sequence": snapshot.combat.ai_sequence or "",
+                "job_name": prog.job_name or "",
             },
             payload=snapshot.model_dump(mode="json"),
         )
         return self._ingest([event], bot_id=snapshot.meta.bot_id)
 
     def enriched_state(self, *, bot_id: str) -> EnrichedWorldState:
+        world_projection = self.world_state.export(bot_id=bot_id, features=LearningFeatureVector())
+        operational = world_projection["operational"]
+        encounter = world_projection["encounter"]
+        inventory = world_projection["inventory"]
+        risk = world_projection["risk"]
+
         basis = {
-            "operational.in_combat": 1.0,
+            "operational.in_combat": 1.0 if operational.in_combat else 0.0,
+            "encounter.in_encounter": 1.0 if encounter.in_encounter else 0.0,
+            "encounter.nearby_hostiles": float(encounter.nearby_hostiles),
+            "encounter.nearby_allies": float(encounter.nearby_allies),
+            "encounter.risk_score": float(encounter.risk_score),
+            "risk.danger_score": float(risk.danger_score),
+            "inventory.zeny": float(inventory.zeny or 0.0),
+            "inventory.item_count": float(inventory.item_count),
+            "inventory.overweight_ratio": float(inventory.overweight_ratio or 0.0),
+            "progression.base_level": float(operational.base_level or 0.0),
+            "progression.job_level": float(operational.job_level or 0.0),
+            "progression.base_exp": float(operational.base_exp or 0.0),
+            "progression.base_exp_max": float(operational.base_exp_max or 0.0),
+            "progression.job_exp": float(operational.job_exp or 0.0),
+            "progression.job_exp_max": float(operational.job_exp_max or 0.0),
+            "progression.skill_points": float(operational.skill_points or 0.0),
+            "progression.stat_points": float(operational.stat_points or 0.0),
         }
-        features = self.feature_extractor.extract(bot_id=bot_id, basis=basis)
+        labels = {
+            "map": str(operational.map or ""),
+            "ai_sequence": str(operational.ai_sequence or ""),
+            "job_name": str(operational.job_name or ""),
+        }
+        raw = {
+            "target_id": operational.target_id,
+            "job_id": operational.job_id,
+        }
+        features = self.feature_extractor.extract(bot_id=bot_id, basis=basis, labels=labels, raw=raw)
         world_projection = self.world_state.export(bot_id=bot_id, features=features)
         graph = self.entity_graph.export(bot_id=bot_id)
         return EnrichedWorldState(
@@ -147,4 +185,3 @@ class NormalizerBus:
             event_ids=accepted_ids,
             message="events processed",
         )
-

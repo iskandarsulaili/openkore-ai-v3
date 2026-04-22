@@ -5,7 +5,7 @@ use warnings;
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs);
 use IO::Socket::INET;
 use Log qw(debug message warning);
 use Network;
@@ -83,6 +83,7 @@ my $event_seq = 0;
 my $last_ai_seq_top = '';
 my $consecutive_poll_failures = 0;
 my $consecutive_v2_event_failures = 0;
+my %known_actor_ids;
 
 my $json_available = eval { require JSON::PP; 1; };
 
@@ -125,6 +126,7 @@ sub _cleanup_runtime {
 	$last_ai_seq_top = '';
 	$consecutive_poll_failures = 0;
 	$consecutive_v2_event_failures = 0;
+	%known_actor_ids = ();
 }
 
 sub on_start3 {
@@ -597,6 +599,10 @@ sub _send_snapshot {
 		_throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
 		_emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
 	}
+
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_actorsEnabled', 1)) {
+		_send_actor_delta_from_snapshot($snapshot);
+	}
 }
 
 sub _build_snapshot_payload {
@@ -631,41 +637,207 @@ sub _build_snapshot_payload {
 	}
 
 	my $raw = {
-		char_name => _trim($char ? ($char->{name} || '') : '', $max_raw),
-		master => _trim($config{master} || '', $max_raw),
+		char_name  => _trim($char ? ($char->{name} || '') : '', $max_raw),
+		master     => _trim($config{master} || '', $max_raw),
 		ai_sequence => _trim($ai_top || '', $max_raw),
-		ai_queue => _trim(join(',', @ai_seq[0 .. ($#ai_seq < 4 ? $#ai_seq : 4)]), $max_raw),
+		ai_queue   => _trim(join(',', @ai_seq[0 .. ($#ai_seq < 4 ? $#ai_seq : 4)]), $max_raw),
 	};
 
+	# --- Progression digest (job, level, exp) ---
+	my $progression = {};
+	if ($char) {
+		$progression = eval {
+			my %p;
+			$p{job_id}       = $char->{jobID}     if defined $char->{jobID};
+			$p{base_level}   = $char->{level}      if defined $char->{level};
+			$p{job_level}    = $char->{level_job}  if defined $char->{level_job};
+			$p{base_exp}     = $char->{exp}        if defined $char->{exp};
+			$p{base_exp_max} = $char->{exp_max}    if defined $char->{exp_max};
+			$p{job_exp}      = $char->{exp_job}    if defined $char->{exp_job};
+			$p{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
+			$p{skill_points} = $char->{points_skill} if defined $char->{points_skill};
+			$p{stat_points}  = $char->{points_free}  if defined $char->{points_free};
+			\%p;
+		} || {};
+	}
+
+	# --- Actors digest (nearby mobs, players, NPCs) ---
+	my @actors;
+	if (_cfg_bool('aiSidecar_actorsEnabled', 1)) {
+		my $max_actors = _cfg_int('aiSidecar_maxActors', 24);
+
+		# Nearby monsters
+		eval {
+			my @mons = values %monsters;
+			for my $mob (@mons) {
+				last if scalar(@actors) >= $max_actors;
+				next unless ref $mob eq 'HASH';
+				push @actors, {
+					actor_id   => _actor_id_from_any($mob->{ID}),
+					actor_type => 'monster',
+					name       => _trim($mob->{name} || 'Monster', 64),
+					relation   => 'hostile',
+					x          => defined $mob->{pos_to} && ref $mob->{pos_to} eq 'HASH' ? $mob->{pos_to}{x} : ($mob->{pos} && ref $mob->{pos} eq 'HASH' ? $mob->{pos}{x} : undef),
+					y          => defined $mob->{pos_to} && ref $mob->{pos_to} eq 'HASH' ? $mob->{pos_to}{y} : ($mob->{pos} && ref $mob->{pos} eq 'HASH' ? $mob->{pos}{y} : undef),
+					hp         => $mob->{hp}     || undef,
+					hp_max     => $mob->{hp_max} || undef,
+					level      => $mob->{level}  || undef,
+				};
+			}
+		};
+
+		# Nearby players
+		eval {
+			my @pls = values %players;
+			for my $player (@pls) {
+				last if scalar(@actors) >= $max_actors;
+				next unless ref $player eq 'HASH';
+				my $relation = 'neutral';
+				if ($char && $char->{party} && ref($char->{party}{party}{member}) eq 'HASH') {
+					$relation = 'party' if exists $char->{party}{party}{member}{$player->{binID}};
+				}
+				push @actors, {
+					actor_id   => _actor_id_from_any($player->{ID}),
+					actor_type => 'player',
+					name       => _trim($player->{name} || 'Player', 64),
+					relation   => $relation,
+					x          => defined $player->{pos_to} && ref $player->{pos_to} eq 'HASH' ? $player->{pos_to}{x} : undef,
+					y          => defined $player->{pos_to} && ref $player->{pos_to} eq 'HASH' ? $player->{pos_to}{y} : undef,
+					hp         => undef,
+					hp_max     => undef,
+					level      => $player->{level} || undef,
+				};
+			}
+		};
+
+		# Nearby NPCs
+		eval {
+			my @npc_rows = values %npcs;
+			for my $npc (@npc_rows) {
+				last if scalar(@actors) >= $max_actors;
+				next unless ref $npc eq 'HASH';
+				push @actors, {
+					actor_id   => _actor_id_from_any($npc->{ID}),
+					actor_type => 'npc',
+					name       => _trim($npc->{name} || 'NPC', 64),
+					relation   => 'neutral',
+					x          => defined $npc->{pos_to} && ref $npc->{pos_to} eq 'HASH' ? $npc->{pos_to}{x} : ($npc->{pos} && ref $npc->{pos} eq 'HASH' ? $npc->{pos}{x} : undef),
+					y          => defined $npc->{pos_to} && ref $npc->{pos_to} eq 'HASH' ? $npc->{pos_to}{y} : ($npc->{pos} && ref $npc->{pos} eq 'HASH' ? $npc->{pos}{y} : undef),
+					hp         => undef,
+					hp_max     => undef,
+					level      => undef,
+				};
+			}
+		};
+	}
+
 	return {
-		meta => _meta($bot_id),
-		tick_id => _trace_id(),
+		meta       => _meta($bot_id),
+		tick_id    => _trace_id(),
 		observed_at => _iso_now(),
-		position => {
+		position   => {
 			map => $map || undef,
-			x => $x,
-			y => $y,
+			x   => $x,
+			y   => $y,
 		},
 		vitals => {
-			hp => $char ? $char->{hp} : undef,
-			hp_max => $char ? $char->{hp_max} : undef,
-			sp => $char ? $char->{sp} : undef,
-			sp_max => $char ? $char->{sp_max} : undef,
-			weight => $char ? $char->{weight} : undef,
+			hp         => $char ? $char->{hp}         : undef,
+			hp_max     => $char ? $char->{hp_max}     : undef,
+			sp         => $char ? $char->{sp}         : undef,
+			sp_max     => $char ? $char->{sp_max}     : undef,
+			weight     => $char ? $char->{weight}     : undef,
 			weight_max => $char ? $char->{weight_max} : undef,
 		},
 		combat => {
-			ai_sequence => $ai_top || undef,
-			target_id => undef,
+			ai_sequence  => $ai_top || undef,
+			target_id    => undef,
 			is_in_combat => $in_combat,
 		},
 		inventory => {
-			zeny => $char ? $char->{zeny} : undef,
+			zeny       => $char ? $char->{zeny} : undef,
 			item_count => $item_count,
 		},
-		raw => $raw,
+		progression => $progression,
+		actors      => \@actors,
+		raw         => $raw,
 	};
 }
+
+sub _send_actor_delta_from_snapshot {
+	my ($snapshot) = @_;
+	return if ref($snapshot) ne 'HASH';
+
+	my $actors = $snapshot->{actors};
+	$actors = [] if ref($actors) ne 'ARRAY';
+
+	my $map_name = '';
+	if (ref($snapshot->{position}) eq 'HASH') {
+		$map_name = _trim(_scalarize($snapshot->{position}{map}), 64);
+	}
+
+	my %observed_ids;
+	my @observed;
+	for my $actor (@{$actors}) {
+		next if ref($actor) ne 'HASH';
+		my $actor_id = _trim(_scalarize($actor->{actor_id}), 128);
+		next if $actor_id eq '';
+		next if $observed_ids{$actor_id};
+		$observed_ids{$actor_id} = 1;
+
+		push @observed, {
+			actor_id => $actor_id,
+			actor_type => _trim(_scalarize($actor->{actor_type} || 'unknown'), 64),
+			name => _trim(_scalarize($actor->{name}), 128),
+			map => _trim(_scalarize($actor->{map} || $map_name), 64),
+			x => $actor->{x},
+			y => $actor->{y},
+			hp => $actor->{hp},
+			hp_max => $actor->{hp_max},
+			level => $actor->{level},
+			relation => _trim(_scalarize($actor->{relation}), 64),
+			raw => {},
+		};
+	}
+
+	my @removed_actor_ids = grep { !$observed_ids{$_} } sort keys %known_actor_ids;
+
+	my $payload = {
+		meta => ref($snapshot->{meta}) eq 'HASH' ? $snapshot->{meta} : _meta(_bot_id()),
+		observed_at => _trim(_scalarize($snapshot->{observed_at} || _iso_now()), 64),
+		revision => _trim(_scalarize($snapshot->{tick_id} || _trace_id()), 128),
+		actors => \@observed,
+		removed_actor_ids => \@removed_actor_ids,
+	};
+
+	my $resp = _http_post_json('/v2/ingest/actors', $payload);
+	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+		_throttled_warning('v2_actors_failed', '[aiSidecarBridge] v2 actor push failed, retaining previous actor-set state.');
+		return;
+	}
+
+	%known_actor_ids = %observed_ids;
+}
+
+sub _actor_id_from_any {
+	my ($value) = @_;
+	return '' if !defined $value;
+
+	my $ref = ref($value);
+	if (!$ref) {
+		my $raw = "$value";
+		if ($raw =~ /^\d+$/) {
+			return _trim($raw, 64);
+		}
+		if (length($raw) == 4) {
+			my $unpacked = unpack('V', $raw);
+			return _trim(_scalarize($unpacked), 64);
+		}
+		return _trim($raw, 64);
+	}
+
+	return _trim(_scalarize($value), 64);
+}
+
 
 sub _poll_next_action {
 	return 1 if !_bridge_enabled();

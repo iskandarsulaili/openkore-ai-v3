@@ -361,7 +361,23 @@ class ReflexRuleEngine:
         facts["social.private_messages_5m"] = facts.get("social.private_messages_5m", 0)
         facts["risk.death_risk_score"] = facts.get("risk.death_risk_score", 0.0)
         facts["risk.danger_score"] = facts.get("risk.danger_score", 0.0)
+
+        # --- Progression shorthands (alias deep paths for ergonomic rule authoring) ---
+        facts["state.base_level"] = facts.get("operational.base_level")
+        facts["state.job_level"] = facts.get("operational.job_level")
+        facts["state.job_id"] = facts.get("operational.job_id")
+        facts["state.skill_points"] = facts.get("operational.skill_points")
+        facts["state.stat_points"] = facts.get("operational.stat_points")
+        facts["state.job_name"] = facts.get("operational.job_name")
+
+        # --- Encounter shorthands ---
+        facts["encounter.nearby_hostiles"] = facts.get("encounter.nearby_hostiles", 0)
+        facts["encounter.nearby_allies"] = facts.get("encounter.nearby_allies", 0)
+        facts["encounter.risk_score"] = facts.get("encounter.risk_score", 0.0)
+        facts["encounter.in_encounter"] = facts.get("encounter.in_encounter", False)
+
         return facts
+
 
     def _flatten(self, *, prefix: str, value: object, out: dict[str, object]) -> None:
         if isinstance(value, dict):
@@ -662,4 +678,72 @@ class ReflexRuleEngine:
                 circuit_breaker_key="macro.default",
                 event_macro_conditions=["OnCharLogIn"],
             ),
+            # --- Progression & encounter auto-responses ---
+            ReflexRule(
+                rule_id="mob_swarm_combat_stance",
+                enabled=True,
+                priority=15,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="encounter.nearby_hostiles", op="gte", value=3),
+                        ReflexPredicate(fact="combat.is_in_combat", op="eq", value=False),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="do ai auto",
+                    priority_tier="reflex",
+                    conflict_key="encounter.combat_stance",
+                    metadata={"category": "mob_swarm"},
+                ),
+                fallback_macro="reflex_mob_swarm_combat",
+                cooldown_ms=5000,
+                circuit_breaker_key="combat.default",
+            ),
+            ReflexRule(
+                rule_id="extreme_overweight_sell_run",
+                enabled=True,
+                priority=22,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="inventory.overweight_ratio", op="gte", value=0.95),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="sit",
+                    priority_tier="reflex",
+                    conflict_key="inventory.extreme_weight_guard",
+                    metadata={"category": "extreme_overweight"},
+                ),
+                fallback_macro="reflex_extreme_weight_sell",
+                cooldown_ms=10000,
+                circuit_breaker_key="queue.default",
+            ),
+            ReflexRule(
+                rule_id="skill_points_available_alert",
+                enabled=True,
+                priority=50,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="event.event_type", op="eq", value="snapshot.compact"),
+                        ReflexPredicate(fact="state.skill_points", op="gte", value=1),
+                        ReflexPredicate(fact="state.base_level", op="gte", value=2),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="",
+                    priority_tier="tactical",
+                    conflict_key="progression.skill_points_pending",
+                    metadata={"category": "skill_points_available"},
+                ),
+                fallback_macro="reflex_skill_point_allocation",
+                cooldown_ms=60000,
+                circuit_breaker_key="queue.default",
+            ),
         ]
+

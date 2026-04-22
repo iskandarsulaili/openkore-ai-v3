@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import logging
 from threading import RLock
 from time import perf_counter
 from typing import Any
@@ -23,6 +24,8 @@ from ai_sidecar.crewai.tasks import build_collaborative_tasks
 from ai_sidecar.crewai.tools import CrewToolFacade, build_crewai_tools
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerPlanRequest
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class CrewManager:
@@ -37,6 +40,7 @@ class CrewManager:
     _init_error: str = field(default="", init=False, repr=False)
     _tool_facade: CrewToolFacade = field(init=False, repr=False)
     _tool_map: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+    _listener_events: list[dict[str, object]] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._counters = {
@@ -51,10 +55,15 @@ class CrewManager:
 
             self._crewai_available = True
             self._tool_map = build_crewai_tools(facade=self._tool_facade)
+            logger.info("crewai_sdk_initialized", extra={"event": "crewai_sdk_initialized", "tools": sorted(self._tool_map.keys())})
         except Exception as exc:
             self._crewai_available = False
             self._init_error = str(exc)
             self._tool_map = {}
+            logger.exception(
+                "crewai_sdk_init_failed",
+                extra={"event": "crewai_sdk_init_failed", "error": type(exc).__name__},
+            )
 
     def agents(self) -> CrewAgentsResponse:
         rows = [
@@ -182,18 +191,34 @@ class CrewManager:
         required_agents: list[str],
     ) -> tuple[list[dict[str, object]], str, list[str]]:
         if not self.enabled:
-            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_disabled", ["crewai_disabled"]
+            logger.warning(
+                "crewai_pipeline_disabled",
+                extra={"event": "crewai_pipeline_disabled", "bot_id": bot_id, "trace_id": trace_id},
+            )
+            return [], "crewai_disabled", ["crewai_disabled"]
         if not self._crewai_available:
             err = self._init_error or "crewai_not_installed"
-            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_unavailable", [err]
+            logger.error(
+                "crewai_pipeline_unavailable",
+                extra={"event": "crewai_pipeline_unavailable", "bot_id": bot_id, "trace_id": trace_id, "error": err},
+            )
+            return [], "crewai_unavailable", [err]
+
+        if self.model_router is None:
+            logger.error(
+                "crewai_pipeline_missing_model_router",
+                extra={"event": "crewai_pipeline_missing_model_router", "bot_id": bot_id, "trace_id": trace_id},
+            )
+            return [], "crewai_model_router_unavailable", ["crewai_model_router_unavailable"]
 
         try:
             from crewai import Crew, Process
 
+            llm_workload = self._resolve_llm_workload(task_hint=task_hint)
             llm = ProviderBackedCrewLLM(
                 model="router",
                 model_router=self.model_router,
-                workload="strategic_planning",
+                workload=llm_workload,
                 timeout_seconds=float(getattr(self.runtime, "planner_service", None) and 45.0 or 45.0),
                 max_retries=1,
                 bot_id=bot_id,
@@ -218,12 +243,40 @@ class CrewManager:
             manager = create_manager_agent(llm=llm, tools=manager_tools, verbose=self.verbose)
 
             tasks = build_collaborative_tasks(objective=objective, task_hint=task_hint, agents_by_id=agents_by_id)
+            listener_events: list[dict[str, object]] = []
+
+            def _before_kickoff(inputs: dict[str, object]) -> dict[str, object]:
+                listener_events.append(
+                    {
+                        "event": "crew_before_kickoff",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "bot_id": bot_id,
+                        "trace_id": trace_id,
+                    }
+                )
+                return dict(inputs or {})
+
+            def _after_kickoff(result: Any) -> Any:
+                listener_events.append(
+                    {
+                        "event": "crew_after_kickoff",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "bot_id": bot_id,
+                        "trace_id": trace_id,
+                    }
+                )
+                return result
+
             crew = Crew(
+                name=f"sidecar-{bot_id}",
                 agents=list(agents_by_id.values()),
                 tasks=tasks,
                 manager_agent=manager,
                 process=Process.hierarchical,
                 planning=True,
+                memory=True,
+                before_kickoff_callbacks=[_before_kickoff],
+                after_kickoff_callbacks=[_after_kickoff],
                 verbose=self.verbose,
             )
             result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
@@ -233,40 +286,56 @@ class CrewManager:
             for item in task_outputs:
                 rows.append(
                     {
-                        "task_name": getattr(item, "name", None),
+                        "task_name": str(getattr(item, "name", "") or "task"),
                         "agent": str(getattr(item, "agent", "")),
-                        "summary": str(getattr(item, "summary", "")),
+                        "summary": str(getattr(item, "summary", "") or ""),
                         "raw": str(getattr(item, "raw", "")),
                         "json": dict(getattr(item, "json_dict", {}) or {}),
                     }
                 )
-            if not rows:
-                rows = self._fallback_outputs(bot_id=bot_id, objective=objective)
+            with self._lock:
+                self._listener_events.extend(listener_events[-10:])
+
+            if not rows and consolidated:
+                rows.append(
+                    {
+                        "task_name": "crew_result",
+                        "agent": "crew_manager",
+                        "summary": "Crew execution completed without explicit task outputs",
+                        "raw": consolidated,
+                        "json": {},
+                    }
+                )
+
+            logger.info(
+                "crewai_pipeline_completed",
+                extra={
+                    "event": "crewai_pipeline_completed",
+                    "bot_id": bot_id,
+                    "trace_id": trace_id,
+                    "task_hint": task_hint,
+                    "llm_workload": llm_workload,
+                    "agent_count": len(agents_by_id),
+                    "task_count": len(tasks),
+                    "output_rows": len(rows),
+                    "listener_events": len(listener_events),
+                },
+            )
             return rows, consolidated, []
         except Exception as exc:
-            return self._fallback_outputs(bot_id=bot_id, objective=objective), "crewai_execution_failed", [str(exc)]
-
-    def _fallback_outputs(self, *, bot_id: str, objective: str) -> list[dict[str, object]]:
-        state = self._tool_facade.get_bot_state(bot_id=bot_id)
-        feasibility = self._tool_facade.evaluate_plan_feasibility(bot_id=bot_id, plan={"objective": objective, "risk_score": 0.35})
-        rows: list[dict[str, object]] = []
-        for profile in AGENT_PROFILES:
-            rows.append(
-                {
-                    "task_name": f"task_{profile.agent_id}",
-                    "agent": profile.role,
-                    "summary": f"Fallback synthesis for {profile.role}",
-                    "raw": (
-                        f"objective={objective}; queue_depth={state.get('queue_depth')}; "
-                        f"feasible={feasibility.get('feasible')}"
-                    ),
-                    "json": {
-                        "agent_id": profile.agent_id,
-                        "objective": objective,
-                        "queue_depth": state.get("queue_depth"),
-                        "feasible": feasibility.get("feasible"),
-                    },
-                }
+            logger.exception(
+                "crewai_pipeline_failed",
+                extra={
+                    "event": "crewai_pipeline_failed",
+                    "bot_id": bot_id,
+                    "trace_id": trace_id,
+                    "task_hint": task_hint,
+                },
             )
-        return rows
+            return [], "crewai_execution_failed", [f"{type(exc).__name__}:{exc}"]
 
+    def _resolve_llm_workload(self, *, task_hint: str) -> str:
+        candidate = (task_hint or "").strip().lower()
+        if candidate in {"strategic_planning", "tactical_short_reasoning", "long_reflection", "reflex_explain"}:
+            return candidate
+        return "tactical_short_reasoning"

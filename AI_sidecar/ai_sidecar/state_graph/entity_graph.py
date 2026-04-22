@@ -53,7 +53,7 @@ class EntityGraphStore:
 
     def _apply_actor_event(self, graph: _BotEntityGraph, bot_id: str, event: NormalizedEvent, now: datetime) -> None:
         payload = event.payload
-        if event.event_type == "actor.removed":
+        if event.event_type in {"actor.removed", "actor.disappeared"}:
             actor_id = str(payload.get("actor_id") or "")
             if actor_id:
                 graph.nodes.pop(actor_id, None)
@@ -135,4 +135,3 @@ class EntityGraphStore:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
-

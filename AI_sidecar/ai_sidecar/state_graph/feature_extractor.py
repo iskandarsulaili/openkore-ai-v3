@@ -15,6 +15,7 @@ class _FeatureWindow:
     warnings: deque[datetime] = field(default_factory=deque)
     errors: deque[datetime] = field(default_factory=deque)
     zeny_points: deque[tuple[datetime, int]] = field(default_factory=deque)
+    exp_points: deque[tuple[datetime, int]] = field(default_factory=deque)
     latest_values: dict[str, float] = field(default_factory=dict)
 
 
@@ -39,6 +40,23 @@ class FeatureExtractor:
             zeny_value = event.payload.get("zeny")
             if isinstance(zeny_value, int):
                 window.zeny_points.append((now, zeny_value))
+            elif isinstance(event.numeric.get("zeny"), float):
+                window.zeny_points.append((now, int(event.numeric.get("zeny") or 0.0)))
+
+            exp_value = event.payload.get("base_exp")
+            if not isinstance(exp_value, int):
+                job_exp = event.payload.get("job_exp")
+                if isinstance(job_exp, int):
+                    exp_value = job_exp
+                else:
+                    numeric_base = event.numeric.get("base_exp")
+                    numeric_job = event.numeric.get("job_exp")
+                    if isinstance(numeric_base, float):
+                        exp_value = int(numeric_base)
+                    elif isinstance(numeric_job, float):
+                        exp_value = int(numeric_job)
+            if isinstance(exp_value, int):
+                window.exp_points.append((now, exp_value))
 
             for key, value in event.numeric.items():
                 window.latest_values[f"event.{event.event_type}.{key}"] = float(value)
@@ -68,8 +86,13 @@ class FeatureExtractor:
                 zeny_delta_10m = float(window.zeny_points[-1][1] - window.zeny_points[0][1])
             features["economy.zeny_delta_10m"] = zeny_delta_10m
 
+            exp_delta_10m = 0.0
+            if len(window.exp_points) >= 2:
+                exp_delta_10m = float(window.exp_points[-1][1] - window.exp_points[0][1])
+            features["economy.exp_delta_10m"] = exp_delta_10m
+
             for key, value in window.latest_values.items():
-                features.setdefault(key, value)
+                features[key] = value
 
             return LearningFeatureVector(
                 feature_version="v1",
@@ -88,6 +111,10 @@ class FeatureExtractor:
         while window.zeny_points and window.zeny_points[0][0] < min_zeny_ts:
             window.zeny_points.popleft()
 
+        min_exp_ts = now - timedelta(minutes=10)
+        while window.exp_points and window.exp_points[0][0] < min_exp_ts:
+            window.exp_points.popleft()
+
     def _trim_deque(self, bucket: deque[datetime], now: datetime, keep: timedelta) -> None:
         min_ts = now - keep
         while bucket and bucket[0] < min_ts:
@@ -97,4 +124,3 @@ class FeatureExtractor:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
-

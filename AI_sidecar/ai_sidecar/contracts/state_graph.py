@@ -24,6 +24,17 @@ class BotOperationalState(BaseModel):
     liveness_state: str = "unknown"
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
+    # --- progression (populated from enriched snapshot) ---
+    job_id: int | None = None
+    job_name: str | None = None
+    base_level: int | None = None
+    job_level: int | None = None
+    base_exp: int | None = None
+    base_exp_max: int | None = None
+    job_exp: int | None = None
+    job_exp_max: int | None = None
+    skill_points: int | None = None
+    stat_points: int | None = None
 
 
 class WorldEntity(BaseModel):

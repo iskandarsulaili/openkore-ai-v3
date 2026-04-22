@@ -41,6 +41,39 @@ class InventoryDigest(BaseModel):
     item_count: int | None = None
 
 
+class ProgressionDigest(BaseModel):
+    """Character job/level progression snapshot — optional, provided by bridge v2."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: int | None = None
+    job_name: str | None = None
+    base_level: int | None = None
+    job_level: int | None = None
+    base_exp: int | None = None
+    base_exp_max: int | None = None
+    job_exp: int | None = None
+    job_exp_max: int | None = None
+    skill_points: int | None = None
+    stat_points: int | None = None
+
+
+class ActorDigest(BaseModel):
+    """Compact summary of a nearby actor (mob/player/NPC)."""
+
+    model_config = ConfigDict(extra="ignore")  # forward-compat for extra actor fields
+
+    actor_id: str = Field(min_length=1, max_length=64)
+    actor_type: str = Field(default="unknown", max_length=32)  # monster | player | npc
+    name: str | None = None
+    relation: str | None = None  # hostile | ally | neutral | party | unknown
+    x: int | None = None
+    y: int | None = None
+    hp: int | None = None
+    hp_max: int | None = None
+    level: int | None = None
+
+
 class BotStateSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +84,8 @@ class BotStateSnapshot(BaseModel):
     vitals: Vitals = Field(default_factory=Vitals)
     combat: CombatState = Field(default_factory=CombatState)
     inventory: InventoryDigest = Field(default_factory=InventoryDigest)
+    progression: ProgressionDigest = Field(default_factory=ProgressionDigest)
+    actors: list[ActorDigest] = Field(default_factory=list, max_length=64)
     raw: dict[str, object] = Field(default_factory=dict)
 
 

@@ -101,8 +101,9 @@ def test_crew_manager_strategize_disabled_fallback() -> None:
     assert result.ok is False
     assert "crewai_disabled" in result.errors
     assert result.objective == payload.objective
+    assert result.agent_outputs == []
+    assert result.consolidated_output == "crewai_disabled"
     assert result.planner_response is not None and result.planner_response.ok is True
-    assert len(result.agent_outputs) >= 1
 
 
 def test_crew_manager_coordinate_disabled_and_tool_dispatch() -> None:
@@ -119,6 +120,8 @@ def test_crew_manager_coordinate_disabled_and_tool_dispatch() -> None:
     result = asyncio.run(manager.coordinate(payload))
     assert result.ok is False
     assert "crewai_disabled" in result.errors
+    assert result.agent_outputs == []
+    assert result.consolidated_output == "crewai_disabled"
     assert result.planner_response is not None and result.planner_response.ok is True
 
     known_tool = manager.execute_tool(bot_id="bot:crew", tool_name="get_bot_state", arguments={})

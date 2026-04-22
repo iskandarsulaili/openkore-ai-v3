@@ -86,6 +86,11 @@ class PlanGenerator:
             "selected_model": route_decision.selected_model,
             "fallback_chain": route_decision.fallback_chain,
             "policy_version": route_decision.policy_version,
+            "planned_provider": route_decision.planned_provider,
+            "planned_model": route_decision.planned_model,
+            "attempted_providers": route_decision.attempted_providers,
+            "attempted_models": route_decision.attempted_models,
+            "fallback_used": route_decision.fallback_used,
         }
         if not response.ok or not response.content:
             return self._fallback(bot_id=bot_id, context=context, max_steps=max_steps), self._bundle_fallback(bot_id=bot_id, context=context), route, response.provider, response.model, response.latency_ms
@@ -286,4 +291,3 @@ class PlanGenerator:
             "macros": context.macros,
         }
         return json.dumps(payload, ensure_ascii=False)
-

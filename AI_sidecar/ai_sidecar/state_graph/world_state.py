@@ -33,6 +33,21 @@ class _BotProjection:
     macro_execution: MacroExecutionState = field(default_factory=MacroExecutionState)
     fleet_intent: FleetIntentState = field(default_factory=FleetIntentState)
     recent_event_ids: list[str] = field(default_factory=list)
+    actor_relations: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _str_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s if s else None
 
 
 class WorldStateProjector:
@@ -108,10 +123,30 @@ class WorldStateProjector:
         projection.operational.updated_at = now
         projection.operational.raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
 
+        # Populate progression fields from enriched snapshot (bridge v2+).
+        progression = payload.get("progression") if isinstance(payload.get("progression"), dict) else {}
+        if progression:
+            projection.operational.job_id = _int_or_none(progression.get("job_id"))
+            projection.operational.job_name = _str_or_none(progression.get("job_name"))
+            projection.operational.base_level = _int_or_none(progression.get("base_level"))
+            projection.operational.job_level = _int_or_none(progression.get("job_level"))
+            projection.operational.base_exp = _int_or_none(progression.get("base_exp"))
+            projection.operational.base_exp_max = _int_or_none(progression.get("base_exp_max"))
+            projection.operational.job_exp = _int_or_none(progression.get("job_exp"))
+            projection.operational.job_exp_max = _int_or_none(progression.get("job_exp_max"))
+            projection.operational.skill_points = _int_or_none(progression.get("skill_points"))
+            projection.operational.stat_points = _int_or_none(progression.get("stat_points"))
+
         projection.navigation.map = position.get("map")
         projection.navigation.x = position.get("x")
         projection.navigation.y = position.get("y")
-        projection.navigation.route_status = "moving" if projection.operational.ai_sequence == "route" else "idle"
+        ai_seq = (projection.operational.ai_sequence or "").strip().lower()
+        if ai_seq.startswith("route") or ai_seq.startswith("move"):
+            projection.navigation.route_status = "moving"
+        elif ai_seq:
+            projection.navigation.route_status = ai_seq
+        else:
+            projection.navigation.route_status = "idle"
         projection.navigation.updated_at = now
 
         projection.inventory.zeny = inventory.get("zeny")
@@ -129,6 +164,23 @@ class WorldStateProjector:
         projection.encounter.target_id = combat.get("target_id")
         projection.encounter.updated_at = now
 
+        # Rebuild canonical actor relation cache from inlined actors array (if bridge provided them).
+        actors_list = payload.get("actors")
+        if isinstance(actors_list, list):
+            relation_map: dict[str, tuple[str, str]] = {}
+            for actor in actors_list:
+                if not isinstance(actor, dict):
+                    continue
+                actor_id = str(actor.get("actor_id") or "").strip()
+                if not actor_id:
+                    continue
+                relation_map[actor_id] = (
+                    str(actor.get("relation") or "").strip().lower(),
+                    str(actor.get("actor_type") or "").strip().lower(),
+                )
+            projection.actor_relations = relation_map
+            self._recompute_actor_encounter(projection, now)
+
         hp = float(vitals.get("hp") or 0.0)
         hp_max = float(vitals.get("hp_max") or 0.0)
         hp_ratio = (hp / hp_max) if hp_max > 0 else 1.0
@@ -138,14 +190,19 @@ class WorldStateProjector:
 
     def _apply_actor(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
         payload = event.payload
-        relation = str(payload.get("relation") or "")
-        actor_type = str(payload.get("actor_type") or "")
-        if relation in {"hostile", "monster", "enemy"} or actor_type == "monster":
-            projection.encounter.nearby_hostiles = max(0, projection.encounter.nearby_hostiles + 1)
-        elif relation in {"party", "ally", "friend"}:
-            projection.encounter.nearby_allies = max(0, projection.encounter.nearby_allies + 1)
-        projection.encounter.risk_score = float(projection.encounter.nearby_hostiles) / float(max(1, projection.encounter.nearby_allies + 1))
-        projection.encounter.updated_at = now
+        actor_id = str(payload.get("actor_id") or "").strip()
+        if not actor_id:
+            return
+
+        if event.event_type in {"actor.removed", "actor.disappeared"}:
+            projection.actor_relations.pop(actor_id, None)
+            self._recompute_actor_encounter(projection, now)
+            return
+
+        relation = str(payload.get("relation") or "").strip().lower()
+        actor_type = str(payload.get("actor_type") or "").strip().lower()
+        projection.actor_relations[actor_id] = (relation, actor_type)
+        self._recompute_actor_encounter(projection, now)
 
     def _apply_chat(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
         projection.social.recent_chat_count += 1
@@ -205,3 +262,17 @@ class WorldStateProjector:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
 
+    def _recompute_actor_encounter(self, projection: _BotProjection, now: datetime) -> None:
+        hostiles = 0
+        allies = 0
+        for relation, actor_type in projection.actor_relations.values():
+            if relation in {"hostile", "monster", "enemy"} or actor_type == "monster":
+                hostiles += 1
+            elif relation in {"party", "ally", "friend"}:
+                allies += 1
+
+        projection.encounter.nearby_hostiles = hostiles
+        projection.encounter.nearby_allies = allies
+        projection.encounter.risk_score = float(hostiles) / float(max(1, allies + 1))
+        projection.encounter.in_encounter = bool(projection.operational.in_combat or hostiles > 0)
+        projection.encounter.updated_at = now
