@@ -34,8 +34,30 @@ class OllamaAdapter(LLMProvider):
 
     async def generate_structured(self, request: PlannerModelRequest) -> PlannerModelResponse:
         model = request.model or self._default_model
-        system_prompt = self._guard.ensure_prompt_safe(request.system_prompt, field="system_prompt")
-        user_prompt = self._guard.ensure_prompt_safe(request.user_prompt, field="user_prompt")
+        try:
+            system_prompt = self._guard.ensure_prompt_safe(request.system_prompt, field="system_prompt")
+            user_prompt = self._guard.ensure_prompt_safe(request.user_prompt, field="user_prompt")
+        except Exception as exc:
+            error = f"prompt_guard_failed:{type(exc).__name__}:{exc}"
+            self.emit_telemetry(
+                bot_id=request.bot_id,
+                level=TelemetryLevel.warning,
+                event="llm_prompt_guard_failed",
+                message=error,
+                metrics={"latency_ms": 0.0},
+                tags={"task": request.task},
+            )
+            return PlannerModelResponse(
+                ok=False,
+                provider=self.provider_name,
+                model=model,
+                trace_id=request.trace_id,
+                latency_ms=0.0,
+                content=None,
+                raw_text="",
+                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                error=error,
+            )
         payload = {
             "model": model,
             "messages": [

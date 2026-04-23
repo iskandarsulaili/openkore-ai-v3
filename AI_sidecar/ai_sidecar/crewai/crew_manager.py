@@ -18,7 +18,7 @@ from ai_sidecar.contracts.crewai import (
 )
 from ai_sidecar.crewai.agents import create_agent_by_id
 from ai_sidecar.crewai.agents.manager_agent import create_manager_agent
-from ai_sidecar.crewai.config import AGENT_PROFILES, CREW_TOOL_NAMES
+from ai_sidecar.crewai.config import AGENT_OPERATING_MODEL, AGENT_PROFILES, CREW_TOOL_NAMES
 from ai_sidecar.crewai.llm_adapter import ProviderBackedCrewLLM
 from ai_sidecar.crewai.tasks import build_collaborative_tasks
 from ai_sidecar.crewai.tools import CrewToolFacade, build_crewai_tools
@@ -66,12 +66,23 @@ class CrewManager:
             )
 
     def agents(self) -> CrewAgentsResponse:
+        operating_map = {item.agent_id: item for item in AGENT_OPERATING_MODEL}
         rows = [
             CrewAgentDescriptor(
                 agent_id=item.agent_id,
                 role=item.role,
                 goal=item.goal,
                 tools=list(item.tools),
+                operating_model=item.operating_model,
+                responsibilities=list(operating_map.get(item.agent_id, None).responsibilities)
+                if item.agent_id in operating_map
+                else [],
+                handoff_inputs=list(operating_map.get(item.agent_id, None).handoff_inputs)
+                if item.agent_id in operating_map
+                else [],
+                handoff_outputs=list(operating_map.get(item.agent_id, None).handoff_outputs)
+                if item.agent_id in operating_map
+                else [],
                 enabled=self.enabled,
             )
             for item in AGENT_PROFILES
@@ -102,7 +113,7 @@ class CrewManager:
             self._active_runs += 1
             self._counters["strategize_calls"] += 1
         try:
-            agent_outputs, consolidated_output, errors = await self._run_crew_pipeline(
+            agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
                 bot_id=payload.meta.bot_id,
                 trace_id=payload.meta.trace_id,
                 objective=payload.objective,
@@ -131,6 +142,7 @@ class CrewManager:
                 agent_outputs=agent_outputs,
                 consolidated_output=consolidated_output,
                 planner_response=planner_response,
+                orchestrator=orchestrator,
                 duration_ms=(perf_counter() - started) * 1000.0,
                 errors=errors,
             )
@@ -145,7 +157,7 @@ class CrewManager:
             self._counters["coordinate_calls"] += 1
         try:
             objective = payload.objective or payload.task
-            agent_outputs, consolidated_output, errors = await self._run_crew_pipeline(
+            agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
                 bot_id=payload.meta.bot_id,
                 trace_id=payload.meta.trace_id,
                 objective=objective,
@@ -174,6 +186,7 @@ class CrewManager:
                 agent_outputs=agent_outputs,
                 consolidated_output=consolidated_output,
                 planner_response=planner_response,
+                orchestrator=orchestrator,
                 duration_ms=(perf_counter() - started) * 1000.0,
                 errors=errors,
             )
@@ -189,27 +202,27 @@ class CrewManager:
         objective: str,
         task_hint: str,
         required_agents: list[str],
-    ) -> tuple[list[dict[str, object]], str, list[str]]:
+    ) -> tuple[list[dict[str, object]], str, dict[str, object], list[str]]:
         if not self.enabled:
             logger.warning(
                 "crewai_pipeline_disabled",
                 extra={"event": "crewai_pipeline_disabled", "bot_id": bot_id, "trace_id": trace_id},
             )
-            return [], "crewai_disabled", ["crewai_disabled"]
+            return [], "crewai_disabled", {}, ["crewai_disabled"]
         if not self._crewai_available:
             err = self._init_error or "crewai_not_installed"
             logger.error(
                 "crewai_pipeline_unavailable",
                 extra={"event": "crewai_pipeline_unavailable", "bot_id": bot_id, "trace_id": trace_id, "error": err},
             )
-            return [], "crewai_unavailable", [err]
+            return [], "crewai_unavailable", {}, [err]
 
         if self.model_router is None:
             logger.error(
                 "crewai_pipeline_missing_model_router",
                 extra={"event": "crewai_pipeline_missing_model_router", "bot_id": bot_id, "trace_id": trace_id},
             )
-            return [], "crewai_model_router_unavailable", ["crewai_model_router_unavailable"]
+            return [], "crewai_model_router_unavailable", {}, ["crewai_model_router_unavailable"]
 
         try:
             from crewai import Crew, Process
@@ -307,6 +320,24 @@ class CrewManager:
                     }
                 )
 
+            orchestrator = {
+                "crew": {
+                    "process": "hierarchical",
+                    "planning": True,
+                    "memory": True,
+                    "manager_agent": "manager",
+                },
+                "flow": {
+                    "objective": objective,
+                    "task_hint": task_hint,
+                    "required_agents": list(required_agents),
+                },
+                "agents": [profile.agent_id for profile in selected_profiles],
+                "tasks": [str(getattr(item, "name", "task")) for item in tasks],
+                "llm_workload": llm_workload,
+                "listener_events": list(listener_events),
+            }
+
             logger.info(
                 "crewai_pipeline_completed",
                 extra={
@@ -321,7 +352,7 @@ class CrewManager:
                     "listener_events": len(listener_events),
                 },
             )
-            return rows, consolidated, []
+            return rows, consolidated, orchestrator, []
         except Exception as exc:
             logger.exception(
                 "crewai_pipeline_failed",
@@ -332,7 +363,7 @@ class CrewManager:
                     "task_hint": task_hint,
                 },
             )
-            return [], "crewai_execution_failed", [f"{type(exc).__name__}:{exc}"]
+            return [], "crewai_execution_failed", {}, [f"{type(exc).__name__}:{exc}"]
 
     def _resolve_llm_workload(self, *, task_hint: str) -> str:
         candidate = (task_hint or "").strip().lower()

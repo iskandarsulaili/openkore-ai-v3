@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -16,6 +17,9 @@ from ai_sidecar.planner.schemas import (
     TacticalIntentBundle,
 )
 from ai_sidecar.providers.base import PlannerModelRequest
+
+
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
@@ -92,6 +96,19 @@ class PlanGenerator:
         max_steps: int,
     ) -> tuple[StrategicPlan, TacticalIntentBundle, dict[str, object], str, str, float]:
         user_prompt, prompt_meta = self._user_prompt(context=context, max_steps=max_steps)
+        if prompt_meta.get("prompt_reductions"):
+            logger.info(
+                "planner_prompt_compacted",
+                extra={
+                    "event": "planner_prompt_compacted",
+                    "bot_id": bot_id,
+                    "trace_id": trace_id,
+                    "prompt_chars_initial": prompt_meta.get("prompt_chars_initial"),
+                    "prompt_chars_final": prompt_meta.get("prompt_chars_final"),
+                    "prompt_chars_limit": prompt_meta.get("prompt_chars_limit"),
+                    "prompt_reductions": list(prompt_meta.get("prompt_reductions") or []),
+                },
+            )
         request = PlannerModelRequest(
             bot_id=bot_id,
             trace_id=trace_id,
@@ -496,6 +513,45 @@ class PlanGenerator:
                     "objective": context.fleet_constraints.get("objective"),
                 }
                 reductions.append("collapse:doctrine_and_fleet_constraints")
+
+        if _size() > self.max_user_prompt_chars:
+            reductions.append("collapse:minimal_payload")
+            payload_working = {
+                "bot_id": context.bot_id,
+                "objective": context.objective,
+                "horizon": context.horizon.value,
+                "max_steps": max_steps,
+                "latency_budget_ms": horizon_budget_ms,
+                "latency_headroom": context.latency_headroom,
+                "queue": {"pending_actions": context.queue.get("pending_actions")},
+                "state": {
+                    "operational": context.state.get("operational", {}),
+                    "navigation": context.state.get("navigation", {}),
+                    "encounter": context.state.get("encounter", {}),
+                    "inventory": {
+                        "zeny": context.state.get("inventory", {}).get("zeny"),
+                        "overweight_ratio": context.state.get("inventory", {}).get("overweight_ratio"),
+                    },
+                    "quest": {
+                        "active_objective_count": context.state.get("quest", {}).get("active_objective_count"),
+                        "objective_completion_ratio": context.state.get("quest", {}).get("objective_completion_ratio"),
+                    },
+                    "risk": {
+                        "danger_score": context.state.get("risk", {}).get("danger_score"),
+                        "death_risk_score": context.state.get("risk", {}).get("death_risk_score"),
+                    },
+                },
+            }
+
+        if _size() > self.max_user_prompt_chars:
+            reductions.append("collapse:core_only")
+            payload_working = {
+                "bot_id": context.bot_id,
+                "objective": context.objective,
+                "horizon": context.horizon.value,
+                "max_steps": max_steps,
+                "latency_budget_ms": horizon_budget_ms,
+            }
 
         final_chars = _size()
         prompt = json.dumps(payload_working, ensure_ascii=False, default=_json_default)

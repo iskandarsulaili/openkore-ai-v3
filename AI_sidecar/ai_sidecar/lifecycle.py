@@ -3342,6 +3342,7 @@ def create_runtime() -> RuntimeState:
             model_router=model_router,
             planner_timeout_seconds=settings.planner_timeout_seconds,
             planner_retries=settings.planner_retries,
+            max_user_prompt_chars=settings.llm_prompt_max_chars,
         ),
         plan_validator=PlanValidator(
             tactical_budget_ms=settings.planner_tactical_budget_ms,

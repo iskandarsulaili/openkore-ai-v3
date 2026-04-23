@@ -11,6 +11,10 @@ class GetBotStateInput(BaseModel):
     bot_id: str = Field(..., min_length=1, max_length=128)
 
 
+class GetEnrichedStateInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+
+
 class QueryMemoryInput(BaseModel):
     bot_id: str = Field(..., min_length=1, max_length=128)
     query: str = Field(..., min_length=1, max_length=512)
@@ -27,6 +31,20 @@ class GenerateMacroTemplateInput(BaseModel):
     action_sequence: list[str] = Field(default_factory=list)
 
 
+class ListActiveMacrosInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+
+
+class ProposeActionsInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+    intents: list[dict[str, object]] = Field(default_factory=list)
+
+
+class PublishMacroInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+    macro_bundle: dict[str, object] = Field(default_factory=dict)
+
+
 class EvaluatePlanFeasibilityInput(BaseModel):
     bot_id: str = Field(..., min_length=1, max_length=128)
     plan: dict[str, object] = Field(default_factory=dict)
@@ -36,6 +54,15 @@ class CoordinateWithFleetInput(BaseModel):
     bot_id: str = Field(..., min_length=1, max_length=128)
     action: str = Field(..., min_length=1, max_length=256)
     target_bots: list[str] = Field(default_factory=list)
+
+
+class GetFleetConstraintsInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+
+
+class WriteReflectionInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+    episode: dict[str, object] = Field(default_factory=dict)
 
 
 class MLShadowPredictInput(BaseModel):
@@ -55,6 +82,14 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
 
         def _run(self, bot_id: str) -> str:
             return str(facade.get_bot_state(bot_id=bot_id))
+
+    class GetEnrichedStateTool(BaseTool):
+        name: str = "get_enriched_state"
+        description: str = "Retrieve the full enriched state graph for a bot."
+        args_schema: type[BaseModel] = GetEnrichedStateInput
+
+        def _run(self, bot_id: str) -> str:
+            return str(facade.get_enriched_state(bot_id=bot_id))
 
     class QueryMemoryTool(BaseTool):
         name: str = "query_memory"
@@ -80,6 +115,30 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
         def _run(self, bot_id: str, action_sequence: list[str]) -> str:
             return str(facade.generate_macro_template(bot_id=bot_id, action_sequence=action_sequence))
 
+    class ListActiveMacrosTool(BaseTool):
+        name: str = "list_active_macros"
+        description: str = "List the latest macro publication and manifest for a bot."
+        args_schema: type[BaseModel] = ListActiveMacrosInput
+
+        def _run(self, bot_id: str) -> str:
+            return str(facade.list_active_macros(bot_id=bot_id))
+
+    class ProposeActionsTool(BaseTool):
+        name: str = "propose_actions"
+        description: str = "Queue proposed action intents into the sidecar action queue."
+        args_schema: type[BaseModel] = ProposeActionsInput
+
+        def _run(self, bot_id: str, intents: list[dict[str, object]]) -> str:
+            return str(facade.propose_actions(bot_id=bot_id, intents=intents))
+
+    class PublishMacroTool(BaseTool):
+        name: str = "publish_macro"
+        description: str = "Publish macro bundles for a bot using the sidecar macro pipeline."
+        args_schema: type[BaseModel] = PublishMacroInput
+
+        def _run(self, bot_id: str, macro_bundle: dict[str, object]) -> str:
+            return str(facade.publish_macro(bot_id=bot_id, macro_bundle=macro_bundle))
+
     class EvaluatePlanFeasibilityTool(BaseTool):
         name: str = "evaluate_plan_feasibility"
         description: str = "Evaluate plan feasibility against queue pressure and risk constraints."
@@ -95,6 +154,22 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
 
         def _run(self, bot_id: str, action: str, target_bots: list[str]) -> str:
             return str(facade.coordinate_with_fleet(bot_id=bot_id, action=action, target_bots=target_bots))
+
+    class GetFleetConstraintsTool(BaseTool):
+        name: str = "get_fleet_constraints"
+        description: str = "Retrieve fleet coordination constraints and doctrine metadata for a bot."
+        args_schema: type[BaseModel] = GetFleetConstraintsInput
+
+        def _run(self, bot_id: str) -> str:
+            return str(facade.get_fleet_constraints(bot_id=bot_id))
+
+    class WriteReflectionTool(BaseTool):
+        name: str = "write_reflection"
+        description: str = "Write a reflection episode into memory with semantic indexing."
+        args_schema: type[BaseModel] = WriteReflectionInput
+
+        def _run(self, bot_id: str, episode: dict[str, object]) -> str:
+            return str(facade.write_reflection(bot_id=bot_id, episode=episode))
 
     class MLShadowPredictTool(BaseTool):
         name: str = "ml_shadow_predict"
@@ -112,11 +187,17 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
             )
 
     return {
+        "get_enriched_state": GetEnrichedStateTool(),
         "get_bot_state": GetBotStateTool(),
         "query_memory": QueryMemoryTool(),
         "check_reflex_rules": CheckReflexRulesTool(),
         "generate_macro_template": GenerateMacroTemplateTool(),
+        "list_active_macros": ListActiveMacrosTool(),
+        "propose_actions": ProposeActionsTool(),
+        "publish_macro": PublishMacroTool(),
         "evaluate_plan_feasibility": EvaluatePlanFeasibilityTool(),
         "coordinate_with_fleet": CoordinateWithFleetTool(),
+        "get_fleet_constraints": GetFleetConstraintsTool(),
+        "write_reflection": WriteReflectionTool(),
         "ml_shadow_predict": MLShadowPredictTool(),
     }
