@@ -159,6 +159,15 @@ class DeepseekAdapter(LLMProvider):
         )
 
     async def health(self, *, bot_id: str) -> ProviderHealth:
+        if not self._api_key.strip():
+            return ProviderHealth(
+                provider=self.provider_name,
+                available=False,
+                latency_ms=0.0,
+                models=[],
+                breaker_state="closed",
+                message="api_key_missing",
+            )
         data, latency_ms, error = await self._get_json(
             bot_id=bot_id,
             trace_id="health",

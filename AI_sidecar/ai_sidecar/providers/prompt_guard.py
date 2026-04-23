@@ -43,7 +43,7 @@ class PromptGuard:
         return redacted[: self.max_log_chars] + "…"
 
     def parse_json_object(self, value: str) -> dict[str, Any] | None:
-        text = (value or "").strip()
+        text = self._strip_code_fence((value or "").strip())
         if not text:
             return None
         try:
@@ -52,11 +52,9 @@ class PromptGuard:
                 return parsed
             return None
         except Exception:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start < 0 or end <= start:
+            candidate = self._extract_first_json_object(text)
+            if not candidate:
                 return None
-            candidate = text[start : end + 1]
             try:
                 parsed = json.loads(candidate)
                 if isinstance(parsed, dict):
@@ -64,6 +62,14 @@ class PromptGuard:
             except Exception:
                 return None
         return None
+
+    def normalize_for_schema(self, payload: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict) or not isinstance(schema, dict):
+            return payload
+        normalized = self._normalize_value(payload, schema=schema, path="$", depth=0)
+        if isinstance(normalized, dict):
+            return normalized
+        return payload
 
     def validate_schema(self, payload: dict[str, Any], schema: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -190,6 +196,240 @@ class PromptGuard:
         lowered = key.strip().lower()
         if lowered in self._UNSAFE_OBJECT_KEYS or lowered.startswith("$"):
             raise ValueError(f"schema_unsafe_key:{path}.{key}")
+
+    def _strip_code_fence(self, text: str) -> str:
+        cleaned = text.strip()
+        if not cleaned.startswith("```"):
+            return cleaned
+        lines = cleaned.splitlines()
+        if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip().startswith("```"):
+            return "\n".join(lines[1:-1]).strip()
+        return cleaned
+
+    def _extract_first_json_object(self, text: str) -> str:
+        start = text.find("{")
+        if start < 0:
+            return ""
+        depth = 0
+        in_string = False
+        escape = False
+        for idx in range(start, len(text)):
+            ch = text[idx]
+            if in_string:
+                if escape:
+                    escape = False
+                    continue
+                if ch == "\\":
+                    escape = True
+                    continue
+                if ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                continue
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : idx + 1]
+        return ""
+
+    def _normalize_value(self, value: Any, *, schema: dict[str, Any], path: str, depth: int) -> Any:
+        if depth > self.max_schema_depth:
+            return value
+
+        expected_type = schema.get("type")
+        type_name = ""
+        if isinstance(expected_type, list):
+            candidate_types = [str(item).strip().lower() for item in expected_type if isinstance(item, str)]
+            matched = [item for item in candidate_types if self._matches_type(value, item)]
+            if matched:
+                type_name = matched[0]
+            elif "null" in candidate_types:
+                type_name = candidate_types[0]
+            elif candidate_types:
+                type_name = candidate_types[0]
+        elif isinstance(expected_type, str):
+            type_name = expected_type.strip().lower()
+
+        normalized = value
+        if type_name == "object":
+            normalized = self._normalize_object(value, schema=schema, path=path, depth=depth)
+        elif type_name == "array":
+            normalized = self._normalize_array(value, schema=schema, path=path, depth=depth)
+        elif type_name == "string":
+            normalized = self._normalize_string(value, schema=schema)
+        elif type_name == "number":
+            normalized = self._normalize_number(value, schema=schema, integer=False)
+        elif type_name == "integer":
+            normalized = self._normalize_number(value, schema=schema, integer=True)
+        elif type_name == "boolean":
+            normalized = self._normalize_bool(value)
+        elif type_name == "null":
+            normalized = None
+
+        if "const" in schema:
+            normalized = schema.get("const")
+
+        enum_values = schema.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            if normalized not in enum_values:
+                if isinstance(normalized, str):
+                    lowered = normalized.strip().lower()
+                    found = next((item for item in enum_values if isinstance(item, str) and item.lower() == lowered), None)
+                    normalized = found if found is not None else enum_values[0]
+                else:
+                    normalized = enum_values[0]
+        return normalized
+
+    def _normalize_object(self, value: Any, *, schema: dict[str, Any], path: str, depth: int) -> dict[str, Any]:
+        obj = value if isinstance(value, dict) else {}
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        additional_allowed = schema.get("additionalProperties", True)
+
+        normalized: dict[str, Any] = {}
+        for key, nested_schema in properties.items():
+            if key not in obj or not isinstance(nested_schema, dict):
+                continue
+            normalized[key] = self._normalize_value(obj.get(key), schema=nested_schema, path=f"{path}.{key}", depth=depth + 1)
+
+        for key, nested_value in obj.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                self._validate_safe_key(key=key, path=path)
+            except Exception:
+                continue
+            if key in normalized or key in properties:
+                continue
+            if additional_allowed is False:
+                continue
+            if isinstance(additional_allowed, dict):
+                normalized[key] = self._normalize_value(
+                    nested_value,
+                    schema=additional_allowed,
+                    path=f"{path}.{key}",
+                    depth=depth + 1,
+                )
+            else:
+                normalized[key] = nested_value
+
+        required = schema.get("required")
+        if isinstance(required, list):
+            for item in required:
+                if not isinstance(item, str) or item in normalized:
+                    continue
+                nested_schema = properties.get(item) if isinstance(properties, dict) else None
+                if isinstance(nested_schema, dict):
+                    normalized[item] = self._default_for_schema(nested_schema)
+                else:
+                    normalized[item] = ""
+        return normalized
+
+    def _normalize_array(self, value: Any, *, schema: dict[str, Any], path: str, depth: int) -> list[Any]:
+        if isinstance(value, list):
+            rows = list(value)
+        elif value is None:
+            rows = []
+        else:
+            rows = [value]
+
+        item_schema = schema.get("items") if isinstance(schema.get("items"), dict) else None
+        if item_schema is not None:
+            rows = [
+                self._normalize_value(item, schema=item_schema, path=f"{path}[{idx}]", depth=depth + 1)
+                for idx, item in enumerate(rows)
+            ]
+
+        max_items = schema.get("maxItems")
+        if isinstance(max_items, int) and max_items >= 0:
+            rows = rows[:max_items]
+
+        min_items = schema.get("minItems")
+        if isinstance(min_items, int) and min_items > 0:
+            while len(rows) < min_items:
+                rows.append(self._default_for_schema(item_schema if isinstance(item_schema, dict) else {}))
+        return rows
+
+    def _normalize_string(self, value: Any, *, schema: dict[str, Any]) -> str:
+        text = "" if value is None else str(value)
+        max_length = schema.get("maxLength")
+        if isinstance(max_length, int) and max_length >= 0:
+            text = text[:max_length]
+        min_length = schema.get("minLength")
+        if isinstance(min_length, int) and min_length > 0 and len(text) < min_length:
+            text = (text + ("x" * min_length))[:min_length]
+        return text
+
+    def _normalize_number(self, value: Any, *, schema: dict[str, Any], integer: bool) -> float | int:
+        out: float
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out = float(value)
+        elif isinstance(value, str):
+            try:
+                out = float(value.strip())
+            except Exception:
+                out = 0.0
+        else:
+            out = 0.0
+
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if isinstance(minimum, (int, float)):
+            out = max(out, float(minimum))
+        if isinstance(maximum, (int, float)):
+            out = min(out, float(maximum))
+        if integer:
+            return int(round(out))
+        return out
+
+    def _normalize_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "y", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "n", "off", ""}:
+                return False
+        return bool(value)
+
+    def _default_for_schema(self, schema: dict[str, Any]) -> Any:
+        expected_type = schema.get("type")
+        type_name = ""
+        if isinstance(expected_type, list):
+            candidates = [str(item).strip().lower() for item in expected_type if isinstance(item, str)]
+            type_name = next((item for item in candidates if item != "null"), candidates[0] if candidates else "")
+        elif isinstance(expected_type, str):
+            type_name = expected_type.strip().lower()
+
+        if "const" in schema:
+            return schema.get("const")
+        enum_values = schema.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            return enum_values[0]
+
+        if type_name == "array":
+            return []
+        if type_name == "object":
+            return {}
+        if type_name == "string":
+            min_length = schema.get("minLength")
+            if isinstance(min_length, int) and min_length > 0:
+                return "x" * min_length
+            return ""
+        if type_name == "integer":
+            return int(self._normalize_number(0, schema=schema, integer=True))
+        if type_name == "number":
+            return float(self._normalize_number(0, schema=schema, integer=False))
+        if type_name == "boolean":
+            return False
+        return None
 
     def _matches_type(self, value: Any, expected_type: str) -> bool:
         normalized = expected_type.strip().lower()

@@ -1738,7 +1738,11 @@ sub _trace_id {
 sub _iso_now {
 	my $t = time();
 	my @g = gmtime($t);
-	my $frac = sprintf('%.3f', $t - int($t));
+	my $frac_raw = $t - int($t);
+	$frac_raw = 0.0 if $frac_raw < 0.0;
+	$frac_raw = 0.999 if $frac_raw >= 1.0;
+	my $frac = sprintf('%.3f', $frac_raw);
+	$frac = '.999' if $frac eq '1.000';
 	$frac =~ s/^0//;
 	return sprintf(
 		'%04d-%02d-%02dT%02d:%02d:%02d%sZ',

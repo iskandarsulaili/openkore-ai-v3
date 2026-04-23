@@ -12,15 +12,15 @@ class MacroSynthesizer:
         if len(plan.steps) < max(2, min_repeat):
             return None
 
-        travel_steps = [step for step in plan.steps if (step.kind or "").lower() in {"travel", "move", "route"}]
-        combat_steps = [step for step in plan.steps if (step.kind or "").lower() in {"combat", "fight", "attack"}]
+        travel_steps = [step for step in plan.steps if str(step.kind or "").lower() in {"travel", "move", "route"}]
+        combat_steps = [step for step in plan.steps if str(step.kind or "").lower() in {"combat", "fight", "attack"}]
         if not travel_steps and not combat_steps:
             return None
 
         macro_name = f"plan_macro_{plan.plan_id[:18]}"
         lines: list[str] = []
         for step in plan.steps:
-            kind = (step.kind or "").lower()
+            kind = str(step.kind or "").lower()
             target = (step.target or "").strip()
             if kind in {"travel", "move", "route"} and target:
                 lines.append(f"do move {target}")
@@ -49,4 +49,3 @@ class MacroSynthesizer:
             event_macros=[],
             automacros=[automacro],
         )
-

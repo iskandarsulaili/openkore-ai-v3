@@ -6,7 +6,14 @@ from datetime import UTC, datetime
 
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.events import EventFamily, EventSeverity, NormalizedEvent
-from ai_sidecar.contracts.reflex import ReflexActionTemplate, ReflexPredicate, ReflexRule, ReflexTriggerClause
+from ai_sidecar.contracts.reflex import (
+    ReflexActionTemplate,
+    ReflexCategory,
+    ReflexPlannerInterop,
+    ReflexPredicate,
+    ReflexRule,
+    ReflexTriggerClause,
+)
 from ai_sidecar.contracts.state_graph import (
     BotOperationalState,
     EconomyState,
@@ -144,7 +151,11 @@ def test_reflex_conflict_resolution_between_rules(tmp_path):
     suppressed = [item for item in relevant if item.suppressed]
     assert len(emitted) == 1
     assert suppressed
-    assert any((item.suppression_reason or "").startswith("conflict_reserved") for item in suppressed)
+    assert any(
+        (item.suppression_reason or "").startswith("conflict_reserved")
+        or (item.suppression_reason or "") == "override_in_effect"
+        for item in suppressed
+    )
 
 
 def test_reflex_fallback_chain_micro_macro_then_eventmacro(tmp_path):
@@ -264,7 +275,7 @@ def test_reflex_circuit_breaker_opens_after_failures(tmp_path):
         trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.breaker")]),
         guards=[],
         action_template=ReflexActionTemplate(kind="command", command="", conflict_key=None),
-        fallback_macro=None,
+        fallback_macro="reflex_breaker_macro",
         event_macro_conditions=[],
         cooldown_ms=0,
         circuit_breaker_key="macro.default",
@@ -304,3 +315,212 @@ def test_reflex_circuit_breaker_opens_after_failures(tmp_path):
     macro_default = [item for item in breakers if item.key == "macro.default"]
     assert macro_default
     assert macro_default[0].state == "open"
+
+
+def test_reflex_default_rules_cover_all_categories(tmp_path):
+    bot_id = "bot:categories"
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+    rules = engine.list_rules(bot_id=bot_id)
+    categories = {item.category for item in rules}
+    assert ReflexCategory.combat in categories
+    assert ReflexCategory.survival in categories
+    assert ReflexCategory.interaction in categories
+
+
+def test_reflex_override_interop_suppresses_later_rules_for_same_event(tmp_path):
+    bot_id = "bot:override"
+    queue = ActionQueue(max_per_bot=64)
+    queue_action, publish_macros = _callbacks(tmp_path, queue)
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+
+    override_rule = ReflexRule(
+        rule_id="override.first",
+        enabled=True,
+        priority=1,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.override")]),
+        guards=[],
+        action_template=ReflexActionTemplate(kind="command", command="sit", conflict_key="override.a"),
+        cooldown_ms=0,
+        circuit_breaker_key="queue.default",
+        category=ReflexCategory.survival,
+        planner_interop=ReflexPlannerInterop.override,
+    )
+    complement_rule = ReflexRule(
+        rule_id="override.second",
+        enabled=True,
+        priority=2,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.override")]),
+        guards=[],
+        action_template=ReflexActionTemplate(kind="command", command="attack", conflict_key="override.b"),
+        cooldown_ms=0,
+        circuit_breaker_key="queue.default",
+        category=ReflexCategory.combat,
+        planner_interop=ReflexPlannerInterop.complement,
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=override_rule)
+    engine.upsert_rule(bot_id=bot_id, rule=complement_rule)
+
+    records = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="unit.override")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+    )
+
+    first = [item for item in records if item.rule_id == "override.first"]
+    second = [item for item in records if item.rule_id == "override.second"]
+    assert first and first[0].emitted
+    assert second and second[0].suppressed
+    assert second[0].suppression_reason == "override_in_effect"
+
+
+def test_reflex_complement_interop_allows_multiple_rules(tmp_path):
+    bot_id = "bot:complement"
+    queue = ActionQueue(max_per_bot=64)
+    queue_action, publish_macros = _callbacks(tmp_path, queue)
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+
+    first = ReflexRule(
+        rule_id="complement.a",
+        enabled=True,
+        priority=1,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.complement")]),
+        guards=[],
+        action_template=ReflexActionTemplate(kind="command", command="sit", conflict_key=None),
+        cooldown_ms=0,
+        circuit_breaker_key="queue.default",
+        planner_interop=ReflexPlannerInterop.complement,
+    )
+    second = ReflexRule(
+        rule_id="complement.b",
+        enabled=True,
+        priority=2,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.complement")]),
+        guards=[],
+        action_template=ReflexActionTemplate(kind="command", command="attack", conflict_key=None),
+        cooldown_ms=0,
+        circuit_breaker_key="queue.default",
+        planner_interop=ReflexPlannerInterop.complement,
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=first)
+    engine.upsert_rule(bot_id=bot_id, rule=second)
+
+    records = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="unit.complement")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+    )
+
+    emitted = [item for item in records if item.rule_id in {"complement.a", "complement.b"} and item.emitted]
+    assert len(emitted) == 2
+
+
+def test_reflex_uses_planner_context_facts(tmp_path):
+    bot_id = "bot:planner-facts"
+    queue = ActionQueue(max_per_bot=64)
+    queue_action, publish_macros = _callbacks(tmp_path, queue)
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+
+    rule = ReflexRule(
+        rule_id="planner.interrupt",
+        enabled=True,
+        priority=1,
+        trigger=ReflexTriggerClause(
+            all=[
+                ReflexPredicate(fact="event.event_type", op="eq", value="unit.planner"),
+                ReflexPredicate(fact="planner.active", op="eq", value=True),
+                ReflexPredicate(fact="planner.current_horizon", op="eq", value="strategic"),
+            ]
+        ),
+        guards=[],
+        action_template=ReflexActionTemplate(kind="command", command="sit", conflict_key="planner.interrupt"),
+        cooldown_ms=0,
+        circuit_breaker_key="queue.default",
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=rule)
+
+    records = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="unit.planner")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+        get_planner_context=lambda *, bot_id=bot_id: {
+            "active": True,
+            "current_horizon": "strategic",
+            "current_objective": "farm",
+            "last_plan_id": "plan-1",
+            "queue_depth": 2,
+        },
+    )
+    assert any(item.rule_id == "planner.interrupt" and item.emitted for item in records)
+
+
+def test_reflex_micro_and_eventmacro_plugin_override_from_metadata(tmp_path):
+    bot_id = "bot:plugin-override"
+    queue = ActionQueue(max_per_bot=64)
+    queue_action, publish_macros = _callbacks(tmp_path, queue)
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+
+    micro_rule = ReflexRule(
+        rule_id="plugin.micro",
+        enabled=True,
+        priority=1,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.plugin.micro")]),
+        guards=[],
+        action_template=ReflexActionTemplate(
+            kind="command",
+            command="",
+            conflict_key="plugin.micro",
+            metadata={"macro_plugin": "macroCustom"},
+        ),
+        fallback_macro="reflex_plugin_micro",
+        cooldown_ms=0,
+        circuit_breaker_key="macro.default",
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=micro_rule)
+
+    records_micro = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="unit.plugin.micro")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+    )
+    assert any(item.rule_id == "plugin.micro" and item.emitted for item in records_micro)
+    queued_micro = queue.fetch_next(bot_id)
+    assert queued_micro is not None
+    assert queued_micro.command == "macroCustom reflex_plugin_micro"
+
+    event_rule = ReflexRule(
+        rule_id="plugin.event",
+        enabled=True,
+        priority=1,
+        trigger=ReflexTriggerClause(all=[ReflexPredicate(fact="event.event_type", op="eq", value="unit.plugin.event")]),
+        guards=[],
+        action_template=ReflexActionTemplate(
+            kind="command",
+            command="",
+            conflict_key="plugin.event",
+            metadata={"event_macro_plugin": "eventMacroCustom"},
+        ),
+        event_macro_conditions=["OnCharLogIn"],
+        cooldown_ms=0,
+        circuit_breaker_key="macro.default",
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=event_rule)
+
+    records_event = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="unit.plugin.event")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+    )
+    assert any(item.rule_id == "plugin.event" and item.emitted for item in records_event)
+    queued_event = queue.fetch_next(bot_id)
+    assert queued_event is not None
+    assert queued_event.command == "eventMacroCustom reflex_auto_plugin.event"

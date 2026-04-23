@@ -33,7 +33,7 @@ class SelfCritic:
                 issues.append(f"forbidden_objective_token:{token}")
 
         for step in plan.steps:
-            kind = (step.kind or "").strip().lower()
+            kind = str(step.kind or "").strip().lower()
             if not kind:
                 issues.append(f"invalid_step_kind:{step.step_id}")
 
@@ -52,4 +52,3 @@ class SelfCritic:
                 issues.append("strategic_risk_too_high")
 
         return CriticVerdict(ok=not issues, issues=issues, risk_score=risk)
-

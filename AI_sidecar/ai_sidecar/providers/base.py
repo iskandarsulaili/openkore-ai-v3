@@ -286,6 +286,19 @@ class LLMProvider:
         try:
             self._guard.validate_schema(parsed, schema)
         except Exception as exc:
+            normalized = self._guard.normalize_for_schema(parsed, schema)
+            try:
+                self._guard.validate_schema(normalized, schema)
+                logger.info(
+                    "structured_schema_normalized",
+                    extra={
+                        "event": "structured_schema_normalized",
+                        "provider": self.provider_name,
+                    },
+                )
+                return normalized, ""
+            except Exception:
+                pass
             logger.warning(
                 "structured_schema_invalid",
                 extra={

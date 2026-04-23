@@ -5,6 +5,7 @@ import inspect
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import RLock
 from typing import Any
 from uuid import uuid4
@@ -119,6 +120,8 @@ class OpenMemoryProvider(MemoryProvider):
 
     def _init_client(self) -> None:
         try:
+            if self._path.strip():
+                Path(self._path).parent.mkdir(parents=True, exist_ok=True)
             from openmemory.client import Memory  # type: ignore
 
             self._memory_client = Memory(mode=self._mode, path=self._path)

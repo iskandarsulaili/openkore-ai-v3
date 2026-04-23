@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai_sidecar.contracts.actions import ActionPriorityTier
 from ai_sidecar.contracts.common import ContractMeta, utc_now
@@ -49,6 +50,17 @@ class ReflexActionTemplate(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class ReflexCategory(StrEnum):
+    combat = "combat"
+    survival = "survival"
+    interaction = "interaction"
+
+
+class ReflexPlannerInterop(StrEnum):
+    override = "override"
+    complement = "complement"
+
+
 class ReflexRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -62,6 +74,34 @@ class ReflexRule(BaseModel):
     cooldown_ms: int = Field(default=1000, ge=0, le=600000)
     circuit_breaker_key: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     event_macro_conditions: list[str] = Field(default_factory=list)
+    category: ReflexCategory = ReflexCategory.survival
+    planner_interop: ReflexPlannerInterop = ReflexPlannerInterop.override
+
+    @field_validator("event_macro_conditions")
+    @classmethod
+    def _normalize_event_macro_conditions(cls, value: list[str]) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            normalized = str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            out.append(normalized)
+        return out
+
+    @model_validator(mode="after")
+    def _validate_rule_contract(self) -> Self:
+        has_trigger = bool(self.trigger.all or self.trigger.any)
+        if not has_trigger:
+            raise ValueError("reflex_rule_trigger_missing")
+
+        has_direct_action = bool((self.action_template.command or "").strip())
+        has_macro_action = bool(self.fallback_macro or self.event_macro_conditions)
+        if not has_direct_action and not has_macro_action:
+            raise ValueError("reflex_rule_action_missing")
+
+        return self
 
 
 class ReflexRuleUpsertRequest(BaseModel):
@@ -111,6 +151,9 @@ class ReflexTriggerRecord(BaseModel):
     trigger_id: str = Field(min_length=1, max_length=128)
     bot_id: str = Field(min_length=1, max_length=128)
     rule_id: str = Field(min_length=1, max_length=128)
+    priority: int = 100
+    category: ReflexCategory = ReflexCategory.survival
+    planner_interop: ReflexPlannerInterop = ReflexPlannerInterop.override
     event_id: str | None = Field(default=None, max_length=128)
     event_family: str = Field(min_length=1, max_length=64)
     event_type: str = Field(min_length=1, max_length=128)
@@ -153,4 +196,3 @@ class ReflexBreakerListResponse(BaseModel):
     ok: bool = True
     bot_id: str
     breakers: list[ReflexBreakerStatusView] = Field(default_factory=list)
-

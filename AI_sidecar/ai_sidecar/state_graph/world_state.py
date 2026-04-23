@@ -14,10 +14,14 @@ from ai_sidecar.contracts.state_graph import (
     LearningFeatureVector,
     MacroExecutionState,
     NavigationState,
+    NpcState,
     QuestState,
     RiskState,
     SocialState,
 )
+from ai_sidecar.state_graph.economy_tracker import EconomyTracker
+from ai_sidecar.state_graph.npc_tracker import NpcInteractionTracker
+from ai_sidecar.state_graph.quest_tracker import QuestProgressTracker
 
 
 @dataclass(slots=True)
@@ -29,6 +33,7 @@ class _BotProjection:
     inventory: InventoryState = field(default_factory=InventoryState)
     economy: EconomyState = field(default_factory=EconomyState)
     social: SocialState = field(default_factory=SocialState)
+    npc: NpcState = field(default_factory=NpcState)
     risk: RiskState = field(default_factory=RiskState)
     macro_execution: MacroExecutionState = field(default_factory=MacroExecutionState)
     fleet_intent: FleetIntentState = field(default_factory=FleetIntentState)
@@ -54,6 +59,9 @@ class WorldStateProjector:
     def __init__(self) -> None:
         self._lock = RLock()
         self._by_bot: dict[str, _BotProjection] = {}
+        self._npc_tracker = NpcInteractionTracker()
+        self._economy_tracker = EconomyTracker()
+        self._quest_tracker = QuestProgressTracker()
 
     def observe_event(self, event: NormalizedEvent) -> None:
         now = self._normalize_dt(event.observed_at)
@@ -80,6 +88,8 @@ class WorldStateProjector:
                 self._apply_quest(projection, event, now)
             elif event.event_family == EventFamily.macro:
                 self._apply_macro(projection, event, now)
+            elif event.event_family == EventFamily.action:
+                self._apply_action(projection, event, now)
             elif event.event_family == EventFamily.telemetry:
                 self._apply_telemetry(projection, event, now)
 
@@ -96,6 +106,7 @@ class WorldStateProjector:
                 "inventory": projection.inventory,
                 "economy": projection.economy,
                 "social": projection.social,
+                "npc": projection.npc,
                 "risk": projection.risk,
                 "macro_execution": projection.macro_execution,
                 "fleet_intent": projection.fleet_intent,
@@ -137,6 +148,19 @@ class WorldStateProjector:
             projection.operational.skill_points = _int_or_none(progression.get("skill_points"))
             projection.operational.stat_points = _int_or_none(progression.get("stat_points"))
 
+        skills_payload = payload.get("skills")
+        if isinstance(skills_payload, list):
+            skill_map: dict[str, int] = {}
+            for item in skills_payload:
+                if not isinstance(item, dict):
+                    continue
+                skill_name = _str_or_none(item.get("skill_name") or item.get("skill_id"))
+                if not skill_name:
+                    continue
+                skill_map[skill_name] = int(_int_or_none(item.get("level")) or 0)
+            projection.operational.skills = skill_map
+            projection.operational.skill_count = len(skill_map)
+
         projection.navigation.map = position.get("map")
         projection.navigation.x = position.get("x")
         projection.navigation.y = position.get("y")
@@ -157,12 +181,39 @@ class WorldStateProjector:
             projection.inventory.overweight_ratio = float(projection.inventory.weight) / float(projection.inventory.weight_max)
         projection.inventory.updated_at = now
 
-        projection.economy.zeny = inventory.get("zeny")
-        projection.economy.updated_at = now
+        inventory_items_payload = payload.get("inventory_items")
+        if isinstance(inventory_items_payload, list):
+            consumables: dict[str, int] = {}
+            for item in inventory_items_payload[:128]:
+                if not isinstance(item, dict):
+                    continue
+                category = str(item.get("category") or "").strip().lower()
+                if category not in {"consumable", "potion", "ammo", "healing"}:
+                    continue
+                name = str(item.get("name") or item.get("item_id") or "").strip()
+                if not name:
+                    continue
+                qty = int(_int_or_none(item.get("quantity")) or 0)
+                if qty > 0:
+                    consumables[name] = qty
+            projection.inventory.consumables = consumables
+
+        self._economy_tracker.observe_snapshot(bot_id=projection.operational.bot_id, payload=payload, observed_at=now)
+        projection.economy = self._economy_tracker.export(
+            bot_id=projection.operational.bot_id,
+            zeny=_int_or_none(inventory.get("zeny")),
+            observed_at=now,
+        )
 
         projection.encounter.in_encounter = bool(combat.get("is_in_combat"))
         projection.encounter.target_id = combat.get("target_id")
         projection.encounter.updated_at = now
+
+        self._npc_tracker.observe_snapshot(bot_id=projection.operational.bot_id, payload=payload, observed_at=now)
+        projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
+
+        self._quest_tracker.observe_snapshot(bot_id=projection.operational.bot_id, payload=payload, observed_at=now)
+        projection.quest = self._quest_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
 
         # Rebuild canonical actor relation cache from inlined actors array (if bridge provided them).
         actors_list = payload.get("actors")
@@ -196,12 +247,19 @@ class WorldStateProjector:
 
         if event.event_type in {"actor.removed", "actor.disappeared"}:
             projection.actor_relations.pop(actor_id, None)
+            self._npc_tracker.observe_event(event)
+            projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
             self._recompute_actor_encounter(projection, now)
             return
 
         relation = str(payload.get("relation") or "").strip().lower()
         actor_type = str(payload.get("actor_type") or "").strip().lower()
         projection.actor_relations[actor_id] = (relation, actor_type)
+
+        if actor_type == "npc":
+            self._npc_tracker.observe_event(event)
+            projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
+
         self._recompute_actor_encounter(projection, now)
 
     def _apply_chat(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
@@ -216,6 +274,9 @@ class WorldStateProjector:
         projection.social.last_interaction_at = now
         projection.social.updated_at = now
 
+        self._npc_tracker.observe_event(event)
+        projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
+
     def _apply_config(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
         key = event.tags.get("key")
         if key:
@@ -223,17 +284,11 @@ class WorldStateProjector:
         projection.fleet_intent.updated_at = now
 
     def _apply_quest(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
-        payload = event.payload
-        quest_id = str(payload.get("quest_id") or "")
-        state_to = str(payload.get("state_to") or "")
-        if quest_id:
-            if quest_id not in projection.quest.active_quests and state_to not in {"completed", "abandoned"}:
-                projection.quest.active_quests.append(quest_id)
-            projection.quest.quest_status[quest_id] = state_to or "unknown"
-        npc = payload.get("npc")
-        if isinstance(npc, str) and npc:
-            projection.quest.last_npc = npc
-        projection.quest.updated_at = now
+        self._quest_tracker.observe_event(event)
+        projection.quest = self._quest_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
+
+        self._npc_tracker.observe_event(event)
+        projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
 
     def _apply_macro(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
         payload = event.payload
@@ -248,7 +303,21 @@ class WorldStateProjector:
         projection.macro_execution.last_result = action or event.event_type
         projection.macro_execution.updated_at = now
 
+        self._economy_tracker.observe_event(event)
+        projection.economy = self._economy_tracker.export(
+            bot_id=projection.operational.bot_id,
+            zeny=projection.economy.zeny,
+            observed_at=now,
+        )
+
     def _apply_telemetry(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
+        self._economy_tracker.observe_event(event)
+        projection.economy = self._economy_tracker.export(
+            bot_id=projection.operational.bot_id,
+            zeny=projection.economy.zeny,
+            observed_at=now,
+        )
+
         if event.severity.value in {"warning", "error", "critical"}:
             projection.risk.anomaly_flags.append(event.event_type)
             if len(projection.risk.anomaly_flags) > 64:
@@ -256,6 +325,14 @@ class WorldStateProjector:
             base = 0.2 if event.severity.value == "warning" else 0.4
             projection.risk.danger_score = min(1.0, projection.risk.danger_score + base)
             projection.risk.updated_at = now
+
+    def _apply_action(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
+        self._economy_tracker.observe_event(event)
+        projection.economy = self._economy_tracker.export(
+            bot_id=projection.operational.bot_id,
+            zeny=projection.economy.zeny,
+            observed_at=now,
+        )
 
     def _normalize_dt(self, value: datetime) -> datetime:
         if value.tzinfo is None:

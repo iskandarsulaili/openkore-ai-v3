@@ -15,6 +15,10 @@ class CrewAgentDescriptor(BaseModel):
     role: str = Field(min_length=1, max_length=128)
     goal: str = Field(min_length=1, max_length=512)
     tools: list[str] = Field(default_factory=list)
+    operating_model: str = Field(default="", max_length=1024)
+    responsibilities: list[str] = Field(default_factory=list)
+    handoff_inputs: list[str] = Field(default_factory=list)
+    handoff_outputs: list[str] = Field(default_factory=list)
     enabled: bool = True
 
 
@@ -53,6 +57,7 @@ class CrewStrategizeResponse(BaseModel):
     agent_outputs: list[dict[str, object]] = Field(default_factory=list)
     consolidated_output: str = ""
     planner_response: PlannerResponse | None = None
+    orchestrator: dict[str, object] = Field(default_factory=dict)
     duration_ms: float = 0.0
     errors: list[str] = Field(default_factory=list)
 
@@ -69,6 +74,7 @@ class CrewCoordinateResponse(BaseModel):
     agent_outputs: list[dict[str, object]] = Field(default_factory=list)
     consolidated_output: str = ""
     planner_response: PlannerResponse | None = None
+    orchestrator: dict[str, object] = Field(default_factory=dict)
     duration_ms: float = 0.0
     errors: list[str] = Field(default_factory=list)
 
@@ -110,4 +116,3 @@ class CrewStatusResponse(BaseModel):
     active_runs: int = 0
     counters: dict[str, int] = Field(default_factory=dict)
     agents: list[CrewAgentDescriptor] = Field(default_factory=list)
-

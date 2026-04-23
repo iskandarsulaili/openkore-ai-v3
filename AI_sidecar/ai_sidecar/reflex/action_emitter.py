@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import logging
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -10,6 +11,8 @@ from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.macros import EventAutomacro, MacroPublishRequest, MacroRoutine
 from ai_sidecar.contracts.reflex import ReflexRule
 from ai_sidecar.reflex.micro_macro_generator import MicroMacroGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class EmitOutcome:
@@ -37,7 +40,6 @@ class ActionEmitter:
         "overrideAI",
         "delay",
     }
-
     def __init__(
         self,
         *,
@@ -61,6 +63,15 @@ class ActionEmitter:
         queue_action: callable,
         publish_macros: callable,
     ) -> EmitOutcome:
+        logger.debug(
+            "reflex_emit_chain_start",
+            extra={
+                "event": "reflex_emit_chain_start",
+                "bot_id": bot_id,
+                "rule_id": rule.rule_id,
+                "trigger_id": trigger_id,
+            },
+        )
         direct = self._emit_direct_queue_action(
             bot_id=bot_id,
             rule=rule,
@@ -90,6 +101,18 @@ class ActionEmitter:
         if event_macro.emitted:
             return event_macro
 
+        logger.warning(
+            "reflex_emit_chain_all_targets_failed",
+            extra={
+                "event": "reflex_emit_chain_all_targets_failed",
+                "bot_id": bot_id,
+                "rule_id": rule.rule_id,
+                "trigger_id": trigger_id,
+                "direct_reason": direct.reason,
+                "micro_reason": micro.reason,
+                "eventmacro_reason": event_macro.reason,
+            },
+        )
         return EmitOutcome(
             emitted=False,
             execution_target="none",
@@ -134,10 +157,21 @@ class ActionEmitter:
             automacros=[automacro_by_name[name] for name in sorted(automacro_by_name)],
             enqueue_reload=True,
             reload_conflict_key="reflex.macro_reload",
+            macro_plugin=self._macro_plugin_for_rule(rule),
+            event_macro_plugin=self._event_macro_plugin_for_rule(rule),
         )
 
         ok, _, message = publish_macros(request)
         if not ok:
+            logger.warning(
+                "reflex_asset_publish_failed",
+                extra={
+                    "event": "reflex_asset_publish_failed",
+                    "bot_id": bot_id,
+                    "rule_id": rule.rule_id,
+                    "publish_error": message,
+                },
+            )
             return False, f"asset_publish_failed:{message}"
 
         with self._lock:
@@ -216,7 +250,7 @@ class ActionEmitter:
             trigger_id=trigger_id,
             execution_target="published_micro_macro",
             kind="command",
-            command=f"macro {macro_name}",
+            command=f"{self._macro_plugin_for_rule(rule)} {macro_name}",
         )
         accepted, status, action_id, reason = queue_action(proposal, bot_id)
         if accepted:
@@ -262,7 +296,7 @@ class ActionEmitter:
             trigger_id=trigger_id,
             execution_target="eventmacro_trigger",
             kind="command",
-            command=f"eventMacro {automacro_name}",
+            command=f"{self._event_macro_plugin_for_rule(rule)} {automacro_name}",
         )
         accepted, status, action_id, reason = queue_action(proposal, bot_id)
         if accepted:
@@ -304,11 +338,37 @@ class ActionEmitter:
                 "postconditions": [],
                 "rollback_hint": "teleport_to_save",
                 "reflex_rule_id": rule.rule_id,
+                "reflex_rule_priority": rule.priority,
+                "reflex_category": rule.category.value,
+                "reflex_planner_interop": rule.planner_interop.value,
                 "reflex_trigger_id": trigger_id,
                 "execution_target": execution_target,
                 **dict(rule.action_template.metadata),
             },
         )
+
+    def _sanitize_plugin(self, value: object, *, fallback: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return fallback
+        return text if self._is_safe_token(text) else fallback
+
+    def _macro_plugin_for_rule(self, rule: ReflexRule) -> str:
+        metadata = dict(rule.action_template.metadata)
+        return self._sanitize_plugin(metadata.get("macro_plugin"), fallback="macro")
+
+    def _event_macro_plugin_for_rule(self, rule: ReflexRule) -> str:
+        metadata = dict(rule.action_template.metadata)
+        return self._sanitize_plugin(metadata.get("event_macro_plugin"), fallback="eventMacro")
+
+    def _is_safe_token(self, value: str) -> bool:
+        if not value:
+            return False
+        for ch in value:
+            if ch.isalnum() or ch in "_.:-":
+                continue
+            return False
+        return True
 
     def _load_existing_generated_assets(self) -> tuple[list[MacroRoutine], list[MacroRoutine], list[EventAutomacro]]:
         macro_file = self._workspace_root / "control" / "ai_sidecar_generated_macros.txt"
@@ -395,4 +455,3 @@ class ActionEmitter:
                 )
             idx += 1
         return out
-

@@ -4,13 +4,23 @@ import asyncio
 from dataclasses import dataclass
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
+from ai_sidecar.app import install_request_validation_logging
+from ai_sidecar.config import settings
 from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.lifecycle import create_runtime
+from ai_sidecar.memory.retrieval import OpenMemoryProvider, SQLiteMemoryProvider
 from ai_sidecar.planner.context_assembler import PlannerContextAssembler
 from ai_sidecar.planner.schemas import PlanHorizon
+from ai_sidecar.providers.deepseek_adapter import DeepseekAdapter
 from ai_sidecar.providers.base import PlannerModelRequest, PlannerModelResponse
 from ai_sidecar.providers.model_router import ModelRouter
+from ai_sidecar.providers.openai_adapter import OpenAIAdapter
 from ai_sidecar.providers.prompt_guard import PromptGuard
+from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 
 
 @dataclass(slots=True)
@@ -214,3 +224,94 @@ def test_context_assembler_marks_degradation_when_fleet_calls_fail() -> None:
     reasons = coordination["degradation_reasons"]
     assert any(str(item).startswith("fleet_constraints_unavailable") for item in reasons)
     assert any(str(item).startswith("fleet_blackboard_unavailable") for item in reasons)
+
+
+def test_create_runtime_openmemory_failure_uses_sqlite_fallback_without_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    def _forced_openmemory_init_failure(self: OpenMemoryProvider) -> None:
+        self._memory_client = None
+        self._enabled = False
+        self._init_error = "forced_openmemory_failure"
+
+    monkeypatch.setattr(settings, "memory_backend", "openmemory")
+    monkeypatch.setattr(settings, "sqlite_path", str(tmp_path / "sidecar.sqlite"))
+    monkeypatch.setattr(settings, "memory_openmemory_path", str(tmp_path / "openmemory.sqlite"))
+    monkeypatch.setattr(OpenMemoryProvider, "_init_client", _forced_openmemory_init_failure)
+
+    runtime = create_runtime()
+
+    assert runtime.persistence_degraded is False
+    assert isinstance(runtime.memory.provider, SQLiteMemoryProvider)
+
+
+def test_openai_and_deepseek_health_report_api_key_missing_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = PromptGuard()
+    breaker = ReflexCircuitBreaker()
+
+    openai = OpenAIAdapter(
+        base_url="https://api.openai.com/v1",
+        api_key="",
+        default_model="gpt-4o-mini",
+        embedding_model="text-embedding-3-small",
+        guard=guard,
+        breaker=breaker,
+        timeout_seconds=1.0,
+        max_retries=0,
+    )
+    deepseek = DeepseekAdapter(
+        base_url="https://api.deepseek.com/v1",
+        api_key="",
+        default_model="deepseek-chat",
+        embedding_model="text-embedding-3-small",
+        guard=guard,
+        breaker=breaker,
+        timeout_seconds=1.0,
+        max_retries=0,
+    )
+
+    async def _fail_if_called(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("network_call_not_expected_when_api_key_missing")
+
+    monkeypatch.setattr(openai, "_get_json", _fail_if_called)
+    monkeypatch.setattr(deepseek, "_get_json", _fail_if_called)
+
+    openai_health = asyncio.run(openai.health(bot_id="bot:w1"))
+    deepseek_health = asyncio.run(deepseek.health(bot_id="bot:w1"))
+
+    assert openai_health.available is False
+    assert openai_health.message == "api_key_missing"
+    assert openai_health.breaker_state == "closed"
+
+    assert deepseek_health.available is False
+    assert deepseek_health.message == "api_key_missing"
+    assert deepseek_health.breaker_state == "closed"
+
+
+class _ValidationPayload(BaseModel):
+    value: int
+
+
+def test_request_validation_logging_handler_emits_structured_warning(caplog: pytest.LogCaptureFixture) -> None:
+    app = FastAPI()
+    install_request_validation_logging(app)
+
+    @app.post("/contracts/validation")
+    def _validation_endpoint(payload: _ValidationPayload) -> dict[str, object]:
+        return {"ok": True, "value": payload.value}
+
+    caplog.set_level("WARNING", logger="ai_sidecar.app")
+    with TestClient(app) as client:
+        response = client.post("/contracts/validation", json={"value": "not-an-int"})
+
+    assert response.status_code == 422
+    records = [item for item in caplog.records if getattr(item, "event", "") == "http_request_validation_failed"]
+    assert records
+    record = records[-1]
+    assert getattr(record, "path", "") == "/contracts/validation"
+    body_preview = str(getattr(record, "body_preview", ""))
+    assert "not-an-int" in body_preview

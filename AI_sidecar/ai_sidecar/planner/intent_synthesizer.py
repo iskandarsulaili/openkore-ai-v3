@@ -39,9 +39,11 @@ class IntentSynthesizer:
                 intent_id="intent-objective-1",
                 objective=context.objective,
                 priority=50,
-                constraints=[f"horizon={context.horizon.value}"],
+                constraints=[
+                    f"horizon={context.horizon.value}",
+                    f"latency_budget_ms={context.latency_headroom.get('horizon_budget_ms', 0)}",
+                ],
                 expected_latency_ms=1800,
             )
         )
         return intents
-

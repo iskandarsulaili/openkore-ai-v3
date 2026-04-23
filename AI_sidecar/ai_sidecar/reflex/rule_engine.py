@@ -10,7 +10,9 @@ from uuid import uuid4
 
 from ai_sidecar.contracts.events import NormalizedEvent
 from ai_sidecar.contracts.reflex import (
+    ReflexCategory,
     ReflexActionTemplate,
+    ReflexPlannerInterop,
     ReflexPredicate,
     ReflexRule,
     ReflexTriggerClause,
@@ -38,6 +40,12 @@ class _PendingOutcome:
 
 
 class ReflexRuleEngine:
+    _CATEGORY_ORDER: dict[ReflexCategory, int] = {
+        ReflexCategory.survival: 0,
+        ReflexCategory.combat: 1,
+        ReflexCategory.interaction: 2,
+    }
+
     def __init__(
         self,
         *,
@@ -123,6 +131,7 @@ class ReflexRuleEngine:
         get_enriched_state,
         queue_action,
         publish_macros,
+        get_planner_context=None,
     ) -> list[ReflexTriggerRecord]:
         self.ensure_bot(bot_id=bot_id)
 
@@ -132,10 +141,31 @@ class ReflexRuleEngine:
 
         for event in events:
             state = get_enriched_state(bot_id=bot_id)
-            facts = self._build_fact_map(event=event, state=state)
+            planner_context = get_planner_context(bot_id=bot_id) if callable(get_planner_context) else {}
+            facts = self._build_fact_map(event=event, state=state, planner_context=planner_context)
             descriptors = self._candidate_descriptors(bot_id=bot_id, event=event)
+            override_emitted = False
             for descriptor in descriptors:
                 rule = descriptor.rule
+
+                if override_emitted:
+                    output.append(
+                        self._record_trigger(
+                            bot_id=bot_id,
+                            rule=rule,
+                            event=event,
+                            elapsed_ms=0.0,
+                            suppressed=True,
+                            suppression_reason="override_in_effect",
+                            emitted=False,
+                            execution_target=None,
+                            action_id=None,
+                            outcome="suppressed",
+                            detail="higher-priority override reflex already emitted for this event",
+                        )
+                    )
+                    continue
+
                 decision = self._matcher.evaluate(bot_id=bot_id, rule=rule, facts=facts)
                 if not decision.matched:
                     if decision.suppressed:
@@ -232,6 +262,8 @@ class ReflexRuleEngine:
                         trigger_id=trigger_id,
                     )
                     output.append(record)
+                    if rule.planner_interop == ReflexPlannerInterop.override:
+                        override_emitted = True
                     continue
 
                 self._breakers.record_failure(
@@ -309,7 +341,14 @@ class ReflexRuleEngine:
         return selected
 
     def _build_descriptors(self, rules: list[ReflexRule]) -> list[_RuleDescriptor]:
-        sorted_rules = sorted(rules, key=lambda item: (item.priority, item.rule_id))
+        sorted_rules = sorted(
+            rules,
+            key=lambda item: (
+                item.priority,
+                self._CATEGORY_ORDER.get(item.category, 99),
+                item.rule_id,
+            ),
+        )
         out: list[_RuleDescriptor] = []
         for rule in sorted_rules:
             hints = self._extract_event_hints(rule)
@@ -332,7 +371,13 @@ class ReflexRuleEngine:
                         out.add(item)
         return out
 
-    def _build_fact_map(self, *, event: NormalizedEvent, state: EnrichedWorldState) -> dict[str, object]:
+    def _build_fact_map(
+        self,
+        *,
+        event: NormalizedEvent,
+        state: EnrichedWorldState,
+        planner_context: dict[str, object],
+    ) -> dict[str, object]:
         facts: dict[str, object] = {
             "event.event_id": event.event_id,
             "event.event_type": event.event_type,
@@ -351,6 +396,15 @@ class ReflexRuleEngine:
         self._flatten(prefix="event", value=event_payload, out=facts)
         self._flatten(prefix="state", value=state_payload, out=facts)
         self._flatten(prefix="", value=state_payload, out=facts)
+
+        planner_payload = planner_context if isinstance(planner_context, dict) else {}
+        self._flatten(prefix="planner", value=planner_payload, out=facts)
+
+        facts["planner.active"] = bool(planner_payload.get("active", False))
+        facts["planner.current_horizon"] = planner_payload.get("current_horizon", "")
+        facts["planner.current_objective"] = planner_payload.get("current_objective", "")
+        facts["planner.last_plan_id"] = planner_payload.get("last_plan_id", "")
+        facts["planner.queue_depth"] = planner_payload.get("queue_depth", 0)
 
         hp = self._safe_float(facts.get("operational.hp"))
         hp_max = self._safe_float(facts.get("operational.hp_max"))
@@ -432,6 +486,9 @@ class ReflexRuleEngine:
             trigger_id=trigger_id or f"rfx-{uuid4().hex[:20]}",
             bot_id=bot_id,
             rule_id=rule.rule_id,
+            priority=rule.priority,
+            category=rule.category,
+            planner_interop=rule.planner_interop,
             event_id=event.event_id,
             event_family=event.event_family.value,
             event_type=event.event_type,
@@ -521,6 +578,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_survival_heal",
                 cooldown_ms=1500,
                 circuit_breaker_key="combat.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="lethal_escape_teleport",
@@ -543,6 +602,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_survival_escape",
                 cooldown_ms=3000,
                 circuit_breaker_key="combat.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="route_stuck_recovery",
@@ -565,6 +626,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_route_recovery",
                 cooldown_ms=5000,
                 circuit_breaker_key="queue.default",
+                category=ReflexCategory.combat,
+                planner_interop=ReflexPlannerInterop.complement,
             ),
             ReflexRule(
                 rule_id="weight_overflow_handling",
@@ -586,6 +649,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_weight_overflow",
                 cooldown_ms=4000,
                 circuit_breaker_key="queue.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="hostile_player_detection_response",
@@ -611,6 +676,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_social_escape",
                 cooldown_ms=10000,
                 circuit_breaker_key="social.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="disconnect_relog_orchestration",
@@ -632,6 +699,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_relog_sequence",
                 cooldown_ms=15000,
                 circuit_breaker_key="fleet.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="anti_loop_deadlock_escape",
@@ -654,6 +723,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_deadlock_escape",
                 cooldown_ms=6000,
                 circuit_breaker_key="queue.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="macro_crash_fallback",
@@ -677,6 +748,8 @@ class ReflexRuleEngine:
                 cooldown_ms=8000,
                 circuit_breaker_key="macro.default",
                 event_macro_conditions=["OnCharLogIn"],
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
             ),
             # --- Progression & encounter auto-responses ---
             ReflexRule(
@@ -700,6 +773,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_mob_swarm_combat",
                 cooldown_ms=5000,
                 circuit_breaker_key="combat.default",
+                category=ReflexCategory.combat,
+                planner_interop=ReflexPlannerInterop.complement,
             ),
             ReflexRule(
                 rule_id="extreme_overweight_sell_run",
@@ -721,6 +796,8 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_extreme_weight_sell",
                 cooldown_ms=10000,
                 circuit_breaker_key="queue.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
             ),
             ReflexRule(
                 rule_id="skill_points_available_alert",
@@ -744,6 +821,7 @@ class ReflexRuleEngine:
                 fallback_macro="reflex_skill_point_allocation",
                 cooldown_ms=60000,
                 circuit_breaker_key="queue.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
             ),
         ]
-

@@ -99,7 +99,10 @@ class NormalizerBus:
         world_projection = self.world_state.export(bot_id=bot_id, features=LearningFeatureVector())
         operational = world_projection["operational"]
         encounter = world_projection["encounter"]
+        quest = world_projection["quest"]
         inventory = world_projection["inventory"]
+        economy = world_projection["economy"]
+        npc = world_projection["npc"]
         risk = world_projection["risk"]
 
         basis = {
@@ -112,6 +115,13 @@ class NormalizerBus:
             "inventory.zeny": float(inventory.zeny or 0.0),
             "inventory.item_count": float(inventory.item_count),
             "inventory.overweight_ratio": float(inventory.overweight_ratio or 0.0),
+            "inventory.consumables_count": float(len(inventory.consumables)),
+            "economy.zeny_delta_1m": float(economy.zeny_delta_1m),
+            "economy.zeny_delta_10m": float(economy.zeny_delta_10m),
+            "economy.vendor_exposure": float(economy.vendor_exposure),
+            "economy.transaction_count_10m": float(economy.transaction_count_10m),
+            "economy.inventory_value_estimate": float(economy.inventory_value_estimate),
+            "economy.price_signal_index": float(economy.price_signal_index),
             "progression.base_level": float(operational.base_level or 0.0),
             "progression.job_level": float(operational.job_level or 0.0),
             "progression.base_exp": float(operational.base_exp or 0.0),
@@ -120,6 +130,13 @@ class NormalizerBus:
             "progression.job_exp_max": float(operational.job_exp_max or 0.0),
             "progression.skill_points": float(operational.skill_points or 0.0),
             "progression.stat_points": float(operational.stat_points or 0.0),
+            "progression.skill_count": float(operational.skill_count),
+            "quest.active_count": float(len(quest.active_quests)),
+            "quest.completed_count": float(len(quest.completed_quests)),
+            "quest.active_objective_count": float(quest.active_objective_count),
+            "quest.objective_completion_ratio": float(quest.objective_completion_ratio),
+            "npc.relationship_count": float(npc.total_known_npcs),
+            "npc.interaction_count_10m": float(npc.interaction_count_10m),
         }
         labels = {
             "map": str(operational.map or ""),
@@ -142,6 +159,7 @@ class NormalizerBus:
             inventory=world_projection["inventory"],
             economy=world_projection["economy"],
             social=world_projection["social"],
+            npc=world_projection["npc"],
             risk=world_projection["risk"],
             macro_execution=world_projection["macro_execution"],
             fleet_intent=world_projection["fleet_intent"],

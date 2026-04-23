@@ -128,6 +128,7 @@ from ai_sidecar.planner.schemas import (
 )
 from ai_sidecar.planner.self_critic import SelfCritic
 from ai_sidecar.planner.service import PlannerService
+from ai_sidecar.planner.validator import PlanValidator
 from ai_sidecar.providers.deepseek_adapter import DeepseekAdapter
 from ai_sidecar.providers.model_router import DEFAULT_POLICY_RULES, ModelRouter
 from ai_sidecar.providers.ollama_adapter import OllamaAdapter
@@ -1074,6 +1075,7 @@ class RuntimeState:
             get_enriched_state=lambda *, bot_id=bot_id: self.enriched_state(bot_id=bot_id),
             queue_action=self.queue_action,
             publish_macros=self.publish_macros,
+            get_planner_context=lambda *, bot_id=bot_id: self.reflex_runtime_context(bot_id=bot_id),
         )
         elapsed_ms = self.latency_router.end("reflex.evaluate", started)
 
@@ -2585,6 +2587,17 @@ class RuntimeState:
             return PlannerStatusResponse(ok=True, bot_id=bot_id, planner_healthy=False, counters={})
         return self.planner_service.status(bot_id=bot_id)
 
+    def reflex_runtime_context(self, *, bot_id: str) -> dict[str, object]:
+        planner = self.planner_status(bot_id=bot_id)
+        return {
+            "active": bool(planner.current_objective),
+            "planner_healthy": bool(planner.planner_healthy),
+            "current_objective": planner.current_objective,
+            "current_horizon": self._bot_plan_family.get(bot_id, ""),
+            "last_plan_id": planner.last_plan_id,
+            "queue_depth": self.action_queue.count(bot_id),
+        }
+
     async def crewai_strategize(self, payload: CrewStrategizeRequest) -> CrewStrategizeResponse:
         if self.crew_manager is None:
             return CrewStrategizeResponse(
@@ -3156,10 +3169,22 @@ def create_runtime() -> RuntimeState:
             mode=settings.memory_openmemory_mode,
             path=str(memory_sqlite_path),
         )
-        provider = openmemory_provider
-        if backend == "openmemory" and not openmemory_provider.enabled:
-            persistence_degraded = True
+        if openmemory_provider.enabled:
+            provider = openmemory_provider
+        else:
+            provider = fallback_provider
             memory_provider_error = openmemory_provider.init_error
+            logger.warning(
+                "memory_backend_fallback_to_sqlite",
+                extra={
+                    "event": "memory_backend_fallback_to_sqlite",
+                    "requested_backend": backend,
+                    "fallback_backend": "sqlite" if isinstance(fallback_provider, SQLiteMemoryProvider) else "in_memory",
+                    "reason": openmemory_provider.init_error,
+                },
+            )
+            if backend == "openmemory" and not isinstance(fallback_provider, SQLiteMemoryProvider):
+                persistence_degraded = True
 
     guard = PromptGuard(max_prompt_chars=settings.llm_prompt_max_chars)
     provider_breaker = ReflexCircuitBreaker()
@@ -3317,6 +3342,10 @@ def create_runtime() -> RuntimeState:
             model_router=model_router,
             planner_timeout_seconds=settings.planner_timeout_seconds,
             planner_retries=settings.planner_retries,
+        ),
+        plan_validator=PlanValidator(
+            tactical_budget_ms=settings.planner_tactical_budget_ms,
+            strategic_budget_ms=settings.planner_strategic_budget_ms,
         ),
         self_critic=SelfCritic(
             tactical_budget_ms=settings.planner_tactical_budget_ms,

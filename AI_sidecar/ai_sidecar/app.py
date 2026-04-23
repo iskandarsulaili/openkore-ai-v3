@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi import Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 from ai_sidecar.api.routers import (
     acknowledgements,
@@ -28,12 +33,42 @@ from ai_sidecar.lifecycle import create_runtime
 from ai_sidecar.logging_setup import configure_logging
 from ai_sidecar.observability import install_fastapi_tracing
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(level=settings.log_level, use_json=settings.log_json)
     app.state.runtime = create_runtime()
     yield
+
+
+def install_request_validation_logging(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+        trace_id = str(getattr(request.state, "trace_id", "") or "")
+        body_preview = ""
+        try:
+            raw_body = await request.body()
+            if raw_body:
+                body_preview = raw_body.decode("utf-8", errors="replace")[:2048]
+        except Exception as body_error:
+            body_preview = f"<unavailable:{type(body_error).__name__}>"
+
+        details = exc.errors()
+        logger.warning(
+            "http_request_validation_failed",
+            extra={
+                "event": "http_request_validation_failed",
+                "trace_id": trace_id,
+                "method": request.method,
+                "path": request.url.path,
+                "errors": details,
+                "errors_json": json.dumps(details, ensure_ascii=False)[:4096],
+                "body_preview": body_preview,
+            },
+        )
+        return await request_validation_exception_handler(request, exc)
 
 
 def create_app() -> FastAPI:
@@ -49,6 +84,7 @@ def create_app() -> FastAPI:
     )
     if settings.observability_enable_tracing:
         install_fastapi_tracing(app)
+    install_request_validation_logging(app)
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(actions.router)

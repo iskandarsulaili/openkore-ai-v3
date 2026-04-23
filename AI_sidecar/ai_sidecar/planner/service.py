@@ -13,7 +13,6 @@ from ai_sidecar.planner.reflection_writer import ReflectionWriter
 from ai_sidecar.planner.schemas import (
     EscalationNotice,
     LearningLabel,
-    MacroSynthesisProposal,
     MemoryWriteback,
     PlanHorizon,
     PlannerExplainRequest,
@@ -23,6 +22,7 @@ from ai_sidecar.planner.schemas import (
     PlannerStatusResponse,
 )
 from ai_sidecar.planner.self_critic import SelfCritic
+from ai_sidecar.planner.validator import PlanValidator
 
 
 @dataclass(slots=True)
@@ -41,6 +41,7 @@ class PlannerService:
     context_assembler: PlannerContextAssembler
     intent_synthesizer: IntentSynthesizer
     plan_generator: PlanGenerator
+    plan_validator: PlanValidator
     self_critic: SelfCritic
     macro_synthesizer: MacroSynthesizer
     reflection_writer: ReflectionWriter
@@ -55,6 +56,7 @@ class PlannerService:
             "planner_requests": 0,
             "planner_replans": 0,
             "planner_failures": 0,
+            "planner_validation_failures": 0,
             "planner_success": 0,
             "planner_macro_promotions": 0,
         }
@@ -74,6 +76,77 @@ class PlannerService:
             context=context,
             max_steps=payload.max_steps,
         )
+
+        validation = self.plan_validator.validate(plan=plan, latency_ms=latency_ms)
+        plan = validation.normalized
+        tactical_bundle = self.plan_generator.build_tactical_bundle(bot_id=payload.meta.bot_id, context=context, plan=plan)
+        route = {
+            **dict(route),
+            "execution_flow": ["context_assembly", "plan_generation", "plan_validation", "self_critic", "output"],
+            "validation": {
+                "ok": validation.ok,
+                "issues": list(validation.issues),
+                "warnings": list(validation.warnings),
+            },
+            "latency_budget": {
+                "horizon": payload.horizon.value,
+                "budget_ms": self._budget_for_horizon(payload.horizon),
+                "observed_ms": float(latency_ms),
+                "within_budget": float(latency_ms) <= float(self._budget_for_horizon(payload.horizon)),
+            },
+        }
+
+        if not validation.ok:
+            with self._lock:
+                self._counters["planner_failures"] += 1
+                self._counters["planner_validation_failures"] += 1
+                bot_state = self._state.setdefault(payload.meta.bot_id, _PlannerBotState())
+                bot_state.current_objective = payload.objective
+                bot_state.last_plan_id = plan.plan_id
+                bot_state.last_provider = provider
+                bot_state.last_model = model
+                bot_state.last_rationale = ";".join(validation.issues)
+                bot_state.updated_at = datetime.now(UTC)
+
+            escalation = EscalationNotice(
+                bot_id=payload.meta.bot_id,
+                severity="warning",
+                reason=f"plan_validation_failed:{';'.join(validation.issues)}",
+                recommended_action="fallback_safe_mode",
+            )
+            self.reflection_writer.write(
+                bot_id=payload.meta.bot_id,
+                plan_id=plan.plan_id,
+                objective=payload.objective,
+                succeeded=False,
+                rationale=escalation.reason,
+                metadata={"trace_id": payload.meta.trace_id, "route": route},
+            )
+            return PlannerResponse(
+                ok=False,
+                message="plan_rejected_by_validator",
+                trace_id=payload.meta.trace_id,
+                strategic_plan=plan,
+                tactical_bundle=tactical_bundle,
+                macro_proposal=None,
+                memory_writeback=MemoryWriteback(
+                    bot_id=payload.meta.bot_id,
+                    summary=f"Plan validation failed: {escalation.reason}",
+                    semantic_tags=["planner", "validator", "rejected"],
+                    metadata={"issues": validation.issues, "warnings": validation.warnings},
+                ),
+                learning_label=LearningLabel(
+                    bot_id=payload.meta.bot_id,
+                    label="planner_validation_rejected",
+                    reward=-0.3,
+                    details={"issues": validation.issues, "warnings": validation.warnings},
+                ),
+                escalation=escalation,
+                provider=provider,
+                model=model,
+                latency_ms=latency_ms,
+                route=route,
+            )
 
         verdict = self.self_critic.evaluate(plan=plan)
         if not verdict.ok:
@@ -162,7 +235,11 @@ class PlannerService:
                 bot_id=payload.meta.bot_id,
                 summary=f"Plan generated for objective: {payload.objective}",
                 semantic_tags=["planner", "success", payload.horizon.value],
-                metadata={"plan_id": plan.plan_id, "risk_score": plan.risk_score},
+                metadata={
+                    "plan_id": plan.plan_id,
+                    "risk_score": plan.risk_score,
+                    "validator_warnings": list(validation.warnings),
+                },
             ),
             learning_label=LearningLabel(
                 bot_id=payload.meta.bot_id,
@@ -265,3 +342,6 @@ class PlannerService:
     def counters(self) -> dict[str, int]:
         with self._lock:
             return dict(self._counters)
+
+    def _budget_for_horizon(self, horizon: PlanHorizon) -> int:
+        return self.plan_validator.tactical_budget_ms if horizon == PlanHorizon.tactical else self.plan_validator.strategic_budget_ms

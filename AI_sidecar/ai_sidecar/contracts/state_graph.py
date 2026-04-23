@@ -35,6 +35,8 @@ class BotOperationalState(BaseModel):
     job_exp_max: int | None = None
     skill_points: int | None = None
     stat_points: int | None = None
+    skill_count: int = 0
+    skills: dict[str, int] = Field(default_factory=dict)
 
 
 class WorldEntity(BaseModel):
@@ -88,6 +90,11 @@ class QuestState(BaseModel):
 
     active_quests: list[str] = Field(default_factory=list)
     quest_status: dict[str, str] = Field(default_factory=dict)
+    quest_titles: dict[str, str] = Field(default_factory=dict)
+    quest_objectives: dict[str, list[dict[str, object]]] = Field(default_factory=dict)
+    completed_quests: list[str] = Field(default_factory=list)
+    active_objective_count: int = 0
+    objective_completion_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     last_npc: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
@@ -113,6 +120,10 @@ class EconomyState(BaseModel):
     zeny_delta_1m: int = 0
     zeny_delta_10m: int = 0
     vendor_exposure: int = 0
+    transaction_count_10m: int = 0
+    inventory_value_estimate: int = 0
+    price_signal_index: float = 0.0
+    market_listings: list[dict[str, object]] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
 
@@ -125,6 +136,17 @@ class SocialState(BaseModel):
     party_messages_5m: int = 0
     guild_messages_5m: int = 0
     last_interaction_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+    raw: dict[str, object] = Field(default_factory=dict)
+
+
+class NpcState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    last_interacted_npc: str | None = None
+    relationships: list[dict[str, object]] = Field(default_factory=list)
+    total_known_npcs: int = 0
+    interaction_count_10m: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
 
@@ -185,6 +207,7 @@ class EnrichedWorldState(BaseModel):
     inventory: InventoryState
     economy: EconomyState
     social: SocialState
+    npc: NpcState = Field(default_factory=NpcState)
     risk: RiskState
     macro_execution: MacroExecutionState
     fleet_intent: FleetIntentState
@@ -212,4 +235,3 @@ class NormalizedStateGraph(BaseModel):
     nodes: list[WorldEntity] = Field(default_factory=list)
     edges: list[EntityEdge] = Field(default_factory=list)
     projections: dict[str, object] = Field(default_factory=dict)
-

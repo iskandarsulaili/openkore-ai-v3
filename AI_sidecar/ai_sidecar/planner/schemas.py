@@ -16,13 +16,28 @@ class PlanHorizon(StrEnum):
     reflection = "reflection"
 
 
+class PlannerStepKind(StrEnum):
+    task = "task"
+    observe = "observe"
+    combat = "combat"
+    travel = "travel"
+    npc = "npc"
+    loot = "loot"
+    rest = "rest"
+    quest = "quest"
+    econ = "econ"
+    skill_up = "skill_up"
+    social = "social"
+
+
 class PlannerStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     step_id: str = Field(min_length=1, max_length=128)
-    kind: str = Field(min_length=1, max_length=64)
+    kind: PlannerStepKind = PlannerStepKind.task
     target: str | None = Field(default=None, max_length=256)
     description: str = Field(default="", max_length=1024)
+    priority: int = Field(default=100, ge=0, le=1000)
     success_predicates: list[str] = Field(default_factory=list)
     fallbacks: list[str] = Field(default_factory=list)
 
@@ -121,6 +136,12 @@ class PlannerContext(BaseModel):
     fleet_constraints: dict[str, object] = Field(default_factory=dict)
     queue: dict[str, object] = Field(default_factory=dict)
     macros: dict[str, object] = Field(default_factory=dict)
+    reflex: dict[str, object] = Field(default_factory=dict)
+    job_progression: dict[str, object] = Field(default_factory=dict)
+    economy_context: dict[str, object] = Field(default_factory=dict)
+    quest_context: dict[str, object] = Field(default_factory=dict)
+    npc_context: dict[str, object] = Field(default_factory=dict)
+    latency_headroom: dict[str, object] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -204,4 +225,3 @@ class ProviderPolicyUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     rules: dict[str, dict[str, object]] = Field(default_factory=dict)
-

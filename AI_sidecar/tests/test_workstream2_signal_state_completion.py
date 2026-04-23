@@ -18,8 +18,15 @@ from ai_sidecar.contracts.state import (
     BotStateSnapshot,
     CombatState,
     InventoryDigest,
+    InventoryItemDigest,
+    MarketDigest,
+    MarketQuoteDigest,
+    NpcRelationshipDigest,
     Position,
     ProgressionDigest,
+    QuestDigest,
+    QuestObjectiveDigest,
+    SkillDigest,
     Vitals,
 )
 from ai_sidecar.contracts.state_graph import LearningFeatureVector
@@ -188,6 +195,140 @@ def test_feature_extractor_tracks_exp_delta_and_latest_numeric_values() -> None:
     assert features.values["event.snapshot.compact.hp"] == pytest.approx(30.0)
 
 
+def test_world_state_projector_enriches_npc_economy_quest_and_skill_state() -> None:
+    bot_id = "bot:wsA-world"
+    projector = WorldStateProjector()
+    t0 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+
+    first = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0,
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 100, "y": 100},
+            "vitals": {"hp": 900, "hp_max": 1000, "sp": 120, "sp_max": 200, "weight": 1000, "weight_max": 8000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "idle"},
+            "inventory": {"zeny": 1000, "item_count": 5},
+            "inventory_items": [
+                {"item_id": "red_potion", "name": "Red Potion", "category": "consumable", "quantity": 12, "sell_price": 25}
+            ],
+            "progression": {"base_level": 10, "job_level": 5, "skill_points": 3, "stat_points": 4},
+            "skills": [
+                {"skill_id": "AL_HEAL", "skill_name": "Heal", "level": 5},
+                {"skill_id": "SM_BASH", "skill_name": "Bash", "level": 7},
+            ],
+            "quests": [
+                {
+                    "quest_id": "quest.alpha",
+                    "state": "active",
+                    "npc": "Tool Dealer",
+                    "title": "Collect Apples",
+                    "objectives": [
+                        {"objective_id": "obj.1", "description": "Collect 10 apples", "status": "in_progress", "current": 2, "target": 10}
+                    ],
+                }
+            ],
+            "npc_relationships": [
+                {
+                    "npc_id": "npc:tool_dealer",
+                    "npc_name": "Tool Dealer",
+                    "relation": "quest",
+                    "affinity_score": 0.3,
+                    "trust_score": 0.2,
+                    "interaction_count": 4,
+                }
+            ],
+            "market": {
+                "listings": [
+                    {"item_id": "red_potion", "item_name": "Red Potion", "buy_price": 45, "sell_price": 25, "quantity": 200, "source": "npc_shop"}
+                ],
+                "vendor_exposure": 1,
+                "transaction_count_10m": 2,
+            },
+            "actors": [
+                {"actor_id": "npc:tool_dealer", "actor_type": "npc", "relation": "neutral", "name": "Tool Dealer"}
+            ],
+        },
+    )
+    projector.observe_event(first)
+
+    second = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0 + timedelta(minutes=5),
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 102, "y": 101},
+            "vitals": {"hp": 900, "hp_max": 1000, "sp": 120, "sp_max": 200, "weight": 1010, "weight_max": 8000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "route"},
+            "inventory": {"zeny": 1600, "item_count": 6},
+            "progression": {"base_level": 10, "job_level": 5, "skill_points": 2, "stat_points": 4},
+        },
+    )
+    projector.observe_event(second)
+
+    state = projector.export(bot_id=bot_id, features=LearningFeatureVector())
+
+    assert state["operational"].skill_count == 2
+    assert state["operational"].skills["Heal"] == 5
+    assert state["inventory"].consumables["Red Potion"] == 12
+
+    assert "quest.alpha" in state["quest"].active_quests
+    assert state["quest"].quest_status["quest.alpha"] == "active"
+    assert state["quest"].quest_titles["quest.alpha"] == "Collect Apples"
+    assert state["quest"].active_objective_count >= 1
+
+    assert state["npc"].total_known_npcs >= 1
+    assert state["npc"].last_interacted_npc in {"Tool Dealer", "npc:tool_dealer"}
+
+    assert state["economy"].vendor_exposure >= 1
+    assert state["economy"].zeny_delta_10m == 600
+    assert state["economy"].inventory_value_estimate > 0
+
+
+def test_feature_extractor_tracks_npc_quest_and_market_activity() -> None:
+    bot_id = "bot:wsA-features"
+    extractor = FeatureExtractor()
+    t0 = datetime.now(UTC) - timedelta(minutes=2)
+
+    quest_evt = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0,
+        event_family=EventFamily.quest,
+        event_type="quest.transition",
+        source_hook="pytest",
+        payload={"quest_id": "quest.alpha", "state_to": "active", "npc": "Tool Dealer"},
+    )
+    market_evt = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0 + timedelta(seconds=30),
+        event_family=EventFamily.action,
+        event_type="market.buy",
+        source_hook="pytest",
+        payload={"zeny": 800},
+    )
+    chat_npc_evt = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0 + timedelta(seconds=60),
+        event_family=EventFamily.chat,
+        event_type="chat.intent",
+        source_hook="pytest",
+        payload={"interaction_intent": {"npc": "Tool Dealer", "kind": "quest_dialogue"}},
+    )
+
+    extractor.observe_event(quest_evt)
+    extractor.observe_event(market_evt)
+    extractor.observe_event(chat_npc_evt)
+
+    features = extractor.extract(bot_id=bot_id, basis={})
+    assert features.values["quest.transitions_10m"] >= 1.0
+    assert features.values["social.npc_interactions_10m"] >= 1.0
+    assert features.values["economy.market_transactions_10m"] >= 1.0
+
+
 def test_runtime_snapshot_builds_typed_actor_delta_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = create_runtime()
     bot_id = "bot:ws2-runtime-actors"
@@ -217,6 +358,75 @@ def test_runtime_snapshot_builds_typed_actor_delta_payload(monkeypatch: pytest.M
     assert payload.revision == "tick-actors-1"
     assert [item.actor_id for item in payload.actors] == ["mob-1", "npc-1"]
     assert payload.removed_actor_ids == ["stale-actor"]
+
+
+def test_runtime_snapshot_accepts_rich_ingestion_fields() -> None:
+    runtime = create_runtime()
+    bot_id = "bot:wsA-runtime-rich"
+    snapshot = BotStateSnapshot(
+        meta=_meta(bot_id),
+        tick_id="tick-rich-1",
+        observed_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        position=Position(map="prt_fild08", x=100, y=100),
+        vitals=Vitals(hp=900, hp_max=1000, sp=100, sp_max=200, weight=500, weight_max=8000),
+        combat=CombatState(ai_sequence="route", is_in_combat=False),
+        inventory=InventoryDigest(zeny=1500, item_count=8),
+        inventory_items=[
+            InventoryItemDigest(item_id="red_potion", name="Red Potion", quantity=10, category="consumable", sell_price=25)
+        ],
+        progression=ProgressionDigest(base_level=12, job_level=6, skill_points=3, stat_points=4),
+        skills=[SkillDigest(skill_id="AL_HEAL", skill_name="Heal", level=5)],
+        quests=[
+            QuestDigest(
+                quest_id="quest.alpha",
+                state="active",
+                npc="Tool Dealer",
+                title="Collect Apples",
+                objectives=[
+                    QuestObjectiveDigest(
+                        objective_id="obj.1",
+                        description="Collect 10 apples",
+                        status="in_progress",
+                        current=3,
+                        target=10,
+                    )
+                ],
+            )
+        ],
+        npc_relationships=[
+            NpcRelationshipDigest(
+                npc_id="npc:tool_dealer",
+                npc_name="Tool Dealer",
+                relation="quest",
+                affinity_score=0.2,
+                trust_score=0.1,
+                interaction_count=2,
+            )
+        ],
+        market=MarketDigest(
+            listings=[
+                MarketQuoteDigest(
+                    item_id="red_potion",
+                    item_name="Red Potion",
+                    buy_price=45,
+                    sell_price=25,
+                    quantity=200,
+                    source="npc_shop",
+                )
+            ]
+        ),
+        actors=[
+            ActorDigest(actor_id="npc-1", actor_type="npc", name="Tool Dealer", relation="neutral", x=11, y=21)
+        ],
+    )
+
+    runtime.ingest_snapshot(snapshot)
+    enriched = runtime.enriched_state(bot_id=bot_id)
+
+    assert enriched.operational.skill_count >= 1
+    assert enriched.quest.active_quests
+    assert enriched.npc.total_known_npcs >= 1
+    assert enriched.economy.vendor_exposure >= 1
 
 
 def test_runtime_slo_economy_uses_progression_digest_for_exp() -> None:
