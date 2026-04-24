@@ -3304,12 +3304,18 @@ def create_runtime() -> RuntimeState:
     fleet_conflict_resolver = FleetConflictResolver()
 
     action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
-    action_arbiter = ActionArbiter(queue=action_queue, fleet_client=fleet_sync_client, constraint_state=fleet_constraint_state)
+    snapshot_cache = SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds)
+    action_arbiter = ActionArbiter(
+        queue=action_queue,
+        fleet_client=fleet_sync_client,
+        constraint_state=fleet_constraint_state,
+        snapshot_cache=snapshot_cache,
+    )
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
         workspace_root=workspace_root,
         bot_registry=BotRegistry(),
-        snapshot_cache=SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds),
+        snapshot_cache=snapshot_cache,
         action_queue=action_queue,
         action_arbiter=action_arbiter,
         latency_router=LatencyRouter(budget_ms=settings.latency_budget_ms),

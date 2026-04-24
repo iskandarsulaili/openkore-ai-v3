@@ -6,6 +6,9 @@ from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, Act
 from ai_sidecar.runtime import action_arbiter as arbiter_module
 from ai_sidecar.runtime.action_arbiter import ActionArbiter
 from ai_sidecar.runtime.action_queue import ActionQueue
+from ai_sidecar.runtime.snapshot_cache import SnapshotCache
+from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.contracts.state import BotStateSnapshot
 
 
 class _FleetClient:
@@ -62,14 +65,73 @@ def test_action_arbiter_basic_admission() -> None:
 
 def test_action_arbiter_precondition_rejection() -> None:
     queue = ActionQueue(max_per_bot=8)
-    arbiter = ActionArbiter(queue=queue, fleet_client=None)
-    proposal = _make_proposal("action.precond", preconditions=["must_be_safe"])
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal("action.precond", preconditions=["navigation.ready"])
 
     result = arbiter.admit_sync(proposal, bot_id="bot:precond")
 
+    assert result.admitted is True
+    assert result.status == ActionStatus.queued
+    assert queue.count("bot:precond") == 1
+
+
+def test_action_arbiter_precondition_snapshot_missing_admits() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal("action.precond.missing", preconditions=["navigation.ready"])
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:precond.missing")
+
+    assert result.admitted is True
+    assert result.status == ActionStatus.queued
+
+
+def test_action_arbiter_precondition_passes_with_snapshot() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal("action.precond.pass", preconditions=["navigation.ready"])
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:precond.pass"),
+            tick_id="t-1",
+            observed_at=datetime.now(UTC),
+            position={"map": "prt_fild01", "x": 5, "y": 9},
+            vitals={"hp": 100, "hp_max": 100},
+            raw={"status": "alive"},
+        )
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:precond.pass")
+
+    assert result.admitted is True
+    assert result.status == ActionStatus.queued
+
+
+def test_action_arbiter_precondition_fail_rejects() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal("action.precond.fail", preconditions=["progression.skill_points_available"])
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:precond.fail"),
+            tick_id="t-2",
+            observed_at=datetime.now(UTC),
+            position={"map": "prt_fild02"},
+            progression={"skill_points": 0},
+        )
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:precond.fail")
+
     assert result.admitted is False
-    assert result.reason == "preconditions_unmet"
-    assert queue.count("bot:precond") == 0
+    assert result.reason == "precondition_failed:progression.skill_points_available"
+    assert queue.count("bot:precond.fail") == 0
 
 
 def test_action_arbiter_conflict_detection_blocks_lower_priority() -> None:

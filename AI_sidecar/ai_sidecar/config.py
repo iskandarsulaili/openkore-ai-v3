@@ -29,7 +29,7 @@ class SidecarSettings(BaseSettings):
 
     contract_version: str = "v1"
 
-    action_default_ttl_seconds: int = Field(default=30, ge=1, le=600)
+    action_default_ttl_seconds: int = Field(default=120, ge=1, le=600)
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)
     snapshot_cache_ttl_seconds: int = Field(default=120, ge=1, le=3600)
     telemetry_max_per_bot: int = Field(default=500, ge=10, le=10000)
@@ -37,7 +37,7 @@ class SidecarSettings(BaseSettings):
     telemetry_recent_incidents_limit: int = Field(default=100, ge=1, le=1000)
     telemetry_backlog_max_events: int = Field(default=10000, ge=100, le=200000)
 
-    latency_budget_ms: int = Field(default=12, ge=1, le=500)
+    latency_budget_ms: int = Field(default=500, ge=1, le=500)
     reflex_latency_budget_ms: int = Field(default=100, ge=10, le=1000)
     reflex_trigger_history_per_bot: int = Field(default=1000, ge=100, le=20000)
 

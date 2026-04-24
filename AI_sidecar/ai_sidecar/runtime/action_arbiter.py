@@ -7,9 +7,11 @@ from time import perf_counter
 
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
+from ai_sidecar.contracts.state import BotStateSnapshot
 from ai_sidecar.fleet.sync_client import FleetSyncClient
 from ai_sidecar.runtime.action_queue import ActionQueue
 from ai_sidecar.fleet.constraint_ingestion import ConstraintIngestionState
+from ai_sidecar.runtime.snapshot_cache import SnapshotCache
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +30,12 @@ class ActionArbiter:
         queue: ActionQueue,
         fleet_client: FleetSyncClient | None = None,
         constraint_state: ConstraintIngestionState | None = None,
+        snapshot_cache: SnapshotCache | None = None,
     ) -> None:
         self._queue = queue
         self._fleet_client = fleet_client
         self._constraint_state = constraint_state
+        self._snapshot_cache = snapshot_cache
 
     async def admit(self, proposal: ActionProposal, *, bot_id: str | None = None) -> AdmissionResult:
         return self._admit_impl(proposal, bot_id=bot_id)
@@ -91,22 +95,9 @@ class ActionArbiter:
             },
         )
 
-        if proposal.preconditions:
-            logger.warning(
-                "action_admission_preconditions_unmet",
-                extra={
-                    "event": "action_admission_preconditions_unmet",
-                    "bot_id": resolved_bot_id,
-                    "action_id": proposal.action_id,
-                    "preconditions": list(proposal.preconditions),
-                },
-            )
-            return AdmissionResult(
-                admitted=False,
-                reason="preconditions_unmet",
-                action_id=proposal.action_id,
-                status=ActionStatus.dropped,
-            )
+        precondition_result = self._evaluate_preconditions(proposal, bot_id=resolved_bot_id)
+        if precondition_result is not None:
+            return precondition_result
 
         if proposal.lease_id:
             lease_id = str(proposal.lease_id).strip()
@@ -272,6 +263,261 @@ class ActionArbiter:
                 updates["expires_at"] = expires_at
 
         return proposal.model_copy(update=updates) if updates else proposal
+
+    def _evaluate_preconditions(self, proposal: ActionProposal, *, bot_id: str) -> AdmissionResult | None:
+        if not proposal.preconditions:
+            return None
+
+        snapshot_cache = self._snapshot_cache
+        if snapshot_cache is None:
+            logger.warning(
+                "action_admission_precondition_snapshot_cache_unavailable",
+                extra={
+                    "event": "action_admission_precondition_snapshot_cache_unavailable",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                    "preconditions": list(proposal.preconditions),
+                },
+            )
+            return None
+
+        snapshot = snapshot_cache.get(bot_id)
+        if snapshot is None:
+            logger.warning(
+                "action_admission_precondition_snapshot_missing",
+                extra={
+                    "event": "action_admission_precondition_snapshot_missing",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                    "preconditions": list(proposal.preconditions),
+                },
+            )
+            return None
+
+        for item in proposal.preconditions:
+            name = str(item).strip()
+            if not name:
+                continue
+            passed, detail, unknown = self._evaluate_precondition(name, snapshot)
+            logger.info(
+                "action_admission_precondition_evaluated",
+                extra={
+                    "event": "action_admission_precondition_evaluated",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                    "precondition": name,
+                    "passed": passed,
+                    "detail": detail,
+                },
+            )
+            if unknown:
+                logger.warning(
+                    "action_admission_precondition_unknown",
+                    extra={
+                        "event": "action_admission_precondition_unknown",
+                        "bot_id": bot_id,
+                        "action_id": proposal.action_id,
+                        "precondition": name,
+                    },
+                )
+                continue
+            if not passed:
+                logger.warning(
+                    "action_admission_precondition_failed",
+                    extra={
+                        "event": "action_admission_precondition_failed",
+                        "bot_id": bot_id,
+                        "action_id": proposal.action_id,
+                        "precondition": name,
+                        "detail": detail,
+                    },
+                )
+                return AdmissionResult(
+                    admitted=False,
+                    reason=f"precondition_failed:{name}",
+                    action_id=proposal.action_id,
+                    status=ActionStatus.dropped,
+                )
+
+        return None
+
+    def _evaluate_precondition(self, name: str, snapshot: BotStateSnapshot) -> tuple[bool, str, bool]:
+        raw = snapshot.raw if isinstance(snapshot.raw, dict) else {}
+        map_name = self._resolve_map_name(snapshot, raw)
+        status, status_source = self._resolve_status(snapshot, raw)
+
+        if name == "navigation.ready":
+            if status == "dead":
+                return False, f"status=dead source={status_source}", False
+            if not map_name:
+                return True, "map_missing", False
+            return True, f"map={map_name} status={status or 'unknown'}", False
+
+        if name == "combat.allowed":
+            is_alive = None
+            if status:
+                is_alive = status == "alive"
+            else:
+                hp = snapshot.vitals.hp
+                if hp is not None:
+                    is_alive = hp > 0
+            is_town = self._resolve_is_town(map_name, raw)
+            if is_alive is False:
+                return False, f"status={status or 'dead'}", False
+            if is_town is True:
+                return False, f"map_town={map_name or 'unknown'}", False
+            if is_alive is None or is_town is None:
+                return True, "insufficient_data", False
+            return True, f"map={map_name or 'unknown'}", False
+
+        if name == "inventory.can_loot":
+            weight = self._coerce_float(snapshot.vitals.weight)
+            max_weight = self._coerce_float(snapshot.vitals.weight_max)
+            if weight is None:
+                weight = self._coerce_float(raw.get("weight"))
+            if max_weight is None:
+                max_weight = self._coerce_float(raw.get("weight_max") or raw.get("max_weight"))
+            if weight is None or max_weight is None:
+                return True, "weight_missing", False
+            if max_weight <= 0:
+                return True, "weight_max_invalid", False
+            return weight < max_weight, f"weight={weight} max_weight={max_weight}", False
+
+        if name == "vitals.safe_to_rest":
+            hp = self._coerce_float(snapshot.vitals.hp)
+            hp_max = self._coerce_float(snapshot.vitals.hp_max)
+            sp = self._coerce_float(snapshot.vitals.sp)
+            sp_max = self._coerce_float(snapshot.vitals.sp_max)
+            hp_ratio = (hp / hp_max) if hp is not None and hp_max and hp_max > 0 else None
+            sp_ratio = (sp / sp_max) if sp is not None and sp_max and sp_max > 0 else None
+            if hp_ratio is None and sp_ratio is None:
+                return True, "vitals_missing", False
+            needs_rest = bool((hp_ratio is not None and hp_ratio < 0.7) or (sp_ratio is not None and sp_ratio < 0.5))
+            return needs_rest, f"hp_ratio={hp_ratio} sp_ratio={sp_ratio}", False
+
+        if name == "npc.available":
+            npc_relationships = len(snapshot.npc_relationships)
+            npc_actors = sum(1 for actor in snapshot.actors if (actor.actor_type or "").lower() == "npc")
+            has_npc = npc_relationships > 0 or npc_actors > 0
+            return has_npc, f"npc_relationships={npc_relationships} npc_actors={npc_actors}", False
+
+        if name == "economy.safe":
+            monsters = self._coerce_int(raw.get("monsters_around"))
+            if monsters is None:
+                monsters = sum(1 for actor in snapshot.actors if (actor.actor_type or "").lower() == "monster")
+            if monsters is None:
+                return True, "monsters_unknown", False
+            return monsters < 3, f"monsters_around={monsters}", False
+
+        if name == "progression.skill_points_available":
+            skill_points = self._coerce_int(snapshot.progression.skill_points)
+            if skill_points is None:
+                return True, "skill_points_missing", False
+            return skill_points > 0, f"skill_points={skill_points}", False
+
+        if name == "social.allowed":
+            party_enabled = raw.get("party_enabled")
+            if isinstance(party_enabled, bool):
+                return party_enabled, f"party_enabled={party_enabled}", False
+            party_cfg = raw.get("party") if isinstance(raw.get("party"), dict) else None
+            if isinstance(party_cfg, dict) and isinstance(party_cfg.get("enabled"), bool):
+                enabled = bool(party_cfg.get("enabled"))
+                return enabled, f"party_enabled={enabled}", False
+            return True, "party_config_missing", False
+
+        if name == "inventory.can_equip":
+            equipment_slots = raw.get("equipment_slots")
+            if isinstance(equipment_slots, dict):
+                has_empty = any(not value for value in equipment_slots.values())
+                return has_empty, f"equipment_slots_empty={has_empty}", False
+            if isinstance(equipment_slots, list):
+                has_empty = any(not value for value in equipment_slots)
+                return has_empty, f"equipment_slots_empty={has_empty}", False
+            unequipped = sum(
+                1
+                for item in snapshot.inventory_items
+                if (item.category or "").lower() in {"equipment", "armor", "weapon", "gear"} and not item.equipped
+            )
+            if unequipped:
+                return True, f"unequipped_items={unequipped}", False
+            return True, "equipment_data_missing", False
+
+        if name == "social.party_ready":
+            party_nearby = self._coerce_int(raw.get("party_nearby") or raw.get("party_members_nearby"))
+            if party_nearby is None:
+                party_nearby = sum(1 for actor in snapshot.actors if (actor.relation or "").lower() == "party")
+            if party_nearby is None:
+                return True, "party_nearby_unknown", False
+            return party_nearby > 0, f"party_nearby={party_nearby}", False
+
+        if name == "crafting.ready":
+            materials_count = self._coerce_int(
+                raw.get("crafting_materials_count")
+                or (len(raw.get("crafting_materials")) if isinstance(raw.get("crafting_materials"), list) else None)
+            )
+            if materials_count is None:
+                materials_count = sum(
+                    1
+                    for item in snapshot.inventory_items
+                    if (item.category or "").lower() in {"material", "craft", "ingredient", "resource"}
+                    and item.quantity > 0
+                )
+            if materials_count is None:
+                return True, "materials_unknown", False
+            return materials_count > 0, f"materials_count={materials_count}", False
+
+        return True, "unknown_precondition", True
+
+    def _resolve_map_name(self, snapshot: BotStateSnapshot, raw: dict[str, object]) -> str | None:
+        map_name = snapshot.position.map or raw.get("map") or raw.get("map_name")
+        map_name = str(map_name or "").strip()
+        return map_name or None
+
+    def _resolve_status(self, snapshot: BotStateSnapshot, raw: dict[str, object]) -> tuple[str, str]:
+        for key in ("status", "liveness_state", "state"):
+            value = raw.get(key)
+            if value:
+                return str(value).strip().lower(), f"raw:{key}"
+        hp = snapshot.vitals.hp
+        hp_max = snapshot.vitals.hp_max
+        if hp is not None and hp_max is not None and hp_max > 0:
+            return ("dead" if hp <= 0 else "alive"), "vitals"
+        if hp is not None and hp <= 0:
+            return "dead", "vitals"
+        return "", "unknown"
+
+    def _resolve_is_town(self, map_name: str | None, raw: dict[str, object]) -> bool | None:
+        if isinstance(raw.get("map_is_town"), bool):
+            return bool(raw.get("map_is_town"))
+        if isinstance(raw.get("is_town"), bool):
+            return bool(raw.get("is_town"))
+        if isinstance(raw.get("town"), bool):
+            return bool(raw.get("town"))
+        map_type = raw.get("map_type")
+        if isinstance(map_type, str):
+            lowered = map_type.lower()
+            if "town" in lowered or "city" in lowered:
+                return True
+            if "field" in lowered or "dungeon" in lowered:
+                return False
+        _ = map_name
+        return None
+
+    def _coerce_float(self, value: object) -> float | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_int(self, value: object) -> int | None:
+        coerced = self._coerce_float(value)
+        if coerced is None:
+            return None
+        return int(coerced)
 
     def _map_source(self, raw: object) -> str | None:
         value = str(raw or "").strip().lower()

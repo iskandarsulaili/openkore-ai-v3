@@ -76,10 +76,26 @@ def next_action(
     try:
         action = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
         elapsed_ms = runtime.latency_router.end("actions.next", started)
+        budget_exceeded = not runtime.latency_router.within_budget(elapsed_ms)
+        had_action = action is not None
 
-        if action is not None and not runtime.latency_router.within_budget(elapsed_ms):
+        if action is not None and budget_exceeded:
             runtime.rollback_action_dispatch(action.action_id)
             action = None
+
+        if budget_exceeded:
+            logger.warning(
+                "actions_next_latency_budget_exceeded",
+                extra={
+                    "event": "actions_next_latency_budget_exceeded",
+                    "bot_id": payload.meta.bot_id,
+                    "poll_id": payload.poll_id,
+                    "trace_id": payload.meta.trace_id,
+                    "elapsed_ms": elapsed_ms,
+                    "budget_ms": settings.latency_budget_ms,
+                    "had_action": had_action,
+                },
+            )
 
         if action is None:
             reason = "latency_budget_exceeded" if not runtime.latency_router.within_budget(elapsed_ms) else "no_action_available"

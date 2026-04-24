@@ -1056,7 +1056,7 @@ history_max 50
 eventMacro_orphans terminate
 eventMacro_CheckOnAI auto
 eventMacro_notWhenInQueue storageAuto, buyAuto, sellAuto
-eventMacro_file eventMacros.txt
+eventMacro_file ai_sidecar_generated_eventmacros.txt
 
 avoidObstacles_enable_move 1
 avoidObstacles_enable_remove 1
