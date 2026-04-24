@@ -198,7 +198,7 @@ class PDCALoop:
     async def _run_one_cycle(self, horizon: Horizon) -> PDCAResult:
         """Execute one PDCA cycle for the given horizon."""
         start = time.monotonic()
-        plan_id: str | None = None
+        plan_id: str | None = self._artifact_id(self._active_plan[horizon])
         actions_queued = 0
         re_planned = False
 
@@ -218,11 +218,7 @@ class PDCALoop:
                 plan = await self._generate_plan(horizon, latest_snapshot)
                 if plan:
                     self._active_plan[horizon] = plan
-                    plan_id = (
-                        getattr(plan, "plan_id", None)
-                        or getattr(plan, "id", None)
-                        or f"plan_{int(time.time())}"
-                    )
+                    plan_id = self._artifact_id(plan) or f"plan_{int(time.time())}"
                     re_planned = True
                     self._stuck_counter[horizon] = 0
                 else:
@@ -256,6 +252,8 @@ class PDCALoop:
             elif progress.stuck_cycles > 0:
                 self._stuck_counter[horizon] = progress.stuck_cycles
 
+            plan_id = plan_id or self._artifact_id(self._active_plan[horizon])
+
             return PDCAResult(
                 horizon=horizon,
                 plan_id=plan_id,
@@ -278,6 +276,15 @@ class PDCALoop:
                 cycle_ms=(time.monotonic() - start) * 1000,
                 error=str(e),
             )
+
+    def _artifact_id(self, artifact: StrategicPlan | TacticalIntentBundle | None) -> str | None:
+        if artifact is None:
+            return None
+        return (
+            getattr(artifact, "plan_id", None)
+            or getattr(artifact, "bundle_id", None)
+            or getattr(artifact, "id", None)
+        )
 
     def _interval_for(self, horizon: Horizon) -> float:
         if horizon == Horizon.SHORT_TERM:

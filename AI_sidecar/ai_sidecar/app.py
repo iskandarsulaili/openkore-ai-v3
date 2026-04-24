@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -29,7 +30,7 @@ from ai_sidecar.api.routers import (
     telemetry,
 )
 from ai_sidecar.config import settings
-from ai_sidecar.lifecycle import create_runtime
+from ai_sidecar.lifecycle import create_runtime, start_fleet_sync_loop
 from ai_sidecar.logging_setup import configure_logging
 from ai_sidecar.observability import install_fastapi_tracing
 
@@ -56,12 +57,21 @@ async def lifespan(app: FastAPI):
     # Auto-start the PDCA loop
     pdca_loop.start()
     logger.info("PDCA autonomy loop started (auto)")
+    fleet_sync_task = start_fleet_sync_loop(runtime)
+    logger.info("fleet sync loop started")
     yield
 
     # Stop PDCA loop
     if pdca_loop.running:
         await pdca_loop.stop()
         logger.info("PDCA autonomy loop stopped")
+    fleet_sync_task.cancel()
+    try:
+        await fleet_sync_task
+    except asyncio.CancelledError:
+        logger.info("fleet sync loop cancelled")
+    except Exception:
+        logger.info("fleet sync loop stopped")
 
 
 def install_request_validation_logging(app: FastAPI) -> None:

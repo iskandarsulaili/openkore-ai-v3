@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+from ai_sidecar.planner.domain_prompts import domain_prompt_builders
 from ai_sidecar.planner.schemas import (
     PlanHorizon,
     PlannerContext,
@@ -225,33 +226,95 @@ class PlanGenerator:
             kind = str(step.kind or "").lower()
             command = ""
             conflict_key = None
+            preconditions: list[str] = []
+            rollback_action: str | None = None
+            metadata = {
+                "source": "planner",
+                "step_id": step.step_id,
+                "step_kind": str(step.kind),
+                "step_priority": int(step.priority),
+                "target": step.target,
+                "description": step.description,
+            }
             if kind in {"travel", "move", "route"}:
                 command = f"move {step.target or ''}".strip()
                 conflict_key = "nav.route"
+                preconditions.append("navigation.ready")
             elif kind in {"combat", "fight", "attack"}:
                 command = "attack"
                 conflict_key = "combat.primary"
+                preconditions.append("combat.allowed")
             elif kind in {"loot", "collect"}:
                 command = "take"
                 conflict_key = "loot.collect"
+                preconditions.append("inventory.can_loot")
             elif kind in {"recover", "heal"}:
                 command = "sit"
                 conflict_key = "recovery"
+                preconditions.append("vitals.safe_to_rest")
             elif kind in {"npc", "quest"}:
-                command = "talknpc"
+                npc_name = (step.target or "").strip()
+                command = f"talknpc {npc_name}".strip() if npc_name else "talknpc"
                 conflict_key = "npc.interact"
+                preconditions.append("npc.available")
+                rollback_action = "ai clear"
+                if npc_name:
+                    metadata["npc_name"] = npc_name
             elif kind in {"econ"}:
                 command = "storage"
                 conflict_key = "economy.loop"
+                preconditions.append("economy.safe")
+                rollback_action = "storage close"
             elif kind in {"skill_up"}:
-                command = "skills"
+                skill_target = (step.target or "").strip()
+                command = f"skills {skill_target}".strip() if skill_target else "skills"
                 conflict_key = "progression.skill"
+                preconditions.append("progression.skill_points_available")
+                if skill_target:
+                    metadata["skill_target"] = skill_target
             elif kind in {"rest"}:
                 command = "sit"
                 conflict_key = "recovery.rest"
+                preconditions.append("vitals.safe_to_rest")
             elif kind in {"social"}:
-                command = "chat"
+                message = (step.target or step.description or "").strip()
+                command = f"chat {message}".strip() if message else "chat"
                 conflict_key = "social.message"
+                preconditions.append("social.allowed")
+                if message:
+                    metadata["chat_message"] = message[:120]
+            elif kind in {"equip", "equipment"}:
+                target_item = (step.target or "").strip()
+                command = f"equip {target_item}".strip() if target_item else "equip"
+                conflict_key = "inventory.equip"
+                preconditions.append("inventory.can_equip")
+                if target_item:
+                    metadata["equip_item"] = target_item
+            elif kind in {"party"}:
+                target_party = (step.target or "").strip()
+                command = f"party {target_party}".strip() if target_party else "party"
+                conflict_key = "social.party"
+                preconditions.append("social.party_ready")
+                if target_party:
+                    metadata["party_target"] = target_party
+            elif kind in {"chat"}:
+                message = (step.target or step.description or "").strip()
+                command = f"chat {message}".strip() if message else "chat"
+                conflict_key = "social.chat"
+                preconditions.append("social.allowed")
+                if message:
+                    metadata["chat_message"] = message[:120]
+            elif kind in {"vending"}:
+                command = "vending"
+                conflict_key = "economy.vending"
+                preconditions.append("economy.safe")
+            elif kind in {"craft"}:
+                craft_target = (step.target or "").strip()
+                command = f"craft {craft_target}".strip() if craft_target else "craft"
+                conflict_key = "economy.craft"
+                preconditions.append("crafting.ready")
+                if craft_target:
+                    metadata["craft_target"] = craft_target
             if not command:
                 continue
             actions.append(
@@ -261,16 +324,12 @@ class PlanGenerator:
                     command=command[:256],
                     priority_tier=priority,
                     conflict_key=conflict_key,
+                    preconditions=preconditions,
+                    rollback_action=rollback_action,
                     created_at=now,
                     expires_at=now + ttl,
                     idempotency_key=f"plan:{bot_id}:{idx}:{command}"[:128],
-                    metadata={
-                        "source": "planner",
-                        "step_id": step.step_id,
-                        "step_kind": str(step.kind),
-                        "step_priority": int(step.priority),
-                        "target": step.target,
-                    },
+                    metadata=metadata,
                 )
             )
         return actions
@@ -362,7 +421,7 @@ class PlanGenerator:
     def _system_prompt(self, *, context: PlannerContext) -> str:
         allowed_step_kinds = ", ".join(item.value for item in PlannerStepKind)
         horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
-        return (
+        base_prompt = (
             "You are the local sidecar conscious planner for Ragnarok Online bots. "
             "Output only strict JSON following schema. "
             "Do not emit free-form commands outside schema. "
@@ -371,6 +430,29 @@ class PlanGenerator:
             f"Current horizon={context.horizon.value} with latency budget under {horizon_budget_ms} ms. "
             "Respect doctrine, safety constraints, and latency tiers."
         )
+        prompt_limit = int(self.max_user_prompt_chars) + 14000
+        domain_blocks: list[str] = []
+        domain_context = {
+            "objective": context.objective,
+            "job": context.job_progression.get("job_name"),
+            "job_level": context.job_progression.get("job_level"),
+            "base_level": context.state.get("base_level") if isinstance(context.state, dict) else None,
+            "quest": context.quest_context.get("active_quests") if isinstance(context.quest_context, dict) else None,
+            "npc": context.npc_context.get("last_interacted_npc") if isinstance(context.npc_context, dict) else None,
+            "market": context.economy_context.get("market_listings") if isinstance(context.economy_context, dict) else None,
+        }
+        for name, builder in domain_prompt_builders().items():
+            try:
+                block = builder(context=domain_context)
+            except TypeError:
+                block = builder()
+            candidate = "\n\n".join([*domain_blocks, block]).strip()
+            if len(base_prompt) + len(candidate) + 10 > prompt_limit:
+                break
+            domain_blocks.append(block)
+        if not domain_blocks:
+            return base_prompt
+        return "\n\n".join([base_prompt, "Domain Guidance:", *domain_blocks])
 
     def _user_prompt(self, *, context: PlannerContext, max_steps: int) -> tuple[str, dict[str, object]]:
         horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
@@ -588,6 +670,12 @@ class PlanGenerator:
             "recover": PlannerStepKind.rest,
             "heal": PlannerStepKind.rest,
             "economy": PlannerStepKind.econ,
+            "equip": PlannerStepKind.equip,
+            "equipment": PlannerStepKind.equip,
+            "party": PlannerStepKind.party,
+            "chat": PlannerStepKind.chat,
+            "vending": PlannerStepKind.vending,
+            "craft": PlannerStepKind.craft,
             "skill": PlannerStepKind.skill_up,
         }
         if value in aliases:

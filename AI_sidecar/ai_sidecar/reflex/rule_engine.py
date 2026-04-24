@@ -824,4 +824,153 @@ class ReflexRuleEngine:
                 category=ReflexCategory.interaction,
                 planner_interop=ReflexPlannerInterop.complement,
             ),
+            # --- Equipment, party, market, NPC dialogue, stat/skill, PvP escape ---
+            ReflexRule(
+                rule_id="equipment_auto_swap",
+                enabled=True,
+                priority=18,
+                trigger=ReflexTriggerClause(
+                    any=[
+                        ReflexPredicate(fact="inventory.recommended_equip", op="neq", value=""),
+                        ReflexPredicate(fact="event.event_type", op="eq", value="equipment.update"),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="equip",
+                    priority_tier="reflex",
+                    conflict_key="inventory.equip",
+                    metadata={"category": "equipment"},
+                ),
+                fallback_macro="reflex_equipment_swap",
+                cooldown_ms=8000,
+                circuit_breaker_key="queue.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
+            ),
+            ReflexRule(
+                rule_id="party_coordination_reflex",
+                enabled=True,
+                priority=24,
+                trigger=ReflexTriggerClause(
+                    any=[
+                        ReflexPredicate(fact="event.event_type", op="eq", value="party.invite"),
+                        ReflexPredicate(fact="event.event_type", op="eq", value="party.request"),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="party",
+                    priority_tier="reflex",
+                    conflict_key="social.party",
+                    metadata={"category": "party_coordination"},
+                ),
+                fallback_macro="reflex_party_coordination",
+                cooldown_ms=12000,
+                circuit_breaker_key="social.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
+            ),
+            ReflexRule(
+                rule_id="market_overflow_guard",
+                enabled=True,
+                priority=21,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="inventory.overweight_ratio", op="gte", value=0.88),
+                        ReflexPredicate(fact="economy.inventory_value", op="gte", value=1),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="storage",
+                    priority_tier="reflex",
+                    conflict_key="economy.market_guard",
+                    metadata={"category": "market_ops"},
+                ),
+                fallback_macro="reflex_market_safety",
+                cooldown_ms=10000,
+                circuit_breaker_key="queue.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
+            ),
+            ReflexRule(
+                rule_id="npc_dialogue_retry",
+                enabled=True,
+                priority=12,
+                trigger=ReflexTriggerClause(
+                    any=[
+                        ReflexPredicate(fact="event.event_type", op="eq", value="npc.dialogue_failed"),
+                        ReflexPredicate(fact="event.event_type", op="eq", value="npc.missing"),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="talknpc",
+                    priority_tier="reflex",
+                    conflict_key="npc.dialogue_retry",
+                    metadata={"category": "npc_dialogue"},
+                ),
+                fallback_macro="reflex_npc_dialogue_recover",
+                cooldown_ms=7000,
+                circuit_breaker_key="npc.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
+            ),
+            ReflexRule(
+                rule_id="stat_skill_auto_allocation",
+                enabled=True,
+                priority=26,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="state.skill_points", op="gte", value=1),
+                        ReflexPredicate(fact="combat.is_in_combat", op="eq", value=False),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="skills",
+                    priority_tier="reflex",
+                    conflict_key="progression.auto_allocate",
+                    metadata={"category": "stat_skill"},
+                ),
+                fallback_macro="reflex_stat_skill_allocation",
+                cooldown_ms=45000,
+                circuit_breaker_key="queue.default",
+                category=ReflexCategory.interaction,
+                planner_interop=ReflexPlannerInterop.complement,
+            ),
+            ReflexRule(
+                rule_id="pvp_escape_extended",
+                enabled=True,
+                priority=2,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="event.event_type", op="eq", value="actor.observed"),
+                        ReflexPredicate(fact="event.payload.actor_type", op="eq", value="player"),
+                    ],
+                    any=[
+                        ReflexPredicate(fact="encounter.risk_score", op="gte", value=0.75),
+                        ReflexPredicate(fact="risk.anomaly_flags", op="contains", value="pvp.threat"),
+                    ],
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="teleport",
+                    priority_tier="reflex",
+                    conflict_key="social.escape.extended",
+                    metadata={"category": "pvp_escape"},
+                ),
+                fallback_macro="reflex_pvp_escape",
+                cooldown_ms=12000,
+                circuit_breaker_key="social.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
+            ),
         ]

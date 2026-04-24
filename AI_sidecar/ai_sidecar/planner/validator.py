@@ -68,6 +68,12 @@ class PlanValidator:
             "heal": PlannerStepKind.rest,
             "recover": PlannerStepKind.rest,
             "economy": PlannerStepKind.econ,
+            "equip": PlannerStepKind.equip,
+            "equipment": PlannerStepKind.equip,
+            "party": PlannerStepKind.party,
+            "chat": PlannerStepKind.chat,
+            "vending": PlannerStepKind.vending,
+            "craft": PlannerStepKind.craft,
             "skill": PlannerStepKind.skill_up,
         }
         if value in aliases:

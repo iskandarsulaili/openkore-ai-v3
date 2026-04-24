@@ -26,6 +26,11 @@ class PlannerStepKind(StrEnum):
     rest = "rest"
     quest = "quest"
     econ = "econ"
+    equip = "equip"
+    party = "party"
+    chat = "chat"
+    vending = "vending"
+    craft = "craft"
     skill_up = "skill_up"
     social = "social"
 

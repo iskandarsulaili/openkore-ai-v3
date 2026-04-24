@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from threading import RLock
 from typing import Any
+from uuid import uuid4
 
+from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
 from ai_sidecar.planner.context_assembler import PlannerContextAssembler
 from ai_sidecar.planner.intent_synthesizer import IntentSynthesizer
 from ai_sidecar.planner.macro_synthesizer import MacroSynthesizer
@@ -16,11 +18,15 @@ from ai_sidecar.planner.schemas import (
     LearningLabel,
     MemoryWriteback,
     PlanHorizon,
+    PlannerContext,
     PlannerExplainRequest,
     PlannerMacroPromoteRequest,
     PlannerPlanRequest,
     PlannerResponse,
     PlannerStatusResponse,
+    PlannerStep,
+    PlannerStepKind,
+    StrategicPlan,
 )
 from ai_sidecar.planner.self_critic import SelfCritic
 from ai_sidecar.planner.validator import PlanValidator
@@ -64,6 +70,51 @@ class PlannerService:
             "planner_success": 0,
             "planner_macro_promotions": 0,
         }
+
+    def _fallback_plan(self, *, bot_id: str, context: PlannerContext, max_steps: int) -> StrategicPlan:
+        now = datetime.now(UTC)
+        steps = [
+            PlannerStep(
+                step_id="s1",
+                kind=PlannerStepKind.observe,
+                target=None,
+                description="Gather fresh state and hold safe tactical posture",
+                priority=25,
+                success_predicates=["state_refreshed"],
+                fallbacks=["safe_idle"],
+            )
+        ]
+        actions = [
+            ActionProposal(
+                action_id=f"fallback-{uuid4().hex[:20]}",
+                kind="command",
+                command="ai auto",
+                priority_tier=ActionPriorityTier.tactical,
+                conflict_key="planner.safe_idle",
+                created_at=now,
+                expires_at=now + timedelta(seconds=90),
+                idempotency_key=f"fallback:{bot_id}:safe_idle"[:128],
+                metadata={"source": "planner_fallback", "objective": context.objective},
+            )
+        ]
+        horizon = context.horizon
+        return StrategicPlan(
+            plan_id=f"fallback-plan-{uuid4().hex[:16]}",
+            bot_id=bot_id,
+            objective=context.objective,
+            horizon=horizon,
+            assumptions=["provider_unavailable_or_schema_invalid"],
+            constraints=["keep_safe_posture"],
+            hypotheses=[],
+            policies=["fallback_safe_mode"],
+            steps=steps[:max_steps],
+            recommended_actions=actions,
+            recommended_macros=[],
+            risk_score=0.2,
+            requires_fleet_coordination=False,
+            rationale="Fallback plan generated due to model call failure.",
+            expires_at=now + timedelta(seconds=120 if horizon == PlanHorizon.tactical else 1200),
+        )
 
     async def plan(self, payload: PlannerPlanRequest) -> PlannerResponse:
         with self._lock:
@@ -123,11 +174,19 @@ class PlannerService:
                 bot_state.last_rationale = ";".join(validation.issues)
                 bot_state.updated_at = datetime.now(UTC)
 
-            fallback_plan = self.plan_generator._fallback(
-                bot_id=payload.meta.bot_id,
-                context=context,
-                max_steps=payload.max_steps,
-            )
+            fallback_builder = getattr(self.plan_generator, "_fallback", None)
+            if callable(fallback_builder):
+                fallback_plan = fallback_builder(
+                    bot_id=payload.meta.bot_id,
+                    context=context,
+                    max_steps=payload.max_steps,
+                )
+            else:
+                fallback_plan = self._fallback_plan(
+                    bot_id=payload.meta.bot_id,
+                    context=context,
+                    max_steps=payload.max_steps,
+                )
             fallback_bundle = self.plan_generator.build_tactical_bundle(
                 bot_id=payload.meta.bot_id,
                 context=context,

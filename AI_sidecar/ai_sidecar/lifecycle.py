@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from typing import Callable, TypeVar
 from uuid import uuid4
 
 import httpx
+import structlog
 
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionAckRequest, ActionPriorityTier, ActionProposal, ActionStatus
@@ -136,6 +138,7 @@ from ai_sidecar.providers.openai_adapter import OpenAIAdapter
 from ai_sidecar.providers.prompt_guard import PromptGuard
 from ai_sidecar.persistence.db import SQLiteDB
 from ai_sidecar.persistence.repositories import SidecarRepositories, bot_id_aliases, canonicalize_bot_id, create_repositories
+from ai_sidecar.runtime.action_arbiter import ActionArbiter
 from ai_sidecar.runtime.action_queue import ActionQueue
 from ai_sidecar.runtime.bot_registry import BotRegistry
 from ai_sidecar.runtime.latency_router import LatencyRouter
@@ -144,6 +147,7 @@ from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 
 logger = logging.getLogger(__name__)
+fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
 T = TypeVar("T")
 
 
@@ -327,6 +331,7 @@ class RuntimeState:
     repositories: SidecarRepositories | None
     normalizer_bus: NormalizerBus
     reflex_engine: ReflexRuleEngine
+    action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
     planner_service: PlannerService | None = None
@@ -845,7 +850,14 @@ class RuntimeState:
                     extra={"event": "fleet_rearbitration_failed", "bot_id": bot_id, "action_id": proposal.action_id},
                 )
 
-        accepted, status, action_id, reason = self.action_queue.enqueue(bot_id, proposal)
+        if self.action_arbiter is not None:
+            admission = self.action_arbiter.admit_sync(proposal, bot_id=bot_id)
+            accepted = admission.admitted
+            status = admission.status or (ActionStatus.queued if accepted else ActionStatus.dropped)
+            action_id = admission.action_id or proposal.action_id
+            reason = admission.reason
+        else:
+            accepted, status, action_id, reason = self.action_queue.enqueue(bot_id, proposal)
         self.incr("actions_queued", bot_id=bot_id)
 
         if self.slo_metrics is not None:
@@ -3291,12 +3303,15 @@ def create_runtime() -> RuntimeState:
     fleet_outcome_reporter = OutcomeReporter(client=fleet_sync_client)
     fleet_conflict_resolver = FleetConflictResolver()
 
+    action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
+    action_arbiter = ActionArbiter(queue=action_queue, fleet_client=fleet_sync_client, constraint_state=fleet_constraint_state)
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
         workspace_root=workspace_root,
         bot_registry=BotRegistry(),
         snapshot_cache=SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds),
-        action_queue=ActionQueue(max_per_bot=settings.action_max_queue_per_bot),
+        action_queue=action_queue,
+        action_arbiter=action_arbiter,
         latency_router=LatencyRouter(budget_ms=settings.latency_budget_ms),
         telemetry_store=telemetry_store,
         macro_compiler=MacroCompiler(),
@@ -3396,3 +3411,101 @@ def create_runtime() -> RuntimeState:
         extra={"event": "runtime_initialized", "sqlite_path": str(sqlite_path), "degraded": persistence_degraded},
     )
     return runtime
+
+
+def start_fleet_sync_loop(runtime: RuntimeState) -> asyncio.Task[None]:
+    async def _fleet_sync_loop() -> None:
+        while True:
+            try:
+                await asyncio.sleep(30)
+                if runtime.fleet_sync_client is None or runtime.fleet_constraint_state is None:
+                    continue
+                bots = runtime.list_bots()
+                if not bots:
+                    continue
+                for bot in bots:
+                    bot_id = str(bot.get("bot_id") or "")
+                    if not bot_id:
+                        continue
+                    payload = FleetSyncRequest(
+                        meta=ContractMeta(
+                            contract_version=settings.contract_version,
+                            source="fleet_sync_loop",
+                            bot_id=bot_id,
+                        ),
+                        include_blackboard=True,
+                    )
+                    response = runtime.fleet_sync(payload)
+                    if response.ok and response.blackboard:
+                        runtime.fleet_constraint_state.parse_blackboard(response.blackboard)
+                        runtime._fleet_refresh_role_from_blackboard(
+                            bot_id=bot_id,
+                            blackboard=runtime.fleet_constraint_state.blackboard(),
+                        )
+
+                    if runtime.fleet_outcome_reporter is not None:
+                        drained = runtime.fleet_outcome_reporter.flush_backlog()
+                        if drained:
+                            fleet_logger.info("fleet_outcome_backlog_flushed", bot_id=bot_id, drained=drained)
+
+                    role_state = runtime._fleet_role_manager(bot_id=bot_id).current()
+                    lease_id = None
+                    role_name = None
+                    blackboard = runtime.fleet_constraint_state.blackboard()
+                    role_leases = blackboard.get("role_leases") if isinstance(blackboard.get("role_leases"), list) else []
+                    for lease in role_leases:
+                        if not isinstance(lease, dict):
+                            continue
+                        if str(lease.get("bot_id") or "") != bot_id:
+                            continue
+                        lease_id = str(lease.get("lease_id") or lease.get("id") or "")
+                        role_name = str(lease.get("role") or "")
+                        if lease_id:
+                            break
+
+                    if lease_id and role_name and runtime.fleet_sync_client.enabled:
+                        expires_at = role_state.get("expires_at")
+                        if isinstance(expires_at, datetime):
+                            expires_at = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+                            remaining = (expires_at - datetime.now(UTC)).total_seconds()
+                            if remaining <= 60:
+                                ok, result, err = await runtime.fleet_sync_client.renew_role(
+                                    role_name,
+                                    lease_id,
+                                    bot_id=bot_id,
+                                )
+                                if ok:
+                                    fleet_logger.info(
+                                        "fleet_role_renewed",
+                                        bot_id=bot_id,
+                                        role=role_name,
+                                        lease_id=lease_id,
+                                    )
+                                else:
+                                    fleet_logger.warning(
+                                        "fleet_role_renew_failed",
+                                        bot_id=bot_id,
+                                        role=role_name,
+                                        lease_id=lease_id,
+                                        error=err,
+                                    )
+
+                    snapshot = runtime.snapshot_cache.get(bot_id)
+                    map_name = None
+                    if snapshot is not None:
+                        map_name = str(snapshot.position.map or "") if snapshot.position.map else None
+                    if map_name:
+                        claim = runtime.fleet_constraint_state.get_zone_claim(map_name)
+                        if claim and claim.claimed_by and claim.claimed_by != bot_id:
+                            fleet_logger.warning(
+                                "fleet_zone_claim_conflict",
+                                bot_id=bot_id,
+                                map=map_name,
+                                claimed_by=claim.claimed_by,
+                            )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                fleet_logger.error("fleet_sync_loop_error", error=str(exc))
+
+    return asyncio.create_task(_fleet_sync_loop())

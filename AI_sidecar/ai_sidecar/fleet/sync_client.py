@@ -127,3 +127,109 @@ class FleetSyncClient:
             "synced_at": utc_now().isoformat(),
         }
 
+    async def renew_role(self, role_name: str, lease_id: str, *, bot_id: str) -> tuple[bool, dict[str, object], str]:
+        """Renew a role lease on the central server."""
+        if not self.enabled:
+            return False, {}, "fleet_central_disabled"
+        body = {
+            "bot_id": bot_id,
+            "role_name": role_name,
+            "lease_id": lease_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(self._url("/v1/fleet/roles/renew"), json=body)
+                resp.raise_for_status()
+                payload = resp.json() if resp.content else {}
+            if not isinstance(payload, dict):
+                return False, {}, "invalid_role_renew_response"
+            return True, payload, "ok"
+        except Exception as exc:
+            logger.warning(
+                "fleet_sync_role_renew_failed",
+                extra={"event": "fleet_sync_role_renew_failed", "bot_id": bot_id, "role": role_name, "error": str(exc)},
+            )
+            return False, {}, str(exc)
+
+    async def release_role(self, lease_id: str, *, bot_id: str) -> tuple[bool, dict[str, object], str]:
+        """Voluntarily release a role lease."""
+        if not self.enabled:
+            return False, {}, "fleet_central_disabled"
+        body = {
+            "bot_id": bot_id,
+            "lease_id": lease_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(self._url("/v1/fleet/roles/release"), json=body)
+                resp.raise_for_status()
+                payload = resp.json() if resp.content else {}
+            if not isinstance(payload, dict):
+                return False, {}, "invalid_role_release_response"
+            return True, payload, "ok"
+        except Exception as exc:
+            logger.warning(
+                "fleet_sync_role_release_failed",
+                extra={"event": "fleet_sync_role_release_failed", "bot_id": bot_id, "lease_id": lease_id, "error": str(exc)},
+            )
+            return False, {}, str(exc)
+
+    async def report_zone_claim(
+        self,
+        map_name: str,
+        purpose: str,
+        duration_seconds: int,
+        *,
+        bot_id: str,
+        conflict_key: str = "",
+    ) -> tuple[bool, dict[str, object], str]:
+        """Claim a zone on the central blackboard."""
+        if not self.enabled:
+            return False, {}, "fleet_central_disabled"
+        body = {
+            "bot_id": bot_id,
+            "map_name": map_name,
+            "purpose": purpose,
+            "duration_seconds": int(duration_seconds),
+            "conflict_key": conflict_key,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(self._url("/v1/fleet/zones/claim"), json=body)
+                resp.raise_for_status()
+                payload = resp.json() if resp.content else {}
+            if not isinstance(payload, dict):
+                return False, {}, "invalid_zone_claim_response"
+            return True, payload, "ok"
+        except Exception as exc:
+            logger.warning(
+                "fleet_sync_zone_claim_failed",
+                extra={"event": "fleet_sync_zone_claim_failed", "bot_id": bot_id, "map_name": map_name, "error": str(exc)},
+            )
+            return False, {}, str(exc)
+
+    async def report_objective_completion(
+        self,
+        objective_id: str,
+        result: str,
+        *,
+        bot_id: str,
+    ) -> tuple[bool, dict[str, object], str]:
+        """Mark an objective as completed."""
+        if not self.enabled:
+            return False, {}, "fleet_central_disabled"
+        body = {"bot_id": bot_id, "result": result}
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(self._url(f"/v1/fleet/objectives/{objective_id}/complete"), json=body)
+                resp.raise_for_status()
+                payload = resp.json() if resp.content else {}
+            if not isinstance(payload, dict):
+                return False, {}, "invalid_objective_completion_response"
+            return True, payload, "ok"
+        except Exception as exc:
+            logger.warning(
+                "fleet_sync_objective_complete_failed",
+                extra={"event": "fleet_sync_objective_complete_failed", "bot_id": bot_id, "objective_id": objective_id, "error": str(exc)},
+            )
+            return False, {}, str(exc)

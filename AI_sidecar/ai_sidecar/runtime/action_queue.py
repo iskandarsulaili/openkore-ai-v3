@@ -232,6 +232,10 @@ class ActionQueue:
             self._expire_for_bot(bot_id, now)
             return len(self._by_bot.get(bot_id, ()))
 
+    def snapshot(self) -> dict[str, list[QueuedAction]]:
+        with self._lock:
+            return {bot_id: list(items) for bot_id, items in self._by_bot.items()}
+
     def _expire_for_bot(self, bot_id: str, now: datetime) -> None:
         queue = self._by_bot.get(bot_id)
         if not queue:
