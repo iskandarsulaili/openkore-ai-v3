@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import logging
 from threading import RLock
 from typing import Any
 
@@ -23,6 +24,9 @@ from ai_sidecar.planner.schemas import (
 )
 from ai_sidecar.planner.self_critic import SelfCritic
 from ai_sidecar.planner.validator import PlanValidator
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -97,6 +101,17 @@ class PlannerService:
         }
 
         if not validation.ok:
+            logger.warning(
+                "planner_validation_failed",
+                extra={
+                    "event": "planner_validation_failed",
+                    "bot_id": payload.meta.bot_id,
+                    "trace_id": payload.meta.trace_id,
+                    "issues": list(validation.issues),
+                    "warnings": list(validation.warnings),
+                    "latency_ms": float(latency_ms),
+                },
+            )
             with self._lock:
                 self._counters["planner_failures"] += 1
                 self._counters["planner_validation_failures"] += 1
@@ -108,6 +123,24 @@ class PlannerService:
                 bot_state.last_rationale = ";".join(validation.issues)
                 bot_state.updated_at = datetime.now(UTC)
 
+            fallback_plan = self.plan_generator._fallback(
+                bot_id=payload.meta.bot_id,
+                context=context,
+                max_steps=payload.max_steps,
+            )
+            fallback_bundle = self.plan_generator.build_tactical_bundle(
+                bot_id=payload.meta.bot_id,
+                context=context,
+                plan=fallback_plan,
+            )
+            route = {
+                **dict(route),
+                "fallback": {
+                    "used": True,
+                    "reason": "validation_failed",
+                    "issues": list(validation.issues),
+                },
+            }
             escalation = EscalationNotice(
                 bot_id=payload.meta.bot_id,
                 severity="warning",
@@ -116,30 +149,30 @@ class PlannerService:
             )
             self.reflection_writer.write(
                 bot_id=payload.meta.bot_id,
-                plan_id=plan.plan_id,
+                plan_id=fallback_plan.plan_id,
                 objective=payload.objective,
                 succeeded=False,
                 rationale=escalation.reason,
                 metadata={"trace_id": payload.meta.trace_id, "route": route},
             )
             return PlannerResponse(
-                ok=False,
-                message="plan_rejected_by_validator",
+                ok=True,
+                message="planned_with_fallback",
                 trace_id=payload.meta.trace_id,
-                strategic_plan=plan,
-                tactical_bundle=tactical_bundle,
+                strategic_plan=fallback_plan,
+                tactical_bundle=fallback_bundle,
                 macro_proposal=None,
                 memory_writeback=MemoryWriteback(
                     bot_id=payload.meta.bot_id,
                     summary=f"Plan validation failed: {escalation.reason}",
-                    semantic_tags=["planner", "validator", "rejected"],
-                    metadata={"issues": validation.issues, "warnings": validation.warnings},
+                    semantic_tags=["planner", "validator", "fallback"],
+                    metadata={"issues": validation.issues, "warnings": validation.warnings, "fallback_plan_id": fallback_plan.plan_id},
                 ),
                 learning_label=LearningLabel(
                     bot_id=payload.meta.bot_id,
-                    label="planner_validation_rejected",
-                    reward=-0.3,
-                    details={"issues": validation.issues, "warnings": validation.warnings},
+                    label="planner_validation_fallback",
+                    reward=-0.15,
+                    details={"issues": validation.issues, "warnings": validation.warnings, "fallback_plan_id": fallback_plan.plan_id},
                 ),
                 escalation=escalation,
                 provider=provider,

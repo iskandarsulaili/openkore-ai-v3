@@ -61,6 +61,7 @@ def _plan_schema() -> dict[str, object]:
             "rationale": {"type": "string"},
             "steps": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "required": ["step_id", "kind", "description"],
@@ -175,6 +176,18 @@ class PlanGenerator:
                 fallbacks=[str(x) for x in list(item.get("fallbacks") or [])],
             )
             steps.append(step)
+
+        if not steps:
+            logger.warning(
+                "planner_empty_steps_detected",
+                extra={
+                    "event": "planner_empty_steps_detected",
+                    "bot_id": bot_id,
+                    "horizon": context.horizon.value,
+                    "objective": context.objective,
+                },
+            )
+            steps = self._fallback(bot_id=bot_id, context=context, max_steps=max_steps).steps
 
         assumptions = [str(x) for x in list(raw_content.get("assumptions") or [])]
         constraints = [str(x) for x in list(raw_content.get("constraints") or [])]
@@ -348,24 +361,26 @@ class PlanGenerator:
 
     def _system_prompt(self, *, context: PlannerContext) -> str:
         allowed_step_kinds = ", ".join(item.value for item in PlannerStepKind)
-        horizon_budget_ms = 2000 if context.horizon == PlanHorizon.tactical else 10000
+        horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
         return (
             "You are the local sidecar conscious planner for Ragnarok Online bots. "
             "Output only strict JSON following schema. "
             "Do not emit free-form commands outside schema. "
+            "Steps must be a non-empty array with concrete descriptions. "
             f"Allowed step kinds: [{allowed_step_kinds}]. "
             f"Current horizon={context.horizon.value} with latency budget under {horizon_budget_ms} ms. "
             "Respect doctrine, safety constraints, and latency tiers."
         )
 
     def _user_prompt(self, *, context: PlannerContext, max_steps: int) -> tuple[str, dict[str, object]]:
-        horizon_budget_ms = 2000 if context.horizon == PlanHorizon.tactical else 10000
+        horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
         payload = {
             "bot_id": context.bot_id,
             "objective": context.objective,
             "horizon": context.horizon.value,
             "max_steps": max_steps,
             "latency_budget_ms": horizon_budget_ms,
+            "steps_required": True,
             "latency_headroom": context.latency_headroom,
             "state": context.state,
             "job_progression": context.job_progression,

@@ -102,7 +102,7 @@ class PlannerContextAssembler:
             "context_events_bytes": events_bytes,
         }
 
-        horizon_budget_ms = 2000 if horizon == PlanHorizon.tactical else 10000
+        horizon_budget_ms = 15000 if horizon == PlanHorizon.tactical else 30000
         latency_headroom = {
             "horizon_budget_ms": horizon_budget_ms,
             "observed_avg_ms": queue_info["latency_avg_ms"],

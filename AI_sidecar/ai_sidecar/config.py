@@ -88,8 +88,8 @@ class SidecarSettings(BaseSettings):
 
     provider_policy_json: str = ""
 
-    planner_tactical_budget_ms: int = Field(default=2000, ge=100, le=120000)
-    planner_strategic_budget_ms: int = Field(default=10000, ge=500, le=300000)
+    planner_tactical_budget_ms: int = Field(default=15000, ge=100, le=120000)
+    planner_strategic_budget_ms: int = Field(default=30000, ge=500, le=300000)
     planner_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
     planner_retries: int = Field(default=2, ge=0, le=8)
 

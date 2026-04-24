@@ -1,18 +1,14 @@
-"""Autonomy PDCA loop package."""
-
-from ai_sidecar.autonomy.conductor import AutonomyConductor
-from ai_sidecar.autonomy.horizons import AutonomyArtifactStore, HorizonSpec, PlanArtifact, PlanOutcome
-from ai_sidecar.autonomy.learning import LearningEngine, LearningOutcome
-from ai_sidecar.autonomy.pdca_loop import PDCAHorizonLoop, PDCAResult
+"""Autonomy module — PDCA continuous improvement loop."""
+from ai_sidecar.autonomy.pdca_loop import PDCALoop, PDCAResult, PDCAConfig, Horizon
+from ai_sidecar.autonomy.plan_executor import PlanExecutor
+from ai_sidecar.autonomy.progress_tracker import ProgressTracker, ProgressEvaluation
 
 __all__ = [
-    "AutonomyConductor",
-    "AutonomyArtifactStore",
-    "HorizonSpec",
-    "PlanArtifact",
-    "PlanOutcome",
-    "LearningEngine",
-    "LearningOutcome",
-    "PDCAHorizonLoop",
+    "PDCALoop",
     "PDCAResult",
+    "PDCAConfig",
+    "Horizon",
+    "PlanExecutor",
+    "ProgressTracker",
+    "ProgressEvaluation",
 ]

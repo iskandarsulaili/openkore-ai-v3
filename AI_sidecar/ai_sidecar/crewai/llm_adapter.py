@@ -87,6 +87,61 @@ class ProviderBackedCrewLLM(BaseLLM):
             return response.raw_text
         return "No provider content returned."
 
+    async def acall(
+        self,
+        messages: str | list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        callbacks: list[Any] | None = None,
+        available_functions: dict[str, Any] | None = None,
+        from_task: Any | None = None,
+        from_agent: Any | None = None,
+        response_model: type[BaseModel] | None = None,
+    ) -> str:
+        del callbacks, available_functions, from_task, from_agent, response_model
+
+        prompt = self._messages_to_prompt(messages)
+        schema: dict[str, object] = {
+            "type": "object",
+            "required": ["response"],
+            "properties": {
+                "response": {"type": "string"},
+                "notes": {"type": "array", "items": {"type": "string"}},
+            },
+        }
+        if tools:
+            schema["properties"] = {
+                **dict(schema["properties"]),
+                "tool_plan": {"type": "array", "items": {"type": "string"}},
+            }
+
+        request = PlannerModelRequest(
+            bot_id=self.bot_id,
+            trace_id=self.trace_id,
+            task=self.workload,
+            model=self.model,
+            system_prompt=(
+                "You are a specialist strategic planning assistant in a local Ragnarok Online"
+                " sidecar. Respond with compact JSON only."
+            ),
+            user_prompt=prompt,
+            schema=schema,
+            timeout_seconds=self.timeout_seconds,
+            max_retries=self.max_retries,
+            metadata={"source": "crewai", "provider": self.provider},
+        )
+        response, _decision = await self.model_router.generate_with_fallback(request=request)
+        if not response.ok:
+            return f"Provider routing failure: {response.error or 'unknown_error'}"
+
+        if isinstance(response.content, dict):
+            candidate = response.content.get("response")
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate
+            return json.dumps(response.content, ensure_ascii=False)
+        if response.raw_text:
+            return response.raw_text
+        return "No provider content returned."
+
     def supports_function_calling(self) -> bool:
         return True
 

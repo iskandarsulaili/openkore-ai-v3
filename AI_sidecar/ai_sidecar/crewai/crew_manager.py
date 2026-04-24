@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
@@ -41,6 +42,7 @@ class CrewManager:
     _tool_facade: CrewToolFacade = field(init=False, repr=False)
     _tool_map: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
     _listener_events: list[dict[str, object]] = field(default_factory=list, init=False, repr=False)
+    _run_locks: dict[str, asyncio.Lock] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._counters = {
@@ -112,23 +114,25 @@ class CrewManager:
         with self._lock:
             self._active_runs += 1
             self._counters["strategize_calls"] += 1
+        run_lock = self._get_run_lock(payload.meta.bot_id)
         try:
-            agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
-                bot_id=payload.meta.bot_id,
-                trace_id=payload.meta.trace_id,
-                objective=payload.objective,
-                task_hint="strategic_planning",
-                required_agents=[],
-            )
-            planner_response = await self.runtime.planner_plan(
-                PlannerPlanRequest(
-                    meta=payload.meta,
+            async with run_lock:
+                agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
+                    bot_id=payload.meta.bot_id,
+                    trace_id=payload.meta.trace_id,
                     objective=payload.objective,
-                    horizon=payload.horizon,
-                    force_replan=payload.force_replan,
-                    max_steps=payload.max_steps,
+                    task_hint="strategic_planning",
+                    required_agents=[],
                 )
-            )
+                planner_response = await self.runtime.planner_plan(
+                    PlannerPlanRequest(
+                        meta=payload.meta,
+                        objective=payload.objective,
+                        horizon=payload.horizon,
+                        force_replan=payload.force_replan,
+                        max_steps=payload.max_steps,
+                    )
+                )
             ok = planner_response.ok and not errors
             message = "strategized" if ok else "strategize_degraded"
             with self._lock:
@@ -155,24 +159,26 @@ class CrewManager:
         with self._lock:
             self._active_runs += 1
             self._counters["coordinate_calls"] += 1
+        run_lock = self._get_run_lock(payload.meta.bot_id)
         try:
             objective = payload.objective or payload.task
-            agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
-                bot_id=payload.meta.bot_id,
-                trace_id=payload.meta.trace_id,
-                objective=objective,
-                task_hint=payload.task,
-                required_agents=list(payload.required_agents),
-            )
-            planner_response = await self.runtime.planner_plan(
-                PlannerPlanRequest(
-                    meta=payload.meta,
+            async with run_lock:
+                agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
+                    bot_id=payload.meta.bot_id,
+                    trace_id=payload.meta.trace_id,
                     objective=objective,
-                    horizon=PlanHorizon.tactical,
-                    force_replan=False,
-                    max_steps=12,
+                    task_hint=payload.task,
+                    required_agents=list(payload.required_agents),
                 )
-            )
+                planner_response = await self.runtime.planner_plan(
+                    PlannerPlanRequest(
+                        meta=payload.meta,
+                        objective=objective,
+                        horizon=PlanHorizon.tactical,
+                        force_replan=False,
+                        max_steps=12,
+                    )
+                )
             ok = planner_response.ok and not errors
             message = "coordinated" if ok else "coordinate_degraded"
             with self._lock:
@@ -252,8 +258,7 @@ class CrewManager:
                     verbose=self.verbose,
                 )
 
-            manager_tools = [self._tool_map[name] for name in CREW_TOOL_NAMES if name in self._tool_map]
-            manager = create_manager_agent(llm=llm, tools=manager_tools, verbose=self.verbose)
+            manager = create_manager_agent(llm=llm, tools=[], verbose=self.verbose)
 
             tasks = build_collaborative_tasks(objective=objective, task_hint=task_hint, agents_by_id=agents_by_id)
             listener_events: list[dict[str, object]] = []
@@ -280,19 +285,106 @@ class CrewManager:
                 )
                 return result
 
-            crew = Crew(
-                name=f"sidecar-{bot_id}",
-                agents=list(agents_by_id.values()),
-                tasks=tasks,
-                manager_agent=manager,
-                process=Process.hierarchical,
-                planning=True,
-                memory=True,
-                before_kickoff_callbacks=[_before_kickoff],
-                after_kickoff_callbacks=[_after_kickoff],
-                verbose=self.verbose,
-            )
-            result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
+            execution_attempts: list[dict[str, object]] = [
+                {
+                    "profile": "hierarchical_planning",
+                    "process": Process.hierarchical,
+                    "planning": True,
+                    "with_manager": True,
+                },
+                {
+                    "profile": "sequential_planning",
+                    "process": Process.sequential,
+                    "planning": True,
+                    "with_manager": True,
+                },
+                {
+                    "profile": "sequential_no_planning",
+                    "process": Process.sequential,
+                    "planning": False,
+                    "with_manager": True,
+                },
+                {
+                    "profile": "sequential_no_planning_no_manager",
+                    "process": Process.sequential,
+                    "planning": False,
+                    "with_manager": False,
+                },
+            ]
+
+            result: Any | None = None
+            execution_profile = ""
+            execution_process_label = "sequential"
+            execution_planning = False
+            execution_with_manager = False
+            last_async_error: Exception | None = None
+
+            for attempt in execution_attempts:
+                attempt_profile = str(attempt["profile"])
+                attempt_process = attempt["process"]
+                attempt_planning = bool(attempt["planning"])
+                attempt_with_manager = bool(attempt["with_manager"])
+
+                try:
+                    crew = self._build_crew(
+                        Crew=Crew,
+                        Process=Process,
+                        bot_id=bot_id,
+                        agents_by_id=agents_by_id,
+                        tasks=tasks,
+                        manager=manager,
+                        planning_llm=llm,
+                        include_manager=attempt_with_manager,
+                        before_kickoff=_before_kickoff,
+                        after_kickoff=_after_kickoff,
+                        process=attempt_process,
+                        planning=attempt_planning,
+                    )
+                except Exception as build_exc:
+                    if self._is_async_order_validation_error(build_exc):
+                        last_async_error = build_exc
+                        logger.warning(
+                            "crewai_async_order_retry",
+                            extra={
+                                "event": "crewai_async_order_retry",
+                                "bot_id": bot_id,
+                                "trace_id": trace_id,
+                                "retry_profile": attempt_profile,
+                                "retry_stage": "build",
+                                "error": str(build_exc),
+                            },
+                        )
+                        continue
+                    raise
+
+                try:
+                    result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
+                    execution_profile = attempt_profile
+                    execution_process_label = "hierarchical" if attempt_process == Process.hierarchical else "sequential"
+                    execution_planning = attempt_planning
+                    execution_with_manager = attempt_with_manager
+                    break
+                except Exception as kickoff_exc:
+                    if self._is_async_order_validation_error(kickoff_exc):
+                        last_async_error = kickoff_exc
+                        logger.warning(
+                            "crewai_async_order_retry",
+                            extra={
+                                "event": "crewai_async_order_retry",
+                                "bot_id": bot_id,
+                                "trace_id": trace_id,
+                                "retry_profile": attempt_profile,
+                                "retry_stage": "kickoff",
+                                "error": str(kickoff_exc),
+                            },
+                        )
+                        continue
+                    raise
+
+            if result is None:
+                if last_async_error is not None:
+                    raise last_async_error
+                raise RuntimeError("crewai_no_execution_profile_succeeded")
             consolidated = str(getattr(result, "raw", "") or str(result))
             task_outputs = list(getattr(result, "tasks_output", []) or [])
             rows: list[dict[str, object]] = []
@@ -322,10 +414,11 @@ class CrewManager:
 
             orchestrator = {
                 "crew": {
-                    "process": "hierarchical",
-                    "planning": True,
+                    "process": execution_process_label,
+                    "planning": execution_planning,
                     "memory": True,
-                    "manager_agent": "manager",
+                    "manager_agent": "manager" if execution_with_manager else "",
+                    "execution_profile": execution_profile,
                 },
                 "flow": {
                     "objective": objective,
@@ -370,3 +463,55 @@ class CrewManager:
         if candidate in {"strategic_planning", "tactical_short_reasoning", "long_reflection", "reflex_explain"}:
             return candidate
         return "tactical_short_reasoning"
+
+    def _get_run_lock(self, bot_id: str) -> asyncio.Lock:
+        with self._lock:
+            lock = self._run_locks.get(bot_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._run_locks[bot_id] = lock
+            return lock
+
+    def _is_async_order_validation_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "async_task_count" in message
+            or "async task" in message
+            or "asynchronous task" in message
+            or "at most one asynchronous task" in message
+        )
+
+    def _build_crew(
+        self,
+        *,
+        Crew: Any,
+        Process: Any,
+        bot_id: str,
+        agents_by_id: dict[str, Any],
+        tasks: list[Any],
+        manager: Any,
+        planning_llm: Any,
+        include_manager: bool,
+        before_kickoff: Any,
+        after_kickoff: Any,
+        process: Any,
+        planning: bool,
+    ) -> Any:
+        kwargs: dict[str, Any] = {
+            "name": f"sidecar-{bot_id}",
+            "agents": list(agents_by_id.values()),
+            "tasks": tasks,
+            "process": process,
+            "planning": planning,
+            "memory": True,
+            "before_kickoff_callbacks": [before_kickoff],
+            "after_kickoff_callbacks": [after_kickoff],
+            "verbose": self.verbose,
+        }
+        if planning:
+            kwargs["planning_llm"] = planning_llm
+        if include_manager:
+            kwargs["manager_agent"] = manager
+        return Crew(
+            **kwargs,
+        )

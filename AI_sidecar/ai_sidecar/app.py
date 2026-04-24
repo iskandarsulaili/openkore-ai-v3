@@ -40,7 +40,28 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     configure_logging(level=settings.log_level, use_json=settings.log_json)
     app.state.runtime = create_runtime()
+    runtime = app.state.runtime
+
+    # Initialize and start PDCA loop
+    from ai_sidecar.autonomy.pdca_loop import PDCALoop, PDCAConfig
+    from ai_sidecar.api.routers.autonomy import set_pdca_loop
+
+    pdca_config = PDCAConfig(
+        short_term_interval_s=5.0,
+        medium_term_interval_s=30.0,
+        long_term_interval_s=120.0,
+    )
+    pdca_loop = PDCALoop(runtime_state=runtime, config=pdca_config)
+    set_pdca_loop(pdca_loop)
+    # Auto-start the PDCA loop
+    pdca_loop.start()
+    logger.info("PDCA autonomy loop started (auto)")
     yield
+
+    # Stop PDCA loop
+    if pdca_loop.running:
+        await pdca_loop.stop()
+        logger.info("PDCA autonomy loop stopped")
 
 
 def install_request_validation_logging(app: FastAPI) -> None:
@@ -101,6 +122,10 @@ def create_app() -> FastAPI:
     app.include_router(ml_subconscious_v2.router)
     app.include_router(fleet_v2.router)
     app.include_router(observability_v2.router)
+    # Register autonomy router
+    from ai_sidecar.api.routers.autonomy import router as autonomy_router, set_pdca_loop
+
+    app.include_router(autonomy_router)
     return app
 
 

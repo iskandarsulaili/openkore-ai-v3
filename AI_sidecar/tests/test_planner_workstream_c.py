@@ -157,7 +157,7 @@ def test_plan_generator_compacts_prompt_and_emits_metadata() -> None:
     assert int(meta["prompt_chars_initial"]) > int(meta["prompt_chars_final"])
     assert int(meta["prompt_chars_final"]) <= int(meta["prompt_chars_limit"])
     assert isinstance(meta["prompt_reductions"], list)
-    assert payload["latency_budget_ms"] == 10000
+    assert payload["latency_budget_ms"] == 30000
 
 
 @dataclass(slots=True)
@@ -223,8 +223,8 @@ def test_planner_service_rejects_plan_when_latency_budget_exceeded() -> None:
         )
     )
 
-    assert response.ok is False
-    assert response.message == "plan_rejected_by_validator"
+    assert response.ok is True
+    assert response.message == "planned_with_fallback"
     assert response.provider == "deepseek"
     assert response.route["execution_flow"] == [
         "context_assembly",
@@ -235,6 +235,9 @@ def test_planner_service_rejects_plan_when_latency_budget_exceeded() -> None:
     ]
     assert response.route["latency_budget"]["within_budget"] is False
     assert "latency_budget_exceeded" in ";".join(response.route["validation"]["issues"])
+    assert response.route["fallback"]["used"] is True
+    assert response.strategic_plan is not None
+    assert response.tactical_bundle is not None
 
 
 def test_plan_validator_accepts_strategic_plan_within_budget() -> None:
