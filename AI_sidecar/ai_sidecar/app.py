@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
         long_term_interval_s=120.0,
     )
     pdca_loop = PDCALoop(runtime_state=runtime, config=pdca_config)
+    runtime.pdca_loop = pdca_loop
     set_pdca_loop(pdca_loop)
     # Auto-start the PDCA loop
     pdca_loop.start()
@@ -72,6 +73,10 @@ async def lifespan(app: FastAPI):
         logger.info("fleet sync loop cancelled")
     except Exception:
         logger.info("fleet sync loop stopped")
+    try:
+        await runtime.shutdown()
+    except Exception:
+        logger.exception("runtime_shutdown_failed")
 
 
 def install_request_validation_logging(app: FastAPI) -> None:
@@ -116,7 +121,8 @@ def create_app() -> FastAPI:
     if settings.observability_enable_tracing:
         install_fastapi_tracing(app)
     install_request_validation_logging(app)
-    app.include_router(health.router)
+    app.include_router(health.router, prefix="/health")
+    app.include_router(health.router, prefix="/v1/health")
     app.include_router(ingest.router)
     app.include_router(actions.router)
     app.include_router(acknowledgements.router)

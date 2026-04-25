@@ -31,8 +31,10 @@ class PlannerContextAssembler:
 
         recent_events_raw = self.runtime.recent_ingest_events(bot_id=bot_id, limit=event_limit)
         recent_events = self._compact_events(recent_events_raw, limit=event_limit)
-        memory_matches = self.runtime.memory_context(bot_id=bot_id, query=objective, limit=memory_limit)
-        episodes = self.runtime.memory_recent_episodes(bot_id=bot_id, limit=min(20, memory_limit * 2))
+        memory_matches_raw = self.runtime.memory_context(bot_id=bot_id, query=objective, limit=memory_limit)
+        memory_matches = self._compact_records(memory_matches_raw, limit=max(1, min(memory_limit, 8)))
+        episodes_raw = self.runtime.memory_recent_episodes(bot_id=bot_id, limit=min(20, memory_limit * 2))
+        episodes = self._compact_records(episodes_raw, limit=max(1, min(memory_limit * 2, 10)))
 
         doctrine: dict[str, object] = {
             "doctrine_version": state_payload.get("fleet_intent", {}).get("constraints", {}).get("config.doctrine_version"),
@@ -51,9 +53,21 @@ class PlannerContextAssembler:
             central_constraints = self.runtime.fleet_constraints(bot_id=bot_id)
             fleet_coordination["mode"] = central_constraints.mode
             fleet_coordination["doctrine_version"] = central_constraints.doctrine_version
-            fleet_coordination["constraints"] = dict(central_constraints.constraints)
+            fleet_coordination["constraints"] = self._compact_payload(
+                dict(central_constraints.constraints),
+                max_depth=4,
+                max_dict_items=24,
+                max_list_items=24,
+                max_str_chars=180,
+            )
             doctrine["doctrine_version"] = central_constraints.doctrine_version
-            doctrine["constraints"] = dict(central_constraints.constraints)
+            doctrine["constraints"] = self._compact_payload(
+                dict(central_constraints.constraints),
+                max_depth=4,
+                max_dict_items=24,
+                max_list_items=24,
+                max_str_chars=180,
+            )
         except Exception as exc:
             reason = f"fleet_constraints_unavailable:{type(exc).__name__}"
             fleet_coordination["degraded"] = True
@@ -74,7 +88,13 @@ class PlannerContextAssembler:
         try:
             blackboard_view = self.runtime.fleet_blackboard(bot_id=bot_id)
             fleet_coordination["mode"] = blackboard_view.mode
-            fleet_coordination["blackboard"] = dict(blackboard_view.blackboard)
+            fleet_coordination["blackboard"] = self._compact_payload(
+                dict(blackboard_view.blackboard),
+                max_depth=3,
+                max_dict_items=20,
+                max_list_items=12,
+                max_str_chars=160,
+            )
         except Exception as exc:
             reason = f"fleet_blackboard_unavailable:{type(exc).__name__}"
             fleet_coordination["degraded"] = True
@@ -95,11 +115,15 @@ class PlannerContextAssembler:
         queue_depth = self.runtime.action_queue.count(bot_id)
         state_bytes = len(json.dumps(state_payload, ensure_ascii=False, default=str))
         events_bytes = len(json.dumps(recent_events, ensure_ascii=False, default=str))
+        memory_bytes = len(json.dumps(memory_matches, ensure_ascii=False, default=str))
+        episodes_bytes = len(json.dumps(episodes, ensure_ascii=False, default=str))
         queue_info = {
             "pending_actions": queue_depth,
             "latency_avg_ms": round(self.runtime.latency_router.average_ms(), 3),
             "context_state_bytes": state_bytes,
             "context_events_bytes": events_bytes,
+            "context_memory_bytes": memory_bytes,
+            "context_episodes_bytes": episodes_bytes,
         }
 
         horizon_budget_ms = 15000 if horizon == PlanHorizon.tactical else 30000
@@ -153,7 +177,13 @@ class PlannerContextAssembler:
         }
 
         macros_info: dict[str, object] = {
-            "latest_publication": self.runtime.latest_macro_publication(bot_id=bot_id),
+            "latest_publication": self._compact_payload(
+                self.runtime.latest_macro_publication(bot_id=bot_id),
+                max_depth=3,
+                max_dict_items=16,
+                max_list_items=8,
+                max_str_chars=160,
+            ),
         }
 
         reflex_info: dict[str, object] = {
@@ -375,7 +405,7 @@ class PlannerContextAssembler:
                 "role": fleet.get("role"),
                 "assignment": fleet.get("assignment"),
                 "objective": fleet.get("objective"),
-                "constraints": fleet.get("constraints", {}),
+                "constraints": _top_dict_items(fleet.get("constraints"), limit=24),
             },
             "features": {
                 "values": {
@@ -414,3 +444,75 @@ class PlannerContextAssembler:
                 }
             )
         return compact
+
+    def _compact_records(self, rows: list[dict[str, object]], *, limit: int) -> list[dict[str, object]]:
+        compact: list[dict[str, object]] = []
+        for item in rows[: max(0, int(limit))]:
+            if not isinstance(item, dict):
+                continue
+            normalized = self._compact_payload(
+                item,
+                max_depth=3,
+                max_dict_items=14,
+                max_list_items=8,
+                max_str_chars=220,
+            )
+            if isinstance(normalized, dict):
+                compact.append(normalized)
+        return compact
+
+    def _compact_payload(
+        self,
+        value: object,
+        *,
+        max_depth: int,
+        max_dict_items: int,
+        max_list_items: int,
+        max_str_chars: int,
+    ) -> object:
+        if isinstance(value, str):
+            return value[:max_str_chars]
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+        if isinstance(value, list):
+            if max_depth <= 0:
+                return [self._compact_scalar(item, max_str_chars=max_str_chars) for item in value[:max_list_items]]
+            return [
+                self._compact_payload(
+                    item,
+                    max_depth=max_depth - 1,
+                    max_dict_items=max_dict_items,
+                    max_list_items=max_list_items,
+                    max_str_chars=max_str_chars,
+                )
+                for item in value[:max_list_items]
+            ]
+        if isinstance(value, dict):
+            keys = list(value.keys())
+            if max_depth <= 0:
+                return {
+                    str(key): self._compact_scalar(value.get(key), max_str_chars=max_str_chars)
+                    for key in keys[:max_dict_items]
+                }
+            return {
+                str(key): self._compact_payload(
+                    value.get(key),
+                    max_depth=max_depth - 1,
+                    max_dict_items=max_dict_items,
+                    max_list_items=max_list_items,
+                    max_str_chars=max_str_chars,
+                )
+                for key in keys[:max_dict_items]
+            }
+        return str(value)[:max_str_chars]
+
+    def _compact_scalar(self, value: object, *, max_str_chars: int) -> object:
+        if isinstance(value, str):
+            return value[:max_str_chars]
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+        if isinstance(value, dict):
+            return {"_type": "dict", "_len": len(value)}
+        if isinstance(value, list):
+            return {"_type": "list", "_len": len(value)}
+        return str(value)[:max_str_chars]

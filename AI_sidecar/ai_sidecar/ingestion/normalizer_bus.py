@@ -107,6 +107,8 @@ class NormalizerBus:
 
         basis = {
             "operational.in_combat": 1.0 if operational.in_combat else 0.0,
+            "operational.death_count": float(getattr(operational, "death_count", 0)),
+            "operational.reconnect_age_s": float(getattr(operational, "reconnect_age_s", 0.0) or 0.0),
             "encounter.in_encounter": 1.0 if encounter.in_encounter else 0.0,
             "encounter.nearby_hostiles": float(encounter.nearby_hostiles),
             "encounter.nearby_allies": float(encounter.nearby_allies),
@@ -115,7 +117,9 @@ class NormalizerBus:
             "inventory.zeny": float(inventory.zeny or 0.0),
             "inventory.item_count": float(inventory.item_count),
             "inventory.overweight_ratio": float(inventory.overweight_ratio or 0.0),
+            "inventory.weight_pressure": float(getattr(inventory, "weight_pressure", 0.0)),
             "inventory.consumables_count": float(len(inventory.consumables)),
+            "inventory.consumable_depletion_score": float(getattr(inventory, "consumable_depletion_score", 0.0)),
             "economy.zeny_delta_1m": float(economy.zeny_delta_1m),
             "economy.zeny_delta_10m": float(economy.zeny_delta_10m),
             "economy.vendor_exposure": float(economy.vendor_exposure),
@@ -137,6 +141,9 @@ class NormalizerBus:
             "quest.objective_completion_ratio": float(quest.objective_completion_ratio),
             "npc.relationship_count": float(npc.total_known_npcs),
             "npc.interaction_count_10m": float(npc.interaction_count_10m),
+            "navigation.route_churn_count": float(getattr(world_projection["navigation"], "route_churn_count", 0)),
+            "navigation.route_failure_count": float(getattr(world_projection["navigation"], "route_failure_count", 0)),
+            "navigation.stuck_score": float(getattr(world_projection["navigation"], "stuck_score", 0.0)),
         }
         labels = {
             "map": str(operational.map or ""),

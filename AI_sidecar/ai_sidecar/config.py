@@ -37,7 +37,7 @@ class SidecarSettings(BaseSettings):
     telemetry_recent_incidents_limit: int = Field(default=100, ge=1, le=1000)
     telemetry_backlog_max_events: int = Field(default=10000, ge=100, le=200000)
 
-    latency_budget_ms: int = Field(default=500, ge=1, le=500)
+    latency_budget_ms: int = Field(default=500, ge=1, le=5000)
     reflex_latency_budget_ms: int = Field(default=100, ge=10, le=1000)
     reflex_trigger_history_per_bot: int = Field(default=1000, ge=100, le=20000)
 
@@ -62,10 +62,10 @@ class SidecarSettings(BaseSettings):
 
     provider_ollama_enabled: bool = True
     provider_ollama_base_url: str = "http://127.0.0.1:11434"
-    provider_ollama_default_model: str = "qwen2.5:14b"
-    provider_ollama_tactical_model: str = "qwen2.5:7b"
-    provider_ollama_strategic_model: str = "qwen2.5:14b"
-    provider_ollama_reflection_model: str = "qwen2.5:14b"
+    provider_ollama_default_model: str = "qwen3.6:35b-a3b-q4_K_M"
+    provider_ollama_tactical_model: str = "qwen3.6:35b-a3b-q4_K_M"
+    provider_ollama_strategic_model: str = "qwen3.6:35b-a3b-q4_K_M"
+    provider_ollama_reflection_model: str = "qwen3.6:35b-a3b-q4_K_M"
     provider_ollama_embedding_model: str = "nomic-embed-text"
 
     provider_deepseek_enabled: bool = True
@@ -92,6 +92,17 @@ class SidecarSettings(BaseSettings):
     planner_strategic_budget_ms: int = Field(default=30000, ge=500, le=300000)
     planner_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
     planner_retries: int = Field(default=2, ge=0, le=8)
+
+    autonomy_objective_max_age_cycles: int = Field(default=6, ge=1, le=10000)
+    autonomy_max_active_objectives: int = Field(default=3, ge=1, le=64)
+    autonomy_priority_decay_per_cycle: float = Field(default=0.10, ge=0.0, le=1.0)
+    autonomy_objective_rotation_cooldown_s: float = Field(default=20.0, ge=0.0, le=3600.0)
+    autonomy_ranked_objectives: str = "grind,recovery,economy,quest"
+    autonomy_stale_plan_threshold_s: float = Field(default=60.0, ge=1.0, le=36000.0)
+    autonomy_death_recovery_cooldown_s: float = Field(default=15.0, ge=0.0, le=3600.0)
+    autonomy_reconnect_grace_s: float = Field(default=20.0, ge=0.0, le=3600.0)
+    autonomy_preferred_grind_maps: str = ""
+    autonomy_preferred_grind_map_policy: str = "prefer"
 
     crewai_enabled: bool = True
     crewai_verbose: bool = False

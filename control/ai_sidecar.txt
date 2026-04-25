@@ -18,7 +18,7 @@ aiSidecar_source openkore-bridge
 
 # Tight-but-stable local IPC timeouts in milliseconds.
 aiSidecar_connectTimeoutMs 180
-aiSidecar_ioTimeoutMs 1200
+aiSidecar_ioTimeoutMs 30000
 
 # Snapshot push behavior.
 aiSidecar_snapshotEnabled 1

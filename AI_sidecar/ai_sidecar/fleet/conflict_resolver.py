@@ -9,12 +9,18 @@ class FleetConflictResolver:
         avoid_items = constraints.get("avoid") if isinstance(constraints.get("avoid"), list) else []
         required_items = constraints.get("required") if isinstance(constraints.get("required"), list) else []
         source_items = constraints.get("sources") if isinstance(constraints.get("sources"), list) else []
+        passthrough = {
+            str(key): value
+            for key, value in constraints.items()
+            if str(key) not in {"avoid", "required", "sources", "policy"}
+        }
 
         dedup_avoid = self._dedup_dict_list(avoid_items)
         dedup_required = self._dedup_dict_list(required_items)
         sources = sorted({str(item) for item in source_items if str(item)})
 
         return {
+            **passthrough,
             "avoid": dedup_avoid,
             "required": dedup_required,
             "sources": sources,
@@ -56,4 +62,3 @@ class FleetConflictResolver:
             seen.add(normalized)
             result.append(dict(row))
         return result
-

@@ -39,6 +39,10 @@ class _BotProjection:
     fleet_intent: FleetIntentState = field(default_factory=FleetIntentState)
     recent_event_ids: list[str] = field(default_factory=list)
     actor_relations: dict[str, tuple[str, str]] = field(default_factory=dict)
+    last_in_game: bool | None = None
+    last_disconnect_at: datetime | None = None
+    last_map_name: str | None = None
+    last_route_signature: tuple[str | None, int | None, int | None] | None = None
 
 
 def _int_or_none(value: object) -> int | None:
@@ -92,6 +96,8 @@ class WorldStateProjector:
                 self._apply_action(projection, event, now)
             elif event.event_family == EventFamily.telemetry:
                 self._apply_telemetry(projection, event, now)
+            elif event.event_family == EventFamily.lifecycle:
+                self._apply_lifecycle(projection, event, now)
 
     def export(self, *, bot_id: str, features: LearningFeatureVector) -> dict[str, object]:
         with self._lock:
@@ -120,6 +126,7 @@ class WorldStateProjector:
         vitals = payload.get("vitals") if isinstance(payload.get("vitals"), dict) else {}
         combat = payload.get("combat") if isinstance(payload.get("combat"), dict) else {}
         inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
+        raw_payload = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
 
         projection.operational.map = position.get("map")
         projection.operational.x = position.get("x")
@@ -132,7 +139,37 @@ class WorldStateProjector:
         projection.operational.in_combat = bool(combat.get("is_in_combat"))
         projection.operational.target_id = combat.get("target_id")
         projection.operational.updated_at = now
-        projection.operational.raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
+        projection.operational.raw = raw_payload
+
+        in_game_value = raw_payload.get("in_game")
+        in_game: bool | None = None
+        if isinstance(in_game_value, bool):
+            in_game = in_game_value
+        elif isinstance(in_game_value, (int, float)):
+            in_game = bool(in_game_value)
+        elif isinstance(in_game_value, str):
+            in_game = in_game_value.strip().lower() in {"1", "true", "yes", "on"}
+
+        if in_game is not None:
+            projection.last_in_game = in_game
+            projection.operational.liveness_state = "online" if in_game else "disconnected"
+
+        reconnect_age = raw_payload.get("reconnect_age_s")
+        if isinstance(reconnect_age, (int, float)):
+            projection.operational.reconnect_age_s = max(0.0, float(reconnect_age))
+        elif isinstance(reconnect_age, str):
+            try:
+                projection.operational.reconnect_age_s = max(0.0, float(reconnect_age))
+            except ValueError:
+                pass
+
+        death_count = raw_payload.get("death_count")
+        if isinstance(death_count, int):
+            projection.operational.death_count = max(0, death_count)
+
+        respawn_state = _str_or_none(raw_payload.get("respawn_state"))
+        if respawn_state:
+            projection.operational.respawn_state = respawn_state
 
         # Populate progression fields from enriched snapshot (bridge v2+).
         progression = payload.get("progression") if isinstance(payload.get("progression"), dict) else {}
@@ -171,6 +208,21 @@ class WorldStateProjector:
             projection.navigation.route_status = ai_seq
         else:
             projection.navigation.route_status = "idle"
+
+        route_signature = (
+            _str_or_none(position.get("map")),
+            _int_or_none(position.get("x")),
+            _int_or_none(position.get("y")),
+        )
+        moving_now = projection.navigation.route_status == "moving"
+        if moving_now and projection.last_route_signature == route_signature:
+            projection.navigation.route_churn_count += 1
+        projection.last_route_signature = route_signature
+
+        route_failure_count = raw_payload.get("route_failure_count")
+        if isinstance(route_failure_count, int):
+            projection.navigation.route_failure_count = max(projection.navigation.route_failure_count, route_failure_count)
+
         projection.navigation.updated_at = now
 
         projection.inventory.zeny = inventory.get("zeny")
@@ -179,6 +231,10 @@ class WorldStateProjector:
         projection.inventory.weight_max = vitals.get("weight_max")
         if projection.inventory.weight is not None and projection.inventory.weight_max:
             projection.inventory.overweight_ratio = float(projection.inventory.weight) / float(projection.inventory.weight_max)
+            projection.inventory.weight_pressure = max(
+                0.0,
+                min(1.0, (projection.inventory.overweight_ratio - 0.5) / 0.5),
+            )
         projection.inventory.updated_at = now
 
         inventory_items_payload = payload.get("inventory_items")
@@ -197,6 +253,18 @@ class WorldStateProjector:
                 if qty > 0:
                     consumables[name] = qty
             projection.inventory.consumables = consumables
+
+        total_consumables = sum(int(max(0, qty)) for qty in projection.inventory.consumables.values())
+        if total_consumables <= 0:
+            projection.inventory.consumable_depletion_score = 1.0
+        elif total_consumables <= 3:
+            projection.inventory.consumable_depletion_score = 0.9
+        elif total_consumables <= 10:
+            projection.inventory.consumable_depletion_score = 0.6
+        elif total_consumables <= 25:
+            projection.inventory.consumable_depletion_score = 0.3
+        else:
+            projection.inventory.consumable_depletion_score = 0.0
 
         self._economy_tracker.observe_snapshot(bot_id=projection.operational.bot_id, payload=payload, observed_at=now)
         projection.economy = self._economy_tracker.export(
@@ -235,8 +303,52 @@ class WorldStateProjector:
         hp = float(vitals.get("hp") or 0.0)
         hp_max = float(vitals.get("hp_max") or 0.0)
         hp_ratio = (hp / hp_max) if hp_max > 0 else 1.0
+        if hp_max > 0 and hp <= 0:
+            projection.operational.respawn_state = "dead"
+            projection.operational.death_count = max(1, projection.operational.death_count)
+        elif hp_max > 0 and hp > 0 and projection.operational.respawn_state in {"dead", "respawning"}:
+            projection.operational.respawn_state = "alive"
         projection.risk.death_risk_score = max(0.0, 1.0 - hp_ratio)
         projection.risk.danger_score = max(projection.risk.danger_score, projection.risk.death_risk_score)
+        projection.risk.updated_at = now
+
+    def _apply_lifecycle(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:
+        event_type = str(event.event_type or "").strip().lower()
+        payload = event.payload if isinstance(event.payload, dict) else {}
+
+        if event_type in {"lifecycle.disconnected", "lifecycle.disconnect"}:
+            projection.operational.liveness_state = "disconnected"
+            projection.last_in_game = False
+            projection.last_disconnect_at = now
+            projection.operational.reconnect_age_s = 0.0
+        elif event_type in {"lifecycle.reconnected", "lifecycle.connected"}:
+            projection.operational.liveness_state = "online"
+            projection.last_in_game = True
+            if projection.last_disconnect_at is not None:
+                projection.operational.reconnect_age_s = max(0.0, (now - projection.last_disconnect_at).total_seconds())
+        elif event_type == "lifecycle.death":
+            projection.operational.death_count += 1
+            projection.operational.respawn_state = "dead"
+            projection.risk.death_risk_score = 1.0
+            projection.risk.danger_score = max(projection.risk.danger_score, 0.95)
+        elif event_type == "lifecycle.respawn":
+            projection.operational.respawn_state = "respawned"
+        elif event_type == "lifecycle.map_transfer":
+            from_map = _str_or_none(payload.get("from_map"))
+            to_map = _str_or_none(payload.get("to_map"))
+            projection.navigation.destination_map = to_map
+            projection.navigation.map = to_map or projection.navigation.map
+            projection.last_map_name = to_map or projection.last_map_name
+            projection.navigation.route_churn_count += 1
+            if from_map and to_map and from_map != to_map:
+                projection.navigation.route_status = "transferred"
+        elif event_type in {"lifecycle.route_failure", "navigation.route_failure", "navigation.stuck"}:
+            projection.navigation.route_failure_count += 1
+            projection.navigation.stuck_score = min(1.0, projection.navigation.stuck_score + 0.2)
+            projection.navigation.route_status = "failed"
+
+        projection.operational.updated_at = now
+        projection.navigation.updated_at = now
         projection.risk.updated_at = now
 
     def _apply_actor(self, projection: _BotProjection, event: NormalizedEvent, now: datetime) -> None:

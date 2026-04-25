@@ -4,14 +4,17 @@ import asyncio
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
 from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.lifecycle import RuntimeState
 from ai_sidecar.planner.plan_generator import PlanGenerator
 from ai_sidecar.planner.schemas import (
     PlanHorizon,
     PlannerContext,
     PlannerPlanRequest,
+    PlannerStatusResponse,
     PlannerStep,
     PlannerStepKind,
     StrategicPlan,
@@ -160,6 +163,96 @@ def test_plan_generator_compacts_prompt_and_emits_metadata() -> None:
     assert payload["latency_budget_ms"] == 30000
 
 
+def test_plan_generator_fallback_emits_context_aware_actions_without_ai_auto() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
+    context = PlannerContext(
+        bot_id="bot:ws-c",
+        objective="farm safely",
+        horizon=PlanHorizon.tactical,
+        state={
+            "operational": {"map": "prt_fild01", "hp": 300},
+            "navigation": {"map": "prt_fild01"},
+            "encounter": {"nearby_hostiles": 0, "target_id": None},
+            "inventory": {"item_count": 99, "overweight_ratio": 0.92},
+            "risk": {"anomaly_flags": ["planner.stale_loop"]},
+            "features": {"values": {"reconnect_age_s": 12.0}},
+        },
+        fleet_constraints={"assignment": "prt_fild08", "constraints": {"preferred_grind_maps": ["prt_fild08"]}},
+        quest_context={"active_objective_count": 4},
+        economy_context={"overweight_ratio": 0.92},
+    )
+
+    fallback = generator._fallback(bot_id="bot:ws-c", context=context, max_steps=8)
+
+    assert fallback.recommended_actions
+    assert all(item.command != "ai auto" for item in fallback.recommended_actions)
+    modes = {str(item.metadata.get("fallback_mode") or "") for item in fallback.recommended_actions}
+    assert "economy_relief" in modes
+    assert "resume_grind" in modes
+    assert "seek_targets" in modes
+    seek_action = next(item for item in fallback.recommended_actions if item.metadata.get("fallback_mode") == "seek_targets")
+    assert "scan.targets_absent" in seek_action.preconditions
+    assert seek_action.metadata.get("target_scan_required") is True
+    assert seek_action.metadata.get("seek_only_random_walk") is True
+
+
+def test_plan_generator_fallback_safe_idle_only_when_no_other_safe_action_exists() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
+    context = PlannerContext(
+        bot_id="bot:ws-c",
+        objective="farm safely",
+        horizon=PlanHorizon.tactical,
+        state={
+            "operational": {"map": "prt_fild08", "hp": 500},
+            "navigation": {"map": "prt_fild08"},
+            "encounter": {"nearby_hostiles": 2, "target_id": "mob:poring"},
+            "inventory": {"item_count": 6, "overweight_ratio": 0.1},
+            "risk": {"anomaly_flags": []},
+        },
+        fleet_constraints={"assignment": "prt_fild08", "constraints": {"preferred_grind_maps": ["prt_fild08"]}},
+        economy_context={"overweight_ratio": 0.1},
+        quest_context={"active_objective_count": 1},
+    )
+
+    fallback = generator._fallback(bot_id="bot:ws-c", context=context, max_steps=8)
+
+    assert len(fallback.recommended_actions) == 1
+    action = fallback.recommended_actions[0]
+    assert action.command == "sit"
+    assert action.metadata.get("fallback_mode") == "safe_idle"
+
+
+def test_plan_generator_actions_from_steps_bridge_compatible_for_residual_kinds() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
+    steps = [
+        PlannerStep(step_id="s1", kind=PlannerStepKind.combat, description="engage target", priority=100),
+        PlannerStep(step_id="s2", kind=PlannerStepKind.rest, description="recover", priority=95),
+        PlannerStep(step_id="s3", kind=PlannerStepKind.econ, description="storage loop", priority=90),
+        PlannerStep(step_id="s4", kind=PlannerStepKind.skill_up, description="allocate skills", priority=85),
+        PlannerStep(step_id="s5", kind=PlannerStepKind.equip, description="swap gear", priority=80),
+        PlannerStep(step_id="s6", kind=PlannerStepKind.party, description="party sync", priority=75),
+        PlannerStep(step_id="s7", kind=PlannerStepKind.chat, description="announce", priority=70),
+        PlannerStep(step_id="s8", kind=PlannerStepKind.social, description="social ping", priority=65),
+        PlannerStep(step_id="s9", kind=PlannerStepKind.vending, description="open vending", priority=60),
+        PlannerStep(step_id="s10", kind=PlannerStepKind.craft, description="craft supplies", priority=55),
+    ]
+
+    actions = generator._actions_from_steps(bot_id="bot:ws-c", steps=steps, horizon=PlanHorizon.tactical)
+
+    assert len(actions) == 2
+    commands = {item.command for item in actions}
+    assert "ai auto" in commands
+    assert "ai manual" in commands
+
+    allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
+    for action in actions:
+        root = action.command.split(maxsplit=1)[0].strip().lower()
+        assert root in allowed_roots
+        compat = dict(action.metadata).get("bridge_compat")
+        assert isinstance(compat, dict)
+        assert compat.get("status") == "rewritten"
+
+
 @dataclass(slots=True)
 class _Assembler:
     context: PlannerContext
@@ -246,3 +339,139 @@ def test_plan_validator_accepts_strategic_plan_within_budget() -> None:
     assert verdict.ok is True
     assert verdict.issues == []
     assert verdict.normalized.steps[0].kind == PlannerStepKind.travel
+
+
+def test_planner_service_status_no_state_is_unhealthy_and_without_timestamp() -> None:
+    context = PlannerContext(bot_id="bot:ws-c", objective="farm safely", horizon=PlanHorizon.tactical)
+    bundle = TacticalIntentBundle(bundle_id="bundle-1", bot_id="bot:ws-c", intents=[], actions=[], notes=[])
+    service = PlannerService(
+        runtime=object(),
+        context_assembler=_Assembler(context=context),
+        intent_synthesizer=_IntentSynth(),
+        plan_generator=_Generator(plan=_plan(horizon=PlanHorizon.tactical), bundle=bundle, latency_ms=10.0),
+        plan_validator=PlanValidator(tactical_budget_ms=2000, strategic_budget_ms=10000),
+        self_critic=SelfCritic(tactical_budget_ms=2000, strategic_budget_ms=10000),
+        macro_synthesizer=_MacroSynth(),
+        reflection_writer=_ReflectionWriter(),
+    )
+
+    status = service.status(bot_id="bot:no-state")
+
+    assert status.ok is True
+    assert status.bot_id == "bot:no-state"
+    assert status.planner_healthy is False
+    assert status.updated_at is None
+    assert status.current_objective is None
+    assert status.last_plan_id is None
+
+
+def test_readiness_bot_selection_prefers_bot_with_real_planner_state() -> None:
+    now = datetime.now(UTC)
+
+    class _Runtime:
+        def list_bots(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "bot_id": "bot:idle",
+                    "last_seen_at": now - timedelta(seconds=2),
+                    "latest_snapshot_at": now - timedelta(seconds=2),
+                    "pending_actions": 1,
+                    "telemetry_events": 10,
+                    "liveness_state": "online",
+                },
+                {
+                    "bot_id": "bot:active",
+                    "last_seen_at": now - timedelta(seconds=8),
+                    "latest_snapshot_at": now - timedelta(seconds=8),
+                    "pending_actions": 0,
+                    "telemetry_events": 1,
+                    "liveness_state": "online",
+                },
+            ]
+
+        def planner_status(self, *, bot_id: str) -> PlannerStatusResponse:
+            if bot_id == "bot:active":
+                return PlannerStatusResponse(
+                    ok=True,
+                    bot_id=bot_id,
+                    planner_healthy=True,
+                    current_objective="farm safely",
+                    last_plan_id="plan-active",
+                    last_provider="deepseek",
+                    last_model="deepseek-chat",
+                    updated_at=now - timedelta(seconds=1),
+                    counters={},
+                )
+            return PlannerStatusResponse(
+                ok=True,
+                bot_id=bot_id,
+                planner_healthy=False,
+                current_objective=None,
+                last_plan_id=None,
+                last_provider=None,
+                last_model=None,
+                updated_at=None,
+                counters={},
+            )
+
+    assert RuntimeState._readiness_bot_id(_Runtime()) == "bot:active"
+
+
+def test_readiness_indicators_absent_state_is_stale_and_real_recent_state_is_not() -> None:
+    now = datetime.now(UTC)
+
+    class _Runtime:
+        planner_stale_threshold_s = 60.0
+        autonomy_scheduler_degraded = False
+        autonomy_scheduler_degraded_reason = ""
+        pdca_loop = SimpleNamespace(running=True, _circuit_breaker_tripped=lambda: False)
+
+        def __init__(self, planner: PlannerStatusResponse) -> None:
+            self._planner = planner
+
+        def _readiness_bot_id(self) -> str:
+            return self._planner.bot_id
+
+        def planner_status(self, *, bot_id: str) -> PlannerStatusResponse:
+            assert bot_id == self._planner.bot_id
+            return self._planner
+
+        def _fleet_status(self) -> dict[str, object]:
+            return {
+                "mode": "central",
+                "central_available": True,
+                "stale": False,
+                "last_sync_at": now,
+            }
+
+    absent = PlannerStatusResponse(
+        ok=True,
+        bot_id="bot:none",
+        planner_healthy=False,
+        current_objective=None,
+        last_plan_id=None,
+        last_provider=None,
+        last_model=None,
+        updated_at=None,
+        counters={},
+    )
+    absent_indicators = RuntimeState.readiness_indicators(_Runtime(absent))
+    assert absent_indicators["planner_stale"] is True
+    assert absent_indicators["planner_stale_seconds"] is None
+    assert absent_indicators["planner_last_updated_at"] is None
+
+    recent = PlannerStatusResponse(
+        ok=True,
+        bot_id="bot:recent",
+        planner_healthy=True,
+        current_objective="farm safely",
+        last_plan_id="plan-recent",
+        last_provider="deepseek",
+        last_model="deepseek-chat",
+        updated_at=now - timedelta(seconds=5),
+        counters={},
+    )
+    recent_indicators = RuntimeState.readiness_indicators(_Runtime(recent))
+    assert recent_indicators["planner_stale"] is False
+    assert isinstance(recent_indicators["planner_stale_seconds"], float)
+    assert 0.0 <= float(recent_indicators["planner_stale_seconds"]) <= 60.0

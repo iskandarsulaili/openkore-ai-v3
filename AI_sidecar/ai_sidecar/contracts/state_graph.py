@@ -22,6 +22,9 @@ class BotOperationalState(BaseModel):
     in_combat: bool = False
     target_id: str | None = None
     liveness_state: str = "unknown"
+    death_count: int = 0
+    respawn_state: str = "unknown"
+    reconnect_age_s: float | None = None
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
     # --- progression (populated from enriched snapshot) ---
@@ -80,6 +83,8 @@ class NavigationState(BaseModel):
     destination_y: int | None = None
     route_status: str = "idle"
     stuck_score: float = 0.0
+    route_churn_count: int = 0
+    route_failure_count: int = 0
     leash_state: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
@@ -108,7 +113,9 @@ class InventoryState(BaseModel):
     weight: int | None = None
     weight_max: int | None = None
     overweight_ratio: float | None = None
+    weight_pressure: float = 0.0
     consumables: dict[str, int] = Field(default_factory=dict)
+    consumable_depletion_score: float = 0.0
     updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, object] = Field(default_factory=dict)
 

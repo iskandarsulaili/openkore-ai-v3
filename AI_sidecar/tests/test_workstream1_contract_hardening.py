@@ -17,7 +17,7 @@ from ai_sidecar.planner.context_assembler import PlannerContextAssembler
 from ai_sidecar.planner.schemas import PlanHorizon
 from ai_sidecar.providers.deepseek_adapter import DeepseekAdapter
 from ai_sidecar.providers.base import PlannerModelRequest, PlannerModelResponse
-from ai_sidecar.providers.model_router import ModelRouter
+from ai_sidecar.providers.model_router import DEFAULT_POLICY_RULES, ModelRouter
 from ai_sidecar.providers.openai_adapter import OpenAIAdapter
 from ai_sidecar.providers.prompt_guard import PromptGuard
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
@@ -72,7 +72,7 @@ def test_model_router_reports_actual_fallback_provider_and_metrics() -> None:
         initial_rules={
             "strategic_planning": {
                 "providers": ["ollama", "openai"],
-                "models": {"ollama": "qwen2.5:14b", "openai": "gpt-4o-mini"},
+                "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M", "openai": "gpt-4o-mini"},
             }
         },
         route_metric_observer=lambda workload, provider, model: metrics.append((workload, provider, model)),
@@ -87,6 +87,31 @@ def test_model_router_reports_actual_fallback_provider_and_metrics() -> None:
     assert decision.fallback_used is True
     assert decision.attempted_providers == ["ollama", "openai"]
     assert metrics == [("strategic_planning", "openai", "gpt-4o-mini")]
+
+
+def test_model_router_default_reasoning_routes_use_current_models() -> None:
+    router = ModelRouter(
+        providers={
+            "ollama": _DummyProvider(provider_name="ollama", ok=True),
+            "openai": _DummyProvider(provider_name="openai", ok=True),
+            "deepseek": _DummyProvider(provider_name="deepseek", ok=True),
+        }
+    )
+
+    tactical = router.decide(workload="tactical_short_reasoning")
+    strategic = router.decide(workload="strategic_planning")
+    reflection = router.decide(workload="long_reflection")
+
+    assert tactical.selected_provider == "ollama"
+    assert tactical.selected_model == "qwen3.6:35b-a3b-q4_K_M"
+    assert strategic.selected_provider == "ollama"
+    assert strategic.selected_model == "qwen3.6:35b-a3b-q4_K_M"
+    assert reflection.selected_provider == "deepseek"
+    assert reflection.selected_model == "deepseek-chat"
+
+    assert DEFAULT_POLICY_RULES["tactical_short_reasoning"]["models"]["ollama"] == "qwen3.6:35b-a3b-q4_K_M"
+    assert DEFAULT_POLICY_RULES["strategic_planning"]["models"]["ollama"] == "qwen3.6:35b-a3b-q4_K_M"
+    assert DEFAULT_POLICY_RULES["long_reflection"]["models"]["ollama"] == "qwen3.6:35b-a3b-q4_K_M"
 
 
 def test_model_router_no_provider_emits_none_metric() -> None:

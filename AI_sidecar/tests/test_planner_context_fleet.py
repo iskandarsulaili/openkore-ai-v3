@@ -288,6 +288,61 @@ class _LargeRuntime(_Runtime):
             for i in range(limit)
         ]
 
+    def memory_context(self, *, bot_id: str, query: str, limit: int) -> list[dict[str, object]]:
+        return [
+            {
+                "bot_id": bot_id,
+                "query": query,
+                "memory_id": f"mem_{i}",
+                "text": "memory:" + ("x" * 1200),
+                "source": "openmemory",
+                "topic": "grinding",
+                "score": 0.91,
+                "importance": 0.77,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "labels": [f"label_{j}" for j in range(32)],
+                "entities": [{"id": f"e_{j}", "name": "poring", "blob": "x" * 120} for j in range(20)],
+                "metadata": {
+                    f"k_{j}": {
+                        "value": f"v_{j}",
+                        "nested": {"signal": "x" * 300, "weight": j},
+                    }
+                    for j in range(24)
+                },
+                "trace": {
+                    "origin": "planner",
+                    "path": [f"hop_{j}" for j in range(30)],
+                },
+                "overflow_1": "y" * 300,
+                "overflow_2": "z" * 300,
+            }
+            for i in range(limit)
+        ]
+
+    def memory_recent_episodes(self, *, bot_id: str, limit: int) -> list[dict[str, object]]:
+        return [
+            {
+                "bot_id": bot_id,
+                "episode_id": f"ep_{i}",
+                "objective": "farm safely",
+                "summary": "episode:" + ("q" * 1400),
+                "result": "success",
+                "score": 0.66,
+                "duration_s": 123.4,
+                "started_at": "2026-01-01T00:00:00Z",
+                "ended_at": "2026-01-01T00:02:00Z",
+                "maps": [f"map_{j}" for j in range(28)],
+                "actions": [{"kind": "travel", "detail": "x" * 140} for _ in range(24)],
+                "rewards": [{"kind": "loot", "value": j} for j in range(24)],
+                "metrics": {f"m_{j}": float(j) for j in range(30)},
+                "notes": {f"n_{j}": "x" * 160 for j in range(20)},
+                "overflow_1": "w" * 300,
+                "overflow_2": "v" * 300,
+            }
+            for i in range(limit)
+        ]
+
 
 def test_planner_context_assembler_compacts_state_for_prompt_density() -> None:
     runtime = _LargeRuntime()
@@ -295,6 +350,10 @@ def test_planner_context_assembler_compacts_state_for_prompt_density() -> None:
 
     raw_state_bytes = len(json.dumps(runtime._raw_state, ensure_ascii=False, default=str))
     raw_events_bytes = len(json.dumps(runtime.recent_ingest_events(bot_id="bot:p2", limit=64), ensure_ascii=False, default=str))
+    raw_memory_bytes = len(
+        json.dumps(runtime.memory_context(bot_id="bot:p2", query="farm safely", limit=4), ensure_ascii=False, default=str)
+    )
+    raw_episodes_bytes = len(json.dumps(runtime.memory_recent_episodes(bot_id="bot:p2", limit=8), ensure_ascii=False, default=str))
 
     context = assembler.assemble(
         meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:p2", trace_id="trace-p2"),
@@ -306,15 +365,27 @@ def test_planner_context_assembler_compacts_state_for_prompt_density() -> None:
 
     compact_state_bytes = len(json.dumps(context.state, ensure_ascii=False, default=str))
     compact_events_bytes = len(json.dumps(context.recent_events, ensure_ascii=False, default=str))
+    compact_memory_bytes = len(json.dumps(context.memory_matches, ensure_ascii=False, default=str))
+    compact_episodes_bytes = len(json.dumps(context.episodes, ensure_ascii=False, default=str))
 
     assert compact_state_bytes < raw_state_bytes
     assert compact_events_bytes < raw_events_bytes
+    assert compact_memory_bytes < raw_memory_bytes
+    assert compact_episodes_bytes < raw_episodes_bytes
 
     assert context.queue["context_state_bytes"] == compact_state_bytes
     assert context.queue["context_events_bytes"] == compact_events_bytes
+    assert context.queue["context_memory_bytes"] == compact_memory_bytes
+    assert context.queue["context_episodes_bytes"] == compact_episodes_bytes
     assert len(context.state["entities"]) <= 24
     assert len(context.state["features"]["values"]) <= 128
     assert len(context.recent_events) == 64
     assert len(context.recent_events[0]["tags"]) <= 8
     assert len(context.recent_events[0]["numeric"]) <= 8
+    assert len(context.memory_matches) <= 4
+    assert len(context.episodes) <= 8
+    assert all(len(item) <= 14 for item in context.memory_matches)
+    assert all(len(item) <= 14 for item in context.episodes)
+    assert all(len(str(item.get("text", ""))) <= 220 for item in context.memory_matches)
+    assert all(len(str(item.get("summary", ""))) <= 220 for item in context.episodes)
     assert "reflex" in context.model_dump(mode="json")

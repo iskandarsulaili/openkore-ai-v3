@@ -21,6 +21,7 @@ def _make_proposal(
     *,
     created_at: datetime | None = None,
     priority: ActionPriorityTier = ActionPriorityTier.tactical,
+    command: str = "sit",
     conflict_key: str | None = None,
     source: str | None = None,
     preconditions: list[str] | None = None,
@@ -32,7 +33,7 @@ def _make_proposal(
     payload: dict[str, object] = {
         "action_id": action_id,
         "kind": "command",
-        "command": "sit",
+        "command": command,
         "priority_tier": priority,
         "conflict_key": conflict_key,
         "created_at": now,
@@ -190,3 +191,61 @@ def test_action_arbiter_source_tracking_from_metadata() -> None:
     snapshot = queue.snapshot().get("bot:source") or []
     assert snapshot
     assert snapshot[0].proposal.source == "planner"
+
+
+def test_action_arbiter_random_walk_rejected_without_scan_precondition() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None)
+    proposal = _make_proposal(
+        "action.randomwalk.missing.scan",
+        command="move random_walk_seek",
+        metadata={"seek_only_random_walk": True, "target_scan_required": True},
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:rw:missing")
+
+    assert result.admitted is False
+    assert result.reason == "random_walk_requires_target_scan"
+    assert queue.count("bot:rw:missing") == 0
+
+
+def test_action_arbiter_random_walk_rejected_when_targets_present() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None)
+    proposal = _make_proposal(
+        "action.randomwalk.targets.present",
+        command="move random_walk_seek",
+        preconditions=["scan.targets_absent"],
+        metadata={
+            "seek_only_random_walk": True,
+            "target_scan_required": True,
+            "target_scan": {"targets_found": True, "source": "pytest"},
+        },
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:rw:present")
+
+    assert result.admitted is False
+    assert result.reason == "random_walk_target_scan_failed"
+    assert queue.count("bot:rw:present") == 0
+
+
+def test_action_arbiter_random_walk_admits_with_scan_absent_evidence() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None)
+    proposal = _make_proposal(
+        "action.randomwalk.scan.absent",
+        command="move random_walk_seek",
+        preconditions=["scan.targets_absent"],
+        metadata={
+            "seek_only_random_walk": True,
+            "target_scan_required": True,
+            "target_scan": {"targets_found": False, "nearby_hostiles": 0, "source": "pytest"},
+        },
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:rw:absent")
+
+    assert result.admitted is True
+    assert result.status == ActionStatus.queued
+    assert queue.count("bot:rw:absent") == 1

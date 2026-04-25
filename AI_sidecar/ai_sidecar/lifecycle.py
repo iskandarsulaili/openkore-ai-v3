@@ -6,8 +6,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import RLock
-from typing import Callable, TypeVar
+from threading import Event, RLock, Thread
+from typing import Awaitable, Callable, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -150,6 +150,14 @@ logger = logging.getLogger(__name__)
 fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
 T = TypeVar("T")
 
+_PROVIDER_HARD_DENY_BY_WORKLOAD: dict[str, set[str]] = {
+    "strategic_planning": {"openai"},
+    "long_reflection": {"openai"},
+    "embeddings": {"openai"},
+}
+
+_LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = ("prt_fild08",)
+
 
 def _default_macro_plugin_name() -> str:
     return "macro"
@@ -166,6 +174,88 @@ def _resolve_path(workspace_root: Path, configured_path: str) -> Path:
     return workspace_root / candidate
 
 
+def _parse_csv_tokens(value: str) -> list[str]:
+    seen: set[str] = set()
+    rows: list[str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        rows.append(token)
+    return rows
+
+
+def _sanitize_provider_policy_rules(
+    rules: dict[str, dict[str, object]],
+    *,
+    available_providers: set[str],
+) -> dict[str, dict[str, object]]:
+    defaults = _build_provider_policy_rules()
+    sanitized: dict[str, dict[str, object]] = {}
+
+    for workload, config in rules.items():
+        workload_key = str(workload).strip()
+        if not workload_key:
+            continue
+        cfg = config if isinstance(config, dict) else {}
+        deny_for_workload = _PROVIDER_HARD_DENY_BY_WORKLOAD.get(workload_key, set())
+
+        raw_providers = [str(item).strip().lower() for item in list(cfg.get("providers") or [])]
+        providers: list[str] = []
+        for provider_name in raw_providers:
+            if not provider_name:
+                continue
+            if provider_name in deny_for_workload:
+                continue
+            if provider_name not in available_providers:
+                continue
+            if provider_name in providers:
+                continue
+            providers.append(provider_name)
+
+        default_rule = defaults.get(workload_key, {})
+        default_providers = [str(item).strip().lower() for item in list(default_rule.get("providers") or [])]
+        if not providers:
+            for provider_name in default_providers:
+                if not provider_name:
+                    continue
+                if provider_name in deny_for_workload:
+                    continue
+                if provider_name not in available_providers:
+                    continue
+                if provider_name in providers:
+                    continue
+                providers.append(provider_name)
+
+        models: dict[str, str] = {}
+        raw_models = cfg.get("models")
+        if isinstance(raw_models, dict):
+            for provider_name, model_name in raw_models.items():
+                key = str(provider_name).strip().lower()
+                if key not in providers:
+                    continue
+                model_text = str(model_name or "").strip()
+                if model_text:
+                    models[key] = model_text
+
+        default_models = default_rule.get("models") if isinstance(default_rule, dict) else {}
+        if isinstance(default_models, dict):
+            for provider_name in providers:
+                if provider_name in models:
+                    continue
+                model_name = str(default_models.get(provider_name) or "").strip()
+                if model_name:
+                    models[provider_name] = model_name
+
+        sanitized[workload_key] = {
+            "providers": providers,
+            "models": models,
+        }
+
+    return sanitized
+
+
 def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
     return {
         "reflex_explain": {"providers": [], "models": {}},
@@ -177,26 +267,23 @@ def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
             },
         },
         "strategic_planning": {
-            "providers": ["ollama", "openai", "deepseek"],
+            "providers": ["ollama", "deepseek"],
             "models": {
                 "ollama": settings.provider_ollama_strategic_model,
-                "openai": settings.provider_openai_strategic_model,
                 "deepseek": settings.provider_deepseek_strategic_model,
             },
         },
         "long_reflection": {
-            "providers": ["deepseek", "openai", "ollama"],
+            "providers": ["deepseek", "ollama"],
             "models": {
                 "deepseek": settings.provider_deepseek_reflection_model,
-                "openai": settings.provider_openai_reflection_model,
                 "ollama": settings.provider_ollama_reflection_model,
             },
         },
         "embeddings": {
-            "providers": ["ollama", "openai", "deepseek"],
+            "providers": ["ollama", "deepseek"],
             "models": {
                 "ollama": settings.provider_ollama_embedding_model,
-                "openai": settings.provider_openai_embedding_model,
                 "deepseek": settings.provider_deepseek_embedding_model,
             },
         },
@@ -354,6 +441,11 @@ class RuntimeState:
     explainability: ExplainabilityStore | None = None
     security_auditor: SecurityAuditor | None = None
     doctrine_manager: DoctrineManager | None = None
+    autonomy_policy: dict[str, object] = field(default_factory=dict)
+    autonomy_scheduler_degraded: bool = False
+    autonomy_scheduler_degraded_reason: str = ""
+    planner_stale_threshold_s: float = 60.0
+    pdca_loop: object | None = None
     _fleet_role_lock: RLock = field(default_factory=RLock)
     _fleet_roles: dict[str, RoleManager] = field(default_factory=dict)
     _counter_lock: RLock = field(default_factory=RLock)
@@ -362,6 +454,11 @@ class RuntimeState:
     _bot_plan_family: dict[str, str] = field(default_factory=dict)
     _actor_presence_by_bot: dict[str, set[str]] = field(default_factory=dict)
     _actor_last_revision_fingerprint: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = field(default_factory=dict)
+    _background_tasks: list[asyncio.Task[None]] = field(default_factory=list)
+    _background_loop: asyncio.AbstractEventLoop | None = None
+    _background_thread: Thread | None = None
+    _background_loop_ready: Event = field(default_factory=Event)
+    _background_loop_lock: RLock = field(default_factory=RLock)
     persistence_degraded: bool = False
 
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
@@ -379,6 +476,166 @@ class RuntimeState:
     def counter_snapshot(self) -> dict[str, int]:
         with self._counter_lock:
             return dict(self.counters)
+
+    def _background_task_done(self, task: asyncio.Task[None]) -> None:
+        try:
+            self._background_tasks.remove(task)
+        except ValueError:
+            pass
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.debug(
+                "background_task_cancelled",
+                extra={"event": "background_task_cancelled", "label": getattr(task, "_ai_sidecar_label", None)},
+            )
+        except Exception:
+            logger.exception(
+                "background_task_failed",
+                extra={"event": "background_task_failed", "label": getattr(task, "_ai_sidecar_label", None)},
+            )
+
+    def _ensure_background_loop(self, *, label: str, bot_id: str | None, tick_id: str | None) -> asyncio.AbstractEventLoop | None:
+        with self._background_loop_lock:
+            loop = self._background_loop
+            if loop is not None and not loop.is_closed():
+                return loop
+
+            thread = self._background_thread
+            if thread is not None and thread.is_alive():
+                logger.info(
+                    "background_task_loop_reuse_pending",
+                    extra={"event": "background_task_loop_reuse_pending", "label": label, "bot_id": bot_id, "tick_id": tick_id},
+                )
+            else:
+                self._background_loop_ready.clear()
+
+                def _run_loop() -> None:
+                    loop_local = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop_local)
+                    self._background_loop = loop_local
+                    self._background_loop_ready.set()
+                    logger.info(
+                        "background_task_loop_started",
+                        extra={"event": "background_task_loop_started", "label": label, "bot_id": bot_id, "tick_id": tick_id},
+                    )
+                    loop_local.run_forever()
+                    pending = asyncio.all_tasks(loop_local)
+                    if pending:
+                        for task in pending:
+                            task.cancel()
+                        loop_local.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                    loop_local.close()
+
+                thread = Thread(target=_run_loop, name="ai-sidecar-background", daemon=True)
+                self._background_thread = thread
+                thread.start()
+
+        ready = self._background_loop_ready.wait(timeout=2.0)
+        loop = self._background_loop
+        if not ready or loop is None or loop.is_closed():
+            logger.warning(
+                "background_task_loop_unavailable",
+                extra={"event": "background_task_loop_unavailable", "label": label, "bot_id": bot_id, "tick_id": tick_id},
+            )
+            return None
+        return loop
+
+    def _enqueue_background(
+        self,
+        coro: Awaitable[None],
+        *,
+        label: str,
+        bot_id: str | None = None,
+        tick_id: str | None = None,
+    ) -> None:
+        async def _runner() -> None:
+            try:
+                await coro
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "background_task_exception",
+                    extra={"event": "background_task_exception", "label": label, "bot_id": bot_id, "tick_id": tick_id},
+                )
+
+        def _register(task: asyncio.Task[None]) -> None:
+            setattr(task, "_ai_sidecar_label", label)
+            self._background_tasks.append(task)
+            task.add_done_callback(self._background_task_done)
+
+        running_loop: asyncio.AbstractEventLoop | None
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is not None:
+            self._background_loop = running_loop
+            task = running_loop.create_task(_runner())
+            _register(task)
+            return
+
+        loop = self._ensure_background_loop(label=label, bot_id=bot_id, tick_id=tick_id)
+        if loop is None:
+            asyncio.run(_runner())
+            return
+
+        def _schedule() -> None:
+            task = loop.create_task(_runner())
+            _register(task)
+
+        loop.call_soon_threadsafe(_schedule)
+
+    async def shutdown(self) -> None:
+        if not self._background_tasks:
+            loop = self._background_loop
+            if loop is not None and not loop.is_closed():
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                    logger.info("background_task_loop_stopping", extra={"event": "background_task_loop_stopping"})
+                except Exception:
+                    logger.exception("background_task_loop_stop_failed", extra={"event": "background_task_loop_stop_failed"})
+            thread = self._background_thread
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=2.0)
+                if thread.is_alive():
+                    logger.warning(
+                        "background_task_loop_thread_join_timeout",
+                        extra={"event": "background_task_loop_thread_join_timeout"},
+                    )
+            self._background_thread = None
+            self._background_loop = None
+            return
+        pending = list(self._background_tasks)
+        for task in pending:
+            task.cancel()
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                logger.exception(
+                    "background_task_shutdown_error",
+                    extra={"event": "background_task_shutdown_error", "error": str(result)},
+                )
+        self._background_tasks.clear()
+        loop = self._background_loop
+        if loop is not None and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+                logger.info("background_task_loop_stopping", extra={"event": "background_task_loop_stopping"})
+            except Exception:
+                logger.exception("background_task_loop_stop_failed", extra={"event": "background_task_loop_stop_failed"})
+        thread = self._background_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logger.warning(
+                    "background_task_loop_thread_join_timeout",
+                    extra={"event": "background_task_loop_thread_join_timeout"},
+                )
+        self._background_thread = None
+        self._background_loop = None
 
     def register_bot(self, payload: BotRegistrationRequest) -> dict[str, object]:
         requested_bot_id = payload.meta.bot_id
@@ -533,84 +790,116 @@ class RuntimeState:
                 observed_at=snapshot.observed_at,
             )
 
+        self._enqueue_background(
+            self._background_ingest_snapshot(snapshot),
+            label="snapshot_ingest",
+            bot_id=bot_id,
+            tick_id=snapshot.tick_id,
+        )
+
+    async def _background_ingest_snapshot(self, snapshot: BotStateSnapshot) -> None:
+        snapshot_copy = snapshot.model_copy(deep=True)
+        bot_id = snapshot_copy.meta.bot_id
+        tick_id = snapshot_copy.tick_id
+
+        try:
+            snapshot_payload = snapshot_copy.model_dump(mode="json")
+            snapshot_event = NormalizedEvent(
+                meta=snapshot_copy.meta,
+                observed_at=snapshot_copy.observed_at,
+                event_family=EventFamily.snapshot,
+                event_type="snapshot.compact",
+                source_hook="v1.ingest.snapshot",
+                text="snapshot ingested",
+                numeric={
+                    "hp": float(snapshot_copy.vitals.hp or 0),
+                    "hp_max": float(snapshot_copy.vitals.hp_max or 0),
+                    "sp": float(snapshot_copy.vitals.sp or 0),
+                    "sp_max": float(snapshot_copy.vitals.sp_max or 0),
+                    "x": float(snapshot_copy.position.x or 0),
+                    "y": float(snapshot_copy.position.y or 0),
+                    "zeny": float(snapshot_copy.inventory.zeny or 0),
+                    "item_count": float(snapshot_copy.inventory.item_count or 0),
+                    "base_level": float(snapshot_copy.progression.base_level or 0),
+                    "job_level": float(snapshot_copy.progression.job_level or 0),
+                    "base_exp": float(snapshot_copy.progression.base_exp or 0),
+                    "base_exp_max": float(snapshot_copy.progression.base_exp_max or 0),
+                    "job_exp": float(snapshot_copy.progression.job_exp or 0),
+                    "job_exp_max": float(snapshot_copy.progression.job_exp_max or 0),
+                    "job_id": float(snapshot_copy.progression.job_id or 0),
+                    "skill_points": float(snapshot_copy.progression.skill_points or 0),
+                    "stat_points": float(snapshot_copy.progression.stat_points or 0),
+                },
+                tags={
+                    "tick_id": snapshot_copy.tick_id,
+                    "map": snapshot_copy.position.map or "",
+                    "ai_sequence": snapshot_copy.combat.ai_sequence or "",
+                    "job_name": snapshot_copy.progression.job_name or "",
+                },
+                payload=snapshot_payload,
+            )
+            result = self.normalizer_bus.ingest_batch(
+                EventBatchIngestRequest(meta=snapshot_copy.meta, events=[snapshot_event])
+            )
+            self._evaluate_reflex_events(
+                bot_id=bot_id,
+                events=self._accepted_events(events=[snapshot_event], event_ids=result.event_ids),
+                source="snapshot",
+            )
+        except Exception:
+            logger.exception(
+                "snapshot_normalization_failed",
+                extra={"event": "snapshot_normalization_failed", "bot_id": bot_id, "tick_id": tick_id},
+            )
+
+        try:
+            snapshot_actor_delta = self._snapshot_actor_delta_payload(snapshot=snapshot_copy)
+            if snapshot_actor_delta is not None:
+                self.ingest_actor_delta(snapshot_actor_delta)
+        except Exception:
+            logger.exception(
+                "snapshot_actor_delta_failed",
+                extra={"event": "snapshot_actor_delta_failed", "bot_id": bot_id, "tick_id": tick_id},
+            )
+
         self._safe_persist(
             "persist_snapshot",
-            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=snapshot.tick_id, liveness_state="online")
+            lambda: self.repositories.bots.touch(
+                bot_id=bot_id,
+                tick_id=tick_id,
+                liveness_state="online",
+            )
             if self.repositories
             else None,
             bot_id=bot_id,
         )
         self._safe_persist(
             "persist_snapshot_history",
-            lambda: self.repositories.snapshots.save_snapshot(snapshot) if self.repositories else None,
+            lambda: self.repositories.snapshots.save_snapshot(snapshot_copy) if self.repositories else None,
             bot_id=bot_id,
         )
 
         summary = (
-            f"tick={snapshot.tick_id} map={snapshot.position.map or 'unknown'} "
-            f"pos=({snapshot.position.x},{snapshot.position.y}) "
-            f"hp={snapshot.vitals.hp}/{snapshot.vitals.hp_max} "
-            f"ai={snapshot.combat.ai_sequence or 'idle'}"
+            f"tick={snapshot_copy.tick_id} map={snapshot_copy.position.map or 'unknown'} "
+            f"pos=({snapshot_copy.position.x},{snapshot_copy.position.y}) "
+            f"hp={snapshot_copy.vitals.hp}/{snapshot_copy.vitals.hp_max} "
+            f"ai={snapshot_copy.combat.ai_sequence or 'idle'}"
         )
         self._safe_memory(
             "capture_snapshot_memory",
             lambda: self.memory.capture_snapshot(
                 bot_id=bot_id,
-                tick_id=snapshot.tick_id,
+                tick_id=snapshot_copy.tick_id,
                 summary=summary,
                 payload={
-                    "map": snapshot.position.map,
-                    "x": snapshot.position.x,
-                    "y": snapshot.position.y,
-                    "in_combat": snapshot.combat.is_in_combat,
+                    "map": snapshot_copy.position.map,
+                    "x": snapshot_copy.position.x,
+                    "y": snapshot_copy.position.y,
+                    "in_combat": snapshot_copy.combat.is_in_combat,
                 },
             ),
             bot_id=bot_id,
         )
-        snapshot_event = NormalizedEvent(
-            meta=snapshot.meta,
-            observed_at=snapshot.observed_at,
-            event_family=EventFamily.snapshot,
-            event_type="snapshot.compact",
-            source_hook="v1.ingest.snapshot",
-            text="snapshot ingested",
-            numeric={
-                "hp": float(snapshot.vitals.hp or 0),
-                "hp_max": float(snapshot.vitals.hp_max or 0),
-                "sp": float(snapshot.vitals.sp or 0),
-                "sp_max": float(snapshot.vitals.sp_max or 0),
-                "x": float(snapshot.position.x or 0),
-                "y": float(snapshot.position.y or 0),
-                "zeny": float(snapshot.inventory.zeny or 0),
-                "item_count": float(snapshot.inventory.item_count or 0),
-                "base_level": float(snapshot.progression.base_level or 0),
-                "job_level": float(snapshot.progression.job_level or 0),
-                "base_exp": float(snapshot.progression.base_exp or 0),
-                "base_exp_max": float(snapshot.progression.base_exp_max or 0),
-                "job_exp": float(snapshot.progression.job_exp or 0),
-                "job_exp_max": float(snapshot.progression.job_exp_max or 0),
-                "job_id": float(snapshot.progression.job_id or 0),
-                "skill_points": float(snapshot.progression.skill_points or 0),
-                "stat_points": float(snapshot.progression.stat_points or 0),
-            },
-            tags={
-                "tick_id": snapshot.tick_id,
-                "map": snapshot.position.map or "",
-                "ai_sequence": snapshot.combat.ai_sequence or "",
-                "job_name": snapshot.progression.job_name or "",
-            },
-            payload=snapshot.model_dump(mode="json"),
-        )
-        result = self.normalizer_bus.ingest_batch(EventBatchIngestRequest(meta=snapshot.meta, events=[snapshot_event]))
-        self._evaluate_reflex_events(
-            bot_id=bot_id,
-            events=self._accepted_events(events=[snapshot_event], event_ids=result.event_ids),
-            source="snapshot",
-        )
-
-        snapshot_actor_delta = self._snapshot_actor_delta_payload(snapshot=snapshot)
-        if snapshot_actor_delta is not None:
-            self.ingest_actor_delta(snapshot_actor_delta)
 
     def _snapshot_actor_delta_payload(self, *, snapshot: BotStateSnapshot) -> ActorDeltaPushRequest | None:
         bot_id = snapshot.meta.bot_id
@@ -666,6 +955,25 @@ class RuntimeState:
         observed_actor_ids = {str(item.actor_id).strip() for item in payload.actors if str(item.actor_id).strip()}
         removed_actor_ids = {str(item).strip() for item in payload.removed_actor_ids if str(item).strip()}
         known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
+        hostile_count = sum(
+            1
+            for item in payload.actors
+            if (str(item.relation or "").strip().lower() in {"hostile", "enemy", "monster"})
+            or (str(item.actor_type or "").strip().lower() == "monster")
+        )
+
+        logger.info(
+            "actor_delta_received",
+            extra={
+                "event": "actor_delta_received",
+                "bot_id": bot_id,
+                "revision": str(payload.revision or "").strip(),
+                "observed_count": len(observed_actor_ids),
+                "removed_count": len(removed_actor_ids),
+                "known_count_before": len(known_actor_ids),
+                "hostile_count": hostile_count,
+            },
+        )
 
         revision = str(payload.revision or "").strip()
         revision_fingerprint = (revision, tuple(sorted(observed_actor_ids)), tuple(sorted(removed_actor_ids)))
@@ -737,6 +1045,39 @@ class RuntimeState:
 
         if revision and accepted_events:
             self._actor_last_revision_fingerprint[bot_id] = revision_fingerprint
+
+        logger.info(
+            "actor_delta_ingested",
+            extra={
+                "event": "actor_delta_ingested",
+                "bot_id": bot_id,
+                "revision": revision,
+                "observed_count": len(observed_actor_ids),
+                "removed_count": len(removed_actor_ids),
+                "appeared_count": len(appeared_actor_ids),
+                "disappeared_count": len(disappeared_actor_ids),
+                "hostile_count": hostile_count,
+                "accepted": result.accepted,
+                "dropped": result.dropped,
+                "known_count_after": len(next_presence),
+            },
+        )
+
+        if result.accepted <= 0 and (observed_actor_ids or removed_actor_ids):
+            logger.warning(
+                "actor_delta_effectively_dropped",
+                extra={
+                    "event": "actor_delta_effectively_dropped",
+                    "bot_id": bot_id,
+                    "revision": revision,
+                    "observed_count": len(observed_actor_ids),
+                    "removed_count": len(removed_actor_ids),
+                    "hostile_count": hostile_count,
+                    "accepted": result.accepted,
+                    "dropped": result.dropped,
+                    "response_message": result.message,
+                },
+            )
 
         self._evaluate_reflex_events(
             bot_id=bot_id,
@@ -1208,6 +1549,26 @@ class RuntimeState:
                 )
 
     def ingest_telemetry(self, bot_id: str, events: list[TelemetryEvent]) -> TelemetryIngestResponse:
+        if not events:
+            return TelemetryIngestResponse(ok=True, accepted=0, dropped=0, queued_for_retry=0)
+
+        if self.telemetry_store._ingestor is None:
+            return self._process_telemetry_ingest(bot_id=bot_id, events=events)
+
+        events_copy = list(events)
+        self._enqueue_background(
+            self._background_ingest_telemetry(bot_id=bot_id, events=events_copy),
+            label="telemetry_ingest",
+            bot_id=bot_id,
+        )
+        return TelemetryIngestResponse(
+            ok=True,
+            accepted=len(events_copy),
+            dropped=0,
+            queued_for_retry=self.telemetry_store.backlog_size(),
+        )
+
+    def _process_telemetry_ingest(self, *, bot_id: str, events: list[TelemetryEvent]) -> TelemetryIngestResponse:
         result = self.telemetry_store.push(bot_id, events)
         if result.accepted:
             self.incr("telemetry_ingested", n=result.accepted, bot_id=bot_id)
@@ -1229,35 +1590,43 @@ class RuntimeState:
             },
         )
 
-        if events:
-            for item in events:
-                if self.slo_metrics is not None:
-                    if "death" in item.event.lower() or "death" in item.category.lower():
-                        self.slo_metrics.record_death(
-                            map_name=str(item.tags.get("map") or item.tags.get("map_name") or "unknown"),
-                            doctrine_version=str(item.tags.get("doctrine_version") or "unknown"),
-                        )
-                severity = EventSeverity.info
-                if item.level.value == "debug":
-                    severity = EventSeverity.debug
-                elif item.level.value == "warning":
-                    severity = EventSeverity.warning
-                elif item.level.value == "error":
-                    severity = EventSeverity.error
-                self._emit_runtime_event(
-                    bot_id=bot_id,
-                    event_family=EventFamily.telemetry,
-                    event_type=f"telemetry.{item.category}.{item.event}",
-                    severity=severity,
-                    text=item.message,
-                    numeric={key: float(value) for key, value in item.metrics.items()},
-                    payload={
-                        "category": item.category,
-                        "event": item.event,
-                        "tags": item.tags,
-                    },
-                )
+        for item in events:
+            if self.slo_metrics is not None:
+                if "death" in item.event.lower() or "death" in item.category.lower():
+                    self.slo_metrics.record_death(
+                        map_name=str(item.tags.get("map") or item.tags.get("map_name") or "unknown"),
+                        doctrine_version=str(item.tags.get("doctrine_version") or "unknown"),
+                    )
+            severity = EventSeverity.info
+            if item.level.value == "debug":
+                severity = EventSeverity.debug
+            elif item.level.value == "warning":
+                severity = EventSeverity.warning
+            elif item.level.value == "error":
+                severity = EventSeverity.error
+            self._emit_runtime_event(
+                bot_id=bot_id,
+                event_family=EventFamily.telemetry,
+                event_type=f"telemetry.{item.category}.{item.event}",
+                severity=severity,
+                text=item.message,
+                numeric={key: float(value) for key, value in item.metrics.items()},
+                payload={
+                    "category": item.category,
+                    "event": item.event,
+                    "tags": item.tags,
+                },
+            )
         return result
+
+    async def _background_ingest_telemetry(self, *, bot_id: str, events: list[TelemetryEvent]) -> None:
+        try:
+            self._process_telemetry_ingest(bot_id=bot_id, events=events)
+        except Exception:
+            logger.exception(
+                "telemetry_ingest_failed",
+                extra={"event": "telemetry_ingest_failed", "bot_id": bot_id, "batch_size": len(events)},
+            )
 
     def telemetry_operational_summary(self, *, bot_id: str | None = None) -> dict[str, object]:
         if self.repositories is None:
@@ -1686,8 +2055,34 @@ class RuntimeState:
         return self.fleet_constraint_state.status()
 
     def _fleet_constraints_for_bot(self, *, bot_id: str) -> dict[str, object]:
+        def _parse_maps(rows: object) -> list[str]:
+            if not isinstance(rows, list):
+                return []
+            out: list[str] = []
+            for item in rows:
+                token = str(item or "").strip()
+                if token and token not in out:
+                    out.append(token)
+            return out
+
+        def _apply_local_startup_preference(payload: dict[str, object]) -> dict[str, object]:
+            constraints = dict(payload)
+            assignment = str(constraints.get("assignment") or "").strip()
+            preferred = _parse_maps(constraints.get("preferred_grind_maps"))
+            preferred_alias = _parse_maps(constraints.get("preferred_maps"))
+            for map_name in preferred_alias:
+                if map_name not in preferred:
+                    preferred.append(map_name)
+            if not assignment:
+                for map_name in _LOCAL_STARTUP_PREFERRED_GRIND_MAPS:
+                    if map_name not in preferred:
+                        preferred.append(map_name)
+            if preferred:
+                constraints["preferred_grind_maps"] = preferred
+            return constraints
+
         if self.fleet_constraint_state is None:
-            return {
+            return _apply_local_startup_preference({
                 "avoid": [],
                 "required": [],
                 "sources": ["local_default"],
@@ -1698,8 +2093,8 @@ class RuntimeState:
                     "step_4_emit_constraints": True,
                     "step_5_rearbitrate_pending_strategic": True,
                 },
-            }
-        constraints = self.fleet_constraint_state.constraints_for_bot(bot_id=bot_id)
+            })
+        constraints = _apply_local_startup_preference(self.fleet_constraint_state.constraints_for_bot(bot_id=bot_id))
         if self.fleet_conflict_resolver is None:
             return constraints
         return self.fleet_conflict_resolver.resolve_constraints(constraints=constraints)
@@ -2610,6 +3005,171 @@ class RuntimeState:
             "queue_depth": self.action_queue.count(bot_id),
         }
 
+    def _readiness_bot_id(self) -> str:
+        def _as_utc(value: object) -> datetime | None:
+            if not isinstance(value, datetime):
+                return None
+            if value.tzinfo is None:
+                return value.replace(tzinfo=UTC)
+            return value.astimezone(UTC)
+
+        def _as_int(value: object) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
+        try:
+            bots = self.list_bots()
+            candidates: list[
+                tuple[
+                    str,
+                    bool,
+                    bool,
+                    datetime,
+                    int,
+                    int,
+                    bool,
+                    datetime,
+                ]
+            ] = []
+            for row in bots:
+                if not isinstance(row, dict):
+                    continue
+                bot_id = str(row.get("bot_id") or "").strip()
+                if not bot_id:
+                    continue
+
+                last_seen_at = _as_utc(row.get("last_seen_at"))
+                latest_snapshot_at = _as_utc(row.get("latest_snapshot_at"))
+                pending_actions = max(_as_int(row.get("pending_actions")), 0)
+                telemetry_events = max(_as_int(row.get("telemetry_events")), 0)
+
+                planner = self.planner_status(bot_id=bot_id)
+                planner_updated_at = _as_utc(getattr(planner, "updated_at", None))
+                planner_has_state = bool(planner_updated_at or planner.current_objective or planner.last_plan_id)
+
+                activity_points = [item for item in (planner_updated_at, latest_snapshot_at, last_seen_at) if item is not None]
+                activity_at = max(activity_points) if activity_points else datetime.min.replace(tzinfo=UTC)
+
+                has_activity = bool(
+                    planner_has_state
+                    or latest_snapshot_at is not None
+                    or pending_actions > 0
+                    or telemetry_events > 0
+                    or last_seen_at is not None
+                )
+                is_online = str(row.get("liveness_state") or "").strip().lower() in {"online", "active"}
+
+                candidates.append(
+                    (
+                        bot_id,
+                        planner_has_state,
+                        has_activity,
+                        activity_at,
+                        pending_actions,
+                        telemetry_events,
+                        is_online,
+                        last_seen_at or datetime.min.replace(tzinfo=UTC),
+                    )
+                )
+
+            if candidates:
+                candidates.sort(
+                    key=lambda item: (
+                        int(item[1]),  # prefer bots with real planner state
+                        int(item[2]),  # then bots showing runtime activity
+                        item[3],  # freshest planner/snapshot/seen signal
+                        int(item[4] > 0),
+                        item[4],
+                        item[5],
+                        int(item[6]),
+                        item[7],
+                        item[0],
+                    ),
+                    reverse=True,
+                )
+                return candidates[0][0]
+
+            if bots:
+                first = bots[0]
+                if isinstance(first, dict):
+                    fallback_bot_id = str(first.get("bot_id") or "").strip()
+                    if fallback_bot_id:
+                        return fallback_bot_id
+        except Exception:
+            logger.exception("readiness_bot_resolution_failed", extra={"event": "readiness_bot_resolution_failed"})
+        return "openkoreai"
+
+    def readiness_indicators(self) -> dict[str, object]:
+        now = datetime.now(UTC)
+        bot_id = self._readiness_bot_id()
+        planner = self.planner_status(bot_id=bot_id)
+
+        planner_updated_at = getattr(planner, "updated_at", None)
+        if isinstance(planner_updated_at, datetime) and planner_updated_at.tzinfo is None:
+            planner_updated_at = planner_updated_at.replace(tzinfo=UTC)
+        planner_stale_seconds: float | None = None
+        if isinstance(planner_updated_at, datetime):
+            planner_stale_seconds = max(0.0, (now - planner_updated_at.astimezone(UTC)).total_seconds())
+
+        planner_stale_threshold_s = max(float(self.planner_stale_threshold_s), 1.0)
+        planner_stale = (
+            (not bool(planner.planner_healthy))
+            or planner_stale_seconds is None
+            or planner_stale_seconds > planner_stale_threshold_s
+        )
+
+        fleet_status = self._fleet_status()
+        fleet_last_sync_at = fleet_status.get("last_sync_at")
+        if isinstance(fleet_last_sync_at, datetime) and fleet_last_sync_at.tzinfo is None:
+            fleet_last_sync_at = fleet_last_sync_at.replace(tzinfo=UTC)
+
+        objective_scheduler_degraded = bool(self.autonomy_scheduler_degraded)
+        objective_scheduler_reason = str(self.autonomy_scheduler_degraded_reason or "")
+        pdca_running = False
+        pdca_breaker_tripped: bool | None = None
+        if self.pdca_loop is None:
+            objective_scheduler_degraded = True
+            if not objective_scheduler_reason:
+                objective_scheduler_reason = "pdca_loop_unavailable"
+        else:
+            try:
+                pdca_running = bool(getattr(self.pdca_loop, "running", False))
+            except Exception:
+                pdca_running = False
+            if not pdca_running:
+                objective_scheduler_degraded = True
+                if not objective_scheduler_reason:
+                    objective_scheduler_reason = "pdca_loop_stopped"
+            try:
+                breaker_probe = getattr(self.pdca_loop, "_circuit_breaker_tripped", None)
+                if callable(breaker_probe):
+                    pdca_breaker_tripped = bool(breaker_probe())
+                    if pdca_breaker_tripped:
+                        objective_scheduler_degraded = True
+                        if not objective_scheduler_reason:
+                            objective_scheduler_reason = "pdca_circuit_breaker_tripped"
+            except Exception:
+                pdca_breaker_tripped = None
+
+        return {
+            "planner_bot_id": bot_id,
+            "planner_healthy": bool(planner.planner_healthy),
+            "planner_stale": planner_stale,
+            "planner_stale_seconds": planner_stale_seconds,
+            "planner_stale_threshold_s": planner_stale_threshold_s,
+            "planner_last_updated_at": planner_updated_at,
+            "fleet_mode": str(fleet_status.get("mode") or "local"),
+            "fleet_central_available": bool(fleet_status.get("central_available", False)),
+            "fleet_central_stale": bool(fleet_status.get("stale", True)),
+            "fleet_last_sync_at": fleet_last_sync_at,
+            "objective_scheduler_degraded": objective_scheduler_degraded,
+            "objective_scheduler_degraded_reason": objective_scheduler_reason,
+            "pdca_running": pdca_running,
+            "pdca_circuit_breaker_tripped": pdca_breaker_tripped,
+        }
+
     async def crewai_strategize(self, payload: CrewStrategizeRequest) -> CrewStrategizeResponse:
         if self.crew_manager is None:
             return CrewStrategizeResponse(
@@ -3253,6 +3813,28 @@ def create_runtime() -> RuntimeState:
         except Exception:
             logger.exception("provider_policy_json_parse_failed", extra={"event": "provider_policy_json_parse_failed"})
 
+    policy_rules = _sanitize_provider_policy_rules(
+        policy_rules,
+        available_providers={str(key).strip().lower() for key in provider_adapters.keys()},
+    )
+
+    autonomy_ranked_objectives = _parse_csv_tokens(settings.autonomy_ranked_objectives)
+    autonomy_preferred_grind_maps = _parse_csv_tokens(settings.autonomy_preferred_grind_maps)
+    autonomy_policy: dict[str, object] = {
+        "objective_max_age_cycles": int(settings.autonomy_objective_max_age_cycles),
+        "max_active_objectives": int(settings.autonomy_max_active_objectives),
+        "priority_decay_per_cycle": float(settings.autonomy_priority_decay_per_cycle),
+        "objective_rotation_cooldown_s": float(settings.autonomy_objective_rotation_cooldown_s),
+        "ranked_objectives": autonomy_ranked_objectives,
+        "stale_plan_threshold_s": float(settings.autonomy_stale_plan_threshold_s),
+        "death_recovery_cooldown_s": float(settings.autonomy_death_recovery_cooldown_s),
+        "reconnect_grace_s": float(settings.autonomy_reconnect_grace_s),
+        "preferred_grind_maps": autonomy_preferred_grind_maps,
+        "preferred_grind_map_policy": str(settings.autonomy_preferred_grind_map_policy),
+    }
+    autonomy_scheduler_degraded = not bool(autonomy_ranked_objectives)
+    autonomy_scheduler_degraded_reason = "autonomy_ranked_objectives_empty" if autonomy_scheduler_degraded else ""
+
     model_router = ModelRouter(
         providers=provider_adapters,
         initial_rules=policy_rules,
@@ -3353,6 +3935,10 @@ def create_runtime() -> RuntimeState:
         explainability=explainability_store,
         security_auditor=security_auditor,
         doctrine_manager=doctrine_manager,
+        autonomy_policy=autonomy_policy,
+        autonomy_scheduler_degraded=autonomy_scheduler_degraded,
+        autonomy_scheduler_degraded_reason=autonomy_scheduler_degraded_reason,
+        planner_stale_threshold_s=float(settings.autonomy_stale_plan_threshold_s),
     )
 
     planner_service = PlannerService(
@@ -3410,6 +3996,9 @@ def create_runtime() -> RuntimeState:
             "fleet_central_base_url": settings.fleet_central_base_url,
             "fleet_mode": runtime.fleet_constraint_state.status().get("mode") if runtime.fleet_constraint_state is not None else "local",
             "fleet_outcome_backlog": runtime.fleet_outcome_reporter.backlog_size() if runtime.fleet_outcome_reporter is not None else 0,
+            "autonomy_policy": autonomy_policy,
+            "autonomy_scheduler_degraded": autonomy_scheduler_degraded,
+            "autonomy_scheduler_degraded_reason": autonomy_scheduler_degraded_reason,
         },
     )
     logger.info(

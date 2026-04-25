@@ -22,6 +22,8 @@ from ai_sidecar.providers.base import PlannerModelRequest
 
 logger = logging.getLogger(__name__)
 
+_BRIDGE_ALLOWED_ROOTS = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
+
 
 def _now_utc() -> datetime:
     return datetime.now(UTC)
@@ -45,6 +47,14 @@ def _safe_int(value: object, default: int) -> int:
         return int(value)
     except Exception:
         return int(default)
+
+
+def _safe_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def _plan_schema() -> dict[str, object]:
@@ -142,9 +152,11 @@ class PlanGenerator:
             **prompt_meta,
         }
         if not response.ok or not response.content:
+            fallback_plan = self._fallback(bot_id=bot_id, context=context, max_steps=max_steps)
+            fallback_bundle = self._to_tactical_bundle(bot_id=bot_id, context=context, plan=fallback_plan)
             return (
-                self._fallback(bot_id=bot_id, context=context, max_steps=max_steps),
-                self._bundle_fallback(bot_id=bot_id, context=context),
+                fallback_plan,
+                fallback_bundle,
                 route,
                 response.provider,
                 response.model,
@@ -241,17 +253,29 @@ class PlanGenerator:
                 conflict_key = "nav.route"
                 preconditions.append("navigation.ready")
             elif kind in {"combat", "fight", "attack"}:
-                command = "attack"
+                command = "ai auto"
                 conflict_key = "combat.primary"
                 preconditions.append("combat.allowed")
+                metadata["bridge_compat"] = {
+                    "status": "rewritten",
+                    "original_command": "attack",
+                    "rewritten_command": command,
+                    "reason": "bridge_root_not_allowed",
+                }
             elif kind in {"loot", "collect"}:
                 command = "take"
                 conflict_key = "loot.collect"
                 preconditions.append("inventory.can_loot")
             elif kind in {"recover", "heal"}:
-                command = "sit"
+                command = "ai manual"
                 conflict_key = "recovery"
                 preconditions.append("vitals.safe_to_rest")
+                metadata["bridge_compat"] = {
+                    "status": "rewritten",
+                    "original_command": "sit",
+                    "rewritten_command": command,
+                    "reason": "bridge_root_not_allowed",
+                }
             elif kind in {"npc", "quest"}:
                 npc_name = (step.target or "").strip()
                 command = f"talknpc {npc_name}".strip() if npc_name else "talknpc"
@@ -261,61 +285,138 @@ class PlanGenerator:
                 if npc_name:
                     metadata["npc_name"] = npc_name
             elif kind in {"econ"}:
-                command = "storage"
-                conflict_key = "economy.loop"
-                preconditions.append("economy.safe")
-                rollback_action = "storage close"
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:storage",
+                    },
+                )
+                continue
             elif kind in {"skill_up"}:
                 skill_target = (step.target or "").strip()
-                command = f"skills {skill_target}".strip() if skill_target else "skills"
-                conflict_key = "progression.skill"
-                preconditions.append("progression.skill_points_available")
-                if skill_target:
-                    metadata["skill_target"] = skill_target
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:skills",
+                        "skill_target": skill_target,
+                    },
+                )
+                continue
             elif kind in {"rest"}:
-                command = "sit"
+                command = "ai manual"
                 conflict_key = "recovery.rest"
                 preconditions.append("vitals.safe_to_rest")
+                metadata["bridge_compat"] = {
+                    "status": "rewritten",
+                    "original_command": "sit",
+                    "rewritten_command": command,
+                    "reason": "bridge_root_not_allowed",
+                }
             elif kind in {"social"}:
                 message = (step.target or step.description or "").strip()
-                command = f"chat {message}".strip() if message else "chat"
-                conflict_key = "social.message"
-                preconditions.append("social.allowed")
-                if message:
-                    metadata["chat_message"] = message[:120]
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:chat",
+                        "chat_message": message[:120],
+                    },
+                )
+                continue
             elif kind in {"equip", "equipment"}:
                 target_item = (step.target or "").strip()
-                command = f"equip {target_item}".strip() if target_item else "equip"
-                conflict_key = "inventory.equip"
-                preconditions.append("inventory.can_equip")
-                if target_item:
-                    metadata["equip_item"] = target_item
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:equip",
+                        "equip_item": target_item,
+                    },
+                )
+                continue
             elif kind in {"party"}:
                 target_party = (step.target or "").strip()
-                command = f"party {target_party}".strip() if target_party else "party"
-                conflict_key = "social.party"
-                preconditions.append("social.party_ready")
-                if target_party:
-                    metadata["party_target"] = target_party
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:party",
+                        "party_target": target_party,
+                    },
+                )
+                continue
             elif kind in {"chat"}:
                 message = (step.target or step.description or "").strip()
-                command = f"chat {message}".strip() if message else "chat"
-                conflict_key = "social.chat"
-                preconditions.append("social.allowed")
-                if message:
-                    metadata["chat_message"] = message[:120]
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:chat",
+                        "chat_message": message[:120],
+                    },
+                )
+                continue
             elif kind in {"vending"}:
-                command = "vending"
-                conflict_key = "economy.vending"
-                preconditions.append("economy.safe")
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:vending",
+                    },
+                )
+                continue
             elif kind in {"craft"}:
                 craft_target = (step.target or "").strip()
-                command = f"craft {craft_target}".strip() if craft_target else "craft"
-                conflict_key = "economy.craft"
-                preconditions.append("crafting.ready")
-                if craft_target:
-                    metadata["craft_target"] = craft_target
+                logger.info(
+                    "planner_action_suppressed_bridge_incompatible",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_incompatible",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "reason": "unsupported_bridge_root:craft",
+                        "craft_target": craft_target,
+                    },
+                )
+                continue
             if not command:
+                continue
+            root = (command.split(maxsplit=1)[0] if command else "").strip().lower()
+            if root not in _BRIDGE_ALLOWED_ROOTS:
+                logger.info(
+                    "planner_action_suppressed_bridge_root",
+                    extra={
+                        "event": "planner_action_suppressed_bridge_root",
+                        "bot_id": bot_id,
+                        "step_id": step.step_id,
+                        "step_kind": kind,
+                        "command": command,
+                        "command_root": root,
+                    },
+                )
                 continue
             actions.append(
                 ActionProposal(
@@ -357,39 +458,236 @@ class PlanGenerator:
     def build_tactical_bundle(self, *, bot_id: str, context: PlannerContext, plan: StrategicPlan) -> TacticalIntentBundle:
         return self._to_tactical_bundle(bot_id=bot_id, context=context, plan=plan)
 
+    def _preferred_grind_maps(self, context: PlannerContext) -> list[str]:
+        fleet_constraints = _safe_dict(context.fleet_constraints)
+        constraints = _safe_dict(fleet_constraints.get("constraints"))
+        candidates: list[object] = []
+        candidates.extend(_safe_list(constraints.get("preferred_grind_maps")))
+        candidates.extend(_safe_list(constraints.get("preferred_maps")))
+        assignment = str(fleet_constraints.get("assignment") or "").strip()
+        if assignment:
+            candidates.append(assignment)
+
+        parsed: list[str] = []
+        for item in candidates:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            for token in text.replace(";", ",").split(","):
+                token_clean = token.strip()
+                if token_clean and token_clean not in parsed:
+                    parsed.append(token_clean)
+        return parsed
+
+    def _fallback_signals(self, context: PlannerContext) -> dict[str, object]:
+        state = _safe_dict(context.state)
+        operational = _safe_dict(state.get("operational"))
+        navigation = _safe_dict(state.get("navigation"))
+        encounter = _safe_dict(state.get("encounter"))
+        inventory = _safe_dict(state.get("inventory"))
+        risk = _safe_dict(state.get("risk"))
+        features = _safe_dict(state.get("features"))
+        feature_values = _safe_dict(features.get("values"))
+        quest_context = _safe_dict(context.quest_context)
+        economy_context = _safe_dict(context.economy_context)
+
+        hp = _safe_float(operational.get("hp"), -1.0)
+        death_state = hp <= 0.0
+        nearby_hostiles = _safe_int(encounter.get("nearby_hostiles"), 0)
+        target_id = str(encounter.get("target_id") or operational.get("target_id") or "").strip()
+        targets_present = bool(target_id) or nearby_hostiles > 0
+        overweight_ratio = _safe_float(
+            economy_context.get("overweight_ratio") if economy_context.get("overweight_ratio") is not None else inventory.get("overweight_ratio"),
+            0.0,
+        )
+        item_count = _safe_int(inventory.get("item_count"), 0)
+        inventory_pressure = bool(overweight_ratio >= 0.88 or item_count >= 95)
+        objective_backlog = _safe_int(quest_context.get("active_objective_count"), len(_safe_list(quest_context.get("active_quests"))))
+        reconnect_age_s = _safe_float(
+            feature_values.get("operational.reconnect_age_s")
+            if feature_values.get("operational.reconnect_age_s") is not None
+            else feature_values.get("reconnect_age_s"),
+            0.0,
+        )
+        anomaly_flags = [str(item) for item in _safe_list(risk.get("anomaly_flags"))]
+        planner_stale_hints = [item for item in anomaly_flags if "stale" in item.lower() or "loop" in item.lower()]
+
+        preferred_maps = self._preferred_grind_maps(context)
+        current_map = str(navigation.get("map") or operational.get("map") or "").strip()
+        preferred_target = ""
+        for map_name in preferred_maps:
+            if map_name != current_map:
+                preferred_target = map_name
+                break
+
+        return {
+            "death_state": death_state,
+            "targets_present": targets_present,
+            "nearby_hostiles": nearby_hostiles,
+            "target_id": target_id,
+            "inventory_pressure": inventory_pressure,
+            "overweight_ratio": overweight_ratio,
+            "item_count": item_count,
+            "objective_backlog": objective_backlog,
+            "reconnect_age_s": reconnect_age_s,
+            "planner_stale_hints": planner_stale_hints,
+            "preferred_grind_maps": preferred_maps,
+            "preferred_target": preferred_target,
+            "current_map": current_map,
+        }
+
     def _fallback(self, *, bot_id: str, context: PlannerContext, max_steps: int) -> StrategicPlan:
         now = _now_utc()
-        steps = [
-            PlannerStep(
+        signals = self._fallback_signals(context)
+        steps: list[PlannerStep] = []
+        actions: list[ActionProposal] = []
+
+        def _append(
+            *,
+            step_id: str,
+            kind: PlannerStepKind,
+            description: str,
+            command: str,
+            conflict_key: str,
+            priority: int,
+            success_predicates: list[str],
+            fallbacks: list[str],
+            preconditions: list[str],
+            metadata: dict[str, object],
+        ) -> None:
+            steps.append(
+                PlannerStep(
+                    step_id=step_id,
+                    kind=kind,
+                    target=str(metadata.get("target") or "") or None,
+                    description=description,
+                    priority=priority,
+                    success_predicates=success_predicates,
+                    fallbacks=fallbacks,
+                )
+            )
+            actions.append(
+                ActionProposal(
+                    action_id=f"fallback-{uuid4().hex[:20]}",
+                    kind="command",
+                    command=command[:256],
+                    priority_tier=ActionPriorityTier.tactical,
+                    conflict_key=conflict_key,
+                    preconditions=list(preconditions),
+                    created_at=now,
+                    expires_at=now + timedelta(seconds=90),
+                    idempotency_key=f"fallback:{bot_id}:{step_id}:{conflict_key}"[:128],
+                    metadata={
+                        "source": "planner_fallback",
+                        "objective": context.objective,
+                        **metadata,
+                    },
+                )
+            )
+
+        if bool(signals.get("death_state")):
+            _append(
                 step_id="s1",
+                kind=PlannerStepKind.rest,
+                description="Recover from death at savepoint before route resume",
+                command="move savepoint",
+                conflict_key="recovery.death",
+                priority=95,
+                success_predicates=["death_cleared", "returned_to_savepoint"],
+                fallbacks=["safe_idle"],
+                preconditions=[],
+                metadata={
+                    "fallback_mode": "death_recovery",
+                    "target": "savepoint",
+                    "death_state": True,
+                },
+            )
+
+        if bool(signals.get("inventory_pressure")):
+            _append(
+                step_id="s2",
+                kind=PlannerStepKind.econ,
+                description="Relieve inventory pressure through storage loop",
+                command="storage",
+                conflict_key="economy.pressure_relief",
+                priority=90,
+                success_predicates=["inventory_pressure_reduced"],
+                fallbacks=["safe_idle"],
+                preconditions=["economy.safe"],
+                metadata={
+                    "fallback_mode": "economy_relief",
+                    "inventory_pressure": True,
+                    "overweight_ratio": float(signals.get("overweight_ratio") or 0.0),
+                    "item_count": int(signals.get("item_count") or 0),
+                },
+            )
+
+        preferred_target = str(signals.get("preferred_target") or "").strip()
+        if preferred_target:
+            _append(
+                step_id="s3",
+                kind=PlannerStepKind.travel,
+                description=f"Resume grind posture by routing to preferred map {preferred_target}",
+                command=f"move {preferred_target}",
+                conflict_key="nav.resume_grind",
+                priority=85,
+                success_predicates=["arrived_preferred_map"],
+                fallbacks=["safe_idle"],
+                preconditions=["navigation.ready"],
+                metadata={
+                    "fallback_mode": "resume_grind",
+                    "target": preferred_target,
+                    "preferred_grind_maps": list(signals.get("preferred_grind_maps") or []),
+                },
+            )
+
+        if not bool(signals.get("targets_present")):
+            _append(
+                step_id="s4",
+                kind=PlannerStepKind.travel,
+                description="Seek monsters with scan-first random walk fallback",
+                command="move random_walk_seek",
+                conflict_key="planner.seek.random_walk",
+                priority=80,
+                success_predicates=["scan_targets_found", "route_progress"],
+                fallbacks=["safe_idle"],
+                preconditions=["navigation.ready", "scan.targets_absent"],
+                metadata={
+                    "fallback_mode": "seek_targets",
+                    "seek_only_random_walk": True,
+                    "target_scan_required": True,
+                    "target_scan": {
+                        "targets_found": False,
+                        "nearby_hostiles": int(signals.get("nearby_hostiles") or 0),
+                        "source": "context.encounter",
+                    },
+                },
+            )
+
+        if not actions:
+            _append(
+                step_id="s5",
                 kind=PlannerStepKind.observe,
-                target=None,
-                description="Gather fresh state and hold safe tactical posture",
-                priority=25,
+                description="Hold safe idle while waiting for fresh planner context",
+                command="sit",
+                conflict_key="planner.safe_idle",
+                priority=50,
                 success_predicates=["state_refreshed"],
                 fallbacks=["safe_idle"],
+                preconditions=["vitals.safe_to_rest"],
+                metadata={
+                    "fallback_mode": "safe_idle",
+                    "planner_stale_hints": list(signals.get("planner_stale_hints") or []),
+                },
             )
-        ]
-        actions = [
-            ActionProposal(
-                action_id=f"fallback-{uuid4().hex[:20]}",
-                kind="command",
-                command="ai auto",
-                priority_tier=ActionPriorityTier.tactical,
-                conflict_key="planner.safe_idle",
-                created_at=now,
-                expires_at=now + timedelta(seconds=90),
-                idempotency_key=f"fallback:{bot_id}:safe_idle"[:128],
-                metadata={"source": "planner_fallback", "objective": context.objective},
-            )
-        ]
+
         return StrategicPlan(
             plan_id=f"fallback-plan-{uuid4().hex[:16]}",
             bot_id=bot_id,
             objective=context.objective,
             horizon=context.horizon,
-            assumptions=["provider_unavailable_or_schema_invalid"],
-            constraints=["keep_safe_posture"],
+            assumptions=["provider_unavailable_or_schema_invalid", "fallback_objective_ranking_enabled"],
+            constraints=["keep_safe_posture", "no_idle_random_walk_without_scan_evidence"],
             hypotheses=[],
             policies=["fallback_safe_mode"],
             steps=steps[:max_steps],
@@ -402,21 +700,8 @@ class PlanGenerator:
         )
 
     def _bundle_fallback(self, *, bot_id: str, context: PlannerContext) -> TacticalIntentBundle:
-        return TacticalIntentBundle(
-            bundle_id=f"fallback-bundle-{uuid4().hex[:16]}",
-            bot_id=bot_id,
-            intents=[
-                TacticalIntent(
-                    intent_id="fallback-intent-1",
-                    objective="Hold safe idle while waiting for replan",
-                    priority=50,
-                    constraints=["no risky actions"],
-                    expected_latency_ms=500,
-                )
-            ],
-            actions=[],
-            notes=["fallback_bundle"],
-        )
+        plan = self._fallback(bot_id=bot_id, context=context, max_steps=3)
+        return self._to_tactical_bundle(bot_id=bot_id, context=context, plan=plan)
 
     def _system_prompt(self, *, context: PlannerContext) -> str:
         allowed_step_kinds = ", ".join(item.value for item in PlannerStepKind)
@@ -456,6 +741,7 @@ class PlanGenerator:
 
     def _user_prompt(self, *, context: PlannerContext, max_steps: int) -> tuple[str, dict[str, object]]:
         horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
+        signals = self._fallback_signals(context)
         payload = {
             "bot_id": context.bot_id,
             "objective": context.objective,
@@ -477,6 +763,16 @@ class PlanGenerator:
             "episodes": context.episodes[:10],
             "macros": context.macros,
             "reflex": context.reflex,
+            "autonomy_signals": {
+                "preferred_grind_maps": list(signals.get("preferred_grind_maps") or []),
+                "objective_backlog": int(signals.get("objective_backlog") or 0),
+                "planner_stale_hints": list(signals.get("planner_stale_hints") or []),
+                "death_state": bool(signals.get("death_state")),
+                "reconnect_age_s": float(signals.get("reconnect_age_s") or 0.0),
+                "inventory_pressure": bool(signals.get("inventory_pressure")),
+                "overweight_ratio": float(signals.get("overweight_ratio") or 0.0),
+                "targets_present": bool(signals.get("targets_present")),
+            },
         }
 
         payload_working = json.loads(json.dumps(payload, ensure_ascii=False, default=_json_default))

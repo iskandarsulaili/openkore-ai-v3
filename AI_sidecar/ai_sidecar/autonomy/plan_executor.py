@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -66,7 +66,7 @@ class PlanExecutor:
         # Strategic plans contain high-level objectives
         objectives = getattr(plan, "steps", []) or []
         for obj in objectives[:max_actions]:
-            action = self._objective_to_action(obj)
+            action = self._objective_to_action(obj, bot_id=bot_id)
             if action:
                 await self._queue_action(action, bot_id)
                 count += 1
@@ -86,7 +86,7 @@ class PlanExecutor:
 
         intents = getattr(bundle, "intents", []) or []
         for intent in intents[:max_actions]:
-            action = self._intent_to_action(intent)
+            action = self._intent_to_action(intent, bot_id=bot_id)
             if action:
                 await self._queue_action(action, bot_id)
                 count += 1
@@ -109,7 +109,110 @@ class PlanExecutor:
                 break
         return count
 
-    def _objective_to_action(self, objective: Any) -> ActionProposal | None:
+    def _fleet_constraints_for_bot(self, *, bot_id: str) -> dict[str, object]:
+        runtime = self._runtime
+
+        resolver = getattr(runtime, "_fleet_constraints_for_bot", None)
+        if callable(resolver):
+            try:
+                payload = resolver(bot_id=bot_id)
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                logger.debug("PlanExecutor: local fleet constraints unavailable", exc_info=True)
+
+        public_resolver = getattr(runtime, "fleet_constraints", None)
+        if callable(public_resolver):
+            try:
+                payload = public_resolver(bot_id=bot_id)
+                if isinstance(payload, dict):
+                    constraints = payload.get("constraints")
+                    if isinstance(constraints, dict):
+                        return constraints
+                    return payload
+                constraints = getattr(payload, "constraints", None)
+                if isinstance(constraints, dict):
+                    return constraints
+            except Exception:
+                logger.debug("PlanExecutor: public fleet constraints unavailable", exc_info=True)
+
+        constraint_state = getattr(runtime, "fleet_constraint_state", None)
+        resolver = getattr(constraint_state, "constraints_for_bot", None)
+        if callable(resolver):
+            try:
+                payload = resolver(bot_id=bot_id)
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                logger.debug("PlanExecutor: state fleet constraints unavailable", exc_info=True)
+
+        return {}
+
+    def _current_map_for_bot(self, *, bot_id: str) -> str:
+        cache = getattr(self._runtime, "snapshot_cache", None)
+        getter = getattr(cache, "get", None)
+        if not callable(getter):
+            return ""
+        try:
+            snapshot = getter(bot_id)
+        except Exception:
+            logger.debug("PlanExecutor: snapshot cache lookup failed", exc_info=True)
+            return ""
+
+        position = getattr(snapshot, "position", None)
+        map_name = str(getattr(position, "map", "") or "").strip()
+        if map_name:
+            return map_name
+        raw = getattr(snapshot, "raw", None)
+        if isinstance(raw, dict):
+            return str(raw.get("map") or raw.get("map_name") or "").strip()
+        return ""
+
+    def _preferred_grind_maps(self, *, bot_id: str) -> list[str]:
+        payload = self._fleet_constraints_for_bot(bot_id=bot_id)
+        constraints = payload.get("constraints") if isinstance(payload.get("constraints"), dict) else payload
+        candidates: list[object] = []
+
+        for key in ("preferred_grind_maps", "preferred_maps"):
+            rows = constraints.get(key) if isinstance(constraints, dict) else None
+            if isinstance(rows, list):
+                candidates.extend(rows)
+            rows_root = payload.get(key)
+            if isinstance(rows_root, list):
+                candidates.extend(rows_root)
+
+        assignment = ""
+        if isinstance(payload, dict):
+            assignment = str(payload.get("assignment") or "").strip()
+        if not assignment and isinstance(constraints, dict):
+            assignment = str(constraints.get("assignment") or "").strip()
+        if assignment:
+            candidates.append(assignment)
+
+        preferred: list[str] = []
+        for item in candidates:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            for token in text.replace(";", ",").split(","):
+                clean = token.strip()
+                if clean and clean not in preferred:
+                    preferred.append(clean)
+        return preferred
+
+    def _preferred_grind_target(self, *, bot_id: str) -> str:
+        preferred = self._preferred_grind_maps(bot_id=bot_id)
+        current_map = self._current_map_for_bot(bot_id=bot_id)
+        for map_name in preferred:
+            if map_name != current_map:
+                return map_name
+        return ""
+
+    def _contains_any(self, text: str, needles: tuple[str, ...]) -> bool:
+        lowered = text.lower()
+        return any(token in lowered for token in needles)
+
+    def _objective_to_action(self, objective: Any, *, bot_id: str) -> ActionProposal | None:
         """Convert a strategic objective to an action proposal."""
         try:
             description = (
@@ -117,27 +220,193 @@ class PlanExecutor:
                 or getattr(objective, "name", None)
                 or str(objective)
             )
+
+            preferred_maps = self._preferred_grind_maps(bot_id=bot_id)
+            preferred_target = self._preferred_grind_target(bot_id=bot_id)
+
+            if self._contains_any(description, ("death", "dead", "savepoint", "respawn")):
+                return self._build_action_proposal(
+                    command="move savepoint",
+                    priority=ActionPriorityTier.strategic,
+                    source="pdca_loop_strategic",
+                    conflict_key="recovery.death",
+                    preconditions=[],
+                    metadata={
+                        "description": description,
+                        "fallback_mode": "death_recovery",
+                        "target": "savepoint",
+                    },
+                )
+
+            resume_tokens = ("grind", "farm", "resume", "route", "travel", "move", "map")
+            seek_tokens = ("seek", "search", "target", "hunt", "scan")
+            rest_tokens = ("rest", "idle", "wait", "hold")
+
+            if preferred_target and self._contains_any(description, resume_tokens):
+                return self._build_action_proposal(
+                    command=f"move {preferred_target}",
+                    priority=ActionPriorityTier.strategic,
+                    source="pdca_loop_strategic",
+                    conflict_key="nav.resume_grind",
+                    preconditions=["navigation.ready"],
+                    metadata={
+                        "description": description,
+                        "fallback_mode": "resume_grind",
+                        "target": preferred_target,
+                        "preferred_grind_maps": preferred_maps,
+                    },
+                )
+
+            if self._contains_any(description, seek_tokens):
+                return self._build_action_proposal(
+                    command="move random_walk_seek",
+                    priority=ActionPriorityTier.strategic,
+                    source="pdca_loop_strategic",
+                    conflict_key="planner.seek.random_walk",
+                    preconditions=["navigation.ready", "scan.targets_absent"],
+                    metadata={
+                        "description": description,
+                        "fallback_mode": "seek_targets",
+                        "seek_only_random_walk": True,
+                        "target_scan_required": True,
+                        "target_scan": {
+                            "targets_found": False,
+                            "source": "plan_executor.objective",
+                        },
+                    },
+                )
+
+            if preferred_target:
+                return self._build_action_proposal(
+                    command=f"move {preferred_target}",
+                    priority=ActionPriorityTier.strategic,
+                    source="pdca_loop_strategic",
+                    conflict_key="nav.resume_grind",
+                    preconditions=["navigation.ready"],
+                    metadata={
+                        "description": description,
+                        "fallback_mode": "resume_grind",
+                        "target": preferred_target,
+                        "preferred_grind_maps": preferred_maps,
+                    },
+                )
+
+            if self._contains_any(description, rest_tokens):
+                return self._build_action_proposal(
+                    command="sit",
+                    priority=ActionPriorityTier.strategic,
+                    source="pdca_loop_strategic",
+                    conflict_key="planner.safe_idle",
+                    preconditions=["vitals.safe_to_rest"],
+                    metadata={
+                        "description": description,
+                        "fallback_mode": "safe_idle",
+                    },
+                )
+
             return self._build_action_proposal(
-                command="ai auto",
+                command="sit",
                 priority=ActionPriorityTier.strategic,
                 source="pdca_loop_strategic",
-                conflict_key="pdca.strategic",
-                metadata={"description": description},
+                conflict_key="planner.safe_idle",
+                preconditions=["vitals.safe_to_rest"],
+                metadata={"description": description, "fallback_mode": "safe_idle"},
             )
         except Exception:
             logger.exception("Failed to convert objective to action")
             return None
 
-    def _intent_to_action(self, intent: Any) -> ActionProposal | None:
+    def _intent_to_action(self, intent: Any, *, bot_id: str) -> ActionProposal | None:
         """Convert a tactical intent to an action proposal."""
         try:
             objective = getattr(intent, "objective", None) or getattr(intent, "type", None) or "tactical_action"
+            objective_text = str(objective)
+            constraints = [str(item).strip().lower() for item in list(getattr(intent, "constraints", []) or [])]
+            step_kind = ""
+            for item in constraints:
+                if item.startswith("step_kind="):
+                    step_kind = item.split("=", 1)[1]
+                    break
+
+            preferred_maps = self._preferred_grind_maps(bot_id=bot_id)
+            preferred_target = self._preferred_grind_target(bot_id=bot_id)
+
+            seek_tokens = ("seek", "search", "target", "hunt", "scan")
+            resume_tokens = ("grind", "farm", "resume", "route", "travel", "move", "map")
+            rest_tokens = ("rest", "idle", "wait", "hold")
+
+            if self._contains_any(objective_text, seek_tokens):
+                return self._build_action_proposal(
+                    command="move random_walk_seek",
+                    priority=ActionPriorityTier.tactical,
+                    source="pdca_loop_tactical",
+                    conflict_key="planner.seek.random_walk",
+                    preconditions=["navigation.ready", "scan.targets_absent"],
+                    metadata={
+                        "objective": objective_text,
+                        "fallback_mode": "seek_targets",
+                        "seek_only_random_walk": True,
+                        "target_scan_required": True,
+                        "target_scan": {
+                            "targets_found": False,
+                            "source": "plan_executor.intent",
+                        },
+                    },
+                )
+
+            if preferred_target and (
+                self._contains_any(objective_text, resume_tokens)
+                or step_kind in {"travel", "task", "combat"}
+            ):
+                return self._build_action_proposal(
+                    command=f"move {preferred_target}",
+                    priority=ActionPriorityTier.tactical,
+                    source="pdca_loop_tactical",
+                    conflict_key="nav.resume_grind",
+                    preconditions=["navigation.ready"],
+                    metadata={
+                        "objective": objective_text,
+                        "fallback_mode": "resume_grind",
+                        "target": preferred_target,
+                        "preferred_grind_maps": preferred_maps,
+                    },
+                )
+
+            if self._contains_any(objective_text, rest_tokens):
+                return self._build_action_proposal(
+                    command="sit",
+                    priority=ActionPriorityTier.tactical,
+                    source="pdca_loop_tactical",
+                    conflict_key="planner.safe_idle",
+                    preconditions=["vitals.safe_to_rest"],
+                    metadata={
+                        "objective": objective_text,
+                        "fallback_mode": "safe_idle",
+                    },
+                )
+
+            if preferred_target:
+                return self._build_action_proposal(
+                    command=f"move {preferred_target}",
+                    priority=ActionPriorityTier.tactical,
+                    source="pdca_loop_tactical",
+                    conflict_key="nav.resume_grind",
+                    preconditions=["navigation.ready"],
+                    metadata={
+                        "objective": objective_text,
+                        "fallback_mode": "resume_grind",
+                        "target": preferred_target,
+                        "preferred_grind_maps": preferred_maps,
+                    },
+                )
+
             return self._build_action_proposal(
-                command="ai auto",
+                command="sit",
                 priority=ActionPriorityTier.tactical,
                 source="pdca_loop_tactical",
-                conflict_key="pdca.tactical",
-                metadata={"objective": str(objective)},
+                conflict_key="planner.safe_idle",
+                preconditions=["vitals.safe_to_rest"],
+                metadata={"objective": objective_text, "fallback_mode": "safe_idle"},
             )
         except Exception:
             logger.exception("Failed to convert intent to action")
@@ -177,6 +446,7 @@ class PlanExecutor:
         priority: ActionPriorityTier,
         source: str,
         conflict_key: str | None = None,
+        preconditions: list[str] | None = None,
         metadata: dict[str, object] | None = None,
     ) -> ActionProposal:
         now = utc_now()
@@ -187,6 +457,7 @@ class PlanExecutor:
             command=command[:256],
             priority_tier=priority,
             conflict_key=conflict_key,
+            preconditions=list(preconditions or []),
             created_at=now,
             expires_at=now + timedelta(seconds=90),
             idempotency_key=f"{source}:{action_id}"[:128],

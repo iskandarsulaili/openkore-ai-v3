@@ -95,6 +95,10 @@ class ActionArbiter:
             },
         )
 
+        random_walk_guard = self._validate_random_walk_guard(proposal, bot_id=resolved_bot_id)
+        if random_walk_guard is not None:
+            return random_walk_guard
+
         precondition_result = self._evaluate_preconditions(proposal, bot_id=resolved_bot_id)
         if precondition_result is not None:
             return precondition_result
@@ -263,6 +267,67 @@ class ActionArbiter:
                 updates["expires_at"] = expires_at
 
         return proposal.model_copy(update=updates) if updates else proposal
+
+    def _validate_random_walk_guard(self, proposal: ActionProposal, *, bot_id: str) -> AdmissionResult | None:
+        if not self._requires_target_scan_guard(proposal):
+            return None
+
+        required_precondition = "scan.targets_absent"
+        preconditions = {str(item).strip().lower() for item in proposal.preconditions}
+        if required_precondition not in preconditions:
+            logger.warning(
+                "action_admission_random_walk_missing_scan_precondition",
+                extra={
+                    "event": "action_admission_random_walk_missing_scan_precondition",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                    "command": proposal.command,
+                },
+            )
+            return AdmissionResult(
+                admitted=False,
+                reason="random_walk_requires_target_scan",
+                action_id=proposal.action_id,
+                status=ActionStatus.dropped,
+            )
+
+        metadata = proposal.metadata if isinstance(proposal.metadata, dict) else {}
+        target_scan = metadata.get("target_scan") if isinstance(metadata.get("target_scan"), dict) else {}
+        if self._coerce_bool(target_scan.get("targets_found")) is True:
+            logger.warning(
+                "action_admission_random_walk_scan_failed",
+                extra={
+                    "event": "action_admission_random_walk_scan_failed",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                    "command": proposal.command,
+                    "target_scan": target_scan,
+                },
+            )
+            return AdmissionResult(
+                admitted=False,
+                reason="random_walk_target_scan_failed",
+                action_id=proposal.action_id,
+                status=ActionStatus.dropped,
+            )
+
+        if self._coerce_bool(metadata.get("targets_present")) is True:
+            logger.warning(
+                "action_admission_random_walk_targets_present",
+                extra={
+                    "event": "action_admission_random_walk_targets_present",
+                    "bot_id": bot_id,
+                    "action_id": proposal.action_id,
+                },
+            )
+            return AdmissionResult(
+                admitted=False,
+                reason="random_walk_target_scan_failed",
+                action_id=proposal.action_id,
+                status=ActionStatus.dropped,
+            )
+
+        return None
 
     def _evaluate_preconditions(self, proposal: ActionProposal, *, bot_id: str) -> AdmissionResult | None:
         if not proposal.preconditions:
@@ -466,7 +531,32 @@ class ActionArbiter:
                 return True, "materials_unknown", False
             return materials_count > 0, f"materials_count={materials_count}", False
 
+        if name == "scan.targets_absent":
+            target_id = str(raw.get("target_id") or snapshot.combat.target_id or "").strip()
+            monsters = self._coerce_int(raw.get("monsters_around"))
+            if monsters is None:
+                monsters = sum(1 for actor in snapshot.actors if (actor.actor_type or "").lower() == "monster")
+            targets_found = bool(target_id) or bool(monsters and monsters > 0)
+            return (
+                not targets_found,
+                f"targets_found={targets_found} target_id={target_id or 'none'} monsters_around={monsters}",
+                False,
+            )
+
         return True, "unknown_precondition", True
+
+    def _requires_target_scan_guard(self, proposal: ActionProposal) -> bool:
+        command = str(proposal.command or "").strip().lower()
+        metadata = proposal.metadata if isinstance(proposal.metadata, dict) else {}
+        if self._coerce_bool(metadata.get("seek_only_random_walk")) is True:
+            return True
+        if self._coerce_bool(metadata.get("target_scan_required")) is True:
+            return True
+        if "random_walk" in command or "randomwalk" in command:
+            return True
+        if command.startswith("route_randomwalk"):
+            return True
+        return False
 
     def _resolve_map_name(self, snapshot: BotStateSnapshot, raw: dict[str, object]) -> str | None:
         map_name = snapshot.position.map or raw.get("map") or raw.get("map_name")
@@ -518,6 +608,19 @@ class ActionArbiter:
         if coerced is None:
             return None
         return int(coerced)
+
+    def _coerce_bool(self, value: object) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "y", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "n", "off"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return None
 
     def _map_source(self, raw: object) -> str | None:
         value = str(raw or "").strip().lower()

@@ -72,6 +72,20 @@ class PlannerService:
         }
 
     def _fallback_plan(self, *, bot_id: str, context: PlannerContext, max_steps: int) -> StrategicPlan:
+        fallback_builder = getattr(self.plan_generator, "_fallback", None)
+        if callable(fallback_builder):
+            try:
+                return fallback_builder(bot_id=bot_id, context=context, max_steps=max_steps)
+            except Exception:
+                logger.exception(
+                    "planner_fallback_builder_failed",
+                    extra={
+                        "event": "planner_fallback_builder_failed",
+                        "bot_id": bot_id,
+                        "objective": context.objective,
+                    },
+                )
+
         now = datetime.now(UTC)
         steps = [
             PlannerStep(
@@ -88,9 +102,10 @@ class PlannerService:
             ActionProposal(
                 action_id=f"fallback-{uuid4().hex[:20]}",
                 kind="command",
-                command="ai auto",
+                command="sit",
                 priority_tier=ActionPriorityTier.tactical,
                 conflict_key="planner.safe_idle",
+                preconditions=["vitals.safe_to_rest"],
                 created_at=now,
                 expires_at=now + timedelta(seconds=90),
                 idempotency_key=f"fallback:{bot_id}:safe_idle"[:128],
@@ -412,11 +427,12 @@ class PlannerService:
             return PlannerStatusResponse(
                 ok=True,
                 bot_id=bot_id,
-                planner_healthy=True,
+                planner_healthy=False,
                 current_objective=None,
                 last_plan_id=None,
                 last_provider=None,
                 last_model=None,
+                updated_at=None,
                 counters=counters,
             )
         return PlannerStatusResponse(

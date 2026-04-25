@@ -37,6 +37,9 @@ class PDCAResult:
     stuck: bool
     re_planned: bool
     cycle_ms: float
+    force_replan: bool = False
+    replan_reasons: list[str] = field(default_factory=list)
+    objective: str = ""
     error: str | None = None
 
 
@@ -85,6 +88,8 @@ class PDCALoop:
         }
         self._last_plan_time: dict[Horizon, float] = {h: 0.0 for h in Horizon}
         self._stuck_counter: dict[Horizon, int] = {h: 0 for h in Horizon}
+        self._objective_rotation_index: dict[Horizon, int] = {h: 0 for h in Horizon}
+        self._last_objective_switch_at: dict[Horizon, float] = {h: 0.0 for h in Horizon}
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._cycle_count: int = 0
@@ -175,13 +180,16 @@ class PDCALoop:
 
                         # Log cycle result
                         logger.info(
-                            "PDCA [%s] plan=%s actions=%d progress=%.1f%% stuck=%s replan=%s cycle_ms=%.1f",
+                            "PDCA [%s] plan=%s actions=%d progress=%.1f%% stuck=%s replan=%s force=%s objective=%s reasons=%s cycle_ms=%.1f",
                             horizon.value,
                             result.plan_id,
                             result.actions_queued,
                             result.progress_pct * 100,
                             result.stuck,
                             result.re_planned,
+                            result.force_replan,
+                            result.objective,
+                            ",".join(result.replan_reasons),
                             result.cycle_ms,
                         )
 
@@ -201,6 +209,9 @@ class PDCALoop:
         plan_id: str | None = self._artifact_id(self._active_plan[horizon])
         actions_queued = 0
         re_planned = False
+        force_replan = False
+        objective = ""
+        replan_reasons: list[str] = []
 
         try:
             # ── CHECK phase ──────────────────────────────────────
@@ -212,10 +223,27 @@ class PDCALoop:
             )
 
             stuck = progress.stuck_cycles >= self._config.max_stuck_cycles
+            replan_reasons = self._collect_replan_reasons(
+                horizon=horizon,
+                progress=progress,
+                snapshot=latest_snapshot,
+            )
+            force_replan = bool(replan_reasons)
 
             # ── PLAN phase ───────────────────────────────────────
-            if self._active_plan[horizon] is None or stuck:
-                plan = await self._generate_plan(horizon, latest_snapshot)
+            if self._active_plan[horizon] is None or force_replan:
+                objective_override = self._select_objective(
+                    horizon=horizon,
+                    snapshot=latest_snapshot,
+                    replan_reasons=replan_reasons,
+                )
+                objective = objective_override or self._objective_for(horizon=horizon, snapshot=latest_snapshot)
+                plan = await self._generate_plan(
+                    horizon,
+                    latest_snapshot,
+                    force_replan=force_replan and self._active_plan[horizon] is not None,
+                    objective_override=objective_override,
+                )
                 if plan:
                     self._active_plan[horizon] = plan
                     plan_id = self._artifact_id(plan) or f"plan_{int(time.time())}"
@@ -229,9 +257,14 @@ class PDCALoop:
                         progress_pct=progress.progress_pct,
                         stuck=stuck,
                         re_planned=False,
+                        force_replan=force_replan,
+                        replan_reasons=replan_reasons,
+                        objective=objective,
                         cycle_ms=(time.monotonic() - start) * 1000,
                         error="plan generation returned None",
                     )
+            else:
+                objective = self._objective_for(horizon=horizon, snapshot=latest_snapshot)
 
             # ── DO phase ─────────────────────────────────────────
             if self._active_plan[horizon] is not None:
@@ -242,12 +275,13 @@ class PDCALoop:
                 )
 
             # ── ACT phase ────────────────────────────────────────
-            if stuck and re_planned:
+            if force_replan and re_planned:
                 self._stuck_counter[horizon] = 0
                 logger.info(
-                    "Re-planned [%s] after %d stuck cycles",
+                    "Re-planned [%s] after %d stuck cycles reasons=%s",
                     horizon.value,
                     progress.stuck_cycles,
+                    ",".join(replan_reasons),
                 )
             elif progress.stuck_cycles > 0:
                 self._stuck_counter[horizon] = progress.stuck_cycles
@@ -261,6 +295,9 @@ class PDCALoop:
                 progress_pct=progress.progress_pct,
                 stuck=stuck,
                 re_planned=re_planned,
+                force_replan=force_replan,
+                replan_reasons=replan_reasons,
+                objective=objective,
                 cycle_ms=(time.monotonic() - start) * 1000,
             )
 
@@ -273,6 +310,9 @@ class PDCALoop:
                 progress_pct=0.0,
                 stuck=False,
                 re_planned=re_planned,
+                force_replan=force_replan,
+                replan_reasons=replan_reasons,
+                objective=objective,
                 cycle_ms=(time.monotonic() - start) * 1000,
                 error=str(e),
             )
@@ -308,12 +348,17 @@ class PDCALoop:
         return None
 
     async def _generate_plan(
-        self, horizon: Horizon, snapshot: BotStateSnapshot | None
+        self,
+        horizon: Horizon,
+        snapshot: BotStateSnapshot | None,
+        *,
+        force_replan: bool = False,
+        objective_override: str | None = None,
     ) -> StrategicPlan | TacticalIntentBundle | None:
         """Generate a plan using planner or crewAI depending on horizon."""
         try:
             bot_id = self._resolve_bot_id(snapshot)
-            objective = self._objective_for(horizon=horizon, snapshot=snapshot)
+            objective = objective_override or self._objective_for(horizon=horizon, snapshot=snapshot)
             if horizon == Horizon.LONG_TERM:
                 # Use crewAI strategize for long-term strategic plans
                 result = await self._runtime.crewai_strategize(
@@ -321,6 +366,7 @@ class PDCALoop:
                         meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
                         objective=objective,
                         horizon=PlanHorizon.strategic,
+                        force_replan=force_replan,
                         max_steps=12,
                         context_overrides=self._context_overrides(snapshot),
                     )
@@ -336,7 +382,7 @@ class PDCALoop:
                         meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
                         objective=objective,
                         horizon=PlanHorizon.tactical,
-                        force_replan=False,
+                        force_replan=force_replan,
                         max_steps=8,
                     )
                 )
@@ -350,7 +396,7 @@ class PDCALoop:
                         meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
                         objective=objective,
                         horizon=PlanHorizon.tactical,
-                        force_replan=False,
+                        force_replan=force_replan,
                         max_steps=4,
                     )
                 )
@@ -400,6 +446,213 @@ class PDCALoop:
         if horizon == Horizon.MEDIUM_TERM:
             return f"progress tactical objective safely on {current_map}"
         return f"execute immediate tactical actions safely on {current_map}"
+
+    def _collect_replan_reasons(
+        self,
+        *,
+        horizon: Horizon,
+        progress: Any,
+        snapshot: BotStateSnapshot | None,
+    ) -> list[str]:
+        reasons: list[str] = []
+
+        progress_reasons = list(getattr(progress, "reasons", []) or [])
+        for item in progress_reasons:
+            if item and item not in reasons:
+                reasons.append(str(item))
+
+        if bool(getattr(progress, "force_replan_hint", False)) is False and progress.stuck_cycles >= self._config.max_stuck_cycles:
+            reasons.append("stuck_cycles")
+
+        if snapshot is not None:
+            if self._snapshot_disconnected(snapshot):
+                reasons.append("disconnect_recovery")
+            reconnect_age_s = self._snapshot_reconnect_age_s(snapshot)
+            if reconnect_age_s is not None and reconnect_age_s >= self._policy_float("reconnect_grace_s", 20.0):
+                reasons.append("reconnect_stale")
+            if self._overweight_ratio(snapshot) >= 0.90:
+                reasons.append("inventory_overweight_pressure")
+
+        fleet_status = self._fleet_status()
+        if bool(fleet_status.get("stale", False)):
+            reasons.append("fleet_central_stale")
+        if bool(fleet_status.get("central_available", True)) is False:
+            reasons.append("fleet_central_unavailable")
+
+        # Limit trigger aggression for long-term horizon to hard stale/failure reasons.
+        if horizon == Horizon.LONG_TERM:
+            hard = {
+                "stale_progress",
+                "objective_aged_out",
+                "death_loop_detected",
+                "disconnect_recovery",
+                "reconnect_stale",
+                "fleet_central_stale",
+                "fleet_central_unavailable",
+                "stuck_cycles",
+            }
+            reasons = [item for item in reasons if item in hard]
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in reasons:
+            key = str(item).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return deduped
+
+    def _select_objective(
+        self,
+        *,
+        horizon: Horizon,
+        snapshot: BotStateSnapshot | None,
+        replan_reasons: list[str],
+    ) -> str | None:
+        if horizon == Horizon.LONG_TERM:
+            return None
+
+        ranked = self._ranked_objectives()
+        if not ranked:
+            return None
+
+        preferred: str | None = None
+        if "inventory_overweight_pressure" in replan_reasons:
+            preferred = "economy"
+        elif "death_loop_detected" in replan_reasons or "disconnect_recovery" in replan_reasons or "reconnect_stale" in replan_reasons:
+            preferred = "recovery"
+        elif "objective_aged_out" in replan_reasons and "quest" in ranked:
+            preferred = "quest"
+        elif "stale_progress" in replan_reasons or "map_dwell_no_gain" in replan_reasons or "route_churn_no_position_gain" in replan_reasons:
+            preferred = "grind"
+
+        choice = self._pick_ranked_objective(horizon=horizon, ranked=ranked, preferred=preferred, force_rotate=bool(replan_reasons))
+        if choice is None:
+            return None
+
+        current_map = getattr(getattr(snapshot, "position", None), "map", None) or "unknown"
+        if choice == "recovery":
+            return f"recover safely and re-establish operational posture on {current_map}"
+        if choice == "economy":
+            return f"stabilize inventory and economy pressure safely from {current_map}"
+        if choice == "quest":
+            return f"advance active quest objectives safely near {current_map}"
+        return f"resume efficient grind and loot progression safely on {current_map}"
+
+    def _pick_ranked_objective(
+        self,
+        *,
+        horizon: Horizon,
+        ranked: list[str],
+        preferred: str | None,
+        force_rotate: bool,
+    ) -> str | None:
+        if not ranked:
+            return None
+
+        now = time.time()
+        current_index = int(self._objective_rotation_index.get(horizon, 0))
+        last_switch = float(self._last_objective_switch_at.get(horizon, 0.0))
+        cooldown_s = self._policy_float("objective_rotation_cooldown_s", 20.0)
+
+        if preferred in ranked:
+            current_index = ranked.index(preferred)
+            self._objective_rotation_index[horizon] = current_index
+            self._last_objective_switch_at[horizon] = now
+            return ranked[current_index]
+
+        if last_switch <= 0.0:
+            self._objective_rotation_index[horizon] = current_index
+            self._last_objective_switch_at[horizon] = now
+            return ranked[current_index]
+
+        if force_rotate or (now - last_switch) >= cooldown_s:
+            current_index = (current_index + 1) % len(ranked)
+            self._objective_rotation_index[horizon] = current_index
+            self._last_objective_switch_at[horizon] = now
+
+        return ranked[current_index]
+
+    def _ranked_objectives(self) -> list[str]:
+        policy = getattr(self._runtime, "autonomy_policy", {})
+        ranked = []
+        if isinstance(policy, dict):
+            raw = policy.get("ranked_objectives")
+            if isinstance(raw, list):
+                ranked = [str(item).strip().lower() for item in raw if str(item).strip()]
+            elif isinstance(raw, str):
+                ranked = [item.strip().lower() for item in raw.split(",") if item.strip()]
+
+        if not ranked:
+            ranked = ["grind", "recovery", "economy", "quest"]
+        return ranked
+
+    def _policy_float(self, key: str, default: float) -> float:
+        policy = getattr(self._runtime, "autonomy_policy", {})
+        if isinstance(policy, dict):
+            try:
+                return float(policy.get(key, default))
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    def _fleet_status(self) -> dict[str, object]:
+        state = getattr(self._runtime, "fleet_constraint_state", None)
+        if state is not None and hasattr(state, "status"):
+            try:
+                data = state.status()
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                logger.exception("Failed to read fleet status for PDCA")
+        return {
+            "mode": "local",
+            "central_available": False,
+            "stale": True,
+            "last_sync_at": None,
+            "doctrine_version": "local",
+            "last_error": "fleet_constraint_state_unavailable",
+        }
+
+    def _snapshot_disconnected(self, snapshot: BotStateSnapshot) -> bool:
+        raw = getattr(snapshot, "raw", {})
+        if not isinstance(raw, dict):
+            return False
+        if raw.get("in_game") is False:
+            return True
+        status = str(raw.get("status") or raw.get("state") or raw.get("net_state") or "").strip().lower()
+        return status in {
+            "offline",
+            "disconnected",
+            "disconnect",
+            "reconnecting",
+            "connecting",
+            "not_connected",
+        }
+
+    def _snapshot_reconnect_age_s(self, snapshot: BotStateSnapshot) -> float | None:
+        raw = getattr(snapshot, "raw", {})
+        if not isinstance(raw, dict):
+            return None
+        for key in ("reconnect_age_s", "disconnect_age_s", "offline_age_s"):
+            value = raw.get(key)
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    continue
+        return None
+
+    def _overweight_ratio(self, snapshot: BotStateSnapshot) -> float:
+        vitals = getattr(snapshot, "vitals", None)
+        weight = getattr(vitals, "weight", None)
+        weight_max = getattr(vitals, "weight_max", None)
+        if not isinstance(weight, int) or not isinstance(weight_max, int) or weight_max <= 0:
+            return 0.0
+        return max(0.0, min(2.0, float(weight) / float(weight_max)))
 
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:

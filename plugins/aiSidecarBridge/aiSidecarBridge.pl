@@ -5,11 +5,12 @@ use warnings;
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList);
 use IO::Socket::INET;
 use Log qw(debug message warning);
 use Network;
 use Plugins;
+use Scalar::Util qw(reftype);
 use Settings;
 use Time::HiRes qw(alarm time);
 
@@ -84,6 +85,16 @@ my $last_ai_seq_top = '';
 my $consecutive_poll_failures = 0;
 my $consecutive_v2_event_failures = 0;
 my %known_actor_ids;
+my $last_net_in_game;
+my $last_disconnect_at_ms = 0;
+my $last_hp;
+my $death_count = 0;
+my $respawn_state = 'unknown';
+my $last_map_name = '';
+my $last_route_signature = '';
+my $route_churn_count = 0;
+my $route_failure_count = 0;
+my $last_actor_source_probe_log_ms = 0;
 
 my $json_available = eval { require JSON::PP; 1; };
 
@@ -127,6 +138,16 @@ sub _cleanup_runtime {
 	$consecutive_poll_failures = 0;
 	$consecutive_v2_event_failures = 0;
 	%known_actor_ids = ();
+	$last_net_in_game = undef;
+	$last_disconnect_at_ms = 0;
+	$last_hp = undef;
+	$death_count = 0;
+	$respawn_state = 'unknown';
+	$last_map_name = '';
+	$last_route_signature = '';
+	$route_churn_count = 0;
+	$route_failure_count = 0;
+	$last_actor_source_probe_log_ms = 0;
 }
 
 sub on_start3 {
@@ -171,6 +192,7 @@ sub on_mainLoop_pre {
 		_send_snapshot();
 	}
 
+	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 }
 
@@ -434,10 +456,171 @@ sub _track_ai_sequence_transition {
 	);
 }
 
+sub _track_lifecycle_transitions {
+	return if !_bridge_enabled();
+	return if !_cfg_bool('aiSidecar_v2Enabled', 1);
+
+	my $in_game = ($net && $net->getState() == Network::IN_GAME) ? 1 : 0;
+	my $now_ms = _now_ms();
+
+	if (!defined $last_net_in_game) {
+		$last_net_in_game = $in_game;
+	} elsif ($last_net_in_game != $in_game) {
+		if ($in_game) {
+			my $age_s = 0.0;
+			if ($last_disconnect_at_ms > 0) {
+				$age_s = ($now_ms - $last_disconnect_at_ms) / 1000.0;
+				$age_s = 0.0 if $age_s < 0.0;
+			}
+			_enqueue_normalized_event(
+				'lifecycle',
+				'lifecycle.reconnected',
+				'mainLoop_pre',
+				'reconnected to game state',
+				{ reconnect_age_s => $age_s + 0.0 },
+				{ state => 'in_game' },
+				{ reconnect_age_s => $age_s + 0.0 },
+				'info',
+			);
+		} else {
+			$last_disconnect_at_ms = $now_ms;
+			_enqueue_normalized_event(
+				'lifecycle',
+				'lifecycle.disconnected',
+				'mainLoop_pre',
+				'disconnected from game state',
+				{ net_state => 'disconnected' },
+				{ state => 'disconnected' },
+				{},
+				'warning',
+			);
+		}
+		$last_net_in_game = $in_game;
+	}
+
+	my $hp = $char ? $char->{hp} : undef;
+	if (defined $hp && $hp =~ /^\d+$/) {
+		if (defined $last_hp) {
+			if ($last_hp > 0 && $hp <= 0) {
+				$death_count += 1;
+				$respawn_state = 'dead';
+				_enqueue_normalized_event(
+					'lifecycle',
+					'lifecycle.death',
+					'mainLoop_pre',
+					'character died',
+					{ hp => 0 + $hp, death_count => 0 + $death_count, respawn_state => $respawn_state },
+					{},
+					{ death_count => 0 + $death_count },
+					'warning',
+				);
+			} elsif ($last_hp <= 0 && $hp > 0) {
+				$respawn_state = 'respawned';
+				_enqueue_normalized_event(
+					'lifecycle',
+					'lifecycle.respawn',
+					'mainLoop_pre',
+					'character respawned',
+					{ hp => 0 + $hp, death_count => 0 + $death_count, respawn_state => $respawn_state },
+					{},
+					{ death_count => 0 + $death_count },
+					'info',
+				);
+			}
+		}
+		$last_hp = 0 + $hp;
+	}
+
+	my $map = _safe_field_map();
+	if (defined $map && $map ne '' && defined $last_map_name && $last_map_name ne '' && $map ne $last_map_name) {
+		_enqueue_normalized_event(
+			'lifecycle',
+			'lifecycle.map_transfer',
+			'mainLoop_pre',
+			"map transfer: $last_map_name -> $map",
+			{ from_map => $last_map_name, to_map => $map },
+			{ from_map => _trim($last_map_name, 64), to_map => _trim($map, 64) },
+			{},
+			'info',
+		);
+	}
+	$last_map_name = $map if defined $map && $map ne '';
+
+	my $ai_top = _safe_ai_seq_top();
+	my $x = undef;
+	my $y = undef;
+	if ($char) {
+		my $pos = eval {
+			if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+				return $char->{pos_to};
+			}
+			if ($char->{pos} && ref $char->{pos} eq 'HASH') {
+				return $char->{pos};
+			}
+			return undef;
+		};
+		if ($pos) {
+			$x = $pos->{x};
+			$y = $pos->{y};
+		}
+	}
+	my $route_signature = join(':', ($map || ''), (defined $x ? $x : ''), (defined $y ? $y : ''), ($ai_top || ''));
+	if ($ai_top =~ /^(?:route|move)/i && defined $last_route_signature && $last_route_signature eq $route_signature) {
+		$route_churn_count += 1;
+		my $threshold = _cfg_int('aiSidecar_routeChurnThreshold', 8);
+		$threshold = 1 if $threshold < 1;
+		my $emit_every = _cfg_int('aiSidecar_routeFailureEvery', 16);
+		$emit_every = $threshold if $emit_every < $threshold;
+
+		if ($route_churn_count % $threshold == 0) {
+			_enqueue_normalized_event(
+				'lifecycle',
+				'lifecycle.route_churn',
+				'mainLoop_pre',
+				'route churn without position gain detected',
+				{
+					map => $map,
+					x => $x,
+					y => $y,
+					route_churn_count => 0 + $route_churn_count,
+				},
+				{ map => _trim($map || '', 64) },
+				{ route_churn_count => 0 + $route_churn_count },
+				'warning',
+			);
+		}
+
+		if ($route_churn_count % $emit_every == 0) {
+			$route_failure_count += 1;
+			_enqueue_normalized_event(
+				'lifecycle',
+				'lifecycle.route_failure',
+				'mainLoop_pre',
+				'route failure inferred from repeated churn',
+				{
+					map => $map,
+					x => $x,
+					y => $y,
+					route_failure_count => 0 + $route_failure_count,
+					route_churn_count => 0 + $route_churn_count,
+				},
+				{ map => _trim($map || '', 64) },
+				{ route_failure_count => 0 + $route_failure_count, route_churn_count => 0 + $route_churn_count },
+				'warning',
+			);
+		}
+	} else {
+		$route_churn_count = 0 if $ai_top !~ /^(?:route|move)/i;
+	}
+	$last_route_signature = $route_signature;
+}
+
 sub _load_bridge_config {
 	my ($file, $target) = @_;
 	%{$target} = ();
 	parseConfigFile($file, $target, 0);
+
+	_load_bridge_config_overrides();
 
 	my %defaults = (
 		aiSidecar_enable => 1,
@@ -445,7 +628,7 @@ sub _load_bridge_config {
 		aiSidecar_contractVersion => 'v1',
 		aiSidecar_source => 'openkore-bridge',
 		aiSidecar_connectTimeoutMs => 2000,
-		aiSidecar_ioTimeoutMs => 10000,
+		aiSidecar_ioTimeoutMs => 30000,
 		aiSidecar_snapshotEnabled => 1,
 		aiSidecar_snapshotIntervalMs => 1000,
 		aiSidecar_pollWhenDisconnected => 0,
@@ -492,6 +675,8 @@ sub _load_bridge_config {
 		aiSidecar_maxConfigValueChars => 220,
 		aiSidecar_maxConfigKeysPerPush => 64,
 		aiSidecar_traceAllCommands => 0,
+		aiSidecar_routeChurnThreshold => 8,
+		aiSidecar_routeFailureEvery => 16,
 		aiSidecar_verbose => 1,
 	);
 
@@ -500,6 +685,20 @@ sub _load_bridge_config {
 	}
 
 	debug "[aiSidecarBridge] loaded control file $file\n", 'aiSidecarBridge', 2;
+}
+
+sub _load_bridge_config_overrides {
+	my $path = eval { Settings::getControlFilename('ai_sidecar.txt') };
+	return if !defined $path || $path eq '';
+	return if !-e $path;
+
+	my %fresh;
+	parseConfigFile($path, \%fresh, 0);
+	foreach my $key (keys %fresh) {
+		next if !defined $key || $key eq '';
+		$bridge_cfg{$key} = $fresh{$key} if defined $fresh{$key};
+	}
+	debug "[aiSidecarBridge] refreshed control file $path\n", 'aiSidecarBridge', 2;
 }
 
 sub _load_bridge_policy {
@@ -641,6 +840,15 @@ sub _build_snapshot_payload {
 		master     => _trim($config{master} || '', $max_raw),
 		ai_sequence => _trim($ai_top || '', $max_raw),
 		ai_queue   => _trim(join(',', @ai_seq[0 .. ($#ai_seq < 4 ? $#ai_seq : 4)]), $max_raw),
+		in_game => ($net && $net->getState() == Network::IN_GAME) ? JSON::PP::true() : JSON::PP::false(),
+		net_state => ($net ? ($net->getState() + 0) : -1),
+		reconnect_age_s => ($last_disconnect_at_ms > 0 && $net && $net->getState() == Network::IN_GAME)
+			? ((_now_ms() - $last_disconnect_at_ms) / 1000.0)
+			: 0.0,
+		death_count => 0 + $death_count,
+		respawn_state => _trim($respawn_state, 32),
+		route_churn_count => 0 + $route_churn_count,
+		route_failure_count => 0 + $route_failure_count,
 	};
 
 	# --- Progression digest (job, level, exp) ---
@@ -663,73 +871,213 @@ sub _build_snapshot_payload {
 
 	# --- Actors digest (nearby mobs, players, NPCs) ---
 	my @actors;
+	my $actor_discovery = {
+		enabled => _cfg_bool('aiSidecar_actorsEnabled', 1) ? 1 : 0,
+		source_counts => {
+			monster => { hash => 0, list => 0, merged_candidates => 0 },
+			player  => { hash => 0, list => 0, merged_candidates => 0 },
+			npc     => { hash => 0, list => 0, merged_candidates => 0 },
+		},
+		normalize => {
+			seen_total => 0,
+			kept_total => 0,
+			skipped_total => 0,
+			seen_by_type => { monster => 0, player => 0, npc => 0 },
+			kept_by_type => { monster => 0, player => 0, npc => 0 },
+			skipped_by_type => { monster => 0, player => 0, npc => 0 },
+			skipped_reasons => {
+				non_hash => 0,
+				missing_actor_id => 0,
+				duplicate_actor_id => 0,
+				over_limit => 0,
+			},
+		},
+		payload => {
+			snapshot_actor_count => 0,
+			max_actors => 0,
+			truncated => 0,
+		},
+	};
 	if (_cfg_bool('aiSidecar_actorsEnabled', 1)) {
 		my $max_actors = _cfg_int('aiSidecar_maxActors', 24);
+		$max_actors = 0 if !defined $max_actors || $max_actors < 0;
+		$actor_discovery->{payload}{max_actors} = 0 + $max_actors;
 
-		# Nearby monsters
+		my %seen_actor_ids;
+		my $party_members = ($char && $char->{party} && ref($char->{party}{party}{member}) eq 'HASH')
+			? $char->{party}{party}{member}
+			: undef;
+
+		my $append_actor = sub {
+			my (%args) = @_;
+			my $actor = $args{actor};
+			my $actor_type = _trim(_scalarize($args{actor_type}), 32);
+			$actor_type = 'unknown' if !defined $actor_type || $actor_type eq '';
+
+			$actor_discovery->{normalize}{seen_total} += 1;
+			$actor_discovery->{normalize}{seen_by_type}{$actor_type} =
+				0 + ($actor_discovery->{normalize}{seen_by_type}{$actor_type} || 0) + 1;
+
+			if (!_is_hash_like($actor)) {
+				$actor_discovery->{normalize}{skipped_total} += 1;
+				$actor_discovery->{normalize}{skipped_by_type}{$actor_type} =
+					0 + ($actor_discovery->{normalize}{skipped_by_type}{$actor_type} || 0) + 1;
+				$actor_discovery->{normalize}{skipped_reasons}{non_hash} += 1;
+				return;
+			}
+
+			my $actor_id = _actor_id_from_any($actor->{ID});
+			if ($actor_id eq '') {
+				$actor_discovery->{normalize}{skipped_total} += 1;
+				$actor_discovery->{normalize}{skipped_by_type}{$actor_type} =
+					0 + ($actor_discovery->{normalize}{skipped_by_type}{$actor_type} || 0) + 1;
+				$actor_discovery->{normalize}{skipped_reasons}{missing_actor_id} += 1;
+				return;
+			}
+
+			if ($seen_actor_ids{$actor_id}) {
+				$actor_discovery->{normalize}{skipped_total} += 1;
+				$actor_discovery->{normalize}{skipped_by_type}{$actor_type} =
+					0 + ($actor_discovery->{normalize}{skipped_by_type}{$actor_type} || 0) + 1;
+				$actor_discovery->{normalize}{skipped_reasons}{duplicate_actor_id} += 1;
+				return;
+			}
+			$seen_actor_ids{$actor_id} = 1;
+
+			if (scalar(@actors) >= $max_actors) {
+				$actor_discovery->{normalize}{skipped_total} += 1;
+				$actor_discovery->{normalize}{skipped_by_type}{$actor_type} =
+					0 + ($actor_discovery->{normalize}{skipped_by_type}{$actor_type} || 0) + 1;
+				$actor_discovery->{normalize}{skipped_reasons}{over_limit} += 1;
+				return;
+			}
+
+			my $relation = _trim(_scalarize($args{relation} || 'neutral'), 32);
+			if (ref($args{relation_cb}) eq 'CODE') {
+				$relation = _trim(_scalarize($args{relation_cb}->($actor)), 32);
+				$relation = 'neutral' if !defined $relation || $relation eq '';
+			}
+
+			push @actors, {
+				actor_id   => $actor_id,
+				actor_type => $actor_type,
+				name       => _trim($actor->{name} || ($args{default_name} || 'Actor'), 64),
+				relation   => $relation,
+				x          => defined $actor->{pos_to} && ref $actor->{pos_to} eq 'HASH' ? $actor->{pos_to}{x} : ($actor->{pos} && ref $actor->{pos} eq 'HASH' ? $actor->{pos}{x} : undef),
+				y          => defined $actor->{pos_to} && ref $actor->{pos_to} eq 'HASH' ? $actor->{pos_to}{y} : ($actor->{pos} && ref $actor->{pos} eq 'HASH' ? $actor->{pos}{y} : undef),
+				hp         => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp} || undef) : undef,
+				hp_max     => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp_max} || undef) : undef,
+				level      => $actor->{level} || undef,
+			};
+
+			$actor_discovery->{normalize}{kept_total} += 1;
+			$actor_discovery->{normalize}{kept_by_type}{$actor_type} =
+				0 + ($actor_discovery->{normalize}{kept_by_type}{$actor_type} || 0) + 1;
+		};
+
+		# Nearby monsters (hash + ActorList)
 		eval {
-			my @mons = values %monsters;
-			for my $mob (@mons) {
-				last if scalar(@actors) >= $max_actors;
-				next unless ref $mob eq 'HASH';
-				push @actors, {
-					actor_id   => _actor_id_from_any($mob->{ID}),
+			my @mons_hash = values %monsters;
+			my @mons_list = _actor_list_items($monstersList);
+			$actor_discovery->{source_counts}{monster}{hash} = scalar(@mons_hash) + 0;
+			$actor_discovery->{source_counts}{monster}{list} = scalar(@mons_list) + 0;
+			my @mons_merged = (@mons_hash, @mons_list);
+			$actor_discovery->{source_counts}{monster}{merged_candidates} = scalar(@mons_merged) + 0;
+
+			for my $mob (@mons_merged) {
+				$append_actor->(
+					actor => $mob,
 					actor_type => 'monster',
-					name       => _trim($mob->{name} || 'Monster', 64),
-					relation   => 'hostile',
-					x          => defined $mob->{pos_to} && ref $mob->{pos_to} eq 'HASH' ? $mob->{pos_to}{x} : ($mob->{pos} && ref $mob->{pos} eq 'HASH' ? $mob->{pos}{x} : undef),
-					y          => defined $mob->{pos_to} && ref $mob->{pos_to} eq 'HASH' ? $mob->{pos_to}{y} : ($mob->{pos} && ref $mob->{pos} eq 'HASH' ? $mob->{pos}{y} : undef),
-					hp         => $mob->{hp}     || undef,
-					hp_max     => $mob->{hp_max} || undef,
-					level      => $mob->{level}  || undef,
-				};
+					default_name => 'Monster',
+					relation => 'hostile',
+					include_hp => 1,
+				);
 			}
 		};
 
-		# Nearby players
+		# Nearby players (hash + ActorList)
 		eval {
-			my @pls = values %players;
-			for my $player (@pls) {
-				last if scalar(@actors) >= $max_actors;
-				next unless ref $player eq 'HASH';
-				my $relation = 'neutral';
-				if ($char && $char->{party} && ref($char->{party}{party}{member}) eq 'HASH') {
-					$relation = 'party' if exists $char->{party}{party}{member}{$player->{binID}};
-				}
-				push @actors, {
-					actor_id   => _actor_id_from_any($player->{ID}),
+			my @players_hash = values %players;
+			my @players_list = _actor_list_items($playersList);
+			$actor_discovery->{source_counts}{player}{hash} = scalar(@players_hash) + 0;
+			$actor_discovery->{source_counts}{player}{list} = scalar(@players_list) + 0;
+			my @players_merged = (@players_hash, @players_list);
+			$actor_discovery->{source_counts}{player}{merged_candidates} = scalar(@players_merged) + 0;
+
+			for my $player (@players_merged) {
+				$append_actor->(
+					actor => $player,
 					actor_type => 'player',
-					name       => _trim($player->{name} || 'Player', 64),
-					relation   => $relation,
-					x          => defined $player->{pos_to} && ref $player->{pos_to} eq 'HASH' ? $player->{pos_to}{x} : undef,
-					y          => defined $player->{pos_to} && ref $player->{pos_to} eq 'HASH' ? $player->{pos_to}{y} : undef,
-					hp         => undef,
-					hp_max     => undef,
-					level      => $player->{level} || undef,
-				};
+					default_name => 'Player',
+					relation_cb => sub {
+						my ($row) = @_;
+						my $relation = 'neutral';
+						if ($party_members && _is_hash_like($row) && defined $row->{binID}) {
+							$relation = 'party' if exists $party_members->{$row->{binID}};
+						}
+						return $relation;
+					},
+					include_hp => 0,
+				);
 			}
 		};
 
-		# Nearby NPCs
+		# Nearby NPCs (hash + ActorList)
 		eval {
-			my @npc_rows = values %npcs;
-			for my $npc (@npc_rows) {
-				last if scalar(@actors) >= $max_actors;
-				next unless ref $npc eq 'HASH';
-				push @actors, {
-					actor_id   => _actor_id_from_any($npc->{ID}),
+			my @npcs_hash = values %npcs;
+			my @npcs_list = _actor_list_items($npcsList);
+			$actor_discovery->{source_counts}{npc}{hash} = scalar(@npcs_hash) + 0;
+			$actor_discovery->{source_counts}{npc}{list} = scalar(@npcs_list) + 0;
+			my @npcs_merged = (@npcs_hash, @npcs_list);
+			$actor_discovery->{source_counts}{npc}{merged_candidates} = scalar(@npcs_merged) + 0;
+
+			for my $npc (@npcs_merged) {
+				$append_actor->(
+					actor => $npc,
 					actor_type => 'npc',
-					name       => _trim($npc->{name} || 'NPC', 64),
-					relation   => 'neutral',
-					x          => defined $npc->{pos_to} && ref $npc->{pos_to} eq 'HASH' ? $npc->{pos_to}{x} : ($npc->{pos} && ref $npc->{pos} eq 'HASH' ? $npc->{pos}{x} : undef),
-					y          => defined $npc->{pos_to} && ref $npc->{pos_to} eq 'HASH' ? $npc->{pos_to}{y} : ($npc->{pos} && ref $npc->{pos} eq 'HASH' ? $npc->{pos}{y} : undef),
-					hp         => undef,
-					hp_max     => undef,
-					level      => undef,
-				};
+					default_name => 'NPC',
+					relation => 'neutral',
+					include_hp => 0,
+				);
 			}
 		};
+
+		my $now_ms = _now_ms();
+		if ($now_ms - $last_actor_source_probe_log_ms >= 5000) {
+			debug sprintf(
+				"[aiSidecarBridge] actor source probe pre-normalize raw_containers={monster:{hash=%d,list=%d} player:{hash=%d,list=%d} npc:{hash=%d,list=%d}}\n",
+				0 + ($actor_discovery->{source_counts}{monster}{hash} || 0),
+				0 + ($actor_discovery->{source_counts}{monster}{list} || 0),
+				0 + ($actor_discovery->{source_counts}{player}{hash} || 0),
+				0 + ($actor_discovery->{source_counts}{player}{list} || 0),
+				0 + ($actor_discovery->{source_counts}{npc}{hash} || 0),
+				0 + ($actor_discovery->{source_counts}{npc}{list} || 0),
+			), 'aiSidecarBridge', 2;
+			$last_actor_source_probe_log_ms = $now_ms;
+		}
+
+		$actor_discovery->{payload}{truncated} = $actor_discovery->{normalize}{skipped_reasons}{over_limit} > 0 ? 1 : 0;
+		debug sprintf(
+			"[aiSidecarBridge] actor discovery source_counts={m:h=%d,l=%d p:h=%d,l=%d n:h=%d,l=%d} normalize={seen=%d kept=%d skipped=%d missing_id=%d dup_id=%d over_limit=%d} payload={count=%d max=%d truncated=%d}\n",
+			0 + ($actor_discovery->{source_counts}{monster}{hash} || 0),
+			0 + ($actor_discovery->{source_counts}{monster}{list} || 0),
+			0 + ($actor_discovery->{source_counts}{player}{hash} || 0),
+			0 + ($actor_discovery->{source_counts}{player}{list} || 0),
+			0 + ($actor_discovery->{source_counts}{npc}{hash} || 0),
+			0 + ($actor_discovery->{source_counts}{npc}{list} || 0),
+			0 + ($actor_discovery->{normalize}{seen_total} || 0),
+			0 + ($actor_discovery->{normalize}{kept_total} || 0),
+			0 + ($actor_discovery->{normalize}{skipped_total} || 0),
+			0 + ($actor_discovery->{normalize}{skipped_reasons}{missing_actor_id} || 0),
+			0 + ($actor_discovery->{normalize}{skipped_reasons}{duplicate_actor_id} || 0),
+			0 + ($actor_discovery->{normalize}{skipped_reasons}{over_limit} || 0),
+			scalar(@actors) + 0,
+			0 + $max_actors,
+			0 + ($actor_discovery->{payload}{truncated} || 0),
+		), 'aiSidecarBridge', 2;
 	}
+	$actor_discovery->{payload}{snapshot_actor_count} = scalar(@actors) + 0;
+	$raw->{actor_discovery} = $actor_discovery;
 
 	return {
 		meta       => _meta($bot_id),
@@ -769,6 +1117,13 @@ sub _send_actor_delta_from_snapshot {
 
 	my $actors = $snapshot->{actors};
 	$actors = [] if ref($actors) ne 'ARRAY';
+	my $snapshot_actor_count = scalar(@{$actors}) + 0;
+	my $actor_discovery = {};
+	if (ref($snapshot->{raw}) eq 'HASH' && ref($snapshot->{raw}{actor_discovery}) eq 'HASH') {
+		$actor_discovery = $snapshot->{raw}{actor_discovery};
+	} elsif (ref($snapshot->{actor_discovery}) eq 'HASH') {
+		$actor_discovery = $snapshot->{actor_discovery};
+	}
 
 	my $map_name = '';
 	if (ref($snapshot->{position}) eq 'HASH') {
@@ -800,6 +1155,27 @@ sub _send_actor_delta_from_snapshot {
 	}
 
 	my @removed_actor_ids = grep { !$observed_ids{$_} } sort keys %known_actor_ids;
+	my %actor_type_counts;
+	my $hostile_count = 0;
+	for my $row (@observed) {
+		next if ref($row) ne 'HASH';
+		my $actor_type = _trim(_scalarize($row->{actor_type}), 64);
+		$actor_type = 'unknown' if !defined $actor_type || $actor_type eq '';
+		$actor_type_counts{$actor_type} = 0 + ($actor_type_counts{$actor_type} || 0) + 1;
+
+		my $relation = lc(_trim(_scalarize($row->{relation}), 64));
+		if ($relation eq 'hostile' || $relation eq 'enemy' || $relation eq 'monster' || $actor_type eq 'monster') {
+			$hostile_count += 1;
+		}
+	}
+	my $observed_count = scalar(@observed) + 0;
+	my $removed_count = scalar(@removed_actor_ids) + 0;
+	my $payload_counts = {
+		snapshot_actor_count => 0 + $snapshot_actor_count,
+		observed_count => 0 + $observed_count,
+		removed_count => 0 + $removed_count,
+		hostile_count => 0 + $hostile_count,
+	};
 
 	my $payload = {
 		meta => ref($snapshot->{meta}) eq 'HASH' ? $snapshot->{meta} : _meta(_bot_id()),
@@ -811,11 +1187,100 @@ sub _send_actor_delta_from_snapshot {
 
 	my $resp = _http_post_json('/v2/ingest/actors', $payload);
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
-		_throttled_warning('v2_actors_failed', '[aiSidecarBridge] v2 actor push failed, retaining previous actor-set state.');
+		my $status = _http_status_code($resp);
+		my $err = _http_error_text($resp);
+		_throttled_warning(
+			'v2_actors_failed',
+			"[aiSidecarBridge] v2 actor push failed status=$status error=$err observed=$observed_count removed=$removed_count hostile=$hostile_count, retaining previous actor-set state.",
+		);
+		_emit_telemetry(
+			'warning',
+			'bridge',
+			'v2_actor_delta_failed',
+			'v2 actor delta push failed',
+			{
+				status => 0 + $status,
+				observed_count => 0 + $observed_count,
+				removed_count => 0 + $removed_count,
+				hostile_count => 0 + $hostile_count,
+				snapshot_actor_count => 0 + $snapshot_actor_count,
+			},
+			{ endpoint => '/v2/ingest/actors', error => $err },
+		);
+		_enqueue_normalized_event(
+			'actor_state',
+			'actor_state.bridge_delta_failed',
+			'mainLoop_pre',
+			'bridge actor delta push failed',
+			{
+				revision => $payload->{revision},
+				status => 0 + $status,
+				error => $err,
+				observed_count => 0 + $observed_count,
+				removed_count => 0 + $removed_count,
+				hostile_count => 0 + $hostile_count,
+				snapshot_actor_count => 0 + $snapshot_actor_count,
+				actor_type_counts => \%actor_type_counts,
+				payload_counts => $payload_counts,
+				actor_discovery => $actor_discovery,
+			},
+			{},
+			{
+				observed_count => 0 + $observed_count,
+				removed_count => 0 + $removed_count,
+				hostile_count => 0 + $hostile_count,
+				snapshot_actor_count => 0 + $snapshot_actor_count,
+				status => 0 + $status,
+			},
+			'warning',
+		);
 		return;
 	}
 
+	my $response_json = (ref($resp) eq 'HASH' && ref($resp->{json}) eq 'HASH') ? $resp->{json} : {};
+	my $accepted = int($response_json->{accepted} || 0);
+	my $dropped = int($response_json->{dropped} || 0);
+	my $message = _trim(_scalarize($response_json->{message} || ''), 220);
+	my $outcome = ($observed_count == 0 && $removed_count == 0) ? 'none_visible' : 'delta_sent';
+	_enqueue_normalized_event(
+		'actor_state',
+		'actor_state.bridge_delta_sent',
+		'mainLoop_pre',
+		'bridge actor delta sent',
+		{
+			revision => $payload->{revision},
+			outcome => $outcome,
+			observed_count => 0 + $observed_count,
+			removed_count => 0 + $removed_count,
+			hostile_count => 0 + $hostile_count,
+			snapshot_actor_count => 0 + $snapshot_actor_count,
+			accepted => 0 + $accepted,
+			dropped => 0 + $dropped,
+			message => $message,
+			actor_type_counts => \%actor_type_counts,
+			payload_counts => $payload_counts,
+			actor_discovery => $actor_discovery,
+		},
+		{ outcome => $outcome },
+		{
+			observed_count => 0 + $observed_count,
+			removed_count => 0 + $removed_count,
+			hostile_count => 0 + $hostile_count,
+			snapshot_actor_count => 0 + $snapshot_actor_count,
+			accepted => 0 + $accepted,
+			dropped => 0 + $dropped,
+		},
+		'info',
+	);
+
 	%known_actor_ids = %observed_ids;
+}
+
+sub _is_hash_like {
+	my ($value) = @_;
+	return 0 if !defined $value;
+	my $kind = eval { reftype($value) };
+	return defined($kind) && $kind eq 'HASH' ? 1 : 0;
 }
 
 sub _actor_id_from_any {
@@ -836,6 +1301,19 @@ sub _actor_id_from_any {
 	}
 
 	return _trim(_scalarize($value), 64);
+}
+
+sub _actor_list_items {
+	my ($list_obj) = @_;
+	return () if !defined $list_obj;
+	return () if !ref($list_obj);
+
+	my $items = eval {
+		return () if !$list_obj->can('getItems');
+		return $list_obj->getItems();
+	};
+	return () if !$items || ref($items) ne 'ARRAY';
+	return @{$items};
 }
 
 
@@ -900,6 +1378,7 @@ sub _execute_action {
 	my $command = defined $action->{command} ? $action->{command} : '';
 	my $metadata = ref($action->{metadata}) eq 'HASH' ? $action->{metadata} : {};
 	my $started = _now_ms();
+	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
 
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
 
@@ -907,16 +1386,22 @@ sub _execute_action {
 		($success, $result_code, $msg) = _execute_macro_reload_action($metadata);
 	} elsif ($kind ne 'command') {
 		($success, $result_code, $msg) = (0, 'unsupported_kind', "unsupported action kind '$kind'");
-	} elsif ($command eq '') {
+	} elsif ($rewrite_kind eq 'bare_take_delegated') {
+		($success, $result_code, $msg) = (1, 'ok', 'loot pickup delegated to OpenKore auto-loot configuration');
+	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
-	} elsif (length($command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {
+	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {
 		($success, $result_code, $msg) = (0, 'command_too_long', 'command length exceeds policy');
-	} elsif (!_command_allowed($command)) {
+	} elsif (!_command_allowed($effective_command)) {
 		($success, $result_code, $msg) = (0, 'policy_rejected', 'command rejected by bridge policy');
 	} else {
-		my $ok = eval { Commands::run($command); 1; };
+		my $ok = eval { Commands::run($effective_command); 1; };
 		if ($ok) {
-			($success, $result_code, $msg) = (1, 'ok', 'command dispatched through OpenKore console pathway');
+			if ($rewrite_kind ne '') {
+				($success, $result_code, $msg) = (1, 'ok', "command rewritten to '$effective_command' for runtime compatibility");
+			} else {
+				($success, $result_code, $msg) = (1, 'ok', 'command dispatched through OpenKore console pathway');
+			}
 		} else {
 			my $err = $@ || 'command execution failure';
 			($success, $result_code, $msg) = (0, 'dispatch_error', _trim($err, 220));
@@ -1476,6 +1961,7 @@ sub _stable_config_fingerprint {
 sub _http_post_json {
 	my ($path, $payload) = @_;
 	return undef if !$json_available;
+	_load_bridge_config_overrides();
 
 	my $base_url = _cfg('aiSidecar_baseUrl', 'http://127.0.0.1:18081');
 	$base_url =~ s{/+$}{};
@@ -1619,6 +2105,27 @@ sub _command_allowed {
 	}
 
 	return 1;
+}
+
+sub _rewrite_runtime_command {
+	my ($command, $metadata) = @_;
+	my $trimmed = _trim(_scalarize($command), 256);
+	my $normalized = lc($trimmed || '');
+	$metadata = {} if ref($metadata) ne 'HASH';
+
+	if ($normalized eq 'move random_walk_seek') {
+		return ('ai auto', 'random_walk_seek_rewritten');
+	}
+
+	if ($normalized eq 'move') {
+		return ('ai auto', 'bare_move_rewritten');
+	}
+
+	if ($normalized eq 'take') {
+		return ('', 'bare_take_delegated');
+	}
+
+	return ($trimmed, '');
 }
 
 sub _meta {

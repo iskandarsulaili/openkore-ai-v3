@@ -30,6 +30,8 @@ class ProviderBackedCrewLLM(BaseLLM):
     max_retries: int = Field(default=1, ge=0, le=8)
     bot_id: str = Field(default="fleet", min_length=1, max_length=128)
     trace_id: str = Field(default_factory=lambda: uuid4().hex)
+    max_prompt_chars: int = Field(default=24000, ge=1024, le=200000)
+    max_message_count: int = Field(default=24, ge=4, le=200)
 
     # CrewAI expects this method on custom LLM adapters.
     def call(
@@ -150,7 +152,9 @@ class ProviderBackedCrewLLM(BaseLLM):
 
     def _messages_to_prompt(self, messages: str | list[dict[str, Any]]) -> str:
         if isinstance(messages, str):
-            return messages
+            return self._compact_prompt(messages)
+        if len(messages) > self.max_message_count:
+            messages = messages[-self.max_message_count :]
         parts: list[str] = []
         for item in messages:
             if not isinstance(item, dict):
@@ -158,7 +162,19 @@ class ProviderBackedCrewLLM(BaseLLM):
             role = str(item.get("role") or "user")
             content = str(item.get("content") or "")
             parts.append(f"[{role}] {content}")
-        return "\n".join(parts)
+        return self._compact_prompt("\n".join(parts))
+
+    def _compact_prompt(self, prompt: str) -> str:
+        text = (prompt or "").strip()
+        if len(text) <= self.max_prompt_chars:
+            return text
+
+        marker = "\n...[truncated for provider budget]...\n"
+        tail_budget = max(0, int(self.max_prompt_chars * 0.75) - len(marker))
+        head_budget = max(0, self.max_prompt_chars - tail_budget - len(marker))
+        if head_budget == 0:
+            return text[-self.max_prompt_chars :]
+        return f"{text[:head_budget]}{marker}{text[-tail_budget:]}"
 
     def _run_async_blocking(self, awaitable: Any) -> Any:
         try:

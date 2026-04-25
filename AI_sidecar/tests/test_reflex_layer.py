@@ -327,6 +327,46 @@ def test_reflex_default_rules_cover_all_categories(tmp_path):
     assert ReflexCategory.interaction in categories
 
 
+def test_reflex_default_rules_bridge_compat_no_unsupported_direct_roots(tmp_path):
+    bot_id = "bot:bridge-compat"
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+    rules = engine.list_rules(bot_id=bot_id)
+
+    allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
+    checked = 0
+    for rule in rules:
+        command = (rule.action_template.command or "").strip()
+        if not command:
+            compat = dict(rule.action_template.metadata).get("bridge_compat")
+            if compat:
+                assert compat.get("status") == "suppressed"
+            continue
+        checked += 1
+        root = command.split(maxsplit=1)[0].strip().lower()
+        assert root in allowed_roots
+        if dict(rule.action_template.metadata).get("bridge_compat"):
+            assert dict(rule.action_template.metadata)["bridge_compat"].get("status") in {"rewritten", "suppressed"}
+
+    assert checked > 0
+
+
+def test_reflex_default_rules_suppressed_direct_commands_still_have_macro_fallback(tmp_path):
+    bot_id = "bot:suppressed-defaults"
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+    rules = engine.list_rules(bot_id=bot_id)
+
+    suppressed = [
+        item
+        for item in rules
+        if not (item.action_template.command or "").strip()
+        and isinstance(dict(item.action_template.metadata).get("bridge_compat"), dict)
+        and dict(item.action_template.metadata)["bridge_compat"].get("status") == "suppressed"
+    ]
+
+    assert suppressed
+    assert all(bool(item.fallback_macro) for item in suppressed)
+
+
 def test_reflex_override_interop_suppresses_later_rules_for_same_event(tmp_path):
     bot_id = "bot:override"
     queue = ActionQueue(max_per_bot=64)

@@ -52,10 +52,39 @@ def ingest_actor_delta(
     runtime: RuntimeState = Depends(get_runtime),
 ) -> IngestAcceptedResponse:
     try:
+        observed_count = len(payload.actors)
+        removed_count = len(payload.removed_actor_ids)
+        hostile_count = sum(
+            1
+            for item in payload.actors
+            if (str(item.relation or "").strip().lower() in {"hostile", "enemy", "monster"})
+            or (str(item.actor_type or "").strip().lower() == "monster")
+        )
+        logger.info(
+            "v2_actor_delta_received",
+            extra={
+                "event": "v2_actor_delta_received",
+                "bot_id": payload.meta.bot_id,
+                "revision": payload.revision,
+                "observed_count": observed_count,
+                "removed_count": removed_count,
+                "hostile_count": hostile_count,
+            },
+        )
         result = runtime.ingest_actor_delta(payload)
         logger.info(
             "v2_actors_ingested",
-            extra={"event": "v2_actors_ingested", "bot_id": payload.meta.bot_id, "accepted": result.accepted},
+            extra={
+                "event": "v2_actors_ingested",
+                "bot_id": payload.meta.bot_id,
+                "revision": payload.revision,
+                "observed_count": observed_count,
+                "removed_count": removed_count,
+                "hostile_count": hostile_count,
+                "accepted": result.accepted,
+                "dropped": result.dropped,
+                "ingest_message": result.message,
+            },
         )
         return result
     except HTTPException:

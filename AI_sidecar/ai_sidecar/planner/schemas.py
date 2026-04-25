@@ -205,7 +205,7 @@ class PlannerStatusResponse(BaseModel):
     last_plan_id: str | None = None
     last_provider: str | None = None
     last_model: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime | None = None
     counters: dict[str, int] = Field(default_factory=dict)
 
 
