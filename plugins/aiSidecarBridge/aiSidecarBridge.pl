@@ -25,6 +25,9 @@ my $hooks = Plugins::addHooks(
 	['start3', \&on_start3, undef],
 	['mainLoop_pre', \&on_mainLoop_pre, undef],
 	['mainLoop_post', \&on_mainLoop_post, undef],
+	['add_monster_list', \&on_add_actor_list_probe, 'monster'],
+	['add_player_list', \&on_add_actor_list_probe, 'player'],
+	['add_npc_list', \&on_add_actor_list_probe, 'npc'],
 	['packet_pre/public_chat', \&on_packet_hook, 'packet_pre.public_chat'],
 	['packet_pre/private_message', \&on_packet_hook, 'packet_pre.private_message'],
 	['packet_pre/party_chat', \&on_packet_hook, 'packet_pre.party_chat'],
@@ -95,6 +98,9 @@ my $last_route_signature = '';
 my $route_churn_count = 0;
 my $route_failure_count = 0;
 my $last_actor_source_probe_log_ms = 0;
+my $last_actor_post_parse_probe_log_ms = 0;
+my %actor_add_probe_count;
+my %actor_add_probe_last_log_ms;
 
 my $json_available = eval { require JSON::PP; 1; };
 
@@ -148,6 +154,9 @@ sub _cleanup_runtime {
 	$route_churn_count = 0;
 	$route_failure_count = 0;
 	$last_actor_source_probe_log_ms = 0;
+	$last_actor_post_parse_probe_log_ms = 0;
+	%actor_add_probe_count = ();
+	%actor_add_probe_last_log_ms = ();
 }
 
 sub on_start3 {
@@ -199,6 +208,7 @@ sub on_mainLoop_pre {
 sub on_mainLoop_post {
 	return unless _bridge_enabled();
 	my $now = _now_ms();
+	_probe_actor_post_parse($now);
 
 	if (!$registered && $now >= $next_register_at_ms) {
 		$next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 5000);
@@ -236,6 +246,117 @@ sub on_mainLoop_post {
 		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
 		$next_event_ingest_at_ms = $now + $next_delay_ms;
 	}
+}
+
+sub on_add_actor_list_probe {
+	my ($hook, $actor, $actor_type) = @_;
+	return if !_bridge_enabled();
+
+	my $type = lc(_trim(_scalarize($actor_type), 16));
+	return if $type !~ /^(?:monster|player|npc)$/;
+
+	$actor_add_probe_count{$type} = 0 + ($actor_add_probe_count{$type} || 0) + 1;
+
+	my $now_ms = _now_ms();
+	my $last_ms = 0 + ($actor_add_probe_last_log_ms{$type} || 0);
+	my $count = 0 + ($actor_add_probe_count{$type} || 0);
+	my $throttle_ms = 5000;
+	my $should_log = ($count == 1 || ($now_ms - $last_ms) >= $throttle_ms) ? 1 : 0;
+	return if !$should_log;
+
+	my ($hash_count, $list_count) = _actor_probe_counts_by_type($type);
+	my $sample = _actor_probe_sample($actor);
+
+	debug sprintf(
+		"[aiSidecarBridge] actor add-hook probe type=%s add_count=%d containers={hash=%d,list=%d} sample=%s\n",
+		$type,
+		$count,
+		0 + $hash_count,
+		0 + $list_count,
+		$sample,
+	), 'aiSidecarBridge', 2;
+
+	$actor_add_probe_last_log_ms{$type} = $now_ms;
+}
+
+sub _probe_actor_post_parse {
+	my ($now_ms) = @_;
+	return if !_bridge_enabled();
+	$now_ms = _now_ms() if !defined $now_ms;
+
+	my $throttle_ms = 5000;
+	return if ($now_ms - $last_actor_post_parse_probe_log_ms) < $throttle_ms;
+
+	my ($m_hash, $m_list) = _actor_probe_counts_by_type('monster');
+	my ($p_hash, $p_list) = _actor_probe_counts_by_type('player');
+	my ($n_hash, $n_list) = _actor_probe_counts_by_type('npc');
+
+	my $m_sample = _actor_probe_sample_from_sources($monstersList, \%monsters);
+	my $p_sample = _actor_probe_sample_from_sources($playersList, \%players);
+	my $n_sample = _actor_probe_sample_from_sources($npcsList, \%npcs);
+
+	debug sprintf(
+		"[aiSidecarBridge] actor post-parse probe containers={monster:{hash=%d,list=%d,sample=%s} player:{hash=%d,list=%d,sample=%s} npc:{hash=%d,list=%d,sample=%s}} non_zero={monster=%d player=%d npc=%d}\n",
+		0 + $m_hash,
+		0 + $m_list,
+		$m_sample,
+		0 + $p_hash,
+		0 + $p_list,
+		$p_sample,
+		0 + $n_hash,
+		0 + $n_list,
+		$n_sample,
+		($m_hash > 0 || $m_list > 0) ? 1 : 0,
+		($p_hash > 0 || $p_list > 0) ? 1 : 0,
+		($n_hash > 0 || $n_list > 0) ? 1 : 0,
+	), 'aiSidecarBridge', 2;
+
+	$last_actor_post_parse_probe_log_ms = $now_ms;
+}
+
+sub _actor_probe_counts_by_type {
+	my ($actor_type) = @_;
+	my $type = lc(_trim(_scalarize($actor_type), 16));
+
+	if ($type eq 'monster') {
+		return (scalar(keys %monsters) + 0, scalar(_actor_list_items($monstersList)) + 0);
+	}
+	if ($type eq 'player') {
+		return (scalar(keys %players) + 0, scalar(_actor_list_items($playersList)) + 0);
+	}
+	if ($type eq 'npc') {
+		return (scalar(keys %npcs) + 0, scalar(_actor_list_items($npcsList)) + 0);
+	}
+
+	return (0, 0);
+}
+
+sub _actor_probe_sample_from_sources {
+	my ($list_obj, $hash_ref) = @_;
+	my $actor;
+
+	my @items = _actor_list_items($list_obj);
+	$actor = $items[0] if @items;
+
+	if (!_is_hash_like($actor) && ref($hash_ref) eq 'HASH') {
+		my @hash_items = values %{$hash_ref};
+		$actor = $hash_items[0] if @hash_items;
+	}
+
+	return _actor_probe_sample($actor);
+}
+
+sub _actor_probe_sample {
+	my ($actor) = @_;
+	return 'none' if !_is_hash_like($actor);
+
+	my $id = _actor_id_from_any($actor->{ID});
+	$id = '?' if !defined $id || $id eq '';
+
+	my $name = _trim(_scalarize($actor->{name}), 40);
+	$name = '?' if !defined $name || $name eq '';
+
+	return _trim("$id/$name", 96);
 }
 
 sub on_packet_hook {
@@ -642,6 +763,7 @@ sub _load_bridge_config {
 		aiSidecar_ackMaxAgeMs => 120000,
 		aiSidecar_registerRetryMs => 3000,
 		aiSidecar_telemetryEnabled => 1,
+		aiSidecar_configReloadEnabled => 1,
 		aiSidecar_telemetryIntervalMs => 1000,
 		aiSidecar_maxRawChars => 256,
 		aiSidecar_maxCommandLength => 160,
@@ -758,6 +880,7 @@ sub _attempt_register {
 			'bridge_action_ack',
 			'bridge_telemetry_push',
 			'bridge_macro_reload_orchestration',
+			'bridge_config_reload_orchestration',
 			'bridge_v2_event_ingest',
 			'bridge_v2_chat_ingest',
 			'bridge_v2_config_ingest',
@@ -771,6 +894,8 @@ sub _attempt_register {
 			identity_username => ($config{username} || ''),
 			identity_char_name => ($char ? ($char->{name} || '') : ''),
 			identity_override => _cfg('aiSidecar_botIdentity', ''),
+			profile => eval { $profiles::profile } || '',
+			control_folder => _active_control_folder(),
 		},
 	};
 
@@ -1384,6 +1509,8 @@ sub _execute_action {
 
 	if ($kind eq 'macro_reload') {
 		($success, $result_code, $msg) = _execute_macro_reload_action($metadata);
+	} elsif ($kind eq 'config_reload') {
+		($success, $result_code, $msg) = _execute_config_reload_action($metadata);
 	} elsif ($kind ne 'command') {
 		($success, $result_code, $msg) = (0, 'unsupported_kind', "unsupported action kind '$kind'");
 	} elsif ($rewrite_kind eq 'bare_take_delegated') {
@@ -1409,8 +1536,8 @@ sub _execute_action {
 	}
 
 	my $latency_ms = _now_ms() - $started;
-	my $event_name = $kind eq 'macro_reload' ? 'macro_reload_executed' : 'action_executed';
-	my $category = $kind eq 'macro_reload' ? 'macro' : 'action';
+	my $event_name = $kind eq 'macro_reload' ? 'macro_reload_executed' : $kind eq 'config_reload' ? 'config_reload_executed' : 'action_executed';
+	my $category = $kind eq 'macro_reload' ? 'macro' : $kind eq 'config_reload' ? 'config' : 'action';
 	push @ack_queue, {
 		queued_at => _now_ms(),
 		action_id => $action_id,
@@ -1419,6 +1546,7 @@ sub _execute_action {
 		result_code => $result_code,
 		message => $msg,
 		observed_latency_ms => $latency_ms,
+		kind => $kind,
 	};
 
 	_emit_telemetry(
@@ -1429,6 +1557,20 @@ sub _execute_action {
 		{ observed_latency_ms => $latency_ms + 0 },
 		{ result_code => $result_code, kind => $kind },
 	);
+}
+
+sub _execute_config_reload_action {
+	my ($metadata) = @_;
+	if (!_cfg_bool('aiSidecar_configReloadEnabled', 1)) {
+		return (0, 'config_reload_disabled', 'config reload orchestration disabled by bridge config');
+	}
+	my $target = _safe_control_filename($metadata->{target} || 'config.txt', 'config.txt');
+	my $command = "reload $target";
+	my ($ok, $err) = _run_safe_openkore_command($command);
+	if (!$ok) {
+		return (0, 'config_reload_failed', "config reload failed for '$command': $err");
+	}
+	return (1, 'ok', "config reload completed through OpenKore command pathway for '$target'");
 }
 
 sub _execute_macro_reload_action {
@@ -1705,7 +1847,7 @@ sub _flush_config_updates {
 		doctrine_version => _cfg('aiSidecar_contractVersion', 'v1'),
 		changed_keys => \@keys,
 		values => \%values,
-		source_files => ['config.txt', 'ai_sidecar.txt', 'ai_sidecar_policy.txt'],
+		source_files => ['config.txt', 'ai_sidecar.txt', 'ai_sidecar_policy.txt', _active_control_folder()],
 	};
 
 	my $resp = _http_post_json('/v2/ingest/config', $payload);
@@ -2137,6 +2279,17 @@ sub _meta {
 		source => _cfg('aiSidecar_source', 'openkore-bridge'),
 		bot_id => $bot_id,
 	};
+}
+
+sub _active_control_folder {
+	my $folder = '';
+	eval {
+		if (ref(\@Settings::controlFolders) eq 'ARRAY' && @Settings::controlFolders) {
+			$folder = $Settings::controlFolders[0] || '';
+		}
+	};
+	$folder = _trim(_scalarize($folder), 220);
+	return $folder ne '' ? $folder : 'control';
 }
 
 sub _bot_id {

@@ -35,6 +35,7 @@ CREW_TOOL_NAMES: tuple[str, ...] = (
     "evaluate_plan_feasibility",
     "coordinate_with_fleet",
     "ml_shadow_predict",
+    "plan_control_change",
 )
 
 

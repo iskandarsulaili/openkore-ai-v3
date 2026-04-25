@@ -26,6 +26,17 @@ from ai_sidecar.contracts.crewai import (
     CrewToolExecuteRequest,
     CrewToolExecuteResponse,
 )
+from ai_sidecar.contracts.control_domain import (
+    ControlApplyRequest,
+    ControlApplyResponse,
+    ControlArtifactsResponse,
+    ControlPlanRequest,
+    ControlPlanResponse,
+    ControlRollbackRequest,
+    ControlRollbackResponse,
+    ControlValidateRequest,
+    ControlValidateResponse,
+)
 from ai_sidecar.contracts.events import (
     ActorDeltaPushRequest,
     ActorObservation,
@@ -73,6 +84,15 @@ from ai_sidecar.contracts.state_graph import EnrichedWorldState
 from ai_sidecar.contracts.telemetry import TelemetryEvent, TelemetryIngestResponse
 from ai_sidecar.crewai import CrewManager
 from ai_sidecar.domain.macro_compiler import MacroCompiler, MacroPublisher
+from ai_sidecar.domain.control_executor import ControlExecutor
+from ai_sidecar.domain.control_parser import ControlParser
+from ai_sidecar.domain.control_planner import ControlPlanner
+from ai_sidecar.domain.control_policy import default_control_policy
+from ai_sidecar.domain.control_registry import ControlRegistry
+from ai_sidecar.domain.control_service import ControlDomainService
+from ai_sidecar.domain.control_state import ControlStateStore
+from ai_sidecar.domain.control_storage import ControlStorage
+from ai_sidecar.domain.control_validator import ControlValidator
 from ai_sidecar.fleet import (
     ConstraintIngestionState,
     FleetConflictResolver,
@@ -441,6 +461,7 @@ class RuntimeState:
     explainability: ExplainabilityStore | None = None
     security_auditor: SecurityAuditor | None = None
     doctrine_manager: DoctrineManager | None = None
+    control_domain: ControlDomainService | None = None
     autonomy_policy: dict[str, object] = field(default_factory=dict)
     autonomy_scheduler_degraded: bool = False
     autonomy_scheduler_degraded_reason: str = ""
@@ -1819,6 +1840,21 @@ class RuntimeState:
         if self.slo_metrics is not None:
             self.slo_metrics.record_macro_publish(version=str(compiled.version), success=True)
         return True, publication_info, "macro artifacts published"
+
+    def control_plan(self, payload: ControlPlanRequest) -> ControlPlanResponse:
+        return self.control_domain.plan(payload)
+
+    def control_apply(self, payload: ControlApplyRequest) -> ControlApplyResponse:
+        return self.control_domain.apply(payload)
+
+    def control_validate(self, payload: ControlValidateRequest) -> ControlValidateResponse:
+        return self.control_domain.validate(payload)
+
+    def control_rollback(self, payload: ControlRollbackRequest) -> ControlRollbackResponse:
+        return self.control_domain.rollback(payload)
+
+    def control_artifacts(self, *, bot_id: str) -> ControlArtifactsResponse:
+        return self.control_domain.artifacts(bot_id=bot_id)
 
     def list_bots(self) -> list[dict[str, object]]:
         items: dict[str, dict[str, object]] = {}
@@ -3893,6 +3929,24 @@ def create_runtime() -> RuntimeState:
         constraint_state=fleet_constraint_state,
         snapshot_cache=snapshot_cache,
     )
+    control_policy = default_control_policy()
+    control_parser = ControlParser()
+    control_storage = ControlStorage(workspace_root=workspace_root, parser=control_parser)
+    control_registry = ControlRegistry()
+    control_state = ControlStateStore()
+    control_planner = ControlPlanner(storage=control_storage)
+    control_executor = ControlExecutor(runtime=None, storage=control_storage)
+    control_validator = ControlValidator(storage=control_storage)
+    control_domain = ControlDomainService(
+        storage=control_storage,
+        policy=control_policy,
+        registry=control_registry,
+        planner=control_planner,
+        executor=control_executor,
+        validator=control_validator,
+        state=control_state,
+    )
+
     runtime = RuntimeState(
         started_at=datetime.now(UTC),
         workspace_root=workspace_root,
@@ -3939,7 +3993,10 @@ def create_runtime() -> RuntimeState:
         autonomy_scheduler_degraded=autonomy_scheduler_degraded,
         autonomy_scheduler_degraded_reason=autonomy_scheduler_degraded_reason,
         planner_stale_threshold_s=float(settings.autonomy_stale_plan_threshold_s),
+        control_domain=control_domain,
     )
+
+    control_executor.runtime = runtime
 
     planner_service = PlannerService(
         runtime=runtime,
@@ -3999,6 +4056,7 @@ def create_runtime() -> RuntimeState:
             "autonomy_policy": autonomy_policy,
             "autonomy_scheduler_degraded": autonomy_scheduler_degraded,
             "autonomy_scheduler_degraded_reason": autonomy_scheduler_degraded_reason,
+            "control_domain_enabled": runtime.control_domain is not None,
         },
     )
     logger.info(

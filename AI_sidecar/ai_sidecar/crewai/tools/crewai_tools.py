@@ -72,6 +72,11 @@ class MLShadowPredictInput(BaseModel):
     planner_choice: dict[str, object] = Field(default_factory=dict)
 
 
+class PlanControlChangeInput(BaseModel):
+    bot_id: str = Field(..., min_length=1, max_length=128)
+    request: dict[str, object] = Field(default_factory=dict)
+
+
 def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
     from crewai.tools import BaseTool
 
@@ -186,6 +191,14 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
                 )
             )
 
+    class PlanControlChangeTool(BaseTool):
+        name: str = "plan_control_change"
+        description: str = "Plan control domain configuration changes with protected ownership policy enforcement."
+        args_schema: type[BaseModel] = PlanControlChangeInput
+
+        def _run(self, bot_id: str, request: dict[str, object]) -> str:
+            return str(facade.plan_control_change(bot_id=bot_id, request=dict(request or {})))
+
     return {
         "get_enriched_state": GetEnrichedStateTool(),
         "get_bot_state": GetBotStateTool(),
@@ -200,4 +213,5 @@ def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
         "get_fleet_constraints": GetFleetConstraintsTool(),
         "write_reflection": WriteReflectionTool(),
         "ml_shadow_predict": MLShadowPredictTool(),
+        "plan_control_change": PlanControlChangeTool(),
     }

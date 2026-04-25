@@ -11,6 +11,7 @@ from uuid import uuid4
 from ai_sidecar.config import settings
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
 from ai_sidecar.contracts.common import ContractMeta
+from ai_sidecar.contracts.control_domain import ControlPlanRequest
 from ai_sidecar.contracts.macros import EventAutomacro, MacroPublishRequest, MacroRoutine
 from ai_sidecar.contracts.ml_subconscious import MLPredictRequest, ModelFamily
 
@@ -414,6 +415,30 @@ class CrewToolFacade:
             "message": response.message,
         }
 
+    def plan_control_change(self, *, bot_id: str, request: dict[str, object]) -> dict[str, object]:
+        try:
+            payload = ControlPlanRequest.model_validate(
+                {
+                    "meta": {
+                        "contract_version": settings.contract_version,
+                        "source": "crewai_tool",
+                        "bot_id": bot_id,
+                        "trace_id": str(request.get("trace_id") or ""),
+                    },
+                    "bot_id": str(request.get("bot_id") or bot_id),
+                    "profile": request.get("profile"),
+                    "artifact_type": request.get("artifact_type"),
+                    "name": request.get("name"),
+                    "target_path": request.get("target_path"),
+                    "desired": dict(request.get("desired") or {}),
+                    "source": str(request.get("source") or "crewai"),
+                }
+            )
+        except Exception as exc:
+            return {"ok": False, "bot_id": bot_id, "message": f"invalid_control_request:{exc}"}
+        response = self.runtime.control_plan(payload)
+        return response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response)
+
     def execute(self, *, bot_id: str, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         tool = tool_name.strip()
         args = dict(arguments)
@@ -478,5 +503,11 @@ class CrewToolFacade:
                 model_family=str(args.get("model_family") or ""),
                 objective=str(args.get("objective") or ""),
                 planner_choice=dict(planner_choice) if isinstance(planner_choice, dict) else {},
+            )
+        if tool == "plan_control_change":
+            request = args.get("request")
+            return self.plan_control_change(
+                bot_id=str(args.get("bot_id") or bot_id),
+                request=dict(request) if isinstance(request, dict) else {},
             )
         return {"ok": False, "bot_id": bot_id, "message": f"unknown_tool:{tool}"}
