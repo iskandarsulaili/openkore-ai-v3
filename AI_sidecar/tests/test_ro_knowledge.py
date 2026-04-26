@@ -122,3 +122,82 @@ def test_stage4_opportunistic_upgrade_non_actionable_when_market_is_ambiguous() 
     assert assessment["opportunities"] == []
     reasons = [str(item) for item in assessment.get("non_actionable_reasons", [])]
     assert any("market_source_unsupported" in item for item in reasons)
+
+
+def test_wave_a1_signal_domains_actionable_with_intent_signals() -> None:
+    data_dir, tables_dir = _repo_paths()
+    knowledge = load_ro_knowledge(data_dir=data_dir, tables_dir=tables_dir)
+
+    assessment = knowledge.assess_opportunistic_upgrades(
+        job_name="Novice",
+        base_level=20,
+        zeny=3000,
+        inventory_items=[],
+        market_listings=[
+            {
+                "item_id": "red_potion",
+                "item_name": "Red Potion",
+                "buy_price": 45,
+                "source": "npc_shop",
+            }
+        ],
+        signals={
+            "in_combat": False,
+            "map_known": True,
+            "nearby_hostiles": 1,
+            "inventory_pressure": False,
+            "market_listing_count": 1,
+            "vendor_exposure": 2,
+            "exploration_intent": True,
+            "card_gear_farming_intent": True,
+            "mercenary_homunculus_intent": True,
+            "companion_available": True,
+            "vending_intent": True,
+            "overweight_ratio": 0.5,
+        },
+    )
+
+    assert assessment["supported"] is True
+    assert assessment["actionable"] is True
+    opportunities = assessment["opportunities"]
+    assert isinstance(opportunities, list) and opportunities
+    domains = {str(item.get("domain") or "") for item in opportunities if isinstance(item, dict)}
+    assert "exploration" in domains
+    assert "card_gear_farming" in domains
+    assert "mercenary_homunculus" in domains
+    assert "vending" in domains
+
+
+def test_wave_a1_signal_domain_non_actionable_when_signal_missing() -> None:
+    data_dir, tables_dir = _repo_paths()
+    knowledge = load_ro_knowledge(data_dir=data_dir, tables_dir=tables_dir)
+
+    assessment = knowledge.assess_opportunistic_upgrades(
+        job_name="Novice",
+        base_level=20,
+        zeny=1000,
+        inventory_items=[],
+        market_listings=[],
+        signals={
+            "in_combat": False,
+            "map_known": True,
+            "nearby_hostiles": 0,
+            "inventory_pressure": False,
+            "market_listing_count": 0,
+            "vendor_exposure": 0,
+            "exploration_intent": False,
+            "card_gear_farming_intent": False,
+            "mercenary_homunculus_intent": False,
+            "companion_available": False,
+            "vending_intent": False,
+            "overweight_ratio": 0.4,
+        },
+    )
+
+    assert assessment["supported"] is True
+    assert assessment["actionable"] is False
+    reasons = [str(item) for item in assessment.get("non_actionable_reasons", [])]
+    assert any("exploration_route_refresh_posture:signal<exploration_intent>_mismatch" in item for item in reasons)
+    assert any("card_gear_farm_window:signal<card_gear_farming_intent>_mismatch" in item for item in reasons)
+    assert any("mercenary_homunculus_support_posture:signal<mercenary_homunculus_intent>_mismatch" in item for item in reasons)
+    assert any("vending_cycle_posture:signal<vending_intent>_mismatch" in item for item in reasons)

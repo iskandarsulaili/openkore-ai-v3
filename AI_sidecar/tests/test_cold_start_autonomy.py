@@ -482,3 +482,74 @@ def test_pdca_cold_start_dead_snapshot_queues_respawn(monkeypatch, tmp_path) -> 
         assert action.metadata.get("fallback_mode") == "death_recovery"
     finally:
         asyncio.run(runtime.shutdown())
+
+
+def test_create_runtime_restores_persisted_goal_state_on_restart(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    _configure_isolated_runtime(monkeypatch, tmp_path, crewai_enabled=False)
+
+    bot_id = "bot-persist-restart"
+    runtime1 = create_runtime()
+    try:
+        runtime1.register_bot(
+            BotRegistrationRequest(
+                meta=ContractMeta(contract_version="v1", source="pytest", bot_id=bot_id, trace_id="trace-register-restart"),
+            )
+        )
+
+        decided = runtime1.autonomy_decide(
+            meta=ContractMeta(contract_version="v1", source="pytest", bot_id=bot_id, trace_id="trace-decide-restart"),
+            horizon="short_term",
+            replan_reasons=["cold_start_bootstrap"],
+        )
+        assert decided is not None
+    finally:
+        asyncio.run(runtime1.shutdown())
+
+    runtime2 = create_runtime()
+    try:
+        restored = runtime2.latest_goal_state(bot_id=bot_id)
+        assert restored is not None
+        assert restored.bot_id == bot_id
+        assert restored.selected_goal.goal_key.value == decided.selected_goal.goal_key.value
+        assert restored.selected_goal.objective == decided.selected_goal.objective
+
+        # Validate registration-path restore still works when cache is cold.
+        runtime2._last_goal_state_by_bot.clear()
+        runtime2.register_bot(
+            BotRegistrationRequest(
+                meta=ContractMeta(contract_version="v1", source="pytest", bot_id=bot_id, trace_id="trace-register-restart-2"),
+            )
+        )
+        assert bot_id in runtime2._last_goal_state_by_bot
+    finally:
+        asyncio.run(runtime2.shutdown())
+
+
+def test_persistence_degraded_self_heals_after_subsequent_success(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    _configure_isolated_runtime(monkeypatch, tmp_path, crewai_enabled=False)
+    runtime = create_runtime()
+
+    try:
+        assert runtime.repositories is not None
+        original_upsert = runtime.repositories.bots.upsert_registration
+        calls = {"n": 0}
+
+        def _fail_once(*args, **kwargs):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("forced_persistence_failure")
+            return original_upsert(*args, **kwargs)
+
+        monkeypatch.setattr(runtime.repositories.bots, "upsert_registration", _fail_once)
+
+        runtime.register_bot(
+            BotRegistrationRequest(
+                meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot-heal-1", trace_id="trace-heal-1"),
+            )
+        )
+
+        # First persist call fails, later safe persistence calls recover and clear degraded flag.
+        assert calls["n"] >= 1
+        assert runtime.persistence_degraded is False
+    finally:
+        asyncio.run(runtime.shutdown())

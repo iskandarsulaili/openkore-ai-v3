@@ -84,6 +84,8 @@ class JobChangePlaybook:
 @dataclass(slots=True)
 class OpportunisticUpgradeRule:
     rule_id: str
+    domain: str
+    evidence_mode: str
     job_names: list[str]
     slot: str
     current_item_ids: list[str]
@@ -97,6 +99,7 @@ class OpportunisticUpgradeRule:
     direct_command: str
     direct_conflict_key: str
     direct_preconditions: list[str]
+    signal_requirements: dict[str, object]
     control_plan: dict[str, object]
     macro_bundle: dict[str, object]
     notes: list[str]
@@ -225,9 +228,11 @@ class ROKnowledgeBundle:
         zeny: int,
         inventory_items: list[dict[str, object]],
         market_listings: list[dict[str, object]],
+        signals: dict[str, object] | None = None,
     ) -> dict[str, object]:
         normalized_job = _normalize_job_name(job_name)
         selected_rules = self._resolve_upgrade_rules(job_name)
+        signal_map = dict(signals or {})
         if not selected_rules:
             return {
                 "knowledge_loaded": True,
@@ -237,6 +242,7 @@ class ROKnowledgeBundle:
                 "job_name": str(job_name or "unknown"),
                 "base_level": int(base_level),
                 "zeny": int(max(0, int(zeny))),
+                "signals": signal_map,
                 "known_rule_ids": [],
                 "opportunities": [],
                 "non_actionable_reasons": ["no_curated_upgrade_rules_for_job"],
@@ -260,8 +266,50 @@ class ROKnowledgeBundle:
         non_actionable_reasons: list[str] = []
 
         for rule in selected_rules:
+            signal_reasons = self._evaluate_signal_requirements(
+                rule_id=rule.rule_id,
+                requirements=rule.signal_requirements,
+                signals=signal_map,
+            )
+            if signal_reasons:
+                non_actionable_reasons.extend(signal_reasons)
+                continue
+
             if int(base_level) < int(rule.required_base_level):
                 non_actionable_reasons.append(f"{rule.rule_id}:base_level<{rule.required_base_level}")
+                continue
+
+            if str(rule.evidence_mode or "").strip().lower() == "signals":
+                execution_payload, execution_error = self._normalize_execution_payload(rule=rule)
+                if execution_error:
+                    non_actionable_reasons.append(f"{rule.rule_id}:{execution_error}")
+                    continue
+
+                opportunities.append(
+                    {
+                        "rule_id": rule.rule_id,
+                        "domain": rule.domain,
+                        "evidence_mode": "signals",
+                        "job_name": str(job_name or "unknown"),
+                        "job_key": normalized_job,
+                        "slot": rule.slot,
+                        "current_item_id": "",
+                        "current_item_name": "",
+                        "candidate_item_id": rule.candidate_item_id,
+                        "candidate_item_name": rule.candidate_item_name,
+                        "buy_price": 0,
+                        "max_price_zeny": 0,
+                        "score_current": int(rule.score_current),
+                        "score_candidate": int(rule.score_candidate),
+                        "score_delta": int(rule.score_candidate) - int(rule.score_current),
+                        "zeny_after": available_zeny,
+                        "quote_source": "signals",
+                        "execution_mode": rule.execution_mode,
+                        "execution_payload": execution_payload,
+                        "signal_requirements": dict(rule.signal_requirements),
+                        "notes": list(rule.notes),
+                    }
+                )
                 continue
 
             slot = str(rule.slot).strip().lower()
@@ -314,6 +362,8 @@ class ROKnowledgeBundle:
             opportunities.append(
                 {
                     "rule_id": rule.rule_id,
+                    "domain": rule.domain,
+                    "evidence_mode": "gear_market",
                     "job_name": str(job_name or "unknown"),
                     "job_key": normalized_job,
                     "slot": rule.slot,
@@ -330,6 +380,7 @@ class ROKnowledgeBundle:
                     "quote_source": source,
                     "execution_mode": rule.execution_mode,
                     "execution_payload": execution_payload,
+                    "signal_requirements": dict(rule.signal_requirements),
                     "notes": list(rule.notes),
                 }
             )
@@ -354,16 +405,76 @@ class ROKnowledgeBundle:
             "job_name": str(job_name or "unknown"),
             "base_level": int(base_level),
             "zeny": available_zeny,
+            "signals": signal_map,
             "known_rule_ids": [item.rule_id for item in selected_rules],
             "opportunities": opportunities,
             "non_actionable_reasons": deduped_reasons,
         }
 
+    def _evaluate_signal_requirements(
+        self,
+        *,
+        rule_id: str,
+        requirements: dict[str, object],
+        signals: dict[str, object],
+    ) -> list[str]:
+        if not requirements:
+            return []
+        reasons: list[str] = []
+        for key, expected in requirements.items():
+            raw_key = str(key or "").strip()
+            if not raw_key:
+                continue
+            if raw_key.endswith("_gte"):
+                signal_key = raw_key[: -len("_gte")]
+                observed = _parse_float(signals.get(signal_key), default=float("-inf"))
+                threshold = _parse_float(expected, default=0.0)
+                if observed < threshold:
+                    reasons.append(f"{rule_id}:signal<{signal_key}>_lt_{threshold}")
+                continue
+            if raw_key.endswith("_lte"):
+                signal_key = raw_key[: -len("_lte")]
+                observed = _parse_float(signals.get(signal_key), default=float("inf"))
+                threshold = _parse_float(expected, default=0.0)
+                if observed > threshold:
+                    reasons.append(f"{rule_id}:signal<{signal_key}>_gt_{threshold}")
+                continue
+
+            observed = signals.get(raw_key)
+            if isinstance(expected, bool):
+                if isinstance(observed, bool):
+                    observed_bool = observed
+                elif isinstance(observed, (int, float)):
+                    observed_bool = observed != 0
+                else:
+                    observed_bool = str(observed or "").strip().lower() in {"1", "true", "yes", "y", "on", "enabled", "active"}
+                if observed_bool is not expected:
+                    reasons.append(f"{rule_id}:signal<{raw_key}>_mismatch")
+                continue
+            if isinstance(expected, (int, float)):
+                if _parse_float(observed, default=float("nan")) != _parse_float(expected, default=0.0):
+                    reasons.append(f"{rule_id}:signal<{raw_key}>_mismatch")
+                continue
+            if str(observed or "").strip().lower() != str(expected or "").strip().lower():
+                reasons.append(f"{rule_id}:signal<{raw_key}>_mismatch")
+        return reasons
+
     def _resolve_upgrade_rules(self, job_name: str | None) -> list[OpportunisticUpgradeRule]:
         normalized_job = _normalize_job_name(job_name)
+        selected: list[OpportunisticUpgradeRule] = []
         if normalized_job and normalized_job in self.upgrade_rules_by_job:
-            return list(self.upgrade_rules_by_job.get(normalized_job, []))
-        return list(self.default_upgrade_rules)
+            selected.extend(self.upgrade_rules_by_job.get(normalized_job, []))
+        selected.extend(self.default_upgrade_rules)
+
+        deduped: list[OpportunisticUpgradeRule] = []
+        seen: set[str] = set()
+        for rule in selected:
+            rule_id = str(rule.rule_id or "").strip()
+            if not rule_id or rule_id in seen:
+                continue
+            seen.add(rule_id)
+            deduped.append(rule)
+        return deduped
 
     def _inventory_slot(self, item: dict[str, object]) -> str:
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
@@ -596,10 +707,19 @@ def _parse_opportunistic_upgrades(
             continue
 
         rule_id = str(item.get("rule_id") or "").strip()
+        evidence_mode = str(item.get("evidence_mode") or "gear_market").strip().lower()
+        if evidence_mode not in {"gear_market", "signals"}:
+            continue
+
         slot = str(item.get("slot") or "").strip().lower()
         candidate_item_id = str(item.get("candidate_item_id") or "").strip().lower()
-        if not rule_id or not slot or not candidate_item_id:
+        if not rule_id:
             continue
+        if evidence_mode == "gear_market" and (not slot or not candidate_item_id):
+            continue
+        if evidence_mode == "signals":
+            slot = slot or "activity"
+            candidate_item_id = candidate_item_id or rule_id
 
         mode = str(item.get("execution_mode") or "").strip().lower()
         if mode not in {"direct", "config", "macro"}:
@@ -607,19 +727,22 @@ def _parse_opportunistic_upgrades(
 
         rule = OpportunisticUpgradeRule(
             rule_id=rule_id,
+            domain=str(item.get("domain") or "opportunistic_upgrades").strip().lower() or "opportunistic_upgrades",
+            evidence_mode=evidence_mode,
             job_names=[str(value).strip() for value in item.get("job_names", []) if str(value).strip()],
             slot=slot,
             current_item_ids=[str(value).strip().lower() for value in item.get("current_item_ids", []) if str(value).strip()],
             candidate_item_id=candidate_item_id,
-            candidate_item_name=str(item.get("candidate_item_name") or item.get("candidate_item_id") or "").strip(),
+            candidate_item_name=str(item.get("candidate_item_name") or item.get("candidate_item_id") or rule_id).strip(),
             required_base_level=max(1, _parse_int(item.get("required_base_level"), default=1)),
             score_current=max(0, _parse_int(item.get("score_current"), default=0)),
             score_candidate=max(0, _parse_int(item.get("score_candidate"), default=0)),
-            max_price_zeny=max(1, _parse_int(item.get("max_price_zeny"), default=1)),
+            max_price_zeny=max(0, _parse_int(item.get("max_price_zeny"), default=0)),
             execution_mode=mode,
             direct_command=str(item.get("direct_command") or "").strip(),
             direct_conflict_key=str(item.get("direct_conflict_key") or "").strip(),
             direct_preconditions=[str(value).strip() for value in item.get("direct_preconditions", []) if str(value).strip()],
+            signal_requirements=dict(item.get("signal_requirements") or {}),
             control_plan=dict(item.get("control_plan") or {}),
             macro_bundle=dict(item.get("macro_bundle") or {}),
             notes=[str(value).strip() for value in item.get("notes", []) if str(value).strip()],

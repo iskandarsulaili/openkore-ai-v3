@@ -573,13 +573,16 @@ class PDCALoop:
         replan_reasons: list[str],
     ) -> GoalStackState | None:
         if not hasattr(self._runtime, "autonomy_decide"):
-            return None
+            return self._fallback_goal_state(meta=meta, horizon=horizon)
         try:
-            return self._runtime.autonomy_decide(
+            decided = self._runtime.autonomy_decide(
                 meta=meta,
                 horizon=horizon.value,
                 replan_reasons=replan_reasons,
             )
+            if decided is not None:
+                return decided
+            return self._fallback_goal_state(meta=meta, horizon=horizon)
         except Exception:
             logger.exception(
                 "pdca_goal_decision_failed",
@@ -589,7 +592,39 @@ class PDCALoop:
                     "horizon": horizon.value,
                 },
             )
+            return self._fallback_goal_state(meta=meta, horizon=horizon)
+
+    def _fallback_goal_state(self, *, meta: ContractMeta, horizon: Horizon) -> GoalStackState | None:
+        latest_fn = getattr(self._runtime, "latest_goal_state", None)
+        if not callable(latest_fn):
             return None
+        try:
+            restored = latest_fn(bot_id=meta.bot_id)
+        except Exception:
+            logger.exception(
+                "pdca_goal_state_restore_failed",
+                extra={
+                    "event": "pdca_goal_state_restore_failed",
+                    "bot_id": meta.bot_id,
+                    "horizon": horizon.value,
+                },
+            )
+            return None
+        if restored is None:
+            return None
+        logger.info(
+            "pdca_goal_state_restored_from_runtime_cache",
+            extra={
+                "event": "pdca_goal_state_restored_from_runtime_cache",
+                "bot_id": meta.bot_id,
+                "horizon": horizon.value,
+                "restored_horizon": restored.horizon,
+                "decision_version": restored.decision_version,
+                "tick_id": restored.tick_id,
+                "selected_goal": restored.selected_goal.goal_key.value,
+            },
+        )
+        return restored
 
     def _pick_ranked_objective(
         self,

@@ -86,10 +86,11 @@ def compute_goal_stack(*, assessment: SituationalAssessment, horizon: str) -> Go
     if opportunistic_active and top_opportunity:
         candidate_name = str(top_opportunity.get("candidate_item_name") or top_opportunity.get("candidate_item_id") or "upgrade")
         slot_name = str(top_opportunity.get("slot") or "equipment")
+        domain_name = str(top_opportunity.get("domain") or "opportunistic_upgrades")
         score_delta = int(top_opportunity.get("score_delta") or 0)
         buy_price = int(top_opportunity.get("buy_price") or 0)
         opportunistic_objective = (
-            f"execute curated opportunistic {slot_name} upgrade to {candidate_name} "
+            f"execute curated opportunistic {domain_name} {slot_name} upgrade to {candidate_name} "
             f"(score_delta={score_delta}, buy_price={buy_price}) from {map_name}"
         )
         opportunistic_rationale = "deterministic_priority:opportunistic_upgrades;knowledge_backed:stage4_actionable"
@@ -153,6 +154,7 @@ def compute_goal_stack(*, assessment: SituationalAssessment, horizon: str) -> Go
                 ],
                 "overweight_ratio": assessment.overweight_ratio,
                 "vendor_exposure": assessment.vendor_exposure,
+                "recommended_domain": str(top_opportunity.get("domain") or ""),
                 "recommended_opportunity": dict(top_opportunity) if isinstance(top_opportunity, dict) else {},
                 "execution_hints": execution_hints,
                 "non_actionable_reasons": non_actionable_reasons,

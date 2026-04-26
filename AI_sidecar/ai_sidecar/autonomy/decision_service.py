@@ -491,12 +491,24 @@ class DecisionService:
         )
         inventory_items = self._extract_inventory_items(snapshot)
         market_listings = self._extract_market_listings(snapshot=snapshot, enriched=enriched)
+        opportunistic_signals = self._build_opportunistic_signals(
+            snapshot=snapshot,
+            enriched=enriched,
+            replan_reasons=replan_reasons,
+            map_name=map_name,
+            in_combat=in_combat,
+            item_count=item_count,
+            overweight_ratio=overweight_ratio,
+            vendor_exposure=vendor_exposure,
+            market_listings=market_listings,
+        )
         opportunistic_upgrades = self._build_opportunistic_upgrade_assessment(
             job_name=job_name,
             base_level=base_level,
             zeny=zeny,
             inventory_items=inventory_items,
             market_listings=market_listings,
+            signals=opportunistic_signals,
         )
 
         trigger_flags: list[str] = []
@@ -563,6 +575,7 @@ class DecisionService:
                 "snapshot_present": snapshot is not None,
                 "enriched_present": enriched is not None,
                 "knowledge_version": self.ro_knowledge.version if self.ro_knowledge is not None else "unavailable",
+                "opportunistic_signals": opportunistic_signals,
             },
         )
 
@@ -574,8 +587,10 @@ class DecisionService:
         zeny: int,
         inventory_items: list[dict[str, object]],
         market_listings: list[dict[str, object]],
+        signals: dict[str, object] | None = None,
     ) -> dict[str, object]:
         normalized_job = str(job_name or "")
+        signal_map = dict(signals or {})
         if self.ro_knowledge is None:
             return {
                 "knowledge_loaded": False,
@@ -585,6 +600,7 @@ class DecisionService:
                 "job_name": normalized_job,
                 "base_level": int(base_level),
                 "zeny": int(max(0, int(zeny))),
+                "signals": signal_map,
                 "known_rule_ids": [],
                 "opportunities": [],
                 "non_actionable_reasons": ["stage4 ro knowledge unavailable"],
@@ -599,6 +615,7 @@ class DecisionService:
                 zeny=zeny,
                 inventory_items=inventory_items,
                 market_listings=market_listings,
+                signals=signal_map,
             )
         except Exception:
             logger.exception(
@@ -617,6 +634,7 @@ class DecisionService:
                 "job_name": normalized_job,
                 "base_level": int(base_level),
                 "zeny": int(max(0, int(zeny))),
+                "signals": signal_map,
                 "known_rule_ids": [],
                 "opportunities": [],
                 "non_actionable_reasons": ["stage4 opportunistic assessment failed"],
@@ -731,6 +749,120 @@ class DecisionService:
                 deduped[key] = item
 
         return list(deduped.values())
+
+    def _build_opportunistic_signals(
+        self,
+        *,
+        snapshot: Any,
+        enriched: Any,
+        replan_reasons: list[str],
+        map_name: str | None,
+        in_combat: bool,
+        item_count: int,
+        overweight_ratio: float,
+        vendor_exposure: int,
+        market_listings: list[dict[str, object]],
+    ) -> dict[str, object]:
+        reason_text = " ".join(str(item).strip().lower() for item in replan_reasons if str(item).strip())
+        fleet_objective = str(self._safe_get(enriched, "fleet_intent", "objective") or "").strip().lower()
+        fleet_target_item = str(self._safe_get(enriched, "fleet_intent", "target_item") or "").strip().lower()
+        fleet_target_mob = str(self._safe_get(enriched, "fleet_intent", "target_mob") or "").strip().lower()
+        target_id = self._first_non_empty(
+            self._safe_get(snapshot, "combat", "target_id"),
+            self._safe_get(enriched, "encounter", "target_id"),
+        )
+
+        nearby_hostiles = self._to_int(
+            self._first_non_empty(
+                self._safe_get(enriched, "encounter", "nearby_hostiles"),
+                self._safe_get(enriched, "operational", "nearby_hostiles"),
+                0,
+            )
+        )
+        actors = self._safe_get(snapshot, "actors")
+        actor_hostiles = 0
+        if isinstance(actors, list):
+            for actor in actors:
+                relation = ""
+                if isinstance(actor, dict):
+                    relation = str(actor.get("relation") or "").strip().lower()
+                else:
+                    relation = str(getattr(actor, "relation", "") or "").strip().lower()
+                if relation in {"hostile", "enemy"}:
+                    actor_hostiles += 1
+        nearby_hostiles = max(nearby_hostiles, actor_hostiles)
+
+        raw = self._safe_get(snapshot, "raw")
+        raw_dict = raw if isinstance(raw, dict) else {}
+        companion_raw = self._first_non_empty(
+            self._safe_get(enriched, "operational", "companion_available"),
+            self._safe_get(enriched, "social", "companion_available"),
+            raw_dict.get("companion_available"),
+            raw_dict.get("mercenary_active"),
+            raw_dict.get("homunculus_active"),
+            raw_dict.get("mercenary"),
+            raw_dict.get("homunculus"),
+        )
+        if isinstance(companion_raw, (dict, list, tuple, set)):
+            companion_available = bool(companion_raw)
+        else:
+            companion_available = self._to_bool(companion_raw)
+
+        vending_active = self._to_bool(
+            self._first_non_empty(
+                self._safe_get(enriched, "economy", "vending_active"),
+                raw_dict.get("vending_active"),
+                raw_dict.get("is_vending"),
+            )
+        )
+
+        map_known = bool(str(map_name or "").strip() and str(map_name or "").strip().lower() != "unknown")
+        inventory_pressure = bool(float(overweight_ratio) >= 0.90 or int(item_count) >= 95)
+
+        exploration_intent = bool(
+            fleet_objective in {"explore", "exploration"}
+            or any(token in reason_text for token in ("explore", "navigation", "route", "seek"))
+        )
+        card_gear_farming_intent = bool(
+            fleet_objective in {"farm", "grind", "loot"}
+            or bool(fleet_target_item)
+            or bool(fleet_target_mob)
+            or any(token in reason_text for token in ("farm", "grind", "card", "gear", "loot"))
+        )
+        mercenary_homunculus_intent = bool(
+            companion_available
+            or any(token in reason_text for token in ("mercenary", "homunculus", "companion"))
+        )
+        vending_intent = bool(
+            vending_active
+            or int(vendor_exposure) > 0
+            or fleet_objective in {"trade", "vending"}
+            or any(token in reason_text for token in ("vending", "vendor", "trade", "shop"))
+        )
+
+        signals = {
+            "in_combat": bool(in_combat),
+            "map_known": map_known,
+            "nearby_hostiles": max(0, int(nearby_hostiles)),
+            "market_listing_count": len(market_listings),
+            "overweight_ratio": max(0.0, min(2.0, float(overweight_ratio))),
+            "inventory_pressure": inventory_pressure,
+            "vendor_exposure": max(0, int(vendor_exposure)),
+            "targets_present": bool(target_id) or max(0, int(nearby_hostiles)) > 0,
+            "exploration_intent": exploration_intent,
+            "card_gear_farming_intent": card_gear_farming_intent,
+            "mercenary_homunculus_intent": mercenary_homunculus_intent,
+            "companion_available": companion_available,
+            "vending_intent": vending_intent,
+        }
+        logger.info(
+            "autonomy_stage4_opportunistic_signals_computed",
+            extra={
+                "event": "autonomy_stage4_opportunistic_signals_computed",
+                "signals": dict(signals),
+            },
+        )
+        return signals
 
     def _build_progression_recommendation(self, *, job_name: Any, base_level: int) -> dict[str, object]:
         normalized_job = str(job_name or "")
@@ -854,6 +986,18 @@ class DecisionService:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    def _to_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes", "y", "on", "enabled", "active"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", "disabled", "inactive", ""}:
+            return False
+        return bool(text)
 
     def _to_ratio(self, numerator: Any, denominator: Any) -> float:
         num = self._to_float(numerator)

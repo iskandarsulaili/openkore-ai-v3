@@ -428,6 +428,245 @@ def test_decision_service_stage4_selects_opportunistic_when_actionable_and_highe
     assert hints[0].get("tool") == "propose_actions"
 
 
+def test_decision_service_wave_a1_exploration_domain_emits_safe_direct_hint() -> None:
+    snapshot = _snapshot(
+        hp=920,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    snapshot.inventory = InventoryDigest(zeny=3000, item_count=16)
+
+    enriched = {
+        "operational": {
+            "map": "prt_fild08",
+            "in_combat": False,
+                "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "encounter": {"nearby_hostiles": 1},
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 16, "zeny": 3000},
+        "economy": {"vendor_exposure": 0, "market_listings": []},
+    }
+    runtime = _DecisionRuntime(snapshot=snapshot, enriched=enriched)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(
+            contract_version="v1",
+            source="pytest",
+            bot_id="bot:wave-a1-exploration",
+            trace_id="trace-wave-a1-exploration",
+        ),
+        horizon="short_term",
+        replan_reasons=["explore_unseen_route"],
+    )
+
+    assert state.selected_goal.goal_key == GoalCategory.opportunistic_upgrades
+    stage4 = state.assessment.opportunistic_upgrades
+    assert stage4.get("actionable") is True
+    assert stage4.get("recommended_opportunity", {}).get("domain") == "exploration"
+
+    hints = state.selected_goal.metadata.get("execution_hints") if isinstance(state.selected_goal.metadata, dict) else []
+    assert isinstance(hints, list) and hints
+    assert hints[0].get("execution_mode") == "direct"
+    assert hints[0].get("tool") == "propose_actions"
+
+
+def test_decision_service_wave_a1_card_gear_domain_emits_safe_direct_hint() -> None:
+    snapshot = _snapshot(
+        hp=920,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    snapshot.inventory = InventoryDigest(zeny=3000, item_count=22)
+
+    enriched = {
+        "operational": {
+            "map": "prt_fild08",
+            "in_combat": False,
+                "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "encounter": {"nearby_hostiles": 3},
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 22, "zeny": 3000},
+        "economy": {
+            "vendor_exposure": 0,
+            "market_listings": [
+                {
+                    "item_id": "red_potion",
+                    "item_name": "Red Potion",
+                    "buy_price": 45,
+                    "source": "npc_shop",
+                }
+            ],
+        },
+    }
+    runtime = _DecisionRuntime(snapshot=snapshot, enriched=enriched)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(
+            contract_version="v1",
+            source="pytest",
+            bot_id="bot:wave-a1-card-gear",
+            trace_id="trace-wave-a1-card-gear",
+        ),
+        horizon="short_term",
+        replan_reasons=["card_farm_rotation"],
+    )
+
+    assert state.selected_goal.goal_key == GoalCategory.opportunistic_upgrades
+    stage4 = state.assessment.opportunistic_upgrades
+    assert stage4.get("actionable") is True
+    assert stage4.get("recommended_opportunity", {}).get("domain") == "card_gear_farming"
+
+    hints = state.selected_goal.metadata.get("execution_hints") if isinstance(state.selected_goal.metadata, dict) else []
+    assert isinstance(hints, list) and hints
+    assert hints[0].get("execution_mode") == "direct"
+    assert hints[0].get("tool") == "propose_actions"
+
+
+def test_decision_service_wave_a1_mercenary_homunculus_domain_emits_macro_hint() -> None:
+    snapshot = _snapshot(
+        hp=920,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    snapshot.inventory = InventoryDigest(zeny=3000, item_count=20)
+    snapshot.raw = {"homunculus_active": True}
+
+    enriched = {
+        "operational": {
+            "map": "prt_fild08",
+            "in_combat": False,
+                "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "encounter": {"nearby_hostiles": 0},
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 20, "zeny": 3000},
+        "economy": {"vendor_exposure": 0, "market_listings": []},
+    }
+    runtime = _DecisionRuntime(snapshot=snapshot, enriched=enriched)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(
+            contract_version="v1",
+            source="pytest",
+            bot_id="bot:wave-a1-merc-homu",
+            trace_id="trace-wave-a1-merc-homu",
+        ),
+        horizon="short_term",
+        replan_reasons=["homunculus_support_window"],
+    )
+
+    assert state.selected_goal.goal_key == GoalCategory.opportunistic_upgrades
+    stage4 = state.assessment.opportunistic_upgrades
+    assert stage4.get("actionable") is True
+    assert stage4.get("recommended_opportunity", {}).get("domain") == "mercenary_homunculus"
+
+    hints = state.selected_goal.metadata.get("execution_hints") if isinstance(state.selected_goal.metadata, dict) else []
+    assert isinstance(hints, list) and hints
+    assert hints[0].get("execution_mode") == "macro"
+    assert hints[0].get("tool") == "publish_macro"
+
+
+def test_decision_service_wave_a1_vending_domain_emits_config_hint() -> None:
+    snapshot = _snapshot(
+        hp=920,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    snapshot.inventory = InventoryDigest(zeny=3000, item_count=24)
+
+    enriched = {
+        "operational": {
+            "map": "prt_fild08",
+            "in_combat": False,
+                "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "encounter": {"nearby_hostiles": 0},
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.50, "item_count": 24, "zeny": 3000},
+        "economy": {"vendor_exposure": 2, "market_listings": []},
+    }
+    runtime = _DecisionRuntime(snapshot=snapshot, enriched=enriched)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(
+            contract_version="v1",
+            source="pytest",
+            bot_id="bot:wave-a1-vending",
+            trace_id="trace-wave-a1-vending",
+        ),
+        horizon="short_term",
+        replan_reasons=["vending_cycle"],
+    )
+
+    assert state.selected_goal.goal_key == GoalCategory.opportunistic_upgrades
+    stage4 = state.assessment.opportunistic_upgrades
+    assert stage4.get("actionable") is True
+    assert stage4.get("recommended_opportunity", {}).get("domain") == "vending"
+
+    hints = state.selected_goal.metadata.get("execution_hints") if isinstance(state.selected_goal.metadata, dict) else []
+    assert isinstance(hints, list) and hints
+    assert hints[0].get("execution_mode") == "config"
+    assert hints[0].get("tool") == "plan_control_change"
+
+
 def test_goal_state_persistence_roundtrip(tmp_path) -> None:
     db = SQLiteDB(path=tmp_path / "sidecar-stage1.sqlite", busy_timeout_ms=250)
     db.initialize()
@@ -505,7 +744,11 @@ class _PDCAStage1Runtime:
             },
         )()
         self._goal_state = selected_goal_state
+        self._latest_goal_state = selected_goal_state
+        self.raise_autonomy_error = False
+        self.return_autonomy_none = False
         self.autonomy_calls: list[dict[str, object]] = []
+        self.latest_goal_state_calls: list[str] = []
         self.planner_calls: list[object] = []
 
     def list_bots(self) -> list[dict[str, object]]:
@@ -519,7 +762,15 @@ class _PDCAStage1Runtime:
                 "replan_reasons": list(replan_reasons or []),
             }
         )
+        if self.raise_autonomy_error:
+            raise RuntimeError("forced_autonomy_decision_failure")
+        if self.return_autonomy_none:
+            return None  # type: ignore[return-value]
         return self._goal_state
+
+    def latest_goal_state(self, *, bot_id: str) -> GoalStackState | None:
+        self.latest_goal_state_calls.append(bot_id)
+        return self._latest_goal_state
 
     async def planner_plan(self, payload) -> PlannerResponse:
         self.planner_calls.append(payload)
@@ -582,6 +833,51 @@ def test_pdca_uses_runtime_autonomy_decision_boundary() -> None:
 
     assert runtime.autonomy_calls
     assert runtime.autonomy_calls[-1]["horizon"] == "short_term"
+    assert runtime.planner_calls
+    assert runtime.planner_calls[-1].objective == goal_state.selected_goal.objective
+    assert result.selected_goal == goal_state.selected_goal.goal_key.value
+    assert result.objective == goal_state.selected_goal.objective
+
+
+def test_pdca_falls_back_to_latest_goal_state_when_autonomy_decision_fails() -> None:
+    assessment = SituationalAssessment(
+        bot_id="bot:pdca-fallback",
+        tick_id="tick-pdca-fallback",
+        map_name="prt_fild08",
+        hp_ratio=0.85,
+        danger_score=0.2,
+        death_risk_score=0.2,
+        skill_points=1,
+        stat_points=0,
+        base_level=45,
+        job_level=20,
+        base_exp_ratio=0.3,
+        job_exp_ratio=0.3,
+        active_quest_count=0,
+        objective_completion_ratio=0.0,
+        overweight_ratio=0.1,
+        item_count=35,
+        zeny=5000,
+        vendor_exposure=0,
+    )
+    computed = compute_goal_stack(assessment=assessment, horizon="short_term")
+    goal_state = GoalStackState(
+        bot_id="bot:pdca",
+        tick_id="tick-pdca-fallback",
+        horizon="short_term",
+        assessment=assessment,
+        goal_stack=computed.goal_stack,
+        selected_goal=computed.selected_goal,
+    )
+
+    runtime = _PDCAStage1Runtime(selected_goal_state=goal_state)
+    runtime.raise_autonomy_error = True
+    pdca = PDCALoop(runtime_state=runtime)
+
+    result = asyncio.run(pdca._run_one_cycle(Horizon.SHORT_TERM))
+
+    assert runtime.autonomy_calls
+    assert runtime.latest_goal_state_calls == ["bot:pdca"]
     assert runtime.planner_calls
     assert runtime.planner_calls[-1].objective == goal_state.selected_goal.objective
     assert result.selected_goal == goal_state.selected_goal.goal_key.value

@@ -823,6 +823,20 @@ class RuntimeState:
             },
         )
 
+        restored_goal_state = self._restore_goal_state_for_bot(bot_id=bot_id)
+        if restored_goal_state is not None:
+            logger.info(
+                "autonomy_goal_state_restored_on_registration",
+                extra={
+                    "event": "autonomy_goal_state_restored_on_registration",
+                    "bot_id": bot_id,
+                    "horizon": restored_goal_state.horizon,
+                    "decision_version": restored_goal_state.decision_version,
+                    "tick_id": restored_goal_state.tick_id,
+                    "selected_goal": restored_goal_state.selected_goal.goal_key.value,
+                },
+            )
+
         if persisted is not None:
             return {
                 "bot_id": bot_id,
@@ -1189,6 +1203,57 @@ class RuntimeState:
     def enriched_state(self, *, bot_id: str) -> EnrichedWorldState:
         return self.normalizer_bus.enriched_state(bot_id=bot_id)
 
+    def _restore_goal_state_cache(self, *, limit: int = 256) -> int:
+        if self.repositories is None:
+            return 0
+        rows = self._safe_persist(
+            "list_recent_autonomy_goal_states",
+            lambda: self.repositories.autonomy_goals.list_recent(limit=max(1, int(limit))),
+            default=[],
+            bot_id=None,
+        ) or []
+        restored = 0
+        seen: set[str] = set()
+        for row in rows:
+            bot_id = str(getattr(row, "bot_id", "") or "").strip()
+            if not bot_id or bot_id in seen or bot_id in self._last_goal_state_by_bot:
+                continue
+            seen.add(bot_id)
+            state = self._safe_persist(
+                "restore_autonomy_goal_state",
+                lambda bot_id=bot_id: self.repositories.autonomy_goals.latest(bot_id=bot_id),
+                default=None,
+                bot_id=bot_id,
+            )
+            if state is None:
+                continue
+            self._last_goal_state_by_bot[bot_id] = state
+            restored += 1
+
+        if restored > 0:
+            logger.info(
+                "autonomy_goal_state_cache_restored",
+                extra={
+                    "event": "autonomy_goal_state_cache_restored",
+                    "restored": restored,
+                    "cache_size": len(self._last_goal_state_by_bot),
+                },
+            )
+        return restored
+
+    def _restore_goal_state_for_bot(self, *, bot_id: str) -> GoalStackState | None:
+        if bot_id in self._last_goal_state_by_bot:
+            return self._last_goal_state_by_bot[bot_id]
+        state = self._safe_persist(
+            "restore_autonomy_goal_state_for_bot",
+            lambda: self.repositories.autonomy_goals.latest(bot_id=bot_id) if self.repositories else None,
+            default=None,
+            bot_id=bot_id,
+        )
+        if state is not None:
+            self._last_goal_state_by_bot[bot_id] = state
+        return state
+
     def persist_goal_state(self, *, bot_id: str, state: GoalStackState) -> None:
         self._last_goal_state_by_bot[bot_id] = state
         self._safe_persist(
@@ -1201,15 +1266,7 @@ class RuntimeState:
         in_memory = self._last_goal_state_by_bot.get(bot_id)
         if in_memory is not None:
             return in_memory
-        persisted = self._safe_persist(
-            "latest_autonomy_goal_state",
-            lambda: self.repositories.autonomy_goals.latest(bot_id=bot_id) if self.repositories else None,
-            default=None,
-            bot_id=bot_id,
-        )
-        if persisted is not None:
-            self._last_goal_state_by_bot[bot_id] = persisted
-        return persisted
+        return self._restore_goal_state_for_bot(bot_id=bot_id)
 
     def autonomy_decide(
         self,
@@ -3719,7 +3776,14 @@ class RuntimeState:
         if self.repositories is None:
             return default
         try:
-            return fn()
+            result = fn()
+            if self.persistence_degraded:
+                self.persistence_degraded = False
+                logger.info(
+                    "persistence_operation_recovered",
+                    extra={"event": "persistence_operation_recovered", "operation": operation, "bot_id": bot_id},
+                )
+            return result
         except Exception:
             self.persistence_degraded = True
             logger.exception(
@@ -4158,6 +4222,7 @@ def create_runtime() -> RuntimeState:
     )
 
     control_executor.runtime = runtime
+    runtime._restore_goal_state_cache(limit=max(64, settings.persistence_snapshot_history_per_bot))
 
     planner_service = PlannerService(
         runtime=runtime,

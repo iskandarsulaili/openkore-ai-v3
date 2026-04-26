@@ -88,6 +88,142 @@
         "stage4-safe-macro: macro publication and reload only through existing safe path",
         "does not widen command roots"
       ]
+    },
+    {
+      "rule_id": "exploration_route_refresh_posture",
+      "enabled": true,
+      "domain": "exploration",
+      "evidence_mode": "signals",
+      "job_names": [],
+      "slot": "activity",
+      "candidate_item_id": "exploration_posture",
+      "candidate_item_name": "Exploration Route Refresh Posture",
+      "required_base_level": 1,
+      "score_current": 2,
+      "score_candidate": 6,
+      "max_price_zeny": 0,
+      "execution_mode": "direct",
+      "direct_command": "ai auto",
+      "direct_conflict_key": "opportunistic.exploration",
+      "direct_preconditions": ["navigation.ready", "navigation.map_known"],
+      "signal_requirements": {
+        "exploration_intent": true,
+        "map_known": true,
+        "in_combat": false,
+        "nearby_hostiles_lte": 1
+      },
+      "notes": [
+        "wave-a1 exploration posture through bridge-safe direct command only",
+        "requires explicit exploration intent signal to avoid broad opportunistic activation"
+      ]
+    },
+    {
+      "rule_id": "card_gear_farm_window",
+      "enabled": true,
+      "domain": "card_gear_farming",
+      "evidence_mode": "signals",
+      "job_names": [],
+      "slot": "activity",
+      "candidate_item_id": "card_gear_farm",
+      "candidate_item_name": "Card/Gear Farming Window",
+      "required_base_level": 1,
+      "score_current": 1,
+      "score_candidate": 7,
+      "max_price_zeny": 0,
+      "execution_mode": "direct",
+      "direct_command": "ai auto",
+      "direct_conflict_key": "opportunistic.card_gear_farm",
+      "direct_preconditions": ["encounter.targets_present", "inventory.not_overweight"],
+      "signal_requirements": {
+        "card_gear_farming_intent": true,
+        "in_combat": false,
+        "nearby_hostiles_gte": 1,
+        "inventory_pressure": false,
+        "market_listing_count_gte": 1
+      },
+      "notes": [
+        "wave-a1 card/gear farming posture remains in safe ai auto command lane",
+        "requires intent plus encounter and inventory pressure checks"
+      ]
+    },
+    {
+      "rule_id": "mercenary_homunculus_support_posture",
+      "enabled": true,
+      "domain": "mercenary_homunculus",
+      "evidence_mode": "signals",
+      "job_names": [],
+      "slot": "activity",
+      "candidate_item_id": "mercenary_homunculus_support",
+      "candidate_item_name": "Mercenary/Homunculus Support Posture",
+      "required_base_level": 1,
+      "score_current": 2,
+      "score_candidate": 8,
+      "max_price_zeny": 0,
+      "execution_mode": "macro",
+      "signal_requirements": {
+        "mercenary_homunculus_intent": true,
+        "companion_available": true,
+        "in_combat": false
+      },
+      "macro_bundle": {
+        "macros": [
+          {
+            "name": "crew_wave_a1_merc_homu_support",
+            "lines": ["do ai auto"]
+          }
+        ],
+        "event_macros": [],
+        "automacros": [
+          {
+            "name": "on_crew_wave_a1_merc_homu_support",
+            "conditions": ["OnCharLogIn"],
+            "call": "crew_wave_a1_merc_homu_support",
+            "parameters": {
+              "source": "wave_a1"
+            }
+          }
+        ],
+        "enqueue_reload": true,
+        "reload_conflict_key": "macro_reload"
+      },
+      "notes": [
+        "wave-a1 mercenary/homunculus support uses macro publication safe path",
+        "no direct unsupported roots emitted"
+      ]
+    },
+    {
+      "rule_id": "vending_cycle_posture",
+      "enabled": true,
+      "domain": "vending",
+      "evidence_mode": "signals",
+      "job_names": [],
+      "slot": "activity",
+      "candidate_item_id": "vending_cycle",
+      "candidate_item_name": "Vending Cycle Posture",
+      "required_base_level": 1,
+      "score_current": 1,
+      "score_candidate": 6,
+      "max_price_zeny": 0,
+      "execution_mode": "config",
+      "signal_requirements": {
+        "vending_intent": true,
+        "in_combat": false,
+        "vendor_exposure_gte": 1,
+        "overweight_ratio_lte": 0.95
+      },
+      "control_plan": {
+        "artifact_type": "config",
+        "name": "config.txt",
+        "target_path": "control/config.txt",
+        "desired": {
+          "aiSidecar_enable": "1"
+        },
+        "source": "crewai"
+      },
+      "notes": [
+        "wave-a1 vending posture stays within control-domain config planning",
+        "avoids raw vending command root emission"
+      ]
     }
   ]
 }
