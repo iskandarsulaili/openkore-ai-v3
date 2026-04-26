@@ -168,6 +168,22 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_ingest_events_bot_ts ON ingest_events(bot_id, observed_at DESC, id DESC)",
     "CREATE INDEX IF NOT EXISTS idx_ingest_events_family_type ON ingest_events(event_family, event_type)",
+    """
+    CREATE TABLE IF NOT EXISTS autonomy_goal_states (
+        bot_id TEXT PRIMARY KEY,
+        tick_id TEXT,
+        horizon TEXT NOT NULL,
+        decision_version TEXT NOT NULL,
+        selected_goal_key TEXT NOT NULL,
+        selected_objective TEXT NOT NULL,
+        assessment_json TEXT NOT NULL,
+        goal_stack_json TEXT NOT NULL,
+        goal_state_json TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_autonomy_goal_states_updated ON autonomy_goal_states(updated_at DESC)",
 )
 
 

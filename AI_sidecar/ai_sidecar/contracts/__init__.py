@@ -1,6 +1,7 @@
 """Contract models for sidecar REST IPC."""
 
 __all__ = [
+    "autonomy",
     "actions",
     "common",
     "control_domain",

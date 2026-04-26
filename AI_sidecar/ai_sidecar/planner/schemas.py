@@ -142,6 +142,8 @@ class PlannerContext(BaseModel):
     queue: dict[str, object] = Field(default_factory=dict)
     macros: dict[str, object] = Field(default_factory=dict)
     reflex: dict[str, object] = Field(default_factory=dict)
+    selected_goal: dict[str, object] = Field(default_factory=dict)
+    goal_stack_summary: dict[str, object] = Field(default_factory=dict)
     job_progression: dict[str, object] = Field(default_factory=dict)
     economy_context: dict[str, object] = Field(default_factory=dict)
     quest_context: dict[str, object] = Field(default_factory=dict)

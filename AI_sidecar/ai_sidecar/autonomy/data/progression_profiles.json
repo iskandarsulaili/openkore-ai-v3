@@ -1,0 +1,95 @@
+{
+  "version": "stage3-ro-progression-v1",
+  "profiles": [
+    {
+      "key": "novice_path",
+      "default": true,
+      "job_names": ["Novice"],
+      "bands": [
+        {
+          "label": "novice_bootstrap",
+          "min_base_level": 1,
+          "max_base_level": 9,
+          "recommended_focus": "intro_grind",
+          "target_maps": ["prt_fild08", "prt_fild01"],
+          "objective_template": "stabilize novice leveling fundamentals and basic supplies"
+        },
+        {
+          "label": "first_job_ready",
+          "min_base_level": 10,
+          "max_base_level": 20,
+          "recommended_focus": "first_job_transition_window",
+          "target_maps": ["prt_fild08", "pay_fild08"],
+          "objective_template": "hold safe leveling tempo while preparing first job change route"
+        }
+      ]
+    },
+    {
+      "key": "swordsman_path",
+      "job_names": ["Swordman", "Swordsman"],
+      "bands": [
+        {
+          "label": "early_swordsman",
+          "min_base_level": 10,
+          "max_base_level": 25,
+          "recommended_focus": "melee_sustain",
+          "target_maps": ["prt_fild08", "prt_fild09"],
+          "objective_template": "build melee sustain and stable job exp for swordsman progression"
+        },
+        {
+          "label": "swordsman_job_window",
+          "min_base_level": 26,
+          "max_base_level": 50,
+          "recommended_focus": "job_change_readiness",
+          "target_maps": ["gef_fild14", "pay_fild10"],
+          "objective_template": "maintain safe grind cadence while preparing Knight/Crusader transition"
+        }
+      ]
+    },
+    {
+      "key": "mage_path",
+      "job_names": ["Mage"],
+      "bands": [
+        {
+          "label": "early_mage",
+          "min_base_level": 10,
+          "max_base_level": 25,
+          "recommended_focus": "spell_efficiency",
+          "target_maps": ["gef_fild14", "moc_fild10"],
+          "objective_template": "optimize spell uptime and safe kite loops for mage progression"
+        },
+        {
+          "label": "mage_job_window",
+          "min_base_level": 26,
+          "max_base_level": 50,
+          "recommended_focus": "job_change_readiness",
+          "target_maps": ["gef_fild14", "yuno_fild08"],
+          "objective_template": "preserve safe leveling flow while preparing Wizard/Sage advancement"
+        }
+      ]
+    },
+    {
+      "key": "acolyte_path",
+      "job_names": ["Acolyte"],
+      "bands": [
+        {
+          "label": "early_acolyte",
+          "min_base_level": 10,
+          "max_base_level": 25,
+          "recommended_focus": "support_sustain",
+          "target_maps": ["prt_fild08", "pay_fild09"],
+          "objective_template": "build support sustain and safe undead farming rhythm"
+        },
+        {
+          "label": "acolyte_job_window",
+          "min_base_level": 26,
+          "max_base_level": 50,
+          "recommended_focus": "job_change_readiness",
+          "target_maps": ["gl_church", "prt_fild10"],
+          "objective_template": "maintain conservative grinding while preparing Priest/Monk advancement"
+        }
+      ]
+    }
+  ]
+}
+

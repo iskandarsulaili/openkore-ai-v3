@@ -1,0 +1,82 @@
+{
+  "version": "stage3-ro-playbooks-v1",
+  "routes": [
+    {
+      "route_id": "novice_to_swordman",
+      "route_priority": 10,
+      "enabled": true,
+      "current_job": "Novice",
+      "target_job": "Swordman",
+      "required_base_level": 10,
+      "required_job_level": 10,
+      "steps": [
+        "confirm novice job level reaches threshold before transition",
+        "route to izlude_in swordman guild entry",
+        "open guild dialogue and execute swordman job change sequence",
+        "verify target job became Swordman and rebuild combat config"
+      ],
+      "notes": [
+        "curated stage-3 route; deterministic execution remains required",
+        "only one novice-first route enabled in stage-3 baseline"
+      ]
+    },
+    {
+      "route_id": "swordman_to_knight",
+      "route_priority": 10,
+      "enabled": true,
+      "current_job": "Swordman",
+      "target_job": "Knight",
+      "required_base_level": 0,
+      "required_job_level": 40,
+      "steps": [
+        "confirm swordsman job level 40+ and stable consumables",
+        "travel to prt_in and locate chivalry npc",
+        "perform knight change dialogue and quest sequence",
+        "validate Knight transition and re-evaluate stat/skill build"
+      ],
+      "notes": [
+        "prioritized branch for stage-3 deterministic coverage",
+        "alternative crusader branch intentionally deferred"
+      ]
+    },
+    {
+      "route_id": "mage_to_wizard",
+      "route_priority": 10,
+      "enabled": true,
+      "current_job": "Mage",
+      "target_job": "Wizard",
+      "required_base_level": 0,
+      "required_job_level": 40,
+      "steps": [
+        "confirm mage job level threshold and spell sustain readiness",
+        "route to gef_tower wizard test location",
+        "execute wizard change trial sequence deterministically",
+        "confirm Wizard transition and refresh leveling profile"
+      ],
+      "notes": [
+        "sage branch intentionally deferred in stage-3",
+        "requires deterministic npc interaction execution path"
+      ]
+    },
+    {
+      "route_id": "acolyte_to_priest",
+      "route_priority": 10,
+      "enabled": true,
+      "current_job": "Acolyte",
+      "target_job": "Priest",
+      "required_base_level": 0,
+      "required_job_level": 40,
+      "steps": [
+        "confirm acolyte job level 40+ and support loadout",
+        "route to prt_church priest job change npc",
+        "execute priest advancement dialogue and qualification flow",
+        "verify Priest transition and persist progression checkpoint"
+      ],
+      "notes": [
+        "monk branch intentionally deferred",
+        "safe fallback expected for unsupported branches"
+      ]
+    }
+  ]
+}
+

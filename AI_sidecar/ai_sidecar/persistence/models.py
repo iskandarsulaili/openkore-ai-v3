@@ -131,3 +131,18 @@ class EventJournalRecord:
     numeric: dict[str, float]
     payload: dict[str, object]
     event: dict[str, object]
+
+
+@dataclass(slots=True)
+class AutonomyGoalStateRecord:
+    bot_id: str
+    tick_id: str | None
+    horizon: str
+    decision_version: str
+    selected_goal_key: str
+    selected_objective: str
+    assessment: dict[str, object]
+    goal_stack: list[dict[str, object]]
+    goal_state: dict[str, object]
+    decided_at: datetime
+    updated_at: datetime

@@ -119,6 +119,99 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
             " doctrine; emits social actions, suppressions, and reflection episodes."
         ),
     ),
+    AgentProfile(
+        agent_id="state_assessor",
+        role="State Assessor",
+        goal=(
+            "Assess deterministic stage-1 selected goal context, detect immediate"
+            " safety constraints, and produce a concise situational report without"
+            " overriding priority policy."
+        ),
+        backstory=(
+            "Signal-focused assessor that reads enriched/runtime state and emits"
+            " structured threat posture and execution caveats for downstream agents."
+        ),
+        tools=(
+            "get_enriched_state",
+            "get_bot_state",
+            "check_reflex_rules",
+            "get_fleet_constraints",
+        ),
+        operating_model=(
+            "Owns situational assessment refinement. Consumes deterministic goal context"
+            " and current state; emits concise risk and posture annotations."
+        ),
+    ),
+    AgentProfile(
+        agent_id="progression_planner",
+        role="Progression Planner",
+        goal=(
+            "Refine deterministic objective wording and progression path into an"
+            " actionable short execution sequence while preserving priority constraints."
+        ),
+        backstory=(
+            "Progression specialist that turns selected objective intent into practical"
+            " steps aligned with current map context and known constraints."
+        ),
+        tools=(
+            "get_enriched_state",
+            "query_memory",
+            "evaluate_plan_feasibility",
+            "get_fleet_constraints",
+        ),
+        operating_model=(
+            "Owns objective refinement. Consumes state and memory context; emits refined"
+            " objective text and near-term execution translation candidates."
+        ),
+    ),
+    AgentProfile(
+        agent_id="opportunistic_trader",
+        role="Opportunistic Trader",
+        goal=(
+            "Assess opportunistic economy and inventory windows relative to the selected"
+            " deterministic objective and annotate low-risk upgrade opportunities."
+        ),
+        backstory=(
+            "Economy-aware opportunist that inspects inventory pressure and market"
+            " posture for safe incremental upgrades without derailing primary goals."
+        ),
+        tools=(
+            "get_enriched_state",
+            "list_active_macros",
+            "evaluate_plan_feasibility",
+            "query_memory",
+            "plan_control_change",
+            "publish_macro",
+        ),
+        operating_model=(
+            "Owns opportunistic refinement. Consumes economy and inventory signals;"
+            " emits upgrade/maintenance opportunities and caveats."
+        ),
+    ),
+    AgentProfile(
+        agent_id="command_emitter",
+        role="Command Emitter",
+        goal=(
+            "Translate refined decision context into explicit execution commands and"
+            " handoff-ready action lines with deterministic safety notes."
+        ),
+        backstory=(
+            "Execution translator that converts refined intent into concrete command"
+            " lines while preserving reflex compatibility and queue feasibility."
+        ),
+        tools=(
+            "get_enriched_state",
+            "check_reflex_rules",
+            "evaluate_plan_feasibility",
+            "propose_actions",
+            "plan_control_change",
+            "publish_macro",
+        ),
+        operating_model=(
+            "Owns command translation. Consumes refined objective and risk annotations;"
+            " emits concise execution command sequence with safeguards."
+        ),
+    ),
 )
 
 
@@ -163,7 +256,57 @@ AGENT_OPERATING_MODEL: tuple[AgentOperatingProfile, ...] = (
         handoff_inputs=("social_stream", "quest_context", "doctrine"),
         handoff_outputs=("social_actions", "dialogue_guidance", "reflection_episode"),
     ),
+    AgentOperatingProfile(
+        agent_id="state_assessor",
+        responsibilities=(
+            "derive situational report from deterministic stage-1 context",
+            "highlight hard risk flags and policy guardrails",
+            "handoff concise state posture to planning agents",
+        ),
+        handoff_inputs=("selected_goal", "goal_stack", "assessment"),
+        handoff_outputs=("situational_report", "risk_notes", "state_annotations"),
+    ),
+    AgentOperatingProfile(
+        agent_id="progression_planner",
+        responsibilities=(
+            "refine selected objective text without changing selected goal category",
+            "produce practical execution sequence draft",
+            "surface blockers and fallback pathways",
+        ),
+        handoff_inputs=("selected_goal", "situational_report", "replan_reasons"),
+        handoff_outputs=("refined_objective", "execution_translation", "planner_annotations"),
+    ),
+    AgentOperatingProfile(
+        agent_id="opportunistic_trader",
+        responsibilities=(
+            "identify safe opportunistic upgrade windows",
+            "annotate inventory/economy caveats",
+            "avoid overriding deterministic priority ordering",
+        ),
+        handoff_inputs=("assessment", "inventory_state", "selected_goal"),
+        handoff_outputs=("opportunity_notes", "economy_caveats", "upgrade_annotations"),
+    ),
+    AgentOperatingProfile(
+        agent_id="command_emitter",
+        responsibilities=(
+            "convert refined decision into explicit command lines",
+            "keep commands reflex-compatible and queue-aware",
+            "emit final handoff bundle for runtime execution plane",
+        ),
+        handoff_inputs=("refined_objective", "risk_notes", "opportunity_notes"),
+        handoff_outputs=("execution_translation", "command_notes", "final_handoff"),
+    ),
 )
+
+
+AGENT_TASK_HINT_ROSTERS: dict[str, tuple[str, ...]] = {
+    "autonomous_decision_intelligence": (
+        "state_assessor",
+        "progression_planner",
+        "opportunistic_trader",
+        "command_emitter",
+    ),
+}
 
 
 LEGACY_AGENT_ROUTING: dict[str, str] = {

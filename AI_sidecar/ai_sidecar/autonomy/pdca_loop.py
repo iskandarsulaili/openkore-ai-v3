@@ -12,6 +12,7 @@ from ai_sidecar.autonomy.plan_executor import PlanExecutor
 from ai_sidecar.autonomy.progress_tracker import ProgressTracker
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.crewai import CrewStrategizeRequest
+from ai_sidecar.contracts.autonomy import GoalStackState
 from ai_sidecar.planner.schemas import PlannerResponse, StrategicPlan, TacticalIntentBundle
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerPlanRequest
 from ai_sidecar.contracts.state import BotStateSnapshot
@@ -40,6 +41,7 @@ class PDCAResult:
     force_replan: bool = False
     replan_reasons: list[str] = field(default_factory=list)
     objective: str = ""
+    selected_goal: str = ""
     error: str | None = None
 
 
@@ -180,7 +182,7 @@ class PDCALoop:
 
                         # Log cycle result
                         logger.info(
-                            "PDCA [%s] plan=%s actions=%d progress=%.1f%% stuck=%s replan=%s force=%s objective=%s reasons=%s cycle_ms=%.1f",
+                            "PDCA [%s] plan=%s actions=%d progress=%.1f%% stuck=%s replan=%s force=%s goal=%s objective=%s reasons=%s cycle_ms=%.1f",
                             horizon.value,
                             result.plan_id,
                             result.actions_queued,
@@ -188,6 +190,7 @@ class PDCALoop:
                             result.stuck,
                             result.re_planned,
                             result.force_replan,
+                            result.selected_goal,
                             result.objective,
                             ",".join(result.replan_reasons),
                             result.cycle_ms,
@@ -211,6 +214,7 @@ class PDCALoop:
         re_planned = False
         force_replan = False
         objective = ""
+        selected_goal = ""
         replan_reasons: list[str] = []
 
         try:
@@ -230,12 +234,23 @@ class PDCALoop:
             )
             force_replan = bool(replan_reasons)
 
+            decision_meta = ContractMeta(source="pdca_loop", bot_id=self._resolve_bot_id(latest_snapshot))
+            goal_state = self._select_goal_state(
+                meta=decision_meta,
+                horizon=horizon,
+                replan_reasons=replan_reasons,
+            )
+            if goal_state is not None:
+                selected_goal = goal_state.selected_goal.goal_key.value
+                objective = goal_state.selected_goal.objective
+
             # ── PLAN phase ───────────────────────────────────────
             if self._active_plan[horizon] is None or force_replan:
                 objective_override = self._select_objective(
                     horizon=horizon,
                     snapshot=latest_snapshot,
                     replan_reasons=replan_reasons,
+                    goal_state=goal_state,
                 )
                 objective = objective_override or self._objective_for(horizon=horizon, snapshot=latest_snapshot)
                 plan = await self._generate_plan(
@@ -260,11 +275,12 @@ class PDCALoop:
                         force_replan=force_replan,
                         replan_reasons=replan_reasons,
                         objective=objective,
+                        selected_goal=selected_goal,
                         cycle_ms=(time.monotonic() - start) * 1000,
                         error="plan generation returned None",
                     )
             else:
-                objective = self._objective_for(horizon=horizon, snapshot=latest_snapshot)
+                objective = objective or self._objective_for(horizon=horizon, snapshot=latest_snapshot)
 
             # ── DO phase ─────────────────────────────────────────
             if self._active_plan[horizon] is not None:
@@ -298,6 +314,7 @@ class PDCALoop:
                 force_replan=force_replan,
                 replan_reasons=replan_reasons,
                 objective=objective,
+                selected_goal=selected_goal,
                 cycle_ms=(time.monotonic() - start) * 1000,
             )
 
@@ -313,6 +330,7 @@ class PDCALoop:
                 force_replan=force_replan,
                 replan_reasons=replan_reasons,
                 objective=objective,
+                selected_goal=selected_goal,
                 cycle_ms=(time.monotonic() - start) * 1000,
                 error=str(e),
             )
@@ -510,7 +528,13 @@ class PDCALoop:
         horizon: Horizon,
         snapshot: BotStateSnapshot | None,
         replan_reasons: list[str],
+        goal_state: GoalStackState | None = None,
     ) -> str | None:
+        if goal_state is not None:
+            objective = str(goal_state.selected_goal.objective or "").strip()
+            if objective:
+                return objective
+
         if horizon == Horizon.LONG_TERM:
             return None
 
@@ -540,6 +564,32 @@ class PDCALoop:
         if choice == "quest":
             return f"advance active quest objectives safely near {current_map}"
         return f"resume efficient grind and loot progression safely on {current_map}"
+
+    def _select_goal_state(
+        self,
+        *,
+        meta: ContractMeta,
+        horizon: Horizon,
+        replan_reasons: list[str],
+    ) -> GoalStackState | None:
+        if not hasattr(self._runtime, "autonomy_decide"):
+            return None
+        try:
+            return self._runtime.autonomy_decide(
+                meta=meta,
+                horizon=horizon.value,
+                replan_reasons=replan_reasons,
+            )
+        except Exception:
+            logger.exception(
+                "pdca_goal_decision_failed",
+                extra={
+                    "event": "pdca_goal_decision_failed",
+                    "bot_id": meta.bot_id,
+                    "horizon": horizon.value,
+                },
+            )
+            return None
 
     def _pick_ranked_objective(
         self,

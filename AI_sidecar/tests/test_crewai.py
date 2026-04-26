@@ -9,9 +9,14 @@ from fastapi.testclient import TestClient
 
 from ai_sidecar.api.deps import get_runtime
 from ai_sidecar.api.routers import crewai_v2
+from ai_sidecar.contracts.autonomy import GoalCategory, GoalDirective, SituationalAssessment
 from ai_sidecar.contracts.actions import ActionProposal, ActionStatus
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.crewai import (
+    CrewAutonomyDecisionContext,
+    CrewAutonomyDecisionOutput,
+    CrewAutonomyRefinementRequest,
+    CrewAutonomyRefinementResponse,
     CrewAgentDescriptor,
     CrewAgentsResponse,
     CrewCoordinateRequest,
@@ -88,6 +93,45 @@ class _ManagerRuntime:
 class _CaptureCrew:
     def __init__(self, **kwargs) -> None:
         self.kwargs = dict(kwargs)
+
+
+def _autonomy_assessment(*, bot_id: str = "bot:crew") -> SituationalAssessment:
+    return SituationalAssessment(
+        bot_id=bot_id,
+        tick_id="tick-autonomy",
+        map_name="prt_fild08",
+        hp_ratio=0.85,
+        danger_score=0.10,
+        death_risk_score=0.12,
+        reconnect_age_s=0.0,
+        is_dead=False,
+        is_disconnected=False,
+        skill_points=2,
+        stat_points=0,
+        base_level=45,
+        job_level=20,
+        base_exp_ratio=0.50,
+        job_exp_ratio=0.90,
+        active_quest_count=1,
+        objective_completion_ratio=0.20,
+        overweight_ratio=0.12,
+        item_count=41,
+        zeny=5000,
+        vendor_exposure=0,
+        replan_reasons=["stale_progress"],
+    )
+
+
+def _autonomy_goal() -> GoalDirective:
+    return GoalDirective(
+        goal_key=GoalCategory.job_advancement,
+        priority_rank=2,
+        active=True,
+        objective="advance job progression deterministically from prt_fild08",
+        rationale="deterministic_priority:job_advancement",
+        blockers=[],
+        metadata={"horizon": "short_term"},
+    )
 
 
 def test_crew_manager_strategize_disabled_fallback() -> None:
@@ -179,6 +223,205 @@ def test_crew_manager_build_crew_memory_honors_explicit_enable() -> None:
     assert crew.kwargs["memory"] is True
     assert "before_kickoff_callbacks" not in crew.kwargs
     assert "after_kickoff_callbacks" not in crew.kwargs
+
+
+def test_crew_manager_autonomy_task_hint_selects_stage2_roster() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    resolved = manager._resolve_required_agents(task_hint="autonomous_decision_intelligence", required_agents=[])
+
+    assert resolved == [
+        "state_assessor",
+        "progression_planner",
+        "opportunistic_trader",
+        "command_emitter",
+    ]
+
+
+def test_crewai_autonomy_contract_roundtrip_validation() -> None:
+    assessment = _autonomy_assessment(bot_id="bot:contract")
+    selected_goal = _autonomy_goal()
+    context = CrewAutonomyDecisionContext(
+        horizon="short_term",
+        assessment=assessment,
+        selected_goal=selected_goal,
+        goal_stack=[selected_goal],
+        deterministic_priority_order=[
+            "survival",
+            "job_advancement",
+            "opportunistic_upgrades",
+            "leveling",
+        ],
+        replan_reasons=["stale_progress"],
+        task_hint="autonomous_decision_intelligence",
+        required_agents=[
+            "state_assessor",
+            "progression_planner",
+            "opportunistic_trader",
+            "command_emitter",
+        ],
+    )
+    request = CrewAutonomyRefinementRequest(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:contract", trace_id="trace-contract"),
+        task_hint="autonomous_decision_intelligence",
+        required_agents=list(context.required_agents),
+        decision_context=context,
+        objective=selected_goal.objective,
+    )
+
+    payload = request.model_dump(mode="json")
+    rebuilt = CrewAutonomyRefinementRequest.model_validate(payload)
+
+    assert rebuilt.task_hint == "autonomous_decision_intelligence"
+    assert rebuilt.decision_context.selected_goal.goal_key == GoalCategory.job_advancement
+    assert rebuilt.decision_context.required_agents == [
+        "state_assessor",
+        "progression_planner",
+        "opportunistic_trader",
+        "command_emitter",
+    ]
+
+
+def test_crew_manager_autonomy_refinement_integration_response_wiring() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=True, verbose=False)
+    context = CrewAutonomyDecisionContext(
+        horizon="short_term",
+        assessment=_autonomy_assessment(bot_id="bot:crew"),
+        selected_goal=_autonomy_goal(),
+        goal_stack=[_autonomy_goal()],
+        deterministic_priority_order=["survival", "job_advancement", "opportunistic_upgrades", "leveling"],
+        replan_reasons=["stale_progress"],
+        task_hint="autonomous_decision_intelligence",
+        required_agents=["state_assessor", "progression_planner", "opportunistic_trader", "command_emitter"],
+    )
+    payload = CrewAutonomyRefinementRequest(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:crew", trace_id="trace-crew-autonomy"),
+        task_hint="autonomous_decision_intelligence",
+        required_agents=list(context.required_agents),
+        decision_context=context,
+        objective=context.selected_goal.objective,
+    )
+
+    async def _fake_pipeline(
+        self,
+        *,
+        bot_id: str,
+        trace_id: str,
+        objective: str,
+        task_hint: str,
+        required_agents: list[str],
+        decision_context: CrewAutonomyDecisionContext | None,
+    ):
+        del self
+        assert bot_id == "bot:crew"
+        assert trace_id == "trace-crew-autonomy"
+        assert objective == payload.objective
+        assert task_hint == "autonomous_decision_intelligence"
+        assert decision_context is not None
+        assert required_agents == ["state_assessor", "progression_planner", "opportunistic_trader", "command_emitter"]
+        return (
+            [{"agent": "state_assessor", "summary": "ok", "json": {}}],
+            "autonomy refined",
+            {
+                "flow": {
+                    "task_hint": "autonomous_decision_intelligence",
+                    "required_agents": [
+                        "state_assessor",
+                        "progression_planner",
+                        "opportunistic_trader",
+                        "command_emitter",
+                    ],
+                }
+            },
+            [],
+            CrewAutonomyDecisionOutput(
+                selected_goal_key="job_advancement",
+                refined_objective="refine objective safely",
+                situational_report="stable posture",
+                execution_translation=["cmd1", "cmd2"],
+                rationale="stage2 refinement",
+                confidence=0.82,
+                annotations={"source": "pytest"},
+            ),
+        )
+
+    original = CrewManager._run_crew_pipeline
+    try:
+        CrewManager._run_crew_pipeline = _fake_pipeline  # type: ignore[assignment]
+        result = asyncio.run(manager.autonomy_refine_decision(payload))
+    finally:
+        CrewManager._run_crew_pipeline = original  # type: ignore[assignment]
+
+    assert result.ok is True
+    assert result.task_hint == "autonomous_decision_intelligence"
+    assert result.required_agents == [
+        "state_assessor",
+        "progression_planner",
+        "opportunistic_trader",
+        "command_emitter",
+    ]
+    assert result.decision_output is not None
+    assert result.decision_output.refined_objective == "refine objective safely"
+    assert result.decision_output.execution_translation == ["cmd1", "cmd2"]
+
+
+def test_crew_manager_derives_stage4_execution_translation_from_context_direct_config_macro() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    def _context_with_hint(hint: dict[str, object]) -> CrewAutonomyDecisionContext:
+        selected_goal = GoalDirective(
+            goal_key=GoalCategory.opportunistic_upgrades,
+            priority_rank=3,
+            active=True,
+            objective="execute curated opportunistic upgrade",
+            rationale="deterministic_priority:opportunistic_upgrades;knowledge_backed:stage4_actionable",
+            blockers=[],
+            metadata={"execution_hints": [hint]},
+        )
+        return CrewAutonomyDecisionContext(
+            horizon="short_term",
+            assessment=_autonomy_assessment(bot_id="bot:crew-stage4"),
+            selected_goal=selected_goal,
+            goal_stack=[selected_goal],
+            deterministic_priority_order=[
+                "survival",
+                "job_advancement",
+                "opportunistic_upgrades",
+                "leveling",
+            ],
+            replan_reasons=["stale_progress"],
+            task_hint="autonomous_decision_intelligence",
+            required_agents=["state_assessor", "progression_planner", "opportunistic_trader", "command_emitter"],
+        )
+
+    direct_context = _context_with_hint(
+        {
+            "execution_mode": "direct",
+            "tool": "propose_actions",
+            "intents": [{"kind": "command", "command": "ai auto"}],
+        }
+    )
+    config_context = _context_with_hint(
+        {
+            "execution_mode": "config",
+            "tool": "plan_control_change",
+            "request": {"target_path": "control/config.txt"},
+        }
+    )
+    macro_context = _context_with_hint(
+        {
+            "execution_mode": "macro",
+            "tool": "publish_macro",
+            "macro_bundle": {"macros": [{"name": "crew_stage4_upgrade_posture", "lines": ["do ai auto"]}]},
+        }
+    )
+
+    assert manager._derive_execution_translation_from_context(direct_context) == ["propose_actions:ai auto"]
+    assert manager._derive_execution_translation_from_context(config_context) == ["plan_control_change:control/config.txt"]
+    assert manager._derive_execution_translation_from_context(macro_context) == ["publish_macro:crew_stage4_upgrade_posture"]
 
 
 class _RouterRuntime:

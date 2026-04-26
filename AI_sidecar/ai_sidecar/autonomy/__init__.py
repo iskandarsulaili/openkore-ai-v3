@@ -2,6 +2,7 @@
 from ai_sidecar.autonomy.pdca_loop import PDCALoop, PDCAResult, PDCAConfig, Horizon
 from ai_sidecar.autonomy.plan_executor import PlanExecutor
 from ai_sidecar.autonomy.progress_tracker import ProgressTracker, ProgressEvaluation
+from ai_sidecar.autonomy.decision_service import DecisionService
 
 __all__ = [
     "PDCALoop",
@@ -11,4 +12,5 @@ __all__ = [
     "PlanExecutor",
     "ProgressTracker",
     "ProgressEvaluation",
+    "DecisionService",
 ]

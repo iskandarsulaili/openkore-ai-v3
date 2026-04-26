@@ -1,0 +1,93 @@
+{
+  "version": "stage4-opportunistic-upgrades-v1",
+  "market_source_allowlist": ["npc_shop", "market", "player_vendor"],
+  "rules": [
+    {
+      "rule_id": "novice_weapon_sword_2_to_3",
+      "enabled": true,
+      "job_names": ["Novice"],
+      "slot": "weapon",
+      "current_item_ids": ["sword_2"],
+      "candidate_item_id": "sword_3",
+      "candidate_item_name": "Sword [3]",
+      "required_base_level": 8,
+      "score_current": 20,
+      "score_candidate": 32,
+      "max_price_zeny": 6000,
+      "execution_mode": "direct",
+      "direct_command": "ai auto",
+      "direct_conflict_key": "opportunistic.weapon_upgrade",
+      "direct_preconditions": ["navigation.ready", "inventory.can_equip"],
+      "notes": [
+        "stage4-safe-direct: use bridge-safe ai auto posture after deterministic purchase evidence",
+        "explicit buy/equip roots remain intentionally unsupported in bridge-safe direct mode"
+      ]
+    },
+    {
+      "rule_id": "swordman_weight_relief_profile",
+      "enabled": true,
+      "job_names": ["Swordman", "Swordsman"],
+      "slot": "weapon",
+      "current_item_ids": ["sword_1", "sword_2", "sword_3"],
+      "candidate_item_id": "sword_3",
+      "candidate_item_name": "Sword [3]",
+      "required_base_level": 22,
+      "score_current": 26,
+      "score_candidate": 30,
+      "max_price_zeny": 12000,
+      "execution_mode": "config",
+      "control_plan": {
+        "artifact_type": "config",
+        "name": "config.txt",
+        "target_path": "control/config.txt",
+        "desired": {
+          "aiSidecar_enable": "1"
+        },
+        "source": "crewai"
+      },
+      "notes": [
+        "stage4-safe-config: deterministic control plan through protected control domain",
+        "no raw equip command emission"
+      ]
+    },
+    {
+      "rule_id": "mage_macro_refresh_upgrade_posture",
+      "enabled": true,
+      "job_names": ["Mage"],
+      "slot": "weapon",
+      "current_item_ids": ["rod_2"],
+      "candidate_item_id": "rod_3",
+      "candidate_item_name": "Rod [3]",
+      "required_base_level": 26,
+      "score_current": 21,
+      "score_candidate": 29,
+      "max_price_zeny": 14000,
+      "execution_mode": "macro",
+      "macro_bundle": {
+        "macros": [
+          {
+            "name": "crew_stage4_upgrade_posture",
+            "lines": ["do ai auto"]
+          }
+        ],
+        "event_macros": [],
+        "automacros": [
+          {
+            "name": "on_crew_stage4_upgrade_posture",
+            "conditions": ["OnCharLogIn"],
+            "call": "crew_stage4_upgrade_posture",
+            "parameters": {
+              "source": "stage4"
+            }
+          }
+        ],
+        "enqueue_reload": true,
+        "reload_conflict_key": "macro_reload"
+      },
+      "notes": [
+        "stage4-safe-macro: macro publication and reload only through existing safe path",
+        "does not widen command roots"
+      ]
+    }
+  ]
+}

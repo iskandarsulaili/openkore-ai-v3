@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Any
 
+from ai_sidecar.autonomy.goal_stack import summarize_goal_stack
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerContext
 
@@ -257,6 +258,32 @@ class PlannerContextAssembler:
                 },
             )
 
+        selected_goal: dict[str, object] = {}
+        goal_stack_summary: dict[str, object] = {}
+        latest_goal_state = None
+        if hasattr(self.runtime, "latest_goal_state"):
+            try:
+                latest_goal_state = self.runtime.latest_goal_state(bot_id=bot_id)
+            except Exception as exc:
+                logger.exception(
+                    "planner_context_autonomy_goal_state_failed",
+                    extra={
+                        "event": "planner_context_autonomy_goal_state_failed",
+                        "bot_id": bot_id,
+                        "objective": objective,
+                        "reason": type(exc).__name__,
+                    },
+                )
+
+        if latest_goal_state is not None:
+            selected_goal = {
+                "goal_key": latest_goal_state.selected_goal.goal_key.value,
+                "priority_rank": latest_goal_state.selected_goal.priority_rank,
+                "objective": latest_goal_state.selected_goal.objective,
+                "rationale": latest_goal_state.selected_goal.rationale,
+            }
+            goal_stack_summary = summarize_goal_stack(state=latest_goal_state)
+
         fleet_constraints = {
             "role": state_payload.get("fleet_intent", {}).get("role"),
             "assignment": state_payload.get("fleet_intent", {}).get("assignment"),
@@ -278,6 +305,8 @@ class PlannerContextAssembler:
             queue=queue_info,
             macros=macros_info,
             reflex=reflex_info,
+            selected_goal=selected_goal,
+            goal_stack_summary=goal_stack_summary,
             job_progression=job_progression,
             economy_context=economy_context,
             quest_context=quest_context,

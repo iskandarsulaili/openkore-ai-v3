@@ -9,6 +9,10 @@ from time import perf_counter
 from typing import Any
 
 from ai_sidecar.contracts.crewai import (
+    CrewAutonomyDecisionContext,
+    CrewAutonomyDecisionOutput,
+    CrewAutonomyRefinementRequest,
+    CrewAutonomyRefinementResponse,
     CrewAgentDescriptor,
     CrewAgentsResponse,
     CrewCoordinateRequest,
@@ -19,7 +23,7 @@ from ai_sidecar.contracts.crewai import (
 )
 from ai_sidecar.crewai.agents import create_agent_by_id
 from ai_sidecar.crewai.agents.manager_agent import create_manager_agent
-from ai_sidecar.crewai.config import AGENT_OPERATING_MODEL, AGENT_PROFILES, CREW_TOOL_NAMES
+from ai_sidecar.crewai.config import AGENT_OPERATING_MODEL, AGENT_PROFILES, AGENT_TASK_HINT_ROSTERS, CREW_TOOL_NAMES
 from ai_sidecar.crewai.llm_adapter import ProviderBackedCrewLLM
 from ai_sidecar.crewai.tasks import build_collaborative_tasks
 from ai_sidecar.crewai.tools import CrewToolFacade, build_crewai_tools
@@ -49,6 +53,7 @@ class CrewManager:
         self._counters = {
             "strategize_calls": 0,
             "coordinate_calls": 0,
+            "autonomy_refinement_calls": 0,
             "success": 0,
             "failures": 0,
         }
@@ -118,12 +123,13 @@ class CrewManager:
         run_lock = self._get_run_lock(payload.meta.bot_id)
         try:
             async with run_lock:
-                agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
+                agent_outputs, consolidated_output, orchestrator, errors, _decision_output = await self._run_crew_pipeline(
+                    decision_context=None,
                     bot_id=payload.meta.bot_id,
                     trace_id=payload.meta.trace_id,
                     objective=payload.objective,
-                    task_hint="strategic_planning",
-                    required_agents=[],
+                    task_hint=payload.task_hint,
+                    required_agents=list(payload.required_agents),
                 )
                 planner_response = await self.runtime.planner_plan(
                     PlannerPlanRequest(
@@ -136,6 +142,7 @@ class CrewManager:
                 )
             ok = planner_response.ok and not errors
             message = "strategized" if ok else "strategize_degraded"
+            resolved_required_agents = list(orchestrator.get("flow", {}).get("required_agents") or payload.required_agents)
             with self._lock:
                 self._counters["success" if ok else "failures"] += 1
             return CrewStrategizeResponse(
@@ -144,6 +151,8 @@ class CrewManager:
                 trace_id=payload.meta.trace_id,
                 bot_id=payload.meta.bot_id,
                 objective=payload.objective,
+                task_hint=payload.task_hint,
+                required_agents=resolved_required_agents,
                 agent_outputs=agent_outputs,
                 consolidated_output=consolidated_output,
                 planner_response=planner_response,
@@ -163,25 +172,33 @@ class CrewManager:
         run_lock = self._get_run_lock(payload.meta.bot_id)
         try:
             objective = payload.objective or payload.task
+            task_hint = str(payload.task_hint or payload.task or "").strip() or payload.task
             async with run_lock:
-                agent_outputs, consolidated_output, orchestrator, errors = await self._run_crew_pipeline(
+                agent_outputs, consolidated_output, orchestrator, errors, decision_output = await self._run_crew_pipeline(
+                    decision_context=payload.decision_context,
                     bot_id=payload.meta.bot_id,
                     trace_id=payload.meta.trace_id,
                     objective=objective,
-                    task_hint=payload.task,
+                    task_hint=task_hint,
                     required_agents=list(payload.required_agents),
                 )
-                planner_response = await self.runtime.planner_plan(
-                    PlannerPlanRequest(
-                        meta=payload.meta,
-                        objective=objective,
-                        horizon=PlanHorizon.tactical,
-                        force_replan=False,
-                        max_steps=12,
+                planner_response = None
+                if task_hint != "autonomous_decision_intelligence":
+                    planner_response = await self.runtime.planner_plan(
+                        PlannerPlanRequest(
+                            meta=payload.meta,
+                            objective=objective,
+                            horizon=PlanHorizon.tactical,
+                            force_replan=False,
+                            max_steps=12,
+                        )
                     )
-                )
-            ok = planner_response.ok and not errors
+            if task_hint == "autonomous_decision_intelligence" and decision_output is None:
+                errors = [*errors, "autonomy_decision_output_unavailable"]
+
+            ok = not errors and (planner_response.ok if planner_response is not None else True)
             message = "coordinated" if ok else "coordinate_degraded"
+            resolved_required_agents = list(orchestrator.get("flow", {}).get("required_agents") or payload.required_agents)
             with self._lock:
                 self._counters["success" if ok else "failures"] += 1
             return CrewCoordinateResponse(
@@ -190,9 +207,55 @@ class CrewManager:
                 trace_id=payload.meta.trace_id,
                 bot_id=payload.meta.bot_id,
                 task=payload.task,
+                task_hint=task_hint,
+                required_agents=resolved_required_agents,
+                decision_output=decision_output,
                 agent_outputs=agent_outputs,
                 consolidated_output=consolidated_output,
                 planner_response=planner_response,
+                orchestrator=orchestrator,
+                duration_ms=(perf_counter() - started) * 1000.0,
+                errors=errors,
+            )
+        finally:
+            with self._lock:
+                self._active_runs = max(0, self._active_runs - 1)
+
+    async def autonomy_refine_decision(self, payload: CrewAutonomyRefinementRequest) -> CrewAutonomyRefinementResponse:
+        started = perf_counter()
+        with self._lock:
+            self._active_runs += 1
+            self._counters["autonomy_refinement_calls"] += 1
+        run_lock = self._get_run_lock(payload.meta.bot_id)
+        try:
+            async with run_lock:
+                agent_outputs, consolidated_output, orchestrator, errors, decision_output = await self._run_crew_pipeline(
+                    bot_id=payload.meta.bot_id,
+                    trace_id=payload.meta.trace_id,
+                    objective=payload.objective,
+                    task_hint=payload.task_hint,
+                    required_agents=list(payload.required_agents),
+                    decision_context=payload.decision_context,
+                )
+
+            resolved_required_agents = list(orchestrator.get("flow", {}).get("required_agents") or payload.required_agents)
+            if decision_output is None:
+                errors = [*errors, "autonomy_decision_output_unavailable"]
+            ok = not errors and decision_output is not None
+            message = "autonomy_refined" if ok else "autonomy_refine_degraded"
+            with self._lock:
+                self._counters["success" if ok else "failures"] += 1
+            return CrewAutonomyRefinementResponse(
+                ok=ok,
+                message=message,
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                task_hint=payload.task_hint,
+                required_agents=resolved_required_agents,
+                decision_context=payload.decision_context,
+                decision_output=decision_output,
+                agent_outputs=agent_outputs,
+                consolidated_output=consolidated_output,
                 orchestrator=orchestrator,
                 duration_ms=(perf_counter() - started) * 1000.0,
                 errors=errors,
@@ -209,27 +272,28 @@ class CrewManager:
         objective: str,
         task_hint: str,
         required_agents: list[str],
-    ) -> tuple[list[dict[str, object]], str, dict[str, object], list[str]]:
+        decision_context: CrewAutonomyDecisionContext | None,
+    ) -> tuple[list[dict[str, object]], str, dict[str, object], list[str], CrewAutonomyDecisionOutput | None]:
         if not self.enabled:
             logger.warning(
                 "crewai_pipeline_disabled",
                 extra={"event": "crewai_pipeline_disabled", "bot_id": bot_id, "trace_id": trace_id},
             )
-            return [], "crewai_disabled", {}, ["crewai_disabled"]
+            return [], "crewai_disabled", {}, ["crewai_disabled"], None
         if not self._crewai_available:
             err = self._init_error or "crewai_not_installed"
             logger.error(
                 "crewai_pipeline_unavailable",
                 extra={"event": "crewai_pipeline_unavailable", "bot_id": bot_id, "trace_id": trace_id, "error": err},
             )
-            return [], "crewai_unavailable", {}, [err]
+            return [], "crewai_unavailable", {}, [err], None
 
         if self.model_router is None:
             logger.error(
                 "crewai_pipeline_missing_model_router",
                 extra={"event": "crewai_pipeline_missing_model_router", "bot_id": bot_id, "trace_id": trace_id},
             )
-            return [], "crewai_model_router_unavailable", {}, ["crewai_model_router_unavailable"]
+            return [], "crewai_model_router_unavailable", {}, ["crewai_model_router_unavailable"], None
 
         try:
             from crewai import Crew, Process
@@ -244,7 +308,8 @@ class CrewManager:
                 bot_id=bot_id,
                 trace_id=trace_id,
             )
-            allowed = set(required_agents) if required_agents else {item.agent_id for item in AGENT_PROFILES}
+            resolved_required_agents = self._resolve_required_agents(task_hint=task_hint, required_agents=required_agents)
+            allowed = set(resolved_required_agents) if resolved_required_agents else {item.agent_id for item in AGENT_PROFILES}
             selected_profiles = [item for item in AGENT_PROFILES if item.agent_id in allowed]
             if not selected_profiles:
                 selected_profiles = list(AGENT_PROFILES)
@@ -261,7 +326,12 @@ class CrewManager:
 
             manager = create_manager_agent(llm=llm, tools=[], verbose=self.verbose)
 
-            tasks = build_collaborative_tasks(objective=objective, task_hint=task_hint, agents_by_id=agents_by_id)
+            effective_objective = self._compose_autonomy_objective(
+                objective=objective,
+                task_hint=task_hint,
+                decision_context=decision_context,
+            )
+            tasks = build_collaborative_tasks(objective=effective_objective, task_hint=task_hint, agents_by_id=agents_by_id)
             listener_events: list[dict[str, object]] = []
 
             execution_attempts: list[dict[str, object]] = [
@@ -343,7 +413,7 @@ class CrewManager:
                             "trace_id": trace_id,
                         }
                     )
-                    result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
+                    result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": effective_objective, "trace_id": trace_id})
                     listener_events.append(
                         {
                             "event": "crew_after_kickoff",
@@ -405,6 +475,14 @@ class CrewManager:
                     }
                 )
 
+            decision_output = self._derive_autonomy_decision_output(
+                task_hint=task_hint,
+                objective=objective,
+                decision_context=decision_context,
+                consolidated_output=consolidated,
+                agent_outputs=rows,
+            )
+
             orchestrator = {
                 "crew": {
                     "process": execution_process_label,
@@ -416,7 +494,7 @@ class CrewManager:
                 "flow": {
                     "objective": objective,
                     "task_hint": task_hint,
-                    "required_agents": list(required_agents),
+                    "required_agents": list(resolved_required_agents),
                 },
                 "agents": [profile.agent_id for profile in selected_profiles],
                 "tasks": [str(getattr(item, "name", "task")) for item in tasks],
@@ -436,9 +514,11 @@ class CrewManager:
                     "task_count": len(tasks),
                     "output_rows": len(rows),
                     "listener_events": len(listener_events),
+                    "required_agents": list(resolved_required_agents),
+                    "decision_output_available": decision_output is not None,
                 },
             )
-            return rows, consolidated, orchestrator, []
+            return rows, consolidated, orchestrator, [], decision_output
         except Exception as exc:
             logger.exception(
                 "crewai_pipeline_failed",
@@ -449,13 +529,183 @@ class CrewManager:
                     "task_hint": task_hint,
                 },
             )
-            return [], "crewai_execution_failed", {}, [f"{type(exc).__name__}:{exc}"]
+            return [], "crewai_execution_failed", {}, [f"{type(exc).__name__}:{exc}"], None
 
     def _resolve_llm_workload(self, *, task_hint: str) -> str:
         candidate = (task_hint or "").strip().lower()
-        if candidate in {"strategic_planning", "tactical_short_reasoning", "long_reflection", "reflex_explain"}:
+        if candidate in {
+            "strategic_planning",
+            "tactical_short_reasoning",
+            "long_reflection",
+            "reflex_explain",
+            "autonomous_decision_intelligence",
+        }:
             return candidate
         return "tactical_short_reasoning"
+
+    def _resolve_required_agents(self, *, task_hint: str, required_agents: list[str]) -> list[str]:
+        normalized_hint = str(task_hint or "").strip().lower()
+        if required_agents:
+            requested = [str(item).strip() for item in required_agents if str(item).strip()]
+            return [item for item in requested if any(profile.agent_id == item for profile in AGENT_PROFILES)]
+
+        roster = AGENT_TASK_HINT_ROSTERS.get(normalized_hint)
+        if roster:
+            return list(roster)
+        return []
+
+    def _compose_autonomy_objective(
+        self,
+        *,
+        objective: str,
+        task_hint: str,
+        decision_context: CrewAutonomyDecisionContext | None,
+    ) -> str:
+        if str(task_hint).strip().lower() != "autonomous_decision_intelligence" or decision_context is None:
+            return objective
+
+        selected_goal = decision_context.selected_goal
+        opportunistic_metadata = (
+            dict(selected_goal.metadata)
+            if selected_goal.goal_key.value == "opportunistic_upgrades" and isinstance(selected_goal.metadata, dict)
+            else {}
+        )
+        execution_hints = [
+            dict(item)
+            for item in opportunistic_metadata.get("execution_hints", [])
+            if isinstance(item, dict)
+        ]
+        top_hint = execution_hints[0] if execution_hints else {}
+        top_hint_mode = str(top_hint.get("execution_mode") or "").strip()
+        top_hint_tool = str(top_hint.get("tool") or "").strip()
+        return (
+            f"{objective}\n"
+            f"Deterministic selected goal: {selected_goal.goal_key.value}\n"
+            f"Deterministic objective: {selected_goal.objective}\n"
+            f"Priority order is immutable: "
+            f"{', '.join(decision_context.deterministic_priority_order)}\n"
+            f"Stage-4 opportunistic execution mode: {top_hint_mode or 'none'}\n"
+            f"Stage-4 opportunistic safe tool path: {top_hint_tool or 'none'}"
+        )
+
+    def _derive_autonomy_decision_output(
+        self,
+        *,
+        task_hint: str,
+        objective: str,
+        decision_context: CrewAutonomyDecisionContext | None,
+        consolidated_output: str,
+        agent_outputs: list[dict[str, object]],
+    ) -> CrewAutonomyDecisionOutput | None:
+        if str(task_hint).strip().lower() != "autonomous_decision_intelligence":
+            return None
+
+        selected_goal_key = ""
+        if decision_context is not None:
+            selected_goal_key = decision_context.selected_goal.goal_key.value
+
+        merged: dict[str, object] = {}
+        for row in agent_outputs:
+            payload = row.get("json")
+            if isinstance(payload, dict):
+                merged.update(payload)
+
+        proposed_goal = str(merged.get("selected_goal_key") or "").strip()
+        proposed_goal = proposed_goal or selected_goal_key
+        if selected_goal_key:
+            proposed_goal = selected_goal_key
+
+        refined_objective = str(merged.get("refined_objective") or "").strip() or objective
+        situational_report = str(merged.get("situational_report") or "").strip()
+        if not situational_report:
+            situational_report = str(consolidated_output or "").strip()[:2048]
+
+        execution_translation_raw = merged.get("execution_translation")
+        execution_translation = self._normalize_string_list(execution_translation_raw)
+        if not execution_translation:
+            execution_translation = self._normalize_string_list(merged.get("commands"))
+        if not execution_translation:
+            execution_translation = self._derive_execution_translation_from_context(decision_context)
+
+        rationale = str(merged.get("rationale") or "").strip()
+        if not rationale:
+            rationale = str(consolidated_output or "").strip()[:2048]
+
+        confidence = self._to_unit_float(merged.get("confidence"))
+        annotations = dict(merged.get("annotations") or {}) if isinstance(merged.get("annotations"), dict) else {}
+        if selected_goal_key and str(merged.get("selected_goal_key") or "").strip() not in {"", selected_goal_key}:
+            annotations["requested_selected_goal_key"] = str(merged.get("selected_goal_key") or "")
+            annotations["deterministic_goal_locked"] = True
+
+        try:
+            return CrewAutonomyDecisionOutput(
+                selected_goal_key=proposed_goal,
+                refined_objective=refined_objective,
+                situational_report=situational_report,
+                execution_translation=execution_translation,
+                rationale=rationale,
+                confidence=confidence,
+                annotations=annotations,
+            )
+        except Exception:
+            return None
+
+    def _derive_execution_translation_from_context(
+        self,
+        decision_context: CrewAutonomyDecisionContext | None,
+    ) -> list[str]:
+        if decision_context is None:
+            return []
+        selected_goal = decision_context.selected_goal
+        if selected_goal.goal_key.value != "opportunistic_upgrades":
+            return []
+        metadata = dict(selected_goal.metadata) if isinstance(selected_goal.metadata, dict) else {}
+        hints = [
+            dict(item)
+            for item in metadata.get("execution_hints", [])
+            if isinstance(item, dict)
+        ]
+        if not hints:
+            return []
+        hint = hints[0]
+        mode = str(hint.get("execution_mode") or "").strip().lower()
+        tool = str(hint.get("tool") or "").strip()
+        if mode == "direct":
+            intents = hint.get("intents") if isinstance(hint.get("intents"), list) else []
+            if not intents:
+                return []
+            first = intents[0] if isinstance(intents[0], dict) else {}
+            command = str(first.get("command") or "").strip()
+            if not command:
+                return []
+            return [f"{tool}:{command}"]
+        if mode == "config":
+            request = hint.get("request") if isinstance(hint.get("request"), dict) else {}
+            target_path = str(request.get("target_path") or "").strip() or "control/config.txt"
+            return [f"{tool}:{target_path}"]
+        if mode == "macro":
+            macro_bundle = hint.get("macro_bundle") if isinstance(hint.get("macro_bundle"), dict) else {}
+            macros = macro_bundle.get("macros") if isinstance(macro_bundle.get("macros"), list) else []
+            macro_name = ""
+            if macros and isinstance(macros[0], dict):
+                macro_name = str(macros[0].get("name") or "").strip()
+            return [f"{tool}:{macro_name or 'stage4_bundle'}"]
+        return []
+
+    def _normalize_string_list(self, value: object) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            normalized = [line.strip(" -\t") for line in value.splitlines()]
+            return [item for item in normalized if item]
+        return []
+
+    def _to_unit_float(self, value: object) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(1.0, numeric))
 
     def _get_run_lock(self, bot_id: str) -> asyncio.Lock:
         with self._lock:

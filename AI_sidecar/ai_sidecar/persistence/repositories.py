@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from ai_sidecar.contracts.autonomy import GoalStackState
 from ai_sidecar.contracts.actions import ActionProposal, ActionStatus
 from ai_sidecar.contracts.events import NormalizedEvent
 from ai_sidecar.contracts.state import BotStateSnapshot
@@ -21,6 +22,7 @@ from ai_sidecar.persistence.models import (
     MemorySemanticRecord,
     SnapshotRecord,
     TelemetryEventRecord,
+    AutonomyGoalStateRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -1054,6 +1056,86 @@ class EventJournalRepository:
         )
 
 
+class AutonomyGoalStateRepository:
+    def __init__(self, db: SQLiteDB) -> None:
+        self._db = db
+
+    def upsert(self, state: GoalStackState) -> None:
+        now = utc_now()
+        dump = state.model_dump(mode="json")
+        selected = state.selected_goal
+        self._db.execute(
+            """
+            INSERT INTO autonomy_goal_states(
+                bot_id,
+                tick_id,
+                horizon,
+                decision_version,
+                selected_goal_key,
+                selected_objective,
+                assessment_json,
+                goal_stack_json,
+                goal_state_json,
+                decided_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bot_id) DO UPDATE SET
+                tick_id=excluded.tick_id,
+                horizon=excluded.horizon,
+                decision_version=excluded.decision_version,
+                selected_goal_key=excluded.selected_goal_key,
+                selected_objective=excluded.selected_objective,
+                assessment_json=excluded.assessment_json,
+                goal_stack_json=excluded.goal_stack_json,
+                goal_state_json=excluded.goal_state_json,
+                decided_at=excluded.decided_at,
+                updated_at=excluded.updated_at
+            """,
+            (
+                state.bot_id,
+                state.tick_id,
+                state.horizon,
+                state.decision_version,
+                selected.goal_key.value,
+                selected.objective,
+                to_json(state.assessment.model_dump(mode="json")),
+                to_json([item.model_dump(mode="json") for item in state.goal_stack]),
+                to_json(dump),
+                to_iso(state.decided_at),
+                to_iso(now),
+            ),
+        )
+
+    def latest(self, *, bot_id: str) -> GoalStackState | None:
+        row = self._db.fetchone("SELECT goal_state_json FROM autonomy_goal_states WHERE bot_id=?", (bot_id,))
+        if row is None:
+            return None
+        payload = from_json(row["goal_state_json"])
+        return GoalStackState.model_validate(payload)
+
+    def list_recent(self, *, limit: int) -> list[AutonomyGoalStateRecord]:
+        rows = self._db.fetchall(
+            "SELECT * FROM autonomy_goal_states ORDER BY updated_at DESC LIMIT ?",
+            (max(1, int(limit)),),
+        )
+        return [self._to_record(row) for row in rows]
+
+    def _to_record(self, row: object) -> AutonomyGoalStateRecord:
+        return AutonomyGoalStateRecord(
+            bot_id=str(row["bot_id"]),
+            tick_id=row["tick_id"],
+            horizon=str(row["horizon"]),
+            decision_version=str(row["decision_version"]),
+            selected_goal_key=str(row["selected_goal_key"]),
+            selected_objective=str(row["selected_objective"]),
+            assessment=dict(from_json(row["assessment_json"])),
+            goal_stack=list(from_json(row["goal_stack_json"])),
+            goal_state=dict(from_json(row["goal_state_json"])),
+            decided_at=from_iso(row["decided_at"]),
+            updated_at=from_iso(row["updated_at"]),
+        )
+
+
 @dataclass(slots=True)
 class SidecarRepositories:
     bots: BotRepository
@@ -1064,6 +1146,7 @@ class SidecarRepositories:
     audit: AuditRepository
     memory: MemoryRepository
     events: EventJournalRepository
+    autonomy_goals: AutonomyGoalStateRepository
 
 
 def create_repositories(
@@ -1087,4 +1170,5 @@ def create_repositories(
         audit=AuditRepository(db, max_history=audit_history),
         memory=MemoryRepository(db),
         events=EventJournalRepository(db, max_history_per_bot=snapshot_history_per_bot),
+        autonomy_goals=AutonomyGoalStateRepository(db),
     )

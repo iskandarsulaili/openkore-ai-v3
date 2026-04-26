@@ -14,9 +14,13 @@ import httpx
 import structlog
 
 from ai_sidecar.config import settings
+from ai_sidecar.autonomy.decision_service import DecisionService
+from ai_sidecar.contracts.autonomy import GoalStackState
 from ai_sidecar.contracts.actions import ActionAckRequest, ActionPriorityTier, ActionProposal, ActionStatus
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.crewai import (
+    CrewAutonomyRefinementRequest,
+    CrewAutonomyRefinementResponse,
     CrewAgentsResponse,
     CrewCoordinateRequest,
     CrewCoordinateResponse,
@@ -510,6 +514,7 @@ class RuntimeState:
     autonomy_scheduler_degraded_reason: str = ""
     planner_stale_threshold_s: float = 60.0
     pdca_loop: object | None = None
+    decision_service: DecisionService | None = None
     _fleet_role_lock: RLock = field(default_factory=RLock)
     _fleet_roles: dict[str, RoleManager] = field(default_factory=dict)
     _counter_lock: RLock = field(default_factory=RLock)
@@ -523,6 +528,7 @@ class RuntimeState:
     _background_thread: Thread | None = None
     _background_loop_ready: Event = field(default_factory=Event)
     _background_loop_lock: RLock = field(default_factory=RLock)
+    _last_goal_state_by_bot: dict[str, GoalStackState] = field(default_factory=dict)
     persistence_degraded: bool = False
 
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
@@ -1182,6 +1188,51 @@ class RuntimeState:
 
     def enriched_state(self, *, bot_id: str) -> EnrichedWorldState:
         return self.normalizer_bus.enriched_state(bot_id=bot_id)
+
+    def persist_goal_state(self, *, bot_id: str, state: GoalStackState) -> None:
+        self._last_goal_state_by_bot[bot_id] = state
+        self._safe_persist(
+            "persist_autonomy_goal_state",
+            lambda: self.repositories.autonomy_goals.upsert(state) if self.repositories else None,
+            bot_id=bot_id,
+        )
+
+    def latest_goal_state(self, *, bot_id: str) -> GoalStackState | None:
+        in_memory = self._last_goal_state_by_bot.get(bot_id)
+        if in_memory is not None:
+            return in_memory
+        persisted = self._safe_persist(
+            "latest_autonomy_goal_state",
+            lambda: self.repositories.autonomy_goals.latest(bot_id=bot_id) if self.repositories else None,
+            default=None,
+            bot_id=bot_id,
+        )
+        if persisted is not None:
+            self._last_goal_state_by_bot[bot_id] = persisted
+        return persisted
+
+    def autonomy_decide(
+        self,
+        *,
+        meta: ContractMeta,
+        horizon: str,
+        replan_reasons: list[str] | None = None,
+    ) -> GoalStackState | None:
+        service = self.decision_service
+        if service is None:
+            return None
+        try:
+            return service.decide(meta=meta, horizon=horizon, replan_reasons=replan_reasons)
+        except Exception:
+            logger.exception(
+                "autonomy_decision_failed",
+                extra={
+                    "event": "autonomy_decision_failed",
+                    "bot_id": meta.bot_id,
+                    "horizon": horizon,
+                },
+            )
+            return None
 
     def normalized_state_graph(self, *, bot_id: str) -> dict[str, object]:
         return self.normalizer_bus.debug_graph(bot_id=bot_id)
@@ -3282,6 +3333,24 @@ class RuntimeState:
             )
         return await self.crew_manager.coordinate(payload)
 
+    async def crewai_autonomy_refine_decision(
+        self,
+        payload: CrewAutonomyRefinementRequest,
+    ) -> CrewAutonomyRefinementResponse:
+        if self.crew_manager is None:
+            return CrewAutonomyRefinementResponse(
+                ok=False,
+                message="crewai_unavailable",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                task_hint=payload.task_hint,
+                required_agents=list(payload.required_agents),
+                decision_context=payload.decision_context,
+                decision_output=None,
+                errors=["crewai_unavailable"],
+            )
+        return await self.crew_manager.autonomy_refine_decision(payload)
+
     def crewai_agents(self) -> CrewAgentsResponse:
         if self.crew_manager is None:
             return CrewAgentsResponse(ok=False, total_agents=0, agents=[])
@@ -4112,6 +4181,7 @@ def create_runtime() -> RuntimeState:
         reflection_writer=ReflectionWriter(memory_service=runtime.memory),
     )
     runtime.planner_service = planner_service
+    runtime.decision_service = DecisionService(runtime=runtime)
     crew_manager = CrewManager(
         runtime=runtime,
         model_router=model_router,
