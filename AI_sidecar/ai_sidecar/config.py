@@ -106,6 +106,7 @@ class SidecarSettings(BaseSettings):
 
     crewai_enabled: bool = True
     crewai_verbose: bool = False
+    crewai_memory_enabled: bool = False
 
     fleet_central_enabled: bool = True
     fleet_central_base_url: str = "https://api-v3.openkore-ai.com"

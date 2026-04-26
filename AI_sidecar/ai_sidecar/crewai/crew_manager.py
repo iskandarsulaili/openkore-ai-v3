@@ -34,6 +34,7 @@ class CrewManager:
     model_router: Any
     enabled: bool = True
     verbose: bool = False
+    memory_enabled: bool = False
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _active_runs: int = field(default=0, init=False, repr=False)
     _counters: dict[str, int] = field(default_factory=dict, init=False, repr=False)
@@ -263,28 +264,6 @@ class CrewManager:
             tasks = build_collaborative_tasks(objective=objective, task_hint=task_hint, agents_by_id=agents_by_id)
             listener_events: list[dict[str, object]] = []
 
-            def _before_kickoff(inputs: dict[str, object]) -> dict[str, object]:
-                listener_events.append(
-                    {
-                        "event": "crew_before_kickoff",
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "bot_id": bot_id,
-                        "trace_id": trace_id,
-                    }
-                )
-                return dict(inputs or {})
-
-            def _after_kickoff(result: Any) -> Any:
-                listener_events.append(
-                    {
-                        "event": "crew_after_kickoff",
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "bot_id": bot_id,
-                        "trace_id": trace_id,
-                    }
-                )
-                return result
-
             execution_attempts: list[dict[str, object]] = [
                 {
                     "profile": "hierarchical_planning",
@@ -335,8 +314,6 @@ class CrewManager:
                         manager=manager,
                         planning_llm=llm,
                         include_manager=attempt_with_manager,
-                        before_kickoff=_before_kickoff,
-                        after_kickoff=_after_kickoff,
                         process=attempt_process,
                         planning=attempt_planning,
                     )
@@ -358,7 +335,23 @@ class CrewManager:
                     raise
 
                 try:
+                    listener_events.append(
+                        {
+                            "event": "crew_before_kickoff",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "bot_id": bot_id,
+                            "trace_id": trace_id,
+                        }
+                    )
                     result = await crew.akickoff(inputs={"bot_id": bot_id, "objective": objective, "trace_id": trace_id})
+                    listener_events.append(
+                        {
+                            "event": "crew_after_kickoff",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "bot_id": bot_id,
+                            "trace_id": trace_id,
+                        }
+                    )
                     execution_profile = attempt_profile
                     execution_process_label = "hierarchical" if attempt_process == Process.hierarchical else "sequential"
                     execution_planning = attempt_planning
@@ -416,7 +409,7 @@ class CrewManager:
                 "crew": {
                     "process": execution_process_label,
                     "planning": execution_planning,
-                    "memory": True,
+                    "memory": self.memory_enabled,
                     "manager_agent": "manager" if execution_with_manager else "",
                     "execution_profile": execution_profile,
                 },
@@ -492,8 +485,6 @@ class CrewManager:
         manager: Any,
         planning_llm: Any,
         include_manager: bool,
-        before_kickoff: Any,
-        after_kickoff: Any,
         process: Any,
         planning: bool,
     ) -> Any:
@@ -503,9 +494,7 @@ class CrewManager:
             "tasks": tasks,
             "process": process,
             "planning": planning,
-            "memory": True,
-            "before_kickoff_callbacks": [before_kickoff],
-            "after_kickoff_callbacks": [after_kickoff],
+            "memory": self.memory_enabled,
             "verbose": self.verbose,
         }
         if planning:

@@ -80,6 +80,10 @@ class ModelRouter:
         with self._lock:
             self._route_metric_observer = observer
 
+    def provider_names(self) -> set[str]:
+        with self._lock:
+            return {str(name).strip().lower() for name in self._providers.keys()}
+
     def _emit_route_metric(self, *, workload: str, provider: str, model: str) -> None:
         with self._lock:
             observer = self._route_metric_observer

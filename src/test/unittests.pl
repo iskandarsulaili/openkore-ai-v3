@@ -20,6 +20,7 @@ my @tests = qw(
 	TaskManagerTest TaskWithSubtaskTest TaskChainedTest
 	TaskTalkNPCTest
 	PluginsHookTest
+	AiSidecarBridgeTest
 	FileParsersTest
 	DynamicPortalGroupsTest
 	NetworkTest

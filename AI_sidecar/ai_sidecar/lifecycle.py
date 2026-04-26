@@ -206,10 +206,53 @@ def _parse_csv_tokens(value: str) -> list[str]:
     return rows
 
 
+def _normalize_provider_policy_rules(raw_rules: dict[str, object]) -> dict[str, dict[str, object]]:
+    normalized: dict[str, dict[str, object]] = {}
+    for workload, config in raw_rules.items():
+        workload_key = str(workload).strip()
+        if not workload_key or not isinstance(config, dict):
+            continue
+        normalized[workload_key] = {
+            "providers": [str(item) for item in list(config.get("providers") or [])],
+            "models": dict(config.get("models") or {}),
+        }
+    return normalized
+
+
+def _provider_registration_viability(provider_name: str) -> tuple[bool, str]:
+    if provider_name == "ollama":
+        if not str(settings.provider_ollama_base_url).strip():
+            return False, "base_url_missing"
+        if not str(settings.provider_ollama_default_model).strip():
+            return False, "default_model_missing"
+        return True, ""
+
+    if provider_name == "openai":
+        if not str(settings.provider_openai_api_key).strip():
+            return False, "api_key_missing"
+        if not str(settings.provider_openai_base_url).strip():
+            return False, "base_url_missing"
+        if not str(settings.provider_openai_default_model).strip():
+            return False, "default_model_missing"
+        return True, ""
+
+    if provider_name == "deepseek":
+        if not str(settings.provider_deepseek_api_key).strip():
+            return False, "api_key_missing"
+        if not str(settings.provider_deepseek_base_url).strip():
+            return False, "base_url_missing"
+        if not str(settings.provider_deepseek_default_model).strip():
+            return False, "default_model_missing"
+        return True, ""
+
+    return False, "unknown_provider"
+
+
 def _sanitize_provider_policy_rules(
     rules: dict[str, dict[str, object]],
     *,
     available_providers: set[str],
+    allow_default_fallback: bool = True,
 ) -> dict[str, dict[str, object]]:
     defaults = _build_provider_policy_rules()
     sanitized: dict[str, dict[str, object]] = {}
@@ -236,7 +279,7 @@ def _sanitize_provider_policy_rules(
 
         default_rule = defaults.get(workload_key, {})
         default_providers = [str(item).strip().lower() for item in list(default_rule.get("providers") or [])]
-        if not providers:
+        if allow_default_fallback and not providers:
             for provider_name in default_providers:
                 if not provider_name:
                     continue
@@ -2080,10 +2123,12 @@ class RuntimeState:
 
     def _fleet_status(self) -> dict[str, object]:
         if self.fleet_constraint_state is None:
+            central_enabled = bool(settings.fleet_central_enabled)
             return {
                 "mode": "local",
                 "central_available": False,
-                "stale": True,
+                "central_enabled": central_enabled,
+                "stale": (True if central_enabled else False),
                 "last_sync_at": None,
                 "doctrine_version": "local",
                 "last_error": "fleet_constraint_state_unavailable",
@@ -2232,10 +2277,16 @@ class RuntimeState:
         state.mark_unavailable(reason=reason)
         status = self._fleet_status()
         constraints = self._fleet_constraints_for_bot(bot_id=bot_id)
-        logger.warning(
-            "fleet_sync_fallback_local",
-            extra={"event": "fleet_sync_fallback_local", "bot_id": bot_id, "reason": reason},
-        )
+        if reason == "fleet_central_disabled":
+            logger.info(
+                "fleet_sync_central_disabled_local",
+                extra={"event": "fleet_sync_central_disabled_local", "bot_id": bot_id, "reason": reason},
+            )
+        else:
+            logger.warning(
+                "fleet_sync_fallback_local",
+                extra={"event": "fleet_sync_fallback_local", "bot_id": bot_id, "reason": reason},
+            )
         return FleetSyncResponse(
             ok=True,
             mode=str(status.get("mode") or "local"),
@@ -3197,6 +3248,7 @@ class RuntimeState:
             "planner_stale_threshold_s": planner_stale_threshold_s,
             "planner_last_updated_at": planner_updated_at,
             "fleet_mode": str(fleet_status.get("mode") or "local"),
+            "fleet_central_enabled": bool(fleet_status.get("central_enabled", True)),
             "fleet_central_available": bool(fleet_status.get("central_available", False)),
             "fleet_central_stale": bool(fleet_status.get("stale", True)),
             "fleet_last_sync_at": fleet_last_sync_at,
@@ -3346,7 +3398,12 @@ class RuntimeState:
     def update_provider_policy(self, payload: ProviderPolicyUpdateRequest) -> dict[str, object]:
         if self.model_router is None:
             return {"ok": False, "version": "unavailable", "updated_at": datetime.now(UTC), "rules": {}}
-        policy = self.model_router.update_policy(rules=payload.rules)
+        sanitized_rules = _sanitize_provider_policy_rules(
+            payload.rules,
+            available_providers=self.model_router.provider_names(),
+            allow_default_fallback=False,
+        )
+        policy = self.model_router.update_policy(rules=sanitized_rules)
         return {
             "ok": True,
             "version": policy.version,
@@ -3800,59 +3857,94 @@ def create_runtime() -> RuntimeState:
 
     provider_adapters: dict[str, object] = {}
     if settings.provider_ollama_enabled:
-        provider_adapters["ollama"] = OllamaAdapter(
-            base_url=settings.provider_ollama_base_url,
-            default_model=settings.provider_ollama_default_model,
-            embedding_model=settings.provider_ollama_embedding_model,
-            guard=guard,
-            breaker=provider_breaker,
-            timeout_seconds=settings.llm_timeout_seconds,
-            max_retries=settings.llm_max_retries,
-            telemetry_push=telemetry_push,
-        )
+        ollama_usable, ollama_reason = _provider_registration_viability("ollama")
+        if ollama_usable:
+            provider_adapters["ollama"] = OllamaAdapter(
+                base_url=settings.provider_ollama_base_url,
+                default_model=settings.provider_ollama_default_model,
+                embedding_model=settings.provider_ollama_embedding_model,
+                guard=guard,
+                breaker=provider_breaker,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_retries=settings.llm_max_retries,
+                telemetry_push=telemetry_push,
+            )
+        else:
+            logger.warning(
+                "provider_adapter_skipped_unusable_config",
+                extra={
+                    "event": "provider_adapter_skipped_unusable_config",
+                    "provider": "ollama",
+                    "reason": ollama_reason,
+                },
+            )
     if settings.provider_openai_enabled:
-        provider_adapters["openai"] = OpenAIAdapter(
-            base_url=settings.provider_openai_base_url,
-            api_key=settings.provider_openai_api_key,
-            default_model=settings.provider_openai_default_model,
-            embedding_model=settings.provider_openai_embedding_model,
-            guard=guard,
-            breaker=provider_breaker,
-            timeout_seconds=settings.llm_timeout_seconds,
-            max_retries=settings.llm_max_retries,
-            telemetry_push=telemetry_push,
-        )
+        openai_usable, openai_reason = _provider_registration_viability("openai")
+        if openai_usable:
+            provider_adapters["openai"] = OpenAIAdapter(
+                base_url=settings.provider_openai_base_url,
+                api_key=settings.provider_openai_api_key,
+                default_model=settings.provider_openai_default_model,
+                embedding_model=settings.provider_openai_embedding_model,
+                guard=guard,
+                breaker=provider_breaker,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_retries=settings.llm_max_retries,
+                telemetry_push=telemetry_push,
+            )
+        else:
+            logger.warning(
+                "provider_adapter_skipped_unusable_config",
+                extra={
+                    "event": "provider_adapter_skipped_unusable_config",
+                    "provider": "openai",
+                    "reason": openai_reason,
+                },
+            )
     if settings.provider_deepseek_enabled:
-        provider_adapters["deepseek"] = DeepseekAdapter(
-            base_url=settings.provider_deepseek_base_url,
-            api_key=settings.provider_deepseek_api_key,
-            default_model=settings.provider_deepseek_default_model,
-            embedding_model=settings.provider_deepseek_embedding_model,
-            guard=guard,
-            breaker=provider_breaker,
-            timeout_seconds=settings.llm_timeout_seconds,
-            max_retries=settings.llm_max_retries,
-            telemetry_push=telemetry_push,
-        )
+        deepseek_usable, deepseek_reason = _provider_registration_viability("deepseek")
+        if deepseek_usable:
+            provider_adapters["deepseek"] = DeepseekAdapter(
+                base_url=settings.provider_deepseek_base_url,
+                api_key=settings.provider_deepseek_api_key,
+                default_model=settings.provider_deepseek_default_model,
+                embedding_model=settings.provider_deepseek_embedding_model,
+                guard=guard,
+                breaker=provider_breaker,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_retries=settings.llm_max_retries,
+                telemetry_push=telemetry_push,
+            )
+        else:
+            logger.warning(
+                "provider_adapter_skipped_unusable_config",
+                extra={
+                    "event": "provider_adapter_skipped_unusable_config",
+                    "provider": "deepseek",
+                    "reason": deepseek_reason,
+                },
+            )
 
-    policy_rules = _build_provider_policy_rules()
+    available_provider_names = {str(key).strip().lower() for key in provider_adapters.keys()}
+    policy_rules = _sanitize_provider_policy_rules(
+        _build_provider_policy_rules(),
+        available_providers=available_provider_names,
+        allow_default_fallback=True,
+    )
     if settings.provider_policy_json.strip():
         try:
             override_rules = json.loads(settings.provider_policy_json)
             if isinstance(override_rules, dict):
-                for workload, config in override_rules.items():
-                    if isinstance(config, dict):
-                        policy_rules[str(workload)] = {
-                            "providers": [str(item) for item in list(config.get("providers") or [])],
-                            "models": dict(config.get("models") or {}),
-                        }
+                normalized_override_rules = _normalize_provider_policy_rules(override_rules)
+                policy_rules.update(
+                    _sanitize_provider_policy_rules(
+                        normalized_override_rules,
+                        available_providers=available_provider_names,
+                        allow_default_fallback=False,
+                    )
+                )
         except Exception:
             logger.exception("provider_policy_json_parse_failed", extra={"event": "provider_policy_json_parse_failed"})
-
-    policy_rules = _sanitize_provider_policy_rules(
-        policy_rules,
-        available_providers={str(key).strip().lower() for key in provider_adapters.keys()},
-    )
 
     autonomy_ranked_objectives = _parse_csv_tokens(settings.autonomy_ranked_objectives)
     autonomy_preferred_grind_maps = _parse_csv_tokens(settings.autonomy_preferred_grind_maps)
@@ -3917,7 +4009,7 @@ def create_runtime() -> RuntimeState:
         timeout_seconds=settings.fleet_request_timeout_seconds,
         enabled=settings.fleet_central_enabled,
     )
-    fleet_constraint_state = ConstraintIngestionState()
+    fleet_constraint_state = ConstraintIngestionState(central_enabled=settings.fleet_central_enabled)
     fleet_outcome_reporter = OutcomeReporter(client=fleet_sync_client)
     fleet_conflict_resolver = FleetConflictResolver()
 
@@ -4025,6 +4117,7 @@ def create_runtime() -> RuntimeState:
         model_router=model_router,
         enabled=settings.crewai_enabled,
         verbose=settings.crewai_verbose,
+        memory_enabled=settings.crewai_memory_enabled,
     )
     runtime.crew_manager = crew_manager
 
@@ -4046,6 +4139,7 @@ def create_runtime() -> RuntimeState:
             "providers_enabled": sorted(provider_adapters.keys()),
             "planner_enabled": planner_service is not None,
             "crewai_enabled": settings.crewai_enabled,
+            "crewai_memory_enabled": settings.crewai_memory_enabled,
             "crewai_available": crew_manager.status().crew_available,
             "ml_subconscious_enabled": True,
             "ml_models_registered": len(runtime.ml_models().models) if runtime.ml_registry is not None else 0,

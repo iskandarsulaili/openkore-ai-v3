@@ -226,7 +226,7 @@ class PlanExecutor:
 
             if self._contains_any(description, ("death", "dead", "savepoint", "respawn")):
                 return self._build_action_proposal(
-                    command="move savepoint",
+                    command="respawn",
                     priority=ActionPriorityTier.strategic,
                     source="pdca_loop_strategic",
                     conflict_key="recovery.death",

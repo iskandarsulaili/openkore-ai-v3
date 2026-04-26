@@ -297,6 +297,7 @@ class ActionEmitter:
             execution_target="eventmacro_trigger",
             kind="command",
             command=f"{self._event_macro_plugin_for_rule(rule)} {automacro_name}",
+            conflict_key=self._eventmacro_conflict_key_for_rule(rule),
         )
         accepted, status, action_id, reason = queue_action(proposal, bot_id)
         if accepted:
@@ -318,10 +319,11 @@ class ActionEmitter:
         execution_target: str,
         kind: str,
         command: str,
+        conflict_key: str | None = None,
     ) -> ActionProposal:
         now = datetime.now(UTC)
         action_id = f"reflex-{rule.rule_id}-{uuid4().hex[:16]}"
-        conflict_key = rule.action_template.conflict_key or f"reflex.{rule.rule_id}"
+        conflict_key = conflict_key if conflict_key is not None else (rule.action_template.conflict_key or f"reflex.{rule.rule_id}")
         return ActionProposal(
             action_id=action_id,
             kind=kind,
@@ -360,6 +362,13 @@ class ActionEmitter:
     def _event_macro_plugin_for_rule(self, rule: ReflexRule) -> str:
         metadata = dict(rule.action_template.metadata)
         return self._sanitize_plugin(metadata.get("event_macro_plugin"), fallback="eventMacro")
+
+    def _eventmacro_conflict_key_for_rule(self, rule: ReflexRule) -> str:
+        base_conflict_key = rule.action_template.conflict_key or f"reflex.{rule.rule_id}"
+        suffix = ".eventmacro"
+        max_base_len = max(1, 128 - len(suffix))
+        trimmed_base = base_conflict_key[:max_base_len]
+        return f"{trimmed_base}{suffix}"
 
     def _is_safe_token(self, value: str) -> bool:
         if not value:

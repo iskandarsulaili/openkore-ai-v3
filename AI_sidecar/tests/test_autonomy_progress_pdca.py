@@ -89,12 +89,14 @@ def test_progress_tracker_detects_death_loop() -> None:
 
 @dataclass(slots=True)
 class _FleetState:
+    central_enabled: bool = True
     stale: bool = False
     central_available: bool = True
 
     def status(self) -> dict[str, object]:
         return {
             "mode": "central" if self.central_available and not self.stale else "local",
+            "central_enabled": self.central_enabled,
             "central_available": self.central_available,
             "stale": self.stale,
             "last_sync_at": datetime.now(UTC),
@@ -239,3 +241,33 @@ def test_pdca_short_term_objective_rotation_on_replan() -> None:
     assert first is not None
     assert second is not None
     assert first != second
+
+
+def test_pdca_collect_replan_reasons_ignores_central_failure_when_disabled() -> None:
+    runtime = _PDCAStubRuntime()
+    runtime.fleet_constraint_state = _FleetState(central_enabled=False, stale=True, central_available=False)
+    pdca = PDCALoop(runtime_state=runtime)
+
+    reasons = pdca._collect_replan_reasons(
+        horizon=Horizon.SHORT_TERM,
+        progress=ProgressEvaluation(),
+        snapshot=_snapshot(tick_id="disabled-central"),
+    )
+
+    assert "fleet_central_stale" not in reasons
+    assert "fleet_central_unavailable" not in reasons
+
+
+def test_pdca_collect_replan_reasons_keeps_central_failure_when_enabled_unavailable() -> None:
+    runtime = _PDCAStubRuntime()
+    runtime.fleet_constraint_state = _FleetState(central_enabled=True, stale=True, central_available=False)
+    pdca = PDCALoop(runtime_state=runtime)
+
+    reasons = pdca._collect_replan_reasons(
+        horizon=Horizon.SHORT_TERM,
+        progress=ProgressEvaluation(),
+        snapshot=_snapshot(tick_id="enabled-unavailable"),
+    )
+
+    assert "fleet_central_stale" in reasons
+    assert "fleet_central_unavailable" in reasons

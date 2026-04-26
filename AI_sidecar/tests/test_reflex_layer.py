@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.events import EventFamily, EventSeverity, NormalizedEvent
 from ai_sidecar.contracts.reflex import (
@@ -564,3 +565,77 @@ def test_reflex_micro_and_eventmacro_plugin_override_from_metadata(tmp_path):
     queued_event = queue.fetch_next(bot_id)
     assert queued_event is not None
     assert queued_event.command == "eventMacroCustom reflex_auto_plugin.event"
+
+
+def test_reflex_eventmacro_route_uses_distinct_conflict_key_when_base_route_is_blocked(tmp_path):
+    bot_id = "bot:eventmacro-conflict"
+    queue = ActionQueue(max_per_bot=64)
+    queue_action, publish_macros = _callbacks(tmp_path, queue)
+    engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
+
+    now = datetime.now(UTC)
+    accepted, _, _, _ = queue.enqueue(
+        bot_id,
+        ActionProposal(
+            action_id="existing-macro-recovery",
+            kind="command",
+            command="macro reflex_macro_recovery",
+            priority_tier=ActionPriorityTier.reflex,
+            conflict_key="macro.recovery",
+            created_at=now,
+            expires_at=now + timedelta(seconds=30),
+            idempotency_key="existing:macro.recovery",
+            metadata={"source": "reflex"},
+        ),
+    )
+    assert accepted
+
+    rule = ReflexRule(
+        rule_id="macro_crash_fallback",
+        enabled=True,
+        priority=8,
+        trigger=ReflexTriggerClause(
+            any=[
+                ReflexPredicate(fact="event.event_type", op="eq", value="macro.publish_failed"),
+                ReflexPredicate(fact="macro_execution.last_result", op="contains", value="failed"),
+            ]
+        ),
+        guards=[],
+        action_template=ReflexActionTemplate(
+            kind="command",
+            command="macro reflex_macro_recovery",
+            conflict_key="macro.recovery",
+            metadata={"category": "macro_crash_fallback"},
+        ),
+        fallback_macro="reflex_macro_recovery",
+        cooldown_ms=8000,
+        circuit_breaker_key="macro.default",
+        event_macro_conditions=["OnCharLogIn"],
+        category=ReflexCategory.interaction,
+        planner_interop=ReflexPlannerInterop.complement,
+    )
+    engine.upsert_rule(bot_id=bot_id, rule=rule)
+
+    records = engine.evaluate_events(
+        bot_id=bot_id,
+        events=[_make_event(bot_id, event_type="macro.publish_failed")],
+        get_enriched_state=lambda *, bot_id=bot_id: _make_state(bot_id),
+        queue_action=queue_action,
+        publish_macros=publish_macros,
+    )
+
+    emitted = [item for item in records if item.rule_id == "macro_crash_fallback" and item.emitted]
+    assert emitted
+    assert emitted[0].execution_target == "eventmacro_trigger"
+
+    queued_actions = queue.snapshot()[bot_id]
+    eventmacro_actions = [
+        item for item in queued_actions if item.proposal.command == "eventMacro reflex_auto_macro_crash_fallback"
+    ]
+    assert len(eventmacro_actions) == 1
+    assert eventmacro_actions[0].proposal.conflict_key == "macro.recovery.eventmacro"
+
+    direct_or_micro_actions = [
+        item for item in queued_actions if item.proposal.command == "macro reflex_macro_recovery"
+    ]
+    assert len(direct_or_micro_actions) == 1

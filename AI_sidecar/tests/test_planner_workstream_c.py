@@ -222,6 +222,32 @@ def test_plan_generator_fallback_safe_idle_only_when_no_other_safe_action_exists
     assert action.metadata.get("fallback_mode") == "safe_idle"
 
 
+def test_plan_generator_fallback_death_recovery_uses_respawn_command() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
+    context = PlannerContext(
+        bot_id="bot:ws-c",
+        objective="recover from death",
+        horizon=PlanHorizon.tactical,
+        state={
+            "operational": {"map": "prt_fild08", "hp": 0},
+            "navigation": {"map": "prt_fild08"},
+            "encounter": {"nearby_hostiles": 2, "target_id": "mob:poring"},
+            "inventory": {"item_count": 6, "overweight_ratio": 0.1},
+            "risk": {"anomaly_flags": []},
+        },
+        fleet_constraints={"assignment": "prt_fild08", "constraints": {"preferred_grind_maps": ["prt_fild08"]}},
+        economy_context={"overweight_ratio": 0.1},
+        quest_context={"active_objective_count": 1},
+    )
+
+    fallback = generator._fallback(bot_id="bot:ws-c", context=context, max_steps=8)
+
+    death_action = next(item for item in fallback.recommended_actions if item.metadata.get("fallback_mode") == "death_recovery")
+    assert death_action.command == "respawn"
+    assert death_action.conflict_key == "recovery.death"
+    assert death_action.metadata.get("target") == "savepoint"
+
+
 def test_plan_generator_actions_from_steps_bridge_compatible_for_residual_kinds() -> None:
     generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
     steps = [
@@ -475,3 +501,45 @@ def test_readiness_indicators_absent_state_is_stale_and_real_recent_state_is_not
     assert recent_indicators["planner_stale"] is False
     assert isinstance(recent_indicators["planner_stale_seconds"], float)
     assert 0.0 <= float(recent_indicators["planner_stale_seconds"]) <= 60.0
+
+
+def test_readiness_indicators_fleet_disabled_not_stale() -> None:
+    now = datetime.now(UTC)
+
+    class _Runtime:
+        planner_stale_threshold_s = 60.0
+        autonomy_scheduler_degraded = False
+        autonomy_scheduler_degraded_reason = ""
+        pdca_loop = SimpleNamespace(running=True, _circuit_breaker_tripped=lambda: False)
+
+        def _readiness_bot_id(self) -> str:
+            return "bot:fleet-disabled"
+
+        def planner_status(self, *, bot_id: str) -> PlannerStatusResponse:
+            assert bot_id == "bot:fleet-disabled"
+            return PlannerStatusResponse(
+                ok=True,
+                bot_id=bot_id,
+                planner_healthy=True,
+                current_objective="farm safely",
+                last_plan_id="plan-disabled",
+                last_provider="deepseek",
+                last_model="deepseek-chat",
+                updated_at=now - timedelta(seconds=5),
+                counters={},
+            )
+
+        def _fleet_status(self) -> dict[str, object]:
+            return {
+                "mode": "local",
+                "central_enabled": False,
+                "central_available": False,
+                "stale": False,
+                "last_sync_at": None,
+            }
+
+    indicators = RuntimeState.readiness_indicators(_Runtime())
+    assert indicators["fleet_mode"] == "local"
+    assert indicators["fleet_central_enabled"] is False
+    assert indicators["fleet_central_available"] is False
+    assert indicators["fleet_central_stale"] is False

@@ -16,6 +16,7 @@ logger = structlog.get_logger(__name__)
 
 @dataclass(slots=True)
 class ConstraintIngestionState:
+    central_enabled: bool = field(default_factory=lambda: bool(settings.fleet_central_enabled))
     _lock: RLock = field(default_factory=RLock)
     _last_sync_at: datetime | None = None
     _central_available: bool = False
@@ -50,13 +51,18 @@ class ConstraintIngestionState:
 
     def status(self) -> dict[str, object]:
         with self._lock:
-            now = datetime.now(UTC)
-            stale = True
-            if self._last_sync_at is not None:
-                stale = now - self._last_sync_at > timedelta(seconds=settings.fleet_local_partition_ttl_seconds)
-            mode = "central" if self._central_available and not stale else "local"
+            if not self.central_enabled:
+                stale = False
+                mode = "local"
+            else:
+                now = datetime.now(UTC)
+                stale = True
+                if self._last_sync_at is not None:
+                    stale = now - self._last_sync_at > timedelta(seconds=settings.fleet_local_partition_ttl_seconds)
+                mode = "central" if self._central_available and not stale else "local"
             return {
                 "mode": mode,
+                "central_enabled": self.central_enabled,
                 "central_available": self._central_available,
                 "stale": stale,
                 "last_sync_at": self._last_sync_at,

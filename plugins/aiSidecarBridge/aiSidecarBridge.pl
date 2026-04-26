@@ -837,6 +837,7 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_2 => 'macro',
 		aiSidecarPolicy_allow_3 => 'eventMacro',
 		aiSidecarPolicy_allow_4 => 'talknpc',
+		aiSidecarPolicy_allow_6 => 'respawn',
 		aiSidecarPolicy_deny_0 => 'quit',
 		aiSidecarPolicy_deny_1 => 'plugin',
 		aiSidecarPolicy_deny_2 => 'reload',
@@ -1640,6 +1641,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = (0, 'unsupported_kind', "unsupported action kind '$kind'");
 	} elsif ($rewrite_kind eq 'bare_take_delegated') {
 		($success, $result_code, $msg) = (1, 'ok', 'loot pickup delegated to OpenKore auto-loot configuration');
+	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto') {
+		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
 	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {
@@ -1722,8 +1725,12 @@ sub _execute_macro_reload_action {
 		'eventMacro',
 	);
 
+	if (!exists $config{macro_file}) {
+		debug "[aiSidecarBridge] macro_file is missing; forcing creation before macro plugin reload\n", 'aiSidecarBridge', 2;
+	}
+
 	my @commands = (
-		"conf macro_file $macro_file",
+		"conf -f macro_file $macro_file",
 		"plugin reload $macro_plugin",
 		"conf eventMacro_file $event_macro_file",
 		"plugin reload $event_macro_plugin",
@@ -1733,6 +1740,13 @@ sub _execute_macro_reload_action {
 		my ($ok, $err) = _run_safe_openkore_command($safe_command);
 		if (!$ok) {
 			return (0, 'macro_reload_failed', "macro reload step failed for '$safe_command': $err");
+		}
+
+		if ($safe_command =~ /^conf\s+-f\s+macro_file\b/) {
+			if (!exists $config{macro_file} || !defined $config{macro_file} || $config{macro_file} ne $macro_file) {
+				my $actual = exists $config{macro_file} ? _trim(_scalarize($config{macro_file}), 120) : 'undef';
+				return (0, 'macro_reload_failed', "macro reload step failed for '$safe_command': macro_file did not persist (actual='$actual')");
+			}
 		}
 	}
 
@@ -2380,11 +2394,21 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
+	if ($normalized =~ /^move\s+savepoint$/) {
+		return ('respawn', 'move_savepoint_rewritten');
+	}
+
 	if ($normalized eq 'move random_walk_seek') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'random_walk_seek_already_auto');
+		}
 		return ('ai auto', 'random_walk_seek_rewritten');
 	}
 
 	if ($normalized eq 'move') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'bare_move_already_auto');
+		}
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
@@ -2393,6 +2417,14 @@ sub _rewrite_runtime_command {
 	}
 
 	return ($trimmed, '');
+}
+
+sub _ai_already_auto_mode {
+	my $state = eval { AI::state() };
+	return 0 if $@;
+	my $auto = eval { AI::AUTO() };
+	return 0 if $@;
+	return ($state == $auto) ? 1 : 0;
 }
 
 sub _meta {

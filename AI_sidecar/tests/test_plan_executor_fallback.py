@@ -147,3 +147,34 @@ def test_plan_executor_tactical_intent_safe_idle_no_ai_auto() -> None:
     assert action.metadata.get("fallback_mode") == "safe_idle"
     assert action.command != "ai auto"
 
+
+def test_plan_executor_strategic_death_recovery_uses_respawn_command() -> None:
+    runtime = _Runtime()
+    runtime.snapshot_cache.set("bot:exec", _snapshot(bot_id="bot:exec", map_name="prt_fild08"))
+    executor = PlanExecutor(runtime_state=runtime)
+
+    plan = StrategicPlan(
+        plan_id="plan-death",
+        bot_id="bot:exec",
+        objective="recover safely",
+        horizon=PlanHorizon.strategic,
+        steps=[
+            PlannerStep(
+                step_id="s1",
+                kind=PlannerStepKind.rest,
+                description="Recover from death at savepoint before route resume",
+            )
+        ],
+        recommended_actions=[],
+        expires_at=datetime.now(UTC) + timedelta(minutes=2),
+    )
+
+    queued = __import__("asyncio").run(executor.execute(plan=plan, horizon=__import__("types").SimpleNamespace(value="long_term"), max_actions=2))
+
+    assert queued == 1
+    assert len(runtime.queued) == 1
+    action = runtime.queued[0][1]
+    assert action.command == "respawn"
+    assert action.conflict_key == "recovery.death"
+    assert action.metadata.get("fallback_mode") == "death_recovery"
+    assert action.metadata.get("target") == "savepoint"

@@ -25,9 +25,10 @@ def ready(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
     persisted_bots = runtime.repositories.bots.count() if runtime.repositories is not None else runtime.bot_registry.count()
     telemetry_backlog = runtime.telemetry_store.backlog_size()
     readiness = runtime.readiness_indicators()
+    fleet_central_enabled = bool(readiness.get("fleet_central_enabled", True))
     readiness_degraded = bool(
         readiness.get("planner_stale")
-        or readiness.get("fleet_central_stale")
+        or (fleet_central_enabled and readiness.get("fleet_central_stale"))
         or readiness.get("objective_scheduler_degraded")
     )
     return {
@@ -48,6 +49,7 @@ def ready(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
         "planner_stale_seconds": readiness.get("planner_stale_seconds"),
         "planner_stale_threshold_s": readiness.get("planner_stale_threshold_s"),
         "planner_last_updated_at": readiness.get("planner_last_updated_at"),
+        "fleet_central_enabled": fleet_central_enabled,
         "fleet_central_stale": bool(readiness.get("fleet_central_stale", True)),
         "fleet_central_available": bool(readiness.get("fleet_central_available", False)),
         "fleet_mode": readiness.get("fleet_mode"),

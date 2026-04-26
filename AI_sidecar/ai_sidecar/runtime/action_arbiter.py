@@ -15,6 +15,8 @@ from ai_sidecar.runtime.snapshot_cache import SnapshotCache
 
 logger = logging.getLogger(__name__)
 
+_PRECONDITION_SNAPSHOT_MISSING_WARN_EVERY = 5
+
 
 @dataclass(slots=True)
 class AdmissionResult:
@@ -36,6 +38,7 @@ class ActionArbiter:
         self._fleet_client = fleet_client
         self._constraint_state = constraint_state
         self._snapshot_cache = snapshot_cache
+        self._precondition_snapshot_missing_counts: dict[str, int] = {}
 
     async def admit(self, proposal: ActionProposal, *, bot_id: str | None = None) -> AdmissionResult:
         return self._admit_impl(proposal, bot_id=bot_id)
@@ -348,16 +351,25 @@ class ActionArbiter:
 
         snapshot = snapshot_cache.get(bot_id)
         if snapshot is None:
-            logger.warning(
-                "action_admission_precondition_snapshot_missing",
-                extra={
-                    "event": "action_admission_precondition_snapshot_missing",
-                    "bot_id": bot_id,
-                    "action_id": proposal.action_id,
-                    "preconditions": list(proposal.preconditions),
-                },
-            )
+            miss_count = self._precondition_snapshot_missing_counts.get(bot_id, 0) + 1
+            self._precondition_snapshot_missing_counts[bot_id] = miss_count
+            log_extra = {
+                "event": "action_admission_precondition_snapshot_missing",
+                "bot_id": bot_id,
+                "action_id": proposal.action_id,
+                "preconditions": list(proposal.preconditions),
+                "miss_count": miss_count,
+                "warn_every": _PRECONDITION_SNAPSHOT_MISSING_WARN_EVERY,
+            }
+            if miss_count == 1:
+                logger.info("action_admission_precondition_snapshot_missing", extra=log_extra)
+            elif miss_count % _PRECONDITION_SNAPSHOT_MISSING_WARN_EVERY == 0:
+                logger.warning("action_admission_precondition_snapshot_missing", extra=log_extra)
+            else:
+                logger.debug("action_admission_precondition_snapshot_missing", extra=log_extra)
             return None
+
+        self._precondition_snapshot_missing_counts.pop(bot_id, None)
 
         for item in proposal.preconditions:
             name = str(item).strip()

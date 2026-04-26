@@ -10,6 +10,7 @@ from pathlib import Path
 from ai_sidecar.contracts.macros import EventAutomacro, MacroRoutine
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+_BARE_CONDITION_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]*$")
 
 
 @dataclass(slots=True)
@@ -90,7 +91,11 @@ class MacroCompiler:
             self._validate_name(item.name)
             self._validate_name(item.call)
 
-            normalized_conditions = [self._sanitize_line(line) for line in item.conditions if self._sanitize_line(line)]
+            normalized_conditions = [
+                self._normalize_automacro_condition(line)
+                for line in item.conditions
+                if self._sanitize_line(line)
+            ]
             if not normalized_conditions:
                 normalized_conditions = ["BaseLevel >= 1"]
 
@@ -154,6 +159,14 @@ class MacroCompiler:
 
     def _sanitize_line(self, line: str) -> str:
         clean = line.replace("\r", " ").replace("\n", " ").strip()
+        return clean
+
+    def _normalize_automacro_condition(self, line: str) -> str:
+        clean = self._sanitize_line(line)
+        if not clean:
+            return clean
+        if _BARE_CONDITION_KEY_RE.fullmatch(clean):
+            return f"{clean} 1"
         return clean
 
 

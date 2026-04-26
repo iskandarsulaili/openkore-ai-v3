@@ -59,21 +59,30 @@ async def lifespan(app: FastAPI):
     # Auto-start the PDCA loop
     pdca_loop.start()
     logger.info("PDCA autonomy loop started (auto)")
-    fleet_sync_task = start_fleet_sync_loop(runtime)
-    logger.info("fleet sync loop started")
+    fleet_sync_task: asyncio.Task[None] | None = None
+    fleet_sync_enabled = bool(getattr(runtime.fleet_sync_client, "enabled", False))
+    if fleet_sync_enabled:
+        fleet_sync_task = start_fleet_sync_loop(runtime)
+        logger.info("fleet sync loop started")
+    else:
+        logger.info(
+            "fleet sync loop disabled",
+            extra={"event": "fleet_sync_loop_disabled", "fleet_central_enabled": False},
+        )
     yield
 
     # Stop PDCA loop
     if pdca_loop.running:
         await pdca_loop.stop()
         logger.info("PDCA autonomy loop stopped")
-    fleet_sync_task.cancel()
-    try:
-        await fleet_sync_task
-    except asyncio.CancelledError:
-        logger.info("fleet sync loop cancelled")
-    except Exception:
-        logger.info("fleet sync loop stopped")
+    if fleet_sync_task is not None:
+        fleet_sync_task.cancel()
+        try:
+            await fleet_sync_task
+        except asyncio.CancelledError:
+            logger.info("fleet sync loop cancelled")
+        except Exception:
+            logger.info("fleet sync loop stopped")
     try:
         await runtime.shutdown()
     except Exception:

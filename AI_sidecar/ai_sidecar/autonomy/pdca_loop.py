@@ -474,9 +474,10 @@ class PDCALoop:
                 reasons.append("inventory_overweight_pressure")
 
         fleet_status = self._fleet_status()
-        if bool(fleet_status.get("stale", False)):
+        fleet_central_enabled = bool(fleet_status.get("central_enabled", True))
+        if fleet_central_enabled and bool(fleet_status.get("stale", False)):
             reasons.append("fleet_central_stale")
-        if bool(fleet_status.get("central_available", True)) is False:
+        if fleet_central_enabled and bool(fleet_status.get("central_available", True)) is False:
             reasons.append("fleet_central_unavailable")
 
         # Limit trigger aggression for long-term horizon to hard stale/failure reasons.
@@ -608,6 +609,7 @@ class PDCALoop:
                 logger.exception("Failed to read fleet status for PDCA")
         return {
             "mode": "local",
+            "central_enabled": True,
             "central_available": False,
             "stale": True,
             "last_sync_at": None,

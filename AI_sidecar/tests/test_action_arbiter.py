@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
@@ -87,6 +88,87 @@ def test_action_arbiter_precondition_snapshot_missing_admits() -> None:
 
     assert result.admitted is True
     assert result.status == ActionStatus.queued
+
+
+def test_action_arbiter_precondition_snapshot_missing_logs_info_then_threshold_warning(caplog) -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+
+    caplog.set_level(logging.INFO, logger="ai_sidecar.runtime.action_arbiter")
+    for idx in range(arbiter_module._PRECONDITION_SNAPSHOT_MISSING_WARN_EVERY):
+        proposal = _make_proposal(f"action.precond.missing.threshold.{idx}", preconditions=["navigation.ready"])
+        result = arbiter.admit_sync(proposal, bot_id="bot:precond.missing.threshold")
+        assert result.admitted is True
+        assert result.status == ActionStatus.queued
+
+    missing_records = [
+        item
+        for item in caplog.records
+        if getattr(item, "event", "") == "action_admission_precondition_snapshot_missing"
+    ]
+    assert len(missing_records) == 2
+
+    info_records = [item for item in missing_records if item.levelno == logging.INFO]
+    warning_records = [item for item in missing_records if item.levelno == logging.WARNING]
+    assert len(info_records) == 1
+    assert len(warning_records) == 1
+    assert getattr(info_records[0], "miss_count", None) == 1
+    assert getattr(warning_records[0], "miss_count", None) == arbiter_module._PRECONDITION_SNAPSHOT_MISSING_WARN_EVERY
+
+
+def test_action_arbiter_precondition_snapshot_missing_counter_resets_after_snapshot(caplog) -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+
+    caplog.set_level(logging.INFO, logger="ai_sidecar.runtime.action_arbiter")
+
+    proposal_first = _make_proposal("action.precond.missing.reset.first", preconditions=["navigation.ready"])
+    first = arbiter.admit_sync(proposal_first, bot_id="bot:precond.missing.reset")
+    assert first.admitted is True
+    assert first.status == ActionStatus.queued
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:precond.missing.reset"),
+            tick_id="t-reset-valid",
+            observed_at=datetime.now(UTC),
+            position={"map": "prt_fild01", "x": 5, "y": 9},
+            vitals={"hp": 100, "hp_max": 100},
+            raw={"status": "alive"},
+        )
+    )
+
+    proposal_second = _make_proposal("action.precond.missing.reset.second", preconditions=["navigation.ready"])
+    second = arbiter.admit_sync(proposal_second, bot_id="bot:precond.missing.reset")
+    assert second.admitted is True
+    assert second.status == ActionStatus.queued
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:precond.missing.reset"),
+            tick_id="t-reset-stale",
+            observed_at=datetime.now(UTC) - timedelta(seconds=120),
+            position={"map": "prt_fild01", "x": 5, "y": 9},
+            vitals={"hp": 100, "hp_max": 100},
+            raw={"status": "alive"},
+        )
+    )
+
+    proposal_third = _make_proposal("action.precond.missing.reset.third", preconditions=["navigation.ready"])
+    third = arbiter.admit_sync(proposal_third, bot_id="bot:precond.missing.reset")
+    assert third.admitted is True
+    assert third.status == ActionStatus.queued
+
+    missing_records = [
+        item
+        for item in caplog.records
+        if getattr(item, "event", "") == "action_admission_precondition_snapshot_missing"
+    ]
+    assert len(missing_records) == 2
+    assert all(item.levelno == logging.INFO for item in missing_records)
+    assert [getattr(item, "miss_count", None) for item in missing_records] == [1, 1]
 
 
 def test_action_arbiter_precondition_passes_with_snapshot() -> None:

@@ -590,7 +590,7 @@ class PlanGenerator:
                 step_id="s1",
                 kind=PlannerStepKind.rest,
                 description="Recover from death at savepoint before route resume",
-                command="move savepoint",
+                command="respawn",
                 conflict_key="recovery.death",
                 priority=95,
                 success_predicates=["death_cleared", "returned_to_savepoint"],

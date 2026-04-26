@@ -85,6 +85,11 @@ class _ManagerRuntime:
         )
 
 
+class _CaptureCrew:
+    def __init__(self, **kwargs) -> None:
+        self.kwargs = dict(kwargs)
+
+
 def test_crew_manager_strategize_disabled_fallback() -> None:
     runtime = _ManagerRuntime()
     manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
@@ -130,6 +135,50 @@ def test_crew_manager_coordinate_disabled_and_tool_dispatch() -> None:
 
     unknown_tool = manager.execute_tool(bot_id="bot:crew", tool_name="missing_tool", arguments={})
     assert unknown_tool.get("ok") is False
+
+
+def test_crew_manager_build_crew_memory_defaults_disabled() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    crew = manager._build_crew(
+        Crew=_CaptureCrew,
+        Process=object,
+        bot_id="bot:crew-memory-default",
+        agents_by_id={"agent": object()},
+        tasks=[object()],
+        manager=object(),
+        planning_llm=object(),
+        include_manager=False,
+        process="sequential",
+        planning=False,
+    )
+
+    assert crew.kwargs["memory"] is False
+    assert "before_kickoff_callbacks" not in crew.kwargs
+    assert "after_kickoff_callbacks" not in crew.kwargs
+
+
+def test_crew_manager_build_crew_memory_honors_explicit_enable() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False, memory_enabled=True)
+
+    crew = manager._build_crew(
+        Crew=_CaptureCrew,
+        Process=object,
+        bot_id="bot:crew-memory-enabled",
+        agents_by_id={"agent": object()},
+        tasks=[object()],
+        manager=object(),
+        planning_llm=object(),
+        include_manager=False,
+        process="sequential",
+        planning=False,
+    )
+
+    assert crew.kwargs["memory"] is True
+    assert "before_kickoff_callbacks" not in crew.kwargs
+    assert "after_kickoff_callbacks" not in crew.kwargs
 
 
 class _RouterRuntime:
