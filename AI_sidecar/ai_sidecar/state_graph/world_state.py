@@ -24,6 +24,9 @@ from ai_sidecar.state_graph.npc_tracker import NpcInteractionTracker
 from ai_sidecar.state_graph.quest_tracker import QuestProgressTracker
 
 
+_ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS = 8.0
+
+
 @dataclass(slots=True)
 class _BotProjection:
     operational: BotOperationalState
@@ -43,6 +46,7 @@ class _BotProjection:
     last_disconnect_at: datetime | None = None
     last_map_name: str | None = None
     last_route_signature: tuple[str | None, int | None, int | None] | None = None
+    last_actor_refresh_at: datetime | None = None
 
 
 def _int_or_none(value: object) -> int | None:
@@ -273,6 +277,12 @@ class WorldStateProjector:
             observed_at=now,
         )
 
+        previous_encounter = {
+            "in_encounter": bool(projection.encounter.in_encounter),
+            "nearby_hostiles": int(projection.encounter.nearby_hostiles),
+            "nearby_allies": int(projection.encounter.nearby_allies),
+            "risk_score": float(projection.encounter.risk_score),
+        }
         projection.encounter.in_encounter = bool(combat.get("is_in_combat"))
         projection.encounter.target_id = combat.get("target_id")
         projection.encounter.updated_at = now
@@ -297,8 +307,41 @@ class WorldStateProjector:
                     str(actor.get("relation") or "").strip().lower(),
                     str(actor.get("actor_type") or "").strip().lower(),
                 )
-            projection.actor_relations = relation_map
-            self._recompute_actor_encounter(projection, now)
+            actor_discovery = raw_payload.get("actor_discovery") if isinstance(raw_payload.get("actor_discovery"), dict) else {}
+            if relation_map:
+                projection.actor_relations = relation_map
+                projection.last_actor_refresh_at = now
+                self._recompute_actor_encounter(projection, now)
+                projection.encounter.raw["actor_snapshot_retention"] = {
+                    "active": False,
+                    "reason": "fresh_actor_census",
+                    "ttl_seconds": _ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS,
+                    "age_seconds": 0.0,
+                }
+            else:
+                retention = self._actor_snapshot_retention_decision(
+                    projection=projection,
+                    actor_discovery=actor_discovery,
+                    observed_at=now,
+                )
+                if bool(retention.get("retain")):
+                    projection.encounter.in_encounter = bool(previous_encounter["in_encounter"])
+                    projection.encounter.nearby_hostiles = int(previous_encounter["nearby_hostiles"])
+                    projection.encounter.nearby_allies = int(previous_encounter["nearby_allies"])
+                    projection.encounter.risk_score = float(previous_encounter["risk_score"])
+                    projection.encounter.updated_at = now
+                else:
+                    projection.actor_relations = {}
+                    projection.last_actor_refresh_at = None
+                    self._recompute_actor_encounter(projection, now)
+
+                projection.encounter.raw["actor_snapshot_retention"] = {
+                    "active": bool(retention.get("retain")),
+                    "reason": str(retention.get("reason") or "unknown"),
+                    "ttl_seconds": _ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS,
+                    "age_seconds": float(retention.get("age_seconds") or 0.0),
+                    "actor_discovery": retention.get("actor_discovery") or {},
+                }
 
         hp = float(vitals.get("hp") or 0.0)
         hp_max = float(vitals.get("hp_max") or 0.0)
@@ -359,6 +402,7 @@ class WorldStateProjector:
 
         if event.event_type in {"actor.removed", "actor.disappeared"}:
             projection.actor_relations.pop(actor_id, None)
+            projection.last_actor_refresh_at = now
             self._npc_tracker.observe_event(event)
             projection.npc = self._npc_tracker.export(bot_id=projection.operational.bot_id, observed_at=now)
             self._recompute_actor_encounter(projection, now)
@@ -367,6 +411,7 @@ class WorldStateProjector:
         relation = str(payload.get("relation") or "").strip().lower()
         actor_type = str(payload.get("actor_type") or "").strip().lower()
         projection.actor_relations[actor_id] = (relation, actor_type)
+        projection.last_actor_refresh_at = now
 
         if actor_type == "npc":
             self._npc_tracker.observe_event(event)
@@ -465,3 +510,115 @@ class WorldStateProjector:
         projection.encounter.risk_score = float(hostiles) / float(max(1, allies + 1))
         projection.encounter.in_encounter = bool(projection.operational.in_combat or hostiles > 0)
         projection.encounter.updated_at = now
+
+    def _actor_snapshot_retention_decision(
+        self,
+        *,
+        projection: _BotProjection,
+        actor_discovery: dict[str, object],
+        observed_at: datetime,
+    ) -> dict[str, object]:
+        metrics = self._actor_discovery_metrics(actor_discovery)
+        if not projection.actor_relations:
+            return {
+                "retain": False,
+                "reason": "no_prior_actor_context",
+                "age_seconds": 0.0,
+                "actor_discovery": metrics,
+            }
+
+        if projection.last_actor_refresh_at is None:
+            return {
+                "retain": False,
+                "reason": "no_actor_refresh_timestamp",
+                "age_seconds": 0.0,
+                "actor_discovery": metrics,
+            }
+
+        age_seconds = max(0.0, (observed_at - projection.last_actor_refresh_at).total_seconds())
+        if age_seconds > _ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS:
+            return {
+                "retain": False,
+                "reason": "ttl_expired",
+                "age_seconds": age_seconds,
+                "actor_discovery": metrics,
+            }
+
+        if not self._actor_discovery_indicates_sensor_missing(metrics):
+            return {
+                "retain": False,
+                "reason": "actor_discovery_not_sensor_missing",
+                "age_seconds": age_seconds,
+                "actor_discovery": metrics,
+            }
+
+        return {
+            "retain": True,
+            "reason": "sensor_missing_empty_census",
+            "age_seconds": age_seconds,
+            "actor_discovery": metrics,
+        }
+
+    def _actor_discovery_metrics(self, actor_discovery: dict[str, object]) -> dict[str, object]:
+        if not isinstance(actor_discovery, dict):
+            return {
+                "available": False,
+                "source_total": 0,
+                "normalize_seen_total": 0,
+                "normalize_kept_total": 0,
+                "normalize_skipped_total": 0,
+                "skipped_missing_actor_id": 0,
+                "payload_snapshot_actor_count": 0,
+            }
+
+        source_counts = actor_discovery.get("source_counts") if isinstance(actor_discovery.get("source_counts"), dict) else {}
+        normalize = actor_discovery.get("normalize") if isinstance(actor_discovery.get("normalize"), dict) else {}
+        skipped_reasons = normalize.get("skipped_reasons") if isinstance(normalize.get("skipped_reasons"), dict) else {}
+        payload = actor_discovery.get("payload") if isinstance(actor_discovery.get("payload"), dict) else {}
+
+        source_total = 0
+        for actor_type in ("monster", "player", "npc"):
+            row = source_counts.get(actor_type)
+            if not isinstance(row, dict):
+                continue
+            source_total += self._non_negative_int(row.get("hash"))
+            source_total += self._non_negative_int(row.get("list"))
+            source_total += self._non_negative_int(row.get("merged_candidates"))
+
+        return {
+            "available": True,
+            "source_total": source_total,
+            "normalize_seen_total": self._non_negative_int(normalize.get("seen_total")),
+            "normalize_kept_total": self._non_negative_int(normalize.get("kept_total")),
+            "normalize_skipped_total": self._non_negative_int(normalize.get("skipped_total")),
+            "skipped_missing_actor_id": self._non_negative_int(skipped_reasons.get("missing_actor_id")),
+            "payload_snapshot_actor_count": self._non_negative_int(payload.get("snapshot_actor_count")),
+        }
+
+    def _actor_discovery_indicates_sensor_missing(self, metrics: dict[str, object]) -> bool:
+        if not bool(metrics.get("available")):
+            return False
+
+        payload_snapshot_actor_count = self._non_negative_int(metrics.get("payload_snapshot_actor_count"))
+        normalize_kept_total = self._non_negative_int(metrics.get("normalize_kept_total"))
+        normalize_seen_total = self._non_negative_int(metrics.get("normalize_seen_total"))
+        source_total = self._non_negative_int(metrics.get("source_total"))
+        skipped_missing_actor_id = self._non_negative_int(metrics.get("skipped_missing_actor_id"))
+
+        if payload_snapshot_actor_count > 0 or normalize_kept_total > 0:
+            return False
+        if source_total == 0:
+            return True
+        if normalize_seen_total > 0 and normalize_kept_total == 0:
+            return True
+        if skipped_missing_actor_id > 0:
+            return True
+        return False
+
+    @staticmethod
+    def _non_negative_int(value: object) -> int:
+        try:
+            parsed = int(value) if value is not None else 0  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0
+        return max(0, parsed)

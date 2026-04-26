@@ -168,6 +168,180 @@ def test_world_state_projector_recomputes_actor_truth_on_disappearance() -> None
     assert second["encounter"].in_encounter is False
 
 
+def test_world_state_projector_snapshot_actor_overwrite_preserved_for_real_actor_data() -> None:
+    bot_id = "bot:ws2-world-overwrite"
+    projector = WorldStateProjector()
+    t0 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+
+    first = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0,
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 100, "y": 100},
+            "vitals": {"hp": 900, "hp_max": 1000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "idle"},
+            "inventory": {"zeny": 1000, "item_count": 2},
+            "actors": [{"actor_id": "mob-1", "actor_type": "monster", "relation": "hostile"}],
+        },
+    )
+    projector.observe_event(first)
+
+    second = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0 + timedelta(seconds=1),
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 101, "y": 101},
+            "vitals": {"hp": 900, "hp_max": 1000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "idle"},
+            "inventory": {"zeny": 1000, "item_count": 2},
+            "actors": [{"actor_id": "npc-1", "actor_type": "npc", "relation": "neutral"}],
+            "raw": {
+                "actor_discovery": {
+                    "source_counts": {
+                        "monster": {"hash": 0, "list": 0, "merged_candidates": 0},
+                        "player": {"hash": 0, "list": 0, "merged_candidates": 0},
+                        "npc": {"hash": 1, "list": 0, "merged_candidates": 1},
+                    },
+                    "normalize": {"seen_total": 1, "kept_total": 1, "skipped_total": 0, "skipped_reasons": {}},
+                    "payload": {"snapshot_actor_count": 1},
+                }
+            },
+        },
+    )
+    projector.observe_event(second)
+
+    state = projector.export(bot_id=bot_id, features=LearningFeatureVector())
+    assert state["encounter"].nearby_hostiles == 0
+    assert state["encounter"].nearby_allies == 0
+    assert state["encounter"].in_encounter is False
+    retention = state["encounter"].raw.get("actor_snapshot_retention") or {}
+    assert retention.get("active") is False
+    assert retention.get("reason") == "fresh_actor_census"
+
+
+def test_world_state_projector_empty_sensor_missing_snapshot_retains_recent_actor_context() -> None:
+    bot_id = "bot:ws2-world-retain"
+    projector = WorldStateProjector()
+    t0 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+
+    first = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0,
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 100, "y": 100},
+            "vitals": {"hp": 900, "hp_max": 1000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "attack"},
+            "inventory": {"zeny": 1000, "item_count": 2},
+            "actors": [{"actor_id": "mob-1", "actor_type": "monster", "relation": "hostile"}],
+        },
+    )
+    projector.observe_event(first)
+
+    missing = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0 + timedelta(seconds=2),
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 101, "y": 101},
+            "vitals": {"hp": 880, "hp_max": 1000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "attack"},
+            "inventory": {"zeny": 1000, "item_count": 2},
+            "actors": [],
+            "raw": {
+                "actor_discovery": {
+                    "source_counts": {
+                        "monster": {"hash": 0, "list": 0, "merged_candidates": 0},
+                        "player": {"hash": 0, "list": 0, "merged_candidates": 0},
+                        "npc": {"hash": 0, "list": 0, "merged_candidates": 0},
+                    },
+                    "normalize": {"seen_total": 0, "kept_total": 0, "skipped_total": 0, "skipped_reasons": {}},
+                    "payload": {"snapshot_actor_count": 0},
+                }
+            },
+        },
+    )
+    projector.observe_event(missing)
+
+    state = projector.export(bot_id=bot_id, features=LearningFeatureVector())
+    assert state["encounter"].nearby_hostiles == 1
+    assert state["encounter"].in_encounter is True
+    retention = state["encounter"].raw.get("actor_snapshot_retention") or {}
+    assert retention.get("active") is True
+    assert retention.get("reason") == "sensor_missing_empty_census"
+
+
+def test_world_state_projector_empty_sensor_missing_snapshot_actor_context_ages_out() -> None:
+    bot_id = "bot:ws2-world-retain-expire"
+    projector = WorldStateProjector()
+    t0 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+
+    first = NormalizedEvent(
+        meta=_meta(bot_id),
+        observed_at=t0,
+        event_family=EventFamily.snapshot,
+        event_type="snapshot.compact",
+        source_hook="pytest",
+        payload={
+            "position": {"map": "prt_fild08", "x": 100, "y": 100},
+            "vitals": {"hp": 900, "hp_max": 1000},
+            "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "attack"},
+            "inventory": {"zeny": 1000, "item_count": 2},
+            "actors": [{"actor_id": "mob-1", "actor_type": "monster", "relation": "hostile"}],
+        },
+    )
+    projector.observe_event(first)
+
+    def _missing_snapshot(at: datetime) -> NormalizedEvent:
+        return NormalizedEvent(
+            meta=_meta(bot_id),
+            observed_at=at,
+            event_family=EventFamily.snapshot,
+            event_type="snapshot.compact",
+            source_hook="pytest",
+            payload={
+                "position": {"map": "prt_fild08", "x": 101, "y": 101},
+                "vitals": {"hp": 880, "hp_max": 1000},
+                "combat": {"is_in_combat": False, "target_id": None, "ai_sequence": "attack"},
+                "inventory": {"zeny": 1000, "item_count": 2},
+                "actors": [],
+                "raw": {
+                    "actor_discovery": {
+                        "source_counts": {
+                            "monster": {"hash": 0, "list": 0, "merged_candidates": 0},
+                            "player": {"hash": 0, "list": 0, "merged_candidates": 0},
+                            "npc": {"hash": 0, "list": 0, "merged_candidates": 0},
+                        },
+                        "normalize": {"seen_total": 0, "kept_total": 0, "skipped_total": 0, "skipped_reasons": {}},
+                        "payload": {"snapshot_actor_count": 0},
+                    }
+                },
+            },
+        )
+
+    projector.observe_event(_missing_snapshot(t0 + timedelta(seconds=2)))
+    retained = projector.export(bot_id=bot_id, features=LearningFeatureVector())
+    assert retained["encounter"].nearby_hostiles == 1
+
+    projector.observe_event(_missing_snapshot(t0 + timedelta(seconds=10)))
+    expired = projector.export(bot_id=bot_id, features=LearningFeatureVector())
+    assert expired["encounter"].nearby_hostiles == 0
+    assert expired["encounter"].in_encounter is False
+    retention = expired["encounter"].raw.get("actor_snapshot_retention") or {}
+    assert retention.get("active") is False
+    assert retention.get("reason") == "ttl_expired"
+
+
 def test_feature_extractor_tracks_exp_delta_and_latest_numeric_values() -> None:
     bot_id = "bot:ws2-features"
     extractor = FeatureExtractor()

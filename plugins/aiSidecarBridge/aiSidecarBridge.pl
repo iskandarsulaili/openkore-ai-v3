@@ -101,6 +101,7 @@ my $last_actor_source_probe_log_ms = 0;
 my $last_actor_post_parse_probe_log_ms = 0;
 my %actor_add_probe_count;
 my %actor_add_probe_last_log_ms;
+my $consecutive_empty_actor_snapshots = 0;
 
 my $json_available = eval { require JSON::PP; 1; };
 
@@ -157,6 +158,7 @@ sub _cleanup_runtime {
 	$last_actor_post_parse_probe_log_ms = 0;
 	%actor_add_probe_count = ();
 	%actor_add_probe_last_log_ms = ();
+	$consecutive_empty_actor_snapshots = 0;
 }
 
 sub on_start3 {
@@ -1016,6 +1018,7 @@ sub _build_snapshot_payload {
 				duplicate_actor_id => 0,
 				over_limit => 0,
 			},
+			id_fallback_from_hash_key => 0,
 		},
 		payload => {
 			snapshot_actor_count => 0,
@@ -1052,12 +1055,24 @@ sub _build_snapshot_payload {
 			}
 
 			my $actor_id = _actor_id_from_any($actor->{ID});
+			my $used_fallback_id = 0;
+			if ($actor_id eq '' && defined $args{fallback_actor_id}) {
+				my $fallback_actor_id = _actor_id_from_any($args{fallback_actor_id});
+				if ($fallback_actor_id ne '') {
+					$actor_id = $fallback_actor_id;
+					$used_fallback_id = 1;
+				}
+			}
 			if ($actor_id eq '') {
 				$actor_discovery->{normalize}{skipped_total} += 1;
 				$actor_discovery->{normalize}{skipped_by_type}{$actor_type} =
 					0 + ($actor_discovery->{normalize}{skipped_by_type}{$actor_type} || 0) + 1;
 				$actor_discovery->{normalize}{skipped_reasons}{missing_actor_id} += 1;
 				return;
+			}
+			if ($used_fallback_id) {
+				$actor_discovery->{normalize}{id_fallback_from_hash_key} =
+					0 + ($actor_discovery->{normalize}{id_fallback_from_hash_key} || 0) + 1;
 			}
 
 			if ($seen_actor_ids{$actor_id}) {
@@ -1102,16 +1117,30 @@ sub _build_snapshot_payload {
 
 		# Nearby monsters (hash + ActorList)
 		eval {
-			my @mons_hash = values %monsters;
+			my @mons_hash = map {
+				{
+					actor => $monsters{$_},
+					fallback_actor_id => $_,
+				}
+			} keys %monsters;
 			my @mons_list = _actor_list_items($monstersList);
 			$actor_discovery->{source_counts}{monster}{hash} = scalar(@mons_hash) + 0;
 			$actor_discovery->{source_counts}{monster}{list} = scalar(@mons_list) + 0;
-			my @mons_merged = (@mons_hash, @mons_list);
+			my @mons_merged = (
+				@mons_hash,
+				map {
+					{
+						actor => $_,
+						fallback_actor_id => undef,
+					}
+				} @mons_list,
+			);
 			$actor_discovery->{source_counts}{monster}{merged_candidates} = scalar(@mons_merged) + 0;
 
-			for my $mob (@mons_merged) {
+			for my $entry (@mons_merged) {
 				$append_actor->(
-					actor => $mob,
+					actor => $entry->{actor},
+					fallback_actor_id => $entry->{fallback_actor_id},
 					actor_type => 'monster',
 					default_name => 'Monster',
 					relation => 'hostile',
@@ -1122,16 +1151,30 @@ sub _build_snapshot_payload {
 
 		# Nearby players (hash + ActorList)
 		eval {
-			my @players_hash = values %players;
+			my @players_hash = map {
+				{
+					actor => $players{$_},
+					fallback_actor_id => $_,
+				}
+			} keys %players;
 			my @players_list = _actor_list_items($playersList);
 			$actor_discovery->{source_counts}{player}{hash} = scalar(@players_hash) + 0;
 			$actor_discovery->{source_counts}{player}{list} = scalar(@players_list) + 0;
-			my @players_merged = (@players_hash, @players_list);
+			my @players_merged = (
+				@players_hash,
+				map {
+					{
+						actor => $_,
+						fallback_actor_id => undef,
+					}
+				} @players_list,
+			);
 			$actor_discovery->{source_counts}{player}{merged_candidates} = scalar(@players_merged) + 0;
 
-			for my $player (@players_merged) {
+			for my $entry (@players_merged) {
 				$append_actor->(
-					actor => $player,
+					actor => $entry->{actor},
+					fallback_actor_id => $entry->{fallback_actor_id},
 					actor_type => 'player',
 					default_name => 'Player',
 					relation_cb => sub {
@@ -1149,16 +1192,30 @@ sub _build_snapshot_payload {
 
 		# Nearby NPCs (hash + ActorList)
 		eval {
-			my @npcs_hash = values %npcs;
+			my @npcs_hash = map {
+				{
+					actor => $npcs{$_},
+					fallback_actor_id => $_,
+				}
+			} keys %npcs;
 			my @npcs_list = _actor_list_items($npcsList);
 			$actor_discovery->{source_counts}{npc}{hash} = scalar(@npcs_hash) + 0;
 			$actor_discovery->{source_counts}{npc}{list} = scalar(@npcs_list) + 0;
-			my @npcs_merged = (@npcs_hash, @npcs_list);
+			my @npcs_merged = (
+				@npcs_hash,
+				map {
+					{
+						actor => $_,
+						fallback_actor_id => undef,
+					}
+				} @npcs_list,
+			);
 			$actor_discovery->{source_counts}{npc}{merged_candidates} = scalar(@npcs_merged) + 0;
 
-			for my $npc (@npcs_merged) {
+			for my $entry (@npcs_merged) {
 				$append_actor->(
-					actor => $npc,
+					actor => $entry->{actor},
+					fallback_actor_id => $entry->{fallback_actor_id},
 					actor_type => 'npc',
 					default_name => 'NPC',
 					relation => 'neutral',
@@ -1183,7 +1240,7 @@ sub _build_snapshot_payload {
 
 		$actor_discovery->{payload}{truncated} = $actor_discovery->{normalize}{skipped_reasons}{over_limit} > 0 ? 1 : 0;
 		debug sprintf(
-			"[aiSidecarBridge] actor discovery source_counts={m:h=%d,l=%d p:h=%d,l=%d n:h=%d,l=%d} normalize={seen=%d kept=%d skipped=%d missing_id=%d dup_id=%d over_limit=%d} payload={count=%d max=%d truncated=%d}\n",
+			"[aiSidecarBridge] actor discovery source_counts={m:h=%d,l=%d p:h=%d,l=%d n:h=%d,l=%d} normalize={seen=%d kept=%d skipped=%d missing_id=%d id_fallback=%d dup_id=%d over_limit=%d} payload={count=%d max=%d truncated=%d}\n",
 			0 + ($actor_discovery->{source_counts}{monster}{hash} || 0),
 			0 + ($actor_discovery->{source_counts}{monster}{list} || 0),
 			0 + ($actor_discovery->{source_counts}{player}{hash} || 0),
@@ -1194,6 +1251,7 @@ sub _build_snapshot_payload {
 			0 + ($actor_discovery->{normalize}{kept_total} || 0),
 			0 + ($actor_discovery->{normalize}{skipped_total} || 0),
 			0 + ($actor_discovery->{normalize}{skipped_reasons}{missing_actor_id} || 0),
+			0 + ($actor_discovery->{normalize}{id_fallback_from_hash_key} || 0),
 			0 + ($actor_discovery->{normalize}{skipped_reasons}{duplicate_actor_id} || 0),
 			0 + ($actor_discovery->{normalize}{skipped_reasons}{over_limit} || 0),
 			scalar(@actors) + 0,
@@ -1279,6 +1337,59 @@ sub _send_actor_delta_from_snapshot {
 		};
 	}
 
+	my $known_before_count = scalar(keys %known_actor_ids) + 0;
+	my $observed_count = scalar(@observed) + 0;
+	if ($observed_count > 0) {
+		$consecutive_empty_actor_snapshots = 0;
+	} else {
+		$consecutive_empty_actor_snapshots += 1;
+	}
+
+	if ($observed_count == 0 && $known_before_count > 0) {
+		my $source_candidates = _actor_discovery_source_candidates($actor_discovery);
+		my $empty_grace_snapshots = _cfg_int('aiSidecar_emptyActorRemovalGraceSnapshots', 2);
+		$empty_grace_snapshots = 1 if !defined $empty_grace_snapshots || $empty_grace_snapshots < 1;
+		my $within_grace = $consecutive_empty_actor_snapshots < $empty_grace_snapshots ? 1 : 0;
+		my $has_source_candidates = $source_candidates > 0 ? 1 : 0;
+
+		if ($within_grace || $has_source_candidates) {
+			debug sprintf(
+				"[aiSidecarBridge] actor delta empty-snapshot guard active observed=0 known=%d empty_streak=%d grace=%d source_candidates=%d; retaining previous actor-set state this tick\n",
+				0 + $known_before_count,
+				0 + $consecutive_empty_actor_snapshots,
+				0 + $empty_grace_snapshots,
+				0 + $source_candidates,
+			), 'aiSidecarBridge', 2;
+
+			_enqueue_normalized_event(
+				'actor_state',
+				'actor_state.bridge_delta_empty_guarded',
+				'mainLoop_pre',
+				'bridge actor delta skipped by empty-snapshot guard',
+				{
+					revision => _trim(_scalarize($snapshot->{tick_id} || _trace_id()), 128),
+					observed_count => 0 + $observed_count,
+					known_before_count => 0 + $known_before_count,
+					empty_streak => 0 + $consecutive_empty_actor_snapshots,
+					empty_grace_snapshots => 0 + $empty_grace_snapshots,
+					source_candidates => 0 + $source_candidates,
+					snapshot_actor_count => 0 + $snapshot_actor_count,
+					actor_discovery => $actor_discovery,
+				},
+				{ outcome => 'guarded_empty' },
+				{
+					observed_count => 0 + $observed_count,
+					known_before_count => 0 + $known_before_count,
+					empty_streak => 0 + $consecutive_empty_actor_snapshots,
+					source_candidates => 0 + $source_candidates,
+					snapshot_actor_count => 0 + $snapshot_actor_count,
+				},
+				'info',
+			);
+			return;
+		}
+	}
+
 	my @removed_actor_ids = grep { !$observed_ids{$_} } sort keys %known_actor_ids;
 	my %actor_type_counts;
 	my $hostile_count = 0;
@@ -1293,7 +1404,6 @@ sub _send_actor_delta_from_snapshot {
 			$hostile_count += 1;
 		}
 	}
-	my $observed_count = scalar(@observed) + 0;
 	my $removed_count = scalar(@removed_actor_ids) + 0;
 	my $payload_counts = {
 		snapshot_actor_count => 0 + $snapshot_actor_count,
@@ -1439,6 +1549,21 @@ sub _actor_list_items {
 	};
 	return () if !$items || ref($items) ne 'ARRAY';
 	return @{$items};
+}
+
+sub _actor_discovery_source_candidates {
+	my ($actor_discovery) = @_;
+	return 0 if ref($actor_discovery) ne 'HASH';
+	return 0 if ref($actor_discovery->{source_counts}) ne 'HASH';
+
+	my $count = 0;
+	for my $actor_type (qw(monster player npc)) {
+		next if ref($actor_discovery->{source_counts}{$actor_type}) ne 'HASH';
+		$count += 0 + ($actor_discovery->{source_counts}{$actor_type}{hash} || 0);
+		$count += 0 + ($actor_discovery->{source_counts}{$actor_type}{list} || 0);
+	}
+
+	return 0 + $count;
 }
 
 
