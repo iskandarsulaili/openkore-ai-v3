@@ -23,9 +23,14 @@ class ControlStorage:
     def resolve_control_path(self, *, bot_id: str, profile: str | None, target_path: str) -> Path:
         if target_path.startswith("/"):
             return self.workspace_root / target_path.lstrip("/")
+        normalized = str(target_path).strip()
+        if normalized.startswith("openkore-ai-v3/"):
+            normalized = normalized[len("openkore-ai-v3/") :]
+        if normalized.startswith("AI_sidecar/"):
+            normalized = normalized[len("AI_sidecar/") :]
         if profile:
-            return self.workspace_root / "openkore-ai-v3" / "profiles" / profile / target_path
-        return self.workspace_root / "openkore-ai-v3" / "control" / target_path
+            return self.workspace_root / "profiles" / profile / normalized
+        return self.workspace_root / normalized
 
     def snapshot(
         self,
@@ -51,4 +56,3 @@ class ControlStorage:
         content = self.parser.render(values)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-

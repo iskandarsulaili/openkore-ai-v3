@@ -96,7 +96,10 @@ sub title {
 	if ($title) {
 		if (!defined($self->{title}) || $self->{title} ne $title) {
 			$self->{title} = $title;
-			if ($ENV{TERM} eq 'xterm' || $ENV{TERM} eq 'screen') {
+			my $term = $ENV{TERM} // '';
+			return if ($term eq '' || $term eq 'dumb');
+			return unless -t STDOUT;
+			if ($term eq 'xterm' || $term eq 'screen') {
 				print STDOUT "\e]2;" . $title . "\a";
 				STDOUT->flush;
 			}

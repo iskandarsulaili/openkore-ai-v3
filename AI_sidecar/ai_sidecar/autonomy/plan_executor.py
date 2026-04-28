@@ -230,7 +230,7 @@ class PlanExecutor:
                     priority=ActionPriorityTier.strategic,
                     source="pdca_loop_strategic",
                     conflict_key="recovery.death",
-                    preconditions=[],
+                    preconditions=["session.in_game"],
                     metadata={
                         "description": description,
                         "fallback_mode": "death_recovery",

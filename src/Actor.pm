@@ -59,6 +59,10 @@ use overload 'ne' => \&_ne;
 use overload '==' => \&_isis;
 use overload '!=' => \&_not_is;
 
+# Throttle repeated teleport-unavailable warnings when multiple AI paths
+# request teleport while required skill/item is absent.
+my %teleport_unavailable_warn_at;
+
 sub _eq {
 	return UNIVERSAL::isa($_[0], "Actor")
 		&& UNIVERSAL::isa($_[1], "Actor")
@@ -863,6 +867,20 @@ sub useTeleport {
 	my ($self, $level) = @_;
 
 	if(!AI::inQueue("teleport","NPC")) {
+		if ($level) {
+			unless (Misc::canUseTeleport($level)) {
+				my $actor_key = defined $self->{ID} ? unpack('H*', $self->{ID}) : 'unknown';
+				my $warn_key = join(':', $actor_key, int($level));
+				my $now = time;
+				my $warn_interval = 30;
+				my $last_warn = $teleport_unavailable_warn_at{$warn_key} // 0;
+				if (($now - $last_warn) >= $warn_interval) {
+					error TF("Teleport unavailable (level %s): missing skill or item; skipping request.\n", $level);
+					$teleport_unavailable_warn_at{$warn_key} = $now;
+				}
+				return;
+			}
+		}
 		require Task::Teleport::Random;
 		require Task::Teleport::Respawn;
 

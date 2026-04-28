@@ -271,3 +271,52 @@ def test_pdca_collect_replan_reasons_keeps_central_failure_when_enabled_unavaila
 
     assert "fleet_central_stale" in reasons
     assert "fleet_central_unavailable" in reasons
+
+
+def test_pdca_long_term_falls_back_to_planner_when_crewai_unusable() -> None:
+    class _Runtime(_PDCAStubRuntime):
+        async def crewai_strategize(self, payload) -> CrewStrategizeResponse:
+            self.crewai_calls.append(payload)
+            return CrewStrategizeResponse(
+                ok=False,
+                message="crewai_disabled",
+                trace_id=payload.meta.trace_id,
+                bot_id=payload.meta.bot_id,
+                objective=payload.objective,
+                planner_response=None,
+                consolidated_output="crewai_disabled",
+                agent_outputs=[],
+                errors=["crewai_disabled"],
+            )
+
+        async def planner_plan(self, payload) -> PlannerResponse:
+            self.planner_calls.append(payload)
+            strategic = StrategicPlan(
+                plan_id="plan-fallback",
+                bot_id=payload.meta.bot_id,
+                objective=payload.objective,
+                horizon=PlanHorizon.strategic,
+                steps=[],
+                recommended_actions=[],
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            )
+            return PlannerResponse(
+                ok=True,
+                message="ok",
+                trace_id=payload.meta.trace_id,
+                strategic_plan=strategic,
+                provider="pytest",
+                model="local",
+                latency_ms=1.0,
+            )
+
+    runtime = _Runtime()
+    pdca = PDCALoop(runtime_state=runtime)
+
+    result = asyncio.run(pdca._run_one_cycle(Horizon.LONG_TERM))
+
+    assert result.error is None
+    assert result.re_planned is True
+    assert runtime.crewai_calls
+    assert runtime.planner_calls
+    assert runtime.planner_calls[-1].horizon == PlanHorizon.strategic

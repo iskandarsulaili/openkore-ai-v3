@@ -30,6 +30,7 @@ from ai_sidecar.crewai.tools import CrewToolFacade, build_crewai_tools
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerPlanRequest
 
 logger = logging.getLogger(__name__)
+_CREWAI_DISABLED_WARN_INTERVAL_S = 30.0
 
 
 @dataclass(slots=True)
@@ -48,6 +49,7 @@ class CrewManager:
     _tool_map: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
     _listener_events: list[dict[str, object]] = field(default_factory=list, init=False, repr=False)
     _run_locks: dict[str, asyncio.Lock] = field(default_factory=dict, init=False, repr=False)
+    _disabled_warning_state: dict[str, tuple[float, int]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._counters = {
@@ -275,10 +277,38 @@ class CrewManager:
         decision_context: CrewAutonomyDecisionContext | None,
     ) -> tuple[list[dict[str, object]], str, dict[str, object], list[str], CrewAutonomyDecisionOutput | None]:
         if not self.enabled:
-            logger.warning(
-                "crewai_pipeline_disabled",
-                extra={"event": "crewai_pipeline_disabled", "bot_id": bot_id, "trace_id": trace_id},
-            )
+            now_s = perf_counter()
+            throttle_key = f"{bot_id}:{task_hint}"
+            had_prior_warning = throttle_key in self._disabled_warning_state
+            last_warn_at_s, suppressed_since_last = self._disabled_warning_state.get(throttle_key, (0.0, 0))
+            since_last_s = now_s - last_warn_at_s
+            if not had_prior_warning or since_last_s >= _CREWAI_DISABLED_WARN_INTERVAL_S:
+                logger.warning(
+                    "crewai_pipeline_disabled",
+                    extra={
+                        "event": "crewai_pipeline_disabled",
+                        "bot_id": bot_id,
+                        "trace_id": trace_id,
+                        "task_hint": task_hint,
+                        "suppressed_since_last": suppressed_since_last,
+                        "warn_interval_s": _CREWAI_DISABLED_WARN_INTERVAL_S,
+                    },
+                )
+                self._disabled_warning_state[throttle_key] = (now_s, 0)
+            else:
+                suppressed_next = suppressed_since_last + 1
+                self._disabled_warning_state[throttle_key] = (last_warn_at_s, suppressed_next)
+                logger.debug(
+                    "crewai_pipeline_disabled_throttled",
+                    extra={
+                        "event": "crewai_pipeline_disabled_throttled",
+                        "bot_id": bot_id,
+                        "trace_id": trace_id,
+                        "task_hint": task_hint,
+                        "suppressed_since_last": suppressed_next,
+                        "warn_interval_s": _CREWAI_DISABLED_WARN_INTERVAL_S,
+                    },
+                )
             return [], "crewai_disabled", {}, ["crewai_disabled"], None
         if not self._crewai_available:
             err = self._init_error or "crewai_not_installed"

@@ -331,3 +331,60 @@ def test_action_arbiter_random_walk_admits_with_scan_absent_evidence() -> None:
     assert result.admitted is True
     assert result.status == ActionStatus.queued
     assert queue.count("bot:rw:absent") == 1
+
+
+def test_action_arbiter_session_in_game_precondition_rejects_when_false() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal(
+        "action.session.in_game.false",
+        command="respawn",
+        preconditions=["session.in_game"],
+    )
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:session:false"),
+            tick_id="t-session-false",
+            observed_at=datetime.now(UTC),
+            position={"map": "prt_fild08", "x": 10, "y": 20},
+            vitals={"hp": 0, "hp_max": 1000},
+            raw={"in_game": False},
+        )
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:session:false")
+
+    assert result.admitted is False
+    assert result.reason == "precondition_failed:session.in_game"
+    assert queue.count("bot:session:false") == 0
+
+
+def test_action_arbiter_respawn_command_injects_session_precondition() -> None:
+    queue = ActionQueue(max_per_bot=8)
+    snapshot_cache = SnapshotCache(ttl_seconds=60)
+    arbiter = ActionArbiter(queue=queue, fleet_client=None, snapshot_cache=snapshot_cache)
+    proposal = _make_proposal(
+        "action.respawn.normalize",
+        command="respawn",
+        preconditions=[],
+    )
+
+    snapshot_cache.set(
+        BotStateSnapshot(
+            meta=ContractMeta(bot_id="bot:respawn:normalize"),
+            tick_id="t-respawn-normalize",
+            observed_at=datetime.now(UTC),
+            position={"map": "prt_fild08", "x": 1, "y": 1},
+            vitals={"hp": 0, "hp_max": 1000},
+            raw={"in_game": True},
+        )
+    )
+
+    result = arbiter.admit_sync(proposal, bot_id="bot:respawn:normalize")
+
+    assert result.admitted is True
+    snapshot = queue.snapshot().get("bot:respawn:normalize") or []
+    assert snapshot
+    assert "session.in_game" in snapshot[0].proposal.preconditions

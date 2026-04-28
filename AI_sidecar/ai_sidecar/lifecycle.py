@@ -529,6 +529,7 @@ class RuntimeState:
     _background_loop_ready: Event = field(default_factory=Event)
     _background_loop_lock: RLock = field(default_factory=RLock)
     _last_goal_state_by_bot: dict[str, GoalStackState] = field(default_factory=dict)
+    _autonomy_startup_gate_by_bot: dict[str, dict[str, object]] = field(default_factory=dict)
     persistence_degraded: bool = False
 
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
@@ -859,6 +860,7 @@ class RuntimeState:
     def ingest_snapshot(self, snapshot: BotStateSnapshot) -> None:
         bot_id = snapshot.meta.bot_id
         self.bot_registry.upsert(bot_id, snapshot.tick_id)
+        previous_snapshot = self.snapshot_cache.get(bot_id)
         self.snapshot_cache.set(snapshot)
         self.incr("snapshots_ingested", bot_id=bot_id)
 
@@ -875,16 +877,59 @@ class RuntimeState:
             )
 
         self._enqueue_background(
-            self._background_ingest_snapshot(snapshot),
+            self._background_ingest_snapshot(snapshot, previous_snapshot=previous_snapshot),
             label="snapshot_ingest",
             bot_id=bot_id,
             tick_id=snapshot.tick_id,
         )
 
-    async def _background_ingest_snapshot(self, snapshot: BotStateSnapshot) -> None:
+    async def _background_ingest_snapshot(
+        self,
+        snapshot: BotStateSnapshot,
+        *,
+        previous_snapshot: BotStateSnapshot | None = None,
+    ) -> None:
         snapshot_copy = snapshot.model_copy(deep=True)
+        previous_snapshot_copy = previous_snapshot.model_copy(deep=True) if previous_snapshot is not None else None
         bot_id = snapshot_copy.meta.bot_id
         tick_id = snapshot_copy.tick_id
+
+        current_skill_points_value = snapshot_copy.progression.skill_points
+        current_stat_points_value = snapshot_copy.progression.stat_points
+        current_skill_points_known = current_skill_points_value is not None
+        current_stat_points_known = current_stat_points_value is not None
+        current_skill_points = int(current_skill_points_value or 0)
+        current_stat_points = int(current_stat_points_value or 0)
+        has_previous_snapshot = previous_snapshot_copy is not None
+        previous_skill_points_value = previous_snapshot_copy.progression.skill_points if has_previous_snapshot else None
+        previous_stat_points_value = previous_snapshot_copy.progression.stat_points if has_previous_snapshot else None
+        previous_skill_points_known = has_previous_snapshot and previous_skill_points_value is not None
+        previous_stat_points_known = has_previous_snapshot and previous_stat_points_value is not None
+        previous_skill_points = int(previous_skill_points_value or 0) if has_previous_snapshot else 0
+        previous_stat_points = int(previous_stat_points_value or 0) if has_previous_snapshot else 0
+        skill_points_delta = current_skill_points - previous_skill_points if has_previous_snapshot else 0
+        stat_points_delta = current_stat_points - previous_stat_points if has_previous_snapshot else 0
+        suppressed_skill_pending = bool(skill_points_delta > 0 and not previous_skill_points_known)
+        suppressed_stat_pending = bool(stat_points_delta > 0 and not previous_stat_points_known)
+        if has_previous_snapshot and (suppressed_skill_pending or suppressed_stat_pending):
+            logger.info(
+                "progression_newly_pending_suppressed",
+                extra={
+                    "event": "progression_newly_pending_suppressed",
+                    "bot_id": bot_id,
+                    "tick_id": tick_id,
+                    "skill_points_current": current_skill_points,
+                    "skill_points_previous": previous_skill_points_value,
+                    "skill_points_delta": skill_points_delta,
+                    "skill_points_prev_known": previous_skill_points_known,
+                    "stat_points_current": current_stat_points,
+                    "stat_points_previous": previous_stat_points_value,
+                    "stat_points_delta": stat_points_delta,
+                    "stat_points_prev_known": previous_stat_points_known,
+                    "suppressed_skill_pending": suppressed_skill_pending,
+                    "suppressed_stat_pending": suppressed_stat_pending,
+                },
+            )
 
         try:
             snapshot_payload = snapshot_copy.model_dump(mode="json")
@@ -913,6 +958,26 @@ class RuntimeState:
                     "job_id": float(snapshot_copy.progression.job_id or 0),
                     "skill_points": float(snapshot_copy.progression.skill_points or 0),
                     "stat_points": float(snapshot_copy.progression.stat_points or 0),
+                    "skill_points_delta": float(skill_points_delta),
+                    "stat_points_delta": float(stat_points_delta),
+                    "skill_points_newly_pending": 1.0
+                    if (
+                        has_previous_snapshot
+                        and previous_skill_points_known
+                        and current_skill_points_known
+                        and skill_points_delta > 0
+                        and current_skill_points >= 1
+                    )
+                    else 0.0,
+                    "stat_points_newly_pending": 1.0
+                    if (
+                        has_previous_snapshot
+                        and previous_stat_points_known
+                        and current_stat_points_known
+                        and stat_points_delta > 0
+                        and current_stat_points >= 1
+                    )
+                    else 0.0,
                 },
                 tags={
                     "tick_id": snapshot_copy.tick_id,
@@ -1267,6 +1332,91 @@ class RuntimeState:
         if in_memory is not None:
             return in_memory
         return self._restore_goal_state_for_bot(bot_id=bot_id)
+
+    def startup_gate_status(self, *, bot_id: str) -> dict[str, object]:
+        state = dict(self._autonomy_startup_gate_by_bot.get(bot_id) or {})
+        started_at = state.get("started_at")
+        if not isinstance(started_at, datetime):
+            started_at = datetime.now(UTC)
+
+        opened_at = state.get("opened_at")
+        if isinstance(opened_at, datetime) and opened_at.tzinfo is None:
+            opened_at = opened_at.replace(tzinfo=UTC)
+
+        snapshot = self.snapshot_cache.get(bot_id)
+        map_name = str(getattr(getattr(snapshot, "position", None), "map", "") or "").strip()
+        tick_id = str(getattr(snapshot, "tick_id", "") or "").strip()
+        snapshot_ready = bool(snapshot is not None and map_name and tick_id)
+
+        continuity_goal_state_present = self.latest_goal_state(bot_id=bot_id) is not None
+        min_events = max(1, int(state.get("min_events", 2) or 2))
+        recent_event_count = len(self.recent_ingest_events(bot_id=bot_id, limit=min_events))
+        history_ready = bool(continuity_goal_state_present or recent_event_count >= min_events)
+
+        now = datetime.now(UTC)
+        elapsed_s = max(0.0, (now - started_at.astimezone(UTC)).total_seconds())
+
+        return {
+            "bot_id": bot_id,
+            "gate_open": bool(state.get("gate_open", False)),
+            "mode": str(state.get("mode") or "pending"),
+            "reason": str(state.get("reason") or "startup_gate_initializing"),
+            "failure_count": int(state.get("failure_count", 0) or 0),
+            "last_error": str(state.get("last_error") or ""),
+            "grace_s": float(state.get("grace_s", max(20.0, float(self.autonomy_policy.get("reconnect_grace_s", 20.0))) or 20.0)),
+            "min_events": min_events,
+            "started_at": started_at,
+            "opened_at": opened_at,
+            "elapsed_s": elapsed_s,
+            "snapshot_ready": snapshot_ready,
+            "history_ready": history_ready,
+            "continuity_goal_state_present": continuity_goal_state_present,
+            "recent_event_count": recent_event_count,
+        }
+
+    def update_startup_gate(
+        self,
+        *,
+        bot_id: str,
+        gate_open: bool,
+        mode: str,
+        reason: str,
+        failure_count: int,
+        last_error: str,
+        grace_s: float | None = None,
+        min_events: int | None = None,
+    ) -> dict[str, object]:
+        existing = dict(self._autonomy_startup_gate_by_bot.get(bot_id) or {})
+        now = datetime.now(UTC)
+        started_at = existing.get("started_at")
+        if not isinstance(started_at, datetime):
+            started_at = now
+        opened_at = existing.get("opened_at")
+        if gate_open and not isinstance(opened_at, datetime):
+            opened_at = now
+
+        payload = {
+            "gate_open": bool(gate_open),
+            "mode": str(mode or "pending"),
+            "reason": str(reason or ""),
+            "failure_count": max(0, int(failure_count)),
+            "last_error": str(last_error or ""),
+            "grace_s": float(grace_s if grace_s is not None else existing.get("grace_s", max(20.0, float(self.autonomy_policy.get("reconnect_grace_s", 20.0))))),
+            "min_events": max(1, int(min_events if min_events is not None else existing.get("min_events", 2))),
+            "started_at": started_at,
+            "opened_at": opened_at if isinstance(opened_at, datetime) else None,
+        }
+        self._autonomy_startup_gate_by_bot[bot_id] = payload
+
+        if payload["mode"] == "degraded":
+            startup_reason = str(payload["reason"] or "startup_gate_degraded")
+            self.autonomy_scheduler_degraded = True
+            if self.autonomy_scheduler_degraded_reason:
+                if startup_reason not in self.autonomy_scheduler_degraded_reason:
+                    self.autonomy_scheduler_degraded_reason = f"{self.autonomy_scheduler_degraded_reason};{startup_reason}"
+            else:
+                self.autonomy_scheduler_degraded_reason = startup_reason
+        return self.startup_gate_status(bot_id=bot_id)
 
     def autonomy_decide(
         self,
@@ -3322,6 +3472,38 @@ class RuntimeState:
 
         objective_scheduler_degraded = bool(self.autonomy_scheduler_degraded)
         objective_scheduler_reason = str(self.autonomy_scheduler_degraded_reason or "")
+        startup_gate_fn = getattr(self, "startup_gate_status", None)
+        if callable(startup_gate_fn):
+            startup_gate = startup_gate_fn(bot_id=bot_id)
+        else:
+            startup_gate = {
+                "gate_open": True,
+                "mode": "conscious",
+                "reason": "startup_gate_unavailable",
+                "failure_count": 0,
+                "elapsed_s": 0.0,
+                "snapshot_ready": True,
+                "history_ready": True,
+                "continuity_goal_state_present": False,
+                "recent_event_count": 0,
+                "min_events": 0,
+            }
+        startup_gate_open = bool(startup_gate.get("gate_open", False))
+        startup_gate_mode = str(startup_gate.get("mode") or "pending")
+        startup_gate_reason = str(startup_gate.get("reason") or "")
+        if not startup_gate_open:
+            objective_scheduler_degraded = True
+            if not objective_scheduler_reason:
+                objective_scheduler_reason = f"startup_gate_blocked:{startup_gate_reason or 'pending'}"
+        elif startup_gate_mode == "pending":
+            objective_scheduler_degraded = True
+            if not objective_scheduler_reason:
+                objective_scheduler_reason = startup_gate_reason or "startup_gate_pending_conscious_bootstrap"
+        elif startup_gate_mode == "degraded":
+            objective_scheduler_degraded = True
+            if not objective_scheduler_reason:
+                objective_scheduler_reason = startup_gate_reason or "startup_gate_degraded"
+
         pdca_running = False
         pdca_breaker_tripped: bool | None = None
         if self.pdca_loop is None:
@@ -3362,6 +3544,16 @@ class RuntimeState:
             "fleet_last_sync_at": fleet_last_sync_at,
             "objective_scheduler_degraded": objective_scheduler_degraded,
             "objective_scheduler_degraded_reason": objective_scheduler_reason,
+            "startup_gate_open": startup_gate_open,
+            "startup_gate_mode": startup_gate_mode,
+            "startup_gate_reason": startup_gate_reason,
+            "startup_gate_failure_count": int(startup_gate.get("failure_count", 0) or 0),
+            "startup_gate_elapsed_s": float(startup_gate.get("elapsed_s", 0.0) or 0.0),
+            "startup_gate_snapshot_ready": bool(startup_gate.get("snapshot_ready", False)),
+            "startup_gate_history_ready": bool(startup_gate.get("history_ready", False)),
+            "startup_gate_continuity_goal_state_present": bool(startup_gate.get("continuity_goal_state_present", False)),
+            "startup_gate_recent_event_count": int(startup_gate.get("recent_event_count", 0) or 0),
+            "startup_gate_min_events": int(startup_gate.get("min_events", 0) or 0),
             "pdca_running": pdca_running,
             "pdca_circuit_breaker_tripped": pdca_breaker_tripped,
         }

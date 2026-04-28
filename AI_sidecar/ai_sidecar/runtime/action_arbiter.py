@@ -229,6 +229,7 @@ class ActionArbiter:
     def _normalize_proposal(self, proposal: ActionProposal) -> ActionProposal:
         updates: dict[str, object] = {}
         metadata = dict(proposal.metadata or {})
+        normalized_command = str(proposal.command or "").strip().lower()
 
         if proposal.source == "manual":
             derived_source = self._map_source(metadata.get("source"))
@@ -268,6 +269,14 @@ class ActionArbiter:
             expires_at = proposal.created_at + timedelta(seconds=ttl_seconds)
             if proposal.expires_at > expires_at:
                 updates["expires_at"] = expires_at
+
+        if normalized_command == "respawn":
+            resolved_preconditions = updates.get("preconditions", proposal.preconditions)
+            preconditions = [str(item).strip() for item in list(resolved_preconditions or []) if str(item).strip()]
+            lower = {item.lower() for item in preconditions}
+            if "session.in_game" not in lower:
+                preconditions.append("session.in_game")
+                updates["preconditions"] = preconditions
 
         return proposal.model_copy(update=updates) if updates else proposal
 
@@ -429,6 +438,16 @@ class ActionArbiter:
             if not map_name:
                 return True, "map_missing", False
             return True, f"map={map_name} status={status or 'unknown'}", False
+
+        if name == "session.in_game":
+            in_game = self._coerce_bool(raw.get("in_game"))
+            if in_game is None:
+                in_game = self._coerce_bool(raw.get("is_logged_in"))
+            if in_game is None:
+                in_game = self._coerce_bool(raw.get("logged_in"))
+            if in_game is None:
+                return True, "in_game_unknown", False
+            return in_game, f"in_game={in_game}", False
 
         if name == "combat.allowed":
             is_alive = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -153,6 +154,52 @@ def test_crew_manager_strategize_disabled_fallback() -> None:
     assert result.agent_outputs == []
     assert result.consolidated_output == "crewai_disabled"
     assert result.planner_response is not None and result.planner_response.ok is True
+
+
+def test_crew_manager_disabled_warning_throttled(monkeypatch, caplog) -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+    payload = CrewStrategizeRequest(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:crew", trace_id="trace-crew-throttle"),
+        objective="farm zeny with low risk",
+        horizon=PlanHorizon.strategic,
+        force_replan=False,
+        max_steps=8,
+    )
+
+    times = iter([0.0, 0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 31.0, 31.1])
+    state = {"last": 31.1}
+
+    def _fake_perf_counter() -> float:
+        try:
+            state["last"] = next(times)
+        except StopIteration:
+            state["last"] = float(state["last"]) + 0.1
+        return float(state["last"])
+
+    monkeypatch.setattr("ai_sidecar.crewai.crew_manager.perf_counter", _fake_perf_counter)
+    caplog.set_level(logging.DEBUG, logger="ai_sidecar.crewai.crew_manager")
+
+    first = asyncio.run(manager.strategize(payload))
+    second = asyncio.run(manager.strategize(payload))
+    third = asyncio.run(manager.strategize(payload))
+
+    assert first.ok is False
+    assert second.ok is False
+    assert third.ok is False
+
+    warning_records = [
+        item for item in caplog.records if item.name == "ai_sidecar.crewai.crew_manager" and item.levelno == logging.WARNING
+    ]
+    warning_events = [getattr(item, "event", "") for item in warning_records]
+    assert warning_events.count("crewai_pipeline_disabled") == 2
+
+    debug_events = [
+        getattr(item, "event", "")
+        for item in caplog.records
+        if item.name == "ai_sidecar.crewai.crew_manager" and item.levelno == logging.DEBUG
+    ]
+    assert "crewai_pipeline_disabled_throttled" in debug_events
 
 
 def test_crew_manager_coordinate_disabled_and_tool_dispatch() -> None:

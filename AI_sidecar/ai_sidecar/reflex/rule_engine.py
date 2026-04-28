@@ -422,6 +422,10 @@ class ReflexRuleEngine:
         facts["state.job_id"] = facts.get("operational.job_id")
         facts["state.skill_points"] = facts.get("operational.skill_points")
         facts["state.stat_points"] = facts.get("operational.stat_points")
+        facts["state.skill_points_delta"] = facts.get("event.numeric.skill_points_delta", 0.0)
+        facts["state.stat_points_delta"] = facts.get("event.numeric.stat_points_delta", 0.0)
+        facts["state.skill_points_newly_pending"] = facts.get("event.numeric.skill_points_newly_pending", 0.0)
+        facts["state.stat_points_newly_pending"] = facts.get("event.numeric.stat_points_newly_pending", 0.0)
         facts["state.job_name"] = facts.get("operational.job_name")
 
         # --- Encounter shorthands ---
@@ -863,6 +867,7 @@ class ReflexRuleEngine:
                     all=[
                         ReflexPredicate(fact="event.event_type", op="eq", value="snapshot.compact"),
                         ReflexPredicate(fact="state.skill_points", op="gte", value=1),
+                        ReflexPredicate(fact="state.skill_points_newly_pending", op="gte", value=1),
                         ReflexPredicate(fact="state.base_level", op="gte", value=2),
                     ]
                 ),
@@ -1007,8 +1012,12 @@ class ReflexRuleEngine:
                 priority=26,
                 trigger=ReflexTriggerClause(
                     all=[
-                        ReflexPredicate(fact="state.skill_points", op="gte", value=1),
+                        ReflexPredicate(fact="event.event_type", op="eq", value="snapshot.compact"),
                         ReflexPredicate(fact="combat.is_in_combat", op="eq", value=False),
+                    ],
+                    any=[
+                        ReflexPredicate(fact="state.skill_points_newly_pending", op="gte", value=1),
+                        ReflexPredicate(fact="state.stat_points_newly_pending", op="gte", value=1),
                     ]
                 ),
                 guards=[],

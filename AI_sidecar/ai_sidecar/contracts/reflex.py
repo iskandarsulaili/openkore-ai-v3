@@ -99,6 +99,14 @@ class ReflexRule(BaseModel):
         has_direct_action = bool((self.action_template.command or "").strip())
         has_macro_action = bool(self.fallback_macro or self.event_macro_conditions)
         if not has_direct_action and not has_macro_action:
+            bridge_compat = dict(self.action_template.metadata or {}).get("bridge_compat")
+            if isinstance(bridge_compat, dict):
+                status = str(bridge_compat.get("status") or "").strip().lower()
+                fallback_strategy = str(bridge_compat.get("fallback_strategy") or "").strip().lower()
+                if status == "suppressed" and fallback_strategy == "fallback_macro":
+                    self.fallback_macro = f"reflex_{self.rule_id}".replace("-", "_")
+                    has_macro_action = True
+        if not has_direct_action and not has_macro_action:
             raise ValueError("reflex_rule_action_missing")
 
         return self

@@ -19,6 +19,8 @@ from ai_sidecar.contracts.state import BotStateSnapshot
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 
 logger = logging.getLogger(__name__)
+_STARTUP_GATE_MIN_EVENTS = 2
+_STARTUP_GATE_MAX_CREW_FAILURES = 2
 
 
 class Horizon(Enum):
@@ -83,6 +85,11 @@ class PDCALoop:
         self._breaker_family = "queue"
         self._default_bot_id = "openkoreai"
         self._last_bot_id: str | None = None
+        self._startup_gate_defaults = {
+            "grace_s": max(20.0, self._policy_float("reconnect_grace_s", 20.0)),
+            "min_events": _STARTUP_GATE_MIN_EVENTS,
+            "max_crewai_failures": _STARTUP_GATE_MAX_CREW_FAILURES,
+        }
 
         # Per-horizon state
         self._active_plan: dict[Horizon, StrategicPlan | TacticalIntentBundle | None] = {
@@ -244,6 +251,43 @@ class PDCALoop:
                 selected_goal = goal_state.selected_goal.goal_key.value
                 objective = goal_state.selected_goal.objective
 
+            startup_gate = self._evaluate_startup_gate(
+                bot_id=decision_meta.bot_id,
+                horizon=horizon,
+                snapshot=latest_snapshot,
+                goal_state=goal_state,
+                replan_reasons=replan_reasons,
+            )
+            if not bool(startup_gate.get("gate_open", False)):
+                logger.info(
+                    "pdca_startup_gate_blocked",
+                    extra={
+                        "event": "pdca_startup_gate_blocked",
+                        "bot_id": decision_meta.bot_id,
+                        "horizon": horizon.value,
+                        "reason": startup_gate.get("reason"),
+                        "mode": startup_gate.get("mode"),
+                        "snapshot_ready": startup_gate.get("snapshot_ready"),
+                        "history_ready": startup_gate.get("history_ready"),
+                        "continuity_goal_state_present": startup_gate.get("continuity_goal_state_present"),
+                        "recent_event_count": startup_gate.get("recent_event_count"),
+                    },
+                )
+                return PDCAResult(
+                    horizon=horizon,
+                    plan_id=plan_id,
+                    actions_queued=0,
+                    progress_pct=progress.progress_pct,
+                    stuck=stuck,
+                    re_planned=False,
+                    force_replan=force_replan,
+                    replan_reasons=replan_reasons,
+                    objective=objective,
+                    selected_goal=selected_goal,
+                    cycle_ms=(time.monotonic() - start) * 1000,
+                    error="startup_gate_blocked",
+                )
+
             # ── PLAN phase ───────────────────────────────────────
             if self._active_plan[horizon] is None or force_replan:
                 objective_override = self._select_objective(
@@ -258,6 +302,7 @@ class PDCALoop:
                     latest_snapshot,
                     force_replan=force_replan and self._active_plan[horizon] is not None,
                     objective_override=objective_override,
+                    startup_gate=startup_gate,
                 )
                 if plan:
                     self._active_plan[horizon] = plan
@@ -372,6 +417,7 @@ class PDCALoop:
         *,
         force_replan: bool = False,
         objective_override: str | None = None,
+        startup_gate: dict[str, object] | None = None,
     ) -> StrategicPlan | TacticalIntentBundle | None:
         """Generate a plan using planner or crewAI depending on horizon."""
         try:
@@ -379,19 +425,93 @@ class PDCALoop:
             objective = objective_override or self._objective_for(horizon=horizon, snapshot=snapshot)
             if horizon == Horizon.LONG_TERM:
                 # Use crewAI strategize for long-term strategic plans
-                result = await self._runtime.crewai_strategize(
-                    CrewStrategizeRequest(
-                        meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
-                        objective=objective,
-                        horizon=PlanHorizon.strategic,
-                        force_replan=force_replan,
-                        max_steps=12,
-                        context_overrides=self._context_overrides(snapshot),
+                crewai_reason = "crewai_unusable"
+                startup_mode = str((startup_gate or {}).get("mode") or "pending")
+                startup_reason = str((startup_gate or {}).get("reason") or "")
+                if startup_mode not in {"conscious", "degraded"}:
+                    logger.warning(
+                        "pdca_long_term_startup_gate_unexpected_mode",
+                        extra={
+                            "event": "pdca_long_term_startup_gate_unexpected_mode",
+                            "bot_id": bot_id,
+                            "mode": startup_mode,
+                            "reason": startup_reason,
+                        },
                     )
-                )
-                planner_response = getattr(result, "planner_response", None)
-                if result and getattr(result, "ok", False) and planner_response is not None:
-                    return planner_response.strategic_plan or planner_response.tactical_bundle
+                try:
+                    result = await self._runtime.crewai_strategize(
+                        CrewStrategizeRequest(
+                            meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
+                            objective=objective,
+                            horizon=PlanHorizon.strategic,
+                            force_replan=force_replan,
+                            max_steps=12,
+                            context_overrides=self._context_overrides(snapshot),
+                        )
+                    )
+                    crew_ok = bool(getattr(result, "ok", False))
+                    crew_message = str(getattr(result, "message", "") or "")
+                    crewai_errors = [str(item) for item in list(getattr(result, "errors", []) or [])]
+                    crew_signals = [crew_message, *crewai_errors]
+                    crew_degraded_signal = any(
+                        token in signal.lower()
+                        for signal in crew_signals
+                        for token in ("crewai_disabled", "crewai_unavailable", "crewai_pipeline_disabled")
+                    )
+
+                    planner_response = getattr(result, "planner_response", None)
+                    if crew_ok and not crew_degraded_signal and planner_response is not None:
+                        artifact = planner_response.strategic_plan or planner_response.tactical_bundle
+                        if artifact is not None:
+                            self._record_startup_gate_success(bot_id=bot_id)
+                            return artifact
+                    crewai_reason = ",".join([crewai_reason, *crewai_errors]).strip(",") or "crewai_unusable"
+                    self._record_startup_gate_failure(bot_id=bot_id, reason=crewai_reason)
+                except Exception as exc:
+                    crewai_reason = f"crewai_exception:{type(exc).__name__}"
+                    self._record_startup_gate_failure(bot_id=bot_id, reason=crewai_reason)
+
+                planner_fn = getattr(self._runtime, "planner_plan", None)
+                if callable(planner_fn):
+                    fallback_state = self._startup_gate_status(bot_id=bot_id)
+                    fallback_mode = str(fallback_state.get("mode") or "pending")
+                    fallback_reason = str(fallback_state.get("reason") or "")
+                    if fallback_mode != "degraded":
+                        logger.error(
+                            "pdca_long_term_conscious_required_before_fallback",
+                            extra={
+                                "event": "pdca_long_term_conscious_required_before_fallback",
+                                "bot_id": bot_id,
+                                "reason": crewai_reason,
+                                "startup_mode": fallback_mode,
+                                "startup_reason": fallback_reason,
+                            },
+                        )
+                        return None
+                    logger.info(
+                        "pdca_long_term_fallback_to_planner",
+                        extra={
+                            "event": "pdca_long_term_fallback_to_planner",
+                            "bot_id": bot_id,
+                            "objective": objective,
+                            "reason": crewai_reason,
+                            "startup_mode": fallback_mode,
+                            "startup_reason": fallback_reason,
+                        },
+                    )
+                    fallback = await planner_fn(
+                        PlannerPlanRequest(
+                            meta=ContractMeta(source="pdca_loop", bot_id=bot_id),
+                            objective=objective,
+                            horizon=PlanHorizon.strategic,
+                            force_replan=force_replan,
+                            max_steps=12,
+                        )
+                    )
+                    if fallback and getattr(fallback, "ok", False):
+                        artifact = fallback.strategic_plan or fallback.tactical_bundle
+                        if artifact is not None:
+                            return artifact
                 return None
             elif horizon == Horizon.MEDIUM_TERM:
                 # Use planner for medium-term tactical bundles
@@ -625,6 +745,185 @@ class PDCALoop:
             },
         )
         return restored
+
+    def _startup_gate_status(self, *, bot_id: str) -> dict[str, object]:
+        status_fn = getattr(self._runtime, "startup_gate_status", None)
+        if callable(status_fn):
+            try:
+                status = status_fn(bot_id=bot_id)
+                if isinstance(status, dict):
+                    return status
+            except Exception:
+                logger.exception(
+                    "pdca_startup_gate_status_failed",
+                    extra={
+                        "event": "pdca_startup_gate_status_failed",
+                        "bot_id": bot_id,
+                    },
+                )
+
+        return {
+            "bot_id": bot_id,
+            "gate_open": True,
+            "mode": "degraded",
+            "reason": "startup_gate_runtime_unavailable",
+            "failure_count": 0,
+            "last_error": "",
+            "elapsed_s": 0.0,
+            "grace_s": float(self._startup_gate_defaults["grace_s"]),
+            "min_events": int(self._startup_gate_defaults["min_events"]),
+            "snapshot_ready": True,
+            "history_ready": True,
+            "continuity_goal_state_present": True,
+            "recent_event_count": int(self._startup_gate_defaults["min_events"]),
+        }
+
+    def _update_startup_gate(
+        self,
+        *,
+        bot_id: str,
+        gate_open: bool,
+        mode: str,
+        reason: str,
+        failure_count: int,
+        last_error: str,
+        grace_s: float,
+        min_events: int,
+    ) -> dict[str, object]:
+        update_fn = getattr(self._runtime, "update_startup_gate", None)
+        if callable(update_fn):
+            try:
+                status = update_fn(
+                    bot_id=bot_id,
+                    gate_open=gate_open,
+                    mode=mode,
+                    reason=reason,
+                    failure_count=failure_count,
+                    last_error=last_error,
+                    grace_s=grace_s,
+                    min_events=min_events,
+                )
+                if isinstance(status, dict):
+                    return status
+            except Exception:
+                logger.exception(
+                    "pdca_startup_gate_update_failed",
+                    extra={
+                        "event": "pdca_startup_gate_update_failed",
+                        "bot_id": bot_id,
+                        "mode": mode,
+                        "reason": reason,
+                    },
+                )
+        return self._startup_gate_status(bot_id=bot_id)
+
+    def _evaluate_startup_gate(
+        self,
+        *,
+        bot_id: str,
+        horizon: Horizon,
+        snapshot: BotStateSnapshot | None,
+        goal_state: GoalStackState | None,
+        replan_reasons: list[str],
+    ) -> dict[str, object]:
+        status = self._startup_gate_status(bot_id=bot_id)
+        if bool(status.get("gate_open", False)):
+            return status
+
+        snapshot_ready = bool(snapshot is not None and str(getattr(snapshot, "tick_id", "") or "").strip())
+        if snapshot_ready:
+            map_name = str(getattr(getattr(snapshot, "position", None), "map", "") or "").strip()
+            snapshot_ready = bool(map_name)
+
+        continuity_goal_state_present = bool(goal_state is not None or status.get("continuity_goal_state_present", False))
+        history_ready = bool(continuity_goal_state_present or status.get("history_ready", False))
+
+        if snapshot_ready and history_ready:
+            mode = "conscious"
+            reason = "startup_gate_open_state_history_ready"
+            self._update_startup_gate(
+                bot_id=bot_id,
+                gate_open=True,
+                mode=mode,
+                reason=reason,
+                failure_count=int(status.get("failure_count", 0) or 0),
+                last_error=str(status.get("last_error") or ""),
+                grace_s=float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"]),
+                min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+            )
+            opened = self._startup_gate_status(bot_id=bot_id)
+            logger.info(
+                "pdca_startup_gate_opened",
+                extra={
+                    "event": "pdca_startup_gate_opened",
+                    "bot_id": bot_id,
+                    "horizon": horizon.value,
+                    "mode": mode,
+                    "reason": reason,
+                    "continuity_goal_state_present": continuity_goal_state_present,
+                    "replan_reasons": list(replan_reasons),
+                },
+            )
+            return opened
+
+        reason = "startup_gate_waiting_state_history"
+        self._update_startup_gate(
+            bot_id=bot_id,
+            gate_open=False,
+            mode="pending",
+            reason=reason,
+            failure_count=int(status.get("failure_count", 0) or 0),
+            last_error=str(status.get("last_error") or ""),
+            grace_s=float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"]),
+            min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+        )
+        return self._startup_gate_status(bot_id=bot_id)
+
+    def _record_startup_gate_success(self, *, bot_id: str) -> None:
+        status = self._startup_gate_status(bot_id=bot_id)
+        self._update_startup_gate(
+            bot_id=bot_id,
+            gate_open=bool(status.get("gate_open", False)),
+            mode=str(status.get("mode") or "conscious"),
+            reason=str(status.get("reason") or "startup_gate_open_state_history_ready"),
+            failure_count=0,
+            last_error="",
+            grace_s=float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"]),
+            min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+        )
+
+    def _record_startup_gate_failure(self, *, bot_id: str, reason: str) -> None:
+        status = self._startup_gate_status(bot_id=bot_id)
+        failures = int(status.get("failure_count", 0) or 0) + 1
+        elapsed_s = float(status.get("elapsed_s", 0.0) or 0.0)
+        grace_s = float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"])
+        max_failures = int(self._startup_gate_defaults["max_crewai_failures"])
+        degrade = failures >= max_failures or elapsed_s >= grace_s
+
+        mode = "degraded" if degrade else str(status.get("mode") or "conscious")
+        gate_reason = "startup_gate_degraded_after_bounded_crewai_failures" if degrade else str(status.get("reason") or "startup_gate_open_state_history_ready")
+        self._update_startup_gate(
+            bot_id=bot_id,
+            gate_open=bool(status.get("gate_open", True)),
+            mode=mode,
+            reason=gate_reason,
+            failure_count=failures,
+            last_error=str(reason or "crewai_unusable"),
+            grace_s=grace_s,
+            min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+        )
+        if degrade:
+            logger.warning(
+                "pdca_startup_gate_degraded",
+                extra={
+                    "event": "pdca_startup_gate_degraded",
+                    "bot_id": bot_id,
+                    "failure_count": failures,
+                    "elapsed_s": elapsed_s,
+                    "grace_s": grace_s,
+                    "reason": reason,
+                },
+            )
 
     def _pick_ranked_objective(
         self,

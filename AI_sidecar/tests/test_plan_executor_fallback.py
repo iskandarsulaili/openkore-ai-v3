@@ -176,5 +176,6 @@ def test_plan_executor_strategic_death_recovery_uses_respawn_command() -> None:
     action = runtime.queued[0][1]
     assert action.command == "respawn"
     assert action.conflict_key == "recovery.death"
+    assert "session.in_game" in action.preconditions
     assert action.metadata.get("fallback_mode") == "death_recovery"
     assert action.metadata.get("target") == "savepoint"

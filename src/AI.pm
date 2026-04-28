@@ -92,6 +92,8 @@ use constant AUTO => 2;
 
 # Do not change $AI::AI directly, use AI::state instead
 our $AI = AUTO;
+my %ai_useTeleport_unavailable_backoff_until;
+my $ai_useTeleport_unavailable_backoff_seconds = 15;
 
 ### CATEGORY: Functions
 
@@ -885,7 +887,29 @@ sub ai_talkNPC {
 # void ai_useTeleport(int level)
 # level: 1 - Random, 2 - Respawn
 sub ai_useTeleport {
-	$char->useTeleport(@_);
+	my ($level) = @_;
+	$level = int($level || 1);
+
+	return unless $char;
+
+	my $now = time;
+	my $blocked_until = $ai_useTeleport_unavailable_backoff_until{$level} // 0;
+	if ($blocked_until > $now) {
+		return;
+	}
+
+	unless (Misc::canUseTeleport($level)) {
+		$ai_useTeleport_unavailable_backoff_until{$level} = $now + $ai_useTeleport_unavailable_backoff_seconds;
+		debug TF(
+			"ai_useTeleport source guard: teleport level %s unavailable; suppressing retries for %s seconds\n",
+			$level,
+			$ai_useTeleport_unavailable_backoff_seconds,
+		), "teleport";
+		return;
+	}
+
+	delete $ai_useTeleport_unavailable_backoff_until{$level};
+	$char->useTeleport($level);
 }
 
 sub attack { $char->attack(@_) }
@@ -948,4 +972,3 @@ sub take {
 }
 
 return 1;
-

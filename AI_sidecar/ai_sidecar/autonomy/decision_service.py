@@ -650,6 +650,40 @@ class DecisionService:
             if hint:
                 execution_hints.append(hint)
 
+        status = str(assessment.get("status") or "unknown")
+        actionable = bool(assessment.get("actionable"))
+        supported = bool(assessment.get("supported"))
+        top_domain = str(top_opportunity.get("domain") or "none") if isinstance(top_opportunity, dict) else "none"
+        known_rule_ids = [
+            str(item).strip()
+            for item in (assessment.get("known_rule_ids") or [])
+            if str(item).strip()
+        ]
+        non_actionable_reasons = [
+            str(item).strip()
+            for item in (assessment.get("non_actionable_reasons") or [])
+            if str(item).strip()
+        ]
+        logger.info(
+            "autonomy_stage4_opportunistic_assessment status=%s actionable=%s "
+            "supported=%s top_domain=%s known_rule_ids=%s non_actionable_reasons=%s",
+            status,
+            actionable,
+            supported,
+            top_domain,
+            ",".join(known_rule_ids) or "none",
+            "|".join(non_actionable_reasons) or "none",
+            extra={
+                "event": "autonomy_stage4_opportunistic_assessment",
+                "status": status,
+                "actionable": actionable,
+                "supported": supported,
+                "top_domain": top_domain,
+                "known_rule_ids": known_rule_ids,
+                "non_actionable_reasons": non_actionable_reasons,
+            },
+        )
+
         return {
             **assessment,
             "execution_hints": execution_hints,
@@ -856,7 +890,20 @@ class DecisionService:
             "vending_intent": vending_intent,
         }
         logger.info(
-            "autonomy_stage4_opportunistic_signals_computed",
+            "autonomy_stage4_opportunistic_signals_computed "
+            "exploration_intent=%s card_gear_farming_intent=%s "
+            "mercenary_homunculus_intent=%s vending_intent=%s "
+            "map_known=%s targets_present=%s nearby_hostiles=%s "
+            "vendor_exposure=%s market_listing_count=%s",
+            exploration_intent,
+            card_gear_farming_intent,
+            mercenary_homunculus_intent,
+            vending_intent,
+            map_known,
+            bool(signals.get("targets_present")),
+            int(signals.get("nearby_hostiles", 0)),
+            int(signals.get("vendor_exposure", 0)),
+            int(signals.get("market_listing_count", 0)),
             extra={
                 "event": "autonomy_stage4_opportunistic_signals_computed",
                 "signals": dict(signals),
