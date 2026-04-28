@@ -302,7 +302,7 @@ def test_lifespan_cold_start_pdca_autonomy_reaches_dispatch(monkeypatch, tmp_pat
 
             assert short_result.re_planned is True
             assert short_result.actions_queued >= 1
-            assert long_result.error == "plan generation returned None"
+            assert long_result.error is None
 
             assert any(getattr(item.meta, "bot_id", "") == bot_id for item in crewai_payloads)
             assert any(getattr(item.meta, "bot_id", "") == bot_id for item in planner_payloads)

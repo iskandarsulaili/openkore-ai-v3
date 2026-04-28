@@ -39,7 +39,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword taudelid
+adminPassword triejohe
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1074,3 +1074,4 @@ avoidObstaclesDefaultPortals {
 }
 
 macro_orphans terminate
+macro_file ai_sidecar_generated_macros.txt

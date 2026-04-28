@@ -236,6 +236,62 @@ class ActionQueue:
         with self._lock:
             return {bot_id: list(items) for bot_id, items in self._by_bot.items()}
 
+    def rehydrate(self, bot_id: str, queued_actions: list[QueuedAction]) -> int:
+        now = datetime.now(UTC)
+        with self._lock:
+            previous = self._by_bot.get(bot_id)
+            if previous is not None:
+                for item in previous:
+                    action_id = item.proposal.action_id
+                    self._actions_by_id.pop(action_id, None)
+                    self._action_to_bot.pop(action_id, None)
+
+            bot_queue: deque[QueuedAction] = deque()
+            self._by_bot[bot_id] = bot_queue
+
+            bucket = self._idempotency_index.setdefault(bot_id, {})
+            bucket.clear()
+
+            restored = 0
+            for item in queued_actions:
+                proposal = item.proposal
+                if self._normalize_datetime(proposal.expires_at) <= now and item.status in {
+                    ActionStatus.queued,
+                    ActionStatus.dispatched,
+                }:
+                    expired = QueuedAction(
+                        proposal=proposal,
+                        status=ActionStatus.expired,
+                        enqueue_seq=self._next_enqueue_seq(),
+                        dispatched_at=item.dispatched_at,
+                        acknowledged_at=item.acknowledged_at,
+                        ack_message=item.ack_message,
+                    )
+                    self._actions_by_id[proposal.action_id] = expired
+                    self._action_to_bot[proposal.action_id] = bot_id
+                    continue
+
+                restored_status = ActionStatus.queued if item.status == ActionStatus.dispatched else item.status
+                restored_dispatched_at = item.dispatched_at if restored_status == ActionStatus.dispatched else None
+
+                restored_item = QueuedAction(
+                    proposal=proposal,
+                    status=restored_status,
+                    enqueue_seq=self._next_enqueue_seq(),
+                    dispatched_at=restored_dispatched_at,
+                    acknowledged_at=item.acknowledged_at,
+                    ack_message=item.ack_message,
+                )
+                self._actions_by_id[proposal.action_id] = restored_item
+                self._action_to_bot[proposal.action_id] = bot_id
+
+                if restored_item.status in {ActionStatus.queued, ActionStatus.dispatched}:
+                    bot_queue.append(restored_item)
+                    bucket[proposal.idempotency_key] = proposal.action_id
+                    restored += 1
+
+            return restored
+
     def _expire_for_bot(self, bot_id: str, now: datetime) -> None:
         queue = self._by_bot.get(bot_id)
         if not queue:

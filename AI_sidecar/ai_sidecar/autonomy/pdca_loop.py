@@ -285,7 +285,7 @@ class PDCALoop:
                     objective=objective,
                     selected_goal=selected_goal,
                     cycle_ms=(time.monotonic() - start) * 1000,
-                    error="startup_gate_blocked",
+                    error=None,
                 )
 
             # ── PLAN phase ───────────────────────────────────────
@@ -310,29 +310,28 @@ class PDCALoop:
                     re_planned = True
                     self._stuck_counter[horizon] = 0
                 else:
-                    return PDCAResult(
-                        horizon=horizon,
-                        plan_id=None,
-                        actions_queued=0,
-                        progress_pct=progress.progress_pct,
-                        stuck=stuck,
-                        re_planned=False,
-                        force_replan=force_replan,
-                        replan_reasons=replan_reasons,
-                        objective=objective,
-                        selected_goal=selected_goal,
-                        cycle_ms=(time.monotonic() - start) * 1000,
-                        error="plan generation returned None",
+                    logger.warning(
+                        "pdca_plan_generation_unavailable",
+                        extra={
+                            "event": "pdca_plan_generation_unavailable",
+                            "bot_id": decision_meta.bot_id,
+                            "horizon": horizon.value,
+                            "mode": startup_gate.get("mode"),
+                            "reason": startup_gate.get("reason"),
+                            "selected_goal": selected_goal,
+                            "objective": objective,
+                        },
                     )
             else:
                 objective = objective or self._objective_for(horizon=horizon, snapshot=latest_snapshot)
 
             # ── DO phase ─────────────────────────────────────────
-            if self._active_plan[horizon] is not None:
+            if self._active_plan[horizon] is not None or goal_state is not None:
                 actions_queued = await self._plan_executor.execute(
                     plan=self._active_plan[horizon],
                     horizon=horizon,
                     max_actions=self._config.max_actions_per_cycle,
+                    goal_state=goal_state,
                 )
 
             # ── ACT phase ────────────────────────────────────────
@@ -474,7 +473,7 @@ class PDCALoop:
                 planner_fn = getattr(self._runtime, "planner_plan", None)
                 if callable(planner_fn):
                     fallback_state = self._startup_gate_status(bot_id=bot_id)
-                    fallback_mode = str(fallback_state.get("mode") or "pending")
+                    fallback_mode = str(fallback_state.get("mode") or "warmup")
                     fallback_reason = str(fallback_state.get("reason") or "")
                     if fallback_mode != "degraded":
                         logger.error(
@@ -789,6 +788,7 @@ class PDCALoop:
         last_error: str,
         grace_s: float,
         min_events: int,
+        major_reasons: list[str] | None = None,
     ) -> dict[str, object]:
         update_fn = getattr(self._runtime, "update_startup_gate", None)
         if callable(update_fn):
@@ -802,6 +802,7 @@ class PDCALoop:
                     last_error=last_error,
                     grace_s=grace_s,
                     min_events=min_events,
+                    major_reasons=major_reasons,
                 )
                 if isinstance(status, dict):
                     return status
@@ -827,57 +828,146 @@ class PDCALoop:
         replan_reasons: list[str],
     ) -> dict[str, object]:
         status = self._startup_gate_status(bot_id=bot_id)
-        if bool(status.get("gate_open", False)):
-            return status
-
         snapshot_ready = bool(snapshot is not None and str(getattr(snapshot, "tick_id", "") or "").strip())
         if snapshot_ready:
             map_name = str(getattr(getattr(snapshot, "position", None), "map", "") or "").strip()
             snapshot_ready = bool(map_name)
+        bot_ready = bool(snapshot is not None and snapshot_ready and not self._snapshot_disconnected(snapshot))
 
         continuity_goal_state_present = bool(goal_state is not None or status.get("continuity_goal_state_present", False))
         history_ready = bool(continuity_goal_state_present or status.get("history_ready", False))
+        minimum_readiness = bool(bot_ready and history_ready)
 
-        if snapshot_ready and history_ready:
-            mode = "conscious"
-            reason = "startup_gate_open_state_history_ready"
+        fleet_status = self._fleet_status()
+        fleet_enabled = bool(fleet_status.get("central_enabled", True))
+        fleet_stale = bool(fleet_status.get("stale", False))
+        fleet_available = bool(fleet_status.get("central_available", False))
+
+        planner_degraded = False
+        planner_reason = ""
+        planner_fn = getattr(self._runtime, "planner_status", None)
+        if callable(planner_fn):
+            try:
+                planner = planner_fn(bot_id=bot_id)
+                planner_healthy = bool(getattr(planner, "planner_healthy", False))
+                planner_updated_at = getattr(planner, "updated_at", None)
+                stale_seconds: float | None = None
+                if isinstance(planner_updated_at, datetime):
+                    if planner_updated_at.tzinfo is None:
+                        planner_updated_at = planner_updated_at.replace(tzinfo=UTC)
+                    stale_seconds = max(0.0, (datetime.now(UTC) - planner_updated_at.astimezone(UTC)).total_seconds())
+                stale_threshold = max(float(getattr(self._runtime, "planner_stale_threshold_s", 60.0) or 60.0), 1.0)
+                planner_stale = (not planner_healthy) or stale_seconds is None or stale_seconds > stale_threshold
+                if planner_stale:
+                    planner_degraded = True
+                    planner_reason = "planner_stale"
+            except Exception:
+                planner_degraded = True
+                planner_reason = "planner_status_unavailable"
+
+        crew_degraded = False
+        crew_reason = ""
+        crew_status_fn = getattr(self._runtime, "crewai_status", None)
+        if callable(crew_status_fn):
+            try:
+                crew_status = crew_status_fn()
+                crew_available = bool(getattr(crew_status, "crew_available", False))
+                crew_enabled = bool(getattr(crew_status, "crewai_enabled", True))
+                if not crew_enabled:
+                    crew_degraded = True
+                    crew_reason = "crewai_disabled"
+                elif not crew_available:
+                    crew_degraded = True
+                    crew_reason = "crewai_unavailable"
+            except Exception:
+                crew_degraded = True
+                crew_reason = "crewai_status_unavailable"
+
+        startup_failures = int(status.get("failure_count", 0) or 0)
+        startup_last_error = str(status.get("last_error") or "").strip()
+
+        degraded_reasons: list[str] = []
+        if fleet_enabled and fleet_stale:
+            degraded_reasons.append("fleet_central_stale")
+        if fleet_enabled and not fleet_available:
+            degraded_reasons.append("fleet_central_unavailable")
+        if planner_degraded and planner_reason:
+            degraded_reasons.append(planner_reason)
+        if crew_degraded and crew_reason:
+            degraded_reasons.append(crew_reason)
+        if startup_failures > 0:
+            degraded_reasons.append("crewai_failures_present")
+        if startup_last_error:
+            degraded_reasons.append(startup_last_error)
+
+        deduped_reasons: list[str] = []
+        seen: set[str] = set()
+        for item in degraded_reasons:
+            key = str(item).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped_reasons.append(key)
+
+        grace_s = float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"])
+        min_events = int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"])
+
+        if not minimum_readiness:
+            wait_reasons: list[str] = []
+            if not snapshot_ready:
+                wait_reasons.append("snapshot_unavailable")
+            if snapshot_ready and not bot_ready:
+                wait_reasons.append("bot_not_ready")
+            if not history_ready:
+                wait_reasons.append("history_unavailable")
+            reason = f"startup_gate_waiting_minimum_live_state:{','.join(wait_reasons) or 'minimum_state_unavailable'}"
             self._update_startup_gate(
                 bot_id=bot_id,
-                gate_open=True,
-                mode=mode,
+                gate_open=False,
+                mode="warmup",
                 reason=reason,
                 failure_count=int(status.get("failure_count", 0) or 0),
                 last_error=str(status.get("last_error") or ""),
-                grace_s=float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"]),
-                min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+                grace_s=grace_s,
+                min_events=min_events,
+                major_reasons=wait_reasons,
             )
-            opened = self._startup_gate_status(bot_id=bot_id)
-            logger.info(
-                "pdca_startup_gate_opened",
-                extra={
-                    "event": "pdca_startup_gate_opened",
-                    "bot_id": bot_id,
-                    "horizon": horizon.value,
-                    "mode": mode,
-                    "reason": reason,
-                    "continuity_goal_state_present": continuity_goal_state_present,
-                    "replan_reasons": list(replan_reasons),
-                },
-            )
-            return opened
+            return self._startup_gate_status(bot_id=bot_id)
 
-        reason = "startup_gate_waiting_state_history"
-        self._update_startup_gate(
+        mode = "degraded" if deduped_reasons else "conscious"
+        reason = (
+            f"startup_gate_open_degraded_optional_subsystems:{','.join(deduped_reasons)}"
+            if deduped_reasons
+            else "startup_gate_open_minimum_live_state_ready"
+        )
+        opened = self._update_startup_gate(
             bot_id=bot_id,
-            gate_open=False,
-            mode="pending",
+            gate_open=True,
+            mode=mode,
             reason=reason,
             failure_count=int(status.get("failure_count", 0) or 0),
             last_error=str(status.get("last_error") or ""),
-            grace_s=float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"]),
-            min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+            grace_s=grace_s,
+            min_events=min_events,
+            major_reasons=deduped_reasons,
         )
-        return self._startup_gate_status(bot_id=bot_id)
+        logger.info(
+            "pdca_startup_gate_ready",
+            extra={
+                "event": "pdca_startup_gate_ready",
+                "bot_id": bot_id,
+                "horizon": horizon.value,
+                "mode": mode,
+                "reason": reason,
+                "snapshot_ready": snapshot_ready,
+                "bot_ready": bot_ready,
+                "history_ready": history_ready,
+                "continuity_goal_state_present": continuity_goal_state_present,
+                "degraded_reasons": deduped_reasons,
+                "replan_reasons": list(replan_reasons),
+            },
+        )
+        return opened
 
     def _record_startup_gate_success(self, *, bot_id: str) -> None:
         status = self._startup_gate_status(bot_id=bot_id)
@@ -898,19 +988,30 @@ class PDCALoop:
         elapsed_s = float(status.get("elapsed_s", 0.0) or 0.0)
         grace_s = float(status.get("grace_s", self._startup_gate_defaults["grace_s"]) or self._startup_gate_defaults["grace_s"])
         max_failures = int(self._startup_gate_defaults["max_crewai_failures"])
-        degrade = failures >= max_failures or elapsed_s >= grace_s
+        normalized_reason = str(reason or "crewai_unusable").strip()
+        reason_lower = normalized_reason.lower()
+        immediate_tokens = ("crewai_disabled", "crewai_unavailable", "crewai_pipeline_disabled")
+        degrade = failures >= max_failures or elapsed_s >= grace_s or any(token in reason_lower for token in immediate_tokens)
 
         mode = "degraded" if degrade else str(status.get("mode") or "conscious")
-        gate_reason = "startup_gate_degraded_after_bounded_crewai_failures" if degrade else str(status.get("reason") or "startup_gate_open_state_history_ready")
+        gate_reason = "startup_gate_degraded_after_bounded_crewai_failures" if degrade else str(status.get("reason") or "startup_gate_open_minimum_live_state_ready")
+        major_reasons = [
+            str(item).strip()
+            for item in list(status.get("major_reasons") or [])
+            if str(item).strip()
+        ]
+        if normalized_reason:
+            major_reasons.append(normalized_reason)
         self._update_startup_gate(
             bot_id=bot_id,
             gate_open=bool(status.get("gate_open", True)),
             mode=mode,
             reason=gate_reason,
             failure_count=failures,
-            last_error=str(reason or "crewai_unusable"),
+            last_error=normalized_reason,
             grace_s=grace_s,
             min_events=int(status.get("min_events", self._startup_gate_defaults["min_events"]) or self._startup_gate_defaults["min_events"]),
+            major_reasons=major_reasons,
         )
         if degrade:
             logger.warning(
@@ -983,6 +1084,15 @@ class PDCALoop:
         return default
 
     def _fleet_status(self) -> dict[str, object]:
+        runtime_status_fn = getattr(self._runtime, "_fleet_status", None)
+        if callable(runtime_status_fn):
+            try:
+                data = runtime_status_fn()
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                logger.exception("Failed to read runtime fleet status for PDCA")
+
         state = getattr(self._runtime, "fleet_constraint_state", None)
         if state is not None and hasattr(state, "status"):
             try:
@@ -991,11 +1101,14 @@ class PDCALoop:
                     return data
             except Exception:
                 logger.exception("Failed to read fleet status for PDCA")
+
+        fleet_client = getattr(self._runtime, "fleet_sync_client", None)
+        central_enabled = bool(getattr(fleet_client, "enabled", True))
         return {
             "mode": "local",
-            "central_enabled": True,
+            "central_enabled": central_enabled,
             "central_available": False,
-            "stale": True,
+            "stale": (True if central_enabled else False),
             "last_sync_at": None,
             "doctrine_version": "local",
             "last_error": "fleet_constraint_state_unavailable",

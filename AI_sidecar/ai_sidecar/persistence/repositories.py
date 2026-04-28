@@ -20,6 +20,7 @@ from ai_sidecar.persistence.models import (
     MacroPublicationRecord,
     MemoryEpisodeRecord,
     MemorySemanticRecord,
+    SidecarOperationRecord,
     SnapshotRecord,
     TelemetryEventRecord,
     AutonomyGoalStateRecord,
@@ -448,6 +449,21 @@ class ActionRepository:
             ),
         )
 
+    def get(self, *, action_id: str) -> ActionRecord | None:
+        row = self._db.fetchone("SELECT * FROM actions WHERE action_id=?", (action_id,))
+        if row is None:
+            return None
+        return self._row_to_action(row)
+
+    def find_by_idempotency(self, *, bot_id: str, idempotency_key: str) -> ActionRecord | None:
+        row = self._db.fetchone(
+            "SELECT * FROM actions WHERE bot_id=? AND idempotency_key=? ORDER BY queued_at DESC LIMIT 1",
+            (bot_id, idempotency_key),
+        )
+        if row is None:
+            return None
+        return self._row_to_action(row)
+
     def list_recent(self, *, bot_id: str, limit: int) -> list[ActionRecord]:
         rows = self._db.fetchall(
             "SELECT * FROM actions WHERE bot_id=? ORDER BY queued_at DESC, action_id DESC LIMIT ?",
@@ -469,6 +485,25 @@ class ActionRepository:
             row = self._db.fetchone("SELECT COUNT(*) AS c FROM actions")
         return int(row["c"]) if row else 0
 
+    def list_replayable(self, *, limit: int = 2048) -> list[ActionRecord]:
+        rows = self._db.fetchall(
+            """
+            SELECT *
+            FROM actions
+            WHERE status IN (?, ?)
+              AND expires_at > ?
+            ORDER BY queued_at ASC, action_id ASC
+            LIMIT ?
+            """,
+            (
+                ActionStatus.queued.value,
+                ActionStatus.dispatched.value,
+                to_iso(utc_now()),
+                max(1, int(limit)),
+            ),
+        )
+        return [self._row_to_action(row) for row in rows]
+
     def _row_to_action(self, row: object) -> ActionRecord:
         return ActionRecord(
             action_id=row["action_id"],
@@ -489,6 +524,240 @@ class ActionRepository:
             ack_message=row["ack_message"] or "",
             poll_id=row["poll_id"],
             status_reason=row["status_reason"] or "",
+        )
+
+
+class SidecarOperationRepository:
+    _ACTIVE_STATUSES = {
+        "planned",
+        "applying",
+        "applied",
+        "reload_pending",
+        "dispatch_pending",
+        "reconciling",
+        "retry_pending",
+    }
+
+    def __init__(self, db: SQLiteDB) -> None:
+        self._db = db
+
+    def begin_operation(
+        self,
+        *,
+        operation_id: str,
+        bot_id: str,
+        operation_kind: str,
+        artifact_kind: str,
+        artifact_path: str,
+        idempotency_key: str,
+        payload: dict[str, object],
+        base_checksum: str | None,
+        desired_checksum: str | None,
+        status: str = "planned",
+        status_reason: str = "operation_planned",
+    ) -> SidecarOperationRecord:
+        existing = self.get_by_idempotency(bot_id=bot_id, idempotency_key=idempotency_key)
+        if existing is not None:
+            return existing
+
+        now = utc_now()
+        self._db.execute(
+            """
+            INSERT INTO sidecar_operations(
+                operation_id,
+                bot_id,
+                operation_kind,
+                artifact_kind,
+                artifact_path,
+                idempotency_key,
+                status,
+                status_reason,
+                base_checksum,
+                desired_checksum,
+                observed_checksum,
+                linked_action_id,
+                payload_json,
+                error_message,
+                created_at,
+                updated_at,
+                reconciled_at,
+                attempt_count,
+                last_attempt_at,
+                last_error_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, '', ?, ?, NULL, 0, NULL, NULL)
+            ON CONFLICT(operation_id) DO UPDATE SET
+                bot_id=excluded.bot_id,
+                operation_kind=excluded.operation_kind,
+                artifact_kind=excluded.artifact_kind,
+                artifact_path=excluded.artifact_path,
+                idempotency_key=excluded.idempotency_key,
+                status=excluded.status,
+                status_reason=excluded.status_reason,
+                base_checksum=excluded.base_checksum,
+                desired_checksum=excluded.desired_checksum,
+                payload_json=excluded.payload_json,
+                updated_at=excluded.updated_at
+            """,
+            (
+                operation_id,
+                bot_id,
+                operation_kind,
+                artifact_kind,
+                artifact_path,
+                idempotency_key,
+                status,
+                status_reason,
+                base_checksum,
+                desired_checksum,
+                to_json(payload),
+                to_iso(now),
+                to_iso(now),
+            ),
+        )
+        row = self._db.fetchone("SELECT * FROM sidecar_operations WHERE operation_id=?", (operation_id,))
+        if row is None:
+            existing_after = self.get_by_idempotency(bot_id=bot_id, idempotency_key=idempotency_key)
+            if existing_after is None:
+                raise RuntimeError(f"failed to begin operation {operation_id}")
+            return existing_after
+        return self._row_to_operation(row)
+
+    def update_status(
+        self,
+        *,
+        operation_id: str,
+        status: str,
+        status_reason: str,
+        observed_checksum: str | None = None,
+        linked_action_id: str | None = None,
+        error_message: str | None = None,
+        increment_attempt: bool = False,
+        mark_reconciled: bool = False,
+    ) -> SidecarOperationRecord | None:
+        now = utc_now()
+        current = self.get(operation_id=operation_id)
+        if current is None:
+            return None
+
+        next_attempt_count = int(current.attempt_count) + (1 if increment_attempt else 0)
+        next_last_attempt_at = to_iso(now) if increment_attempt else (to_iso(current.last_attempt_at) if current.last_attempt_at else None)
+        next_last_error_at = to_iso(now) if error_message else (to_iso(current.last_error_at) if current.last_error_at else None)
+
+        self._db.execute(
+            """
+            UPDATE sidecar_operations
+            SET status=?,
+                status_reason=?,
+                observed_checksum=COALESCE(?, observed_checksum),
+                linked_action_id=COALESCE(?, linked_action_id),
+                error_message=COALESCE(?, error_message),
+                updated_at=?,
+                reconciled_at=CASE WHEN ? THEN ? ELSE reconciled_at END,
+                attempt_count=?,
+                last_attempt_at=?,
+                last_error_at=?
+            WHERE operation_id=?
+            """,
+            (
+                status,
+                status_reason,
+                observed_checksum,
+                linked_action_id,
+                error_message,
+                to_iso(now),
+                1 if mark_reconciled else 0,
+                to_iso(now),
+                next_attempt_count,
+                next_last_attempt_at,
+                next_last_error_at,
+                operation_id,
+            ),
+        )
+        return self.get(operation_id=operation_id)
+
+    def get(self, *, operation_id: str) -> SidecarOperationRecord | None:
+        row = self._db.fetchone("SELECT * FROM sidecar_operations WHERE operation_id=?", (operation_id,))
+        if row is None:
+            return None
+        return self._row_to_operation(row)
+
+    def get_by_idempotency(self, *, bot_id: str, idempotency_key: str) -> SidecarOperationRecord | None:
+        row = self._db.fetchone(
+            "SELECT * FROM sidecar_operations WHERE bot_id=? AND idempotency_key=? ORDER BY updated_at DESC LIMIT 1",
+            (bot_id, idempotency_key),
+        )
+        if row is None:
+            return None
+        return self._row_to_operation(row)
+
+    def get_by_action_id(self, *, action_id: str) -> SidecarOperationRecord | None:
+        row = self._db.fetchone(
+            "SELECT * FROM sidecar_operations WHERE linked_action_id=? ORDER BY updated_at DESC LIMIT 1",
+            (action_id,),
+        )
+        if row is None:
+            return None
+        return self._row_to_operation(row)
+
+    def latest_for_artifact(self, *, bot_id: str, artifact_path: str) -> SidecarOperationRecord | None:
+        row = self._db.fetchone(
+            """
+            SELECT *
+            FROM sidecar_operations
+            WHERE bot_id=? AND artifact_path=?
+            ORDER BY created_at DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (bot_id, artifact_path),
+        )
+        if row is None:
+            return None
+        return self._row_to_operation(row)
+
+    def list_pending(self, *, limit: int = 2048) -> list[SidecarOperationRecord]:
+        rows = self._db.fetchall(
+            """
+            SELECT *
+            FROM sidecar_operations
+            WHERE status IN (?, ?, ?, ?, ?, ?, ?)
+            ORDER BY updated_at ASC, operation_id ASC
+            LIMIT ?
+            """,
+            (
+                "planned",
+                "applying",
+                "applied",
+                "reload_pending",
+                "dispatch_pending",
+                "reconciling",
+                "retry_pending",
+                max(1, int(limit)),
+            ),
+        )
+        return [self._row_to_operation(row) for row in rows]
+
+    def _row_to_operation(self, row: object) -> SidecarOperationRecord:
+        return SidecarOperationRecord(
+            operation_id=str(row["operation_id"]),
+            bot_id=str(row["bot_id"]),
+            operation_kind=str(row["operation_kind"]),
+            artifact_kind=str(row["artifact_kind"]),
+            artifact_path=str(row["artifact_path"]),
+            idempotency_key=str(row["idempotency_key"]),
+            status=str(row["status"]),
+            status_reason=str(row["status_reason"] or ""),
+            base_checksum=(str(row["base_checksum"]) if row["base_checksum"] is not None else None),
+            desired_checksum=(str(row["desired_checksum"]) if row["desired_checksum"] is not None else None),
+            observed_checksum=(str(row["observed_checksum"]) if row["observed_checksum"] is not None else None),
+            linked_action_id=(str(row["linked_action_id"]) if row["linked_action_id"] is not None else None),
+            payload=dict(from_json(row["payload_json"])),
+            error_message=str(row["error_message"] or ""),
+            created_at=from_iso(str(row["created_at"])),
+            updated_at=from_iso(str(row["updated_at"])),
+            reconciled_at=(from_iso(str(row["reconciled_at"])) if row["reconciled_at"] else None),
+            attempt_count=int(row["attempt_count"]),
+            last_attempt_at=(from_iso(str(row["last_attempt_at"])) if row["last_attempt_at"] else None),
+            last_error_at=(from_iso(str(row["last_error_at"])) if row["last_error_at"] else None),
         )
 
 
@@ -1147,6 +1416,7 @@ class SidecarRepositories:
     memory: MemoryRepository
     events: EventJournalRepository
     autonomy_goals: AutonomyGoalStateRepository
+    operations: SidecarOperationRepository
 
 
 def create_repositories(
@@ -1171,4 +1441,5 @@ def create_repositories(
         memory=MemoryRepository(db),
         events=EventJournalRepository(db, max_history_per_bot=snapshot_history_per_bot),
         autonomy_goals=AutonomyGoalStateRepository(db),
+        operations=SidecarOperationRepository(db),
     )

@@ -188,6 +188,33 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_autonomy_goal_states_updated ON autonomy_goal_states(updated_at DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS sidecar_operations (
+        operation_id TEXT PRIMARY KEY,
+        bot_id TEXT NOT NULL,
+        operation_kind TEXT NOT NULL,
+        artifact_kind TEXT NOT NULL,
+        artifact_path TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        status TEXT NOT NULL,
+        status_reason TEXT NOT NULL DEFAULT '',
+        base_checksum TEXT,
+        desired_checksum TEXT,
+        observed_checksum TEXT,
+        linked_action_id TEXT,
+        payload_json TEXT NOT NULL,
+        error_message TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        reconciled_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        last_error_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_sidecar_operations_bot_updated ON sidecar_operations(bot_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_sidecar_operations_status_updated ON sidecar_operations(status, updated_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_sidecar_operations_idempotency ON sidecar_operations(bot_id, idempotency_key)",
 )
 
 

@@ -1,5 +1,5 @@
 {
-  "version": "stage4-opportunistic-upgrades-v1",
+  "version": "stage4-opportunistic-upgrades-v2",
   "market_source_allowlist": ["npc_shop", "market", "player_vendor"],
   "rules": [
     {
@@ -41,12 +41,20 @@
         "name": "config.txt",
         "target_path": "control/config.txt",
         "desired": {
-          "aiSidecar_enable": "1"
+          "aiSidecar_enable": "1",
+          "aiSidecar_profile": "combat_weight_relief",
+          "itemsMaxWeight_sellOrStore": "50",
+          "itemsTakeAuto": "2",
+          "itemsGatherAuto": "1",
+          "route_randomWalk": "1",
+          "attackAuto": "2",
+          "teleportAuto_minAggressives": "4"
         },
         "source": "crewai"
       },
       "notes": [
         "stage4-safe-config: deterministic control plan through protected control domain",
+        "materially tunes inventory pressure relief, engagement posture, and anti-overpull thresholds",
         "no raw equip command emission"
       ]
     },
@@ -67,10 +75,43 @@
         "macros": [
           {
             "name": "crew_stage4_upgrade_posture",
-            "lines": ["do ai auto"]
+            "lines": [
+              "do conf route_randomWalk 1",
+              "do conf route_step 15",
+              "do conf attackAuto 2",
+              "do conf teleportAuto_hp 30",
+              "do conf teleportAuto_minAggressives 3",
+              "do conf itemsTakeAuto 2",
+              "do conf itemsGatherAuto 1",
+              "do conf itemsMaxWeight_sellOrStore 50",
+              "call crew_stage4_recovery_cycle",
+              "do ai clear",
+              "do ai on"
+            ]
           }
         ],
-        "event_macros": [],
+        "event_macros": [
+          {
+            "name": "crew_stage4_recovery_cycle",
+            "lines": [
+              "do conf route_teleport 1",
+              "do conf teleportAuto_sp 8",
+              "do conf lockMap none",
+              "do conf route_randomWalk 1"
+            ]
+          },
+          {
+            "name": "crew_stage4_inventory_relief",
+            "lines": [
+              "do conf itemsMaxWeight_sellOrStore 48",
+              "do conf itemsTakeAuto 1",
+              "do conf itemsGatherAuto 0",
+              "do conf storageAuto 1",
+              "do ai clear",
+              "do ai on"
+            ]
+          }
+        ],
         "automacros": [
           {
             "name": "on_crew_stage4_upgrade_posture",
@@ -86,6 +127,7 @@
       },
       "notes": [
         "stage4-safe-macro: macro publication and reload only through existing safe path",
+        "materially expands recovery, mobility refresh, and inventory-pressure handling payloads",
         "does not widen command roots"
       ]
     },
@@ -169,10 +211,38 @@
         "macros": [
           {
             "name": "crew_wave_a1_merc_homu_support",
-            "lines": ["do ai auto"]
+            "lines": [
+              "do conf attackAuto 2",
+              "do conf route_randomWalk 1",
+              "do conf route_step 12",
+              "do conf itemsTakeAuto 2",
+              "do conf itemsGatherAuto 1",
+              "do conf teleportAuto_minAggressives 4",
+              "call crew_wave_a1_merc_homu_recover",
+              "do ai clear",
+              "do ai on"
+            ]
           }
         ],
-        "event_macros": [],
+        "event_macros": [
+          {
+            "name": "crew_wave_a1_merc_homu_recover",
+            "lines": [
+              "do conf teleportAuto_hp 35",
+              "do conf teleportAuto_sp 10",
+              "do conf route_teleport 1",
+              "do conf lockMap none"
+            ]
+          },
+          {
+            "name": "crew_wave_a1_companion_regroup",
+            "lines": [
+              "do move prontera",
+              "do conf route_randomWalk 0",
+              "do conf attackAuto 1"
+            ]
+          }
+        ],
         "automacros": [
           {
             "name": "on_crew_wave_a1_merc_homu_support",
@@ -188,6 +258,7 @@
       },
       "notes": [
         "wave-a1 mercenary/homunculus support uses macro publication safe path",
+        "payload includes companion-safe recovery and regroup behavior inspired by anti-stuck route-shuffle style playbooks",
         "no direct unsupported roots emitted"
       ]
     },
@@ -216,12 +287,20 @@
         "name": "config.txt",
         "target_path": "control/config.txt",
         "desired": {
-          "aiSidecar_enable": "1"
+          "aiSidecar_enable": "1",
+          "aiSidecar_profile": "vending_cycle",
+          "aiSidecar_inventoryPressureMode": "unload_to_vendor",
+          "itemsTakeAuto": "0",
+          "itemsGatherAuto": "0",
+          "route_randomWalk": "0",
+          "attackAuto": "1",
+          "lockMap": "prontera"
         },
         "source": "crewai"
       },
       "notes": [
         "wave-a1 vending posture stays within control-domain config planning",
+        "materially shifts from farm posture to inventory-offload and merchant cycle posture",
         "avoids raw vending command root emission"
       ]
     }

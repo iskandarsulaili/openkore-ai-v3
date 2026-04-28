@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -163,7 +164,7 @@ from ai_sidecar.providers.prompt_guard import PromptGuard
 from ai_sidecar.persistence.db import SQLiteDB
 from ai_sidecar.persistence.repositories import SidecarRepositories, bot_id_aliases, canonicalize_bot_id, create_repositories
 from ai_sidecar.runtime.action_arbiter import ActionArbiter
-from ai_sidecar.runtime.action_queue import ActionQueue
+from ai_sidecar.runtime.action_queue import ActionQueue, QueuedAction
 from ai_sidecar.runtime.bot_registry import BotRegistry
 from ai_sidecar.runtime.latency_router import LatencyRouter
 from ai_sidecar.runtime.snapshot_cache import SnapshotCache
@@ -1268,6 +1269,274 @@ class RuntimeState:
     def enriched_state(self, *, bot_id: str) -> EnrichedWorldState:
         return self.normalizer_bus.enriched_state(bot_id=bot_id)
 
+    def _sha256_text(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _resolve_workspace_path(self, artifact_path: str) -> Path:
+        normalized = str(artifact_path or "").strip().lstrip("/")
+        return self.workspace_root / normalized
+
+    def _macro_manifest_content_sha(self, *, path: Path) -> str | None:
+        if not path.exists() or not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.warning(
+                "macro_manifest_parse_failed",
+                extra={"event": "macro_manifest_parse_failed", "path": str(path)},
+            )
+            return None
+        content_sha = str(payload.get("content_sha256") or "").strip()
+        if not content_sha:
+            return None
+        return content_sha
+
+    def _observed_checksum_for_operation(self, operation: object) -> str | None:
+        artifact_path = str(getattr(operation, "artifact_path", "") or "").strip()
+        if not artifact_path:
+            return None
+        path = self._resolve_workspace_path(artifact_path)
+        operation_kind = str(getattr(operation, "operation_kind", "") or "").strip().lower()
+        if operation_kind == "macro_publish":
+            return self._macro_manifest_content_sha(path=path)
+        if not path.exists() or not path.is_file():
+            return None
+        try:
+            return self._sha256_text(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.exception(
+                "sidecar_operation_checksum_read_failed",
+                extra={
+                    "event": "sidecar_operation_checksum_read_failed",
+                    "path": str(path),
+                    "operation_kind": operation_kind,
+                },
+            )
+            return None
+
+    def begin_sidecar_operation(
+        self,
+        *,
+        bot_id: str,
+        operation_kind: str,
+        artifact_kind: str,
+        artifact_path: str,
+        idempotency_key: str,
+        payload: dict[str, object],
+        base_checksum: str | None,
+        desired_checksum: str | None,
+        status: str = "planned",
+        status_reason: str = "operation_planned",
+    ) -> str | None:
+        if self.repositories is None:
+            return None
+        operation_id = f"op-{uuid4().hex[:24]}"
+        row = self._safe_persist(
+            "begin_sidecar_operation",
+            lambda: self.repositories.operations.begin_operation(
+                operation_id=operation_id,
+                bot_id=bot_id,
+                operation_kind=operation_kind,
+                artifact_kind=artifact_kind,
+                artifact_path=artifact_path,
+                idempotency_key=idempotency_key,
+                payload=payload,
+                base_checksum=base_checksum,
+                desired_checksum=desired_checksum,
+                status=status,
+                status_reason=status_reason,
+            ),
+            default=None,
+            bot_id=bot_id,
+        )
+        if row is None:
+            return None
+        logger.info(
+            "sidecar_operation_created",
+            extra={
+                "event": "sidecar_operation_created",
+                "operation_id": row.operation_id,
+                "bot_id": row.bot_id,
+                "operation_kind": row.operation_kind,
+                "artifact_path": row.artifact_path,
+                "idempotency_key": row.idempotency_key,
+                "status": row.status,
+                "status_reason": row.status_reason,
+            },
+        )
+        return str(row.operation_id)
+
+    def transition_sidecar_operation(
+        self,
+        *,
+        operation_id: str,
+        status: str,
+        status_reason: str,
+        observed_checksum: str | None = None,
+        linked_action_id: str | None = None,
+        error_message: str | None = None,
+        increment_attempt: bool = False,
+        mark_reconciled: bool = False,
+    ) -> None:
+        if self.repositories is None:
+            return
+        updated = self._safe_persist(
+            "update_sidecar_operation_status",
+            lambda: self.repositories.operations.update_status(
+                operation_id=operation_id,
+                status=status,
+                status_reason=status_reason,
+                observed_checksum=observed_checksum,
+                linked_action_id=linked_action_id,
+                error_message=error_message,
+                increment_attempt=increment_attempt,
+                mark_reconciled=mark_reconciled,
+            ),
+            default=None,
+            bot_id=None,
+        )
+        if updated is None:
+            return
+        logger.info(
+            "sidecar_operation_transition",
+            extra={
+                "event": "sidecar_operation_transition",
+                "operation_id": updated.operation_id,
+                "bot_id": updated.bot_id,
+                "operation_kind": updated.operation_kind,
+                "status": updated.status,
+                "status_reason": updated.status_reason,
+                "linked_action_id": updated.linked_action_id,
+                "attempt_count": updated.attempt_count,
+                "observed_checksum": updated.observed_checksum,
+                "desired_checksum": updated.desired_checksum,
+                "error_message": updated.error_message,
+            },
+        )
+
+    def _action_status_for_operation(self, *, bot_id: str, action_id: str) -> str | None:
+        for queued in self.action_queue.snapshot().get(bot_id, []):
+            if queued.proposal.action_id == action_id:
+                return queued.status.value
+        if self.repositories is None:
+            return None
+        row = self._safe_persist(
+            "get_action_for_operation_reconcile",
+            lambda: self.repositories.actions.get(action_id=action_id),
+            default=None,
+            bot_id=bot_id,
+        )
+        if row is None:
+            return None
+        return str(getattr(row, "status", "") or "").strip().lower() or None
+
+    def _reconcile_sidecar_operations(self, *, limit: int = 2048) -> int:
+        if self.repositories is None:
+            return 0
+        pending = self._safe_persist(
+            "list_pending_sidecar_operations",
+            lambda: self.repositories.operations.list_pending(limit=max(1, int(limit))),
+            default=[],
+            bot_id=None,
+        ) or []
+        if not pending:
+            return 0
+
+        reconciled = 0
+        for operation in pending:
+            operation_id = str(getattr(operation, "operation_id", "") or "")
+            bot_id = str(getattr(operation, "bot_id", "") or "")
+            if not operation_id or not bot_id:
+                continue
+
+            observed_checksum = self._observed_checksum_for_operation(operation)
+            desired_checksum = str(getattr(operation, "desired_checksum", "") or "").strip() or None
+            linked_action_id = str(getattr(operation, "linked_action_id", "") or "").strip() or None
+            linked_action_status = (
+                self._action_status_for_operation(bot_id=bot_id, action_id=linked_action_id)
+                if linked_action_id
+                else None
+            )
+
+            next_status = str(getattr(operation, "status", "") or "").strip()
+            next_reason = str(getattr(operation, "status_reason", "") or "").strip()
+            next_error: str | None = None
+            mark_reconciled = False
+
+            if desired_checksum and observed_checksum == desired_checksum:
+                if linked_action_status in {ActionStatus.queued.value, ActionStatus.dispatched.value}:
+                    next_status = "dispatch_pending"
+                    next_reason = "reconcile_action_pending"
+                elif linked_action_status == ActionStatus.acknowledged.value:
+                    next_status = "completed"
+                    next_reason = "reconcile_action_acknowledged"
+                    mark_reconciled = True
+                elif linked_action_status in {
+                    ActionStatus.dropped.value,
+                    ActionStatus.expired.value,
+                    ActionStatus.superseded.value,
+                }:
+                    next_status = "retry_pending"
+                    next_reason = f"reconcile_action_{linked_action_status}"
+                    next_error = f"linked_action_{linked_action_status}"
+                else:
+                    next_status = "completed"
+                    next_reason = "reconcile_artifact_current"
+                    mark_reconciled = True
+            elif desired_checksum and observed_checksum is None:
+                next_status = "retry_pending"
+                next_reason = "reconcile_artifact_missing"
+                next_error = "artifact_missing"
+            elif desired_checksum and observed_checksum != desired_checksum:
+                next_status = "retry_pending"
+                next_reason = "reconcile_drift_detected"
+                next_error = "desired_checksum_mismatch"
+
+            if (
+                next_status != str(getattr(operation, "status", "") or "")
+                or next_reason != str(getattr(operation, "status_reason", "") or "")
+                or observed_checksum != getattr(operation, "observed_checksum", None)
+                or next_error is not None
+            ):
+                self.transition_sidecar_operation(
+                    operation_id=operation_id,
+                    status=next_status,
+                    status_reason=next_reason,
+                    observed_checksum=observed_checksum,
+                    linked_action_id=linked_action_id,
+                    error_message=next_error,
+                    mark_reconciled=mark_reconciled,
+                )
+                reconciled += 1
+
+                logger.info(
+                    "sidecar_operation_reconciled",
+                    extra={
+                        "event": "sidecar_operation_reconciled",
+                        "operation_id": operation_id,
+                        "bot_id": bot_id,
+                        "operation_kind": getattr(operation, "operation_kind", ""),
+                        "status": next_status,
+                        "reason": next_reason,
+                        "observed_checksum": observed_checksum,
+                        "desired_checksum": desired_checksum,
+                        "linked_action_id": linked_action_id,
+                        "linked_action_status": linked_action_status,
+                    },
+                )
+
+        if reconciled > 0:
+            logger.info(
+                "sidecar_operation_reconcile_completed",
+                extra={
+                    "event": "sidecar_operation_reconcile_completed",
+                    "reconciled": reconciled,
+                    "pending_seen": len(pending),
+                },
+            )
+        return reconciled
+
     def _restore_goal_state_cache(self, *, limit: int = 256) -> int:
         if self.repositories is None:
             return 0
@@ -1304,6 +1573,74 @@ class RuntimeState:
                     "cache_size": len(self._last_goal_state_by_bot),
                 },
             )
+        return restored
+
+    def _restore_action_queue(self, *, limit: int = 2048) -> int:
+        if self.repositories is None:
+            return 0
+
+        rows = self._safe_persist(
+            "list_replayable_actions",
+            lambda: self.repositories.actions.list_replayable(limit=max(1, int(limit))),
+            default=[],
+            bot_id=None,
+        ) or []
+        if not rows:
+            self._reconcile_sidecar_operations(limit=max(256, int(limit)))
+            return 0
+
+        by_bot: dict[str, list[QueuedAction]] = {}
+        dropped_invalid = 0
+        for row in rows:
+            bot_id = str(getattr(row, "bot_id", "") or "").strip()
+            if not bot_id:
+                dropped_invalid += 1
+                continue
+            status_raw = str(getattr(row, "status", "") or "").strip().lower()
+            if status_raw not in {ActionStatus.queued.value, ActionStatus.dispatched.value}:
+                continue
+            try:
+                proposal = ActionProposal.model_validate(getattr(row, "proposal", {}))
+            except Exception:
+                dropped_invalid += 1
+                logger.warning(
+                    "action_replay_invalid_proposal_skipped",
+                    extra={
+                        "event": "action_replay_invalid_proposal_skipped",
+                        "bot_id": bot_id,
+                        "action_id": str(getattr(row, "action_id", "") or ""),
+                    },
+                )
+                continue
+
+            by_bot.setdefault(bot_id, []).append(
+                QueuedAction(
+                    proposal=proposal,
+                    status=ActionStatus(status_raw),
+                    enqueue_seq=0,
+                    dispatched_at=getattr(row, "dispatched_at", None),
+                    acknowledged_at=getattr(row, "acknowledged_at", None),
+                    ack_message=str(getattr(row, "ack_message", "") or ""),
+                )
+            )
+
+        restored = 0
+        for bot_id, queued_actions in by_bot.items():
+            restored += self.action_queue.rehydrate(bot_id=bot_id, queued_actions=queued_actions)
+            for queued in self.action_queue.snapshot().get(bot_id, []):
+                self._action_kind_index[queued.proposal.action_id] = queued.proposal.kind
+
+        if restored > 0 or dropped_invalid > 0:
+            logger.info(
+                "action_queue_rehydrated_from_persistence",
+                extra={
+                    "event": "action_queue_rehydrated_from_persistence",
+                    "restored": restored,
+                    "dropped_invalid": dropped_invalid,
+                    "bot_count": len(by_bot),
+                },
+            )
+        self._reconcile_sidecar_operations(limit=max(256, int(limit)))
         return restored
 
     def _restore_goal_state_for_bot(self, *, bot_id: str) -> GoalStackState | None:
@@ -1348,6 +1685,23 @@ class RuntimeState:
         tick_id = str(getattr(snapshot, "tick_id", "") or "").strip()
         snapshot_ready = bool(snapshot is not None and map_name and tick_id)
 
+        raw = getattr(snapshot, "raw", {}) if snapshot is not None else {}
+        disconnected = False
+        if isinstance(raw, dict):
+            if raw.get("in_game") is False:
+                disconnected = True
+            status = str(raw.get("status") or raw.get("state") or raw.get("net_state") or "").strip().lower()
+            if status in {
+                "offline",
+                "disconnected",
+                "disconnect",
+                "reconnecting",
+                "connecting",
+                "not_connected",
+            }:
+                disconnected = True
+        bot_ready = bool(snapshot_ready and not disconnected)
+
         continuity_goal_state_present = self.latest_goal_state(bot_id=bot_id) is not None
         min_events = max(1, int(state.get("min_events", 2) or 2))
         recent_event_count = len(self.recent_ingest_events(bot_id=bot_id, limit=min_events))
@@ -1356,10 +1710,33 @@ class RuntimeState:
         now = datetime.now(UTC)
         elapsed_s = max(0.0, (now - started_at.astimezone(UTC)).total_seconds())
 
+        gate_open = bool(state.get("gate_open", False))
+        mode = str(state.get("mode") or ("conscious" if gate_open else "warmup")).strip().lower()
+        if mode == "pending":
+            mode = "warmup"
+        if mode not in {"warmup", "conscious", "degraded"}:
+            mode = "degraded" if gate_open else "warmup"
+        if not gate_open:
+            mode = "warmup"
+        elif mode == "warmup":
+            mode = "conscious"
+
+        major_reasons_raw = state.get("major_reasons")
+        major_reasons = [
+            str(item).strip()
+            for item in (major_reasons_raw if isinstance(major_reasons_raw, list) else [])
+            if str(item).strip()
+        ]
+        if not major_reasons:
+            fallback_reason = str(state.get("reason") or "startup_gate_initializing").strip()
+            if fallback_reason:
+                major_reasons = [fallback_reason]
+
         return {
             "bot_id": bot_id,
-            "gate_open": bool(state.get("gate_open", False)),
-            "mode": str(state.get("mode") or "pending"),
+            "gate_open": gate_open,
+            "mode": mode,
+            "runtime_mode": mode,
             "reason": str(state.get("reason") or "startup_gate_initializing"),
             "failure_count": int(state.get("failure_count", 0) or 0),
             "last_error": str(state.get("last_error") or ""),
@@ -1369,9 +1746,12 @@ class RuntimeState:
             "opened_at": opened_at,
             "elapsed_s": elapsed_s,
             "snapshot_ready": snapshot_ready,
+            "bot_ready": bot_ready,
             "history_ready": history_ready,
             "continuity_goal_state_present": continuity_goal_state_present,
             "recent_event_count": recent_event_count,
+            "degraded": mode == "degraded",
+            "major_reasons": major_reasons,
         }
 
     def update_startup_gate(
@@ -1385,19 +1765,44 @@ class RuntimeState:
         last_error: str,
         grace_s: float | None = None,
         min_events: int | None = None,
+        major_reasons: list[str] | None = None,
     ) -> dict[str, object]:
         existing = dict(self._autonomy_startup_gate_by_bot.get(bot_id) or {})
         now = datetime.now(UTC)
         started_at = existing.get("started_at")
         if not isinstance(started_at, datetime):
             started_at = now
+
+        normalized_gate_open = bool(gate_open)
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode == "pending":
+            normalized_mode = "warmup"
+        if normalized_mode not in {"warmup", "conscious", "degraded"}:
+            normalized_mode = "degraded" if normalized_gate_open else "warmup"
+        if not normalized_gate_open:
+            normalized_mode = "warmup"
+        elif normalized_mode == "warmup":
+            normalized_mode = "conscious"
+
         opened_at = existing.get("opened_at")
-        if gate_open and not isinstance(opened_at, datetime):
+        if normalized_gate_open and not isinstance(opened_at, datetime):
             opened_at = now
+        if not normalized_gate_open:
+            opened_at = None
+
+        normalized_major_reasons = [str(item).strip() for item in list(major_reasons or []) if str(item).strip()]
+        if not normalized_major_reasons:
+            fallback_reason = str(reason or existing.get("reason") or "startup_gate_initializing").strip()
+            if fallback_reason:
+                normalized_major_reasons = [fallback_reason]
+
+        prev_gate_open = bool(existing.get("gate_open", False))
+        prev_mode = str(existing.get("mode") or "warmup")
+        prev_reason = str(existing.get("reason") or "")
 
         payload = {
-            "gate_open": bool(gate_open),
-            "mode": str(mode or "pending"),
+            "gate_open": normalized_gate_open,
+            "mode": normalized_mode,
             "reason": str(reason or ""),
             "failure_count": max(0, int(failure_count)),
             "last_error": str(last_error or ""),
@@ -1405,17 +1810,48 @@ class RuntimeState:
             "min_events": max(1, int(min_events if min_events is not None else existing.get("min_events", 2))),
             "started_at": started_at,
             "opened_at": opened_at if isinstance(opened_at, datetime) else None,
+            "major_reasons": normalized_major_reasons,
         }
         self._autonomy_startup_gate_by_bot[bot_id] = payload
 
+        base_policy_degraded = not bool(self.autonomy_policy.get("ranked_objectives"))
+        reasons: list[str] = []
+        if base_policy_degraded:
+            reasons.append("autonomy_ranked_objectives_empty")
         if payload["mode"] == "degraded":
-            startup_reason = str(payload["reason"] or "startup_gate_degraded")
-            self.autonomy_scheduler_degraded = True
-            if self.autonomy_scheduler_degraded_reason:
-                if startup_reason not in self.autonomy_scheduler_degraded_reason:
-                    self.autonomy_scheduler_degraded_reason = f"{self.autonomy_scheduler_degraded_reason};{startup_reason}"
-            else:
-                self.autonomy_scheduler_degraded_reason = startup_reason
+            reasons.extend(normalized_major_reasons)
+        deduped_reasons: list[str] = []
+        seen_reasons: set[str] = set()
+        for token in reasons:
+            key = str(token).strip()
+            if not key or key in seen_reasons:
+                continue
+            seen_reasons.add(key)
+            deduped_reasons.append(key)
+        self.autonomy_scheduler_degraded = bool(deduped_reasons)
+        self.autonomy_scheduler_degraded_reason = ";".join(deduped_reasons)
+
+        if (
+            prev_gate_open != payload["gate_open"]
+            or prev_mode != payload["mode"]
+            or prev_reason != payload["reason"]
+        ):
+            logger.info(
+                "runtime_startup_gate_transition",
+                extra={
+                    "event": "runtime_startup_gate_transition",
+                    "bot_id": bot_id,
+                    "prev_gate_open": prev_gate_open,
+                    "gate_open": payload["gate_open"],
+                    "prev_mode": prev_mode,
+                    "mode": payload["mode"],
+                    "prev_reason": prev_reason,
+                    "reason": payload["reason"],
+                    "major_reasons": normalized_major_reasons,
+                    "failure_count": payload["failure_count"],
+                    "elapsed_s": max(0.0, (now - started_at.astimezone(UTC)).total_seconds()),
+                },
+            )
         return self.startup_gate_status(bot_id=bot_id)
 
     def autonomy_decide(
@@ -1533,6 +1969,24 @@ class RuntimeState:
 
         self._action_kind_index[action_id] = proposal.kind
 
+        sidecar_operation_id = str(proposal.metadata.get("sidecar_operation_id") or "").strip()
+        if sidecar_operation_id:
+            if accepted or reason == "idempotent_duplicate":
+                self.transition_sidecar_operation(
+                    operation_id=sidecar_operation_id,
+                    status="dispatch_pending",
+                    status_reason="queue_action_linked",
+                    linked_action_id=action_id,
+                )
+            else:
+                self.transition_sidecar_operation(
+                    operation_id=sidecar_operation_id,
+                    status="retry_pending",
+                    status_reason="queue_action_rejected",
+                    linked_action_id=action_id,
+                    error_message=reason,
+                )
+
         if action_id == proposal.action_id:
             self._safe_persist(
                 "persist_action_proposal",
@@ -1604,6 +2058,21 @@ class RuntimeState:
 
         proposal = self.action_queue.fetch_next(bot_id)
         if proposal is not None:
+            op_row = self._safe_persist(
+                "find_sidecar_operation_by_action",
+                lambda: self.repositories.operations.get_by_action_id(action_id=proposal.action_id)
+                if self.repositories
+                else None,
+                default=None,
+                bot_id=bot_id,
+            )
+            if op_row is not None:
+                self.transition_sidecar_operation(
+                    operation_id=op_row.operation_id,
+                    status="dispatch_pending",
+                    status_reason="action_dispatched",
+                    linked_action_id=proposal.action_id,
+                )
             self._safe_persist(
                 "mark_action_dispatched",
                 lambda: self.repositories.actions.mark_dispatched(action_id=proposal.action_id, poll_id=poll_id)
@@ -1657,6 +2126,25 @@ class RuntimeState:
             action_kind = self._action_kind_index.get(ack.action_id, "unknown")
             self.slo_metrics.record_ack(source=ack.meta.source, action_kind=action_kind, success=ack.success)
         if acknowledged:
+            op_row = self._safe_persist(
+                "find_sidecar_operation_by_ack_action",
+                lambda: self.repositories.operations.get_by_action_id(action_id=ack.action_id)
+                if self.repositories
+                else None,
+                default=None,
+                bot_id=ack.meta.bot_id,
+            )
+            if op_row is not None:
+                next_status = "completed" if ack.success else "retry_pending"
+                next_reason = "action_ack_success" if ack.success else "action_ack_failed"
+                self.transition_sidecar_operation(
+                    operation_id=op_row.operation_id,
+                    status=next_status,
+                    status_reason=next_reason,
+                    linked_action_id=ack.action_id,
+                    error_message=None if ack.success else (ack.result_code or ack.message or "ack_failed"),
+                    mark_reconciled=ack.success,
+                )
             self._safe_persist(
                 "mark_action_acknowledged",
                 lambda: self.repositories.actions.mark_acknowledged(
@@ -1979,6 +2467,73 @@ class RuntimeState:
 
     def publish_macros(self, request: MacroPublishRequest) -> tuple[bool, dict[str, object] | None, str]:
         target_bot_id = request.target_bot_id or request.meta.bot_id
+        manifest_file = self.macro_publisher.manifest_file
+        manifest_relpath = self.macro_publisher.relpath(manifest_file)
+        macro_file_relpath = self.macro_publisher.relpath(self.macro_publisher.macro_file)
+        event_macro_file_relpath = self.macro_publisher.relpath(self.macro_publisher.event_macro_file)
+        catalog_file_relpath = self.macro_publisher.relpath(self.macro_publisher.catalog_file)
+
+        def _existing_manifest_payload() -> dict[str, object] | None:
+            if not manifest_file.exists() or not manifest_file.is_file():
+                return None
+            try:
+                payload = json.loads(manifest_file.read_text(encoding="utf-8"))
+            except Exception:
+                logger.warning(
+                    "macro_publish_manifest_read_failed",
+                    extra={"event": "macro_publish_manifest_read_failed", "path": str(manifest_file)},
+                )
+                return None
+            if not isinstance(payload, dict):
+                return None
+            return payload
+
+        def _publication_info_for_compiled(compiled: object) -> dict[str, object]:
+            publication_info_local: dict[str, object] = {
+                "publication_id": str(getattr(compiled, "publication_id", "")),
+                "version": str(getattr(compiled, "version", "")),
+                "content_sha256": str(getattr(compiled, "content_sha256", "")),
+                "published_at": getattr(compiled, "published_at", datetime.now(UTC)),
+                "macro_file": macro_file_relpath,
+                "event_macro_file": event_macro_file_relpath,
+                "catalog_file": catalog_file_relpath,
+                "manifest_file": manifest_relpath,
+            }
+            existing_manifest = _existing_manifest_payload()
+            if isinstance(existing_manifest, dict):
+                existing_sha = str(existing_manifest.get("content_sha256") or "").strip()
+                compiled_sha = str(getattr(compiled, "content_sha256", "")).strip()
+                if existing_sha and existing_sha == compiled_sha:
+                    manifest_published_at = existing_manifest.get("published_at")
+                    parsed_published_at = publication_info_local["published_at"]
+                    if isinstance(manifest_published_at, str) and manifest_published_at.strip():
+                        try:
+                            parsed_published_at = datetime.fromisoformat(manifest_published_at.replace("Z", "+00:00"))
+                        except Exception:
+                            parsed_published_at = publication_info_local["published_at"]
+                    publication_info_local.update(
+                        {
+                            "publication_id": str(existing_manifest.get("publication_id") or publication_info_local["publication_id"]),
+                            "version": str(existing_manifest.get("version") or publication_info_local["version"]),
+                            "published_at": parsed_published_at,
+                        }
+                    )
+
+            latest = self.latest_macro_publication(bot_id=target_bot_id)
+            if isinstance(latest, dict) and str(latest.get("content_sha256") or "") == str(publication_info_local["content_sha256"]):
+                latest_paths = latest.get("paths") if isinstance(latest.get("paths"), dict) else {}
+                publication_info_local.update(
+                    {
+                        "publication_id": str(latest.get("publication_id") or publication_info_local["publication_id"]),
+                        "version": str(latest.get("version") or publication_info_local["version"]),
+                        "published_at": latest.get("published_at") or publication_info_local["published_at"],
+                        "macro_file": str(latest_paths.get("macro_file") or macro_file_relpath),
+                        "event_macro_file": str(latest_paths.get("event_macro_file") or event_macro_file_relpath),
+                        "catalog_file": str(latest_paths.get("catalog_file") or catalog_file_relpath),
+                        "manifest_file": str(latest_paths.get("manifest_file") or manifest_relpath),
+                    }
+                )
+            return publication_info_local
 
         if self.security_auditor is not None:
             macro_lines = [line for routine in request.macros for line in routine.lines]
@@ -2011,7 +2566,6 @@ class RuntimeState:
                 event_macros=request.event_macros,
                 automacros=request.automacros,
             )
-            self.macro_publisher.publish(compiled)
         except Exception as exc:
             logger.exception(
                 "macro_publish_failed",
@@ -2034,16 +2588,185 @@ class RuntimeState:
             )
             return False, None, f"macro publication failed: {exc}"
 
-        publication_info: dict[str, object] = {
-            "publication_id": compiled.publication_id,
-            "version": compiled.version,
-            "content_sha256": compiled.content_sha256,
-            "published_at": compiled.published_at,
-            "macro_file": self.macro_publisher.relpath(self.macro_publisher.macro_file),
-            "event_macro_file": self.macro_publisher.relpath(self.macro_publisher.event_macro_file),
-            "catalog_file": self.macro_publisher.relpath(self.macro_publisher.catalog_file),
-            "manifest_file": self.macro_publisher.relpath(self.macro_publisher.manifest_file),
-        }
+        desired_checksum = str(compiled.content_sha256)
+        observed_checksum_before = self._macro_manifest_content_sha(path=manifest_file)
+        operation_id = self.begin_sidecar_operation(
+            bot_id=target_bot_id,
+            operation_kind="macro_publish",
+            artifact_kind="macro_manifest",
+            artifact_path=manifest_relpath,
+            idempotency_key=f"macro-publish:{target_bot_id}:{desired_checksum}",
+            payload={
+                "publication_id": compiled.publication_id,
+                "version": compiled.version,
+                "macro_count": len(request.macros),
+                "event_macro_count": len(request.event_macros),
+                "automacro_count": len(request.automacros),
+                "enqueue_reload": bool(request.enqueue_reload),
+            },
+            base_checksum=observed_checksum_before,
+            desired_checksum=desired_checksum,
+            status="planned",
+            status_reason="macro_publish_planned",
+        )
+
+        if operation_id:
+            self.transition_sidecar_operation(
+                operation_id=operation_id,
+                status="applying",
+                status_reason="macro_publish_started",
+                observed_checksum=observed_checksum_before,
+                increment_attempt=True,
+            )
+
+        if observed_checksum_before == desired_checksum:
+            if operation_id:
+                self.transition_sidecar_operation(
+                    operation_id=operation_id,
+                    status="completed",
+                    status_reason="macro_publish_artifact_already_current",
+                    observed_checksum=observed_checksum_before,
+                    mark_reconciled=True,
+                )
+            logger.info(
+                "macro_publish_duplicate_suppressed",
+                extra={
+                    "event": "macro_publish_duplicate_suppressed",
+                    "bot_id": target_bot_id,
+                    "content_sha256": desired_checksum,
+                    "manifest_file": manifest_relpath,
+                    "operation_id": operation_id,
+                },
+            )
+
+            publication_info = _publication_info_for_compiled(compiled)
+            publication_info["reload_queued"] = False
+            publication_info["reload_action_id"] = None
+            publication_info["reload_status"] = None
+            publication_info["reload_reason"] = "already_current"
+            publication_info["operation_id"] = operation_id
+
+            self._safe_memory(
+                "capture_macro_publish_memory",
+                lambda: self.memory.capture_action(
+                    bot_id=target_bot_id,
+                    action_id=f"macro-publish:{publication_info['publication_id']}",
+                    kind="macro_publish",
+                    message=f"macro bundle already current {publication_info['version']}",
+                    metadata={
+                        "publication_id": publication_info["publication_id"],
+                        "sha256": publication_info["content_sha256"],
+                        "operation_id": operation_id,
+                        "suppressed": True,
+                    },
+                ),
+                bot_id=target_bot_id,
+            )
+
+            self._audit(
+                level="info",
+                event_type="macro_publish",
+                summary="macro publication duplicate suppressed",
+                bot_id=target_bot_id,
+                payload={
+                    "publication_id": publication_info["publication_id"],
+                    "version": publication_info["version"],
+                    "reload_queued": False,
+                    "duplicate_suppressed": True,
+                    "operation_id": operation_id,
+                },
+            )
+            self._emit_runtime_event(
+                bot_id=target_bot_id,
+                event_family=EventFamily.macro,
+                event_type="macro.published",
+                severity=EventSeverity.info,
+                text=f"macro bundle already current {publication_info['version']}",
+                payload={
+                    "publication_id": publication_info["publication_id"],
+                    "version": publication_info["version"],
+                    "reload_queued": False,
+                    "reload_action_id": None,
+                    "reload_reason": "already_current",
+                    "duplicate_suppressed": True,
+                    "operation_id": operation_id,
+                },
+            )
+            if self.slo_metrics is not None:
+                self.slo_metrics.record_macro_publish(version=str(publication_info["version"]), success=True)
+            return True, publication_info, "macro artifacts already current"
+
+        try:
+            self.macro_publisher.publish(compiled)
+        except Exception as exc:
+            observed_checksum_error = self._macro_manifest_content_sha(path=manifest_file)
+            if operation_id:
+                self.transition_sidecar_operation(
+                    operation_id=operation_id,
+                    status="retry_pending",
+                    status_reason="macro_publish_failed",
+                    observed_checksum=observed_checksum_error,
+                    error_message=str(exc),
+                )
+            logger.exception(
+                "macro_publish_failed",
+                extra={
+                    "event": "macro_publish_failed",
+                    "bot_id": target_bot_id,
+                    "content_sha256": desired_checksum,
+                    "operation_id": operation_id,
+                },
+            )
+            self._audit(
+                level="error",
+                event_type="macro_publish",
+                summary="macro publication failed",
+                bot_id=target_bot_id,
+                payload={"error": str(exc), "operation_id": operation_id},
+            )
+            self._emit_runtime_event(
+                bot_id=target_bot_id,
+                event_family=EventFamily.macro,
+                event_type="macro.publish_failed",
+                severity=EventSeverity.error,
+                text=f"macro publication failed: {exc}",
+                payload={"error": str(exc), "operation_id": operation_id},
+            )
+            return False, None, f"macro publication failed: {exc}"
+
+        observed_checksum_after = self._macro_manifest_content_sha(path=manifest_file)
+        if observed_checksum_after != desired_checksum:
+            if operation_id:
+                self.transition_sidecar_operation(
+                    operation_id=operation_id,
+                    status="retry_pending",
+                    status_reason="macro_publish_drift_detected",
+                    observed_checksum=observed_checksum_after,
+                    error_message="post_write_checksum_mismatch",
+                )
+            logger.warning(
+                "macro_publish_drift_detected",
+                extra={
+                    "event": "macro_publish_drift_detected",
+                    "bot_id": target_bot_id,
+                    "manifest_file": manifest_relpath,
+                    "expected_checksum": desired_checksum,
+                    "observed_checksum": observed_checksum_after,
+                    "operation_id": operation_id,
+                },
+            )
+            return False, None, "macro publication drift detected: post_write_checksum_mismatch"
+
+        if operation_id:
+            self.transition_sidecar_operation(
+                operation_id=operation_id,
+                status="applied",
+                status_reason="macro_publish_persisted",
+                observed_checksum=observed_checksum_after,
+            )
+
+        publication_info = _publication_info_for_compiled(compiled)
+        publication_info["operation_id"] = operation_id
 
         self._safe_persist(
             "persist_macro_publication",
@@ -2073,7 +2796,11 @@ class RuntimeState:
                 action_id=f"macro-publish:{compiled.publication_id}",
                 kind="macro_publish",
                 message=f"published macro bundle {compiled.version}",
-                metadata={"publication_id": compiled.publication_id, "sha256": compiled.content_sha256},
+                metadata={
+                    "publication_id": compiled.publication_id,
+                    "sha256": compiled.content_sha256,
+                    "operation_id": operation_id,
+                },
             ),
             bot_id=target_bot_id,
         )
@@ -2081,6 +2808,20 @@ class RuntimeState:
         if request.enqueue_reload:
             now = datetime.now(UTC)
             action_id = f"macro-reload-{uuid4().hex[:18]}"
+            reload_metadata: dict[str, object] = {
+                "publication_id": compiled.publication_id,
+                "version": compiled.version,
+                "macro_file": self.macro_publisher.macro_file.name,
+                "event_macro_file": self.macro_publisher.event_macro_file.name,
+                "catalog_file": self.macro_publisher.catalog_file.name,
+                "manifest_file": self.macro_publisher.manifest_file.name,
+                "macro_plugin": request.macro_plugin or _default_macro_plugin_name(),
+                "event_macro_plugin": request.event_macro_plugin or _default_event_macro_plugin_name(),
+            }
+            if operation_id:
+                reload_metadata["sidecar_operation_id"] = operation_id
+                reload_metadata["operation_kind"] = "macro_publish"
+
             reload_proposal = ActionProposal(
                 action_id=action_id,
                 kind="macro_reload",
@@ -2089,17 +2830,8 @@ class RuntimeState:
                 conflict_key=request.reload_conflict_key,
                 created_at=now,
                 expires_at=now + timedelta(seconds=settings.action_default_ttl_seconds),
-                idempotency_key=f"macro-reload:{compiled.content_sha256}",
-                metadata={
-                    "publication_id": compiled.publication_id,
-                    "version": compiled.version,
-                    "macro_file": self.macro_publisher.macro_file.name,
-                    "event_macro_file": self.macro_publisher.event_macro_file.name,
-                    "catalog_file": self.macro_publisher.catalog_file.name,
-                    "manifest_file": self.macro_publisher.manifest_file.name,
-                    "macro_plugin": request.macro_plugin or _default_macro_plugin_name(),
-                    "event_macro_plugin": request.event_macro_plugin or _default_event_macro_plugin_name(),
-                },
+                idempotency_key=f"macro-reload:{target_bot_id}:{manifest_relpath}:{desired_checksum}",
+                metadata=reload_metadata,
             )
 
             accepted, status, action_id, reason = self.queue_action(reload_proposal, bot_id=target_bot_id)
@@ -2107,11 +2839,42 @@ class RuntimeState:
             publication_info["reload_action_id"] = action_id
             publication_info["reload_status"] = status
             publication_info["reload_reason"] = reason
+            if operation_id:
+                if accepted:
+                    self.transition_sidecar_operation(
+                        operation_id=operation_id,
+                        status="reload_pending",
+                        status_reason="macro_reload_queued",
+                        linked_action_id=action_id,
+                    )
+                elif reason == "idempotent_duplicate":
+                    self.transition_sidecar_operation(
+                        operation_id=operation_id,
+                        status="reload_pending",
+                        status_reason="macro_reload_duplicate_suppressed",
+                        linked_action_id=action_id,
+                    )
+                else:
+                    self.transition_sidecar_operation(
+                        operation_id=operation_id,
+                        status="retry_pending",
+                        status_reason="macro_reload_queue_failed",
+                        linked_action_id=action_id,
+                        error_message=reason,
+                    )
         else:
             publication_info["reload_queued"] = False
             publication_info["reload_action_id"] = None
             publication_info["reload_status"] = None
             publication_info["reload_reason"] = "reload_not_requested"
+            if operation_id:
+                self.transition_sidecar_operation(
+                    operation_id=operation_id,
+                    status="completed",
+                    status_reason="macro_publish_no_reload_requested",
+                    observed_checksum=observed_checksum_after,
+                    mark_reconciled=True,
+                )
 
         self._audit(
             level="info",
@@ -2122,6 +2885,7 @@ class RuntimeState:
                 "publication_id": compiled.publication_id,
                 "version": compiled.version,
                 "reload_queued": publication_info["reload_queued"],
+                "operation_id": operation_id,
             },
         )
         self._emit_runtime_event(
@@ -2136,6 +2900,7 @@ class RuntimeState:
                 "reload_queued": publication_info["reload_queued"],
                 "reload_action_id": publication_info["reload_action_id"],
                 "reload_reason": publication_info["reload_reason"],
+                "operation_id": operation_id,
             },
         )
         if self.slo_metrics is not None:
@@ -3489,16 +4254,16 @@ class RuntimeState:
                 "min_events": 0,
             }
         startup_gate_open = bool(startup_gate.get("gate_open", False))
-        startup_gate_mode = str(startup_gate.get("mode") or "pending")
+        startup_gate_mode = str(startup_gate.get("mode") or "warmup")
         startup_gate_reason = str(startup_gate.get("reason") or "")
         if not startup_gate_open:
             objective_scheduler_degraded = True
             if not objective_scheduler_reason:
-                objective_scheduler_reason = f"startup_gate_blocked:{startup_gate_reason or 'pending'}"
-        elif startup_gate_mode == "pending":
+                objective_scheduler_reason = f"startup_gate_blocked:{startup_gate_reason or 'warmup'}"
+        elif startup_gate_mode == "warmup":
             objective_scheduler_degraded = True
             if not objective_scheduler_reason:
-                objective_scheduler_reason = startup_gate_reason or "startup_gate_pending_conscious_bootstrap"
+                objective_scheduler_reason = startup_gate_reason or "startup_gate_warmup"
         elif startup_gate_mode == "degraded":
             objective_scheduler_degraded = True
             if not objective_scheduler_reason:
@@ -3547,6 +4312,10 @@ class RuntimeState:
             "startup_gate_open": startup_gate_open,
             "startup_gate_mode": startup_gate_mode,
             "startup_gate_reason": startup_gate_reason,
+            "runtime_mode": str(startup_gate.get("runtime_mode") or startup_gate_mode),
+            "runtime_mode_degraded": bool(startup_gate_mode == "degraded"),
+            "startup_gate_bot_ready": bool(startup_gate.get("bot_ready", False)),
+            "startup_gate_major_reasons": list(startup_gate.get("major_reasons") or []),
             "startup_gate_failure_count": int(startup_gate.get("failure_count", 0) or 0),
             "startup_gate_elapsed_s": float(startup_gate.get("elapsed_s", 0.0) or 0.0),
             "startup_gate_snapshot_ready": bool(startup_gate.get("snapshot_ready", False)),
@@ -4415,6 +5184,7 @@ def create_runtime() -> RuntimeState:
 
     control_executor.runtime = runtime
     runtime._restore_goal_state_cache(limit=max(64, settings.persistence_snapshot_history_per_bot))
+    runtime._restore_action_queue(limit=max(256, int(settings.action_max_queue_per_bot) * 8))
 
     planner_service = PlannerService(
         runtime=runtime,

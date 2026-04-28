@@ -608,6 +608,13 @@ def test_decision_service_wave_a1_mercenary_homunculus_domain_emits_macro_hint()
     assert isinstance(hints, list) and hints
     assert hints[0].get("execution_mode") == "macro"
     assert hints[0].get("tool") == "publish_macro"
+    macro_bundle = hints[0].get("macro_bundle") if isinstance(hints[0].get("macro_bundle"), dict) else {}
+    macros = macro_bundle.get("macros") if isinstance(macro_bundle.get("macros"), list) else []
+    event_macros = macro_bundle.get("event_macros") if isinstance(macro_bundle.get("event_macros"), list) else []
+    assert macros and isinstance(macros[0], dict)
+    assert "call crew_wave_a1_merc_homu_recover" in list(macros[0].get("lines") or [])
+    assert event_macros and isinstance(event_macros[0], dict)
+    assert any(str(item.get("name") or "") == "crew_wave_a1_companion_regroup" for item in event_macros if isinstance(item, dict))
 
 
 def test_decision_service_wave_a1_vending_domain_emits_config_hint() -> None:
@@ -665,6 +672,11 @@ def test_decision_service_wave_a1_vending_domain_emits_config_hint() -> None:
     assert isinstance(hints, list) and hints
     assert hints[0].get("execution_mode") == "config"
     assert hints[0].get("tool") == "plan_control_change"
+    request = hints[0].get("request") if isinstance(hints[0].get("request"), dict) else {}
+    desired = request.get("desired") if isinstance(request.get("desired"), dict) else {}
+    assert desired.get("aiSidecar_profile") == "vending_cycle"
+    assert desired.get("lockMap") == "prontera"
+    assert desired.get("itemsTakeAuto") == "0"
 
 
 def test_goal_state_persistence_roundtrip(tmp_path) -> None:

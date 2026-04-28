@@ -320,3 +320,174 @@ def test_pdca_long_term_falls_back_to_planner_when_crewai_unusable() -> None:
     assert runtime.crewai_calls
     assert runtime.planner_calls
     assert runtime.planner_calls[-1].horizon == PlanHorizon.strategic
+
+
+def test_pdca_startup_gate_warmup_blocks_dispatch_until_minimum_live_state() -> None:
+    class _Runtime(_PDCAStubRuntime):
+        def __init__(self) -> None:
+            super().__init__()
+            self.snapshot_cache = type("NullSnapshotCache", (), {"get": staticmethod(lambda _bot_id: None)})()
+            self._startup_gate_by_bot: dict[str, dict[str, object]] = {}
+
+        def startup_gate_status(self, *, bot_id: str) -> dict[str, object]:
+            cached = self._startup_gate_by_bot.get(bot_id)
+            if cached is not None:
+                return dict(cached)
+            return {
+                "bot_id": bot_id,
+                "gate_open": False,
+                "mode": "warmup",
+                "reason": "startup_gate_initializing",
+                "failure_count": 0,
+                "last_error": "",
+                "elapsed_s": 0.0,
+                "grace_s": 20.0,
+                "min_events": 2,
+                "snapshot_ready": False,
+                "history_ready": False,
+                "continuity_goal_state_present": False,
+                "recent_event_count": 0,
+            }
+
+        def update_startup_gate(
+            self,
+            *,
+            bot_id: str,
+            gate_open: bool,
+            mode: str,
+            reason: str,
+            failure_count: int,
+            last_error: str,
+            grace_s: float | None = None,
+            min_events: int | None = None,
+            major_reasons: list[str] | None = None,
+        ) -> dict[str, object]:
+            del major_reasons
+            self._startup_gate_by_bot[bot_id] = {
+                "bot_id": bot_id,
+                "gate_open": bool(gate_open),
+                "mode": str(mode),
+                "reason": str(reason),
+                "failure_count": int(failure_count),
+                "last_error": str(last_error),
+                "elapsed_s": 0.0,
+                "grace_s": float(20.0 if grace_s is None else grace_s),
+                "min_events": int(2 if min_events is None else min_events),
+                "snapshot_ready": False,
+                "history_ready": False,
+                "continuity_goal_state_present": False,
+                "recent_event_count": 0,
+            }
+            return self.startup_gate_status(bot_id=bot_id)
+
+    runtime = _Runtime()
+    pdca = PDCALoop(runtime_state=runtime)
+
+    result = asyncio.run(pdca._run_one_cycle(Horizon.SHORT_TERM))
+
+    assert result.error is None
+    assert result.re_planned is False
+    assert result.actions_queued == 0
+    assert runtime.planner_calls == []
+    assert runtime.crewai_calls == []
+
+    status = runtime.startup_gate_status(bot_id="bot:autonomy")
+    assert status["gate_open"] is False
+    assert status["mode"] == "warmup"
+    assert str(status["reason"]).startswith("startup_gate_waiting_minimum_live_state")
+
+
+def test_pdca_startup_gate_opens_in_degraded_mode_when_optional_subsystems_are_unavailable() -> None:
+    class _Runtime(_PDCAStubRuntime):
+        def __init__(self) -> None:
+            super().__init__()
+            self._startup_gate_by_bot: dict[str, dict[str, object]] = {}
+            self.fleet_constraint_state = _FleetState(
+                central_enabled=True,
+                stale=True,
+                central_available=False,
+            )
+
+        def startup_gate_status(self, *, bot_id: str) -> dict[str, object]:
+            cached = self._startup_gate_by_bot.get(bot_id)
+            if cached is not None:
+                return dict(cached)
+            return {
+                "bot_id": bot_id,
+                "gate_open": False,
+                "mode": "warmup",
+                "reason": "startup_gate_initializing",
+                "failure_count": 0,
+                "last_error": "",
+                "elapsed_s": 0.0,
+                "grace_s": 20.0,
+                "min_events": 2,
+                "snapshot_ready": False,
+                "history_ready": True,
+                "continuity_goal_state_present": True,
+                "recent_event_count": 2,
+            }
+
+        def update_startup_gate(
+            self,
+            *,
+            bot_id: str,
+            gate_open: bool,
+            mode: str,
+            reason: str,
+            failure_count: int,
+            last_error: str,
+            grace_s: float | None = None,
+            min_events: int | None = None,
+            major_reasons: list[str] | None = None,
+        ) -> dict[str, object]:
+            del major_reasons
+            self._startup_gate_by_bot[bot_id] = {
+                "bot_id": bot_id,
+                "gate_open": bool(gate_open),
+                "mode": str(mode),
+                "reason": str(reason),
+                "failure_count": int(failure_count),
+                "last_error": str(last_error),
+                "elapsed_s": 0.0,
+                "grace_s": float(20.0 if grace_s is None else grace_s),
+                "min_events": int(2 if min_events is None else min_events),
+                "snapshot_ready": True,
+                "history_ready": True,
+                "continuity_goal_state_present": True,
+                "recent_event_count": 2,
+            }
+            return self.startup_gate_status(bot_id=bot_id)
+
+        def planner_status(self, *, bot_id: str):
+            del bot_id
+
+            class _Planner:
+                planner_healthy = True
+                updated_at = datetime.now(UTC) - timedelta(minutes=10)
+
+            return _Planner()
+
+        def crewai_status(self):
+            class _Crew:
+                crew_available = False
+                crewai_enabled = True
+
+            return _Crew()
+
+    runtime = _Runtime()
+    pdca = PDCALoop(runtime_state=runtime)
+
+    result = asyncio.run(pdca._run_one_cycle(Horizon.SHORT_TERM))
+
+    assert result.error is None
+    assert runtime.planner_calls
+    status = runtime.startup_gate_status(bot_id="bot:autonomy")
+    assert status["gate_open"] is True
+    assert status["mode"] == "degraded"
+    reason = str(status["reason"])
+    assert reason.startswith("startup_gate_open_degraded_optional_subsystems")
+    assert "fleet_central_stale" in reason
+    assert "fleet_central_unavailable" in reason
+    assert ("planner_stale" in reason) or ("planner_status_unavailable" in reason)
+    assert "crewai_unavailable" in reason

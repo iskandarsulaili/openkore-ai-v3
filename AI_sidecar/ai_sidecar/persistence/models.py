@@ -146,3 +146,27 @@ class AutonomyGoalStateRecord:
     goal_state: dict[str, object]
     decided_at: datetime
     updated_at: datetime
+
+
+@dataclass(slots=True)
+class SidecarOperationRecord:
+    operation_id: str
+    bot_id: str
+    operation_kind: str
+    artifact_kind: str
+    artifact_path: str
+    idempotency_key: str
+    status: str
+    status_reason: str
+    base_checksum: str | None
+    desired_checksum: str | None
+    observed_checksum: str | None
+    linked_action_id: str | None
+    payload: dict[str, object]
+    error_message: str
+    created_at: datetime
+    updated_at: datetime
+    reconciled_at: datetime | None
+    attempt_count: int
+    last_attempt_at: datetime | None
+    last_error_at: datetime | None

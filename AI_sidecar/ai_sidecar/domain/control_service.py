@@ -73,11 +73,52 @@ class ControlDomainService:
         if stored is None:
             raise ValueError("plan_not_found")
         owner = ControlOwnerScope.sidecar
+        operation_id: str | None = None
+        begin_fn = getattr(self.executor.runtime, "begin_sidecar_operation", None)
+        if callable(begin_fn):
+            try:
+                operation_id = begin_fn(
+                    bot_id=stored.plan.bot_id,
+                    operation_kind="control_apply",
+                    artifact_kind=str(stored.plan.artifact.artifact_type),
+                    artifact_path=str(stored.plan.artifact.path),
+                    idempotency_key=f"control-apply:{stored.plan.bot_id}:{stored.plan.artifact.path}:{stored.plan.checksum_after}",
+                    payload={
+                        "plan_id": stored.plan.plan_id,
+                        "dry_run": bool(payload.dry_run),
+                        "policy_version": stored.plan.policy_version,
+                        "change_count": len(stored.plan.changes),
+                    },
+                    base_checksum=str(stored.plan.checksum_before),
+                    desired_checksum=str(stored.plan.checksum_after),
+                    status="planned",
+                    status_reason="control_operation_planned",
+                )
+                logger.info(
+                    "control_operation_created",
+                    extra={
+                        "event": "control_operation_created",
+                        "bot_id": stored.plan.bot_id,
+                        "plan_id": stored.plan.plan_id,
+                        "operation_id": operation_id,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "control_operation_create_failed",
+                    extra={
+                        "event": "control_operation_create_failed",
+                        "bot_id": stored.plan.bot_id,
+                        "plan_id": stored.plan.plan_id,
+                    },
+                )
+
         result = self.executor.apply(
             plan=stored.plan,
             owner=owner,
             policy=self.policy,
             dry_run=payload.dry_run,
+            operation_id=operation_id,
         )
         stored.state = result.state
         self.state.upsert(stored)
@@ -126,4 +167,3 @@ class ControlDomainService:
     def artifacts(self, *, bot_id: str) -> ControlArtifactsResponse:
         artifacts = self.registry.list_for_bot(bot_id=bot_id)
         return ControlArtifactsResponse(ok=True, artifacts=artifacts)
-
