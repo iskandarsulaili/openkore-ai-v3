@@ -9,8 +9,16 @@ from threading import Thread
 from typing import Any
 
 from ai_sidecar.autonomy.goal_stack import compute_goal_stack
+from ai_sidecar.autonomy.mission_agent import MissionAgentService
+from ai_sidecar.autonomy.mission_context import AutonomyMissionContextAssembler
 from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge
-from ai_sidecar.contracts.autonomy import GoalStackState, SituationalAssessment
+from ai_sidecar.contracts.autonomy import (
+    AutonomyMissionDecisionRequest,
+    AutonomyMissionDecisionResponse,
+    GoalStackState,
+    MissionDecisionClass,
+    SituationalAssessment,
+)
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.crewai import (
     CrewAutonomyRefinementRequest,
@@ -28,7 +36,9 @@ class DecisionService:
     runtime: Any
     decision_version: str = "stage1-deterministic-v1"
     refinement_decision_version: str = "stage2-autonomy-crewai-refinement-v1"
+    mission_decision_version: str = "phase-c-authoritative-mission-v1"
     autonomy_task_hint: str = "autonomous_decision_intelligence"
+    mission_workload: str = "autonomy_mission_decision"
     autonomy_required_agents: tuple[str, ...] = (
         "state_assessor",
         "progression_planner",
@@ -36,8 +46,20 @@ class DecisionService:
         "command_emitter",
     )
     ro_knowledge: ROKnowledgeBundle | None = None
+    mission_context_assembler: AutonomyMissionContextAssembler | None = None
+    mission_agent: MissionAgentService | None = None
 
     def __post_init__(self) -> None:
+        if self.mission_context_assembler is None:
+            self.mission_context_assembler = AutonomyMissionContextAssembler(runtime=self.runtime)
+        if self.mission_agent is None:
+            model_router = getattr(self.runtime, "model_router", None)
+            if model_router is not None:
+                self.mission_agent = MissionAgentService(
+                    model_router=model_router,
+                    workload=self.mission_workload,
+                )
+
         if self.ro_knowledge is not None:
             return
         try:
@@ -67,11 +89,12 @@ class DecisionService:
     ) -> GoalStackState:
         snapshot = self.runtime.snapshot_cache.get(meta.bot_id)
         enriched = self.runtime.enriched_state(bot_id=meta.bot_id)
+        replan_reasons = list(replan_reasons or [])
         assessment = self._build_assessment(
             bot_id=meta.bot_id,
             snapshot=snapshot,
             enriched=enriched,
-            replan_reasons=replan_reasons or [],
+            replan_reasons=replan_reasons,
         )
         computed = compute_goal_stack(assessment=assessment, horizon=horizon)
 
@@ -116,11 +139,32 @@ class DecisionService:
             selected_goal=computed.selected_goal,
         )
 
-        refined_goal_state, refinement_errors = self._apply_crewai_refinement(
+        mission_trigger_reasons = self._mission_trigger_reasons(
             meta=meta,
+            horizon=horizon,
+            assessment=assessment,
             goal_state=goal_state,
+            replan_reasons=replan_reasons,
+            enriched=enriched,
         )
-        goal_state = refined_goal_state
+        mission_invoked = bool(mission_trigger_reasons)
+        mission_applied = False
+        mission_errors: list[str] = []
+        if mission_invoked:
+            mission_goal_state, mission_errors, mission_applied = self._apply_mission_decision(
+                meta=meta,
+                goal_state=goal_state,
+                trigger_reasons=mission_trigger_reasons,
+            )
+            goal_state = mission_goal_state
+
+        refinement_errors: list[str] = []
+        if not mission_applied:
+            refined_goal_state, refinement_errors = self._apply_crewai_refinement(
+                meta=meta,
+                goal_state=goal_state,
+            )
+            goal_state = refined_goal_state
 
         self.runtime.persist_goal_state(bot_id=meta.bot_id, state=goal_state)
 
@@ -135,6 +179,10 @@ class DecisionService:
                 "tick_id": goal_state.tick_id,
                 "selected_goal": goal_state.selected_goal.goal_key.value,
                 "selected_objective": goal_state.selected_goal.objective,
+                "mission_invoked": mission_invoked,
+                "mission_applied": mission_applied,
+                "mission_trigger_reasons": list(mission_trigger_reasons),
+                "mission_errors": list(mission_errors),
                 "refinement_applied": goal_state.decision_version == self.refinement_decision_version,
                 "refinement_errors": list(refinement_errors),
                 "stack": [
@@ -167,6 +215,10 @@ class DecisionService:
                 "selected_goal": goal_state.selected_goal.goal_key.value,
                 "selected_objective": goal_state.selected_goal.objective,
                 "replan_reasons": list(goal_state.assessment.replan_reasons),
+                "mission_invoked": mission_invoked,
+                "mission_applied": mission_applied,
+                "mission_trigger_reasons": list(mission_trigger_reasons),
+                "mission_errors": list(mission_errors),
                 "refinement_applied": goal_state.decision_version == self.refinement_decision_version,
                 "refinement_errors": list(refinement_errors),
             },
@@ -181,11 +233,258 @@ class DecisionService:
                 "selected_goal": goal_state.selected_goal.goal_key.value,
                 "selected_objective": goal_state.selected_goal.objective,
                 "decision_version": goal_state.decision_version,
+                "mission_invoked": mission_invoked,
+                "mission_applied": mission_applied,
+                "mission_trigger_reasons": list(mission_trigger_reasons),
+                "mission_errors": list(mission_errors),
                 "refinement_applied": goal_state.decision_version == self.refinement_decision_version,
                 "refinement_errors": list(refinement_errors),
             },
         )
         return goal_state
+
+    def _mission_policy_float(self, key: str, default: float) -> float:
+        policy = getattr(self.runtime, "autonomy_policy", {})
+        value = policy.get(key) if isinstance(policy, dict) else default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _seconds_since(self, when: datetime | None) -> float | None:
+        if not isinstance(when, datetime):
+            return None
+        now = datetime.now(UTC)
+        ts = when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+        return max(0.0, (now - ts.astimezone(UTC)).total_seconds())
+
+    def _latest_goal_state(self, *, bot_id: str) -> GoalStackState | None:
+        latest_fn = getattr(self.runtime, "latest_goal_state", None)
+        if not callable(latest_fn):
+            return None
+        try:
+            latest = latest_fn(bot_id=bot_id)
+            return latest if isinstance(latest, GoalStackState) else None
+        except Exception:
+            logger.exception(
+                "autonomy_mission_latest_goal_state_failed",
+                extra={"event": "autonomy_mission_latest_goal_state_failed", "bot_id": bot_id},
+            )
+            return None
+
+    def _mission_trigger_reasons(
+        self,
+        *,
+        meta: ContractMeta,
+        horizon: str,
+        assessment: SituationalAssessment,
+        goal_state: GoalStackState,
+        replan_reasons: list[str],
+        enriched: Any,
+    ) -> list[str]:
+        reasons: list[str] = []
+        hard = {
+            "stale_progress",
+            "objective_aged_out",
+            "death_loop_detected",
+            "disconnect_recovery",
+            "reconnect_stale",
+            "fleet_central_stale",
+            "fleet_central_unavailable",
+            "stuck_cycles",
+        }
+        for item in replan_reasons:
+            key = str(item).strip()
+            if key and key in hard:
+                reasons.append(key)
+
+        latest = self._latest_goal_state(bot_id=meta.bot_id)
+        if latest is None:
+            reasons.append("no_goal_state_history")
+        else:
+            if latest.selected_goal.goal_key != goal_state.selected_goal.goal_key:
+                reasons.append("selected_goal_changed")
+            ttl_s = self._mission_policy_float("mission_decision_ttl_s", 45.0)
+            age_s = self._seconds_since(latest.decided_at)
+            if age_s is not None and age_s >= ttl_s:
+                reasons.append("mission_decision_ttl_elapsed")
+
+        if assessment.danger_score >= 0.75 or assessment.death_risk_score >= 0.75 or assessment.is_dead:
+            reasons.append("survival_pressure")
+        if assessment.overweight_ratio >= 0.90 or assessment.item_count >= 95:
+            reasons.append("inventory_pressure")
+
+        if self._to_int(self._safe_get(enriched, "social", "private_messages_5m")) > 0:
+            reasons.append("social_private_message")
+        if self._to_int(self._safe_get(enriched, "social", "recent_chat_count")) >= 5:
+            reasons.append("social_chat_spike")
+
+        if str(horizon).strip().lower() == "long_term" and "mission_decision_ttl_elapsed" in reasons:
+            reasons = [item for item in reasons if item in hard or item in {"no_goal_state_history", "selected_goal_changed"}]
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in reasons:
+            key = str(item).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return deduped
+
+    def _resolve_execution_hints(self, raw_hints: list[dict[str, object]]) -> list[dict[str, object]]:
+        resolved: list[dict[str, object]] = []
+        for item in raw_hints[:8]:
+            if not isinstance(item, dict):
+                continue
+            mode = str(item.get("execution_mode") or "").strip().lower()
+            if mode == "direct":
+                intents_raw = item.get("intents") if isinstance(item.get("intents"), list) else []
+                intents: list[dict[str, object]] = []
+                for intent in intents_raw[:4]:
+                    if not isinstance(intent, dict):
+                        continue
+                    command = str(intent.get("command") or "").strip()
+                    if not command:
+                        continue
+                    intents.append(
+                        {
+                            "kind": str(intent.get("kind") or "command")[:32],
+                            "command": command[:512],
+                            "conflict_key": str(intent.get("conflict_key") or "mission.direct")[:128],
+                            "priority_tier": str(intent.get("priority_tier") or "tactical")[:32],
+                            "metadata": dict(intent.get("metadata") or {}) if isinstance(intent.get("metadata"), dict) else {},
+                        }
+                    )
+                if intents:
+                    resolved.append({"execution_mode": "direct", "tool": "propose_actions", "intents": intents})
+                continue
+
+            if mode == "config":
+                request = dict(item.get("request") or {}) if isinstance(item.get("request"), dict) else {}
+                resolved.append({"execution_mode": "config", "tool": "plan_control_change", "request": request})
+                continue
+
+            if mode == "macro":
+                bundle = dict(item.get("macro_bundle") or {}) if isinstance(item.get("macro_bundle"), dict) else {}
+                resolved.append({"execution_mode": "macro", "tool": "publish_macro", "macro_bundle": bundle})
+                continue
+
+        return resolved
+
+    def _apply_mission_decision(
+        self,
+        *,
+        meta: ContractMeta,
+        goal_state: GoalStackState,
+        trigger_reasons: list[str],
+    ) -> tuple[GoalStackState, list[str], bool]:
+        context_assembler = self.mission_context_assembler
+        mission_agent = self.mission_agent
+        if context_assembler is None or mission_agent is None:
+            return goal_state, ["mission_agent_unavailable"], False
+
+        request = AutonomyMissionDecisionRequest(
+            meta=meta,
+            workload=self.mission_workload,
+            trigger_reasons=list(trigger_reasons),
+            context=context_assembler.assemble(
+                meta=meta,
+                horizon=goal_state.horizon,
+                objective_input=goal_state.selected_goal.objective,
+                goal_state=goal_state,
+                trigger_reasons=list(trigger_reasons),
+            ),
+            metadata={"deterministic_decision_version": goal_state.decision_version},
+        )
+
+        try:
+            raw_response = mission_agent.decide(request)
+            response = self._resolve_async_value(raw_response)
+        except Exception as exc:
+            logger.exception(
+                "autonomy_mission_agent_exception",
+                extra={
+                    "event": "autonomy_mission_agent_exception",
+                    "bot_id": meta.bot_id,
+                    "error": type(exc).__name__,
+                },
+            )
+            return goal_state, [f"mission_agent_exception:{type(exc).__name__}"], False
+
+        if not isinstance(response, AutonomyMissionDecisionResponse):
+            return goal_state, ["mission_agent_invalid_response"], False
+        if not response.ok or response.decision is None:
+            return goal_state, [*list(response.errors), "mission_agent_unusable_output"], False
+
+        decision = response.decision
+        selected_goal = goal_state.selected_goal.goal_key.value
+        if str(decision.selected_goal_key).strip() != selected_goal:
+            logger.warning(
+                "autonomy_mission_goal_override_rejected",
+                extra={
+                    "event": "autonomy_mission_goal_override_rejected",
+                    "bot_id": meta.bot_id,
+                    "selected_goal": selected_goal,
+                    "requested_goal": decision.selected_goal_key,
+                },
+            )
+            return goal_state, ["mission_goal_override_rejected"], False
+
+        resolved_hints = self._resolve_execution_hints(list(decision.execution_hints))
+        existing_metadata = dict(goal_state.selected_goal.metadata)
+        existing_hints = existing_metadata.get("execution_hints")
+        selected_goal_payload = goal_state.selected_goal.model_copy(
+            update={
+                "objective": str(decision.mission_objective or goal_state.selected_goal.objective)[:512],
+                "rationale": self._merge_rationale(
+                    deterministic=goal_state.selected_goal.rationale,
+                    refined=f"mission_decision:{str(decision.mission_rationale or '')}",
+                ),
+                "metadata": {
+                    **existing_metadata,
+                    "execution_hints": resolved_hints
+                    if resolved_hints
+                    else (list(existing_hints) if isinstance(existing_hints, list) else []),
+                    "mission_decision": {
+                        "decision_class": decision.decision_class.value,
+                        "confidence": float(decision.confidence),
+                        "planner_handoff": dict(decision.planner_handoff),
+                        "annotations": dict(decision.annotations),
+                        "provider": response.provider,
+                        "model": response.model,
+                        "latency_ms": float(response.latency_ms),
+                        "route": dict(response.route),
+                        "trigger_reasons": list(trigger_reasons),
+                    },
+                },
+            }
+        )
+        patched_goal_stack = [
+            selected_goal_payload if item.goal_key == selected_goal_payload.goal_key else item
+            for item in goal_state.goal_stack
+        ]
+
+        patched_state = goal_state.model_copy(
+            update={
+                "decision_version": self.mission_decision_version,
+                "goal_stack": patched_goal_stack,
+                "selected_goal": selected_goal_payload,
+            }
+        )
+
+        mission_class = decision.decision_class
+        if mission_class == MissionDecisionClass.replan:
+            metadata = dict(patched_state.selected_goal.metadata)
+            metadata["mission_force_replan"] = True
+            selected_goal_updated = patched_state.selected_goal.model_copy(update={"metadata": metadata})
+            patched_goal_stack = [
+                selected_goal_updated if item.goal_key == selected_goal_updated.goal_key else item
+                for item in patched_state.goal_stack
+            ]
+            patched_state = patched_state.model_copy(update={"selected_goal": selected_goal_updated, "goal_stack": patched_goal_stack})
+
+        return patched_state, [], True
 
     def _apply_crewai_refinement(
         self,

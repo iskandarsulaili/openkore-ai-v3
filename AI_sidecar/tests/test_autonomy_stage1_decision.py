@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import json
+from types import SimpleNamespace
 
 from ai_sidecar.autonomy.decision_service import DecisionService
 from ai_sidecar.autonomy.goal_stack import compute_goal_stack
@@ -17,6 +19,7 @@ from ai_sidecar.contracts.crewai import (
 from ai_sidecar.contracts.state import BotStateSnapshot, CombatState, InventoryDigest, Position, ProgressionDigest, Vitals
 from ai_sidecar.persistence.db import SQLiteDB
 from ai_sidecar.persistence.repositories import create_repositories
+from ai_sidecar.providers.base import PlannerModelResponse
 from ai_sidecar.planner.schemas import PlannerResponse, TacticalIntentBundle
 
 
@@ -108,6 +111,123 @@ class _DecisionRuntime:
         if isinstance(self.autonomy_refine_result, Exception):
             raise self.autonomy_refine_result
         return self.autonomy_refine_result
+
+
+class _MissionRouter:
+    def __init__(self, *, mode: str = "valid") -> None:
+        self.mode = mode
+        self.calls: list[object] = []
+
+    async def generate_with_fallback(self, *, request):
+        self.calls.append(request)
+        payload = json.loads(str(request.user_prompt or "{}"))
+        context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+        selected_goal = context.get("selected_goal") if isinstance(context.get("selected_goal"), dict) else {}
+        selected_goal_key = str(selected_goal.get("goal_key") or "leveling")
+
+        if self.mode == "invalid":
+            content = {
+                "decision": {
+                    "decision_class": "maintain",
+                    "mission_objective": "invalid-without-goal-key",
+                    "mission_rationale": "invalid payload",
+                    "confidence": 0.5,
+                    "execution_hints": [],
+                    "planner_handoff": {},
+                    "annotations": {},
+                }
+            }
+        else:
+            content = {
+                "decision": {
+                    "decision_class": "adjust_objective",
+                    "selected_goal_key": selected_goal_key,
+                    "mission_objective": f"mission:{selected_goal_key}:safe-objective",
+                    "mission_rationale": "authoritative mission objective applied",
+                    "confidence": 0.88,
+                    "execution_hints": [
+                        {
+                            "execution_mode": "direct",
+                            "intents": [
+                                {
+                                    "kind": "command",
+                                    "command": "ai auto",
+                                    "conflict_key": "mission.test",
+                                    "priority_tier": "tactical",
+                                    "metadata": {"source": "pytest"},
+                                }
+                            ],
+                        }
+                    ],
+                    "planner_handoff": {"horizon": "tactical", "max_steps": 4},
+                    "annotations": {"phase": "c"},
+                }
+            }
+
+        response = PlannerModelResponse(
+            ok=True,
+            provider="pytest",
+            model="local",
+            trace_id=request.trace_id,
+            latency_ms=1.0,
+            content=content,
+            raw_text=json.dumps(content),
+            usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+        )
+        route = SimpleNamespace(
+            workload=request.task,
+            selected_provider="pytest",
+            selected_model="local",
+            planned_provider="pytest",
+            planned_model="local",
+            attempted_providers=["pytest"],
+            fallback_used=False,
+        )
+        return response, route
+
+
+class _MissionRuntime(_DecisionRuntime):
+    def __init__(
+        self,
+        snapshot: BotStateSnapshot,
+        enriched: dict[str, object],
+        *,
+        router: _MissionRouter,
+        latest: GoalStackState | None,
+    ) -> None:
+        super().__init__(snapshot=snapshot, enriched=enriched)
+        self.model_router = router
+        self._latest_goal_state = latest
+
+    def latest_goal_state(self, *, bot_id: str) -> GoalStackState | None:
+        del bot_id
+        return self._latest_goal_state
+
+
+def _deterministic_goal_state(
+    *,
+    bot_id: str,
+    snapshot: BotStateSnapshot,
+    enriched: dict[str, object],
+    horizon: str,
+) -> GoalStackState:
+    runtime = _DecisionRuntime(snapshot=snapshot, enriched=enriched)
+    service = DecisionService(runtime=runtime)
+    assessment = service._build_assessment(
+        bot_id=bot_id,
+        snapshot=snapshot,
+        enriched=enriched,
+        replan_reasons=[],
+    )
+    computed = compute_goal_stack(assessment=assessment, horizon=horizon)
+    return GoalStackState(
+        bot_id=bot_id,
+        tick_id=assessment.tick_id,
+        horizon=horizon,
+        assessment=assessment,
+        goal_stack=computed.goal_stack,
+        selected_goal=computed.selected_goal,
+    )
 
 
 def test_decision_service_deterministic_priority_survival_first() -> None:
@@ -259,6 +379,155 @@ def test_decision_service_fallback_when_crewai_refinement_unusable() -> None:
 
     assert state.selected_goal.goal_key == GoalCategory.job_advancement
     assert state.decision_version == "stage1-deterministic-v1"
+
+
+def test_decision_service_phase_c_mission_applies_authoritative_objective_when_triggered() -> None:
+    snapshot = _snapshot(
+        bot_id="bot:mission-apply",
+        hp=900,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    enriched = {
+        "operational": {
+            "map": "moc_fild10",
+            "in_combat": False,
+            "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 35, "zeny": 5000},
+        "economy": {"vendor_exposure": 0},
+        "social": {"private_messages_5m": 0, "recent_chat_count": 0},
+    }
+    router = _MissionRouter(mode="valid")
+    runtime = _MissionRuntime(snapshot=snapshot, enriched=enriched, router=router, latest=None)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:mission-apply", trace_id="trace-mission-apply"),
+        horizon="short_term",
+        replan_reasons=["stale_progress"],
+    )
+
+    assert router.calls
+    assert state.decision_version == "phase-c-authoritative-mission-v1"
+    assert state.selected_goal.objective.startswith("mission:")
+    metadata = state.selected_goal.metadata
+    assert isinstance(metadata.get("mission_decision"), dict)
+    hints = metadata.get("execution_hints")
+    assert isinstance(hints, list) and hints
+    assert hints[0].get("execution_mode") == "direct"
+
+
+def test_decision_service_phase_c_mission_trigger_policy_skips_invoke_when_stable() -> None:
+    snapshot = _snapshot(
+        bot_id="bot:mission-stable",
+        hp=900,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    enriched = {
+        "operational": {
+            "map": "moc_fild10",
+            "in_combat": False,
+            "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 35, "zeny": 5000},
+        "economy": {"vendor_exposure": 0},
+        "social": {"private_messages_5m": 0, "recent_chat_count": 0},
+    }
+    latest = _deterministic_goal_state(
+        bot_id="bot:mission-stable",
+        snapshot=snapshot,
+        enriched=enriched,
+        horizon="short_term",
+    )
+    latest = latest.model_copy(update={"decided_at": datetime.now(UTC)})
+
+    router = _MissionRouter(mode="valid")
+    runtime = _MissionRuntime(snapshot=snapshot, enriched=enriched, router=router, latest=latest)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:mission-stable", trace_id="trace-mission-stable"),
+        horizon="short_term",
+        replan_reasons=[],
+    )
+
+    assert router.calls == []
+    assert state.decision_version == "stage1-deterministic-v1"
+
+
+def test_decision_service_phase_c_mission_invalid_schema_falls_closed() -> None:
+    snapshot = _snapshot(
+        bot_id="bot:mission-invalid",
+        hp=900,
+        hp_max=1000,
+        skill_points=0,
+        stat_points=0,
+        base_level=20,
+        job_level=20,
+        job_name="Thief",
+    )
+    enriched = {
+        "operational": {
+            "map": "moc_fild10",
+            "in_combat": False,
+            "job_name": "Thief",
+            "base_level": 20,
+            "job_level": 20,
+            "skill_points": 0,
+            "stat_points": 0,
+            "base_exp": 300,
+            "base_exp_max": 1000,
+            "job_exp": 300,
+            "job_exp_max": 1000,
+        },
+        "risk": {"danger_score": 0.1, "death_risk_score": 0.1},
+        "quest": {"active_objective_count": 0, "objective_completion_ratio": 0.0},
+        "inventory": {"overweight_ratio": 0.10, "item_count": 35, "zeny": 5000},
+        "economy": {"vendor_exposure": 0},
+    }
+    router = _MissionRouter(mode="invalid")
+    runtime = _MissionRuntime(snapshot=snapshot, enriched=enriched, router=router, latest=None)
+    service = DecisionService(runtime=runtime)
+
+    state = service.decide(
+        meta=ContractMeta(contract_version="v1", source="pytest", bot_id="bot:mission-invalid", trace_id="trace-mission-invalid"),
+        horizon="short_term",
+        replan_reasons=["stale_progress"],
+    )
+
+    assert router.calls
+    assert state.decision_version == "stage1-deterministic-v1"
+    assert "mission_decision" not in state.selected_goal.metadata
 
 
 def test_decision_service_stage3_curated_job_advancement_ready() -> None:
@@ -894,3 +1163,53 @@ def test_pdca_falls_back_to_latest_goal_state_when_autonomy_decision_fails() -> 
     assert runtime.planner_calls[-1].objective == goal_state.selected_goal.objective
     assert result.selected_goal == goal_state.selected_goal.goal_key.value
     assert result.objective == goal_state.selected_goal.objective
+
+
+def test_pdca_force_replan_when_mission_requests_replan_metadata() -> None:
+    assessment = SituationalAssessment(
+        bot_id="bot:pdca-mission",
+        tick_id="tick-pdca-mission",
+        map_name="prt_fild08",
+        hp_ratio=0.90,
+        danger_score=0.1,
+        death_risk_score=0.1,
+        skill_points=0,
+        stat_points=0,
+        base_level=45,
+        job_level=20,
+        base_exp_ratio=0.3,
+        job_exp_ratio=0.3,
+        active_quest_count=0,
+        objective_completion_ratio=0.0,
+        overweight_ratio=0.1,
+        item_count=35,
+        zeny=5000,
+        vendor_exposure=0,
+    )
+    computed = compute_goal_stack(assessment=assessment, horizon="short_term")
+    selected = computed.selected_goal.model_copy(update={"metadata": {"mission_force_replan": True}})
+    goal_stack = [selected if item.goal_key == selected.goal_key else item for item in computed.goal_stack]
+    goal_state = GoalStackState(
+        bot_id="bot:pdca",
+        tick_id="tick-pdca-mission",
+        horizon="short_term",
+        assessment=assessment,
+        goal_stack=goal_stack,
+        selected_goal=selected,
+    )
+    runtime = _PDCAStage1Runtime(selected_goal_state=goal_state)
+    pdca = PDCALoop(runtime_state=runtime)
+    pdca._active_plan[Horizon.SHORT_TERM] = TacticalIntentBundle(
+        bundle_id="bundle-active",
+        bot_id="bot:pdca",
+        intents=[],
+        actions=[],
+        notes=[],
+    )
+
+    result = asyncio.run(pdca._run_one_cycle(Horizon.SHORT_TERM))
+
+    assert result.force_replan is True
+    assert "mission_agent_replan" in result.replan_reasons
+    assert runtime.planner_calls
+    assert bool(runtime.planner_calls[-1].force_replan) is True

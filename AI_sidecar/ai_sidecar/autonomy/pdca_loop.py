@@ -250,6 +250,11 @@ class PDCALoop:
             if goal_state is not None:
                 selected_goal = goal_state.selected_goal.goal_key.value
                 objective = goal_state.selected_goal.objective
+                goal_metadata = goal_state.selected_goal.metadata if isinstance(goal_state.selected_goal.metadata, dict) else {}
+                if bool(goal_metadata.get("mission_force_replan")):
+                    if "mission_agent_replan" not in replan_reasons:
+                        replan_reasons.append("mission_agent_replan")
+                    force_replan = True
 
             startup_gate = self._evaluate_startup_gate(
                 bot_id=decision_meta.bot_id,

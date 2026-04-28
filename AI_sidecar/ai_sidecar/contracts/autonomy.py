@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ai_sidecar.contracts.common import utc_now
+from ai_sidecar.contracts.common import ContractMeta, utc_now
 
 
 class GoalCategory(StrEnum):
@@ -74,3 +74,72 @@ class GoalStackState(BaseModel):
     assessment: SituationalAssessment
     goal_stack: list[GoalDirective] = Field(default_factory=list)
     selected_goal: GoalDirective
+
+
+class MissionDecisionClass(StrEnum):
+    maintain = "maintain"
+    adjust_objective = "adjust_objective"
+    replan = "replan"
+
+
+class AutonomyMissionContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bot_id: str = Field(min_length=1, max_length=128)
+    horizon: str = Field(min_length=1, max_length=32)
+    objective_input: str = Field(min_length=1, max_length=512)
+    assessment: SituationalAssessment
+    selected_goal: GoalDirective
+    deterministic_goal_stack: list[GoalDirective] = Field(default_factory=list)
+    deterministic_goal_summary: dict[str, object] = Field(default_factory=dict)
+    replan_reasons: list[str] = Field(default_factory=list)
+    trigger_reasons: list[str] = Field(default_factory=list)
+    queue: dict[str, object] = Field(default_factory=dict)
+    startup_gate: dict[str, object] = Field(default_factory=dict)
+    planner_status: dict[str, object] = Field(default_factory=dict)
+    snapshot: dict[str, object] = Field(default_factory=dict)
+    enriched_state: dict[str, object] = Field(default_factory=dict)
+    fleet_constraints: dict[str, object] = Field(default_factory=dict)
+    fleet_blackboard: dict[str, object] = Field(default_factory=dict)
+    recent_events: list[dict[str, object]] = Field(default_factory=list)
+    memory_matches: list[dict[str, object]] = Field(default_factory=list)
+    recent_episodes: list[dict[str, object]] = Field(default_factory=list)
+
+
+class AutonomyMissionDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_class: MissionDecisionClass = MissionDecisionClass.maintain
+    selected_goal_key: str = Field(min_length=1, max_length=64)
+    mission_objective: str = Field(min_length=1, max_length=512)
+    mission_rationale: str = Field(default="", max_length=2048)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    execution_hints: list[dict[str, object]] = Field(default_factory=list)
+    planner_handoff: dict[str, object] = Field(default_factory=dict)
+    annotations: dict[str, object] = Field(default_factory=dict)
+
+
+class AutonomyMissionDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    meta: ContractMeta
+    workload: str = Field(default="autonomy_mission_decision", min_length=1, max_length=128)
+    trigger_reasons: list[str] = Field(default_factory=list)
+    context: AutonomyMissionContext
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class AutonomyMissionDecisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    message: str = "ok"
+    trace_id: str
+    bot_id: str
+    generated_at: datetime = Field(default_factory=utc_now)
+    decision: AutonomyMissionDecision | None = None
+    errors: list[str] = Field(default_factory=list)
+    provider: str = ""
+    model: str = ""
+    latency_ms: float = 0.0
+    route: dict[str, object] = Field(default_factory=dict)

@@ -341,6 +341,13 @@ def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
                 "deepseek": settings.provider_deepseek_strategic_model,
             },
         },
+        "autonomy_mission_decision": {
+            "providers": ["ollama", "deepseek"],
+            "models": {
+                "ollama": settings.provider_ollama_strategic_model,
+                "deepseek": settings.provider_deepseek_strategic_model,
+            },
+        },
         "long_reflection": {
             "providers": ["deepseek", "ollama"],
             "models": {
