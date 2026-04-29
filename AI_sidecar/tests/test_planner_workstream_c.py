@@ -163,6 +163,61 @@ def test_plan_generator_compacts_prompt_and_emits_metadata() -> None:
     assert payload["latency_budget_ms"] == 30000
 
 
+def test_plan_generator_system_prompt_includes_phase5_invariants_and_capability_truth() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
+    context = PlannerContext(
+        bot_id="bot:ws-c",
+        objective="farm safely",
+        horizon=PlanHorizon.tactical,
+        invariants={
+            "reasoning_protocol": [
+                "observe",
+                "verify",
+                "risk",
+                "options",
+                "capability_check",
+                "plan",
+                "fallback",
+                "output",
+            ],
+            "rathena_axioms": ["evidence_only", "abstain_on_unknowns"],
+            "capability_truth": {
+                "direct": {"tool": "propose_actions", "allowed_roots": ["ai", "move", "talknpc"]},
+                "config": {"tool": "plan_control_change"},
+                "macro": {"tool": "publish_macro"},
+            },
+            "known_upgrade_rule_ids": ["rule-a", "rule-b"],
+        },
+    )
+
+    prompt = generator._system_prompt(context=context)
+
+    assert "Mandatory internal reasoning protocol" in prompt
+    assert "Capability truth:" in prompt
+    assert "direct:propose_actions" in prompt
+    assert "Known upgrade rule ids" in prompt
+
+
+def test_plan_generator_user_prompt_includes_phase5_context_surfaces() -> None:
+    generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0, max_user_prompt_chars=6000)
+    context = PlannerContext(
+        bot_id="bot:ws-c",
+        objective="farm safely",
+        horizon=PlanHorizon.strategic,
+        state={"operational": {"map": "prt_fild08", "hp": 900}},
+        invariants={"reasoning_protocol": ["observe", "verify"], "knowledge_version": "k-v1"},
+        runtime_facts={"queue_pending_actions": 2, "planner_state": "healthy"},
+        knowledge_summary={"knowledge_version": "k-v1", "known_upgrade_rules": ["rule-a"]},
+    )
+
+    prompt, _meta = generator._user_prompt(context=context, max_steps=8)
+    payload = json.loads(prompt)
+
+    assert payload.get("invariants", {}).get("knowledge_version") == "k-v1"
+    assert payload.get("runtime_facts", {}).get("queue_pending_actions") == 2
+    assert payload.get("knowledge_summary", {}).get("known_upgrade_rules") == ["rule-a"]
+
+
 def test_plan_generator_fallback_emits_context_aware_actions_without_ai_auto() -> None:
     generator = PlanGenerator(model_router=object(), planner_timeout_seconds=5.0, planner_retries=0)
     context = PlannerContext(

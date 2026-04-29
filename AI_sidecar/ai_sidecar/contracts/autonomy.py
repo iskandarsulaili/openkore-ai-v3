@@ -104,6 +104,9 @@ class AutonomyMissionContext(BaseModel):
     recent_events: list[dict[str, object]] = Field(default_factory=list)
     memory_matches: list[dict[str, object]] = Field(default_factory=list)
     recent_episodes: list[dict[str, object]] = Field(default_factory=list)
+    invariants: dict[str, object] = Field(default_factory=dict)
+    runtime_facts: dict[str, object] = Field(default_factory=dict)
+    knowledge_summary: dict[str, object] = Field(default_factory=dict)
 
 
 class AutonomyMissionDecision(BaseModel):

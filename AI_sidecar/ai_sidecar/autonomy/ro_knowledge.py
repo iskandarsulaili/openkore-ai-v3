@@ -14,6 +14,41 @@ _AUTONOMY_DIR = Path(__file__).resolve().parent
 _DEFAULT_DATA_DIR = _AUTONOMY_DIR / "data"
 _DEFAULT_TABLES_DIR = _AUTONOMY_DIR.parents[2] / "tables"
 
+_PROMPT_REASONING_PROTOCOL: tuple[str, ...] = (
+    "phase_1_operational_posture",
+    "phase_2_goal_gate_and_priority_lock",
+    "phase_3_rathena_mechanics_check",
+    "phase_4_capability_surface_mapping",
+    "phase_5_plan_with_fallbacks",
+    "phase_6_risk_and_safety_validation",
+    "phase_7_abstain_when_unknown_or_unsupported",
+    "phase_8_schema_and_contract_finalization",
+)
+
+_RATHENA_PROMPT_AXIOMS: tuple[str, ...] = (
+    "Do not fabricate formulas, drop rates, NPC scripts, map geometry, or undocumented server modifiers.",
+    "Treat unknown mechanics as unknown and abstain with explicit missing facts.",
+    "Preserve deterministic priority ordering: survival > job_advancement > opportunistic_upgrades > leveling.",
+    "Only map recommendations to runtime-supported surfaces: direct queue actions, config planning, macro publication.",
+    "When no safe supported action exists, return unsupported with bounded fallback posture.",
+)
+
+_CAPABILITY_MODE_LABELS: tuple[str, ...] = (
+    "direct",
+    "config",
+    "macro",
+    "unsupported",
+)
+
+_DIRECT_ALLOWED_ROOTS: tuple[str, ...] = (
+    "ai",
+    "move",
+    "macro",
+    "eventmacro",
+    "talknpc",
+    "take",
+)
+
 
 def _normalize_job_name(value: str | None) -> str:
     text = str(value or "").strip().lower().replace("-", " ").replace("_", " ")
@@ -595,6 +630,51 @@ def load_ro_knowledge(
         upgrade_rules_by_job=upgrade_rules_by_job,
         default_upgrade_rules=default_upgrade_rules,
     )
+
+
+def prompt_invariants(
+    *,
+    knowledge: ROKnowledgeBundle | None = None,
+    max_known_rules: int = 24,
+) -> dict[str, object]:
+    known_rule_ids: list[str] = []
+    if knowledge is not None:
+        for entries in knowledge.upgrade_rules_by_job.values():
+            for item in entries:
+                if item.rule_id and item.rule_id not in known_rule_ids:
+                    known_rule_ids.append(item.rule_id)
+        for item in knowledge.default_upgrade_rules:
+            if item.rule_id and item.rule_id not in known_rule_ids:
+                known_rule_ids.append(item.rule_id)
+
+    return {
+        "knowledge_version": str(knowledge.version) if knowledge is not None else "stage3-ro-progression-v1",
+        "reasoning_protocol": list(_PROMPT_REASONING_PROTOCOL),
+        "rathena_axioms": list(_RATHENA_PROMPT_AXIOMS),
+        "capability_mode_labels": list(_CAPABILITY_MODE_LABELS),
+        "capability_truth": {
+            "direct": {
+                "tool": "propose_actions",
+                "allowed_roots": list(_DIRECT_ALLOWED_ROOTS),
+                "notes": ["queue command intents only", "reject unsupported command roots"],
+            },
+            "config": {
+                "tool": "plan_control_change",
+                "notes": ["plan control-domain changes", "separate planning from apply"],
+            },
+            "macro": {
+                "tool": "publish_macro",
+                "notes": ["publish macro/eventmacro bundles", "optionally enqueue macro reload"],
+            },
+            "unsupported": {
+                "notes": [
+                    "use when no supported tool path exists",
+                    "state abstention reason and missing facts",
+                ],
+            },
+        },
+        "known_upgrade_rule_ids": list(known_rule_ids[: max(1, int(max_known_rules))]),
+    }
 
 
 def _read_json(path: Path) -> dict[str, object]:

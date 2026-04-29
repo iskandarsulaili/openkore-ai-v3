@@ -149,6 +149,9 @@ class PlannerContext(BaseModel):
     quest_context: dict[str, object] = Field(default_factory=dict)
     npc_context: dict[str, object] = Field(default_factory=dict)
     latency_headroom: dict[str, object] = Field(default_factory=dict)
+    invariants: dict[str, object] = Field(default_factory=dict)
+    runtime_facts: dict[str, object] = Field(default_factory=dict)
+    knowledge_summary: dict[str, object] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=utc_now)
 
 

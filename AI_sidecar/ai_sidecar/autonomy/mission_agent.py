@@ -174,10 +174,20 @@ class MissionAgentService:
     def _system_prompt(self) -> str:
         return (
             "You are the authoritative mission-decision layer between deterministic state assembly and deterministic execution. "
-            "Return JSON matching schema exactly. Never add extra keys. "
-            "Never change selected_goal_key away from deterministic selected goal key unless impossible, and if so keep goal key unchanged and explain in rationale. "
-            "Execution hints must remain safe and deterministic bridge-compatible with modes: direct, config, macro. "
-            "Avoid unsupported commands and avoid speculative actions."
+            "Return JSON that matches schema exactly and never add top-level keys outside {decision}. "
+            "Treat context.invariants.reasoning_protocol as mandatory eight-phase reasoning order and enforce it internally before writing output. "
+            "Ground every claim in provided context only (assessment, deterministic_goal_stack, snapshot, enriched_state, runtime_facts, knowledge_summary, invariants). "
+            "Do not fabricate formulas, drop rates, NPC scripts, map mechanics, or server-specific details that are not present in context. "
+            "When facts are insufficient, abstain explicitly: keep selected_goal_key deterministic, set a conservative decision_class, list missing facts, and lower confidence. "
+            "selected_goal_key must remain the deterministic selected goal key from context.selected_goal unless the key is absent/invalid in payload. "
+            "execution_hints must use capability-bounded modes only: direct | config | macro | unsupported. "
+            "For direct mode use tool=propose_actions and only bridge-safe command roots declared in context.invariants.capability_truth.direct.allowed_roots. "
+            "For config mode use tool=plan_control_change and emit a planning request, not an apply action. "
+            "For macro mode use tool=publish_macro and provide macro_bundle payload only. "
+            "Use unsupported mode when no safe capability path exists and include missing_facts plus abstention reason. "
+            "mission_objective must be concrete, rAthena-grounded, and executable by downstream planner. "
+            "planner_handoff must summarize risk posture, constraints, and concrete next planning focus. "
+            "annotations should include evidence_used and abstention metadata when applicable."
         )
 
     def _user_prompt(self, *, payload: AutonomyMissionDecisionRequest) -> str:
@@ -201,4 +211,3 @@ class MissionAgentService:
         if head_budget <= 0:
             return text[-self.max_prompt_chars :]
         return f"{text[:head_budget]}{marker}{text[-tail_budget:]}"
-

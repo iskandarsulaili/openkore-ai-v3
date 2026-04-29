@@ -20,6 +20,14 @@ def _format_context(context: dict[str, Any]) -> str:
     return "\nContext:\n" + "\n".join(lines)
 
 
+def _capability_guardrails() -> str:
+    return (
+        "- Capability boundary: direct execution must remain bridge-safe (ai/move/macro/eventmacro/talknpc/take roots only).\n"
+        "- Use config-mode planning only for configuration artifacts; use macro-mode only for macro/eventmacro publication payloads.\n"
+        "- If required facts are missing, abstain explicitly and prefer safe fallback posture over speculative actions."
+    )
+
+
 def npc_dialogue_prompt(
     *,
     npc_name: str | None = None,
@@ -43,10 +51,12 @@ def npc_dialogue_prompt(
     )
     return (
         "Domain Focus: NPC Dialogue\n"
+        "- rAthena grounding: use known NPC names/maps only when provided in context and avoid inventing dialogue trees.\n"
         "- Prefer kind=npc or kind=quest steps with explicit NPC names and locations when known.\n"
         "- Include prerequisites (items, quest flags, job/level gates) before initiating dialogue.\n"
         "- Add a retry or fallback step if the NPC is missing or dialogue fails.\n"
-        "- Keep descriptions concrete and confirm next expected response or action."
+        "- Keep descriptions concrete and confirm next expected response or action.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -72,10 +82,12 @@ def job_advancement_prompt(
     )
     return (
         "Domain Focus: Job Advancement\n"
+        "- rAthena grounding: never fabricate job-change formulas or hidden prerequisites not present in context/knowledge.\n"
         "- Ensure job/base level requirements are met before traveling to the advancement NPC.\n"
         "- Plan to gather or purchase required items first if missing.\n"
         "- Use npc/quest steps for the advancement dialogue chain; include success predicates.\n"
-        "- If requirements are unmet, include a safe training or acquisition fallback."
+        "- If requirements are unmet, include a safe training or acquisition fallback.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -101,10 +113,12 @@ def market_operations_prompt(
     )
     return (
         "Domain Focus: Market Operations\n"
+        "- rAthena grounding: use observed market listings and zeny constraints; avoid fabricated price certainty.\n"
         "- Use econ steps with explicit buy/sell targets and price sensitivity notes.\n"
         "- Prefer storage or vending actions after verifying inventory weight limits.\n"
         "- Include a travel step to market hubs if needed and a fallback to pause trading.\n"
-        "- Keep steps compact and avoid risky detours during trade runs."
+        "- Keep steps compact and avoid risky detours during trade runs.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -128,10 +142,12 @@ def equipment_prompt(
     )
     return (
         "Domain Focus: Equipment Management\n"
+        "- rAthena grounding: only reference known item names/slots and avoid fabricated refine success assumptions.\n"
         "- Use equip steps to swap or upgrade gear with explicit slot and item names.\n"
         "- Consider weight, durability, and class restrictions before equipping.\n"
         "- Add a fallback to keep the current loadout if items are missing or unsafe.\n"
-        "- If upgrades require services, plan npc/quest steps for the artisan interaction."
+        "- If upgrades require services, plan npc/quest steps for the artisan interaction.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -155,10 +171,12 @@ def pvp_tactics_prompt(
     )
     return (
         "Domain Focus: PvP Tactics\n"
+        "- rAthena grounding: prioritize survivability and avoid speculative enemy capability assumptions.\n"
         "- Prefer safety-first plans unless the objective explicitly requires engagement.\n"
         "- Include escape or regroup steps when risk is high; avoid dead-end routes.\n"
         "- Coordinate with party roles and avoid initiating fights without support.\n"
-        "- Use combat or travel steps with clear triggers and fallbacks."
+        "- Use combat or travel steps with clear triggers and fallbacks.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -182,10 +200,12 @@ def quest_completion_prompt(
     )
     return (
         "Domain Focus: Quest Completion\n"
+        "- rAthena grounding: use objective state from context and avoid invented quest progression logic.\n"
         "- Use quest steps with objective checkpoints and item/kill counts.\n"
         "- Include navigation to quest zones and NPC handoff steps with explicit names.\n"
         "- Add a recovery step if objectives stall (e.g., insufficient drops).\n"
-        "- Keep the plan ordered to minimize backtracking."
+        "- Keep the plan ordered to minimize backtracking.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -209,10 +229,12 @@ def chat_response_prompt(
     )
     return (
         "Domain Focus: Chat Responses\n"
+        "- rAthena grounding: keep claims factual to observed state; do not invent hidden server/internal details.\n"
         "- Use social steps with concise, polite responses aligned with doctrine.\n"
         "- Avoid revealing sensitive automation details or risky behaviors.\n"
         "- If the chat is about coordination, add a party or travel step as needed.\n"
-        "- Confirm the recipient and intent in the description."
+        "- Confirm the recipient and intent in the description.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -236,10 +258,12 @@ def map_navigation_prompt(
     )
     return (
         "Domain Focus: Map Navigation\n"
+        "- rAthena grounding: use known maps/waypoints from context and avoid speculative shortcuts.\n"
         "- Use travel steps with explicit destinations and waypoints.\n"
         "- Prefer safer routes when risk is elevated; note alternative paths.\n"
         "- Include a fallback if navigation is blocked or the map changes.\n"
-        "- Keep movement steps short and ordered."
+        "- Keep movement steps short and ordered.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -263,10 +287,12 @@ def party_coordination_prompt(
     )
     return (
         "Domain Focus: Party Coordination\n"
+        "- rAthena grounding: align with explicit fleet/party assignments when provided and avoid fabricated role assumptions.\n"
         "- Use party and social steps for invites, follow orders, and comms.\n"
         "- Align movement and combat steps with leader instructions and rendezvous points.\n"
         "- Add fallback steps if party members are missing or unresponsive.\n"
-        "- Ensure descriptions clearly state who to follow or assist."
+        "- Ensure descriptions clearly state who to follow or assist.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 
@@ -290,10 +316,12 @@ def stat_skill_allocation_prompt(
     )
     return (
         "Domain Focus: Stat & Skill Allocation\n"
+        "- rAthena grounding: never fabricate exact formulas/thresholds; rely on available points and known build intent only.\n"
         "- Use skill_up or task steps with explicit stat/skill targets and point counts.\n"
         "- Validate points are available before allocating; avoid wasteful spending.\n"
         "- Prefer safe moments (out of combat) for allocation actions.\n"
-        "- Include a fallback to pause if build requirements are unclear."
+        "- Include a fallback to pause if build requirements are unclear.\n"
+        f"{_capability_guardrails()}"
         f"{_format_context(merged)}"
     )
 

@@ -17,11 +17,35 @@ from ai_sidecar.contracts.ml_subconscious import MLPredictRequest, ModelFamily
 
 logger = logging.getLogger(__name__)
 
+_CAPABILITY_DIRECT_ALLOWED_ROOTS: tuple[str, ...] = (
+    "ai",
+    "move",
+    "macro",
+    "eventmacro",
+    "talknpc",
+    "take",
+)
+
 
 @dataclass(slots=True)
 class CrewToolFacade:
     runtime: Any
     _lock: RLock = field(default_factory=RLock)
+
+    def _capability_profile(self) -> dict[str, object]:
+        return {
+            "modes": ["direct", "config", "macro", "unsupported"],
+            "direct": {
+                "tool": "propose_actions",
+                "allowed_roots": list(_CAPABILITY_DIRECT_ALLOWED_ROOTS),
+            },
+            "config": {
+                "tool": "plan_control_change",
+            },
+            "macro": {
+                "tool": "publish_macro",
+            },
+        }
 
     def get_bot_state(self, *, bot_id: str) -> dict[str, object]:
         state = self.runtime.enriched_state(bot_id=bot_id)
@@ -86,6 +110,20 @@ class CrewToolFacade:
                 results.append({"intent_index": idx, "accepted": False, "reason": "missing_command"})
                 continue
 
+            command_root = command.split(maxsplit=1)[0].strip().lower() if command else ""
+            if command_root not in _CAPABILITY_DIRECT_ALLOWED_ROOTS:
+                rejected_total += 1
+                results.append(
+                    {
+                        "intent_index": idx,
+                        "accepted": False,
+                        "reason": "unsupported_direct_command_root",
+                        "command_root": command_root,
+                        "allowed_roots": list(_CAPABILITY_DIRECT_ALLOWED_ROOTS),
+                    }
+                )
+                continue
+
             priority_raw = str(intent.get("priority_tier") or intent.get("priority") or "tactical").strip().lower()
             try:
                 priority_tier = ActionPriorityTier(priority_raw)
@@ -100,6 +138,9 @@ class CrewToolFacade:
             metadata = dict(intent.get("metadata") or {})
             metadata.setdefault("source", "crewai")
             metadata.setdefault("intent_index", idx)
+            metadata.setdefault("execution_mode", "direct")
+            metadata.setdefault("tool", "propose_actions")
+            metadata.setdefault("command_root", command_root)
 
             proposal = ActionProposal(
                 action_id=action_id,
@@ -131,8 +172,11 @@ class CrewToolFacade:
         return {
             "ok": True,
             "bot_id": bot_id,
+            "execution_mode": "direct",
+            "tool": "propose_actions",
             "accepted": accepted_total,
             "rejected": rejected_total,
+            "capability": self._capability_profile(),
             "results": results,
         }
 
@@ -200,7 +244,10 @@ class CrewToolFacade:
         return {
             "ok": ok,
             "bot_id": bot_id,
+            "execution_mode": "macro",
+            "tool": "publish_macro",
             "message": message,
+            "capability": self._capability_profile(),
             "publication": publication_info,
         }
 
@@ -437,7 +484,14 @@ class CrewToolFacade:
         except Exception as exc:
             return {"ok": False, "bot_id": bot_id, "message": f"invalid_control_request:{exc}"}
         response = self.runtime.control_plan(payload)
-        return response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response)
+        body = response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response)
+        enriched = {
+            **body,
+            "execution_mode": "config",
+            "tool": "plan_control_change",
+            "capability": self._capability_profile(),
+        }
+        return enriched
 
     def execute(self, *, bot_id: str, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         tool = tool_name.strip()

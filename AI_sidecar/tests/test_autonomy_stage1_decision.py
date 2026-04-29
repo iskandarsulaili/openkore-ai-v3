@@ -204,6 +204,18 @@ class _MissionRuntime(_DecisionRuntime):
         return self._latest_goal_state
 
 
+def test_mission_agent_system_prompt_enforces_phase5_doctrine_and_abstention() -> None:
+    from ai_sidecar.autonomy.mission_agent import MissionAgentService
+
+    service = MissionAgentService(model_router=object())
+    prompt = service._system_prompt()
+
+    assert "eight-phase" in prompt or "eight-phase reasoning" in prompt
+    assert "direct | config | macro | unsupported" in prompt
+    assert "Do not fabricate" in prompt
+    assert "abstain" in prompt.lower()
+
+
 def _deterministic_goal_state(
     *,
     bot_id: str,

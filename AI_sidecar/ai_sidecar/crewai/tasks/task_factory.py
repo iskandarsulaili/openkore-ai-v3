@@ -32,14 +32,36 @@ def build_collaborative_tasks(
         if agent is None:
             continue
 
+        output_contract = (
+            "Return strict JSON only with keys: "
+            "summary(str), constraints(list[str]), assumptions(list[str]), risks(list[str]), "
+            "capability_plan(list[object]), blockers(list[str]), confidence(float 0..1), annotations(object). "
+            "Each capability_plan item must include fields: mode(direct|config|macro|unsupported), "
+            "tool(str), feasible(bool), reason(str), payload(object)."
+        )
+
+        mission_overlay = ""
+        if str(task_hint).strip().lower() == "autonomous_decision_intelligence":
+            mission_overlay = (
+                "\nMission constraints:\n"
+                "- Deterministic selected goal priority is immutable; do not change selected goal category.\n"
+                "- Ground all statements in provided state/context; do not fabricate formulas/rates/scripts.\n"
+                "- If evidence is insufficient, include blockers and use capability_plan mode=unsupported with abstention rationale.\n"
+                "- Prefer bridge-safe command pathways and explicit feasibility labels."
+            )
+
         description = (
             f"Objective: {objective}\n"
             f"Global task hint: {task_hint}\n"
             f"You are {profile.role}. Provide concrete, low-ambiguity recommendations in your specialty."
+            f"\nOperating model: {profile.operating_model}"
+            f"\nTool allowance: {', '.join(profile.tools)}"
+            f"\n{output_contract}"
+            f"{mission_overlay}"
         )
         expected_output = (
-            "Return concise actionable recommendations, explicit risks, and assumptions. "
-            "If blocked, clearly state blocker reason and safe fallback."
+            "Structured JSON contract with feasibility-labeled capability plan. "
+            "If blocked, include blocker reason and a safe abstaining fallback in capability_plan."
         )
         async_execution = False
         task_name = f"task_{profile.agent_id}"

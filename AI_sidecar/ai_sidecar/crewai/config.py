@@ -123,13 +123,14 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
         agent_id="state_assessor",
         role="State Assessor",
         goal=(
-            "Assess deterministic stage-1 selected goal context, detect immediate"
-            " safety constraints, and produce a concise situational report without"
-            " overriding priority policy."
+            "Assess deterministic stage-1 selected-goal context, enforce rAthena"
+            " evidence boundaries, and produce concise capability-aware risk posture"
+            " without overriding deterministic priority policy."
         ),
         backstory=(
             "Signal-focused assessor that reads enriched/runtime state and emits"
-            " structured threat posture and execution caveats for downstream agents."
+            " strict factual posture summaries with explicit unknowns when evidence"
+            " is insufficient."
         ),
         tools=(
             "get_enriched_state",
@@ -146,12 +147,14 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
         agent_id="progression_planner",
         role="Progression Planner",
         goal=(
-            "Refine deterministic objective wording and progression path into an"
-            " actionable short execution sequence while preserving priority constraints."
+            "Refine deterministic objective wording into rAthena-grounded short-horizon"
+            " execution plans that remain executable through supported capability"
+            " lanes only."
         ),
         backstory=(
             "Progression specialist that turns selected objective intent into practical"
-            " steps aligned with current map context and known constraints."
+            " steps aligned with current map context, known constraints, and abstains"
+            " when progression requirements are not evidenced."
         ),
         tools=(
             "get_enriched_state",
@@ -168,8 +171,9 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
         agent_id="opportunistic_trader",
         role="Opportunistic Trader",
         goal=(
-            "Assess opportunistic economy and inventory windows relative to the selected"
-            " deterministic objective and annotate low-risk upgrade opportunities."
+            "Assess opportunistic economy/inventory windows relative to deterministic"
+            " objectives and emit low-risk upgrades with explicit feasibility labels"
+            " and capability mode recommendations."
         ),
         backstory=(
             "Economy-aware opportunist that inspects inventory pressure and market"
@@ -192,8 +196,9 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
         agent_id="command_emitter",
         role="Command Emitter",
         goal=(
-            "Translate refined decision context into explicit execution commands and"
-            " handoff-ready action lines with deterministic safety notes."
+            "Translate refined decision context into execution-ready handoff lines"
+            " that are explicitly capability-bounded (direct|config|macro|unsupported)"
+            " with deterministic safety notes."
         ),
         backstory=(
             "Execution translator that converts refined intent into concrete command"
@@ -300,6 +305,17 @@ AGENT_OPERATING_MODEL: tuple[AgentOperatingProfile, ...] = (
 
 
 AGENT_TASK_HINT_ROSTERS: dict[str, tuple[str, ...]] = {
+    "strategic_planning": (
+        "strategic_planner",
+        "resource_manager",
+        "social_coordinator",
+        "tactical_commander",
+    ),
+    "tactical_short_reasoning": (
+        "tactical_commander",
+        "state_assessor",
+        "command_emitter",
+    ),
     "autonomous_decision_intelligence": (
         "state_assessor",
         "progression_planner",
@@ -324,7 +340,7 @@ LEGACY_AGENT_ROUTING: dict[str, str] = {
 MANAGER_PROFILE = AgentProfile(
     agent_id="manager",
     role="Crew Orchestration Manager",
-    goal="Orchestrate agent handoffs across tactical, strategic, resource, and social domains with schema-safe outputs.",
+    goal="Orchestrate agent handoffs across tactical/strategic/resource/social domains with schema-safe, capability-bounded outputs.",
     backstory=(
         "Hierarchical orchestration manager coordinating the local conscious layer. Ensures"
         " flow discipline, cross-agent consistency, and safe planner-ready outputs."

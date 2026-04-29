@@ -77,7 +77,7 @@ class _ManagerRuntime:
         return []
 
     def queue_action(self, proposal: ActionProposal, bot_id: str) -> tuple[bool, ActionStatus, str, str]:
-        return True, ActionStatus.pending, proposal.action_id, f"queued:{bot_id}"
+        return True, ActionStatus.queued, proposal.action_id, f"queued:{bot_id}"
 
     async def planner_plan(self, payload: PlannerPlanRequest) -> PlannerResponse:
         return PlannerResponse(
@@ -89,6 +89,14 @@ class _ManagerRuntime:
             latency_ms=0.1,
             route={"source": "test"},
         )
+
+    def control_plan(self, payload):
+        del payload
+        return {
+            "ok": True,
+            "message": "planned",
+            "plan": {"plan_id": "ctrl-1"},
+        }
 
 
 class _CaptureCrew:
@@ -469,6 +477,110 @@ def test_crew_manager_derives_stage4_execution_translation_from_context_direct_c
     assert manager._derive_execution_translation_from_context(direct_context) == ["propose_actions:ai auto"]
     assert manager._derive_execution_translation_from_context(config_context) == ["plan_control_change:control/config.txt"]
     assert manager._derive_execution_translation_from_context(macro_context) == ["publish_macro:crew_stage4_upgrade_posture"]
+
+
+def test_crew_manager_strategic_task_hint_resolves_specialized_roster() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    resolved = manager._resolve_required_agents(task_hint="strategic_planning", required_agents=[])
+
+    assert resolved == [
+        "strategic_planner",
+        "resource_manager",
+        "social_coordinator",
+        "tactical_commander",
+    ]
+
+
+def test_task_factory_builds_structured_capability_bounded_contracts() -> None:
+    from ai_sidecar.crewai.tasks.task_factory import build_collaborative_tasks
+
+    class _TaskStub:
+        def __init__(self, **kwargs) -> None:
+            self.name = kwargs.get("name")
+            self.description = kwargs.get("description")
+            self.expected_output = kwargs.get("expected_output")
+            self.agent = kwargs.get("agent")
+            self.context = kwargs.get("context")
+            self.async_execution = kwargs.get("async_execution")
+
+    import sys
+    import types
+
+    module_name = "crewai"
+    original = sys.modules.get(module_name)
+    sys.modules[module_name] = types.SimpleNamespace(Task=_TaskStub)
+    try:
+        tasks = build_collaborative_tasks(
+            objective="refine deterministic objective",
+            task_hint="autonomous_decision_intelligence",
+            agents_by_id={
+                "state_assessor": object(),
+                "progression_planner": object(),
+            },
+        )
+    finally:
+        if original is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = original
+
+    assert tasks
+    first = tasks[0]
+    assert "strict JSON" in str(first.description)
+    assert "capability_plan" in str(first.description)
+    assert "mode(direct|config|macro|unsupported)" in str(first.description)
+    assert "Structured JSON contract" in str(first.expected_output)
+
+
+def test_crewai_tool_dispatch_propose_actions_rejects_unsupported_direct_roots() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    result = manager.execute_tool(
+        bot_id="bot:crew",
+        tool_name="propose_actions",
+        arguments={
+            "intents": [
+                {"kind": "command", "command": "dropall"},
+                {"kind": "command", "command": "move prt_fild08"},
+            ]
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["accepted"] == 1
+    assert result["rejected"] == 1
+    reasons = [row.get("reason") for row in result["results"]]
+    assert "unsupported_direct_command_root" in reasons
+    assert result.get("execution_mode") == "direct"
+    assert result.get("tool") == "propose_actions"
+
+
+def test_crewai_tool_dispatch_plan_control_change_includes_capability_metadata() -> None:
+    runtime = _ManagerRuntime()
+    manager = CrewManager(runtime=runtime, model_router=None, enabled=False, verbose=False)
+
+    result = manager.execute_tool(
+        bot_id="bot:crew",
+        tool_name="plan_control_change",
+        arguments={
+            "request": {
+                "artifact_type": "config",
+                "name": "config.txt",
+                "target_path": "control/config.txt",
+                "desired": {"aiSidecar_enable": "1"},
+            }
+        },
+    )
+
+    assert result["ok"] is True
+    assert result.get("execution_mode") == "config"
+    assert result.get("tool") == "plan_control_change"
+    capability = result.get("capability")
+    assert isinstance(capability, dict)
+    assert capability.get("config", {}).get("tool") == "plan_control_change"
 
 
 class _RouterRuntime:

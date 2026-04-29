@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from ai_sidecar.autonomy.goal_stack import summarize_goal_stack
+from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge, prompt_invariants
 from ai_sidecar.contracts.autonomy import AutonomyMissionContext, GoalStackState
 from ai_sidecar.contracts.common import ContractMeta
 
@@ -14,6 +15,19 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class AutonomyMissionContextAssembler:
     runtime: Any
+    ro_knowledge: ROKnowledgeBundle | None = None
+
+    def __post_init__(self) -> None:
+        if self.ro_knowledge is not None:
+            return
+        try:
+            self.ro_knowledge = load_ro_knowledge()
+        except Exception:
+            self.ro_knowledge = None
+            logger.exception(
+                "autonomy_mission_context_ro_knowledge_load_failed",
+                extra={"event": "autonomy_mission_context_ro_knowledge_load_failed"},
+            )
 
     def assemble(
         self,
@@ -49,6 +63,20 @@ class AutonomyMissionContextAssembler:
             limit=max(1, min(memory_limit * 2, 10)),
         )
 
+        invariants = prompt_invariants(knowledge=self.ro_knowledge)
+        runtime_facts = self._runtime_facts(
+            bot_id=bot_id,
+            horizon=horizon,
+            queue_depth=queue_depth,
+            latency_avg_ms=latency_avg_ms,
+            snapshot=snapshot_payload,
+            enriched_state=enriched_payload,
+            startup_gate=startup_gate,
+            planner_status=planner_status,
+            fleet_constraints=fleet_constraints,
+        )
+        knowledge_summary = self._knowledge_summary(goal_state=goal_state)
+
         return AutonomyMissionContext(
             bot_id=bot_id,
             horizon=str(horizon),
@@ -72,7 +100,95 @@ class AutonomyMissionContextAssembler:
             recent_events=recent_events,
             memory_matches=memory_matches,
             recent_episodes=recent_episodes,
+            invariants=invariants,
+            runtime_facts=runtime_facts,
+            knowledge_summary=knowledge_summary,
         )
+
+    def _runtime_facts(
+        self,
+        *,
+        bot_id: str,
+        horizon: str,
+        queue_depth: int,
+        latency_avg_ms: float,
+        snapshot: dict[str, object],
+        enriched_state: dict[str, object],
+        startup_gate: dict[str, object],
+        planner_status: dict[str, object],
+        fleet_constraints: dict[str, object],
+    ) -> dict[str, object]:
+        def _safe_dict(value: object) -> dict[str, object]:
+            return value if isinstance(value, dict) else {}
+
+        snapshot_position = _safe_dict(snapshot.get("position"))
+        snapshot_vitals = _safe_dict(snapshot.get("vitals"))
+        enriched_operational = _safe_dict(enriched_state.get("operational"))
+        fleet_payload = _safe_dict(fleet_constraints.get("constraints"))
+
+        hp = snapshot_vitals.get("hp", enriched_operational.get("hp"))
+        hp_max = snapshot_vitals.get("hp_max", enriched_operational.get("hp_max"))
+        map_name = snapshot_position.get("map", enriched_operational.get("map"))
+
+        capability = prompt_invariants(knowledge=self.ro_knowledge).get("capability_truth")
+        return {
+            "bot_id": bot_id,
+            "horizon": str(horizon),
+            "queue_depth": int(queue_depth),
+            "latency_avg_ms": float(latency_avg_ms),
+            "position": {
+                "map": map_name,
+                "x": snapshot_position.get("x", enriched_operational.get("x")),
+                "y": snapshot_position.get("y", enriched_operational.get("y")),
+            },
+            "vitals": {
+                "hp": hp,
+                "hp_max": hp_max,
+                "in_combat": enriched_operational.get("in_combat"),
+                "is_dead": bool((hp == 0) if isinstance(hp, (int, float)) else False),
+            },
+            "startup_gate": {
+                "ready": bool(startup_gate.get("ready", False)),
+                "stage": startup_gate.get("stage"),
+            },
+            "planner": {
+                "healthy": bool(planner_status.get("planner_healthy", False)),
+                "last_plan_id": planner_status.get("last_plan_id"),
+            },
+            "fleet": {
+                "role": fleet_constraints.get("role"),
+                "assignment": fleet_constraints.get("assignment"),
+                "objective": fleet_constraints.get("objective"),
+                "constraint_keys": [str(key) for key in list(fleet_payload.keys())[:16]],
+            },
+            "capability_truth": capability if isinstance(capability, dict) else {},
+        }
+
+    def _knowledge_summary(self, *, goal_state: GoalStackState) -> dict[str, object]:
+        stage4 = (
+            dict(goal_state.assessment.opportunistic_upgrades)
+            if isinstance(goal_state.assessment.opportunistic_upgrades, dict)
+            else {}
+        )
+        stage3 = dict(goal_state.assessment.job_advancement) if isinstance(goal_state.assessment.job_advancement, dict) else {}
+        return {
+            "knowledge_version": self.ro_knowledge.version if self.ro_knowledge is not None else "stage3-ro-progression-v1",
+            "job_name": str(goal_state.assessment.job_name or ""),
+            "base_level": int(goal_state.assessment.base_level),
+            "job_level": int(goal_state.assessment.job_level),
+            "job_advancement": {
+                "supported": bool(stage3.get("supported", False)),
+                "ready": bool(stage3.get("ready", False)),
+                "status": str(stage3.get("status") or ""),
+                "route_id": str(stage3.get("route_id") or ""),
+            },
+            "opportunistic": {
+                "supported": bool(stage4.get("supported", False)),
+                "actionable": bool(stage4.get("actionable", False)),
+                "status": str(stage4.get("status") or ""),
+                "known_rule_ids": [str(item) for item in list(stage4.get("known_rule_ids") or [])[:16]],
+            },
+        }
 
     def _snapshot_payload(self, *, bot_id: str) -> dict[str, object]:
         cache = getattr(self.runtime, "snapshot_cache", None)
@@ -302,4 +418,3 @@ class AutonomyMissionContextAssembler:
         if isinstance(value, list):
             return {"_type": "list", "_len": len(value)}
         return str(value)[:180]
-

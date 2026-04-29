@@ -706,6 +706,26 @@ class PlanGenerator:
     def _system_prompt(self, *, context: PlannerContext) -> str:
         allowed_step_kinds = ", ".join(item.value for item in PlannerStepKind)
         horizon_budget_ms = 15000 if context.horizon == PlanHorizon.tactical else 30000
+        invariants = context.invariants if isinstance(context.invariants, dict) else {}
+        reasoning_protocol = [str(item).strip() for item in list(invariants.get("reasoning_protocol") or []) if str(item).strip()]
+        rathena_axioms = [str(item).strip() for item in list(invariants.get("rathena_axioms") or []) if str(item).strip()]
+        capability_truth = invariants.get("capability_truth") if isinstance(invariants.get("capability_truth"), dict) else {}
+        known_rule_ids = [str(item).strip() for item in list(invariants.get("known_upgrade_rule_ids") or []) if str(item).strip()]
+        protocol_line = (
+            ", ".join(f"{idx + 1}:{label}" for idx, label in enumerate(reasoning_protocol[:8]))
+            if reasoning_protocol
+            else "1-observe,2-verify,3-risk,4-options,5-capability-check,6-plan,7-fallback,8-output"
+        )
+        axioms_line = ", ".join(rathena_axioms[:8]) if rathena_axioms else "rAthena-grounded only"
+        cap_direct = capability_truth.get("direct") if isinstance(capability_truth.get("direct"), dict) else {}
+        cap_config = capability_truth.get("config") if isinstance(capability_truth.get("config"), dict) else {}
+        cap_macro = capability_truth.get("macro") if isinstance(capability_truth.get("macro"), dict) else {}
+        direct_roots = [str(item).strip() for item in list(cap_direct.get("allowed_roots") or []) if str(item).strip()]
+        capability_line = (
+            f"direct:{str(cap_direct.get('tool') or 'propose_actions')} roots={direct_roots or sorted(_BRIDGE_ALLOWED_ROOTS)}; "
+            f"config:{str(cap_config.get('tool') or 'plan_control_change')}; "
+            f"macro:{str(cap_macro.get('tool') or 'publish_macro')}"
+        )
         base_prompt = (
             "You are the local sidecar conscious planner for Ragnarok Online bots. "
             "Output only strict JSON following schema. "
@@ -713,7 +733,14 @@ class PlanGenerator:
             "Steps must be a non-empty array with concrete descriptions. "
             f"Allowed step kinds: [{allowed_step_kinds}]. "
             f"Current horizon={context.horizon.value} with latency budget under {horizon_budget_ms} ms. "
-            "Respect doctrine, safety constraints, and latency tiers."
+            f"Mandatory internal reasoning protocol (in order): {protocol_line}. "
+            f"rAthena axioms: {axioms_line}. "
+            f"Capability truth: {capability_line}. "
+            "Respect doctrine, safety constraints, and latency tiers. "
+            "Never fabricate formulas, rates, NPC scripts, map mechanics, or prerequisites absent from context. "
+            "If evidence is insufficient, abstain conservatively by adding explicit unknown constraints/hypotheses and avoiding speculative steps. "
+            "Keep every proposed step executable by existing deterministic bridge surfaces and avoid unsupported command roots. "
+            f"Known upgrade rule ids (reference only): {known_rule_ids[:12]}."
         )
         prompt_limit = int(self.max_user_prompt_chars) + 14000
         domain_blocks: list[str] = []
@@ -755,6 +782,9 @@ class PlanGenerator:
             "economy_context": context.economy_context,
             "quest_context": context.quest_context,
             "npc_context": context.npc_context,
+            "invariants": context.invariants,
+            "runtime_facts": context.runtime_facts,
+            "knowledge_summary": context.knowledge_summary,
             "fleet_constraints": context.fleet_constraints,
             "doctrine": context.doctrine,
             "queue": context.queue,
@@ -829,6 +859,9 @@ class PlanGenerator:
             _trim_list(("quest_context", "completed_quests"), 12, "quest_context.completed_quests")
             _trim_list(("npc_context", "relationships"), 8, "npc_context.relationships")
             _trim_list(("state", "recent_event_ids"), 16, "state.recent_event_ids")
+            _trim_list(("invariants", "known_upgrade_rule_ids"), 12, "invariants.known_upgrade_rule_ids")
+            _trim_list(("invariants", "reasoning_protocol"), 8, "invariants.reasoning_protocol")
+            _trim_list(("invariants", "rathena_axioms"), 8, "invariants.rathena_axioms")
             if _size() > self.max_user_prompt_chars:
                 _trim_dict(("state", "fleet_intent", "constraints"), 16, "state.fleet_intent.constraints")
                 _trim_dict(("fleet_constraints", "constraints"), 16, "fleet_constraints.constraints")
@@ -893,6 +926,23 @@ class PlanGenerator:
                 }
                 payload_working["npc_context"] = {
                     "last_interacted_npc": context.npc_context.get("last_interacted_npc"),
+                }
+                payload_working["runtime_facts"] = {
+                    "queue_pending_actions": context.runtime_facts.get("queue_pending_actions"),
+                    "latency_avg_ms": context.runtime_facts.get("latency_avg_ms"),
+                    "planner_state": context.runtime_facts.get("planner_state"),
+                }
+                payload_working["knowledge_summary"] = {
+                    "knowledge_version": context.knowledge_summary.get("knowledge_version"),
+                    "job_name": context.knowledge_summary.get("job_name"),
+                    "profile_key": context.knowledge_summary.get("profile_key"),
+                    "known_upgrade_rules": context.knowledge_summary.get("known_upgrade_rules"),
+                }
+                payload_working["invariants"] = {
+                    "knowledge_version": context.invariants.get("knowledge_version"),
+                    "reasoning_protocol": list(context.invariants.get("reasoning_protocol") or [])[:8],
+                    "capability_mode_labels": list(context.invariants.get("capability_mode_labels") or [])[:4],
+                    "capability_truth": context.invariants.get("capability_truth", {}),
                 }
                 reductions.append("collapse:state_and_domain_context")
 

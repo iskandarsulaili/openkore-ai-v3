@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from ai_sidecar.autonomy.goal_stack import summarize_goal_stack
+from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge, prompt_invariants
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerContext
 
@@ -15,6 +16,19 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class PlannerContextAssembler:
     runtime: Any
+    ro_knowledge: ROKnowledgeBundle | None = None
+
+    def __post_init__(self) -> None:
+        if self.ro_knowledge is not None:
+            return
+        try:
+            self.ro_knowledge = load_ro_knowledge()
+        except Exception:
+            self.ro_knowledge = None
+            logger.exception(
+                "planner_context_ro_knowledge_load_failed",
+                extra={"event": "planner_context_ro_knowledge_load_failed"},
+            )
 
     def assemble(
         self,
@@ -292,6 +306,24 @@ class PlannerContextAssembler:
             "coordination": fleet_coordination,
         }
 
+        invariants = prompt_invariants(knowledge=self.ro_knowledge)
+        runtime_facts = self._runtime_facts(
+            bot_id=bot_id,
+            horizon=horizon,
+            state=state_payload,
+            queue=queue_info,
+            latency_headroom=latency_headroom,
+            fleet_constraints=fleet_constraints,
+            selected_goal=selected_goal,
+        )
+        knowledge_summary = self._knowledge_summary(
+            bot_id=bot_id,
+            state=state_payload,
+            selected_goal=selected_goal,
+            memory_matches=memory_matches,
+            episodes=episodes,
+        )
+
         return PlannerContext(
             bot_id=bot_id,
             objective=objective,
@@ -312,7 +344,97 @@ class PlannerContextAssembler:
             quest_context=quest_context,
             npc_context=npc_context,
             latency_headroom=latency_headroom,
+            invariants=invariants,
+            runtime_facts=runtime_facts,
+            knowledge_summary=knowledge_summary,
         )
+
+    def _runtime_facts(
+        self,
+        *,
+        bot_id: str,
+        horizon: PlanHorizon,
+        state: dict[str, object],
+        queue: dict[str, object],
+        latency_headroom: dict[str, object],
+        fleet_constraints: dict[str, object],
+        selected_goal: dict[str, object],
+    ) -> dict[str, object]:
+        operational = state.get("operational") if isinstance(state.get("operational"), dict) else {}
+        encounter = state.get("encounter") if isinstance(state.get("encounter"), dict) else {}
+        navigation = state.get("navigation") if isinstance(state.get("navigation"), dict) else {}
+        inventory = state.get("inventory") if isinstance(state.get("inventory"), dict) else {}
+        risk = state.get("risk") if isinstance(state.get("risk"), dict) else {}
+        capability = prompt_invariants(knowledge=self.ro_knowledge).get("capability_truth")
+        return {
+            "bot_id": bot_id,
+            "horizon": horizon.value,
+            "position": {
+                "map": operational.get("map") or navigation.get("map"),
+                "x": operational.get("x") or navigation.get("x"),
+                "y": operational.get("y") or navigation.get("y"),
+            },
+            "vitals": {
+                "hp": operational.get("hp"),
+                "hp_max": operational.get("hp_max"),
+                "in_combat": operational.get("in_combat"),
+                "target_id": operational.get("target_id") or encounter.get("target_id"),
+            },
+            "risk": {
+                "danger_score": risk.get("danger_score"),
+                "death_risk_score": risk.get("death_risk_score"),
+                "pvp_risk_score": risk.get("pvp_risk_score"),
+            },
+            "inventory": {
+                "zeny": inventory.get("zeny"),
+                "overweight_ratio": inventory.get("overweight_ratio"),
+                "item_count": inventory.get("item_count"),
+            },
+            "queue": {
+                "pending_actions": int(queue.get("pending_actions") or 0),
+                "latency_avg_ms": float(queue.get("latency_avg_ms") or 0.0),
+            },
+            "latency_headroom": {
+                "horizon_budget_ms": int(latency_headroom.get("horizon_budget_ms") or 0),
+                "observed_avg_ms": float(latency_headroom.get("observed_avg_ms") or 0.0),
+                "remaining_ms": float(latency_headroom.get("remaining_ms") or 0.0),
+            },
+            "fleet": {
+                "role": fleet_constraints.get("role"),
+                "assignment": fleet_constraints.get("assignment"),
+                "objective": fleet_constraints.get("objective"),
+            },
+            "selected_goal": {
+                "goal_key": str(selected_goal.get("goal_key") or ""),
+                "priority_rank": selected_goal.get("priority_rank"),
+                "objective": str(selected_goal.get("objective") or ""),
+            },
+            "capability_truth": capability if isinstance(capability, dict) else {},
+        }
+
+    def _knowledge_summary(
+        self,
+        *,
+        bot_id: str,
+        state: dict[str, object],
+        selected_goal: dict[str, object],
+        memory_matches: list[dict[str, object]],
+        episodes: list[dict[str, object]],
+    ) -> dict[str, object]:
+        operational = state.get("operational") if isinstance(state.get("operational"), dict) else {}
+        return {
+            "bot_id": bot_id,
+            "knowledge_version": self.ro_knowledge.version if self.ro_knowledge is not None else "stage3-ro-progression-v1",
+            "job_name": str(operational.get("job_name") or ""),
+            "base_level": int(operational.get("base_level") or 0),
+            "job_level": int(operational.get("job_level") or 0),
+            "selected_goal_key": str(selected_goal.get("goal_key") or ""),
+            "memory_match_count": len(memory_matches),
+            "episode_count": len(episodes),
+            "known_upgrade_rule_ids": list(
+                (prompt_invariants(knowledge=self.ro_knowledge).get("known_upgrade_rule_ids") or [])[:16]
+            ),
+        }
 
     def _compact_state(self, state_payload: dict[str, object]) -> dict[str, object]:
         def _safe_dict(value: object) -> dict[str, object]:
