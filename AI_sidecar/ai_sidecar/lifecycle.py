@@ -104,6 +104,8 @@ from ai_sidecar.fleet import (
     FleetSyncClient,
     OutcomeReporter,
     RoleManager,
+    FleetCoordinatorService,
+    SelfLearningSystem,
 )
 from ai_sidecar.ingestion.event_journal import EventJournal
 from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
@@ -515,6 +517,8 @@ class RuntimeState:
     fleet_constraint_state: ConstraintIngestionState | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
+    fleet_coordinator: "FleetCoordinatorService | None" = None
+    self_learning_system: "SelfLearningSystem | None" = None
     observability_audit: ObservabilityAuditLogger | None = None
     slo_metrics: SLOMetricsCollector | None = None
     trace_store: TraceStore | None = None
@@ -5119,6 +5123,11 @@ def create_runtime() -> RuntimeState:
     fleet_constraint_state = ConstraintIngestionState(central_enabled=settings.fleet_central_enabled)
     fleet_outcome_reporter = OutcomeReporter(client=fleet_sync_client)
     fleet_conflict_resolver = FleetConflictResolver()
+    fleet_coordinator = FleetCoordinatorService()
+    self_learning_system = SelfLearningSystem(
+        db_path=str(sqlite_path) if sqlite_path is not None else None,
+        max_records=100000,
+    )
 
     action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
     snapshot_cache = SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds)
