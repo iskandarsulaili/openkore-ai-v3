@@ -70,8 +70,8 @@ class SidecarSettings(BaseSettings):
     llm_cost_tier_pricing: str = '{"off":0,"economy":0.15,"standard":0.30,"premium":0.60}'  # $/M tokens
 
     # ── API Authentication ────────────────────────────────────────
-    api_auth_enabled: bool = False
-    api_auth_token: str = ""
+    api_auth_enabled: bool = True
+    api_auth_token: str = ""  # Set via env or auto-generated at startup
 
 
     provider_ollama_enabled: bool = True

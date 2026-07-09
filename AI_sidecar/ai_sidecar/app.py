@@ -46,6 +46,11 @@ async def lifespan(app: FastAPI):
     # Validate auth config at startup
     if settings.api_auth_enabled:
         if not settings.api_auth_token:
+            import secrets
+            _generated = secrets.token_urlsafe(32)
+            settings.api_auth_token = _generated
+            logger.warning("api_auth_token not set — generated: %s", _generated)
+        if not settings.api_auth_token:
             logger.warning("api_auth_enabled=True but api_auth_token is empty — auth will reject all requests")
         elif len(settings.api_auth_token) < 8:
             logger.warning("api_auth_token is very short (<8 chars) — consider a stronger token")

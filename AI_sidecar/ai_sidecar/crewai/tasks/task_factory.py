@@ -7,14 +7,12 @@ from ai_sidecar.crewai.config import AGENT_PROFILES
 
 logger = logging.getLogger(__name__)
 
-
 def build_collaborative_tasks(
     *,
     objective: str,
     task_hint: str,
     agents_by_id: dict[str, Any],
 ) -> list[Any]:
-    from crewai import Task
 
     tasks: list[Any] = []
     previous: list[Any] = []

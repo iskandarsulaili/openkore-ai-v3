@@ -78,7 +78,6 @@ class PlanControlChangeInput(BaseModel):
 
 
 def build_crewai_tools(*, facade: CrewToolFacade) -> dict[str, Any]:
-    from crewai.tools import BaseTool
 
     class GetBotStateTool(BaseTool):
         name: str = "get_bot_state"

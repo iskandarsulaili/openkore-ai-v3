@@ -10,8 +10,6 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
-    from crewai.llms.base_llm import BaseLLM
-except Exception:  # pragma: no cover - optional dependency fallback
     BaseLLM = BaseModel  # type: ignore[misc,assignment]
 
 from ai_sidecar.providers.base import PlannerModelRequest

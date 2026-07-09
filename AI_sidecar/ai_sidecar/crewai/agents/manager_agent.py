@@ -5,7 +5,6 @@ from typing import Any
 from .base_agent import BehaviorProfile
 from .base_agent import BehaviorProfile
 
-
 class ManagerProfile(BehaviorProfile):
     """Coordinates other agents, picks the best one for the current state."""
 
@@ -39,26 +38,6 @@ class ManagerProfile(BehaviorProfile):
                 best = profile
         return best if best_score > 0 else None
 
-
-def create_manager_agent(*, llm: Any, tools: list[Any], verbose: bool) -> Any:
-    """Backward-compatible factory for crew_manager.py.
-
-    Only imports crewai at call time. Falls back to a plain ManagerProfile
-    instance if crewai is not available.
-    """
-    from ai_sidecar.crewai.config import MANAGER_PROFILE
-
-    try:
-        from crewai import Agent
-
-        return Agent(
-            role=MANAGER_PROFILE.role,
-            goal=MANAGER_PROFILE.goal,
-            backstory=MANAGER_PROFILE.backstory,
-            tools=tools,
-            llm=llm,
-            allow_delegation=True,
-            verbose=verbose,
-        )
-    except ImportError:
-        return ManagerProfile()
+def create_manager_agent(*, llm: Any = None, tools: list[Any] | None = None, verbose: bool = False) -> Any:
+    """Backward-compatible factory for crew_manager.py. Returns a ManagerProfile."""
+    return ManagerProfile()
