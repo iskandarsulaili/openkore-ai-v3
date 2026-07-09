@@ -172,6 +172,7 @@ from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
+from ai_sidecar.experience_db import ExperienceDatabase, ExperienceEntry
 
 logger = logging.getLogger(__name__)
 fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
@@ -497,6 +498,7 @@ class RuntimeState:
     reflex_engine: ReflexRuleEngine
     heuristic_service: HeuristicService | None = None
     cost_tracker: CostTracker | None = None
+    experience_db: ExperienceDatabase | None = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
@@ -5231,6 +5233,7 @@ def create_runtime() -> RuntimeState:
 
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
+    runtime.experience_db = ExperienceDatabase()
     # Restore persisted budget state
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))
