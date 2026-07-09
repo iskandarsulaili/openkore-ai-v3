@@ -42,6 +42,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(level=settings.log_level, use_json=settings.log_json)
+    
+    # Validate auth config at startup
+    if settings.api_auth_enabled:
+        if not settings.api_auth_token:
+            logger.warning("api_auth_enabled=True but api_auth_token is empty — auth will reject all requests")
+        elif len(settings.api_auth_token) < 8:
+            logger.warning("api_auth_token is very short (<8 chars) — consider a stronger token")
     app.state.runtime = create_runtime()
     runtime = app.state.runtime
 
@@ -178,10 +185,10 @@ def create_app() -> FastAPI:
     from ai_sidecar.api.routers.autonomy import router as autonomy_router, set_pdca_loop
 
     app.include_router(autonomy_router)
-        if settings.api_auth_enabled and settings.api_auth_token:
-            from ai_sidecar.api.middleware import add_auth_middleware
-            add_auth_middleware(app)
-        return app
+    if settings.api_auth_enabled and settings.api_auth_token:
+        from ai_sidecar.api.middleware import add_auth_middleware
+        add_auth_middleware(app)
+    return app
 
 
 app = create_app()

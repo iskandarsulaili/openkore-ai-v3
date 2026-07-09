@@ -19,6 +19,71 @@ from ai_sidecar.contracts.state import BotStateSnapshot
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 
 logger = logging.getLogger(__name__)
+
+def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
+    """Emit heuristic actions to the action queue.
+    Returns number of actions queued."""
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        hs = getattr(runtime_state, "heuristic_service", None)
+        if hs is None:
+            return 0
+        # Build signals from available state
+        signals = {
+            "hp_ratio": 1.0, "sp_ratio": 1.0,
+            "combat.aggro_count": 0, "map_known": False,
+            "weight_ratio": 0.0, "horizon": horizon,
+            "recent_death": False,
+        }
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        if snapshots is not None:
+            try:
+                latest = snapshots.latest()
+                if latest and isinstance(latest, dict):
+                    v = latest.get("vitals") or {}
+                    signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                    signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                    c = latest.get("combat") or {}
+                    signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                    signals["map_known"] = bool(latest.get("map_known", False))
+                    inv = latest.get("inventory") or {}
+                    signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+            except Exception:
+                pass
+        assessment = hs.assess(signals)
+        if not assessment.actions:
+            return 0
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+        from ai_sidecar.contracts.actions import ActionProposal, ActionStatus, ActionPriorityTier
+        from ai_sidecar.contracts.common import ContractMeta
+        queued = 0
+        for ha in assessment.actions:
+            import time as _t
+            proposal = ActionProposal(
+                meta=ContractMeta(),
+                action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
+                kind=ha.kind, command=ha.command,
+                priority_tier=ActionPriorityTier.standard,
+                bot_id="openkoreai", reason=ha.reason,
+                source="heuristic",
+                metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon},
+            )
+            try:
+                aq.push(proposal)
+                queued += 1
+            except Exception:
+                _log.exception("heuristic_action_push_failed")
+        if queued:
+            _log.info("heuristic_actions_emitted: %d for %s", queued, horizon)
+        return queued
+    except Exception:
+        _log.exception("heuristic_action_emission_failed")
+        return 0
+
+
 _STARTUP_GATE_MIN_EVENTS = 2
 _STARTUP_GATE_MAX_CREW_FAILURES = 2
 
@@ -251,7 +316,16 @@ class PDCALoop:
                         _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
                         if _hc >= _threshold:
                             logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)
-                            return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
+                            # Push heuristic actions to the action queue
+                            _actions_queued = 0
+                            try:
+                                _hs_full = getattr(self._runtime_state, "heuristic_service", None)
+                                if _hs_full is not None:
+                                    _actions_queued = _emit_heuristic_actions(self._runtime_state, horizon.value)
+                            except Exception:
+                                logger.exception("heuristic_action_emission_failed")
+                            
+                            return PDCAResult(plan_id="", actions_queued=_actions_queued, progress_pct=0.0, stuck=False, re_planned=False,
                                               force_replan=False, selected_goal="heuristic_skip",
                                               objective="Satisfied by heuristic rules",
                                               replan_reasons=[], cycle_ms=0.0, error="")

@@ -2,13 +2,13 @@
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ai_sidecar.crewai.crew_manager import CrewManager
+# Backward-compatible import: CrewManager is available at ai_sidecar.crewai.CrewManager
+from ai_sidecar.crewai.crew_manager import CrewManager  # noqa: F401
 
-__all__ = ["CrewManager"]
+__all__ = ["CrewManager", "get_crew_manager"]
 
 
 def get_crew_manager(*args, **kwargs):
-    """Lazy-imported factory to avoid circular imports with agents/__init__.py."""
+    """Lazy-imported factory for use in circular-import scenarios."""
     from ai_sidecar.crewai.crew_manager import CrewManager
     return CrewManager(*args, **kwargs)

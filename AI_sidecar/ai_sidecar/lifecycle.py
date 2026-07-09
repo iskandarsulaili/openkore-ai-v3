@@ -489,12 +489,12 @@ class RuntimeState:
     macro_compiler: MacroCompiler
     macro_publisher: MacroPublisher
     memory: MemoryRetrievalService
-    heuristic_service: HeuristicService | None = None
-    cost_tracker: CostTracker | None = None
     audit_trail: AuditTrail | None
     repositories: SidecarRepositories | None
     normalizer_bus: NormalizerBus
     reflex_engine: ReflexRuleEngine
+    heuristic_service: HeuristicService | None = None
+    cost_tracker: CostTracker | None = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
@@ -5263,14 +5263,14 @@ def create_runtime() -> RuntimeState:
         "runtime_initialized",
         extra={"event": "runtime_initialized", "sqlite_path": str(sqlite_path), "degraded": persistence_degraded},
     )
-        # Load reflex rules from YAML if available
-        try:
+    # Load reflex rules from YAML if available
+    try:
             _count = runtime.reflex_engine.load_rules_from_yaml(
                 Path(settings.workspace_root or ".", "ai_sidecar", "reflex", "reflex_rules.yaml")
             )
             if _count > 0:
                 logger.info("reflex_rules_yaml_loaded: %d rules from YAML", _count)
-        except Exception as _exc:
+    except Exception as _exc:
             logger.warning("reflex_rules_yaml_failed: %s", _exc)
     return runtime
 
