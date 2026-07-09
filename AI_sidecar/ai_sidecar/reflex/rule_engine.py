@@ -320,6 +320,12 @@ class ReflexRuleEngine:
                 reason=f"ack_failed:{result_code}:{message}",
             )
 
+        # Feed acknowledgment outcome into outcome tracking
+        try:
+            self.record_outcome(bot_id=bot_id, rule_id=pending.rule_id, success=success)
+        except Exception:
+            logger.exception("handle_ack_outcome_tracking_failed")
+
         with self._lock:
             record = self._triggers_by_id.get((bot_id, pending.trigger_id))
             if record is None:
