@@ -62,6 +62,7 @@ class ReflexPlannerInterop(StrEnum):
 
 
 class ReflexRule(BaseModel):
+    outcome_tracking: dict[str, int] = Field(default_factory=lambda: {"fires": 0, "successes": 0, "failures": 0})
     model_config = ConfigDict(extra="forbid")
 
     rule_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")

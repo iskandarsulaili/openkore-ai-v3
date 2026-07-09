@@ -639,6 +639,30 @@ class ReflexRuleEngine:
             category=ReflexCategory(raw.get("category", "interaction")),
         )
 
+    def record_outcome(self, *, bot_id: str, rule_id: str, success: bool) -> None:
+        """Record the outcome of a fired reflex rule."""
+        with self._lock:
+            rules = self._rules_by_bot.get(bot_id)
+            if rules and rule_id in rules:
+                rule = rules[rule_id]
+                rule.outcome_tracking["fires"] = rule.outcome_tracking.get("fires", 0) + 1
+                if success:
+                    rule.outcome_tracking["successes"] = rule.outcome_tracking.get("successes", 0) + 1
+                else:
+                    rule.outcome_tracking["failures"] = rule.outcome_tracking.get("failures", 0) + 1
+                # Auto-disable rules with >80% failure rate after 10+ fires
+                fires = rule.outcome_tracking.get("fires", 0)
+                failures = rule.outcome_tracking.get("failures", 0)
+                if fires >= 10 and failures / fires > 0.8:
+                    rule.enabled = False
+                    logger.warning("reflex_rule_auto_disabled: %s (%d/%d failures)", rule_id, failures, fires)
+
+    def outcome_stats(self, *, bot_id: str) -> dict[str, dict[str, int]]:
+        """Return outcome stats for all rules for a bot."""
+        with self._lock:
+            rules = self._rules_by_bot.get(bot_id, {})
+            return {rid: dict(r.outcome_tracking) for rid, r in rules.items()}
+
     def _default_rules(self) -> list[ReflexRule]:
         return [
             ReflexRule(

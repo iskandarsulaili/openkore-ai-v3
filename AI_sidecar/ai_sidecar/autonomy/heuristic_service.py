@@ -52,6 +52,11 @@ class HeuristicService:
         total_confidence = 0.0
         weighted_domains: dict[str, float] = {}
 
+        # Enriched state signals (emergent discovery)
+        # These are optional — the assess() always has fallbacks for missing keys
+        # New signals can be added here without changing behavior profiles
+        _enriched = signals.get("_enriched", None)
+        
         # Check recovery signal
         if signals.get("hp_ratio", 1.0) < 0.5:
             hp = signals["hp_ratio"]
