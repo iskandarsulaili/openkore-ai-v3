@@ -43,6 +43,10 @@ def ingest_snapshot(
     payload: BotStateSnapshot,
     runtime: RuntimeState = Depends(get_runtime),
 ) -> SnapshotIngestResponse:
+    # Override observed_at to now() — the bridge sends game event timestamps
+    # which can be older than the TTL, causing immediate cache expiry.
+    from datetime import UTC, datetime
+    payload.observed_at = datetime.now(UTC)
     runtime.ingest_snapshot(payload)
     logger.info(
         "snapshot_ingested",
