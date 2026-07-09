@@ -140,11 +140,20 @@ class PlannerService:
         context = self.context_assembler.assemble(meta=payload.meta, objective=payload.objective, horizon=payload.horizon)
         _ = self.intent_synthesizer.synthesize(context=context)
 
+        _ctx_budget = {}
+        try:
+            from ai_sidecar.config import settings as _s
+            _tier = getattr(_s, "llm_cost_tier", "standard")
+            _ctx_budget = {"max_context_chars": type(self.plan_generator).CONTEXT_BUDGETS.get(_tier, 0)}
+        except Exception:
+            _ctx_budget = {"max_context_chars": 0}
+        
         plan, tactical_bundle, route, provider, model, latency_ms = await self.plan_generator.generate(
             bot_id=payload.meta.bot_id,
             trace_id=payload.meta.trace_id,
             context=context,
             max_steps=payload.max_steps,
+            **_ctx_budget,
         )
 
         validation = self.plan_validator.validate(plan=plan, latency_ms=latency_ms)
@@ -368,6 +377,7 @@ class PlannerService:
             trace_id=payload.meta.trace_id,
             context=context,
             max_steps=12,
+                        max_context_chars=_ctx_budget.get("max_context_chars", 0),
         )
         macro_proposal = self.macro_synthesizer.synthesize(plan=plan, min_repeat=payload.min_repeat)
         if macro_proposal is None:

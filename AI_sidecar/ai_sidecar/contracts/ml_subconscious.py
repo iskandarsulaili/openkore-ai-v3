@@ -21,6 +21,7 @@ class ModelFamily(StrEnum):
     npc_dialogue_predictor = "npc_dialogue_predictor"
     risk_anomaly_detector = "risk_anomaly_detector"
     memory_retrieval_ranker = "memory_retrieval_ranker"
+    heuristic_decision = "heuristic_decision"
 
 
 class MLOutcome(BaseModel):

@@ -107,6 +107,8 @@ class PlanGenerator:
         context: PlannerContext,
         max_steps: int,
     ) -> tuple[StrategicPlan, TacticalIntentBundle, dict[str, object], str, str, float]:
+        if max_context_chars > 0:
+            context = self._apply_context_budget(context, max_context_chars)
         user_prompt, prompt_meta = self._user_prompt(context=context, max_steps=max_steps)
         if prompt_meta.get("prompt_reductions"):
             logger.info(

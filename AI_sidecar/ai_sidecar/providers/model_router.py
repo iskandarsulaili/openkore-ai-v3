@@ -354,6 +354,12 @@ class ModelRouter:
             )
             return self._policy
 
+    CONTEXT_BUDGETS: dict[str, int] = {"off": 0, "economy": 512, "standard": 2048, "premium": 8192}
+
+    def max_context_tokens(self, tier: str = "standard") -> int:
+        """Return max context tokens allowed for the given cost tier."""
+        return self.CONTEXT_BUDGETS.get(tier, 2048)
+
     def set_cost_controls(self, *, tracker, daily_budget: int, max_calls_per_hour: int, tier: str) -> None:
         self._cost_tracker = tracker
         self._daily_budget = daily_budget
