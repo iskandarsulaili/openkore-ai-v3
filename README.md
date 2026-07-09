@@ -9,6 +9,8 @@
 > **AI**, not *bypass*.
 
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord)](https://discord.gg/zHCKr3rbM)
+[![Sponsor](https://img.shields.io/badge/Sponsor-donate-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/iskandarsulaili)
+<iframe src="https://github.com/sponsors/iskandarsulaili/button" title="Sponsor iskandarsulaili" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
 [![GitHub stars](https://img.shields.io/github/stars/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/issues)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
