@@ -59,6 +59,20 @@ class SidecarSettings(BaseSettings):
     llm_timeout_seconds: float = Field(default=45.0, ge=1.0, le=600.0)
     llm_max_retries: int = Field(default=2, ge=0, le=8)
     llm_prompt_max_chars: int = Field(default=32000, ge=1024, le=200000)
+    # ── Cost Control ──────────────────────────────────────────────
+    llm_cost_tier: str = "standard"  # off | economy | standard | premium
+    llm_daily_budget_tokens: int = Field(default=100000, ge=0, le=10000000)
+    llm_monthly_budget_usd: float = Field(default=10.0, ge=0.0, le=1000.0)
+    llm_max_calls_per_hour: int = Field(default=30, ge=0, le=1000)
+    llm_skip_if_heuristic: bool = True
+    llm_heuristic_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    llm_reflex_always_first: bool = True
+    llm_cost_tier_pricing: str = '{"off":0,"economy":0.15,"standard":0.30,"premium":0.60}'  # $/M tokens
+
+    # ── API Authentication ────────────────────────────────────────
+    api_auth_enabled: bool = False
+    api_auth_token: str = ""
+
 
     provider_ollama_enabled: bool = True
     provider_ollama_base_url: str = "http://127.0.0.1:11434"

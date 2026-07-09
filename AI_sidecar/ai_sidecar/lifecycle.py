@@ -489,6 +489,8 @@ class RuntimeState:
     macro_compiler: MacroCompiler
     macro_publisher: MacroPublisher
     memory: MemoryRetrievalService
+    heuristic_service: HeuristicService | None = None
+    cost_tracker: CostTracker | None = None
     audit_trail: AuditTrail | None
     repositories: SidecarRepositories | None
     normalizer_bus: NormalizerBus

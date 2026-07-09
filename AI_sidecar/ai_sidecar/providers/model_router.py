@@ -135,6 +135,29 @@ class ModelRouter:
 
     async def generate_with_fallback(self, *, request: PlannerModelRequest) -> tuple[PlannerModelResponse, RoutingDecision]:
         decision = self.decide(workload=request.task)
+        
+        # ── Cost gate ──────────────────────────────────────
+        _ct = getattr(self, '_cost_tracker', None)
+        if _ct is not None:
+            _allowed, _reason = _ct.check(
+                daily_budget_tokens=getattr(self, '_daily_budget', 100000),
+                max_calls_per_hour=getattr(self, '_max_calls_per_hour', 30),
+                tier=getattr(self, '_cost_tier', 'standard'),
+            )
+            if not _allowed:
+                logger.warning("cost_gate: %s", _reason)
+                decision.fallback_chain = []
+                return (
+                    PlannerModelResponse(
+                        ok=False, provider="cost_gate", model="",
+                        trace_id=request.trace_id, latency_ms=0.0,
+                        content=None, raw_text="",
+                        usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                        error=f"cost_gate:{_reason}",
+                    ),
+                    decision,
+                )
+
         if decision.selected_provider == "none":
             self._emit_route_metric(workload=request.task, provider="none", model="")
             return (
@@ -329,6 +352,12 @@ class ModelRouter:
                 rules=merged,
             )
             return self._policy
+
+    def set_cost_controls(self, *, tracker, daily_budget: int, max_calls_per_hour: int, tier: str) -> None:
+        self._cost_tracker = tracker
+        self._daily_budget = daily_budget
+        self._max_calls_per_hour = max_calls_per_hour
+        self._cost_tier = tier
 
     def current_policy(self) -> RoutePolicy:
         with self._lock:

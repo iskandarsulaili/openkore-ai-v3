@@ -34,6 +34,7 @@ from ai_sidecar.config import settings
 from ai_sidecar.lifecycle import create_runtime, start_fleet_sync_loop
 from ai_sidecar.logging_setup import configure_logging
 from ai_sidecar.observability import install_fastapi_tracing
+from ai_sidecar.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,30 @@ def install_request_validation_logging(app: FastAPI) -> None:
         return await request_validation_exception_handler(request, exc)
 
 
+import secrets
+from fastapi import HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
+
+# Auth token check middleware
+if settings.api_auth_enabled and settings.api_auth_token:
+    _api_token = settings.api_auth_token.encode("utf-8")
+
+    class _AuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: StarletteRequest, call_next):
+            # Skip auth for health endpoints
+            if request.url.path in ("/health/live", "/health/ready", "/v1/health/live", "/v1/health/ready"):
+                return await call_next(request)
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+            token = auth_header.removeprefix("Bearer ").encode("utf-8")
+            if not secrets.compare_digest(token, _api_token):
+                raise HTTPException(status_code=403, detail="Invalid API token")
+            return await call_next(request)
+
 def create_app() -> FastAPI:
     docs_url = "/docs" if settings.enable_docs else None
     redoc_url = "/redoc" if settings.enable_docs else None
@@ -153,7 +178,10 @@ def create_app() -> FastAPI:
     from ai_sidecar.api.routers.autonomy import router as autonomy_router, set_pdca_loop
 
     app.include_router(autonomy_router)
-    return app
+        if settings.api_auth_enabled and settings.api_auth_token:
+            from ai_sidecar.api.middleware import add_auth_middleware
+            add_auth_middleware(app)
+        return app
 
 
 app = create_app()
