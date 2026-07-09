@@ -16,6 +16,8 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
 [![Perl](https://img.shields.io/badge/Perl-5.38-blue?logo=perl)](https://perl.org)
 
+🌐 [Português](i18n/README-pt-BR.md) | [Tagalog](i18n/README-tl.md) | [日本語](i18n/README-ja.md) | [한국어](i18n/README-ko.md) | [ไทย](i18n/README-th.md) | [Indonesia](i18n/README-id.md) | [简体中文](i18n/README-zh-CN.md)
+
 ---
 
 ## What is this?
