@@ -325,7 +325,7 @@ class PDCALoop:
                     _allowed, _reason = _ct.check(
                         daily_budget_tokens=getattr(_settings, "llm_daily_budget_tokens", 100000),
                         max_calls_per_hour=getattr(_settings, "llm_max_calls_per_hour", 30),
-                        tier=_tier,
+                        tier=_tier, bot_id=self._resolve_bot_id(),
                     )
                     if not _allowed:
                         logger.info("cost_gate[%s]: %s", horizon.value, _reason)
@@ -355,7 +355,7 @@ class PDCALoop:
                                     _signals["horizon"] = horizon.value
                         except Exception:
                             pass
-                        _hc = getattr(_hs, "confidence_for", lambda h, **kw: 0.0)(horizon.value, signals=_signals)
+                        _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=self._resolve_bot_id())
                         _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
                         if _hc >= _threshold:
                             logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)

@@ -143,6 +143,7 @@ class ModelRouter:
                 daily_budget_tokens=getattr(self, '_daily_budget', 100000),
                 max_calls_per_hour=getattr(self, '_max_calls_per_hour', 30),
                 tier=getattr(self, '_cost_tier', 'standard'),
+                bot_id=request.bot_id if hasattr(request, 'bot_id') else 'default',
             )
             if not _allowed:
                 logger.warning("cost_gate: %s", _reason)

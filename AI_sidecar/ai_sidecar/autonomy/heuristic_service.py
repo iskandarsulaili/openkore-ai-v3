@@ -35,6 +35,7 @@ class HeuristicService:
     """
 
     def __init__(self):
+        self._last_assessment: dict[str, HeuristicAssessment] = {}
         self._domain_weights: dict[str, float] = {
             "recovery": 0.15,
             "grind": 0.30,
@@ -135,18 +136,23 @@ class HeuristicService:
             top_domain=top_domain,
             signals=dict(signals),
         )
-        self._last_assessment = assessment
+        bot_id = signals.get("bot_id", "default")
+        if not hasattr(self, '_last_assessment'):
+            object.__setattr__(self, '_last_assessment', {})
+        self._last_assessment[bot_id] = assessment
         return assessment
 
-    def confidence_for(self, horizon: str, signals: dict | None = None) -> float:
+    def confidence_for(self, horizon: str, signals: dict | None = None, bot_id: str = "default") -> float:
         """Called by PDCA loop to check if heuristic can replace LLM for this horizon.
         
-        Returns the confidence from the last assessment, or 0.0 if no signals available.
-        The PDCA loop calls this every cycle to decide whether to skip the LLM.
+        Returns the confidence from the last assessment for this bot_id.
         """
         if signals is not None:
-            result = self.assess(signals)
+            sigs = dict(signals)
+            sigs.setdefault("bot_id", bot_id)
+            result = self.assess(sigs)
             return result.confidence
-        if hasattr(self, '_last_assessment') and self._last_assessment is not None:
-            return self._last_assessment.confidence
+        last = self._last_assessment.get(bot_id) if hasattr(self, '_last_assessment') else None
+        if last is not None:
+            return last.confidence
         return 0.0

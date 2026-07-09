@@ -5230,7 +5230,7 @@ def create_runtime() -> RuntimeState:
     runtime.crew_manager = crew_manager
 
     runtime.heuristic_service = HeuristicService()
-    runtime.cost_tracker = CostTracker()
+    runtime.cost_tracker = CostTracker(per_bot_budget=True)
     # Restore persisted budget state
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))

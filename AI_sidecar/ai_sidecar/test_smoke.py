@@ -50,7 +50,7 @@ def test_imports():
     ct = CostTracker()
     allowed, reason = ct.check(daily_budget_tokens=100000, max_calls_per_hour=30, tier="standard")
     assert allowed
-    ct.record_call(500, model="deepseek-v4-flash", tier="standard")
+    ct.record_call(500, model="deepseek-v4-flash", tier="standard", bot_id="test")
     assert ct.snapshot().daily_tokens_used == 500
     print(f"  CostTracker: daily_tokens={ct.snapshot().daily_tokens_used}")
     

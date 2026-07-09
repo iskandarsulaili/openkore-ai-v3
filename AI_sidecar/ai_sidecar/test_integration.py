@@ -69,7 +69,7 @@ def test_cost_tracker_persist():
     from ai_sidecar.cost_tracker import CostTracker
     import tempfile, os
     ct = CostTracker()
-    ct.record_call(5000, model="test", tier="standard")
+    ct.record_call(5000, model="test", tier="standard", bot_id="test")
     tmp = tempfile.mktemp(suffix=".db")
     ct.persist(tmp)
     ct2 = CostTracker()
@@ -105,12 +105,57 @@ def test_behavior_profiles():
     print(f"  profiles: {len(profiles)} all have can_handle()")
 
 
+def test_server_boot():
+    """Boot the server, verify health, then shut down. Requires uvicorn."""
+    import subprocess, sys, time, json, http.client
+    # Start server in background
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "ai_sidecar.app"],
+        cwd=str(_HERE.parent),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        # Wait up to 60s for health endpoint
+        deadline = time.monotonic() + 60
+        ok = False
+        while time.monotonic() < deadline:
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", 18081, timeout=3)
+                conn.request("GET", "/health/live")
+                resp = conn.getresponse()
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode())
+                    if data.get("status") == "live":
+                        ok = True
+                    conn.close()
+                    break
+                conn.close()
+            except Exception:
+                pass
+            time.sleep(3)
+        assert ok, "Server did not become ready in 60s"
+        # Verify ready endpoint
+        conn = http.client.HTTPConnection("127.0.0.1", 18081, timeout=5)
+        conn.request("GET", "/health/ready")
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode())
+        conn.close()
+        assert "pdca_running" in data
+        print(f"  Server boot: live, pdca={data['pdca_running']}, bots={data['bots_registered']}")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+    print("  Server shutdown: clean")
+
 if __name__ == "__main__":
     print("=" * 50)
     print("Integration Tests")
     print("=" * 50)
 
-    tests = [
+    tests = [("Server boot", test_server_boot),
         ("Cost tracker persist", test_cost_tracker_persist),
         ("Reflex YAML rules", test_reflex_yaml_rules),
         ("Behavior profiles", test_behavior_profiles),
