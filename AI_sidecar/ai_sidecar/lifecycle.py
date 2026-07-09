@@ -4220,7 +4220,7 @@ class RuntimeState:
                         return fallback_bot_id
         except Exception:
             logger.exception("readiness_bot_resolution_failed", extra={"event": "readiness_bot_resolution_failed"})
-        return "openkoreai"
+        return "default"
 
     def readiness_indicators(self) -> dict[str, object]:
         now = datetime.now(UTC)

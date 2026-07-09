@@ -20,8 +20,9 @@ from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 
 logger = logging.getLogger(__name__)
 
-def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
+def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
     """Emit heuristic actions to the action queue.
+    Uses the first registered bot if none specified.
     Returns number of actions queued."""
     import logging
     _log = logging.getLogger(__name__)
@@ -29,6 +30,27 @@ def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
         hs = getattr(runtime_state, "heuristic_service", None)
         if hs is None:
             return 0
+        # Resolve bot_id from runtime if not specified
+        if not bot_id:
+            br = getattr(runtime_state, "bot_registry", None)
+            if br is not None:
+                try:
+                    bots = br.list_bots()
+                    if bots:
+                        bot_id = str(bots[0])
+                except Exception:
+                    pass
+        if not bot_id:
+            snapshots = getattr(runtime_state, "snapshot_cache", None)
+            if snapshots is not None:
+                try:
+                    latest = snapshots.latest()
+                    if latest and isinstance(latest, dict) and latest.get("bot_id"):
+                        bot_id = str(latest["bot_id"])
+                except Exception:
+                    pass
+        bot_id = bot_id or "default"
+        
         # Build signals from available state
         signals = {
             "hp_ratio": 1.0, "sp_ratio": 1.0,
@@ -57,23 +79,24 @@ def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
         aq = getattr(runtime_state, "action_queue", None)
         if aq is None:
             return 0
-        from ai_sidecar.contracts.actions import ActionProposal, ActionStatus, ActionPriorityTier
-        from ai_sidecar.contracts.common import ContractMeta
+        from datetime import UTC, datetime, timedelta as _td
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
         queued = 0
         for ha in assessment.actions:
             import time as _t
-            from ai_sidecar.contracts.common import ContractMeta as _CM
+            _now = datetime.now(UTC)
             proposal = ActionProposal(
-                meta=_CM(bot_id="openkoreai"),
                 action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
-                kind=ha.kind, command=ha.command,
+                kind=ha.kind, command=ha.command or "ai auto",
                 priority_tier=ActionPriorityTier.tactical,
-                bot_id="openkoreai", reason=ha.reason,
-                source="heuristic",
-                metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon},
+                source="planner",
+                created_at=_now,
+                expires_at=_now + _td(seconds=30),
+                idempotency_key=f"heuristic_{horizon}_{ha.domain}",
+                metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon, "reason": ha.reason},
             )
             try:
-                aq.enqueue("openkoreai", proposal)
+                aq.enqueue(bot_id, proposal)
                 queued += 1
             except Exception:
                 _log.exception("heuristic_action_push_failed")
@@ -83,6 +106,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
     except Exception:
         _log.exception("heuristic_action_emission_failed")
     return 0
+
 
 
 _STARTUP_GATE_MIN_EVENTS = 2
@@ -149,7 +173,7 @@ class PDCALoop:
         self._breaker_bot_id = "pdca"
         self._breaker_key = "queue.default"
         self._breaker_family = "queue"
-        self._default_bot_id = "openkoreai"
+        self._default_bot_id = "default"
         self._last_bot_id: str | None = None
         self._startup_gate_defaults = {
             "grace_s": max(20.0, self._policy_float("reconnect_grace_s", 20.0)),

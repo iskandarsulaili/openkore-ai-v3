@@ -43,7 +43,7 @@ class PlanExecutor:
         bot_id = str(
             getattr(plan, "bot_id", None)
             or getattr(goal_state, "bot_id", None)
-            or "openkoreai"
+            or "default"
         )
 
         try:
