@@ -99,3 +99,47 @@ class CostTracker:
             self._daily_calls = 0
             self._day_start = now
             logger.info("cost_tracker: daily budget reset")
+
+    def persist(self, sqlite_path: str | None = None) -> None:
+        """Persist current budget state to SQLite."""
+        if not sqlite_path:
+            return
+        try:
+            import sqlite3
+            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            db.execute("CREATE TABLE IF NOT EXISTS cost_budget (key TEXT PRIMARY KEY, value INTEGER, updated_at REAL)")
+            db.execute(
+                "INSERT OR REPLACE INTO cost_budget (key, value, updated_at) VALUES (?, ?, ?)",
+                ("daily_tokens", self._daily_tokens, time.time()),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO cost_budget (key, value, updated_at) VALUES (?, ?, ?)",
+                ("daily_calls", self._daily_calls, time.time()),
+            )
+            db.commit()
+            db.close()
+        except Exception:
+            logger.warning("cost_tracker_persist_failed")
+
+    def restore(self, sqlite_path: str | None = None) -> None:
+        """Restore budget state from SQLite on startup."""
+        if not sqlite_path:
+            return
+        try:
+            import sqlite3
+            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            cursor = db.execute("SELECT key, value, updated_at FROM cost_budget")
+            for key, value, updated_at in cursor.fetchall():
+                now = time.time()
+                # Only restore if within same day
+                if now - updated_at < 86400:
+                    if key == "daily_tokens":
+                        self._daily_tokens = int(value)
+                    elif key == "daily_calls":
+                        self._daily_calls = int(value)
+                    self._day_start = int(updated_at)
+            db.close()
+            if self._daily_tokens > 0:
+                logger.info("cost_tracker: restored budget state (tokens=%d, calls=%d)", self._daily_tokens, self._daily_calls)
+        except Exception:
+            logger.warning("cost_tracker_restore_failed")

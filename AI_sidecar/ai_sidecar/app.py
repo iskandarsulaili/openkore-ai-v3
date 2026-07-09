@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -46,10 +47,17 @@ async def lifespan(app: FastAPI):
     # Validate auth config at startup
     if settings.api_auth_enabled:
         if not settings.api_auth_token:
-            import secrets
             _generated = secrets.token_urlsafe(32)
             settings.api_auth_token = _generated
-            logger.warning("api_auth_token not set — generated: %s", _generated)
+            # Write token to file so the Perl bridge can read it
+            _token_path = Path.cwd() / "control" / "sidecar_auth_token.txt"
+            try:
+                _token_path.parent.mkdir(parents=True, exist_ok=True)
+                _token_path.write_text(_generated)
+                logger.info("api_auth_token written to %%s for bridge plugin", _token_path)
+            except Exception:
+                pass
+            logger.warning("api_auth_token not set — generated: %%s", _generated)
         if not settings.api_auth_token:
             logger.warning("api_auth_enabled=True but api_auth_token is empty — auth will reject all requests")
         elif len(settings.api_auth_token) < 8:
@@ -131,6 +139,7 @@ def install_request_validation_logging(app: FastAPI) -> None:
 
 
 import secrets
+from pathlib import Path
 from fastapi import HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware

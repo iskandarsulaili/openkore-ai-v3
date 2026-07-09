@@ -5231,7 +5231,14 @@ def create_runtime() -> RuntimeState:
 
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker()
+    # Restore persisted budget state
+    if sqlite_path is not None:
+        runtime.cost_tracker.restore(str(sqlite_path))
 
+    # Persist cost tracker state
+    if runtime.cost_tracker and runtime.sqlite_path:
+        runtime.cost_tracker.persist(str(runtime.sqlite_path))
+    
     runtime._audit(
         level="warning" if persistence_degraded else "info",
         event_type="runtime_initialized",

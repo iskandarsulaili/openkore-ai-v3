@@ -19,21 +19,24 @@ _OPEN_PATHS: frozenset[str] = frozenset({
     "/docs/oauth2-redirect",
 })
 
-_AUTH_TOKEN: bytes | None = None
-if settings.api_auth_enabled and settings.api_auth_token:
-    _AUTH_TOKEN = settings.api_auth_token.encode("utf-8")
+def _get_auth_token() -> bytes | None:
+    """Read auth token from settings at call time, not import time."""
+    if settings.api_auth_enabled and settings.api_auth_token:
+        return settings.api_auth_token.encode("utf-8")
+    return None
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if not _AUTH_TOKEN or request.url.path in _OPEN_PATHS:
+        token_bytes = _get_auth_token()
+        if not token_bytes or request.url.path in _OPEN_PATHS:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})
         token = auth_header.removeprefix("Bearer ").encode("utf-8")
-        if not secrets.compare_digest(token, _AUTH_TOKEN):
+        if not secrets.compare_digest(token, token_bytes):
             return JSONResponse(status_code=403, content={"detail": "Invalid API token"})
 
         return await call_next(request)
