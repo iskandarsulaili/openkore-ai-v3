@@ -3,11 +3,12 @@
 # openkore-ai-v3 — Start Script for Multi-User Multi-Char Production Stack
 # ============================================================================
 # Usage:
-#   ./start.sh                 Start sidecar + all 3 bots
+#   ./start.sh                 Start sidecar + all 3 bots + tail all logs
 #   ./start.sh sidecar         Start sidecar only
 #   ./start.sh bot <name>      Start one bot by profile name
 #   ./start.sh stop            Kill all processes
 #   ./start.sh status          Show status of all processes
+#   ./start.sh tail            Tail logs of running processes
 # ============================================================================
 set -euo pipefail
 
@@ -18,13 +19,10 @@ SIDECAR_LOG="$SCRIPT_DIR/logs/sidecar.log"
 BOT_LOGS="$SCRIPT_DIR/logs"
 PID_FILE="$SCRIPT_DIR/.openkore-pids"
 
-# Bot profiles: master=server, each gets a separate control dir
+# Bot profiles
 declare -A BOT_MASTER BOT_USER BOT_PASS BOT_CHAR
-
 BOT_NAMES=("kicapmasin2" "kicapmasin" "kicapmasin3")
 
-# Profile configurations (no secrets in git — these are set locally)
-# Edit this block with your credentials before first run
 BOT_MASTER["kicapmasin2"]="Asgards Glory"
 BOT_USER["kicapmasin2"]="kicapmasin2"
 BOT_PASS["kicapmasin2"]="sedap888"
@@ -47,28 +45,20 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*"; }
+label() { echo -e "\n${BOLD}$1${NC}\n"; }
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
-
-_cleanup() {
-    local exit_code=$?
-    if [ -f "$PID_FILE" ]; then
-        while IFS= read -r pid; do
-            [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
-    fi
-    info "Cleanup done"
-    exit $exit_code
-}
 
 _save_pid() {
     echo "$1" >> "$PID_FILE"
@@ -127,25 +117,22 @@ start_bot() {
 
     if [ ! -d "$profile_dir" ]; then
         err "Profile not found: $profile_dir"
-        err "Run: mkdir -p $profile_dir/control && cp control/config.txt $profile_dir/control/"
         return 1
     fi
 
-    # Ensure config has credentials
+    # Write credentials to config
     local cfg="$profile_dir/control/config.txt"
     if [ -f "$cfg" ]; then
         local master="${BOT_MASTER[$name]:-}"
         local user="${BOT_USER[$name]:-}"
         local pass="${BOT_PASS[$name]:-}"
         local char="${BOT_CHAR[$name]:-}"
-
         if [ -n "$master" ]; then
-            # Write credentials to config
             python3 << EOF
-cfg = open("$cfg").readlines()
+cfg_lines = open("$cfg").readlines()
 settings = {"master": "master $master", "server": "server 0", "username": "username $user", "password": "password $pass", "char": "char $char"}
 new = []
-for line in cfg:
+for line in cfg_lines:
     key = line.strip().split()[0] if line.strip() and not line.strip().startswith('#') else None
     new.append(settings.get(key, line.rstrip()) + '\n')
 open("$cfg", 'w').writelines(new)
@@ -153,7 +140,7 @@ EOF
         fi
     fi
 
-    info "Starting bot: $name -> $log_file"
+    info "Starting bot: $name"
     cd "$SCRIPT_DIR"
     nohup perl -I src openkore.pl --control="profiles/$name/control" > "$log_file" 2>&1 &
     local pid=$!
@@ -163,19 +150,13 @@ EOF
 }
 
 stop_all() {
-    if [ ! -f "$PID_FILE" ]; then
-        # Try pkill as fallback
-        pkill -f "openkore.pl" 2>/dev/null || true
-        pkill -f "ai_sidecar.app" 2>/dev/null || true
-        ok "Stopped all processes (via pkill)"
-        return 0
-    fi
     info "Stopping all processes..."
-    while IFS= read -r pid; do
-        [ -n "$pid" ] && kill "$pid" 2>/dev/null && ok "Stopped PID $pid" || true
-    done < "$PID_FILE"
-    rm -f "$PID_FILE"
-    # Ensure no stragglers
+    if [ -f "$PID_FILE" ]; then
+        while IFS= read -r pid; do
+            [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+        done < "$PID_FILE"
+        rm -f "$PID_FILE"
+    fi
     pkill -f "openkore.pl" 2>/dev/null || true
     pkill -f "ai_sidecar.app" 2>/dev/null || true
     ok "All processes stopped"
@@ -202,38 +183,111 @@ except: print('parse error')
         err "Sidecar    STOPPED"
     fi
 
-    # Bots
     for name in "${BOT_NAMES[@]}"; do
         local log="$BOT_LOGS/$name.log"
         if ps aux | grep -v grep | grep -q "openkore.pl.*$name"; then
-            # Check if connected
-            local connected=""
-            if [ -f "$log" ]; then
-                if tail -20 "$log" | grep -q "Connected to Map Server"; then
-                    connected="${GREEN}[IN-GAME]${NC}"
-                elif tail -20 "$log" | grep -q "Connecting to"; then
-                    connected="${YELLOW}[CONNECTING]${NC}"
-                else
-                    connected="${YELLOW}[STARTING]${NC}"
-                fi
+            local status="${YELLOW}[STARTING]${NC}"
+            if [ -f "$log" ] && tail -20 "$log" 2>/dev/null | grep -q "Connected to Map Server"; then
+                status="${GREEN}[IN-GAME]${NC}"
             fi
-            echo -e "  ${GREEN}RUNNING${NC}  Bot $name  $(ps aux | grep "openkore.pl.*$name" | grep -v grep | awk '{print "PID="$2}')  $connected"
+            local pid=$(ps aux | grep "openkore.pl.*$name" | grep -v grep | awk '{print $2}')
+            echo -e "  ${GREEN}RUNNING${NC}  Bot $name  PID=$pid  $status"
         else
             echo -e "  ${RED}STOPPED${NC}  Bot $name"
         fi
     done
+    echo ""
+    echo "Logs: $BOT_LOGS/"
+    echo ""
+}
 
+# ------------------------------------------------------------------
+# Console Viewer — tails all logs with color-coded prefixed labels
+# ------------------------------------------------------------------
+
+_tail_all() {
+    local log_files=()
+    
+    # Sidecar log
+    if [ -f "$SIDECAR_LOG" ]; then
+        log_files+=("$SIDECAR_LOG")
+    fi
+    
+    # Bot logs
+    for name in "${BOT_NAMES[@]}"; do
+        local lf="$BOT_LOGS/$name.log"
+        if [ -f "$lf" ]; then
+            log_files+=("$lf")
+        fi
+    done
+
+    if [ ${#log_files[@]} -eq 0 ]; then
+        warn "No log files found yet — waiting for output..."
+        sleep 3
+        _tail_all
+        return
+    fi
+
+    # Build a multi-tail command with labeled prefixes
+    # Use different colors per source
+    local colors=("${CYAN}" "${GREEN}" "${YELLOW}" "${MAGENTA}")
+    local labels=("SIDECAR" "BOT:kicapmasin2" "BOT:kicapmasin" "BOT:kicapmasin3")
+    
+    local pid_list=""
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    
+    info "Tailing all logs (Ctrl+C to stop)..."
     echo ""
-    echo "Logs: $SCRIPT_DIR/logs/"
-    echo "PID file: $PID_FILE"
-    echo ""
+    
+    # Trap Ctrl+C to kill tails and clean up
+    local tail_cleanup_called=0
+    _tail_cleanup() {
+        [ "$tail_cleanup_called" = "1" ] && return
+        tail_cleanup_called=1
+        echo ""
+        info "Shutting down..."
+        # Kill the tail processes
+        for tp in $pid_list; do
+            kill "$tp" 2>/dev/null || true
+        done
+        rm -rf "$temp_dir"
+        # Stop all processes
+        stop_all
+        exit 0
+    }
+    trap _tail_cleanup SIGINT SIGTERM
+
+    # Start a tail for each log, each writes to a named pipe with a label prefix
+    for i in "${!log_files[@]}"; do
+        local lf="${log_files[$i]}"
+        local color="${colors[$i]:-${NC}}"
+        local label="${labels[$i]:-LOG}"
+        
+        # Create a named pipe for this tail
+        local fifo="$temp_dir/tail_$i"
+        mkfifo "$fifo"
+        
+        # Tail the file and prefix each line with color + label
+        (
+            tail -n 0 -f "$lf" 2>/dev/null | while IFS= read -r line; do
+                echo -e "${color}[${label}]${NC} ${line}"
+            done
+        ) > "$fifo" &
+        pid_list="$pid_list $!"
+        
+        # Read from the fifo and display
+        cat "$fifo" &
+        pid_list="$pid_list $!"
+    done
+
+    # Wait for any child to exit (Ctrl+C triggers the trap)
+    wait
 }
 
 # ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
-
-trap _cleanup SIGINT SIGTERM EXIT
 
 _setup_env
 
@@ -241,6 +295,7 @@ case "${1:-all}" in
     sidecar)
         start_sidecar
         show_status
+        _tail_all
         ;;
     bot)
         if [ -z "${2:-}" ]; then
@@ -250,6 +305,7 @@ case "${1:-all}" in
         fi
         start_bot "$2"
         show_status
+        _tail_all
         ;;
     stop)
         stop_all
@@ -257,24 +313,37 @@ case "${1:-all}" in
     status)
         show_status
         ;;
+    tail)
+        _tail_all
+        ;;
     all|start)
-        info "Starting full stack..."
+        label "OPENKORE AI V3 — Starting Full Stack"
+        echo -e "  Sidecar: port ${CYAN}$SIDECAR_PORT${NC}"
+        echo -e "  Bots:    ${GREEN}${BOT_NAMES[*]}${NC}"
+        echo ""
+
         start_sidecar
         for name in "${BOT_NAMES[@]}"; do
             start_bot "$name"
-            sleep 5  # Stagger bot startups to avoid connection storms
+            sleep 3
         done
+
         show_status
-        ok "All systems started. Run '$0 status' to check, '$0 stop' to stop."
+        echo -e "${GREEN}All systems started. Streaming console output below...${NC}"
+        echo -e "${YELLOW}Press Ctrl+C to stop everything.${NC}"
+        echo ""
+        sleep 2
+        _tail_all
         ;;
     *)
-        echo "Usage: $0 {all|sidecar|bot <name>|stop|status}"
+        echo "Usage: $0 {all|sidecar|bot <name>|stop|status|tail}"
         echo ""
-        echo "  all              Start sidecar + all bots"
-        echo "  sidecar          Start sidecar only"
-        echo "  bot <name>       Start one bot (${BOT_NAMES[*]})"
+        echo "  all              Start sidecar + all bots + tail logs"
+        echo "  sidecar          Start sidecar only + tail"
+        echo "  bot <name>       Start one bot + tail"
         echo "  stop             Stop all processes"
         echo "  status           Show system status"
+        echo "  tail             Tail logs of running processes"
         exit 1
         ;;
 esac
