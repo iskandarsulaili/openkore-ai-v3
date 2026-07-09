@@ -408,6 +408,36 @@ class PDCALoop:
                 horizon=horizon,
                 replan_reasons=replan_reasons,
             )
+            
+            # ── Shadow mode: compare LLM decision vs heuristic ──
+            if goal_state is not None and hasattr(self._runtime, "ml_shadow") and self._runtime.ml_shadow is not None:
+                try:
+                    _hs = getattr(self._runtime, "heuristic_service", None)
+                    if _hs is not None:
+                        _sigs = {}
+                        if latest_snapshot and isinstance(latest_snapshot, dict):
+                            v = latest_snapshot.get("vitals") or {}
+                            _sigs["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                            c = latest_snapshot.get("combat") or {}
+                            _sigs["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                            _sigs["map_known"] = bool(latest_snapshot.get("map_known", False))
+                        _sigs["bot_id"] = decision_meta.bot_id
+                        _sigs["horizon"] = horizon.value
+                        _h_assessment = _hs.assess(_sigs)
+                        _llm_goal = str(getattr(goal_state, "selected_goal", "") or "")
+                        _llm_obj = str(getattr(getattr(goal_state, "selected_goal", None), "objective", "") or "")
+                        _h_action = _h_assessment.actions[0].command if _h_assessment.actions else "none"
+                        self._runtime.ml_shadow.compare(
+                            bot_id=decision_meta.bot_id, trace_id=f"pdca_{horizon.value}",
+                            family=__import__("ai_sidecar.contracts.ml_subconscious", fromlist=["ModelFamily"]).ModelFamily.heuristic_decision,
+                            model_version="heuristic_v1",
+                            planner_choice={"goal": _llm_goal, "objective": _llm_obj},
+                            recommendation={"action": _h_action, "top_domain": _h_assessment.top_domain},
+                            confidence=_h_assessment.confidence,
+                        )
+                except Exception:
+                    logger.exception("shadow_mode_compare_failed")
+            
             if goal_state is not None:
                 selected_goal = goal_state.selected_goal.goal_key.value
                 objective = goal_state.selected_goal.objective

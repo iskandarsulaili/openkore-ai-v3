@@ -33,6 +33,9 @@ class ShadowModeEvaluator:
         elif family == ModelFamily.risk_anomaly_detector:
             planned = str(planner_choice.get("risk_label") or planner_choice.get("anomaly") or "normal")
             predicted = str(recommendation.get("risk_label") or "normal")
+        elif family == ModelFamily.heuristic_decision:
+            planned = str(planner_choice.get("goal") or "")
+            predicted = str(recommendation.get("action") or recommendation.get("top_domain") or "")
         else:
             planned = str(planner_choice.get("memory_id") or planner_choice.get("top_memory") or "")
             predicted = str(recommendation.get("top_memory") or "")
