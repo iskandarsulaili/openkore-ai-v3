@@ -170,6 +170,8 @@ from ai_sidecar.runtime.latency_router import LatencyRouter
 from ai_sidecar.runtime.snapshot_cache import SnapshotCache
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
+from ai_sidecar.autonomy.heuristic_service import HeuristicService
+from ai_sidecar.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
 fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
@@ -5227,6 +5229,9 @@ def create_runtime() -> RuntimeState:
     )
     runtime.crew_manager = crew_manager
 
+    runtime.heuristic_service = HeuristicService()
+    runtime.cost_tracker = CostTracker()
+
     runtime._audit(
         level="warning" if persistence_degraded else "info",
         event_type="runtime_initialized",
@@ -5266,7 +5271,7 @@ def create_runtime() -> RuntimeState:
     # Load reflex rules from YAML if available
     try:
             _count = runtime.reflex_engine.load_rules_from_yaml(
-                Path(settings.workspace_root or ".", "ai_sidecar", "reflex", "reflex_rules.yaml")
+                Path("ai_sidecar", "reflex", "reflex_rules.yaml")
             )
             if _count > 0:
                 logger.info("reflex_rules_yaml_loaded: %d rules from YAML", _count)
