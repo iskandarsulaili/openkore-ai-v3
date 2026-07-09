@@ -78,6 +78,7 @@ use AI;
 use Globals;
 use Misc;
 use Plugins;
+use Skill;
 use Utils;
 use Log qw(error message debug warning);
 use Data::Dumper;
@@ -895,7 +896,11 @@ sub getObstacleName {
 	}
 
 	if (defined $obstacle->{type} && !ref $obstacle->{type} && $obstacle->{type} ne '') {
-		return "Spell $obstacle->{type}" if $obstacle->{type} =~ /^\d+$/;
+		if ($obstacle->{type} =~ /^\d+$/) {
+			my $skill_name = eval { Skill->new(idn => $obstacle->{type})->getName() };
+			return $skill_name if defined $skill_name && $skill_name ne '' && $skill_name !~ /^Unknown(?: \d+)?$/;
+			return "Spell $obstacle->{type}";
+		}
 		return $obstacle->{type};
 	}
 
@@ -1193,17 +1198,58 @@ sub remove_prohibited_zone_from_cells {
 	}
 }
 
+## Purpose: Finds portal obstacle positions that are actually used by a route solution.
+## Args: `($solution)`.
+## Returns: A hashref keyed by `"x,y"` for portal cells present in the solution.
+## Notes: This lets portal avoidance stay active for ordinary movement while
+## exempting portals that are part of the planned route itself.
+sub get_route_portal_positions {
+	my ($solution) = @_;
+	return {} unless $solution && @{$solution};
+
+	my %solution_cells;
+	foreach my $node (@{$solution}) {
+		next unless $node && defined $node->{x} && defined $node->{y};
+		$solution_cells{"$node->{x},$node->{y}"} = 1;
+	}
+
+	my %portal_positions;
+	foreach my $obstacle_id (keys %obstaclesList) {
+		my $obstacle = $obstaclesList{$obstacle_id};
+		next unless $obstacle && $obstacle->{type} && $obstacle->{type} eq 'portal';
+		my $pos = get_actor_position($obstacle);
+		next unless $pos;
+		next unless $solution_cells{"$pos->{x},$pos->{y}"};
+		$portal_positions{"$pos->{x},$pos->{y}"} = 1;
+	}
+
+	return \%portal_positions;
+}
+
+## Purpose: Detects whether a route destination is itself a known portal cell.
+## Args: `($task)`.
+## Returns: `1` when the destination matches a portal source on the current map.
+## Notes: This is the safest early escape hatch for portal routes because it does
+## not depend on the route solution already being built.
+sub is_route_destination_portal {
+	my ($task) = @_;
+	return 0 unless $task && $field && $task->{dest} && $task->{dest}{pos};
+	return 1 if defined portalExists($field->baseName, $task->{dest}{pos});
+	return 0;
+}
+
 ## Purpose: Loosens prohibited cells around a route destination when needed.
-## Args: `($task, $prohibited_cells, $target_field)`.
+## Args: `($task, $prohibited_cells, $target_field, $solution)`.
 ## Returns: The original or filtered prohibited-cell hashref.
 ## Notes: This exists so route tasks can still finish at destinations such as portals
 ## while keeping danger scoring and all other obstacle penalties intact.
 sub filter_prohibited_cells_for_route_task {
-	my ($task, $prohibited_cells, $target_field) = @_;
+	my ($task, $prohibited_cells, $target_field, $solution) = @_;
 	return $prohibited_cells unless $task && $prohibited_cells && $target_field;
 	return $prohibited_cells unless $task->{dest} && $task->{dest}{pos};
 
 	my $dest = $task->{dest}{pos};
+	my $route_portal_positions = get_route_portal_positions($solution);
 	my @matching_portals = grep {
 		my $obstacle = $obstaclesList{$_};
 		my $match_dist = 7;
@@ -1239,11 +1285,33 @@ sub filter_prohibited_cells_for_route_task {
 		$needs_filter = 1;
 	}
 
-	return $prohibited_cells unless $needs_filter || ($destination_is_portal_route && @matching_portals);
-
+	my %portal_positions_to_clear = %{$route_portal_positions || {}};
 	foreach my $portal_id (@matching_portals) {
 		my $portal = $obstaclesList{$portal_id};
-		next unless $destination_is_portal_route;
+		next unless $portal && $portal->{pos_to};
+		my $portal_pos_key = "$portal->{pos_to}{x},$portal->{pos_to}{y}";
+		next unless $destination_is_portal_route || $portal_positions_to_clear{$portal_pos_key};
+		$portal_positions_to_clear{$portal_pos_key} = 1;
+	}
+
+	return $prohibited_cells unless $needs_filter || scalar keys %portal_positions_to_clear;
+
+	foreach my $portal_pos_key (keys %portal_positions_to_clear) {
+		my ($portal_x, $portal_y) = split /,/, $portal_pos_key, 2;
+		next unless defined $portal_x && defined $portal_y;
+
+		my $portal;
+		foreach my $obstacle_id (keys %obstaclesList) {
+			my $candidate = $obstaclesList{$obstacle_id};
+			next unless $candidate && $candidate->{type} && $candidate->{type} eq 'portal';
+			my $candidate_pos = get_actor_position($candidate);
+			next unless $candidate_pos;
+			next unless $candidate_pos->{x} == $portal_x && $candidate_pos->{y} == $portal_y;
+			$portal = $candidate;
+			last;
+		}
+
+		next unless $portal && $portal->{pos_to};
 		remove_prohibited_zone_from_cells(\%filtered, $target_field, $portal->{pos_to}, $portal->{prohibited_dist});
 	}
 
@@ -1269,18 +1337,23 @@ sub on_route_step {
 	$max_route_step = $max_index if $max_route_step > $max_index;
 	return if $max_route_step < 1;
 
+	my $route_portal_positions = get_route_portal_positions($args->{solution});
 	my $prohibited_cells = get_cached_prohibited_cells();
-	$prohibited_cells = filter_prohibited_cells_for_route_task($args->{task}, $prohibited_cells, $field);
+	$prohibited_cells = filter_prohibited_cells_for_route_task($args->{task}, $prohibited_cells, $field, $args->{solution});
 	my $danger_cells = get_cached_danger_cells();
 	my ($best_step, $best_score) = choose_best_route_step($args->{current_calc_pos}, $args->{solution}, $max_route_step, $prohibited_cells, $danger_cells);
 	if (!defined $best_step) {
+		if (scalar keys %{$route_portal_positions}) {
+			debug "[" . PLUGIN_NAME . "] No safe local route_step found, but the planned route uses a portal; keeping the current step selection.\n", 'route', 2;
+			return;
+		}
 		warning "[" . PLUGIN_NAME . "] No safe local route_step found; local client path would cross a prohibited cell. Requesting repath.\n";
 		$args->{task}{resetRoute} = 1;
 		return;
 	}
 
 	if ($best_step != $args->{route_step}) {
-		debug "[" . PLUGIN_NAME . "] route_step adjusted from $args->{route_step} to $best_step (danger score $best_score).\n", 'route';
+		debug "[" . PLUGIN_NAME . "] route_step adjusted from $args->{route_step} to $best_step (danger score $best_score).\n", 'route', 2;
 		$args->{route_step} = $best_step;
 	}
 }
@@ -1299,13 +1372,13 @@ sub add_obstacle {
 	return unless $pos;
 
 	if (exists $removed_obstacle_still_in_list{$actor->{ID}}) {
-		debug "[" . PLUGIN_NAME . "] Re-adding obstacle $actor after it returned to view.\n";
+		debug "[" . PLUGIN_NAME . "] Re-adding obstacle $actor after it returned to view.\n", 'route', 2;
 		remove_obstacle_contributions($actor->{ID}) if exists $obstaclesList{$actor->{ID}};
 		delete $obstaclesList{$actor->{ID}};
 		delete $removed_obstacle_still_in_list{$actor->{ID}};
 	}
 
-	debug "[" . PLUGIN_NAME . "] Adding obstacle $actor on location $pos->{x} $pos->{y}.\n";
+	debug "[" . PLUGIN_NAME . "] Adding obstacle $actor on location $pos->{x} $pos->{y}.\n", 'route', 2;
 
 	remove_obstacle_contributions($actor->{ID}) if exists $obstaclesList{$actor->{ID}};
 
@@ -1377,7 +1450,7 @@ sub move_obstacle {
 	my $pos = get_actor_position($actor);
 	return unless $pos;
 
-	debug "[" . PLUGIN_NAME . "] Moving obstacle $actor to $pos->{x} $pos->{y}.\n";
+	debug "[" . PLUGIN_NAME . "] Moving obstacle $actor to $pos->{x} $pos->{y}.\n", 'route', 2;
 
 	remove_obstacle_contributions($actor->{ID});
 
@@ -1405,9 +1478,9 @@ sub remove_obstacle {
 
 	if (($type eq 'monster' || $type eq 'player') && defined $reason && $reason eq 'disappeared') {
 		$removed_obstacle_still_in_list{$actor->{ID}} = 1;
-		debug "[" . PLUGIN_NAME . "] Keeping obstacle $actor cached after it moved out of sight.\n";
+		debug "[" . PLUGIN_NAME . "] Keeping obstacle $actor cached after it moved out of sight.\n", 'route', 2;
 	} else {
-		debug "[" . PLUGIN_NAME . "] Removing obstacle $actor from " . ($pos ? "$pos->{x} $pos->{y}" : 'unknown position') . ".\n";
+		debug "[" . PLUGIN_NAME . "] Removing obstacle $actor from " . ($pos ? "$pos->{x} $pos->{y}" : 'unknown position') . ".\n", 'route', 2;
 		remove_obstacle_contributions($actor->{ID});
 		delete $obstaclesList{$actor->{ID}};
 		delete $removed_obstacle_still_in_list{$actor->{ID}};
@@ -1457,6 +1530,14 @@ sub on_AI_pre_manual_drop_route_dest_near_Obstacle {
 		next unless $task->{isRandomWalk} || ($task->{isToLockMap} && $field->baseName eq $config{lockMap});
 		my $obstacle = is_there_an_obstacle_near_pos($task->{dest}{pos}, 2);
 		next unless $obstacle;
+		if ($obstacle->{type} && $obstacle->{type} eq 'portal' && is_route_destination_portal($task)) {
+			debug "[" . PLUGIN_NAME . "] Keeping route because destination $task->{dest}{pos}{x} $task->{dest}{pos}{y} is a known portal cell.\n", 'route', 2;
+			next;
+		}
+		if ($obstacle->{type} && $obstacle->{type} eq 'portal' && $obstacle->{pos_to}) {
+			my $route_portal_positions = get_route_portal_positions($task->{solution});
+			next if $route_portal_positions->{"$obstacle->{pos_to}{x},$obstacle->{pos_to}{y}"};
+		}
 		warning "[" . PLUGIN_NAME . "] Dropping current route because an obstacle appeared near its destination ($task->{dest}{pos}{x} $task->{dest}{pos}{y}) close to (" . ($obstacle->{name}) . ").\n";
 		AI::clear('move', 'route');
 		last;
@@ -1488,7 +1569,7 @@ sub on_AI_pre_manual_removed_obstacle_still_in_list {
 		my $target = Actor::get($obstacle_ID);
 		next OBSTACLE if $target;
 
-		debug "[" . PLUGIN_NAME . "] Removing cached obstacle $obstacle->{name} ($obstacle->{type}) from $obstacle->{pos_to}{x} $obstacle->{pos_to}{y}.\n";
+		debug "[" . PLUGIN_NAME . "] Removing cached obstacle $obstacle->{name} ($obstacle->{type}) from $obstacle->{pos_to}{x} $obstacle->{pos_to}{y}.\n", 'route', 2;
 		remove_obstacle_contributions($obstacle_ID);
 		delete $obstaclesList{$obstacle_ID};
 		delete $removed_obstacle_still_in_list{$obstacle_ID};

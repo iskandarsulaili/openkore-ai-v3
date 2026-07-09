@@ -6,7 +6,7 @@ use strict;
 
 use Modules 'register';
 use base 'Task::Teleport';
-use Globals qw(%config %timeout);
+use Globals qw(%config %timeout $field);
 use Translation qw(T TF);
 use Log qw(debug);
 
@@ -17,6 +17,7 @@ sub hookArgs {
 sub chatCommand {
 	my ($self) =  @_;
 	return undef if ($self->{actor}->{muted});
+	return undef if Misc::isReturnTeleportBlockedOnMap($field->baseName);
 	return $config{saveMap_warpChatCommand};
 }
 
@@ -25,6 +26,7 @@ sub getInventoryItem {
 	my ($self) =  @_;
 	delete $self->{teleportItemRule};
 	return undef unless ($self->{actor}->inventory->isReady());
+	return undef if Misc::isReturnTeleportBlockedOnMap($field->baseName);
 
 	my $item;
 	if ($config{teleportAuto_item2}) {
@@ -42,16 +44,19 @@ sub getInventoryItem {
 # return 1 if char have skill teleport at lv 2
 sub canUseSkill {
 	my ($self) =  @_;
-	return 0 if ($self->{actor}->{muted});
+	return 0 if $self->isTeleportSkillSuppressedByStatus;
+	return 0 if Misc::isTeleportSkillBlockedOnMap($field->baseName);
 	return 0 if defined $config{'teleportAuto_useItemForRespawn'} && $config{'teleportAuto_useItemForRespawn'} == 1;
 	return 0 if defined $config{'teleportAuto_useSkill'} && $config{'teleportAuto_useSkill'} == 0;
-	return ($self->{actor}->getSkillLevel(new Skill(handle => 'AL_TELEPORT')) == 2) ? 1 : 0;
+	return 0 unless ($self->{actor}->getSkillLevel(new Skill(handle => 'AL_TELEPORT')) == 2);
+	return $self->hasEnoughSPForTeleportSkill(2);
 }
 
 # return the number of items necessary to teleport
 sub isEquipNeededToTeleport {
 	my ($self) =  @_;
 	return 0 unless ($self->{actor}->inventory->isReady());
+	return 0 if Misc::isTeleportSkillBlockedOnMap($field->baseName);
 	return 0 if defined $config{'teleportAuto_useItemForRespawn'} && $config{'teleportAuto_useItemForRespawn'} == 1;
 	return Actor::Item::scanConfigAndCheck('teleportAuto_equip');
 }

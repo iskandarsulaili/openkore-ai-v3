@@ -88,6 +88,7 @@ sub iterate {
 	processAutoAttack() if AI::state() == AI::AUTO();
 	$char->processTask("route", onError => sub {
 		my ($task, $error) = @_;
+		AI::Attack::note_approach_route_failure($task, $error);
 		if (!($task->isa('Task::MapRoute') && $error->{code} == Task::MapRoute::TOO_MUCH_TIME())
 		 && !($task->isa('Task::Route') && $error->{code} == Task::Route::TOO_MUCH_TIME())) {
 			error("$error->{message}\n");
@@ -275,7 +276,8 @@ sub processActorAvoid {
 	my $max_dist = $config{clientSight} + 1;
 	my $max_to_delete = $max_dist*2;
 
-	if (timeOut($timeout{'avoidDistantActors'}{'time'}, 1)) {
+	my $avoid_distant_actors_timeout = $timeout{'avoidDistantActors'}{'timeout'} || 1;
+	if (timeOut($timeout{'avoidDistantActors'}{'time'}, $avoid_distant_actors_timeout)) {
 		$timeout{'avoidDistantActors'}{'time'} = time;
 		foreach my $list ($playersList, $monstersList, $npcsList, $petsList, $portalsList, $slavesList, $elementalsList) {
 			for my $actor (@$list) {
@@ -471,29 +473,30 @@ sub processDrop {
 }
 
 ##### PORTALREADD #####
-# Automatically adds the last missing portals to portals_lut
+# Automatically restores the last temporarily removed route source.
 sub processReAddMissingPortals {
 	return unless ($config{route_reAddMissingPortals});
 	return unless (@portals_lut_missed);
 	return unless (timeOut($portals_lut_missed[0]{time}, $timeout{ai_portal_re_add_missed}{timeout}));
 	my $portal = shift(@portals_lut_missed);
-	$portals_lut{$portal->{name}} = $portal->{portal};
-	debug "Re adding portal '".$portal->{name}."' to portals list.\n", "portalReAdd";
+	Misc::restoreSuspendedRouteSource($portal);
+	debug "Re adding route source '".$portal->{name}."' to portals list.\n", "portalReAdd";
 }
 
 ##### PORTALRECORD #####
 # Automatically record new unknown portals
 sub processPortalRecording {
-	return unless $config{portalRecord};
+	return unless ($config{portalRecord} || $config{portalUpdatePosition});
 	return unless $ai_v{portalTrace_mapChanged} && timeOut($ai_v{portalTrace_mapChanged}, 0.5);
 	delete $ai_v{portalTrace_mapChanged};
+	my $portal_update_candidate = delete $ai_v{portalUpdatePosition_candidate};
 
-	debug "Checking for new portals...\n", "portalRecord";
+	debug "[processPortalRecording] Checking for new portals...\n", "portalRecord";
 	my $first = 1;
 	my ($foundID, $smallDist, $dist);
 
 	if (!$field->baseName) {
-		debug "Field name not known - abort\n", "portalRecord";
+		debug "[processPortalRecording] Field name not known - abort\n", "portalRecord";
 		return;
 	}
 
@@ -516,14 +519,14 @@ sub processPortalRecording {
 		$sourceID = $portals_old{$foundID}{nameID};
 		%sourcePos = %{$portals_old{$foundID}{pos}};
 		$sourceIndex = $foundID;
-		debug "Source portal: $sourceMap ($sourcePos{x}, $sourcePos{y})\n", "portalRecord";
+		debug "[processPortalRecording] Source portal: $sourceMap ($sourcePos{x}, $sourcePos{y})\n", "portalRecord";
 	} else {
-		debug "No source portal found.\n", "portalRecord";
+		debug "[processPortalRecording] No source portal found.\n", "portalRecord";
 		return;
 	}
 
 	#if (defined portalExists($sourceMap, \%sourcePos)) {
-	#	debug "Source portal is already in portals.txt - abort\n", "portalRecord";
+	#	debug "[processPortalRecording] Source portal is already in portals.txt - abort\n", "portalRecord";
 	#	return;
 	#}
 
@@ -546,34 +549,40 @@ sub processPortalRecording {
 
 	# Sanity checks
 	if (!defined $foundID) {
-		debug "No destination portal found.\n", "portalRecord";
+		debug "[processPortalRecording] No destination portal found.\n", "portalRecord";
 		return;
 	}
+
+	my $destMap = $field->baseName;
+	my %arrivalPos = %{$char->{pos_to}};
+	if ($config{portalUpdatePosition}
+		&& _tryUpdateKnownPortalPositions($portal_update_candidate, $sourceMap, \%sourcePos, $destMap, \%arrivalPos)) {
+		return;
+	}
+
 	#if (defined portalExists($field->baseName, $portals{$foundID}{pos})) {
 	#	debug "Destination portal is already in portals.txt\n", "portalRecord";
 	#	last PORTALRECORD;
 	#}
 	if (defined portalExists2($sourceMap, \%sourcePos, $field->baseName, $portals{$foundID}{pos})) {
-		debug "This portal is already in portals.txt\n", "portalRecord";
+		debug "[processPortalRecording] This portal is already in portals.txt\n", "portalRecord";
 		return;
 	}
 
 	if (defined portalExistsAirship($sourceMap, \%sourcePos)) {
-		debug "This portal is already in portals_airships.txt\n", "portalRecord";
+		debug "[processPortalRecording] This portal is already in portals_airships.txt\n", "portalRecord";
 		return;
 	}
 
 
 	# And finally, record the portal information
-	my ($destMap, $destID, %destPos);
-	$destMap = $field->baseName;
+	my ($destID, %destPos);
 	$destID = $portals{$foundID}{nameID};
 	%destPos = %{$portals{$foundID}{pos}};
-	debug "Destination portal: $destMap ($destPos{x}, $destPos{y})\n", "portalRecord";
+	debug "[processPortalRecording] Destination portal: $destMap ($destPos{x}, $destPos{y})\n", "portalRecord";
 
 	$portals{$foundID}{name} = "$destMap -> $sourceMap";
 	$portals_old{$sourceIndex}{name} = "$sourceMap -> $destMap";
-
 
 	my ($ID, $destName);
 	my $recorded = 0;
@@ -581,60 +590,173 @@ sub processPortalRecording {
 	# Record information about destination portal
 	if ($config{portalRecord} > 1 &&
 	    !defined portalExists($destMap, $portals{$foundID}{pos})) {
-		$ID = "$destMap $destPos{x} $destPos{y}";
-		$portals_lut{$ID}{source}{map} = $destMap;
-		$portals_lut{$ID}{source}{x} = $destPos{x};
-		$portals_lut{$ID}{source}{y} = $destPos{y};
-		$destName = "$sourceMap $sourcePos{x} $sourcePos{y}";
-		$portals_lut{$ID}{dest}{$destName}{map} = $sourceMap;
-		$portals_lut{$ID}{dest}{$destName}{x} = $sourcePos{x};
-		$portals_lut{$ID}{dest}{$destName}{y} = $sourcePos{y};
+		if ($config{portalUpdatePosition}
+			&& _tryUpdateNearbyPortalRecordSibling($destMap, \%destPos, $sourceMap, \%sourcePos)) {
+			$recorded = 1;
+		} else {
+			$ID = "$destMap $destPos{x} $destPos{y}";
+			$portals_lut{$ID}{source}{map} = $destMap;
+			$portals_lut{$ID}{source}{x} = $destPos{x};
+			$portals_lut{$ID}{source}{y} = $destPos{y};
+			$destName = "$sourceMap $sourcePos{x} $sourcePos{y}";
+			$portals_lut{$ID}{dest}{$destName}{map} = $sourceMap;
+			$portals_lut{$ID}{dest}{$destName}{x} = $sourcePos{x};
+			$portals_lut{$ID}{dest}{$destName}{y} = $sourcePos{y};
 
-		message TF("Recorded new portal (destination): %s (%s, %s) -> %s (%s, %s)\n", $destMap, $destPos{x}, $destPos{y}, $sourceMap, $sourcePos{x}, $sourcePos{y}), "portalRecord";
-		updatePortalLUT(Settings::getTableFilename("portals.txt"),
+			my $updated = updatePortalLUT(Settings::getTableFilename("portals.txt"),
 				$destMap, $destPos{x}, $destPos{y},
 				$sourceMap, $sourcePos{x}, $sourcePos{y});
-		Plugins::callHook('portal_exist2', {
-			srcMap => $destMap,
-			srcx => $destPos{x},
-			srcy => $destPos{y},
-			dstMap => $sourceMap,
-			dstx => $sourcePos{x},
-			dsty => $sourcePos{y}
-		});
-		$recorded = 1;
+
+			if ($updated == 1) {
+				message TF("[processPortalRecording] Recorded new portal (destination): %s (%s, %s) -> %s (%s, %s)\n", $destMap, $destPos{x}, $destPos{y}, $sourceMap, $sourcePos{x}, $sourcePos{y}), "portalRecord";
+				Plugins::callHook('portal_exist2', {
+					srcMap => $destMap,
+					srcx => $destPos{x},
+					srcy => $destPos{y},
+					dstMap => $sourceMap,
+					dstx => $sourcePos{x},
+					dsty => $sourcePos{y}
+				});
+				$recorded = 1;
+			} elsif ($updated == 2) {
+				debug "[processPortalRecording] Destination portal already canonical in portals.txt\n", "portalRecord";
+			}
+		}
 	}
 
 	# Record information about the source portal
 	if (!defined portalExists($sourceMap, \%sourcePos)) {
-		$ID = "$sourceMap $sourcePos{x} $sourcePos{y}";
-		$portals_lut{$ID}{source}{map} = $sourceMap;
-		$portals_lut{$ID}{source}{x} = $sourcePos{x};
-		$portals_lut{$ID}{source}{y} = $sourcePos{y};
-		$destName = "$destMap $destPos{x} $destPos{y}";
-		$portals_lut{$ID}{dest}{$destName}{map} = $destMap;
-		$portals_lut{$ID}{dest}{$destName}{x} = $destPos{x};
-		$portals_lut{$ID}{dest}{$destName}{y} = $destPos{y};
+		if ($config{portalUpdatePosition}
+			&& _tryUpdateNearbyPortalRecordSibling($sourceMap, \%sourcePos, $destMap, $char->{pos})) {
+			$recorded = 1;
+		} else {
+			$ID = "$sourceMap $sourcePos{x} $sourcePos{y}";
+			$portals_lut{$ID}{source}{map} = $sourceMap;
+			$portals_lut{$ID}{source}{x} = $sourcePos{x};
+			$portals_lut{$ID}{source}{y} = $sourcePos{y};
+			$destName = "$destMap $destPos{x} $destPos{y}";
+			$portals_lut{$ID}{dest}{$destName}{map} = $destMap;
+			$portals_lut{$ID}{dest}{$destName}{x} = $destPos{x};
+			$portals_lut{$ID}{dest}{$destName}{y} = $destPos{y};
 
-		message TF("Recorded new portal (source): %s (%s, %s) -> %s (%s, %s)\n", $sourceMap, $sourcePos{x}, $sourcePos{y}, $destMap, $char->{pos}{x}, $char->{pos}{y}), "portalRecord";
-		updatePortalLUT(Settings::getTableFilename("portals.txt"),
+			my $updated = updatePortalLUT(Settings::getTableFilename("portals.txt"),
 				$sourceMap, $sourcePos{x}, $sourcePos{y},
 				$destMap, $char->{pos}{x}, $char->{pos}{y});
-		Plugins::callHook('portal_exist2', {
-			srcMap => $sourceMap,
-			srcx => $sourcePos{x},
-			srcy => $sourcePos{y},
-			dstMap => $destMap,
-			dstx => $char->{pos}{x},
-			dsty => $char->{pos}{y}
-		});
-		$recorded = 1;
+
+			if ($updated == 1) {
+				message TF("[processPortalRecording] Recorded new portal (source): %s (%s, %s) -> %s (%s, %s)\n", $sourceMap, $sourcePos{x}, $sourcePos{y}, $destMap, $char->{pos}{x}, $char->{pos}{y}), "portalRecord";
+				Plugins::callHook('portal_exist2', {
+					srcMap => $sourceMap,
+					srcx => $sourcePos{x},
+					srcy => $sourcePos{y},
+					dstMap => $destMap,
+					dstx => $char->{pos}{x},
+					dsty => $char->{pos}{y}
+				});
+				$recorded = 1;
+			} elsif ($updated == 2) {
+				debug "[processPortalRecording] Source portal already canonical in portals.txt\n", "portalRecord";
+			}
+		}
 	}
 
 	if ($recorded && $config{portalRecord_recompileAfter}) {
-		Settings::loadByRegexp(qr/portals/);
-		Misc::compilePortals() if Misc::compilePortals_check();
+		recompilePortals();
 	}
+}
+
+sub _tryUpdateKnownPortalPositions {
+	my ($candidate, $sourceMap, $sourcePos, $destMap, $destPos) = @_;
+	return 0 unless $candidate;
+	return 0 unless ($candidate->{oldSourceMap} eq $sourceMap && $candidate->{oldDestMap} eq $destMap);
+	return 1 if ($candidate->{oldSourceX} == $sourcePos->{x}
+		&& $candidate->{oldSourceY} == $sourcePos->{y}
+		&& $candidate->{oldDestX} == $destPos->{x}
+		&& $candidate->{oldDestY} == $destPos->{y});
+
+	my $updated = FileParsers::replacePortalLUT(
+		Settings::getTableFilename("portals.txt"),
+		$candidate->{oldSourceMap}, $candidate->{oldSourceX}, $candidate->{oldSourceY},
+		$candidate->{oldDestMap}, $candidate->{oldDestX}, $candidate->{oldDestY},
+		"$sourceMap $sourcePos->{x} $sourcePos->{y} $destMap $destPos->{x} $destPos->{y}",
+	);
+	return 0 unless $updated;
+	return 1 if $updated == 2;
+
+	warning TF("[processPortalRecording] Updated portal coordinates in portals.txt: %s (%s,%s) -> %s (%s,%s) became %s (%s,%s) -> %s (%s,%s)\n",
+		$candidate->{oldSourceMap}, $candidate->{oldSourceX}, $candidate->{oldSourceY},
+		$candidate->{oldDestMap}, $candidate->{oldDestX}, $candidate->{oldDestY},
+		$sourceMap, $sourcePos->{x}, $sourcePos->{y},
+		$destMap, $destPos->{x}, $destPos->{y}), "portalRecord";
+
+	recompilePortals();
+	return 1;
+}
+
+sub _tryUpdateNearbyPortalRecordSibling {
+	my ($sourceMap, $sourcePos, $destMap, $destPos) = @_;
+
+	my ($siblingSource, $siblingDest) = _findNearbyPortalRecordSibling($sourceMap, $sourcePos, $destMap, $destPos);
+	return 0 unless ($siblingSource && $siblingDest);
+
+	my $updated = FileParsers::replacePortalLUT(
+		Settings::getTableFilename("portals.txt"),
+		$siblingSource->{map}, $siblingSource->{x}, $siblingSource->{y},
+		$siblingDest->{map}, $siblingDest->{x}, $siblingDest->{y},
+		"$sourceMap $sourcePos->{x} $sourcePos->{y} $destMap $destPos->{x} $destPos->{y}",
+	);
+	return 0 unless $updated;
+	return 1 if $updated == 2;
+
+	warning TF("[processPortalRecording] Updated nearby portal sibling in portals.txt: %s (%s,%s) -> %s (%s,%s) became %s (%s,%s) -> %s (%s,%s)\n",
+		$siblingSource->{map}, $siblingSource->{x}, $siblingSource->{y},
+		$siblingDest->{map}, $siblingDest->{x}, $siblingDest->{y},
+		$sourceMap, $sourcePos->{x}, $sourcePos->{y},
+		$destMap, $destPos->{x}, $destPos->{y}), "portalRecord";
+
+	recompilePortals();
+	return 1;
+}
+
+sub _findNearbyPortalRecordSibling {
+	my ($sourceMap, $sourcePos, $destMap, $destPos) = @_;
+
+	my $bestSource;
+	my $bestDest;
+	my $bestScore;
+	my $maxSourceDrift = 2;
+	my $maxDestDrift = 6;
+
+	foreach my $portalID (keys %portals_lut) {
+		my $entry = $portals_lut{$portalID};
+		next if Misc::isRouteSourceRemoved($entry);
+		next unless ($entry->{source}{map} eq $sourceMap && $entry->{dest});
+
+		my $sourceDist = blockDistance($entry->{source}, $sourcePos);
+		next if $sourceDist > $maxSourceDrift;
+
+		foreach my $destID (keys %{$entry->{dest}}) {
+			my $destEntry = $entry->{dest}{$destID};
+			next unless ($destEntry->{map} eq $destMap);
+
+			my $destDist = blockDistance($destEntry, $destPos);
+			next if $destDist > $maxDestDrift;
+
+			my $score = $sourceDist + $destDist;
+			next if defined $bestScore && $score >= $bestScore;
+
+			$bestSource = $entry->{source};
+			$bestDest = $destEntry;
+			$bestScore = $score;
+		}
+	}
+
+	return ($bestSource, $bestDest);
+}
+
+sub recompilePortals {
+	Settings::loadByRegexp(qr/portals/);
+	Misc::compilePortals() if Misc::compilePortals_check();
 }
 
 ##### ESCAPE UNKNOWN MAPS #####
@@ -854,43 +976,51 @@ sub processTake {
 	if (AI::action() eq "take" && !(my $item = $items{AI::args()->{ID}})) {
 		AI::dequeue();
 
-	} elsif (AI::action() eq "take" && timeOut(AI::args()->{ai_take_giveup})) {
-		message TF("Failed to take %s (%s) from (%s, %s) to (%s, %s)\n", $item->{name}, $item->{binID}, $char->{pos}{x}, $char->{pos}{y}, $item->{pos}{x}, $item->{pos}{y});
-		$item->{take_failed}++;
-		AI::dequeue();
-
 	} elsif (AI::action() eq "take") {
 		my $myPos = calcPosFromPathfinding($field, $char);
 		my $dist = blockDistance($item->{pos}, $myPos);
-		debug "Planning to take $item->{name} ($item->{binID}), distance $dist\n", "drop";
 
-		if ($char->{sitting}) {
-			stand();
+		if (timeOut(AI::args()->{ai_take_giveup})) {
+			message TF("Failed to take %s (%s) from (%s, %s) to (%s, %s) - dist %s\n", $item->{name}, $item->{binID}, $myPos->{x}, $myPos->{y}, $item->{pos}{x}, $item->{pos}{y}, $dist);
+			$item->{take_failed}++;
+			AI::dequeue();
 
-		} elsif ($dist <= 2 && $config{'itemsTakeGreed'} && $char->{skills}{BS_GREED}{lv} >= 1) {
-			my $skill = new Skill(handle => 'BS_GREED');
-			ai_skillUse2($skill, $char->{skills}{BS_GREED}{lv}, 1, 0, $char, "BS_GREED");
+		} else {
+			debug "Planning to take $item->{name} ($item->{binID}) at ($item->{pos}{x}, $item->{pos}{y}), distance $dist from us at ($myPos->{x}, $myPos->{y})\n", "drop";
 
-		} elsif ($dist > 1 && timeOut(AI::args()->{time_route}, $timeout{ai_take_giveup}{timeout})) {
-			my $pos = $item->{pos};
-			AI::args()->{time_route} = time;
-			ai_route(
-				$field->baseName,
-				$pos->{x},
-				$pos->{y},
-				noSitAuto => 1,
-				distFromGoal => 1,
-				attackOnRoute => 0,
-				isItemTake => 1
-			);
-		} elsif (timeOut($timeout{ai_take})) {
-			my %vec;
-			my $direction;
-			getVector(\%vec, $item->{pos}, $myPos);
-			$direction = int(sprintf("%.0f", (360 - vectorToDegree(\%vec)) / 45)) % 8;
-			$messageSender->sendLook($direction, 0) if ($direction != $char->{look}{body});
-			$messageSender->sendTake($item->{ID});
-			$timeout{ai_take}{time} = time;
+			if ($char->{sitting}) {
+				stand();
+
+			} elsif ($dist <= 2 && $config{'itemsTakeGreed'} && $char->{skills}{BS_GREED}{lv} >= 1 && !$char->{muted}) {
+				my $skill = new Skill(handle => 'BS_GREED');
+				ai_skillUse2($skill, $char->{skills}{BS_GREED}{lv}, 1, 0, $char, "BS_GREED");
+
+			} elsif ($dist > 1 && timeOut(AI::args()->{time_route}, $timeout{ai_take_giveup}{timeout})) {
+				my $pos = $item->{pos};
+				AI::args()->{time_route} = time;
+				ai_route(
+					$field->baseName,
+					$pos->{x},
+					$pos->{y},
+					noSitAuto => 1,
+					distFromGoal => 1,
+					attackOnRoute => 0,
+					isItemTake => 1
+				);
+				# Walking to the drop is not a failed loot attempt; pause the
+				# give-up timer until the route finishes and take() becomes active again.
+				AI::suspend(1);
+			} else {
+				return unless (timeOut($timeout{ai_take}));
+				return unless (actorFinishedMovement($char, $field, 0.1, 1));
+				my %vec;
+				my $direction;
+				getVector(\%vec, $item->{pos}, $myPos);
+				$direction = int(sprintf("%.0f", (360 - vectorToDegree(\%vec)) / 45)) % 8;
+				$messageSender->sendLook($direction, 0) if ($direction != $char->{look}{body});
+				$messageSender->sendTake($item->{ID});
+				$timeout{ai_take}{time} = time;
+			}
 		}
 	}
 }
@@ -1019,6 +1149,7 @@ sub processAutoBreakTime {
 ##### DEAD #####
 sub processDead {
 	if (AI::action() eq "dead" && !$char->{dead}) {
+		message T("[processDead] Clearing Dead status and dead AI queue sequence.\n");
 		AI::dequeue();
 		$char->setStatus('Dead', 0);
 
@@ -1045,7 +1176,16 @@ sub processDead {
 			}
 		}
 
+	} elsif (AI::action() ne "dead" && !$char->{dead} && $char->statusActive('Dead')) {
+		my $current_action = AI::action();
+		$current_action = defined $current_action && $current_action ne '' ? $current_action : 'none';
+		debug "[processDead] Cleared stale Dead status after respawn while current AI action was '$current_action'; the dead queue was displaced before normal cleanup ran.\n";
+		AI::clear('dead');
+		$char->setStatus('Dead', 0);
+		$char->{resurrected} = 0 if $char->{resurrected};
+
 	} elsif (AI::action() ne "dead" && AI::action() ne "deal" && $char->{'dead'}) {
+		message T("[processDead] You died, clearing AI queue, queueing dead and setting status Dead.\n");
 		AI::clear();
 		AI::queue("dead");
 		$char->setStatus('Dead', 1);
@@ -1058,6 +1198,7 @@ sub processDead {
 	}
 
 	if (AI::action() eq "dead" && $config{dcOnDeath} != -1 && time - $char->{dead_time} >= $timeout{ai_dead_respawn}{timeout}) {
+		message T("[processDead] Sending respawn.\n");
 		$messageSender->sendRestart(0);
 		$char->{'dead_time'} = time;
 	}
@@ -1206,6 +1347,7 @@ sub processCartGet {
 }
 
 sub processAutoMakeArrow {
+	return if ($char->{muted});
 	####### AUTO MAKE ARROW #######
 	if ((AI::isIdle() || AI::is(qw/route move autoBuy storageAuto follow sitAuto items_take items_gather/))
 	 && timeOut($AI::Timeouts::autoArrow, 0.2) && $config{autoMakeArrows} && defined binFind(\@skillsID, 'AC_MAKINGARROW') ) {
@@ -1832,7 +1974,7 @@ sub processAutoSell {
 			Plugins::callHook('AI_sell_auto');
 
 			# Form list of items to sell
-			my @sellItems;
+			@sellList = ();
 			for my $item (@{$char->inventory}) {
 				next if ($item->{equipped} || !$item->{sellable});
 
@@ -1842,15 +1984,15 @@ sub processAutoSell {
 					my %obj;
 					$obj{ID} = $item->{ID};
 					$obj{amount} = $item->{amount} - $control->{keep};
-					push @sellItems, \%obj;
+					push @sellList, \%obj;
 				}
 			}
 
-			if (@sellItems == 0) {
+			if (@sellList == 0) {
 				$args->{'sentEmptyList'} = 1;
 			}
 
-			completeNpcSell(\@sellItems);
+			completeNpcSell(\@sellList);
 
 			delete $args->{'sentNpcTalk'};
 			delete $args->{'sentNpcTalk_time'};
@@ -2139,7 +2281,7 @@ sub processAutoCart {
 			my @getItems;
 			my $max;
 
-			if ($config{cartMaxWeight} && $char->cart->{weight} < $config{cartMaxWeight}) {
+			if ($char->cart->{weight_max} && $char->cart->{weight} < $char->cart->{weight_max}) {
 				for my $invItem (@{$char->inventory}) {
 					next if ($invItem->{broken} && $invItem->{type} == 7); # dont auto-cart add pet eggs in use
 					next if ($invItem->{equipped});
@@ -2335,20 +2477,136 @@ sub processRandomWalk {
 }
 
 ##### FOLLOW #####
+sub follow_route_needs_reset {
+	my ($args, $master_pos_to, $master_time_move, $master_map) = @_;
+	return 0 unless $args;
+
+	my $has_coords = ($master_pos_to && defined $master_pos_to->{x} && defined $master_pos_to->{y}) ? 1 : 0;
+	my $had_coords = ($args->{masterLastMovePosTo} && defined $args->{masterLastMovePosTo}{x} && defined $args->{masterLastMovePosTo}{y}) ? 1 : 0;
+
+	if (defined $master_map && $master_map ne '' && defined $args->{masterLastMap} && $args->{masterLastMap} ne '' && $args->{masterLastMap} ne $master_map) {
+		return 1;
+	}
+
+	if ($has_coords != $had_coords) {
+		return 1;
+	}
+
+	if ($has_coords && (
+		$args->{masterLastMovePosTo}{x} != $master_pos_to->{x}
+		|| $args->{masterLastMovePosTo}{y} != $master_pos_to->{y}
+	)) {
+		return 1;
+	}
+
+	$args->{masterLastMap} = $master_map if defined $master_map && $master_map ne '';
+	if ($has_coords) {
+		$args->{masterLastMovePosTo} = { %{$master_pos_to} };
+	} else {
+		delete $args->{masterLastMovePosTo};
+	}
+	if (defined $master_time_move && $master_time_move ne '') {
+		$args->{masterLastMoveTime} = $master_time_move;
+	} else {
+		delete $args->{masterLastMoveTime};
+	}
+
+	return 0;
+}
+
+sub start_follow {
+	my ($args, %opts) = @_;
+	return unless $args && $char && $char->{pos_to};
+
+	my $master_pos_to = $opts{pos_to};
+	my $master_time_move = $opts{time_move};
+	my $route_map = $opts{route_map} || $field->baseName;
+	my $master_map = $opts{master_map} || $route_map;
+	my $allow_direct_move = $opts{allow_direct_move} ? 1 : 0;
+	my %route_args = $opts{route_args} ? %{$opts{route_args}} : ();
+
+	my $has_coords = ($master_pos_to && defined $master_pos_to->{x} && defined $master_pos_to->{y}) ? 1 : 0;
+	return unless ($has_coords || $route_map ne $field->baseName);
+
+	$args->{move_timeout} = time;
+	$args->{masterLastMap} = $master_map if defined $master_map && $master_map ne '';
+	if ($has_coords) {
+		$args->{masterLastMovePosTo} = { %{$master_pos_to} };
+	} else {
+		delete $args->{masterLastMovePosTo};
+	}
+	if (defined $master_time_move && $master_time_move ne '') {
+		$args->{masterLastMoveTime} = $master_time_move;
+	} else {
+		delete $args->{masterLastMoveTime};
+	}
+
+	my $must_route = !$allow_direct_move
+		|| !$has_coords
+		|| $route_map ne $field->baseName
+		|| !$field->canMove($char->{pos_to}, $master_pos_to);
+
+	if ($must_route) {
+		ai_route(
+			$route_map,
+			($has_coords ? $master_pos_to->{x} : ''),
+			($has_coords ? $master_pos_to->{y} : ''),
+			%route_args
+		);
+		return 1;
+	}
+
+	$char->move(@{$master_pos_to}{qw(x y)});
+	if (AI::action() eq 'move' && AI::args()) {
+		AI::args()->{isFollow} = 1;
+		AI::args()->{masterLastMap} = $master_map if defined $master_map && $master_map ne '';
+		if ($has_coords) {
+			AI::args()->{masterLastMovePosTo} = { %{$master_pos_to} };
+		}
+		if (defined $master_time_move && $master_time_move ne '') {
+			AI::args()->{masterLastMoveTime} = $master_time_move;
+		}
+	}
+	return 1;
+}
+
+sub reset_follow {
+	my ($args, %opts) = @_;
+	return unless $args;
+
+	debug($opts{debug_message} || "Master has moved since we started the follow movement - Adjusting follow\n", 'follow');
+	while ((AI::action() eq 'move' || AI::action() eq 'route') && AI::args() && AI::args()->{isFollow}) {
+		AI::dequeue();
+	}
+
+	delete $args->{move_timeout};
+	return start_follow($args, %opts);
+}
+
 sub processFollow {
 	# FIXME: Should use actors list to determine who and where is the master
 	# TODO: follow should be a 'mode' rather then a sequence, hence all
 	# var/flag about follow should be moved to %ai_v
 
+	my %plugin_args;
+	$plugin_args{return} = 0;
+	Plugins::callHook('processFollow' => \%plugin_args);
+	return if ($plugin_args{return});
+
 	if (!$config{follow}) {
 		AI::clear("follow") if (AI::findAction("follow") ne undef); # if follow is disabled and there's still "follow" in AI queue, remove it
 		return;
+	}
+
+	my $follow_action;
+	if ((AI::action() eq 'move' || AI::action() eq 'route') && AI::args() && AI::args()->{isFollow}) {
+		$follow_action = AI::action();
 	}
 	
 	return unless (
 		(AI::isIdle() || (AI::is('route') && AI::args()->{isRandomWalk})) ||
 		(AI::action() eq "follow") ||
-		((AI::action() eq "route" && AI::action(1) eq "follow") || (AI::action() eq "move" && AI::action(2) eq "follow"))
+		$follow_action
 	);
 	
 	# stop follow when talking with NPC
@@ -2407,17 +2665,19 @@ sub processFollow {
 
 			if ($args->{following} && $player->{pos_to}) {
 				my $dist = blockDistance($char->{pos_to}, $player->{pos_to});
-				if ($dist > $config{followDistanceMax} && timeOut($args->{move_timeout}, 0.25)) {
-					$args->{move_timeout} = time;
-					$args->{masterLastMoveTime} = $player->{time_move};
-
-					ai_route(
-						$field->baseName,
-						$player->{pos_to}{x},
-						$player->{pos_to}{y},
-						attackOnRoute => 1,
-						isFollow => 1,
-						distFromGoal => $config{followDistanceMin}
+				if ($dist > $config{followDistanceMax} && timeOut($args->{move_timeout}, 0.5)) {
+					start_follow(
+						$args,
+						pos_to => $player->{pos_to},
+						time_move => $player->{time_move},
+						master_map => $field->baseName,
+						route_map => $field->baseName,
+						allow_direct_move => 1,
+						route_args => {
+							attackOnRoute => 1,
+							isFollow => 1,
+							distFromGoal => $config{followDistanceMin}
+						}
 					);
 				}
 			}
@@ -2436,32 +2696,31 @@ sub processFollow {
 				}
 			}
 		}
-	} elsif (((AI::action() eq "route" && AI::action(1) eq "follow") || (AI::action() eq "move" && AI::action(2) eq "follow")) && !$args->{ai_follow_lost}) {
+	} elsif ($follow_action && !$args->{ai_follow_lost}) {
 		my $ID = $args->{ID};
 		my $player = $players{$ID};
 		if (
 			$args->{following} &&
 			$player &&
 			%{$player} &&
-			$player->{pos_to} &&
-			$args->{masterLastMoveTime} &&
-			$args->{masterLastMoveTime} != $player->{time_move}
+			$player->{pos_to}
 		) {
-			debug "Master $player has moved since we started routing to it - Adjusting route\n", "ai_attack";
-			AI::dequeue();
-			AI::dequeue() if (AI::action() eq "route");
-
-			$args->{move_timeout} = time;
-			$args->{masterLastMoveTime} = $player->{time_move};
-
-			ai_route(
-				$field->baseName,
-				$player->{pos_to}{x},
-				$player->{pos_to}{y},
-				attackOnRoute => 1,
-				isFollow => 1,
-				distFromGoal => $config{followDistanceMin}
-			);
+			if (follow_route_needs_reset($args, $player->{pos_to}, $player->{time_move}, $field->baseName)) {
+				reset_follow(
+					$args,
+					pos_to => $player->{pos_to},
+					time_move => $player->{time_move},
+					master_map => $field->baseName,
+					route_map => $field->baseName,
+					allow_direct_move => 1,
+					route_args => {
+						attackOnRoute => 1,
+						isFollow => 1,
+						distFromGoal => $config{followDistanceMin}
+					},
+					debug_message => "Master $player moved since we started the follow movement - Adjusting follow\n"
+				);
+			}
 		}
 	}
 
@@ -2747,8 +3006,8 @@ sub processAutoItemUse {
 
 ##### AUTO-SKILL USE #####
 sub processAutoSkillUse {
-	if (AI::isIdle() || AI::is(qw(route mapRoute follow sitAuto take items_gather items_take attack teleport) )
-	|| (AI::action() eq "skill_use" && AI::args()->{tag} eq "attackSkill")) {
+	return if ($char->{muted});
+	if (AI::isIdle() || AI::is(qw(route mapRoute follow sitAuto take items_gather items_take attack teleport) ) || (AI::action() eq "skill_use" && AI::args()->{tag} eq "attackSkill")) {
 		my %self_skill;
 		for (my $i = 0; exists $config{"useSelf_skill_$i"}; $i++) {
 			if ($config{"useSelf_skill_$i"} && checkSelfCondition("useSelf_skill_$i")) {
@@ -2810,6 +3069,7 @@ sub processAutoSkillUse {
 
 ##### PARTY-SKILL USE #####
 sub processPartySkillUse {
+	return if ($char->{muted});
 	if (AI::isIdle() || AI::is(qw(route mapRoute follow sitAuto take items_gather items_take attack move))){
 		my $realMyPos = calcPosFromPathfinding($field, $char);
 		my %party_skill;
@@ -2920,17 +3180,16 @@ sub processPartySkillUse {
 
 ##### MONSTER SKILL USE #####
 sub processMonsterSkillUse {
+	return if ($char->{muted});
 	if (AI::isIdle() || AI::is(qw(route mapRoute follow sitAuto take items_gather items_take attack move))) {
 		my $i = 0;
 		my $prefix = "monsterSkill_$i";
 		while ($config{$prefix}) {
 			# monsterSkill can be used on any monster that we could
 			# attackAuto
-			my @monsterIDs = ai_getAggressives(1, 1);
-			for my $monsterID (@monsterIDs) {
-				my $monster = $monsters{$monsterID};
-				if (checkSelfCondition($prefix)
-				    && checkMonsterCondition("${prefix}_target", $monster)) {
+			for my $monster (@$monstersList) {
+				my $monsterID = $monster->{ID};
+				if (checkSelfCondition($prefix) && checkMonsterCondition("${prefix}_target", $monster)) {
 					my $skill = new Skill(auto => $config{$prefix});
 
 					next if $config{"${prefix}_maxUses"} && $monster->{skillUses}{$skill->getHandle()} >= $config{"${prefix}_maxUses"};
@@ -2939,7 +3198,7 @@ sub processMonsterSkillUse {
 					my $lvl = $config{"${prefix}_lvl"} || $char->getSkillLevel($skill);
 					my $maxCastTime = $config{"${prefix}_maxCastTime"};
 					my $minCastTime = $config{"${prefix}_minCastTime"};
-					debug "Auto-monsterSkill on $monster->{name} ($monster->{binID}): ".$skill->getName()." (lvl $lvl)\n", "monsterSkill";
+					message "Auto-monsterSkill on $monster->{name} ($monster->{binID}): ".$skill->getName()." (lvl $lvl)\n", "monsterSkill";
 					# FIXME: $skill->getOwner (homun, merc) instead of $char?
 					my $target = $config{"${prefix}_isSelfSkill"} ? $char : $monster;
 					ai_skillUse2($skill, $lvl, $maxCastTime, $minCastTime, $target, $prefix);
@@ -3133,8 +3392,8 @@ sub processAutoAttack {
 				# List monsters that party members are attacking
 				if ($config{attackAuto_party} && $effectiveAttackMode >= 1 && !AI::is("take", "items_take")
 				 && !$ai_v{sitAuto_forcedBySitCommand}
-				 && (($monster->{dmgFromParty} && $config{attackAuto_party} != 2) ||
-				     $monster->{dmgToParty} || $monster->{missedToParty})
+				 && ((($monster->{dmgFromParty} || $monster->{castOnByParty}) && $config{attackAuto_party} != 2) ||
+				     $monster->{dmgToParty} || $monster->{castOnToParty} || $monster->{missedToParty})
 				 && timeOut($monster->{attack_failed}, $timeout{ai_attack_unfail}{timeout})) {
 					push @partyMonsters, $_;
 					next;
@@ -3142,7 +3401,7 @@ sub processAutoAttack {
 
 				# List monsters that the master is attacking
 				if ($following && $config{'attackAuto_followTarget'} && $effectiveAttackMode >= 1 && !AI::is("take", "items_take")
-				 && ($monster->{dmgToPlayer}{$followID} || $monster->{dmgFromPlayer}{$followID} || $monster->{missedToPlayer}{$followID})
+				 && ($monster->{dmgToPlayer}{$followID} || $monster->{dmgFromPlayer}{$followID} || $monster->{missedToPlayer}{$followID} || $monster->{castOnToPlayer}{$followID} || $monster->{castOnByPlayer}{$followID})
 				 && timeOut($monster->{attack_failed}, $timeout{ai_attack_unfail}{timeout})) {
 					push @partyMonsters, $_;
 					next;
@@ -3169,13 +3428,6 @@ sub processAutoAttack {
 				my $target_pos = calcPosition($monster);
 				# TODO: Is there any situation where we should use calcPosFromPathfinding or calcPosFromTime here?
 				next unless ($control->{dist} eq '' || blockDistance($target_pos, $myPos) <= $control->{dist});
-
-				# TODO: Sometimes we had no LOS to attack mob and dropped it, but now it is following us and attacking us
-				# which means we now have LOS to is, it we should have a way to delete ai_attack_unfail and ai_attack_failedLOS
-				# timeouts in these cases.
-				next unless (timeOut($monster->{attack_failed}, $timeout{ai_attack_unfail}{timeout}));
-				next unless (timeOut($monster->{attack_failedLOS}, $timeout{ai_attack_failedLOS}{timeout}));
-
 				my %hookArgs;
 				$hookArgs{monster} = $monster;
 				$hookArgs{return} = 1;
@@ -3328,7 +3580,7 @@ sub processItemsGather {
 			AI::suspend();
 			stand();
 
-		} elsif (blockDistance($items{$ID}{pos}, $char->{pos}) > 2 && timeOut(AI::args()->{time_route} = time, $timeout{ai_take_giveup}{timeout})) {
+		} elsif (blockDistance($items{$ID}{pos}, $char->{pos}) > 2) {
 			my $item = $items{$ID};
 			my $pos = $item->{pos};
 			AI::args()->{time_route} = time;
@@ -3527,17 +3779,17 @@ sub processAvoid {
 		avoidGM_near() if ($config{avoidGM_near} >= 1 && (!$field->isCity || $config{avoidGM_near_inTown}));
 		avoidList_near() if $config{avoidList} >= 1;
 		$timeout{ai_avoidcheck}{time} = time;
-	}
-	foreach (@monstersID) {
-		next unless $_;
-		my $action = mon_control($monsters{$_}{name},$monsters{$_}{nameID})->{teleport_auto};
+		foreach (@monstersID) {
+			next unless $_;
+			my $action = mon_control($monsters{$_}{name},$monsters{$_}{nameID})->{teleport_auto};
 
-		if ($action == 3) {
-		   warning TF("Disconnecting for 30 secs to avoid %s\n", $monsters{$_}{name});
-		   relog(30);
-		} elsif ($action > 3) {
-		   warning TF("Disconnecting for %s secs to avoid %s\n", $action, $monsters{$_}{name});
-		   relog($action);
+			if ($action == 3) {
+			warning TF("Disconnecting for 30 secs to avoid %s\n", $monsters{$_}{name});
+			relog(30);
+			} elsif ($action > 3) {
+			warning TF("Disconnecting for %s secs to avoid %s\n", $action, $monsters{$_}{name});
+			relog($action);
+			}
 		}
 	}
 }
@@ -3702,7 +3954,7 @@ sub processRepairAuto {
             return;
         }
 
-        if ($args->{useSkill}) {
+        if ($args->{useSkill} && !$char->{muted}) {
             my $handle = repairAutoSkillHandle();
             unless ($handle) {
                 error T("Unable to auto repair: no repair skill available.\n");
@@ -3922,7 +4174,11 @@ sub processPartyShareAuto {
 	if (timeOut($timeout{ai_partyShareCheck})) {
 		if (!exists($char->{party}{shareTimes})) { $char->{party}{shareTimes} = 1; }
 
-		if (($config{partyAutoShare} || $config{partyAutoShareItem} || $config{partyAutoShareItemDiv}) && $char->{party}{joined} && ($char->{party}{share} ne $config{partyAutoShare} || $char->{party}{itemPickup} ne $config{partyAutoShareItem} || $char->{party}{itemDivision} ne $config{partyAutoShareItemDiv})) {
+		if (
+			   ($config{partyAutoShare} || $config{partyAutoShareItem} || $config{partyAutoShareItemDiv})
+			&& $char->{party}{joined}
+			&& ($char->{party}{share} ne $config{partyAutoShare} || $char->{party}{itemPickup} ne $config{partyAutoShareItem} || $char->{party}{itemDivision} ne $config{partyAutoShareItemDiv})
+		) {
 			$messageSender->sendPartyOption($config{partyAutoShare}, $config{partyAutoShareItem}, $config{partyAutoShareItemDiv});
 			$char->{party}{shareTimes}++;
 			if ($char->{party}{shareTimes} > 5) {
