@@ -62,17 +62,18 @@ def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
         queued = 0
         for ha in assessment.actions:
             import time as _t
+            from ai_sidecar.contracts.common import ContractMeta as _CM
             proposal = ActionProposal(
-                meta=ContractMeta(),
+                meta=_CM(bot_id="openkoreai"),
                 action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
                 kind=ha.kind, command=ha.command,
-                priority_tier=ActionPriorityTier.standard,
+                priority_tier=ActionPriorityTier.tactical,
                 bot_id="openkoreai", reason=ha.reason,
                 source="heuristic",
                 metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon},
             )
             try:
-                aq.push(proposal)
+                aq.enqueue("openkoreai", proposal)
                 queued += 1
             except Exception:
                 _log.exception("heuristic_action_push_failed")
@@ -312,7 +313,25 @@ class PDCALoop:
                 if getattr(_settings, "llm_skip_if_heuristic", True):
                     _hs = getattr(self._runtime_state, "heuristic_service", None)
                     if _hs is not None:
-                        _hc = getattr(_hs, "confidence_for", lambda h: 0.0)(horizon.value)
+                        # Build signals for heuristic check
+                        _signals = {}
+                        try:
+                            _snap = getattr(self._runtime_state, "snapshot_cache", None)
+                            if _snap:
+                                _latest = _snap.latest()
+                                if _latest and isinstance(_latest, dict):
+                                    v = _latest.get("vitals") or {}
+                                    _signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                                    _signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                                    c = _latest.get("combat") or {}
+                                    _signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                                    _signals["map_known"] = bool(_latest.get("map_known", False))
+                                    inv = _latest.get("inventory") or {}
+                                    _signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                                    _signals["horizon"] = horizon.value
+                        except Exception:
+                            pass
+                        _hc = getattr(_hs, "confidence_for", lambda h, **kw: 0.0)(horizon.value, signals=_signals)
                         _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
                         if _hc >= _threshold:
                             logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)

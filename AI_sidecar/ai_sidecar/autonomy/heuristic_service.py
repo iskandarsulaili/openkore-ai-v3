@@ -127,7 +127,7 @@ class HeuristicService:
         if weighted_domains:
             top_domain = str(max(weighted_domains, key=lambda k: float(weighted_domains.get(k, 0.0))))
 
-        return HeuristicAssessment(
+        assessment = HeuristicAssessment(
             horizon=signals.get("horizon", "short_term"),
             actions=actions,
             confidence=total_confidence,
@@ -135,10 +135,18 @@ class HeuristicService:
             top_domain=top_domain,
             signals=dict(signals),
         )
+        self._last_assessment = assessment
+        return assessment
 
-    def confidence_for(self, horizon: str) -> float:
+    def confidence_for(self, horizon: str, signals: dict | None = None) -> float:
         """Called by PDCA loop to check if heuristic can replace LLM for this horizon.
         
-        Returns 0.0 by default — the PDCA loop checks via assess() which needs signals.
+        Returns the confidence from the last assessment, or 0.0 if no signals available.
+        The PDCA loop calls this every cycle to decide whether to skip the LLM.
         """
-        return 0.0  # Overridden by the runtime's assessment
+        if signals is not None:
+            result = self.assess(signals)
+            return result.confidence
+        if hasattr(self, '_last_assessment') and self._last_assessment is not None:
+            return self._last_assessment.confidence
+        return 0.0
