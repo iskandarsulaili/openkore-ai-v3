@@ -78,33 +78,8 @@ def _normalize_agent_id(agent_id: str) -> str:
 
 
 def create_agent_by_id(*, agent_id: str, llm: Any = None, tools: list[Any] | None = None, verbose: bool = False) -> Any:
-    """Backward-compatible factory for crew_manager.py.
-
-    Builds a CrewAI Agent from config profile data.
-    Only imports crewai SDK at call time. Falls back to a
-    plain BehaviorProfile instance if crewai is not installed.
-    """
-    from ai_sidecar.crewai.config import AGENT_PROFILES as CONFIG_AGENT_PROFILES
-
-    normalized = _normalize_agent_id(agent_id)
-    profile = next((item for item in CONFIG_AGENT_PROFILES if item.agent_id == normalized), None)
-    if profile is None:
-        raise ValueError(f"unknown_agent_id:{agent_id}->{normalized}")
-
-    try:
-        from crewai import Agent
-
-        return Agent(
-            role=profile.role,
-            goal=profile.goal,
-            backstory=profile.backstory,
-            tools=tools or [],
-            llm=llm,
-            allow_delegation=False,
-            verbose=verbose,
-        )
-    except ImportError:
-        return get_profile(normalized)
+    """Get a behavior profile by agent ID. Returns the matching BehaviorProfile."""
+    return get_profile(agent_id)
 
 
 __all__ = [
