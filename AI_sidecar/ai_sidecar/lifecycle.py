@@ -180,6 +180,7 @@ from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
+from ai_sidecar.npc_dialog import NPCDialogEngine
 from ai_sidecar.experience_db import ExperienceDatabase, ExperienceEntry
 
 logger = logging.getLogger(__name__)
@@ -507,6 +508,7 @@ class RuntimeState:
     heuristic_service: HeuristicService | None = None
     cost_tracker: CostTracker | None = None
     experience_db: ExperienceDatabase | None = None
+    npc_dialog: NPCDialogEngine | None = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
@@ -5251,6 +5253,7 @@ def create_runtime() -> RuntimeState:
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
     runtime.experience_db = ExperienceDatabase()
+    runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
         max_bots=256,

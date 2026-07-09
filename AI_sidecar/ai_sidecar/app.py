@@ -13,6 +13,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 
 from ai_sidecar.api.routers import (
+    npc_dialog,
     acknowledgements,
     actions,
     control_domain,
@@ -197,6 +198,7 @@ def create_app() -> FastAPI:
     app.include_router(fleet_v2.router)
     app.include_router(observability_v2.router)
     app.include_router(fleet_coordinator.router)
+    app.include_router(npc_dialog.router)
     # Register autonomy router
     from ai_sidecar.api.routers.autonomy import router as autonomy_router, set_pdca_loop
 

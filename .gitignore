@@ -70,3 +70,4 @@ benchmark-results.txt
 logs/
 .openkore-pids
 .env
+.bot_profiles/
