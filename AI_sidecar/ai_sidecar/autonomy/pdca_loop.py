@@ -325,7 +325,7 @@ class PDCALoop:
                     _allowed, _reason = _ct.check(
                         daily_budget_tokens=getattr(_settings, "llm_daily_budget_tokens", 100000),
                         max_calls_per_hour=getattr(_settings, "llm_max_calls_per_hour", 30),
-                        tier=_tier, bot_id=self._resolve_bot_id(),
+                        tier=_tier, bot_id=_cycle_bot_id,
                     )
                     if not _allowed:
                         logger.info("cost_gate[%s]: %s", horizon.value, _reason)
@@ -355,7 +355,7 @@ class PDCALoop:
                                     _signals["horizon"] = horizon.value
                         except Exception:
                             pass
-                        _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=self._resolve_bot_id())
+                        _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=_cycle_bot_id)
                         _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
                         if _hc >= _threshold:
                             logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)
@@ -364,7 +364,7 @@ class PDCALoop:
                             try:
                                 _hs_full = getattr(self._runtime, "heuristic_service", None)
                                 if _hs_full is not None:
-                                    _bot_id_for_heuristic = self._resolve_bot_id()
+                                    _bot_id_for_heuristic = _cycle_bot_id
                                 _actions_queued = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bot_id_for_heuristic)
                             except Exception:
                                 logger.exception("heuristic_action_emission_failed")
