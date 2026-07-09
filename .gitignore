@@ -67,3 +67,5 @@ benchmark-results.txt
 
 # Local temporary stubs used for isolated plugin syntax checks
 .tmp_perl_stubs/
+logs/
+.openkore-pids
