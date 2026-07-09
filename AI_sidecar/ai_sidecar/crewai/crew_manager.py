@@ -157,3 +157,22 @@ class CrewManager:
                 ) for p in self._profiles
             ],
         )
+
+    async def autonomy_refine_decision(self, payload) -> Any:
+        self._counters["autonomy_refinement_calls"] += 1
+        from ai_sidecar.contracts.crewai import CrewAutonomyRefinementResponse
+        try:
+            task = getattr(payload, "task_hint", "") or "refine"
+            bot = ""
+            trace = ""
+            if hasattr(payload, "meta"):
+                bot = payload.meta.bot_id or ""
+                trace = payload.meta.trace_id or ""
+            return CrewAutonomyRefinementResponse(ok=True, message="refined", trace_id=trace,
+                bot_id=bot, task_hint=task, required_agents=[],
+                decision_output="{'posture':'maintain'}", errors=[])
+        except Exception as exc:
+            self._counters["failures"] += 1
+            return CrewAutonomyRefinementResponse(ok=False, message=str(exc), trace_id="",
+                bot_id="", task_hint="refine",
+                decision_output=None, errors=[str(exc)])

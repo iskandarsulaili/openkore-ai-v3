@@ -32,6 +32,22 @@ class SnapshotCache:
         with self._lock:
             return len(self._snapshots)
 
+    def latest(self) -> BotStateSnapshot | None:
+        """Return the most recently updated snapshot across all bots."""
+        self._expire_all()
+        with self._lock:
+            best: BotStateSnapshot | None = None
+            for s in self._snapshots.values():
+                if best is None or s.observed_at > best.observed_at:
+                    best = s
+            return best
+
+    def bot_ids(self) -> list[str]:
+        """Return all bot IDs with valid (non-expired) snapshots."""
+        self._expire_all()
+        with self._lock:
+            return list(self._snapshots.keys())
+
     def _expire_all(self) -> None:
         now = datetime.now(UTC)
         with self._lock:

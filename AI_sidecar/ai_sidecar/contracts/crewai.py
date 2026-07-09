@@ -96,7 +96,7 @@ class CrewAutonomyRefinementResponse(BaseModel):
     task_hint: str = Field(default="autonomous_decision_intelligence", min_length=1, max_length=128)
     required_agents: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=utc_now)
-    decision_context: CrewAutonomyDecisionContext
+    decision_context: CrewAutonomyDecisionContext | None = None
     decision_output: CrewAutonomyDecisionOutput | None = None
     agent_outputs: list[dict[str, object]] = Field(default_factory=list)
     consolidated_output: str = ""

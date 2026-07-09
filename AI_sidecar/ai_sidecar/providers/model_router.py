@@ -40,19 +40,19 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
         "models": {},
     },
     "tactical_short_reasoning": {
-        "providers": ["ollama", "deepseek"],
+        "providers": ["openai", "deepseek"],
         "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M", "deepseek": "deepseek-v4-flash"},
     },
     "strategic_planning": {
-        "providers": ["ollama", "openai", "deepseek"],
-        "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M", "openai": "gpt-4o-mini", "deepseek": "deepseek-v4-flash"},
+        "providers": ["openai", "deepseek"],
+        "models": {"openai": "qwen3.6-27b-q4_k_m", "deepseek": "deepseek-v4-flash"},
     },
     "long_reflection": {
-        "providers": ["deepseek", "openai", "ollama"],
-        "models": {"deepseek": "deepseek-v4-flash", "openai": "gpt-4o-mini", "ollama": "qwen3.6:35b-a3b-q4_K_M"},
+        "providers": ["openai", "deepseek"],
+        "models": {"openai": "qwen3.6-27b-q4_k_m", "deepseek": "deepseek-v4-flash"},
     },
     "embeddings": {
-        "providers": ["ollama", "openai", "deepseek"],
+        "providers": ["openai", "deepseek"],
         "models": {"ollama": "nomic-embed-text", "openai": "text-embedding-3-small", "deepseek": "text-embedding-3-small"},
     },
 }

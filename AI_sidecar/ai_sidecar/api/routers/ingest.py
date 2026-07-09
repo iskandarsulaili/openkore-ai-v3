@@ -47,6 +47,8 @@ def ingest_snapshot(
     # which can be older than the TTL, causing immediate cache expiry.
     from datetime import UTC, datetime
     payload.observed_at = datetime.now(UTC)
+    # Bot is sending snapshots — it knows its map. Enable heuristic.
+    payload.map_known = True
     runtime.ingest_snapshot(payload)
     logger.info(
         "snapshot_ingested",

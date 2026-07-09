@@ -62,20 +62,32 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         snapshots = getattr(runtime_state, "snapshot_cache", None)
         if snapshots is not None:
             try:
+                # Read snapshot data regardless of whether we have candidate bot_ids
                 latest = snapshots.latest()
-                if latest and isinstance(latest, dict):
-                    v = latest.get("vitals") or {}
-                    signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
-                    signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
-                    c = latest.get("combat") or {}
-                    signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
-                    signals["map_known"] = bool(latest.get("map_known", False))
-                    inv = latest.get("inventory") or {}
-                    signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                if latest is not None:
+                    if isinstance(latest, dict):
+                        v = latest.get("vitals") or {}
+                        signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                        signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                        c = latest.get("combat") or {}
+                        signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                        signals["map_known"] = bool(latest.get("map_known", False))
+                        inv = latest.get("inventory") or {}
+                        signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                    else:
+                        v = getattr(latest, "vitals", None) or {}
+                        signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) or 1.0)
+                        signals["sp_ratio"] = float(getattr(v, "sp_ratio", 1.0) or 1.0)
+                        c = getattr(latest, "combat", None) or {}
+                        signals["combat.aggro_count"] = int(getattr(c, "aggro_count", 0) or 0)
+                        signals["map_known"] = bool(getattr(latest, "map_known", False))
+                        inv = getattr(latest, "inventory", None) or {}
+                        signals["weight_ratio"] = float(getattr(inv, "weight_ratio", 0.0) or 0.0)
             except Exception:
                 pass
         assessment = hs.assess(signals)
         if not assessment.actions:
+            _log.info("heuristic_no_actions horizon=%s signals=%s", horizon, str(signals)[:200])
             return 0
         aq = getattr(runtime_state, "action_queue", None)
         if aq is None:
@@ -150,6 +162,39 @@ class PDCAConfig:
     circuit_breaker_reset_s: float = 60.0
     plan_timeout_s: float = 30.0
     max_actions_per_cycle: int = 5
+
+
+def _extract_command_from_goal(goal: str | None) -> str:
+    """Convert a PDCA goal key to a valid OpenKore command."""
+    if not goal:
+        return "ai auto"
+    g = goal.lower()
+    # Strip enum wrapper and quotes
+    for ch in ".:'\"<>[](){}":
+        g = g.replace(ch, " ")
+    g = g.strip()
+    # Extract last meaningful word
+    parts = [p for p in g.split() if p and p not in ("goal", "key", "category", "goalcategory")]
+    keyword = parts[-1] if parts else "auto"
+    
+    # Map to real OpenKore commands
+    cmd_map = {
+        "survival": "ai auto",
+        "survival_pressure": "ai auto",
+        "recovery": "sit",
+        "grind": "ai auto",
+        "economy": "ai auto",
+        "job_advancement": "ai auto",
+        "quest": "ai auto",
+        "idle": "stand",
+        "move": "move",
+        "attack": "attack",
+        "sit": "sit",
+        "stand": "stand",
+        "auto": "ai auto",
+        "manual": "ai manual",
+    }
+    return cmd_map.get(keyword, f"ai auto")
 
 
 class PDCALoop:
@@ -319,6 +364,9 @@ class PDCALoop:
 
     async def _run_one_cycle(self, horizon: Horizon) -> PDCAResult:
         """Execute one PDCA cycle for the given horizon."""
+        # Resolve current bot_id for cost gate
+        _cycle_bot_id = self._resolve_cost_gate_bot_id()
+        
         # ── Cost gate ──────────────────────────────────────────
         if self._runtime is not None:
             _ct = getattr(self._runtime, "cost_tracker", None)
@@ -327,10 +375,17 @@ class PDCALoop:
                 from ai_sidecar.config import settings as _settings
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
                 
-                # Tier "off": skip all LLM cycles
+                # Tier "off": skip all LLM cycles, still emit heuristic actions
                 if _tier == "off":
-                    logger.info("cost_gate[%s]: tier=off, skip", horizon.value)
-                    return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False, 
+                    _actions_queued_off = 0
+                    try:
+                        _hs_off = getattr(self._runtime, "heuristic_service", None)
+                        if _hs_off is not None:
+                            _actions_queued_off = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                    except Exception:
+                        logger.exception("heuristic_action_emission_failed")
+                    logger.info("cost_gate[%s]: tier=off, heuristic=%d", horizon.value, _actions_queued_off)
+                    return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued_off, progress_pct=0.0, stuck=False, re_planned=False,
                                       force_replan=False, selected_goal="cost_gated", objective="LLM disabled by cost tier",
                                       replan_reasons=["cost_tier_off"], cycle_ms=0.0, error="")
                 
@@ -343,7 +398,7 @@ class PDCALoop:
                     )
                     if not _allowed:
                         logger.info("cost_gate[%s]: %s", horizon.value, _reason)
-                        return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
+                        return PDCAResult(horizon=horizon, plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
                                           force_replan=False, selected_goal="budget_gated", objective=f"Budget exceeded: {_reason}",
                                           replan_reasons=[_reason], cycle_ms=0.0, error="")
                 
@@ -383,7 +438,7 @@ class PDCALoop:
                             except Exception:
                                 logger.exception("heuristic_action_emission_failed")
                             
-                            return PDCAResult(plan_id="", actions_queued=_actions_queued, progress_pct=0.0, stuck=False, re_planned=False,
+                            return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued, progress_pct=0.0, stuck=False, re_planned=False,
                                               force_replan=False, selected_goal="heuristic_skip",
                                               objective="Satisfied by heuristic rules",
                                               replan_reasons=[], cycle_ms=0.0, error="")
@@ -422,6 +477,37 @@ class PDCALoop:
                 horizon=horizon,
                 replan_reasons=replan_reasons,
             )
+            
+            # ── Push plan actions to queue ──────────────────────
+            if goal_state is not None:
+                try:
+                    _bot = decision_meta.bot_id
+                    _goal = str(getattr(goal_state, "selected_goal", "") or "")
+                    _obj = str(getattr(getattr(goal_state, "selected_goal", None), "objective", "") or "")
+                    if _goal and _obj:
+                        from datetime import UTC, datetime, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            import hashlib as _hashlib
+                            _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                            _simple_goal = _goal.split(".")[-1].split(":")[0].split(">")[0].strip().lower() if _goal else "auto"
+                            _simple_goal = _simple_goal[:30]  # max 30 chars
+                            proposal = ActionProposal(
+                                action_id=f"pdca_{horizon.value}_{_short_id}",
+                                kind="command",
+                                command=_simple_goal if _simple_goal in ("ai", "move", "attack", "sit", "stand", "auto") else f"ai {_simple_goal}",
+                                priority_tier=ActionPriorityTier.tactical if horizon.value in ("short_term", "tactical") else ActionPriorityTier.strategic,
+                                source="planner",
+                                created_at=datetime.now(UTC),
+                                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                idempotency_key=f"pdca_{horizon.value}_{_short_id}",
+                                metadata={"goal": _goal[:100], "objective": _obj[:100], "horizon": horizon.value, "bot_id": _bot},
+                            )
+                            _aq.enqueue(_bot, proposal)
+                            logger.info("pdca_action_queued: bot=%s goal=%s horizon=%s", _bot, _goal, horizon.value)
+                except Exception:
+                    logger.exception("pdca_action_enqueue_failed")
             
             # ── Shadow mode: compare LLM decision vs heuristic ──
             if goal_state is not None and hasattr(self._runtime, "ml_shadow") and self._runtime.ml_shadow is not None:
@@ -784,6 +870,19 @@ class PDCALoop:
         except Exception:
             logger.exception("Failed to resolve active bot id for PDCA loop")
 
+        return self._default_bot_id
+
+    def _resolve_cost_gate_bot_id(self) -> str:
+        try:
+            if hasattr(self._runtime, "list_bots"):
+                bots = self._runtime.list_bots()
+                if bots:
+                    first = bots[0]
+                    bid = first.get("bot_id") if isinstance(first, dict) else getattr(first, "bot_id", None)
+                    if bid:
+                        return str(bid)
+        except Exception:
+            pass
         return self._default_bot_id
 
     def _objective_for(self, *, horizon: Horizon, snapshot: BotStateSnapshot | None) -> str:

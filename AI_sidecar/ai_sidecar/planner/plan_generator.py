@@ -101,6 +101,20 @@ class PlanGenerator:
     planner_retries: int
     max_user_prompt_chars: int = 18000
 
+    def _apply_context_budget(self, context: PlannerContext, max_chars: int) -> PlannerContext:
+        if max_chars <= 0:
+            return context
+        import copy, json
+        ctx = copy.deepcopy(context)
+        raw = json.dumps(ctx.model_dump(mode="json"), default=str)
+        if len(raw) <= max_chars + 512:
+            return ctx
+        if hasattr(ctx, "memory_matches") and ctx.memory_matches and max_chars < 8000:
+            ctx.memory_matches = ctx.memory_matches[:max(1, len(ctx.memory_matches) // 2)]
+        if hasattr(ctx, "recent_events") and ctx.recent_events and max_chars < 6000:
+            ctx.recent_events = ctx.recent_events[:max(1, len(ctx.recent_events) // 2)]
+        return ctx
+
     async def generate(
         self,
         *,
@@ -108,6 +122,7 @@ class PlanGenerator:
         trace_id: str,
         context: PlannerContext,
         max_steps: int,
+        max_context_chars: int = 0,
     ) -> tuple[StrategicPlan, TacticalIntentBundle, dict[str, object], str, str, float]:
         if max_context_chars > 0:
             context = self._apply_context_budget(context, max_context_chars)
