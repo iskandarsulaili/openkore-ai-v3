@@ -1,111 +1,153 @@
-![logo](https://upload.wikimedia.org/wikipedia/commons/b/b5/Kore_2g_logo.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/iskandarsulaili/openkore-ai-v3/master/assets/logo-dark.png">
+  <img alt="openkore AI" src="https://upload.wikimedia.org/wikipedia/commons/b/b5/Kore_2g_logo.png" width="200">
+</picture>
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/OpenKore/openkore)
+# openkore **AI**
 
-![Language](https://img.shields.io/badge/language-Perl-blue.svg)
+> Ragnarok Online bot powered by LLM decision-making — not just macros.
+> **AI**, not *bypass*.
 
-![Stars](https://img.shields.io/github/stars/OpenKore/openkore)
-![Fork](https://img.shields.io/github/forks/OpenKore/openkore?label=Fork)
-![Watch](https://img.shields.io/github/watchers/OpenKore/openkore?label=Watch)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord)](https://discord.gg/zHCKr3rbM)
+[![GitHub stars](https://img.shields.io/github/stars/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/issues)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
+[![Perl](https://img.shields.io/badge/Perl-5.38-blue?logo=perl)](https://perl.org)
 
-![Issues](https://img.shields.io/github/issues/OpenKore/openkore)
-![Pull Requests](https://img.shields.io/github/issues-pr/OpenKore/openkore.svg)
-![Contributors](https://img.shields.io/github/contributors/OpenKore/openkore.svg)
+---
 
-![Github_Workflow_status](https://img.shields.io/github/actions/workflow/status/OpenKore/openkore/build_XSTools.yml?branch=master)
-![Github_Workflow_CI](https://github.com/OpenKore/openkore/actions/workflows/build_XSTools.yml/badge.svg)
+## What is this?
 
-* OpenKore is a custom client and intelligent automated assistant for Ragnarok Online.
-* It is a **free**, open source and cross-platform program _(Linux, Windows and MacOS are supported)_.
+A modified OpenKore that adds an **AI decision engine** (FastAPI + Python) alongside the classic Perl client. Bots use real-time game state + optional LLM calls to make decisions instead of following hardcoded macros.
 
-## Prerequisites
+**Compared to vanilla OpenKore:**
 
-To run OpenKore you will need:
-* [Read the Requirements page on our wiki](https://openkore.com/wiki/How_to_run_OpenKore#Requirements)
+| Vanilla OpenKore | openkore **AI** |
+|-----------------|----------------|
+| Macro-based decision making | Reflex → Heuristic → LLM (3-tier) |
+| Fixed behavior per config | Self-adapts from outcomes |
+| Single bot per instance | Multi-bot swarm coordination |
+| No cost control | Per-bot daily budget, graduated tiers |
+| Community macros only | Cross-bot shared learning database |
+| Reacts to conditions | Plans ahead via PDCA loop |
 
-## Quickstart
+---
 
-1. [Download OpenKore](https://github.com/OpenKore/openkore/archive/master.zip) and extract it. Alternatively, you could press the **Windows Key + R**, type in ``cmd`` & enter. Run the following command in the cmd to clone.
-***Note: [Git](https://git-scm.com/) required.***
+## Features
+
+- **3-tier decision engine** — Fast reflex rules (25 built-in) → Heuristic scoring (17 profiles) → LLM (DeepSeek optional)
+- **Multi-bot fleet** — Bots share state, auto-assign roles (tank/healer/dps/crafter), relay messages
+- **Self-learning** — Tracks outcomes per action/map/monster. Improves over time. Cross-bot experience sharing.
+- **Cost control** — Set daily token budget, hourly call limit, or disable LLM entirely. Configurable per environment.
+- **30+ RO mechanics** — Party, PVP, GVG, MVP, refine, cards, quests, crafting, job change, stat/skill allocation
+- **NPC interaction** — Auto-talk for warps, quests, job changes, storage, vending, Kafra
+- **Live console** — `start.sh` streams all bots + sidecar logs in one terminal, color-coded
+- **API server** — FastAPI with 24 endpoints, auth middleware, fleet coordination
+- **Works with vanilla OpenKore configs** — Uses standard `control/config.txt` format
+
+---
+
+## Required
+
+- **Python 3.11+** — For the AI sidecar
+- **Perl 5** — For the OpenKore client (bundled)
+- **Ragnarok Online account** — On any server compatible with OpenKore
+- **DeepSeek API key** (optional) — For LLM-powered decisions. Get one at [platform.deepseek.com](https://platform.deepseek.com)
+
+---
+
+## Quick Start (Single Bot)
+
+```bash
+# 1. Clone
+git clone https://github.com/iskandarsulaili/openkore-ai-v3.git
+cd openkore-ai-v3
+
+# 2. Set up credentials
+cat >> .env << 'EOF'
+BOT_kicapmasin2_PASS=your_password
+EOF
+
+# 3. Install Python sidecar
+cd AI_sidecar
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+cd ..
+
+# 4. Set server details in control/config.txt
+#    master YourServer
+#    username your_username
+#    password your_password
+#    char 0
+
+# 5. Start
+source AI_sidecar/venv/bin/activate
+nohup python -m ai_sidecar.app > logs/sidecar.log 2>&1 &
+
+perl -I src openkore.pl
 ```
-git clone https://github.com/OpenKore/openkore.git
+
+## Quick Start (Multi-Bot Fleet)
+
+```bash
+# Same as above, but set up one profile per account:
+
+mkdir -p profiles/char1/control profiles/char2/control
+cp control/config.txt profiles/char1/control/
+cp control/config.txt profiles/char2/control/
+# Edit each profile's config.txt with different credentials
+
+# Set passwords in .env
+cat >> .env << 'EOF'
+BOT_char1_PASS=pass1
+BOT_char2_PASS=pass2
+EOF
+
+# Start everything at once:
+./start.sh all
 ```
 
-2. Configure OpenKore: [documentation](https://openkore.com/wiki/Category:control).
-3. Run openkore.pl _(You can run start.exe or wxstart.exe if you use Windows)_.
+The console shows all bots + sidecar logs in one view. `Ctrl+C` stops everything cleanly.
 
-## F.A.Q. (Frequently Asked Questions)
-<!-- Source: https://forums.openkore.com/viewtopic.php?f=0&t=11287 -->
- 1. **Have a problem?**
-    - Update your openkore or download a new one.
- 2. **Still having problems?**
-    - Search in [Wiki](https://openkore.com/wiki/).
-    - Search in [Forum](https://forums.openkore.com/).
-    - Search in [Github issues](https://github.com/openkore/openkore/issues?utf8=%E2%9C%93&q=).
- 3. **Cant find what you need? / Do not understand?**
-    - Ask in [Discord](https://discord.com/invite/hdAhPM6).
- 4. **Is it a problem in Openkore?**
-    - Read [things to know](https://github.com/OpenKore/openkore#things-to-know) before [reporting](https://github.com/OpenKore/openkore/issues/new).
+---
 
-## Things to know
+## Cost Tiers
 
-* Make sure you've read [FAQ](https://github.com/OpenKore/openkore#faq-frequently-asked-questions) especially to [run latest commit on master branch](https://github.com/OpenKore/openkore/commits/master) & checking [existed issue for your request.](https://github.com/OpenKore/openkore/issues?utf8=%E2%9C%93&q=)
-* Please post in English.
-* Please use the issue template.
-* Please include informations about your server & any changes you did in your configuration.
-* Briefly explain what happened, take a screenhot & include the error message _(If available)_.
-* Please be advised any developers here are doing this on their free time. Please give some time for anyone to respond.
+Set in `AI_sidecar/.env`:
 
-## Status of botting on Official Servers
+| Setting | Effect |
+|---------|--------|
+| `llm_cost_tier=off` | Reflex + heuristic only. $0. |
+| `llm_cost_tier=economy` | 512 token context, minimal LLM |
+| `llm_cost_tier=standard` | 2K context, normal LLM (default) |
+| `llm_cost_tier=premium` | 8K context, full LLM reasoning |
 
-| Server | Description | Protection | Status | Supporter |
-| --- | --- | --- | --- | --- |
-| [aRO Baphomet](https://www.gnjoy.asia/) | Asia RO | CheatDefender | Not working | N/A |
-| [bRO](https://playragnarokonlinebr.com/) | Brazil RO | EAC | Not working | N/A |
-| [cRO](https://ro.zhaouc.com/) | China RO | nProtect | Not working | N/A |
-| [euRO Prime](https://eu.4game.com/roprime/) | Europe RO | Frost Security | Not working | N/A |
-| [iRO Сhaos/Thor/Freya](http://renewal.playragnarok.com/) | International RO | EAC | Not working | N/A |
-| [idRO Classic](https://roclassic.gnjoy.id/) | Indonesia RO | nProtect | Not Working | N/A |
-| [idRO Yggdrasil](https://ro.gnjoy.id/) | Indonesia RO (Forever Love) | EAC | Not Working | N/A |
-| [jRO](https://ragnarokonline.gungho.jp/) | Japan RO | nProtect | Not working | N/A |
-| [kRO](http://ro.gnjoy.com/) | Korea RO | nProtect | Not working | N/A |
-| [kRO Zero](http://roz.gnjoy.com/) | Korea RO | nProtect | Not working | N/A |
-| [laRO](https://rola.maxion.gg/) | Latam (Landverse America) | Custom | Not working | N/A |
-| [ROla](https://www.gnjoylatam.com/) | Latam RO | nProtect | Not working | N/A |
-| [ruRO Prime](https://ru.4game.com/roprime/) | Russia RO | Frost Security | Not Working | ya4ept |
-| [tRO Chaos/Thor](https://ro.gnjoy.in.th/) | Thailand RO (Online) | nProtect | Not Working | N/A |
-| [tRO Classic](https://roc.gnjoy.in.th/) | Thailand RO (Classic) | nProtect | Not Working | N/A |
-| [tRO Baphomet](https://rolth.maxion.gg/) | Thailand (Landverse) | Custom | Not Working | N/A |
-| [tRO Baphomet](https://rolg.maxion.gg/) | Thailand (Landverse Genesis) | Custom | Not Working | N/A |
-| [twRO](https://ro.gnjoy.com.tw/) | Taiwan RO | CheatDefender | Not Working | N/A |
+Add `llm_daily_budget_tokens=50000` or `llm_max_calls_per_hour=20` to cap usage.
 
-## Contributing
+---
 
-OpenKore is developed by a [team](https://github.com/OpenKore/openkore/graphs/contributors) located around the world. Check out the [documentation](https://openkore.com/wiki/Manual) and if necessary, submit a pull request.
+## Commands
 
-## Contacts
+| Command | What it does |
+|---------|-------------|
+| `./start.sh all` | Start sidecar + all bots + console view |
+| `./start.sh status` | Show running bots |
+| `./start.sh stop` | Stop everything |
+| `./start.sh tail` | Re-attach console view |
+| `perl -I src openkore.pl --control=profiles/<name>/control` | Start one bot with profile |
 
-* [OpenKore Wiki](https://openkore.com/wiki/)
-* [OpenKore forum](https://forums.openkore.com/)
-* [Discord](https://discord.com/invite/hdAhPM6)
-* [Russian Community](https://RO-fan.ru/)
+---
 
-## **Warning**
+## Links
 
-Other communities or websites are not affiliated to openkore.com
+- Vanilla OpenKore: [github.com/OpenKore/openkore](https://github.com/OpenKore/openkore)
+- OpenKore wiki: [openkore.com](https://openkore.com)
+- DeepSeek API: [platform.deepseek.com](https://platform.deepseek.com)
+- Discord (support): [discord.gg/zHCKr3rbM](https://discord.gg/zHCKr3rbM)
 
-## Other Links
-
-1. [Openkore History](https://openkore.com/wiki/OpenKore)
-2. [Legacy Changelog](https://github.com/OpenKore/openkore/blob/master/LegacyChangelog.md)
-3. [Openkore RoadMap](https://openkore.com/wiki/roadmap)
-4. [Feature Requests and TODO Wiki](https://openkore.com/wiki/Category:Feature_Request) and [Feature Requests GitHub](https://github.com/OpenKore/openkore/issues?q=is%3Aopen+is%3Aissue+label%3A%22feature+request%22)
+---
 
 ## License
 
-This software is open source, licensed under the GNU General Public License, version 2.
-Basically, this means that you're free to use and allowed to modify and distribute this software.
-However, if you distribute modified versions, you **MUST** also distribute the source code.
-
-
-See https://www.gnu.org/licenses/gpl-3.0.html for the full license.
+GNU General Public License v2.0 — same as vanilla OpenKore.
