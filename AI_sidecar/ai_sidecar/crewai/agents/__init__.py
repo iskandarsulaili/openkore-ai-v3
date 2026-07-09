@@ -2,45 +2,137 @@ from __future__ import annotations
 
 from typing import Any
 
-from ai_sidecar.crewai.agents.command_emitter_agent import create_command_emitter_agent
-from ai_sidecar.crewai.agents.manager_agent import create_manager_agent
-from ai_sidecar.crewai.agents.opportunistic_trader_agent import create_opportunistic_trader_agent
-from ai_sidecar.crewai.agents.progression_planner_agent import create_progression_planner_agent
-from ai_sidecar.crewai.agents.resource_manager_agent import create_resource_manager_agent
-from ai_sidecar.crewai.agents.social_coordinator_agent import create_social_coordinator_agent
-from ai_sidecar.crewai.agents.state_assessor_agent import create_state_assessor_agent
-from ai_sidecar.crewai.agents.strategic_planner_agent import create_strategic_planner_agent
-from ai_sidecar.crewai.agents.tactical_commander_agent import create_tactical_commander_agent
-from ai_sidecar.crewai.config import LEGACY_AGENT_ROUTING
+from ai_sidecar.crewai.agents.base_agent import BehaviorProfile
+from ai_sidecar.crewai.agents.combat_agent import CombatProfile
+from ai_sidecar.crewai.agents.navigation_agent import NavigationProfile
+from ai_sidecar.crewai.agents.economy_agent import EconomyProfile
+from ai_sidecar.crewai.agents.questing_agent import QuestingProfile
+from ai_sidecar.crewai.agents.safety_agent import SafetyProfile
+from ai_sidecar.crewai.agents.social_agent import SocialProfile
+from ai_sidecar.crewai.agents.manager_agent import ManagerProfile
+from ai_sidecar.crewai.agents.tactical_commander_agent import TacticalCommanderProfile
+from ai_sidecar.crewai.agents.strategic_planner_agent import StrategicPlannerProfile
+from ai_sidecar.crewai.agents.progression_planner_agent import ProgressionPlannerProfile
+from ai_sidecar.crewai.agents.resource_manager_agent import ResourceManagerProfile
+from ai_sidecar.crewai.agents.command_emitter_agent import CommandEmitterProfile
+from ai_sidecar.crewai.agents.macro_engineer_agent import MacroEngineerProfile
+from ai_sidecar.crewai.agents.opportunistic_trader_agent import OpportunisticTraderProfile
+from ai_sidecar.crewai.agents.fleet_liaison_agent import FleetLiaisonProfile
+from ai_sidecar.crewai.agents.state_assessor_agent import StateAssessorProfile
+from ai_sidecar.crewai.agents.social_coordinator_agent import SocialCoordinatorProfile
+
+# ---- New behavior-profile API (no CrewAI dependency) ----
+
+AGENT_PROFILES: dict[str, type[BehaviorProfile]] = {
+    "combat": CombatProfile,
+    "navigation": NavigationProfile,
+    "economy": EconomyProfile,
+    "questing": QuestingProfile,
+    "safety": SafetyProfile,
+    "social": SocialProfile,
+    "manager": ManagerProfile,
+    "tactical_commander": TacticalCommanderProfile,
+    "strategic_planner": StrategicPlannerProfile,
+    "progression_planner": ProgressionPlannerProfile,
+    "resource_manager": ResourceManagerProfile,
+    "command_emitter": CommandEmitterProfile,
+    "macro_engineer": MacroEngineerProfile,
+    "opportunistic_trader": OpportunisticTraderProfile,
+    "fleet_liaison": FleetLiaisonProfile,
+    "state_assessor": StateAssessorProfile,
+    "social_coordinator": SocialCoordinatorProfile,
+}
+
+
+def get_profile(agent_id: str) -> BehaviorProfile:
+    """Instantiate a profile by agent_id."""
+    cls = AGENT_PROFILES.get(agent_id)
+    if cls is None:
+        raise ValueError(f"unknown behavior profile: {agent_id}")
+    return cls()
+
+
+def get_all_profiles() -> list[BehaviorProfile]:
+    """Return one instance of every registered profile."""
+    return [cls() for cls in AGENT_PROFILES.values()]
+
+
+def best_profile(signals: dict) -> tuple[str, float]:
+    """Score all profiles against the given signals and return the best (agent_id, score)."""
+    best_id = ""
+    best_score = -1.0
+    for agent_id, cls in AGENT_PROFILES.items():
+        profile = cls()
+        score = profile.can_handle(signals)
+        if score > best_score:
+            best_score = score
+            best_id = agent_id
+    return best_id, best_score
+
+
+# ---- Backward-compatible factory for crew_manager.py (constructs CrewAI Agent) ----
 
 
 def _normalize_agent_id(agent_id: str) -> str:
-    resolved = LEGACY_AGENT_ROUTING.get(agent_id, agent_id)
-    return str(resolved)
+    return str(agent_id)
 
 
-def create_agent_by_id(*, agent_id: str, llm: Any, tools: list[Any], verbose: bool) -> Any:
+def create_agent_by_id(*, agent_id: str, llm: Any = None, tools: list[Any] | None = None, verbose: bool = False) -> Any:
+    """Backward-compatible factory for crew_manager.py.
+
+    Builds a CrewAI Agent from config profile data.
+    Only imports crewai SDK at call time. Falls back to a
+    plain BehaviorProfile instance if crewai is not installed.
+    """
+    from ai_sidecar.crewai.config import AGENT_PROFILES as CONFIG_AGENT_PROFILES
+
     normalized = _normalize_agent_id(agent_id)
-    if normalized == "tactical_commander":
-        return create_tactical_commander_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "strategic_planner":
-        return create_strategic_planner_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "resource_manager":
-        return create_resource_manager_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "social_coordinator":
-        return create_social_coordinator_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "state_assessor":
-        return create_state_assessor_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "progression_planner":
-        return create_progression_planner_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "opportunistic_trader":
-        return create_opportunistic_trader_agent(llm=llm, tools=tools, verbose=verbose)
-    if normalized == "command_emitter":
-        return create_command_emitter_agent(llm=llm, tools=tools, verbose=verbose)
-    raise ValueError(f"unknown_agent_id:{agent_id}->{normalized}")
+    profile = next((item for item in CONFIG_AGENT_PROFILES if item.agent_id == normalized), None)
+    if profile is None:
+        raise ValueError(f"unknown_agent_id:{agent_id}->{normalized}")
+
+    try:
+        from crewai import Agent
+
+        return Agent(
+            role=profile.role,
+            goal=profile.goal,
+            backstory=profile.backstory,
+            tools=tools or [],
+            llm=llm,
+            allow_delegation=False,
+            verbose=verbose,
+        )
+    except ImportError:
+        return get_profile(normalized)
 
 
 __all__ = [
+    # Base
+    "BehaviorProfile",
+    # Profiles
+    "CombatProfile",
+    "NavigationProfile",
+    "EconomyProfile",
+    "QuestingProfile",
+    "SafetyProfile",
+    "SocialProfile",
+    "ManagerProfile",
+    "TacticalCommanderProfile",
+    "StrategicPlannerProfile",
+    "ProgressionPlannerProfile",
+    "ResourceManagerProfile",
+    "CommandEmitterProfile",
+    "MacroEngineerProfile",
+    "OpportunisticTraderProfile",
+    "FleetLiaisonProfile",
+    "StateAssessorProfile",
+    "SocialCoordinatorProfile",
+    # New API
+    "AGENT_PROFILES",
+    "get_profile",
+    "get_all_profiles",
+    "best_profile",
+    # Backward compat
     "create_agent_by_id",
-    "create_manager_agent",
 ]

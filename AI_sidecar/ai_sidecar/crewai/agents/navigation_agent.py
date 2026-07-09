@@ -1,12 +1,38 @@
 from __future__ import annotations
 
 from typing import Any
-
-from ai_sidecar.crewai.agents.base_agent import build_agent
-from ai_sidecar.crewai.config import AGENT_PROFILES
+from .base_agent import BehaviorProfile
 
 
-def create_navigation_agent(*, llm: Any, tools: list[Any], verbose: bool) -> Any:
-    profile = next(item for item in AGENT_PROFILES if item.agent_id == "navigation")
-    return build_agent(profile, llm=llm, tools=tools, allow_delegation=False, verbose=verbose)
 
+class NavigationProfile(BehaviorProfile):
+    """Map movement, portal usage, auto-travel."""
+
+    agent_id = "navigation"
+    role = "Navigation Specialist"
+    goal = "Navigate the world efficiently using portals and safe routes"
+    backstory = (
+        "A cartographer at heart, this agent knows the fastest paths between "
+        "every town, dungeon, and field. It plans routes that avoid dangerous "
+        "zones and minimizes travel time."
+    )
+
+    def can_handle(self, signals: dict[str, Any]) -> float:
+        has_target = bool(signals.get("travel_target"))
+        is_lost = signals.get("state") == "lost"
+        if has_target:
+            return 0.9
+        if is_lost:
+            return 0.8
+        return 0.0
+
+    def get_action(self, signals: dict[str, Any]) -> dict[str, Any] | None:
+        target = signals.get("travel_target")
+        current_map = signals.get("map", "")
+        if target and current_map != target:
+            return {"kind": "move", "command": f"move {target}", "confidence": 0.9, "reason": f"Traveling to {target}"}
+
+        if signals.get("state") == "lost":
+            return {"kind": "explore", "command": "auto_travel save", "confidence": 0.7, "reason": "Recovering from unknown position"}
+
+        return None

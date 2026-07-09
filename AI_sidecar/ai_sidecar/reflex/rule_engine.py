@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 from threading import RLock
 from time import perf_counter
@@ -19,11 +20,16 @@ from ai_sidecar.contracts.reflex import (
     ReflexTriggerRecord,
 )
 from ai_sidecar.contracts.state_graph import EnrichedWorldState
+import json
+import logging
+from pathlib import Path
 from ai_sidecar.reflex.action_emitter import ActionEmitter
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
 from ai_sidecar.reflex.trigger_matcher import TriggerMatcher
 
 
+
+logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class _RuleDescriptor:
     rule: ReflexRule
@@ -558,6 +564,80 @@ class ReflexRuleEngine:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    def load_rules_from_yaml(self, path: str | Path) -> int:
+        """Load reflex rules from a YAML file. Returns number of rules loaded."""
+        path = Path(path)
+        if not path.exists():
+            logger.warning("reflex_rules_yaml_not_found: %s", path)
+            return 0
+        try:
+            import yaml
+        except ImportError:
+            logger.warning("reflex_rules_yaml_unavailable: PyYAML not installed, skipping YAML rules")
+            return 0
+        
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        
+        if not isinstance(data, dict) or "rules" not in data:
+            logger.warning("reflex_rules_yaml_invalid: missing 'rules' key in %s", path)
+            return 0
+        
+        raw_rules = data["rules"]
+        if not isinstance(raw_rules, list):
+            return 0
+        
+        count = 0
+        for raw in raw_rules:
+            if not isinstance(raw, dict) or not raw.get("rule_id"):
+                continue
+            try:
+                rule = self._yaml_to_rule(raw)
+                self.upsert_rule(bot_id="default", rule=rule)
+                count += 1
+            except Exception as exc:
+                logger.warning("reflex_rules_yaml_parse_failed: rule=%s error=%s", raw.get("rule_id"), exc)
+        
+        logger.info("reflex_rules_yaml_loaded: %d rules from %s", count, path)
+        return count
+
+    def _yaml_to_rule(self, raw: dict) -> ReflexRule:
+        """Convert YAML rule dict to ReflexRule contract."""
+        from ai_sidecar.contracts.reflex import (
+            ReflexRule, ReflexTriggerClause, ReflexPredicate,
+            ReflexActionTemplate, ReflexCategory, ReflexPlannerInterop,
+        )
+        
+        trigger_raw = raw.get("trigger", {})
+        all_preds = []
+        for pred_raw in trigger_raw.get("all", []):
+            all_preds.append(ReflexPredicate(
+                fact=pred_raw["fact"],
+                op=pred_raw["op"],
+                value=pred_raw["value"],
+            ))
+        
+        action_raw = raw.get("action", {})
+        action = ReflexActionTemplate(
+            kind=action_raw.get("kind", "command"),
+            command=action_raw.get("command", ""),
+            priority_tier=action_raw.get("priority_tier", "reflex"),
+            conflict_key=action_raw.get("conflict_key", "default"),
+        )
+        
+        return ReflexRule(
+            rule_id=raw["rule_id"],
+            enabled=raw.get("enabled", True),
+            priority=int(raw.get("priority", 10)),
+            trigger=ReflexTriggerClause(all=all_preds),
+            guards=[],
+            action_template=action,
+            fallback_macro=str(raw.get("fallback_macro") or "") if raw.get("fallback_macro") else None,
+            cooldown_ms=int(raw.get("cooldown_ms", 1000)),
+            circuit_breaker_key=raw.get("circuit_breaker_key", "default"),
+            category=ReflexCategory(raw.get("category", "interaction")),
+        )
 
     def _default_rules(self) -> list[ReflexRule]:
         return [

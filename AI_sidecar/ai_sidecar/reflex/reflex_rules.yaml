@@ -1,0 +1,187 @@
+# Reflex Rules Configuration
+# Each rule is evaluated in priority order (lower number = higher priority).
+# Format: YAML with fact predicates matching ReflexPredicate structure.
+
+rules:
+  - rule_id: emergency_heal_potion
+    enabled: true
+    priority: 5
+    category: survival
+    cooldown_ms: 1500
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.35 }
+        - { fact: "combat.is_in_combat", op: "eq", value: true }
+    guards: []
+    action:
+      kind: command
+      command: "ai manual"
+      priority_tier: reflex
+      conflict_key: survival.heal
+    fallback_macro: reflex_survival_heal
+
+  - rule_id: lethal_escape_teleport
+    enabled: true
+    priority: 1
+    category: survival
+    cooldown_ms: 5000
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.18 }
+        - { fact: "combat.is_in_combat", op: "eq", value: true }
+    guards: []
+    action:
+      kind: command
+      command: ""
+      priority_tier: reflex
+      conflict_key: survival.escape
+    fallback_macro: reflex_teleport_escape
+
+  - rule_id: self_heal_skill
+    enabled: true
+    priority: 10
+    category: survival
+    cooldown_ms: 3000
+    circuit_breaker_key: skill.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.50 }
+        - { fact: "vitals.sp_ratio", op: "gte", value: 0.20 }
+        - { fact: "skills.heal", op: "gte", value: 1 }
+    guards: []
+    action:
+      kind: command
+      command: "use_skill heal"
+      priority_tier: reflex
+      conflict_key: survival.heal
+
+  - rule_id: agile_flee_many
+    enabled: true
+    priority: 8
+    category: combat
+    cooldown_ms: 2000
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "combat.aggro_count", op: "gte", value: 4 }
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.60 }
+    guards: []
+    action:
+      kind: command
+      command: "ai manual\nflee"
+      priority_tier: reflex
+      conflict_key: combat.flee
+    fallback_macro: reflex_flee_overwhelmed
+
+  - rule_id: safe_auto_resume
+    enabled: true
+    priority: 20
+    category: interaction
+    cooldown_ms: 5000
+    circuit_breaker_key: movement.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "gte", value: 0.70 }
+        - { fact: "combat.is_in_combat", op: "eq", value: false }
+        - { fact: "combat.aggro_count", op: "eq", value: 0 }
+        - { fact: "ai.is_manual", op: "eq", value: true }
+    guards: []
+    action:
+      kind: command
+      command: "ai auto"
+      priority_tier: reflex
+      conflict_key: interaction.resume_auto
+
+  - rule_id: weight_warning
+    enabled: true
+    priority: 15
+    category: interaction
+    cooldown_ms: 60000
+    circuit_breaker_key: inventory.default
+    trigger:
+      all:
+        - { fact: "inventory.weight_ratio", op: "gte", value: 0.80 }
+        - { fact: "combat.is_in_combat", op: "eq", value: false }
+    guards: []
+    action:
+      kind: command
+      command: "return_to_vendor"
+      priority_tier: reflex
+      conflict_key: inventory.weight_guard
+
+  - rule_id: auto_pickup
+    enabled: true
+    priority: 25
+    category: interaction
+    cooldown_ms: 1000
+    circuit_breaker_key: loot.default
+    trigger:
+      all:
+        - { fact: "ground.nearby_items", op: "gte", value: 1 }
+        - { fact: "combat.is_in_combat", op: "eq", value: false }
+        - { fact: "inventory.weight_ratio", op: "lte", value: 0.85 }
+    guards: []
+    action:
+      kind: command
+      command: "take"
+      priority_tier: reflex
+      conflict_key: loot.pickup
+
+  - rule_id: party_heal_ally
+    enabled: true
+    priority: 12
+    category: survival
+    cooldown_ms: 4000
+    circuit_breaker_key: party.default
+    trigger:
+      all:
+        - { fact: "party.lowest_hp_ratio", op: "lte", value: 0.40 }
+        - { fact: "skills.heal", op: "gte", value: 1 }
+        - { fact: "party.has_members", op: "eq", value: true }
+    guards: []
+    action:
+      kind: command
+      command: "party_heal 1"
+      priority_tier: reflex
+      conflict_key: party.heal
+
+  - rule_id: sit_recover
+    enabled: true
+    priority: 30
+    category: survival
+    cooldown_ms: 10000
+    circuit_breaker_key: recovery.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.60 }
+        - { fact: "vitals.sp_ratio", op: "lte", value: 0.40 }
+        - { fact: "combat.is_in_combat", op: "eq", value: false }
+        - { fact: "combat.aggro_count", op: "eq", value: 0 }
+        - { fact: "ai.is_sitting", op: "eq", value: false }
+    guards: []
+    action:
+      kind: command
+      command: "sit"
+      priority_tier: reflex
+      conflict_key: recovery.sit
+
+  - rule_id: aggro_attack
+    enabled: true
+    priority: 22
+    category: combat
+    cooldown_ms: 2000
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "combat.aggro_count", op: "gte", value: 1 }
+        - { fact: "combat.aggro_count", op: "lte", value: 3 }
+        - { fact: "vitals.hp_ratio", op: "gte", value: 0.50 }
+        - { fact: "ai.is_manual", op: "eq", value: false }
+    guards: []
+    action:
+      kind: command
+      command: "attack"
+      priority_tier: reflex
+      conflict_key: combat.attack

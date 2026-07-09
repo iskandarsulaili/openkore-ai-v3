@@ -1,12 +1,41 @@
 from __future__ import annotations
 
 from typing import Any
-
-from ai_sidecar.crewai.agents.base_agent import build_agent
-from ai_sidecar.crewai.config import AGENT_PROFILES
+from .base_agent import BehaviorProfile
 
 
-def create_tactical_commander_agent(*, llm: Any, tools: list[Any], verbose: bool) -> Any:
-    profile = next(item for item in AGENT_PROFILES if item.agent_id == "tactical_commander")
-    return build_agent(profile, llm=llm, tools=tools, allow_delegation=False, verbose=verbose)
 
+class TacticalCommanderProfile(BehaviorProfile):
+    """Combat tactics, skill rotation."""
+
+    agent_id = "tactical_commander"
+    role = "Tactical Commander"
+    goal = "Execute optimal skill rotations and combat tactics for each encounter"
+    backstory = (
+        "A veteran of a thousand battles, this agent reads every fight "
+        "with surgical precision. It knows exactly which skills to chain, "
+        "when to buff, when to debuff, and how to position for maximum "
+        "effectiveness against any foe."
+    )
+
+    def can_handle(self, signals: dict[str, Any]) -> float:
+        monsters = signals.get("monsters_around", [])
+        target = signals.get("target", {})
+        in_combat = bool(target) or bool(monsters)
+        if not in_combat:
+            return 0.0
+        return 0.7 if target else 0.3
+
+    def get_action(self, signals: dict[str, Any]) -> dict[str, Any] | None:
+        target = signals.get("target", {})
+        if not target:
+            return None
+
+        skills = signals.get("skills", [])
+        # first offensive skill in rotation
+        offense = [s for s in skills if s.get("type") == "offensive"]
+        if offense:
+            skill = offense[0]
+            return {"kind": "skill", "command": f"use_skill {skill.get('id', 0)} {target.get('id', '')}", "confidence": 0.85, "reason": f"Executing skill rotation: {skill.get('name', '?')}"}
+
+        return {"kind": "attack", "command": f"attack {target.get('name', 'monster')}", "confidence": 0.6, "reason": "Auto-attacking target"}
