@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import logging
 import time
 from dataclasses import dataclass, field
@@ -204,24 +205,37 @@ class PDCALoop:
         return self._cycle_count
 
     def start(self) -> None:
-        """Start the PDCA loop in a background task."""
+        """Start the PDCA loop in a background thread with its own event loop.
+        Prevents LLM API calls from blocking the uvicorn event loop."""
         if self._running:
             logger.warning("PDCALoop already running")
             return
         self._running = True
-        self._task = asyncio.create_task(self._run_loop())
-        logger.info("PDCALoop started")
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_in_thread, daemon=True)
+        self._thread.start()
+        logger.info("PDCALoop started in background thread")
+
+    def _run_in_thread(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._loop.run_until_complete(self._run_loop())
+        except Exception:
+            logger.exception("PDCALoop thread crashed")
+        finally:
+            self._loop.close()
+            self._running = False
 
     async def stop(self) -> None:
         """Stop the PDCA loop gracefully."""
         self._running = False
-        if self._task:
-            self._task.cancel()
+        if hasattr(self, '_loop') and self._loop is not None:
             try:
-                await self._task
-            except asyncio.CancelledError:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
                 pass
-            self._task = None
+            if hasattr(self, '_thread') and self._thread is not None:
+                self._thread.join(timeout=3)
         logger.info("PDCALoop stopped")
 
     async def get_status(self) -> dict[str, Any]:
