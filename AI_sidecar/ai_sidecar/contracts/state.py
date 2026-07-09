@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,7 +16,7 @@ class Position(BaseModel):
 
 
 class Vitals(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     hp: int | None = None
     hp_max: int | None = None
@@ -24,21 +24,28 @@ class Vitals(BaseModel):
     sp_max: int | None = None
     weight: int | None = None
     weight_max: int | None = None
+    hp_ratio: float | None = None
+    sp_ratio: float | None = None
+    level: int | None = None
 
 
 class CombatState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     ai_sequence: str | None = None
     target_id: str | None = None
     is_in_combat: bool = False
+    aggro_count: int | None = None
 
 
 class InventoryDigest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     zeny: int | None = None
     item_count: int | None = None
+    weight: int | None = None
+    weight_max: int | None = None
+    weight_ratio: float | None = None
 
 
 class InventoryItemDigest(BaseModel):
@@ -171,11 +178,12 @@ class ActorDigest(BaseModel):
 
 
 class BotStateSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     meta: ContractMeta
-    tick_id: str = Field(min_length=1, max_length=128)
-    observed_at: datetime
+    tick_id: str = Field(default="auto", min_length=1, max_length=128)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    map_known: bool = False
     position: Position = Field(default_factory=Position)
     vitals: Vitals = Field(default_factory=Vitals)
     combat: CombatState = Field(default_factory=CombatState)
