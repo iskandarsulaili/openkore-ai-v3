@@ -69,3 +69,4 @@ benchmark-results.txt
 .tmp_perl_stubs/
 logs/
 .openkore-pids
+.env

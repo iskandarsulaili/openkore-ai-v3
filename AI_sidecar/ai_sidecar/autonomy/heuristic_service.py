@@ -142,8 +142,6 @@ class HeuristicService:
             signals=dict(signals),
         )
         bot_id = signals.get("bot_id", "default")
-        if not hasattr(self, '_last_assessment'):
-            object.__setattr__(self, '_last_assessment', {})
         self._last_assessment[bot_id] = assessment
         return assessment
 

@@ -25,17 +25,14 @@ BOT_NAMES=("kicapmasin2" "kicapmasin" "kicapmasin3")
 
 BOT_MASTER["kicapmasin2"]="Asgards Glory"
 BOT_USER["kicapmasin2"]="kicapmasin2"
-BOT_PASS["kicapmasin2"]="sedap888"
 BOT_CHAR["kicapmasin2"]="0"
 
 BOT_MASTER["kicapmasin"]="Asgards Glory"
 BOT_USER["kicapmasin"]="kicapmasin"
-BOT_PASS["kicapmasin"]="b0tTib0tTi"
 BOT_CHAR["kicapmasin"]="0"
 
 BOT_MASTER["kicapmasin3"]="Asgards Glory"
 BOT_USER["kicapmasin3"]="kicapmasin3"
-BOT_PASS["kicapmasin3"]="sedap888"
 BOT_CHAR["kicapmasin3"]="0"
 
 # ------------------------------------------------------------------
@@ -78,6 +75,25 @@ _wait_for_sidecar() {
     done
     err "Sidecar did not become ready within ${timeout}s (check $SIDECAR_LOG)"
     return 1
+}
+
+_load_env() {
+    local env_file="$SCRIPT_DIR/.env"
+    if [ -f "$env_file" ]; then
+        set -a
+        source "$env_file"
+        set +a
+    fi
+    for name in "${BOT_NAMES[@]}"; do
+        local var_name="BOT_${name}_PASS"
+        if [ -n "${!var_name:-}" ]; then
+            BOT_PASS["$name"]="${!var_name}"
+        elif [ -z "${BOT_PASS[$name]:-}" ]; then
+            read -s -p "Enter password for $name (or set BOT_${name}_PASS in .env): " pw
+            echo ""
+            BOT_PASS["$name"]="$pw"
+        fi
+    done
 }
 
 _setup_env() {
@@ -298,6 +314,7 @@ case "${1:-all}" in
         _tail_all
         ;;
     bot)
+        _load_env
         if [ -z "${2:-}" ]; then
             err "Usage: $0 bot <name>"
             err "Available bots: ${BOT_NAMES[*]}"
@@ -317,6 +334,7 @@ case "${1:-all}" in
         _tail_all
         ;;
     all|start)
+        _load_env
         label "OPENKORE AI V3 — Starting Full Stack"
         echo -e "  Sidecar: port ${CYAN}$SIDECAR_PORT${NC}"
         echo -e "  Bots:    ${GREEN}${BOT_NAMES[*]}${NC}"
