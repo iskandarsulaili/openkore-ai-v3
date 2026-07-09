@@ -40,7 +40,8 @@ A modified OpenKore that adds an **AI decision engine** (FastAPI + Python) along
 - **Self-learning** — Tracks outcomes per action/map/monster. Improves over time. Cross-bot experience sharing.
 - **Cost control** — Set daily token budget, hourly call limit, or disable LLM entirely. Configurable per environment.
 - **30+ RO mechanics** — Party, PVP, GVG, MVP, refine, cards, quests, crafting, job change, stat/skill allocation
-- **NPC interaction** — Auto-talk for warps, quests, job changes, storage, vending, Kafra
+- **NPC interaction** — Auto-talk for warps, quests, job changes, storage, vending, Kafra. LLM-powered conversation engine for complex NPCs.
+- **LLM-powered NPC dialog** — Heuristic response sequences for common NPCs (warp/Kafra/shops), LLM fallback for quest/job/refine NPCs
 - **Live console** — `start.sh` streams all bots + sidecar logs in one terminal, color-coded
 - **API server** — FastAPI with 24 endpoints, auth middleware, fleet coordination
 - **Works with vanilla OpenKore configs** — Uses standard `control/config.txt` format
