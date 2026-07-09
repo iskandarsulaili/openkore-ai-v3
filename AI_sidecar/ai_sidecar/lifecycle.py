@@ -101,11 +101,17 @@ from ai_sidecar.domain.control_validator import ControlValidator
 from ai_sidecar.fleet import (
     ConstraintIngestionState,
     FleetConflictResolver,
+    FleetCoordinatorService,
     FleetSyncClient,
     OutcomeReporter,
     RoleManager,
-    FleetCoordinatorService,
+)
+from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
+from ai_sidecar.fleet.self_learning import (
     SelfLearningSystem,
+    PerformanceRecord,
+    SkillEffectiveness,
+    ItemEffectiveness,
 )
 from ai_sidecar.ingestion.event_journal import EventJournal
 from ai_sidecar.ingestion.adapters.actor_state_adapter import actor_delta_to_events
@@ -5190,6 +5196,8 @@ def create_runtime() -> RuntimeState:
         fleet_constraint_state=fleet_constraint_state,
         fleet_outcome_reporter=fleet_outcome_reporter,
         fleet_conflict_resolver=fleet_conflict_resolver,
+        fleet_coordinator=fleet_coordinator,
+        self_learning_system=self_learning_system,
         observability_audit=observability_audit,
         slo_metrics=slo_metrics,
         trace_store=trace_store,
@@ -5243,6 +5251,15 @@ def create_runtime() -> RuntimeState:
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
     runtime.experience_db = ExperienceDatabase()
+    # Initialize fleet coordinator for multi-bot shared state & auto-coordination
+    fleet_coordinator_service = FleetCoordinatorService(
+        max_bots=256,
+        role_rotation_cooldown_s=120,
+    )
+    runtime.fleet_coordinator = FleetCoordinator(
+        experience_db=runtime.experience_db,
+        coordinator_service=fleet_coordinator_service,
+    )
     # Restore persisted budget state
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))

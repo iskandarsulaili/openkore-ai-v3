@@ -18,6 +18,7 @@ from ai_sidecar.api.routers import (
     control_domain,
     crewai_v2,
     fleet,
+    fleet_coordinator,
     fleet_v2,
     health,
     ingest,
@@ -195,6 +196,7 @@ def create_app() -> FastAPI:
     app.include_router(ml_subconscious_v2.router)
     app.include_router(fleet_v2.router)
     app.include_router(observability_v2.router)
+    app.include_router(fleet_coordinator.router)
     # Register autonomy router
     from ai_sidecar.api.routers.autonomy import router as autonomy_router, set_pdca_loop
 

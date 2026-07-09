@@ -12,6 +12,7 @@ from ai_sidecar.fleet.coordinator import (
     RoleMetrics,
     RoleType,
 )
+from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator, SharedGoal, SharedKnowledge
 from ai_sidecar.fleet.party_coordinator import PartyCoordinator, CoordinationAction
 from ai_sidecar.fleet.self_learning import (
     SelfLearningSystem,
@@ -33,6 +34,9 @@ __all__ = [
     "FleetMessage",
     "RoleMetrics",
     "RoleType",
+    "FleetCoordinator",
+    "SharedGoal",
+    "SharedKnowledge",
     # Party coordination
     "PartyCoordinator",
     "CoordinationAction",
