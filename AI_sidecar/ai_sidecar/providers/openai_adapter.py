@@ -66,10 +66,11 @@ class OpenAIAdapter(LLMProvider):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "response_format": {"type": "json_object"},
             "temperature": 0.2,
             "max_tokens": 1800,
         }
+        # json_object response format is disabled for local Qwen models
+        # which don't support it. Schema validation is done on the response.  
         data, latency_ms, error = await self._post_json(
             bot_id=request.bot_id,
             trace_id=request.trace_id,

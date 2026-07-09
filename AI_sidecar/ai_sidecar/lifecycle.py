@@ -181,6 +181,7 @@ from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
 from ai_sidecar.npc_dialog import NPCDialogEngine
+from ai_sidecar.web_research import WebResearchEngine
 from ai_sidecar.experience_db import ExperienceDatabase, ExperienceEntry
 
 logger = logging.getLogger(__name__)
@@ -340,38 +341,37 @@ def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
     return {
         "reflex_explain": {"providers": [], "models": {}},
         "tactical_short_reasoning": {
-            "providers": ["ollama", "deepseek"],
+            "providers": ["openai", "deepseek"],
             "models": {
-                "ollama": settings.provider_ollama_tactical_model,
+                "openai": settings.provider_openai_tactical_model,
                 "deepseek": settings.provider_deepseek_tactical_model,
             },
         },
         "strategic_planning": {
-            "providers": ["ollama", "deepseek"],
+            "providers": ["openai", "deepseek"],
             "models": {
-                "ollama": settings.provider_ollama_strategic_model,
+                "openai": settings.provider_openai_strategic_model,
                 "deepseek": settings.provider_deepseek_strategic_model,
             },
         },
         "autonomy_mission_decision": {
-            "providers": ["ollama", "deepseek"],
+            "providers": ["openai", "deepseek"],
             "models": {
-                "ollama": settings.provider_ollama_strategic_model,
+                "openai": settings.provider_openai_strategic_model,
                 "deepseek": settings.provider_deepseek_strategic_model,
             },
         },
         "long_reflection": {
-            "providers": ["deepseek", "ollama"],
+            "providers": ["openai", "deepseek"],
             "models": {
+                "openai": settings.provider_openai_reflection_model,
                 "deepseek": settings.provider_deepseek_reflection_model,
-                "ollama": settings.provider_ollama_reflection_model,
             },
         },
         "embeddings": {
-            "providers": ["ollama", "deepseek"],
+            "providers": ["openai"],
             "models": {
-                "ollama": settings.provider_ollama_embedding_model,
-                "deepseek": settings.provider_deepseek_embedding_model,
+                "openai": settings.provider_openai_embedding_model,
             },
         },
     }
@@ -5254,6 +5254,7 @@ def create_runtime() -> RuntimeState:
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
     runtime.experience_db = ExperienceDatabase()
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
+    runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
         max_bots=256,
