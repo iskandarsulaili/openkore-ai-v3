@@ -215,6 +215,49 @@ class PDCALoop:
 
     async def _run_one_cycle(self, horizon: Horizon) -> PDCAResult:
         """Execute one PDCA cycle for the given horizon."""
+        # ── Cost gate ──────────────────────────────────────────
+        if self._runtime_state is not None:
+            _ct = getattr(self._runtime_state, "cost_tracker", None)
+            _settings_available = True
+            try:
+                from ai_sidecar.config import settings as _settings
+                _tier = getattr(_settings, "llm_cost_tier", "standard")
+                
+                # Tier "off": skip all LLM cycles
+                if _tier == "off":
+                    logger.info("cost_gate[%s]: tier=off, skip", horizon.value)
+                    return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False, 
+                                      force_replan=False, selected_goal="cost_gated", objective="LLM disabled by cost tier",
+                                      replan_reasons=["cost_tier_off"], cycle_ms=0.0, error="")
+                
+                # Check daily/hourly budget
+                if _ct is not None:
+                    _allowed, _reason = _ct.check(
+                        daily_budget_tokens=getattr(_settings, "llm_daily_budget_tokens", 100000),
+                        max_calls_per_hour=getattr(_settings, "llm_max_calls_per_hour", 30),
+                        tier=_tier,
+                    )
+                    if not _allowed:
+                        logger.info("cost_gate[%s]: %s", horizon.value, _reason)
+                        return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
+                                          force_replan=False, selected_goal="budget_gated", objective=f"Budget exceeded: {_reason}",
+                                          replan_reasons=[_reason], cycle_ms=0.0, error="")
+                
+                # Heuristic skip: if heuristic service is confident enough, skip LLM
+                if getattr(_settings, "llm_skip_if_heuristic", True):
+                    _hs = getattr(self._runtime_state, "heuristic_service", None)
+                    if _hs is not None:
+                        _hc = getattr(_hs, "confidence_for", lambda h: 0.0)(horizon.value)
+                        _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
+                        if _hc >= _threshold:
+                            logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)
+                            return PDCAResult(plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
+                                              force_replan=False, selected_goal="heuristic_skip",
+                                              objective="Satisfied by heuristic rules",
+                                              replan_reasons=[], cycle_ms=0.0, error="")
+            except Exception:
+                logger.exception("cost_gate_check_failed")
+        
         start = time.monotonic()
         plan_id: str | None = self._artifact_id(self._active_plan[horizon])
         actions_queued = 0
