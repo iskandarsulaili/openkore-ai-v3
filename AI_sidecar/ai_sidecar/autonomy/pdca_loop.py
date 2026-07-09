@@ -306,8 +306,8 @@ class PDCALoop:
     async def _run_one_cycle(self, horizon: Horizon) -> PDCAResult:
         """Execute one PDCA cycle for the given horizon."""
         # ── Cost gate ──────────────────────────────────────────
-        if self._runtime_state is not None:
-            _ct = getattr(self._runtime_state, "cost_tracker", None)
+        if self._runtime is not None:
+            _ct = getattr(self._runtime, "cost_tracker", None)
             _settings_available = True
             try:
                 from ai_sidecar.config import settings as _settings
@@ -335,12 +335,12 @@ class PDCALoop:
                 
                 # Heuristic skip: if heuristic service is confident enough, skip LLM
                 if getattr(_settings, "llm_skip_if_heuristic", True):
-                    _hs = getattr(self._runtime_state, "heuristic_service", None)
+                    _hs = getattr(self._runtime, "heuristic_service", None)
                     if _hs is not None:
                         # Build signals for heuristic check
                         _signals = {}
                         try:
-                            _snap = getattr(self._runtime_state, "snapshot_cache", None)
+                            _snap = getattr(self._runtime, "snapshot_cache", None)
                             if _snap:
                                 _latest = _snap.latest()
                                 if _latest and isinstance(_latest, dict):
@@ -362,10 +362,10 @@ class PDCALoop:
                             # Push heuristic actions to the action queue
                             _actions_queued = 0
                             try:
-                                _hs_full = getattr(self._runtime_state, "heuristic_service", None)
+                                _hs_full = getattr(self._runtime, "heuristic_service", None)
                                 if _hs_full is not None:
                                     _bot_id_for_heuristic = self._resolve_bot_id()
-                                _actions_queued = _emit_heuristic_actions(self._runtime_state, horizon.value, bot_id=_bot_id_for_heuristic)
+                                _actions_queued = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bot_id_for_heuristic)
                             except Exception:
                                 logger.exception("heuristic_action_emission_failed")
                             
