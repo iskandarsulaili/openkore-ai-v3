@@ -78,11 +78,11 @@ def _emit_heuristic_actions(runtime_state, horizon: str) -> int:
             except Exception:
                 _log.exception("heuristic_action_push_failed")
         if queued:
-            _log.info("heuristic_actions_emitted: %d for %s", queued, horizon)
+            _log.info("heuristic_actions_emitted: %d for %s bot_id=%s", queued, horizon, bot_id)
         return queued
     except Exception:
         _log.exception("heuristic_action_emission_failed")
-        return 0
+    return 0
 
 
 _STARTUP_GATE_MIN_EVENTS = 2
@@ -340,7 +340,8 @@ class PDCALoop:
                             try:
                                 _hs_full = getattr(self._runtime_state, "heuristic_service", None)
                                 if _hs_full is not None:
-                                    _actions_queued = _emit_heuristic_actions(self._runtime_state, horizon.value)
+                                    _bot_id_for_heuristic = self._resolve_bot_id()
+                                _actions_queued = _emit_heuristic_actions(self._runtime_state, horizon.value, bot_id=_bot_id_for_heuristic)
                             except Exception:
                                 logger.exception("heuristic_action_emission_failed")
                             
