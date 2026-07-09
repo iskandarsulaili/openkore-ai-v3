@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
@@ -94,6 +95,7 @@ def _plan_schema() -> dict[str, object]:
 
 @dataclass(slots=True)
 class PlanGenerator:
+    CONTEXT_BUDGETS: ClassVar[dict[str, int]] = {"off": 0, "economy": 512, "standard": 2048, "premium": 8192}
     model_router: object
     planner_timeout_seconds: float
     planner_retries: int
