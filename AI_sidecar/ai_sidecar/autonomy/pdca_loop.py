@@ -164,13 +164,13 @@ class PDCAConfig:
     max_actions_per_cycle: int = 5
 
 
-def _extract_command_from_goal(goal: str | None) -> str:
+def _extract_command_from_goal(goal: str | None, objective: str | None = None) -> str:
     """Convert a PDCA goal key to a valid OpenKore command."""
     if not goal:
         return "ai auto"
     g = goal.lower()
     # Strip enum wrapper and quotes
-    for ch in ".:'\"<>[](){}":
+    for ch in ".:'\"":
         g = g.replace(ch, " ")
     g = g.strip()
     # Extract last meaningful word
@@ -194,7 +194,17 @@ def _extract_command_from_goal(goal: str | None) -> str:
         "auto": "ai auto",
         "manual": "ai manual",
     }
-    return cmd_map.get(keyword, f"ai auto")
+    
+    # Dynamic map routing: if objective mentions a hunting map, route there
+    if objective and keyword in ("leveling", "grind", "hunt", "advancement", "survival"):
+        for map_code in ("prt_fild", "pay_fild", "moc_fild", "gef_fild", "alde_fild", "mjolnir"):
+            if map_code in objective.lower():
+                import re as _re
+                _maps = _re.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
+                if _maps:
+                    return f"move {_maps[0]}"
+    
+    return cmd_map.get(keyword, "ai auto")
 
 
 class PDCALoop:
@@ -491,12 +501,11 @@ class PDCALoop:
                         if _aq is not None:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                            _simple_goal = _goal.split(".")[-1].split(":")[0].split(">")[0].strip().lower() if _goal else "auto"
-                            _simple_goal = _simple_goal[:30]  # max 30 chars
+                            _cmd = _extract_command_from_goal(_goal, _obj)
                             proposal = ActionProposal(
                                 action_id=f"pdca_{horizon.value}_{_short_id}",
                                 kind="command",
-                                command=_simple_goal if _simple_goal in ("ai", "move", "attack", "sit", "stand", "auto") else f"ai {_simple_goal}",
+                                command=_cmd,
                                 priority_tier=ActionPriorityTier.tactical if horizon.value in ("short_term", "tactical") else ActionPriorityTier.strategic,
                                 source="planner",
                                 created_at=datetime.now(UTC),

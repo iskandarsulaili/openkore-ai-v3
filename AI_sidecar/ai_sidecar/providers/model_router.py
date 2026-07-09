@@ -41,15 +41,15 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
     },
     "tactical_short_reasoning": {
         "providers": ["openai", "deepseek"],
-        "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M", "deepseek": "deepseek-v4-flash"},
+        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
     },
     "strategic_planning": {
         "providers": ["openai", "deepseek"],
-        "models": {"openai": "qwen3.6-27b-q4_k_m", "deepseek": "deepseek-v4-flash"},
+        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
     },
     "long_reflection": {
         "providers": ["openai", "deepseek"],
-        "models": {"openai": "qwen3.6-27b-q4_k_m", "deepseek": "deepseek-v4-flash"},
+        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
     },
     "embeddings": {
         "providers": ["openai", "deepseek"],
