@@ -898,6 +898,7 @@ class PDCALoop:
         if self._last_bot_id:
             return self._last_bot_id
 
+        # Try to find any registered bot from the runtime
         try:
             if hasattr(self._runtime, "list_bots"):
                 bots = self._runtime.list_bots()
@@ -909,6 +910,17 @@ class PDCALoop:
                         return self._last_bot_id
         except Exception:
             logger.exception("Failed to resolve active bot id for PDCA loop")
+
+        # Try snapshot cache as last resort
+        try:
+            cache = getattr(self._runtime, "snapshot_cache", None)
+            if cache and hasattr(cache, "bot_ids"):
+                ids = cache.bot_ids()
+                if ids:
+                    self._last_bot_id = ids[0]
+                    return self._last_bot_id
+        except Exception:
+            pass
 
         return self._default_bot_id
 
