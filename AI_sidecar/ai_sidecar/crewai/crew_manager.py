@@ -71,20 +71,32 @@ class CrewManager:
     async def strategize(self, payload: CrewStrategizeRequest) -> CrewStrategizeResponse:
         self._counters["strategize_calls"] += 1
         try:
-            signals = {"horizon": payload.horizon.value if hasattr(payload.horizon, "value") else str(payload.horizon)}
+            signals: dict[str, object] = {"horizon": payload.horizon.value if hasattr(payload.horizon, "value") else str(payload.horizon)}
             # Enrich from snapshot cache if available
             if self.runtime and hasattr(self.runtime, "snapshot_cache"):
                 try:
                     snap = self.runtime.snapshot_cache.latest()
-                    if snap and isinstance(snap, dict):
-                        v = snap.get("vitals") or {}
-                        signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
-                        signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
-                        c = snap.get("combat") or {}
-                        signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
-                        signals["map_known"] = bool(snap.get("map_known", False))
-                        inv = snap.get("inventory") or {}
-                        signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                    if snap is not None:
+                        # Handle both dict and BotStateSnapshot objects
+                        if isinstance(snap, dict):
+                            v = snap.get("vitals") or {}
+                            signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                            signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                            c = snap.get("combat") or {}
+                            signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                            signals["map_known"] = bool(snap.get("map_known", False))
+                            inv = snap.get("inventory") or {}
+                            signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                        else:
+                            # BotStateSnapshot object — use attribute access
+                            v = getattr(snap, "vitals", None) or {}
+                            signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) if not isinstance(v, dict) else v.get("hp_ratio", 1.0))
+                            signals["sp_ratio"] = float(getattr(v, "sp_ratio", 1.0) if not isinstance(v, dict) else v.get("sp_ratio", 1.0))
+                            c = getattr(snap, "combat", None) or {}
+                            signals["combat.aggro_count"] = int(getattr(c, "aggro_count", 0) if not isinstance(c, dict) else c.get("aggro_count", 0))
+                            signals["map_known"] = bool(getattr(snap, "map_known", False))
+                            inv = getattr(snap, "inventory", None) or {}
+                            signals["weight_ratio"] = float(getattr(inv, "weight_ratio", 0.0) if not isinstance(inv, dict) else inv.get("weight_ratio", 0.0))
                 except Exception:
                     pass
 
@@ -160,7 +172,7 @@ class CrewManager:
 
     async def autonomy_refine_decision(self, payload) -> Any:
         self._counters["autonomy_refinement_calls"] += 1
-        from ai_sidecar.contracts.crewai import CrewAutonomyRefinementResponse
+        from ai_sidecar.contracts.crewai import CrewAutonomyRefinementResponse, CrewAutonomyDecisionOutput
         try:
             task = getattr(payload, "task_hint", "") or "refine"
             bot = ""
@@ -168,9 +180,18 @@ class CrewManager:
             if hasattr(payload, "meta"):
                 bot = payload.meta.bot_id or ""
                 trace = payload.meta.trace_id or ""
-            return CrewAutonomyRefinementResponse(ok=True, message="refined", trace_id=trace,
+            return CrewAutonomyRefinementResponse(
+                ok=True, message="refined", trace_id=trace,
                 bot_id=bot, task_hint=task, required_agents=[],
-                decision_output="{'posture':'maintain'}", errors=[])
+                decision_output=CrewAutonomyDecisionOutput(
+                    selected_goal_key="survival",
+                    refined_objective="maintain safe posture",
+                    situational_report="no_immediate_threats",
+                    rationale="no_immediate_action_needed",
+                    confidence=0.5,
+                ),
+                errors=[],
+            )
         except Exception as exc:
             self._counters["failures"] += 1
             return CrewAutonomyRefinementResponse(ok=False, message=str(exc), trace_id="",
