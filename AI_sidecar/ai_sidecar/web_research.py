@@ -113,39 +113,34 @@ class WebResearchEngine:
         ]
 
     async def _execute_search(self, query: str) -> ResearchResult | None:
-        """Execute a web search and extract content."""
-        if self._search_func is None:
-            logger.warning("web_research: no search function available")
-            return None
+        """Execute a web search using local SearXNG instance."""
+        if self._search_func is not None:
+            return await self._search_func(query)
+        
+        # Default: use local SearXNG
         try:
-            search_results = await self._search_func(query, limit=3)
-            if not search_results or not search_results.get("data", {}).get("web"):
-                return None
+            import httpx
+            url = "http://127.0.0.1:8080/search"
+            params = {"q": query, "format": "json", "language": "en", "categories": "general"}
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                results = data.get("results", [])
+                if not results:
+                    return None
             
-            best_url = None
-            for item in search_results["data"]["web"][:2]:
-                url = item.get("url", "")
-                if url and not url.startswith("https://github.com") and not url.startswith("https://forums.openkore"):
-                    best_url = url
-                    break
-            if not best_url:
-                best_url = search_results["data"]["web"][0].get("url", "")
-            
-            summary = ""
-            if best_url and self._extract_func:
-                extract_result = await self._extract_func([best_url], char_limit=3000)
-                if extract_result and extract_result.get("results"):
-                    content = extract_result["results"][0].get("content", "")
-                    summary = content[:1000] if content else ""
-            
+            best = results[0]
+            summary = best.get("content", "")[:1000]
             return ResearchResult(
                 topic=query[:60],
                 query=query,
-                summary=summary or "Result found (no extract)",
-                source_url=best_url or "",
+                summary=summary or "Result found",
+                source_url=best.get("url", ""),
             )
         except Exception as exc:
-            logger.exception("web_research_failed: %s", exc)
+            logger.exception("web_research_search_failed: %s", exc)
             return None
 
     def _save_to_knowledge(self, result: ResearchResult) -> None:

@@ -188,11 +188,35 @@ logger = logging.getLogger(__name__)
 fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
 T = TypeVar("T")
 
-_PROVIDER_HARD_DENY_BY_WORKLOAD: dict[str, set[str]] = {
-    "strategic_planning": {"openai"},
-    "long_reflection": {"openai"},
-    "embeddings": {"openai"},
-}
+# Dynamic provider deny — only deny remote API providers when local proxy is available.
+# Local llama.cpp proxy (hosted at 127.0.0.1) is NEVER denied regardless of workload.
+_PROVIDER_HARD_DENY_BY_WORKLOAD: dict[str, set[str]] = {}
+
+
+def _is_local_provider(provider_name: str, provider_base_url: str) -> bool:
+    """Check if a provider is local (127.0.0.1 or localhost)."""
+    url = str(provider_base_url).lower()
+    return url.startswith("http://127.0.0.1") or url.startswith("http://localhost")
+
+
+def _should_deny_provider(workload: str, provider_name: str, provider_base_url: str) -> bool:
+    """Dynamically determine if a provider should be denied for a workload.
+    
+    Remote API providers (not localhost) are denied for certain workloads to prevent
+    accidental remote API usage. Local providers are NEVER denied.
+    """
+    # Never deny local providers — they're our own infrastructure
+    if _is_local_provider(provider_name, provider_base_url):
+        return False
+    
+    # Deny remote providers for expensive workloads
+    remote_deny = {
+        "strategic_planning": {"openai"},
+        "long_reflection": {"openai"},
+        "embeddings": {"openai"},
+    }
+    deny_set = remote_deny.get(workload, set())
+    return provider_name in deny_set
 
 _LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = ("prt_fild08",)
 
@@ -275,21 +299,38 @@ def _sanitize_provider_policy_rules(
     defaults = _build_provider_policy_rules()
     sanitized: dict[str, dict[str, object]] = {}
 
+    # Build provider base URLs for dynamic deny decisions
+    _provider_base_urls = {
+        "ollama": str(settings.provider_ollama_base_url),
+        "openai": str(settings.provider_openai_base_url),
+        "deepseek": str(settings.provider_deepseek_base_url),
+    }
+
     for workload, config in rules.items():
         workload_key = str(workload).strip()
         if not workload_key:
             continue
         cfg = config if isinstance(config, dict) else {}
-        deny_for_workload = _PROVIDER_HARD_DENY_BY_WORKLOAD.get(workload_key, set())
 
         raw_providers = [str(item).strip().lower() for item in list(cfg.get("providers") or [])]
         providers: list[str] = []
         for provider_name in raw_providers:
             if not provider_name:
                 continue
-            if provider_name in deny_for_workload:
-                continue
             if provider_name not in available_providers:
+                continue
+            # Dynamic deny — never deny local providers, only deny remote APIs
+            base_url = _provider_base_urls.get(provider_name, "")
+            if _should_deny_provider(workload_key, provider_name, base_url):
+                logger.info(
+                    "provider_deny_remote",
+                    extra={
+                        "event": "provider_deny_remote",
+                        "workload": workload_key,
+                        "provider": provider_name,
+                        "base_url": base_url,
+                    },
+                )
                 continue
             if provider_name in providers:
                 continue
@@ -301,9 +342,11 @@ def _sanitize_provider_policy_rules(
             for provider_name in default_providers:
                 if not provider_name:
                     continue
-                if provider_name in deny_for_workload:
-                    continue
                 if provider_name not in available_providers:
+                    continue
+                # Dynamic deny — never deny local providers
+                base_url = _provider_base_urls.get(provider_name, "")
+                if _should_deny_provider(workload_key, provider_name, base_url):
                     continue
                 if provider_name in providers:
                     continue
@@ -4868,7 +4911,7 @@ def _seed_db(db) -> None:
                 context_type=ctx, map_name=map_name,
                 monster_name=monster, action_taken=cmd,
                 success=True, bot_id="_seed_",
-                recorded_at=now, confidence=0.5,
+                timestamp=time.time() if hasattr(time, 'time') else 0,
             )
             db.record(entry)
     except Exception:

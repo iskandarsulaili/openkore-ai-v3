@@ -13,7 +13,7 @@ None.
 
 ```
 autoBreakTime [{all|mon|tue|wed|thu|fri|sat|sun}] {
-  startTime 
+  startTime
   stopTime [<time>]
 }
 ```

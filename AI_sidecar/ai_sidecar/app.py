@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,6 +12,11 @@ from fastapi import FastAPI
 from fastapi import Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
+from fastapi import HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
 
 from ai_sidecar.api.routers import (
     npc_dialog,
@@ -138,15 +144,6 @@ def install_request_validation_logging(app: FastAPI) -> None:
             },
         )
         return await request_validation_exception_handler(request, exc)
-
-
-import secrets
-from pathlib import Path
-from fastapi import HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response
 
 # Auth token check middleware
 if settings.api_auth_enabled and settings.api_auth_token:

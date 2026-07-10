@@ -1,5 +1,5 @@
 # timeoutRandomizer plugin
-### by @billabong93	
+### by @billabong93
 
 This plugin lets you configure random ranges for specific entries in `control/timeouts.txt` without modifying the core parser.
 

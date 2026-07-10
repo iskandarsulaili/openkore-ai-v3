@@ -158,7 +158,7 @@ EOF
 
     info "Starting bot: $name"
     cd "$SCRIPT_DIR"
-    nohup perl -I src openkore.pl --control=".bot_profiles/$name/control" > "$log_file" 2>&1 &
+    nohup perl -I src openkore.pl --plugins=plugins --control=".bot_profiles/$name/control" > "$log_file" 2>&1 &
     local pid=$!
     _save_pid "$pid"
     ok "Bot $name started (PID $pid)"
