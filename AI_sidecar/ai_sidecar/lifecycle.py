@@ -746,13 +746,27 @@ class RuntimeState:
         pending = list(self._background_tasks)
         for task in pending:
             task.cancel()
-        results = await asyncio.gather(*pending, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                logger.exception(
-                    "background_task_shutdown_error",
-                    extra={"event": "background_task_shutdown_error", "error": str(result)},
+        # Use the background loop to gather, not the current loop
+        bg_loop = self._background_loop
+        if bg_loop is not None and not bg_loop.is_closed():
+            try:
+                # Schedule gather on the background loop to avoid loop mismatch
+                future = asyncio.run_coroutine_threadsafe(
+                    asyncio.gather(*pending, return_exceptions=True),
+                    bg_loop,
                 )
+                results = future.result(timeout=5.0)
+                for result in results:
+                    if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                        logger.exception(
+                            "background_task_shutdown_error",
+                            extra={"event": "background_task_shutdown_error", "error": str(result)},
+                        )
+            except Exception as e:
+                logger.warning("background_task_gather_failed", extra={"event": "background_task_gather_failed", "error": str(e)})
+        else:
+            # Fallback: just cancel and move on
+            logger.warning("background_task_loop_unavailable_during_shutdown", extra={"event": "background_task_loop_unavailable_during_shutdown"})
         self._background_tasks.clear()
         loop = self._background_loop
         if loop is not None and not loop.is_closed():
