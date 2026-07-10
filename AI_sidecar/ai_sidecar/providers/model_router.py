@@ -40,19 +40,19 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
         "models": {},
     },
     "tactical_short_reasoning": {
-        "providers": ["openai", "deepseek"],
-        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
+        "providers": ["openai", "ollama"],
+        "models": {"openai": "deepseek-v4-flash", "ollama": "/home/lot399/models/Qwen3.6-27B-UD-Q4_K_XL.gguf"},
     },
     "strategic_planning": {
-        "providers": ["openai", "deepseek"],
-        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
+        "providers": ["openai", "ollama"],
+        "models": {"openai": "deepseek-v4-flash", "ollama": "/home/lot399/models/Qwen3.6-27B-UD-Q4_K_XL.gguf"},
     },
     "long_reflection": {
-        "providers": ["openai", "deepseek"],
-        "models": {"openai": "qwen3.6-27b-ud-q4_k_xl", "deepseek": "deepseek-v4-flash"},
+        "providers": ["openai", "ollama"],
+        "models": {"openai": "deepseek-v4-flash", "ollama": "/home/lot399/models/Qwen3.6-27B-UD-Q4_K_XL.gguf"},
     },
     "embeddings": {
-        "providers": ["openai", "deepseek"],
+        "providers": ["openai", "ollama"],
         "models": {"ollama": "nomic-embed-text", "openai": "text-embedding-3-small", "deepseek": "text-embedding-3-small"},
     },
 }

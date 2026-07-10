@@ -384,37 +384,38 @@ def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
     return {
         "reflex_explain": {"providers": [], "models": {}},
         "tactical_short_reasoning": {
-            "providers": ["openai", "deepseek"],
+            "providers": ["openai", "ollama"],
             "models": {
                 "openai": settings.provider_openai_tactical_model,
-                "deepseek": settings.provider_deepseek_tactical_model,
+                "ollama": settings.provider_ollama_tactical_model,
             },
         },
         "strategic_planning": {
-            "providers": ["openai", "deepseek"],
+            "providers": ["openai", "ollama"],
             "models": {
                 "openai": settings.provider_openai_strategic_model,
-                "deepseek": settings.provider_deepseek_strategic_model,
+                "ollama": settings.provider_ollama_strategic_model,
             },
         },
         "autonomy_mission_decision": {
-            "providers": ["openai", "deepseek"],
+            "providers": ["openai", "ollama"],
             "models": {
                 "openai": settings.provider_openai_strategic_model,
-                "deepseek": settings.provider_deepseek_strategic_model,
+                "ollama": settings.provider_ollama_strategic_model,
             },
         },
         "long_reflection": {
-            "providers": ["openai", "deepseek"],
+            "providers": ["openai", "ollama"],
             "models": {
                 "openai": settings.provider_openai_reflection_model,
-                "deepseek": settings.provider_deepseek_reflection_model,
+                "ollama": settings.provider_ollama_reflection_model,
             },
         },
         "embeddings": {
-            "providers": ["openai"],
+            "providers": ["openai", "ollama"],
             "models": {
                 "openai": settings.provider_openai_embedding_model,
+                "ollama": settings.provider_ollama_embedding_model,
             },
         },
     }
