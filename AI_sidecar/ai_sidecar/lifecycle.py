@@ -509,6 +509,7 @@ class RuntimeState:
     cost_tracker: CostTracker | None = None
     experience_db: ExperienceDatabase | None = None
     npc_dialog: NPCDialogEngine | None = None
+    web_research: WebResearchEngine | None = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
@@ -4836,6 +4837,44 @@ class RuntimeState:
             )
 
 
+def _seed_db(db) -> None:
+    """Seed ExperienceDatabase with initial hunting knowledge."""
+    if db is None:
+        return
+    try:
+        from ai_sidecar.experience_db import ExperienceEntry
+        import datetime
+        now = datetime.datetime.now()
+        # Prontera area - level 1-15 hunting maps
+        seeds = [
+            # (context, map, monster, action)
+            ("combat", "prontera", "poring", "move prt_fild08"),
+            ("combat", "prontera", "lunatic", "move prt_fild08"),
+            ("combat", "prontera", "poring", "ai auto"),
+            ("combat", "prt_fild01", "", "ai auto"),
+            ("combat", "prt_fild02", "", "ai auto"),
+            ("combat", "prt_fild03", "", "ai auto"),
+            ("combat", "prt_fild04", "", "ai auto"),
+            ("combat", "prt_fild05", "", "ai auto"),
+            ("combat", "prt_fild08", "", "ai auto"),
+            ("navigation", "prontera", "", "move prt_fild08"),
+            ("navigation", "prt_fild08", "", "move prontera"),
+            ("economy", "prontera", "", "ai auto"),
+            ("recovery", "prontera", "", "sit"),
+            ("recovery", "prt_fild08", "", "sit"),
+        ]
+        for ctx, map_name, monster, cmd in seeds:
+            entry = ExperienceEntry(
+                context_type=ctx, map_name=map_name,
+                monster_name=monster, action_taken=cmd,
+                success=True, bot_id="_seed_",
+                recorded_at=now, confidence=0.5,
+            )
+            db.record(entry)
+    except Exception:
+        pass
+
+
 def create_runtime() -> RuntimeState:
     workspace_root = Path(__file__).resolve().parents[2]
     sqlite_path = _resolve_path(workspace_root, settings.sqlite_path)
@@ -5253,6 +5292,8 @@ def create_runtime() -> RuntimeState:
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
     runtime.experience_db = ExperienceDatabase()
+    # Seed initial hunting knowledge for common maps
+    _seed_db(runtime.experience_db)
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
     runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination

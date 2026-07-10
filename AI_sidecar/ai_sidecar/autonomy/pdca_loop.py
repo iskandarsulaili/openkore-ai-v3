@@ -203,9 +203,13 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
                 _maps = _re.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
                 if _maps:
                     return f"move {_maps[0]}"
-        # If in Prontera with survival goal, route to nearby field
+        # If in Prontera with any common goal, route to nearby field
         if "prontera" in objective.lower() and keyword in ("survival", "job_advancement", "advancement", "idle", "economy"):
             return "move prt_fild08"
+    
+    # If goal is survival with no specific routing, still send ai auto
+    if keyword == "survival":
+        return "ai auto"
     
     return cmd_map.get(keyword, "ai auto")
 
@@ -512,6 +516,23 @@ class PDCALoop:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
                             _cmd = _extract_command_from_goal(_goal, _obj)
+                            # Query ExperienceDatabase for best action
+                            try:
+                                if hasattr(self._runtime, "experience_db") and self._runtime.experience_db is not None:
+                                    _exp = self._runtime.experience_db
+                                    _map_name = ""
+                                    if latest_snapshot is not None:
+                                        _pos_snap = latest_snapshot.position if hasattr(latest_snapshot, "position") else None
+                                        _map_name = getattr(_pos_snap, "map", "") if _pos_snap else ""
+                                    _best_cmd, _best_rate = _exp.best_action(context_type="combat", map_name=_map_name)
+                                    if _best_cmd:
+                                        _cmd = _best_cmd
+                                        logger.info("pdca_exp_best_action: bot=%s map=%s cmd=%s rate=%.2f", _bot, _map_name, _cmd, _best_rate)
+                                    elif _map_name and "prontera" in _map_name.lower() and not "fild" in _map_name.lower():
+                                        # Bot in town with no learned path — heuristic/reflex will handle
+                                        _cmd = "ai auto"
+                            except Exception:
+                                pass
                             proposal = ActionProposal(
                                 action_id=f"pdca_{horizon.value}_{_short_id}",
                                 kind="command",
