@@ -119,12 +119,53 @@ class CrewManager:
             }
 
             self._counters["success"] += 1
+            # Build a planner_response so the PDCA loop can use the plan
+            from ai_sidecar.planner.schemas import StrategicPlan, PlannerStep, PlannerStepKind, PlannerResponse
+            from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+            from ai_sidecar.contracts.common import utc_now
+            from datetime import timedelta
+            from uuid import uuid4
+            now = utc_now()
+            command = str(action.get("command", "")).strip()
+            recommended_actions = []
+            if command:
+                recommended_actions.append(ActionProposal(
+                    action_id=f"crewai-{uuid4().hex[:20]}",
+                    kind="command",
+                    command=command[:256],
+                    priority_tier=ActionPriorityTier.tactical,
+                    created_at=now,
+                    expires_at=now + timedelta(seconds=120),
+                    idempotency_key=f"crewai:{best_id}:{command}"[:128],
+                    metadata={"source": "crewai_strategize", "profile": best_id},
+                ))
+            planner_response = PlannerResponse(
+                ok=True,
+                message=f"crewai_profile={best_id}",
+                trace_id=payload.meta.trace_id,
+                strategic_plan=StrategicPlan(
+                    plan_id=f"crewai-{uuid4().hex[:20]}",
+                    bot_id=payload.meta.bot_id,
+                    objective=payload.objective,
+                    steps=[],
+                    recommended_actions=recommended_actions,
+                    rationale=f"crewai profile {best_id} selected with confidence {best_score:.2f}",
+                    risk_score=1.0 - best_score,
+                    expires_at=now + timedelta(seconds=300),
+                ),
+                tactical_bundle=None,
+                provider="crewai",
+                model="heuristic",
+                latency_ms=0.0,
+                route={"source": "crewai_strategize", "profile": best_id, "confidence": best_score},
+            )
             return CrewStrategizeResponse(
                 ok=True, message=f"profile={best_id} confidence={best_score:.2f}",
                 trace_id=payload.meta.trace_id, bot_id=payload.meta.bot_id,
                 objective=payload.objective,
                 agent_outputs=[agent_output],
                 consolidated_output=str(action.get("command", "")),
+                planner_response=planner_response,
             )
         except Exception as exc:
             self._counters["failures"] += 1

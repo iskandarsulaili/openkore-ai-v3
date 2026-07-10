@@ -138,11 +138,11 @@ class PlanExecutor:
                 continue
             if command.lower() == "ai auto":
                 logger.info(
-                    "PlanExecutor deterministic direct hint skipped unsafe command=%s rule_id=%s",
+                    "PlanExecutor deterministic direct hint dispatching ai_auto command=%s rule_id=%s",
                     command,
                     rule_id or "unknown",
                 )
-                continue
+                # Don't skip — ai auto is the most basic command needed for bot progress
 
             priority_raw = str(intent.get("priority_tier") or intent.get("priority") or "tactical").strip().lower()
             try:

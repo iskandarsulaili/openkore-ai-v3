@@ -2461,6 +2461,16 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
+	# Handle map-name moves: "move prt_fild08" → "ai auto"
+	# OpenKore doesn't understand map names in the move command.
+	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
+	if ($normalized =~ /^move\s+/) {
+		if (_ai_already_auto_mode()) {
+			return ('', 'map_move_already_auto');
+		}
+		return ('ai auto', 'map_move_rewritten');
+	}
+
 	if ($normalized eq 'take') {
 		return ('', 'bare_take_delegated');
 	}
