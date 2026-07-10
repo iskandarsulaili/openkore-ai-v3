@@ -1690,7 +1690,7 @@ sub _execute_action {
 		($success, $result_code, $msg) = (0, 'unsupported_kind', "unsupported action kind '$kind'");
 	} elsif ($rewrite_kind eq 'bare_take_delegated') {
 		($success, $result_code, $msg) = (1, 'ok', 'loot pickup delegated to OpenKore auto-loot configuration');
-	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto' || $rewrite_kind eq 'map_move_already_auto') {
+	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto' || $rewrite_kind eq 'map_move_already_auto' || $rewrite_kind eq 'teleport_already_auto') {
 		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
@@ -2473,6 +2473,15 @@ sub _rewrite_runtime_command {
 
 	if ($normalized eq 'take') {
 		return ('', 'bare_take_delegated');
+	}
+
+	# Handle teleport — OpenKore doesn't have a teleport command.
+	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
+	if ($normalized eq 'teleport') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'teleport_already_auto');
+		}
+		return ('ai auto', 'teleport_rewritten');
 	}
 
 	return ($trimmed, '');
