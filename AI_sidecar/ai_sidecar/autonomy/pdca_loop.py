@@ -958,10 +958,10 @@ class PDCALoop:
     def _objective_for(self, *, horizon: Horizon, snapshot: BotStateSnapshot | None) -> str:
         current_map = getattr(getattr(snapshot, "position", None), "map", None) or "unknown"
         if horizon == Horizon.LONG_TERM:
-            return f"advance long-term progression safely from {current_map}"
+            return f"advance long-term progression: grind and level up safely from {current_map}"
         if horizon == Horizon.MEDIUM_TERM:
-            return f"progress tactical objective safely on {current_map}"
-        return f"execute immediate tactical actions safely on {current_map}"
+            return f"progress tactical objective: farm and move toward targets from {current_map}"
+        return f"execute immediate tactical actions: resume grinding safely on {current_map}"
 
     def _collect_replan_reasons(
         self,
