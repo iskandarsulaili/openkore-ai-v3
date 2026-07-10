@@ -8,13 +8,26 @@
 # - denylist  : command root allowed unless denied by aiSidecarPolicy_deny_*
 aiSidecarPolicy_mode allowlist
 
-# Conservative allow list for first production slice.
+# Allow list — covers commands emitted by reflex rules, heuristic service,
+# and PDCA planner. Extended to include reflex commands that are valid
+# OpenKore console commands.
 aiSidecarPolicy_allow_0 ai
 aiSidecarPolicy_allow_1 move
 aiSidecarPolicy_allow_2 macro
 aiSidecarPolicy_allow_3 eventMacro
 aiSidecarPolicy_allow_4 talknpc
 aiSidecarPolicy_allow_5 take
+# Reflex rule commands — sit for SP/HP recovery, attack for combat,
+# flee for emergency escape, respawn for death recovery
+aiSidecarPolicy_allow_6 sit
+aiSidecarPolicy_allow_7 stand
+aiSidecarPolicy_allow_8 attack
+aiSidecarPolicy_allow_9 flee
+aiSidecarPolicy_allow_10 respawn
+aiSidecarPolicy_allow_11 use_skill
+aiSidecarPolicy_allow_12 party_heal
+aiSidecarPolicy_allow_13 return_to_vendor
+aiSidecarPolicy_allow_14 vendor
 
 # Always blocked (even in denylist mode) for safety.
 aiSidecarPolicy_deny_0 quit

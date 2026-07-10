@@ -53,7 +53,7 @@ rules:
     guards: []
     action:
       kind: command
-      command: "use_skill heal"
+      command: "ss heal"
       priority_tier: reflex
       conflict_key: survival.heal
 
@@ -70,7 +70,7 @@ rules:
     guards: []
     action:
       kind: command
-      command: "ai manual\nflee"
+      command: "ai manual"
       priority_tier: reflex
       conflict_key: combat.flee
     fallback_macro: reflex_flee_overwhelmed
@@ -107,9 +107,11 @@ rules:
     guards: []
     action:
       kind: command
-      command: "return_to_vendor"
+      command: "ai auto"
       priority_tier: reflex
       conflict_key: inventory.weight_guard
+    metadata:
+      note: "Weight warning — let LLM plan vendor route. ai auto keeps bot safe while inventory fills."
 
   - rule_id: auto_pickup
     enabled: true
@@ -143,9 +145,11 @@ rules:
     guards: []
     action:
       kind: command
-      command: "party_heal 1"
+      command: "ai manual"
       priority_tier: reflex
       conflict_key: party.heal
+    metadata:
+      note: "Party heal request — switch to manual so reflex/LLM can target specific ally for healing via 'sp heal <player#>'"
 
   - rule_id: sit_recover
     enabled: true
@@ -182,6 +186,8 @@ rules:
     guards: []
     action:
       kind: command
-      command: "attack"
+      command: "ai auto"
       priority_tier: reflex
       conflict_key: combat.attack
+    metadata:
+      note: "Aggro present — ai auto handles auto-attack. 'attack' bare is not a valid OpenKore command without a monster number."
