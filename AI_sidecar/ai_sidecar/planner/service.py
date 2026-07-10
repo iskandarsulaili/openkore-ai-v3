@@ -379,28 +379,30 @@ class PlannerService:
             return {"max_context_chars": 0}
     
     def _detect_max_context(self) -> int:
-        """Query the active LLM provider for the model's max context size."""
+        """Query the active LLM provider for the model's max context size.
+        Only queries the configured provider endpoint, not hardcoded URLs.
+        Returns 0 on failure (no context budget = full context)."""
         try:
             import httpx
-            # Try common provider model endpoints
-            _endpoints = [
-                "http://127.0.0.1:8012/v1/models",   # llama.cpp / local
-                "https://api.deepseek.com/v1/models", # DeepSeek
-                "https://api.openai.com/v1/models",   # OpenAI
-            ]
-            for url in _endpoints:
+            from ai_sidecar.config import settings as _s
+            # Only query the configured provider, not hardcoded endpoints
+            _base_url = str(getattr(_s, "provider_openai_base_url", "")).rstrip("/")
+            if _base_url and "/v1" in _base_url:
+                _models_url = f"{_base_url}/models"
                 try:
-                    resp = httpx.get(url, timeout=3)
+                    resp = httpx.get(_models_url, timeout=3)
                     if resp.status_code == 200:
                         data = resp.json()
-                        models = data.get("data", data.get("models", []))
-                        if models:
+                        models = data.get("data", [])
+                        if models and isinstance(models, list) and len(models) > 0:
                             meta = models[0].get("meta", {}) if isinstance(models[0], dict) else {}
                             n_ctx = meta.get("n_ctx_train") or meta.get("n_ctx") or 0
                             if n_ctx and n_ctx > 0:
-                                return int(n_ctx)
+                                return min(int(n_ctx) * 4, 200000)  # ~4 chars per token, cap at 200K
                 except Exception:
-                    continue
+                    pass
+            return 0
+        except Exception:
             return 0
         except Exception:
             return 0
@@ -466,7 +468,13 @@ class PlannerService:
 
     def status(self, *, bot_id: str) -> PlannerStatusResponse:
         with self._lock:
+            # Try exact match first, then fallback to any available state
             state = self._state.get(bot_id)
+            if state is None:
+                # Fallback: find any state (PDCA may use "default" bot_id)
+                for bid, s in self._state.items():
+                    state = s
+                    break
             counters = dict(self._counters)
         if state is None:
             return PlannerStatusResponse(
