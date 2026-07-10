@@ -128,7 +128,7 @@ start_sidecar() {
 
 start_bot() {
     local name="$1"
-    local profile_dir="$SCRIPT_DIR/profiles/$name"
+    local profile_dir="$SCRIPT_DIR/.bot_profiles/$name"
     local log_file="$BOT_LOGS/$name.log"
 
     if [ ! -d "$profile_dir" ]; then
@@ -158,7 +158,7 @@ EOF
 
     info "Starting bot: $name"
     cd "$SCRIPT_DIR"
-    nohup perl -I src openkore.pl --control="profiles/$name/control" > "$log_file" 2>&1 &
+    nohup perl -I src openkore.pl --control=".bot_profiles/$name/control" > "$log_file" 2>&1 &
     local pid=$!
     _save_pid "$pid"
     ok "Bot $name started (PID $pid)"
@@ -309,6 +309,9 @@ _setup_env
 
 case "${1:-all}" in
     sidecar)
+        # Kill old sidecar before starting new
+        pkill -f "ai_sidecar.app" 2>/dev/null || true
+        sleep 1
         start_sidecar
         show_status
         _tail_all
@@ -320,6 +323,9 @@ case "${1:-all}" in
             err "Available bots: ${BOT_NAMES[*]}"
             exit 1
         fi
+        # Kill any existing bot with this name
+        pkill -f "openkore.pl.*$2" 2>/dev/null || true
+        sleep 1
         start_bot "$2"
         show_status
         _tail_all
@@ -335,6 +341,9 @@ case "${1:-all}" in
         ;;
     all|start)
         _load_env
+        # Kill any previously running processes to avoid "server recognizes last connection"
+        stop_all
+        sleep 2
         label "OPENKORE AI V3 — Starting Full Stack"
         echo -e "  Sidecar: port ${CYAN}$SIDECAR_PORT${NC}"
         echo -e "  Bots:    ${GREEN}${BOT_NAMES[*]}${NC}"

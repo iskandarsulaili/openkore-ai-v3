@@ -203,6 +203,9 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
                 _maps = _re.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
                 if _maps:
                     return f"move {_maps[0]}"
+        # If in Prontera with survival goal, route to nearby field
+        if "prontera" in objective.lower() and keyword in ("survival", "job_advancement", "advancement", "idle", "economy"):
+            return "move prt_fild08"
     
     return cmd_map.get(keyword, "ai auto")
 
@@ -284,13 +287,8 @@ class PDCALoop:
     async def stop(self) -> None:
         """Stop the PDCA loop gracefully."""
         self._running = False
-        if hasattr(self, '_loop') and self._loop is not None:
-            try:
-                self._loop.call_soon_threadsafe(self._loop.stop)
-            except Exception:
-                pass
-            if hasattr(self, '_thread') and self._thread is not None:
-                self._thread.join(timeout=3)
+        if hasattr(self, '_thread') and self._thread is not None:
+            self._thread.join(timeout=3)
         logger.info("PDCALoop stopped")
 
     async def get_status(self) -> dict[str, Any]:
@@ -481,8 +479,11 @@ class PDCALoop:
                 _map = str(getattr(getattr(latest_snapshot, "position", None), "map", "")) if latest_snapshot else ""
                 if _wr.needs_research(_bid, f"stuck_{horizon.value}", cooldown_s=600):
                     _ctx = {"map": _map, "horizon": horizon.value, "bot_id": _bid}
-                    _task = asyncio.create_task(_wr.research("stuck_map", context=_ctx))
-                    logger.info("web_research_triggered: bot=%s map=%s horizon=%s", _bid, _map, horizon.value)
+                    try:
+                        _task = asyncio.create_task(_wr.research("stuck_map", context=_ctx))
+                        logger.info("web_research_triggered: bot=%s map=%s horizon=%s", _bid, _map, horizon.value)
+                    except RuntimeError:
+                        logger.warning("web_research_skipped: event_loop_stopping")
             replan_reasons = self._collect_replan_reasons(
                 horizon=horizon,
                 progress=progress,
@@ -892,13 +893,31 @@ class PDCALoop:
 
     def _resolve_cost_gate_bot_id(self) -> str:
         try:
+            if not hasattr(self, '_bot_rotation_index'):
+                self._bot_rotation_index = 0
             if hasattr(self._runtime, "list_bots"):
                 bots = self._runtime.list_bots()
                 if bots:
-                    first = bots[0]
-                    bid = first.get("bot_id") if isinstance(first, dict) else getattr(first, "bot_id", None)
-                    if bid:
-                        return str(bid)
+                    # Filter out stale bots (not seen in last 5 min)
+                    import datetime as _dt
+                    _cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(minutes=5)
+                    _fresh = []
+                    for b in bots:
+                        _last = b.get("last_seen_at") if isinstance(b, dict) else getattr(b, "last_seen_at", None)
+                        if _last and isinstance(_last, str):
+                            try:
+                                _ts = _dt.datetime.fromisoformat(_last.replace("Z", "+00:00"))
+                                if _ts >= _cutoff:
+                                    _fresh.append(b)
+                            except: pass
+                    if not _fresh:
+                        _fresh = bots
+                    # Rotate through fresh bots
+                    self._bot_rotation_index = (self._bot_rotation_index + 1) % max(len(_fresh), 1)
+                    bid = _fresh[self._bot_rotation_index]
+                    bot_id = bid.get("bot_id") if isinstance(bid, dict) else getattr(bid, "bot_id", None)
+                    if bot_id:
+                        return str(bot_id)
         except Exception:
             pass
         return self._default_bot_id
