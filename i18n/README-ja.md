@@ -1,8 +1,13 @@
+<p align="center">
+  <img alt="openkore AI" src="https://upload.wikimedia.org/wikipedia/commons/b/b5/Kore_2g_logo.png" width="200">
+</p>
+
 # openkore **AI**
 
 > LLMによる意思決定を搭載したRagnarok Onlineボット — 単なるマクロではありません。**AI**、*bypass*ではありません。
 
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord)](https://discord.gg/zHCKr3rbM)
+[![Sponsor](https://img.shields.io/badge/Sponsor-donate-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/iskandarsulaili)
 [![GitHub stars](https://img.shields.io/github/stars/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/stargazers)
 
 🌐 [English](../README.md) | [Português](README-pt-BR.md) | [Tagalog](README-tl.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [ไทย](README-th.md) | [Indonesia](README-id.md) | [简体中文](README-zh-CN.md)
@@ -19,110 +24,123 @@
 |-----------------|----------------|
 | マクロベースの判断 | 反射→ヒューリスティック→LLM（3段階） |
 | 固定設定 | 結果から自己適応 |
-| 単一ボット | マルチボット群 |
+| 単一ボット | マルチボット群の協調 |
 | コスト管理なし | ボット別予算、段階的レベル |
 | コミュニティマクロのみ | ボット間共有学習 |
 | 条件に反応 | PDCA計画で先読み |
 
 ---
 
-## Fitur
+## 機能
 
-- 3段階エンジン：25反射ルール→17ヒューリスティック→LLM
-- マルチボット艦隊：自動ロール割り当て
-- 自己学習：アクション・マップ・モンスターごとに改善
-- コスト制御：off/economy/standard/premium
-- 30以上のROメカニクス対応
-- LLM搭載NPC会話
-- start.shでライブコンソール
-- 25のFastAPIエンドポイント
-- オリジナルOpenKore設定と互換性あり
-
----
-
-## Persyaratan
-
-- **Python 3.11+** — Untuk sidecar AI
-- **Perl 5** — Untuk klien OpenKore (sudah termasuk)
-- **Akun Ragnarok Online** — Di server mana pun yang kompatibel dengan OpenKore
-- **Kunci API DeepSeek** (opsional) — Untuk keputusan via LLM. Dapatkan di [platform.deepseek.com](https://platform.deepseek.com)
+- **3段階エンジン** — 17の反射ルール → ヒューリスティックスコアリング → LLM（DeepSeek、OpenAI、またはローカルOllama）
+- **マルチボット艦隊** — 自動ロール割り当て（タンク/ヒーラー/DPS/クラフター）
+- **自己学習** — アクション・マップ・モンスターごとに改善。ボット間経験共有。
+- **コスト制御** — 1日あたりのトークン予算、時間あたりの呼び出し制限、またはLLM無効化。
+- **ROメカニクス** — パーティー、PVP、GVG、MVP、精錬、カード、クエスト、クラフト、転職
+- **LLM搭載NPC会話** — 一般的なNPCはヒューリスティック、クエスト/精錬NPCはLLM
+- **ライブコンソール** — `./start.sh` ですべてのボット + サイドカーのログを色分け表示
+- **FastAPIサーバー** — 19ルーターに **112+エンドポイント**、認証ミドルウェア、フリート調整
+- **CrewAI** — 18の専門エージェントをオーケストレーターが管理
+- **ML潜在学習** — セルフホスト型行動学習
+- **互換性** — 標準の `control/config.txt` 形式を使用
 
 ---
 
-## Mulai Cepat (Bot Tunggal)
+## 必要条件
+
+- **Python 3.11+** — AIサイドカー用
+- **Perl 5** — OpenKoreクライアント用（バンドル済み）
+- **Ragnarok Onlineアカウント** — OpenKore互換サーバー
+- **LLMプロバイダー**（オプション） — DeepSeek APIキー、OpenAI APIキー、またはローカルOllama
+
+---
+
+## クイックスタート（単一ボット）
+
+`.env`ファイルに認証情報を設定（リポジトリルート）:
 
 ```bash
-git clone https://github.com/iskandarsulaili/openkore-ai-v3.git
-cd openkore-ai-v3
-
-# Atur kredensial
+# 形式: BOT_<名前>_PASS=<パスワード>
 cat >> .env << 'EOF'
-BOT_karaktermu_PASS=sandi_anda
+BOT_あなたのボット_PASS=あなたのパスワード
 EOF
+```
 
-# Pasang sidecar Python
+```bash
+# 1. Python環境のセットアップ
 cd AI_sidecar
 python3 -m venv venv
 source venv/bin/activate
 pip install -e .
 cd ..
 
-# Atur control/config.txt dengan server dan akun Anda
+# 2. ボットプロファイルの作成
+mkdir -p .bot_profiles/mybot/control
+cp control/config.txt .bot_profiles/mybot/control/
+# .bot_profiles/mybot/control/config.txt を編集
 
-# Mulai
-source AI_sidecar/venv/bin/activate
-nohup python -m ai_sidecar.app > logs/sidecar.log 2>&1 &
-perl -I src openkore.pl
+# 3. サイドカー + ボットの起動
+./start.sh sidecar &
+./start.sh bot mybot &
 ```
 
-## Mulai Cepat (Banyak Bot)
+または一度にすべて起動:
 
 ```bash
-mkdir -p profiles/karakter1/control profiles/karakter2/control
-cp control/config.txt profiles/karakter1/control/
-cp control/config.txt profiles/karakter2/control/
-
-# Atur sandi di .env
-cat >> .env << 'EOF'
-BOT_karakter1_PASS=sandi1
-BOT_karakter2_PASS=sandi2
-EOF
-
-# Mulai semuanya:
 ./start.sh all
 ```
 
-## Tingkat Biaya
+## クイックスタート（複数ボット）
 
-Atur di `AI_sidecar/.env`:
+```bash
+mkdir -p .bot_profiles/char1/control .bot_profiles/char2/control
+cp control/config.txt .bot_profiles/char1/control/
+cp control/config.txt .bot_profiles/char2/control/
 
-| Pengaturan | Efek |
-|------------|------|
-| `llm_cost_tier=off` | Hanya refleks + heuristik. $0. |
-| `llm_cost_tier=economy` | 512 token konteks, LLM minimal |
-| `llm_cost_tier=standard` | 2K konteks, LLM normal (bawaan) |
-| `llm_cost_tier=premium` | 8K konteks, LLM penuh |
+# .envにパスワードを設定
+cat >> .env << 'EOF'
+BOT_char1_PASS=pass1
+BOT_char2_PASS=pass2
+EOF
 
-## Perintah
+# すべて起動:
+./start.sh all
+```
 
-| Perintah | Kegunaan |
-|----------|----------|
-| `./start.sh all` | Mulai sidecar + semua bot + konsol |
-| `./start.sh status` | Lihat bot yang berjalan |
-| `./start.sh stop` | Hentikan semua |
-| `./start.sh tail` | Sambungkan ulang konsol |
-| `perl -I src openkore.pl --control=.bot_profiles/<nama>/control` | Jalankan satu bot dengan profil |
+## 料金プラン
 
+環境変数 `OPENKORE_AI_LLM_COST_TIER` で設定（`AI_sidecar/.env`）:
 
-## Links
+| 設定 | 効果 |
+|------|--------|
+| `OPENKORE_AI_LLM_COST_TIER=off` | 反射 + ヒューリスティックのみ。コスト0。 |
+| `OPENKORE_AI_LLM_COST_TIER=economy` | 512トークンコンテキスト、最小LLM |
+| `OPENKORE_AI_LLM_COST_TIER=standard` | 2Kコンテキスト、通常LLM（デフォルト） |
+| `OPENKORE_AI_LLM_COST_TIER=premium` | 8Kコンテキスト、完全LLM推論 |
+
+すべての設定は [AI_sidecar/.env.example](../AI_sidecar/.env.example) を参照。
+
+## コマンド
+
+| コマンド | 説明 |
+|----------|------|
+| `./start.sh all` | サイドカー + 全ボット + コンソールを起動 |
+| `./start.sh sidecar` | サイドカーのみ起動 |
+| `./start.sh bot <名前>` | 指定したボットを起動 |
+| `./start.sh stop` | 全プロセスを停止 |
+| `./start.sh status` | ボットの状態を表示 |
+| `./start.sh tail` | コンソールに再接続 |
+
+## リンク
 
 - OpenKore original: [github.com/OpenKore/openkore](https://github.com/OpenKore/openkore)
-- Dokumentasi OpenKore: [openkore.com](https://openkore.com)
-- API DeepSeek: [platform.deepseek.com](https://platform.deepseek.com)
+- OpenKore ドキュメント: [openkore.com](https://openkore.com)
+- DeepSeek API: [platform.deepseek.com](https://platform.deepseek.com)
 - Discord: [discord.gg/zHCKr3rbM](https://discord.gg/zHCKr3rbM)
 
 ---
 
-## Lisensi
+## ライセンス
 
-GNU General Public License v2.0 — sama dengan OpenKore original.
+GNU General Public License v2.0 — OpenKore originalと同じ。

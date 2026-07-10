@@ -1,8 +1,13 @@
+<p align="center">
+  <img alt="openkore AI" src="https://upload.wikimedia.org/wikipedia/commons/b/b5/Kore_2g_logo.png" width="200">
+</p>
+
 # openkore **AI**
 
 > Ragnarok Online bot na pinalakas ng LLM decision-making — hindi lang macros. **AI**, hindi *bypass*.
 
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord)](https://discord.gg/zHCKr3rbM)
+[![Sponsor](https://img.shields.io/badge/Sponsor-donate-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/iskandarsulaili)
 [![GitHub stars](https://img.shields.io/github/stars/iskandarsulaili/openkore-ai-v3)](https://github.com/iskandarsulaili/openkore-ai-v3/stargazers)
 
 🌐 [English](../README.md) | [Português](README-pt-BR.md) | [Tagalog](README-tl.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [ไทย](README-th.md) | [Indonesia](README-id.md) | [简体中文](README-zh-CN.md)
@@ -19,110 +24,123 @@ Isang modified OpenKore na may **AI decision engine** (FastAPI + Python) kasama 
 |-----------------|----------------|
 | Macro-based decisions | Reflex → Heuristic → LLM (3-tier) |
 | Fixed behavior | Self-adapts sa outcomes |
-| Single bot | Multi-bot swarm |
+| Single bot | Multi-bot swarm coordination |
 | Walang cost control | Per-bot budget, graduated tiers |
 | Community macros lang | Cross-bot shared learning |
-| Nagre-react sa conditions | Nagpaplano gamit PDCA |
+| Nagre-react sa conditions | Nagpaplano gamit PDCA loop |
 
 ---
 
-## Fitur
+## Mga Tampok
 
-- 3-tier engine: 25 reflex rules → 17 heuristic profiles → LLM
-- Multi-bot fleet na may auto-role assignment
-- Self-learning: nag-iimprove sa pagdaan ng panahon
-- Cost control: off/economy/standard/premium
-- 30+ RO mechanics: party, PVP, GVG, MVP, refine, cards
-- NPC dialog na powered ng LLM
-- Live console sa `start.sh`
-- 25 FastAPI endpoints
-- Compatible sa original OpenKore configs
-
----
-
-## Persyaratan
-
-- **Python 3.11+** — Untuk sidecar AI
-- **Perl 5** — Untuk klien OpenKore (sudah termasuk)
-- **Akun Ragnarok Online** — Di server mana pun yang kompatibel dengan OpenKore
-- **Kunci API DeepSeek** (opsional) — Untuk keputusan via LLM. Dapatkan di [platform.deepseek.com](https://platform.deepseek.com)
+- **3-tier engine** — 17 reflex rules → Heuristic scoring → LLM (DeepSeek, OpenAI, o local Ollama)
+- **Multi-bot fleet** — Auto-role assignment (tank/healer/dps/crafter), message relay
+- **Self-learning** — Nag-iimprove per action/map/monster. Cross-bot experience sharing.
+- **Cost control** — Set daily token budget, hourly limit, o i-off ang LLM.
+- **RO mechanics** — Party, PVP, GVG, MVP, refine, cards, quests, crafting, job change
+- **NPC dialog powered ng LLM** — Heuristic sequences para sa common NPCs, LLM para sa quest/refine NPCs
+- **Live console** — `./start.sh` stream ng lahat ng bot + sidecar logs sa isang terminal, color-coded
+- **FastAPI server** — **112+ endpoints** sa 19 routers, auth middleware, fleet coordination
+- **CrewAI** — 18 specialized agents na managed ng orchestrator
+- **ML Subconscious** — Self-hosted behavior learning
+- **Compatible** — Gumagamit ng standard `control/config.txt` format
 
 ---
 
-## Mulai Cepat (Bot Tunggal)
+## Mga Kailangan
+
+- **Python 3.11+** — Para sa AI sidecar
+- **Perl 5** — Para sa OpenKore client (kasama na)
+- **Ragnarok Online account** — Sa kahit anong server na compatible sa OpenKore
+- **LLM provider** (optional) — DeepSeek API key, OpenAI API key, o local Ollama instance
+
+---
+
+## Mabilis na Pagsisimula (Isang Bot)
+
+Mag-set up ng credentials sa `.env` (sa root ng repository):
 
 ```bash
-git clone https://github.com/iskandarsulaili/openkore-ai-v3.git
-cd openkore-ai-v3
-
-# Atur kredensial
+# format: BOT_<pangalan>_PASS=<password>
 cat >> .env << 'EOF'
-BOT_karaktermu_PASS=sandi_anda
+BOT_akingbot_PASS=aking_password
 EOF
+```
 
-# Pasang sidecar Python
+```bash
+# 1. I-set up ang Python environment
 cd AI_sidecar
 python3 -m venv venv
 source venv/bin/activate
 pip install -e .
 cd ..
 
-# Atur control/config.txt dengan server dan akun Anda
+# 2. Gumawa ng bot profile
+mkdir -p .bot_profiles/akingbot/control
+cp control/config.txt .bot_profiles/akingbot/control/
+# I-edit ang .bot_profiles/akingbot/control/config.txt
 
-# Mulai
-source AI_sidecar/venv/bin/activate
-nohup python -m ai_sidecar.app > logs/sidecar.log 2>&1 &
-perl -I src openkore.pl
+# 3. Simulan ang sidecar + bot
+./start.sh sidecar &
+./start.sh bot akingbot &
 ```
 
-## Mulai Cepat (Banyak Bot)
+O simulan lahat nang sabay:
 
 ```bash
-mkdir -p profiles/karakter1/control profiles/karakter2/control
-cp control/config.txt profiles/karakter1/control/
-cp control/config.txt profiles/karakter2/control/
-
-# Atur sandi di .env
-cat >> .env << 'EOF'
-BOT_karakter1_PASS=sandi1
-BOT_karakter2_PASS=sandi2
-EOF
-
-# Mulai semuanya:
 ./start.sh all
 ```
 
-## Tingkat Biaya
+## Mabilis na Pagsisimula (Maraming Bot)
 
-Atur di `AI_sidecar/.env`:
+```bash
+mkdir -p .bot_profiles/char1/control .bot_profiles/char2/control
+cp control/config.txt .bot_profiles/char1/control/
+cp control/config.txt .bot_profiles/char2/control/
 
-| Pengaturan | Efek |
-|------------|------|
-| `llm_cost_tier=off` | Hanya refleks + heuristik. $0. |
-| `llm_cost_tier=economy` | 512 token konteks, LLM minimal |
-| `llm_cost_tier=standard` | 2K konteks, LLM normal (bawaan) |
-| `llm_cost_tier=premium` | 8K konteks, LLM penuh |
+# I-set ang passwords sa .env
+cat >> .env << 'EOF'
+BOT_char1_PASS=pass1
+BOT_char2_PASS=pass2
+EOF
 
-## Perintah
+# Simulan lahat:
+./start.sh all
+```
 
-| Perintah | Kegunaan |
-|----------|----------|
-| `./start.sh all` | Mulai sidecar + semua bot + konsol |
-| `./start.sh status` | Lihat bot yang berjalan |
-| `./start.sh stop` | Hentikan semua |
-| `./start.sh tail` | Sambungkan ulang konsol |
-| `perl -I src openkore.pl --control=.bot_profiles/<nama>/control` | Jalankan satu bot dengan profil |
+## Antas ng Gastos
 
+I-set gamit ang environment variable `OPENKORE_AI_LLM_COST_TIER` sa `AI_sidecar/.env`:
 
-## Links
+| Setting | Epekto |
+|---------|--------|
+| `OPENKORE_AI_LLM_COST_TIER=off` | Reflex + heuristic lang. Zero cost. |
+| `OPENKORE_AI_LLM_COST_TIER=economy` | 512 token context, minimal LLM |
+| `OPENKORE_AI_LLM_COST_TIER=standard` | 2K context, normal LLM (default) |
+| `OPENKORE_AI_LLM_COST_TIER=premium` | 8K context, full LLM reasoning |
+
+Tingnan ang [AI_sidecar/.env.example](../AI_sidecar/.env.example) para sa lahat ng available na setting.
+
+## Mga Utos
+
+| Utos | Gamit |
+|------|-------|
+| `./start.sh all` | Simulan sidecar + lahat ng bot + console |
+| `./start.sh sidecar` | Simulan sidecar lang |
+| `./start.sh bot <pangalan>` | Simulan isang bot sa profile name |
+| `./start.sh stop` | Ihinto lahat ng proseso |
+| `./start.sh status` | Ipakita ang status ng mga bot |
+| `./start.sh tail` | Muling kumonekta sa console |
+
+## Mga Link
 
 - OpenKore original: [github.com/OpenKore/openkore](https://github.com/OpenKore/openkore)
-- Dokumentasi OpenKore: [openkore.com](https://openkore.com)
-- API DeepSeek: [platform.deepseek.com](https://platform.deepseek.com)
+- OpenKore documentation: [openkore.com](https://openkore.com)
+- DeepSeek API: [platform.deepseek.com](https://platform.deepseek.com)
 - Discord: [discord.gg/zHCKr3rbM](https://discord.gg/zHCKr3rbM)
 
 ---
 
-## Lisensi
+## Lisensya
 
-GNU General Public License v2.0 — sama dengan OpenKore original.
+GNU General Public License v2.0 — katulad ng OpenKore original.
