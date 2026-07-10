@@ -138,12 +138,36 @@ class LLMProvider:
                         self._record_failure()
                         return None, elapsed, error
 
-                    data = response.json() if response.content else {}
-                    if not isinstance(data, dict):
-                        error = "invalid_json_object"
-                        self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)
-                        self._record_failure()
-                        return None, elapsed, error
+                    # Handle SSE (Server-Sent Events) responses — some providers
+                    # always stream even when stream=False is set
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "text/event-stream" in content_type:
+                        # Read the full SSE response and extract the last data event
+                        raw_text = await response.aread()
+                        text = raw_text.decode("utf-8", errors="replace")
+                        # Parse SSE: find the last non-DONE data line
+                        last_json = None
+                        for line in text.split("\n"):
+                            line = line.strip()
+                            if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                                try:
+                                    last_json = json.loads(line[6:])
+                                except json.JSONDecodeError:
+                                    pass
+                        if last_json and isinstance(last_json, dict):
+                            data = last_json
+                        else:
+                            error = "sse_parse_failed"
+                            self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)
+                            self._record_failure()
+                            return None, elapsed, error
+                    else:
+                        data = response.json() if response.content else {}
+                        if not isinstance(data, dict):
+                            error = "invalid_json_object"
+                            self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)
+                            self._record_failure()
+                            return None, elapsed, error
 
                     self._breaker.record_success(bot_id=bot_id, key=breaker_key, family="provider")
                     self._record_call()
