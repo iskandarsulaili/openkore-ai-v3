@@ -52,8 +52,8 @@ This directory documents the **current local sidecar as implemented now**. It is
 From [`AI_sidecar`](.):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
 ```
