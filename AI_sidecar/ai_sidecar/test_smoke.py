@@ -24,7 +24,7 @@ def test_config_loads():
     assert settings.app_name == "openkore-ai-sidecar"
     assert settings.host == "127.0.0.1"
     assert settings.port == 18081
-    assert settings.llm_cost_tier in ("off", "economy", "standard", "premium")
+    assert settings.llm_cost_tier in ("off", "economy", "standard", "premium", "max")
     print(f"  Config: host={settings.host} port={settings.port} tier={settings.llm_cost_tier}")
 
 

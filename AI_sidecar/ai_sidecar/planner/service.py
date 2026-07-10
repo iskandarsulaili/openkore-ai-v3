@@ -362,13 +362,48 @@ class PlannerService:
         )
 
     def _context_budget(self) -> dict[str, int]:
-        """Return max_context_chars based on llm_cost_tier config."""
+        """Return max_context_chars based on llm_cost_tier config.
+        When tier is 'max', try to auto-detect the model's max context window
+        by querying the provider's model metadata endpoint.
+        """
         try:
             from ai_sidecar.config import settings as _s
             _tier = getattr(_s, "llm_cost_tier", "standard")
-            return {"max_context_chars": type(self.plan_generator).CONTEXT_BUDGETS.get(_tier, 0)}
+            _budgets = type(self.plan_generator).CONTEXT_BUDGETS
+            if _tier == "max":
+                # Auto-detect: check across all providers for model n_ctx
+                _detected = self._detect_max_context()
+                return {"max_context_chars": _detected}
+            return {"max_context_chars": _budgets.get(_tier, 0)}
         except Exception:
             return {"max_context_chars": 0}
+    
+    def _detect_max_context(self) -> int:
+        """Query the active LLM provider for the model's max context size."""
+        try:
+            import httpx
+            # Try common provider model endpoints
+            _endpoints = [
+                "http://127.0.0.1:8012/v1/models",   # llama.cpp / local
+                "https://api.deepseek.com/v1/models", # DeepSeek
+                "https://api.openai.com/v1/models",   # OpenAI
+            ]
+            for url in _endpoints:
+                try:
+                    resp = httpx.get(url, timeout=3)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        models = data.get("data", data.get("models", []))
+                        if models:
+                            meta = models[0].get("meta", {}) if isinstance(models[0], dict) else {}
+                            n_ctx = meta.get("n_ctx_train") or meta.get("n_ctx") or 0
+                            if n_ctx and n_ctx > 0:
+                                return int(n_ctx)
+                except Exception:
+                    continue
+            return 0
+        except Exception:
+            return 0
 
     async def promote_macro(self, payload: PlannerMacroPromoteRequest) -> PlannerResponse:
         context = self.context_assembler.assemble(meta=payload.meta, objective=payload.objective, horizon=PlanHorizon.tactical)

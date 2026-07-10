@@ -60,7 +60,7 @@ class SidecarSettings(BaseSettings):
     llm_max_retries: int = Field(default=2, ge=0, le=8)
     llm_prompt_max_chars: int = Field(default=32000, ge=1024, le=200000)
     # ── Cost Control ──────────────────────────────────────────────
-    llm_cost_tier: str = "standard"  # off | economy | standard | premium
+    llm_cost_tier: str = "standard"  # off | economy | standard | premium | max
     llm_daily_budget_tokens: int = Field(default=100000, ge=0, le=10000000)
     llm_monthly_budget_usd: float = Field(default=10.0, ge=0.0, le=1000.0)
     llm_max_calls_per_hour: int = Field(default=30, ge=0, le=1000)

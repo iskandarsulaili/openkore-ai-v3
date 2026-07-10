@@ -95,7 +95,7 @@ def _plan_schema() -> dict[str, object]:
 
 @dataclass(slots=True)
 class PlanGenerator:
-    CONTEXT_BUDGETS: ClassVar[dict[str, int]] = {"off": 0, "economy": 512, "standard": 2048, "premium": 8192}
+    CONTEXT_BUDGETS: ClassVar[dict[str, int]] = {"off": 0, "economy": 512, "standard": 2048, "premium": 8192, "max": 0}
     model_router: object
     planner_timeout_seconds: float
     planner_retries: int
