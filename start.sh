@@ -19,21 +19,29 @@ SIDECAR_LOG="$SCRIPT_DIR/logs/sidecar.log"
 BOT_LOGS="$SCRIPT_DIR/logs"
 PID_FILE="$SCRIPT_DIR/.openkore-pids"
 
-# Bot profiles
+# Bot profiles — auto-discover from .bot_profiles/ directory
 declare -A BOT_MASTER BOT_USER BOT_PASS BOT_CHAR
-BOT_NAMES=("kicapmasin2" "kicapmasin" "kicapmasin3")
-
-BOT_MASTER["kicapmasin2"]="Asgards Glory"
-BOT_USER["kicapmasin2"]="kicapmasin2"
-BOT_CHAR["kicapmasin2"]="0"
-
-BOT_MASTER["kicapmasin"]="Asgards Glory"
-BOT_USER["kicapmasin"]="kicapmasin"
-BOT_CHAR["kicapmasin"]="0"
-
-BOT_MASTER["kicapmasin3"]="Asgards Glory"
-BOT_USER["kicapmasin3"]="kicapmasin3"
-BOT_CHAR["kicapmasin3"]="0"
+BOT_NAMES=()
+for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
+    _name="$(basename "$_profile_dir")"
+    BOT_NAMES+=("$_name")
+    BOT_MASTER["$_name"]="Asgards Glory"
+    BOT_USER["$_name"]="$_name"
+    BOT_CHAR["$_name"]="0"
+done
+# Fallback if no profiles found
+if [ ${#BOT_NAMES[@]} -eq 0 ]; then
+    BOT_NAMES=("kicapmasin2" "kicapmasin" "kicapmasin3")
+    BOT_MASTER["kicapmasin2"]="Asgards Glory"
+    BOT_USER["kicapmasin2"]="kicapmasin2"
+    BOT_CHAR["kicapmasin2"]="0"
+    BOT_MASTER["kicapmasin"]="Asgards Glory"
+    BOT_USER["kicapmasin"]="kicapmasin"
+    BOT_CHAR["kicapmasin"]="0"
+    BOT_MASTER["kicapmasin3"]="Asgards Glory"
+    BOT_USER["kicapmasin3"]="kicapmasin3"
+    BOT_CHAR["kicapmasin3"]="0"
+fi
 
 # ------------------------------------------------------------------
 # Colors
