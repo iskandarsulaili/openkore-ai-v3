@@ -60,14 +60,50 @@ class SidecarSettings(BaseSettings):
     llm_max_retries: int = Field(default=2, ge=0, le=8)
     llm_prompt_max_chars: int = Field(default=32000, ge=1024, le=200000)
     # ── Cost Control ──────────────────────────────────────────────
-    llm_cost_tier: str = "standard"  # off | economy | standard | premium | max
+    llm_cost_tier: str = "standard"  # off | saver | standard | max
     llm_daily_budget_tokens: int = Field(default=100000, ge=0, le=10000000)
-    llm_monthly_budget_usd: float = Field(default=10.0, ge=0.0, le=1000.0)
     llm_max_calls_per_hour: int = Field(default=30, ge=0, le=1000)
     llm_skip_if_heuristic: bool = True
     llm_heuristic_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    llm_reflex_always_first: bool = True
-    llm_cost_tier_pricing: str = '{"off":0,"economy":0.15,"standard":0.30,"premium":0.60}'  # $/M tokens
+    llm_cost_tier_pricing: str = '{"off":0,"saver":0.05,"standard":0.30,"max":0.60}'  # $/M tokens
+
+    # Cost mode: saver = minimal LLM, standard = balanced, max = full LLM
+    # saver: heuristic + game engine for 95% of decisions, LLM only for novel situations
+    # standard: heuristic + game engine + occasional LLM for strategic planning
+    # max: full LLM for all horizons, game engine as fallback
+    cost_mode: str = "standard"  # saver | standard | max
+
+    # Game engine settings
+    game_engine_enabled: bool = True
+    game_engine_knowledge_path: str = "knowledge/knowledge.json"
+    game_engine_auto_learn: bool = True
+    game_engine_learning_rate: float = Field(default=0.1, ge=0.0, le=1.0)
+
+    # Hunting zone auto-discovery
+    hunting_zone_auto_discover: bool = True
+    hunting_zone_min_monsters: int = Field(default=3, ge=1, le=100)
+    hunting_zone_max_distance: int = Field(default=5, ge=1, le=20)
+
+    # Anti-detection
+    anti_detection_enabled: bool = True
+    anti_detection_random_delay_ms: tuple = (100, 500)
+    anti_detection_human_like_movement: bool = True
+    anti_detection_session_rotation_hours: float = Field(default=4.0, ge=0.5, le=24.0)
+
+    # Multi-bot (unlimited)
+    multi_bot_max_bots: int = Field(default=100, ge=1, le=1000)
+    multi_bot_stagger_delay_s: float = Field(default=10.0, ge=1.0, le=60.0)
+    multi_bot_server_timeout_s: float = Field(default=120.0, ge=30.0, le=600.0)
+    multi_bot_auto_restart: bool = True
+    multi_bot_auto_restart_interval_s: float = Field(default=60.0, ge=10.0, le=600.0)
+
+    # Swarm AI
+    swarm_ai_enabled: bool = True
+    swarm_ai_formation: str = "auto"  # auto | vanguard | wedge | line | spread | surround | protect | diamond | flank | retreat
+    swarm_ai_skill_combos: bool = True
+    swarm_ai_party_heal: bool = True
+    swarm_ai_aggro_share: bool = True
+    swarm_ai_loot_share: bool = True
 
     # ── API Authentication ────────────────────────────────────────
     api_auth_enabled: bool = False  # Enable manually + set api_auth_token for the bridge

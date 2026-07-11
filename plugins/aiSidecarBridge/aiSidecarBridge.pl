@@ -12,7 +12,12 @@ use Network;
 use Plugins;
 use Scalar::Util qw(reftype);
 use Settings;
-use Time::HiRes qw(alarm time);
+use Time::HiRes qw(alarm time usleep);
+
+# Anti-detection: random delay to simulate human reaction time
+my $ANTI_DETECTION_ENABLED = 1;
+my $ANTI_DETECTION_MIN_DELAY_MS = 100;
+my $ANTI_DETECTION_MAX_DELAY_MS = 500;
 
 Plugins::register(
 	'aiSidecarBridge',
@@ -1678,6 +1683,13 @@ sub _execute_action {
 	my $command = defined $action->{command} ? $action->{command} : '';
 	my $metadata = ref($action->{metadata}) eq 'HASH' ? $action->{metadata} : {};
 	my $started = _now_ms();
+	
+	# Anti-detection: random delay before executing action
+	if ($ANTI_DETECTION_ENABLED) {
+		my $delay_ms = $ANTI_DETECTION_MIN_DELAY_MS + int(rand($ANTI_DETECTION_MAX_DELAY_MS - $ANTI_DETECTION_MIN_DELAY_MS + 1));
+		usleep($delay_ms * 1000) if $delay_ms > 0;
+	}
+	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
 
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');

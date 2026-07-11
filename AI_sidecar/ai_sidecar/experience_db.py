@@ -159,7 +159,7 @@ class ExperienceDatabase:
                 monster_name TEXT, role TEXT, action_taken TEXT, success INTEGER,
                 reward REAL, details TEXT
             )""")
-            for e in self._entries[-1000:]:  # persist last 1000
+            for e in self._entries:  # persist ALL entries, not just last 1000
                 db.execute(
                     "INSERT INTO experience VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (e.bot_id, e.timestamp, e.context_type, e.map_name,
@@ -168,5 +168,36 @@ class ExperienceDatabase:
                 )
             db.commit()
             db.close()
+            logger.info("experience_persisted: %d entries to %s", len(self._entries), sqlite_path)
         except Exception:
             logger.warning("experience_persist_failed")
+
+    def load(self, sqlite_path: str | None = None) -> int:
+        """Load experience from SQLite on startup.
+        
+        This fixes the critical bug where ExpDB lost all knowledge on restart.
+        """
+        if not sqlite_path:
+            return 0
+        try:
+            import sqlite3
+            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            cursor = db.execute("SELECT * FROM experience")
+            loaded = 0
+            for row in cursor:
+                entry = ExperienceEntry(
+                    bot_id=row[0], timestamp=row[1], context_type=row[2],
+                    map_name=row[3] or "", monster_name=row[4] or "",
+                    role=row[5] or "", action_taken=row[6] or "",
+                    success=bool(row[7]), reward=float(row[8] or 0.0),
+                    details=json.loads(row[9]) if row[9] else {},
+                )
+                self._entries.append(entry)
+                loaded += 1
+            db.close()
+            self._rebuild_indexes()
+            logger.info("experience_loaded: %d entries from %s", loaded, sqlite_path)
+            return loaded
+        except Exception:
+            logger.warning("experience_load_failed")
+            return 0

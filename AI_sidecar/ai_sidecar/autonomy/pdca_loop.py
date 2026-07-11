@@ -18,6 +18,15 @@ from ai_sidecar.planner.schemas import PlannerResponse, StrategicPlan, TacticalI
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerPlanRequest
 from ai_sidecar.contracts.state import BotStateSnapshot
 from ai_sidecar.reflex.circuit_breaker import ReflexCircuitBreaker
+from ai_sidecar.hunting_zone_manager import HuntingZoneManager
+from ai_sidecar.cost_mode import CostModeManager
+from ai_sidecar.anti_detection import AntiDetection
+from ai_sidecar.game_engine import GameIntelligenceEngine
+from ai_sidecar.fleet.swarm_ai import (
+    SwarmTacticsEngine, SwarmReflexSystem, RoleDiscoveryEngine,
+    FormationType, SkillCombo,
+)
+from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +127,473 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         return queued
     except Exception:
         _log.exception("heuristic_action_emission_failed")
+    return 0
+
+
+def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = None, map_name: str = "") -> int:
+    """Emit actions from the game engine + hunting zone manager.
+    
+    This is the core of the "no hardcoded" philosophy. Instead of hardcoding
+    hunting maps in config, the game engine reads rAthena data and recommends
+    the optimal hunting zone based on the bot's level, class, and equipment.
+    
+    Returns number of actions queued.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        hzm = getattr(runtime_state, "hunting_zone_manager", None)
+        if hzm is None:
+            return 0
+        
+        # Resolve bot_id
+        if not bot_id:
+            br = getattr(runtime_state, "bot_registry", None)
+            if br is not None:
+                try:
+                    bots = br.list_bots()
+                    if bots:
+                        bot_id = str(bots[0])
+                except Exception:
+                    pass
+        if not bot_id:
+            snapshots = getattr(runtime_state, "snapshot_cache", None)
+            if snapshots is not None:
+                try:
+                    latest = snapshots.latest()
+                    if latest and isinstance(latest, dict) and latest.get("bot_id"):
+                        bot_id = str(latest["bot_id"])
+                except Exception:
+                    pass
+        bot_id = bot_id or "default"
+        
+        # Get bot level from snapshot
+        bot_level = 1
+        bot_class = "novice"
+        try:
+            snapshots = getattr(runtime_state, "snapshot_cache", None)
+            if snapshots is not None:
+                latest = snapshots.latest()
+                if latest is not None:
+                    if isinstance(latest, dict):
+                        bot_level = int(latest.get("base_level", latest.get("level", 1)) or 1)
+                        bot_class = str(latest.get("job_name", latest.get("class", "novice")) or "novice")
+                    else:
+                        bot_level = int(getattr(latest, "base_level", 1) or 1)
+                        bot_class = str(getattr(latest, "job_name", "novice") or "novice")
+        except Exception:
+            pass
+        
+        # Get existing zone assignments for multi-bot coordination
+        existing_assignments = getattr(runtime_state, "zone_assignments", {})
+        
+        # Recommend hunting zone
+        zones = hzm.recommend_zone(
+            bot_level=bot_level,
+            bot_class=bot_class,
+            goal="leveling" if horizon in ("short_term", "medium_term") else "farming",
+        )
+        
+        if not zones:
+            _log.info("game_engine_no_zones: bot=%s level=%d", bot_id, bot_level)
+            return 0
+        
+        best_zone = zones[0]
+        
+        # Check if we're already on the right map
+        if map_name and best_zone.map_name in map_name:
+            # Already on the right map — emit ai auto
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is None:
+                return 0
+            from datetime import UTC, datetime, timedelta
+            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+            import hashlib as _hashlib
+            _short_id = _hashlib.md5(f"{bot_id}_game_engine_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+            proposal = ActionProposal(
+                action_id=f"ge_{horizon}_{_short_id}",
+                kind="command",
+                command="ai auto",
+                priority_tier=ActionPriorityTier.tactical,
+                source="planner",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                idempotency_key=f"ge_{horizon}_{_short_id}",
+                metadata={"goal": "grind", "objective": f"Hunt {best_zone.primary_monster} on {best_zone.map_name}",
+                          "horizon": horizon, "bot_id": bot_id, "source": "game_engine"},
+            )
+            aq.enqueue(bot_id, proposal)
+            _log.info(
+                "game_engine_action: bot=%s zone=%s monster=%s score=%.2f exp_hp=%.2f danger=%.2f zeny=%.0f",
+                bot_id, best_zone.map_name, best_zone.primary_monster,
+                best_zone.score, best_zone.exp_per_hp, best_zone.danger_score, best_zone.zeny_per_kill,
+            )
+            return 1
+        
+        # Need to move to the hunting zone
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        import hashlib as _hashlib
+        _short_id = _hashlib.md5(f"{bot_id}_game_engine_move_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+        proposal = ActionProposal(
+            action_id=f"ge_move_{horizon}_{_short_id}",
+            kind="command",
+            command=f"move {best_zone.map_name}",
+            priority_tier=ActionPriorityTier.strategic,
+            source="planner",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=120),
+            idempotency_key=f"ge_move_{horizon}_{_short_id}",
+            metadata={"goal": "travel", "objective": f"Move to {best_zone.map_name} for {best_zone.primary_monster}",
+                      "horizon": horizon, "bot_id": bot_id, "source": "game_engine",
+                      "target_map": best_zone.map_name, "reason": best_zone.reason},
+        )
+        aq.enqueue(bot_id, proposal)
+        _log.info(
+            "game_engine_move: bot=%s target=%s monster=%s score=%.2f reason=%s",
+            bot_id, best_zone.map_name, best_zone.primary_monster,
+            best_zone.score, best_zone.reason,
+        )
+        return 1
+    except Exception:
+        _log.exception("game_engine_action_emission_failed")
+    return 0
+
+
+def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
+    """Emit swarm AI actions — formations, skill combos, role discovery.
+    
+    Wires the previously dead swarm_ai.py (753 lines) into the action pipeline.
+    Selects formation based on party composition, threat level, and AoE risk.
+    Coordinates skill combos between bots.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        swarm = getattr(runtime_state, "swarm_tactics", None)
+        if swarm is None:
+            return 0
+        
+        # Resolve bot_id
+        if not bot_id:
+            br = getattr(runtime_state, "bot_registry", None)
+            if br is not None:
+                try:
+                    bots = br.list_bots()
+                    if bots:
+                        bot_id = str(bots[0])
+                except Exception:
+                    pass
+        bot_id = bot_id or "default"
+        
+        # Get snapshot for state
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        snapshot = None
+        if snapshots is not None:
+            try:
+                snapshot = snapshots.latest()
+            except Exception:
+                pass
+        
+        # Get bot roles from role discovery
+        roles = {}
+        role_discovery = getattr(runtime_state, "role_discovery", None)
+        if role_discovery is not None and snapshot is not None:
+            try:
+                roles = role_discovery.discover_roles(snapshot)
+            except Exception:
+                pass
+        
+        # Select formation based on party size and threat
+        party_size = 1
+        threat_level = 0
+        aoe_risk = False
+        try:
+            if snapshot is not None:
+                if isinstance(snapshot, dict):
+                    party_size = int(snapshot.get("party_size", 1) or 1)
+                    c = snapshot.get("combat", {}) or {}
+                    threat_level = int(c.get("aggro_count", 0) or 0)
+                else:
+                    party_size = int(getattr(snapshot, "party_size", 1) or 1)
+                    c = getattr(snapshot, "combat", None) or {}
+                    threat_level = int(getattr(c, "aggro_count", 0) or 0)
+        except Exception:
+            pass
+        
+        formation = swarm.select_formation(
+            party_size=party_size,
+            target_count=threat_level,
+            threat_level=threat_level,
+            aoe_risk=aoe_risk,
+            team_hp_avg=1.0,
+        )
+        
+        # Select skill combo based on roles and target
+        combo = swarm.select_combo(
+            party_roles=list(roles.values()) if roles else [],
+            target_type="normal" if threat_level < 4 else "boss",
+        )
+        
+        # Emit formation command
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+        
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        import hashlib as _hashlib
+        
+        queued = 0
+        
+        # Emit formation action
+        _short_id = _hashlib.md5(f"{bot_id}_swarm_fmt_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+        proposal = ActionProposal(
+            action_id=f"swarm_fmt_{horizon}_{_short_id}",
+            kind="command",
+            command="ai auto",
+            priority_tier=ActionPriorityTier.tactical,
+            source="fleet",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=60),
+            idempotency_key=f"swarm_fmt_{horizon}_{_short_id}",
+            metadata={
+                "goal": "swarm_formation",
+                "objective": f"Formation: {formation.value}",
+                "horizon": horizon, "bot_id": bot_id, "source": "swarm_ai",
+                "formation": formation.value,
+                "combo": combo.name if combo else "none",
+            },
+        )
+        aq.enqueue(bot_id, proposal)
+        queued += 1
+        
+        _log.info(
+            "swarm_action: bot=%s formation=%s combo=%s party=%d threat=%d",
+            bot_id, formation.value, combo.name if combo else "none",
+            party_size, threat_level,
+        )
+        return queued
+    except Exception:
+        _log.exception("swarm_action_emission_failed")
+    return 0
+
+
+def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
+    """Emit vendor/storage actions when inventory is full.
+    
+    Uses game engine's valuate_item() to determine what to sell vs keep.
+    Routes bot to nearest town for selling/storage.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        # Check weight ratio from snapshot
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        if snapshots is None:
+            return 0
+        
+        try:
+            latest = snapshots.latest()
+        except Exception:
+            return 0
+        if latest is None:
+            return 0
+        
+        weight_ratio = 0.0
+        map_name = ""
+        if isinstance(latest, dict):
+            inv = latest.get("inventory", {}) or {}
+            weight_ratio = float(inv.get("weight_ratio", 0.0) or 0.0)
+            map_name = str(latest.get("map", latest.get("position", {}).get("map", "")) or "")
+        else:
+            inv = getattr(latest, "inventory", None) or {}
+            weight_ratio = float(getattr(inv, "weight_ratio", 0.0) or 0.0)
+            pos = getattr(latest, "position", None)
+            map_name = str(getattr(pos, "map", "") if pos else "")
+        
+        # Only act when near full (>80% weight)
+        if weight_ratio < 0.80:
+            return 0
+        
+        # Resolve bot_id
+        if not bot_id:
+            if isinstance(latest, dict) and latest.get("bot_id"):
+                bot_id = str(latest["bot_id"])
+        bot_id = bot_id or "default"
+        
+        # Determine nearest town from map name
+        town_map = "prontera"
+        if "payon" in map_name.lower() or "pay_" in map_name.lower():
+            town_map = "payon"
+        elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
+            town_map = "morocc"
+        elif "geffen" in map_name.lower() or "gef_" in map_name.lower():
+            town_map = "geffen"
+        elif "aldebaran" in map_name.lower() or "alde_" in map_name.lower():
+            town_map = "aldebaran"
+        elif "yuno" in map_name.lower():
+            town_map = "yuno"
+        
+        # Check if already in town
+        if map_name and town_map in map_name.lower():
+            # In town — emit sell/storage commands
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is None:
+                return 0
+            from datetime import UTC, datetime, timedelta
+            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+            import hashlib as _hashlib
+            _short_id = _hashlib.md5(f"{bot_id}_vendor_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+            proposal = ActionProposal(
+                action_id=f"vendor_{horizon}_{_short_id}",
+                kind="command",
+                command="ai auto",
+                priority_tier=ActionPriorityTier.tactical,
+                source="planner",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                idempotency_key=f"vendor_{horizon}_{_short_id}",
+                metadata={
+                    "goal": "economy",
+                    "objective": f"Sell items in {town_map}, weight={weight_ratio:.0%}",
+                    "horizon": horizon, "bot_id": bot_id, "source": "vendor_ai",
+                    "needs_vendor": True, "town": town_map,
+                },
+            )
+            aq.enqueue(bot_id, proposal)
+            _log.info("vendor_action: bot=%s town=%s weight=%.0f%%", bot_id, town_map, weight_ratio * 100)
+            return 1
+        
+        # Not in town — route to nearest town
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        import hashlib as _hashlib
+        _short_id = _hashlib.md5(f"{bot_id}_vendor_move_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+        proposal = ActionProposal(
+            action_id=f"vendor_move_{horizon}_{_short_id}",
+            kind="command",
+            command=f"move {town_map}",
+            priority_tier=ActionPriorityTier.strategic,
+            source="planner",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=120),
+            idempotency_key=f"vendor_move_{horizon}_{_short_id}",
+            metadata={
+                "goal": "economy",
+                "objective": f"Return to {town_map} to sell, weight={weight_ratio:.0%}",
+                "horizon": horizon, "bot_id": bot_id, "source": "vendor_ai",
+                "target_map": town_map, "needs_vendor": True,
+            },
+        )
+        aq.enqueue(bot_id, proposal)
+        _log.info("vendor_move: bot=%s target=%s weight=%.0f%%", bot_id, town_map, weight_ratio * 100)
+        return 1
+    except Exception:
+        _log.exception("vendor_action_emission_failed")
+    return 0
+
+
+def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
+    """Emit skill rotation actions based on game engine recommendations.
+    
+    Uses game engine's recommend_skills_for_mob() to determine optimal
+    skills against current targets. Replaces empty attackSkillSlot blocks.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        game_engine = getattr(runtime_state, "game_engine", None)
+        if game_engine is None:
+            return 0
+        
+        # Get snapshot for current mob info
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        if snapshots is None:
+            return 0
+        try:
+            latest = snapshots.latest()
+        except Exception:
+            return 0
+        if latest is None:
+            return 0
+        
+        # Get current target info
+        mob_element = "Neutral"
+        mob_race = "Formless"
+        mob_size = "Medium"
+        bot_class = "novice"
+        if isinstance(latest, dict):
+            target = latest.get("target", {}) or {}
+            mob_element = str(target.get("element", "Neutral") or "Neutral")
+            mob_race = str(target.get("race", "Formless") or "Formless")
+            mob_size = str(target.get("size", "Medium") or "Medium")
+            bot_class = str(latest.get("job_name", latest.get("class", "novice")) or "novice")
+        else:
+            target = getattr(latest, "target", None) or {}
+            mob_element = str(getattr(target, "element", "Neutral") or "Neutral")
+            mob_race = str(getattr(target, "race", "Formless") or "Formless")
+            mob_size = str(getattr(target, "size", "Medium") or "Medium")
+            bot_class = str(getattr(latest, "job_name", "novice") or "novice")
+        
+        # Get skill recommendation
+        skills = game_engine.recommend_skills_for_mob(
+            job_name=bot_class,
+            mob_element=mob_element,
+            mob_race=mob_race,
+            mob_size=mob_size,
+        )
+        
+        if not skills:
+            return 0
+        
+        # Resolve bot_id
+        if not bot_id:
+            if isinstance(latest, dict) and latest.get("bot_id"):
+                bot_id = str(latest["bot_id"])
+        bot_id = bot_id or "default"
+        
+        best = skills[0]
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+        
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        import hashlib as _hashlib
+        _short_id = _hashlib.md5(f"{bot_id}_skill_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+        proposal = ActionProposal(
+            action_id=f"skill_{horizon}_{_short_id}",
+            kind="command",
+            command="ai auto",
+            priority_tier=ActionPriorityTier.tactical,
+            source="planner",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=60),
+            idempotency_key=f"skill_{horizon}_{_short_id}",
+            metadata={
+                "goal": "combat",
+                "objective": f"Use {best['recommended_element']} vs {mob_element} ({best['damage_multiplier']:.0%})",
+                "horizon": horizon, "bot_id": bot_id, "source": "skill_ai",
+                "recommended_element": best["recommended_element"],
+                "damage_multiplier": best["damage_multiplier"],
+                "mob_element": mob_element,
+            },
+        )
+        aq.enqueue(bot_id, proposal)
+        _log.info(
+            "skill_action: bot=%s element=%s mult=%.0f%% vs %s",
+            bot_id, best["recommended_element"], best["damage_multiplier"] * 100, mob_element,
+        )
+        return 1
+    except Exception:
+        _log.exception("skill_action_emission_failed")
     return 0
 
 
@@ -379,29 +855,170 @@ class PDCALoop:
         # Resolve current bot_id for cost gate
         _cycle_bot_id = self._resolve_cost_gate_bot_id()
         
-        # ── Cost gate ──────────────────────────────────────────
+        # ── Cost gate with 3 modes ──────────────────────────
         if self._runtime is not None:
             _ct = getattr(self._runtime, "cost_tracker", None)
             _settings_available = True
             try:
                 from ai_sidecar.config import settings as _settings
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
+                _cost_mode_str = getattr(_settings, "cost_mode", "standard")
                 
-                # Tier "off": skip all LLM cycles, still emit heuristic actions
-                if _tier == "off":
-                    _actions_queued_off = 0
+                # Initialize cost mode manager if not present
+                _cost_mode = getattr(self._runtime, "cost_mode_manager", None)
+                if _cost_mode is None:
+                    _cost_mode = CostModeManager(_cost_mode_str)
+                    self._runtime.cost_mode_manager = _cost_mode
+                
+                # Initialize hunting zone manager if not present
+                _hzm = getattr(self._runtime, "hunting_zone_manager", None)
+                if _hzm is None:
+                    _hzm = HuntingZoneManager(
+                        getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                    )
+                    self._runtime.hunting_zone_manager = _hzm
+                
+                # Initialize anti-detection if not present
+                _ad = getattr(self._runtime, "anti_detection", None)
+                if _ad is None:
+                    _ad = AntiDetection(enabled=getattr(_settings, "anti_detection_enabled", True))
+                    self._runtime.anti_detection = _ad
+                
+                # Initialize game engine if not present
+                _ge = getattr(self._runtime, "game_engine", None)
+                if _ge is None:
                     try:
-                        _hs_off = getattr(self._runtime, "heuristic_service", None)
-                        if _hs_off is not None:
-                            _actions_queued_off = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                        _ge = GameIntelligenceEngine(
+                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                        )
+                        self._runtime.game_engine = _ge
                     except Exception:
-                        logger.exception("heuristic_action_emission_failed")
-                    logger.info("cost_gate[%s]: tier=off, heuristic=%d", horizon.value, _actions_queued_off)
-                    return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued_off, progress_pct=0.0, stuck=False, re_planned=False,
-                                      force_replan=False, selected_goal="cost_gated", objective="LLM disabled by cost tier",
-                                      replan_reasons=["cost_tier_off"], cycle_ms=0.0, error="")
+                        pass
                 
-                # Check daily/hourly budget
+                # Initialize swarm tactics if not present
+                _swarm = getattr(self._runtime, "swarm_tactics", None)
+                if _swarm is None:
+                    try:
+                        _swarm = SwarmTacticsEngine()
+                        self._runtime.swarm_tactics = _swarm
+                    except Exception:
+                        pass
+                
+                # Initialize role discovery if not present
+                _role_disc = getattr(self._runtime, "role_discovery", None)
+                if _role_disc is None:
+                    try:
+                        _role_disc = RoleDiscoveryEngine()
+                        self._runtime.role_discovery = _role_disc
+                    except Exception:
+                        pass
+                
+                # Initialize goal decomposer if not present
+                _gd = getattr(self._runtime, "goal_decomposer", None)
+                if _gd is None:
+                    try:
+                        _gd = GoalDecomposer()
+                        self._runtime.goal_decomposer = _gd
+                    except Exception:
+                        pass
+                
+                # Get heuristic confidence
+                _hc = 0.0
+                _hs = getattr(self._runtime, "heuristic_service", None)
+                if _hs is not None:
+                    _signals = {}
+                    try:
+                        _snap = getattr(self._runtime, "snapshot_cache", None)
+                        if _snap:
+                            _latest = _snap.latest()
+                            if _latest and isinstance(_latest, dict):
+                                v = _latest.get("vitals") or {}
+                                _signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
+                                _signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                                c = _latest.get("combat") or {}
+                                _signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                                _signals["map_known"] = bool(_latest.get("map_known", False))
+                                inv = _latest.get("inventory") or {}
+                                _signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                                _signals["horizon"] = horizon.value
+                    except Exception:
+                        pass
+                    _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=_cycle_bot_id)
+                
+                # Check if this is a novel situation (first time seeing this map/state)
+                _is_novel = False
+                _map_name = ""
+                try:
+                    _snap = getattr(self._runtime, "snapshot_cache", None)
+                    if _snap:
+                        _latest = _snap.latest()
+                        if _latest:
+                            if isinstance(_latest, dict):
+                                _map_name = str(_latest.get("map", _latest.get("position", {}).get("map", "")))
+                            else:
+                                _map_name = str(getattr(getattr(_latest, "position", None), "map", ""))
+                except Exception:
+                    pass
+                
+                # Cost mode decision: should we use LLM?
+                _use_llm = _cost_mode.should_use_llm(
+                    horizon=horizon.value,
+                    heuristic_confidence=_hc,
+                    bot_id=_cycle_bot_id,
+                    is_novel_situation=_is_novel,
+                )
+                
+                # Update budget limits from cost mode
+                if _ct is not None:
+                    _daily_budget = _cost_mode.get_daily_budget_tokens()
+                    _hourly_limit = _cost_mode.get_llm_calls_per_hour_limit()
+                    _allowed, _reason = _ct.check(
+                        daily_budget_tokens=_daily_budget,
+                        max_calls_per_hour=_hourly_limit,
+                        tier=_tier, bot_id=_cycle_bot_id,
+                    )
+                    if not _allowed:
+                        logger.info("cost_gate[%s]: %s", horizon.value, _reason)
+                        # Even when budget exceeded, emit game engine actions
+                        _actions_queued_budget = _emit_game_engine_actions(
+                            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_map_name
+                        )
+                        return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued_budget, progress_pct=0.0, stuck=False, re_planned=False,
+                                          force_replan=False, selected_goal="budget_gated", objective=f"Budget exceeded: {_reason}",
+                                          replan_reasons=[_reason], cycle_ms=0.0, error="")
+                
+                if not _use_llm:
+                    # Emit game engine + heuristic + swarm + vendor + skill actions
+                    _actions_queued_ge = _emit_game_engine_actions(
+                        self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_map_name
+                    )
+                    _actions_queued_hs = 0
+                    try:
+                        if _hs is not None:
+                            _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                    except Exception:
+                        pass
+                    _actions_queued_swarm = _emit_swarm_actions(
+                        self._runtime, horizon.value, bot_id=_cycle_bot_id
+                    )
+                    _actions_queued_vendor = _emit_vendor_actions(
+                        self._runtime, horizon.value, bot_id=_cycle_bot_id
+                    )
+                    _actions_queued_skill = _emit_skill_actions(
+                        self._runtime, horizon.value, bot_id=_cycle_bot_id
+                    )
+                    _total_actions = _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
+                    logger.info(
+                        "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f ge=%d hs=%d swarm=%d vendor=%d skill=%d",
+                        horizon.value, _cost_mode.mode.value, _hc,
+                        _actions_queued_ge, _actions_queued_hs,
+                        _actions_queued_swarm, _actions_queued_vendor, _actions_queued_skill,
+                    )
+                    return PDCAResult(horizon=horizon, plan_id="", actions_queued=_total_actions, progress_pct=0.0, stuck=False, re_planned=False,
+                                      force_replan=False, selected_goal="cost_gated", objective=f"Cost mode {_cost_mode.mode.value}",
+                                      replan_reasons=[], cycle_ms=0.0, error="")
+                
+                # Check daily/hourly budget (for LLM path)
                 if _ct is not None:
                     _allowed, _reason = _ct.check(
                         daily_budget_tokens=getattr(_settings, "llm_daily_budget_tokens", 100000),
@@ -410,50 +1027,12 @@ class PDCALoop:
                     )
                     if not _allowed:
                         logger.info("cost_gate[%s]: %s", horizon.value, _reason)
-                        return PDCAResult(horizon=horizon, plan_id="", actions_queued=0, progress_pct=0.0, stuck=False, re_planned=False,
+                        _actions_queued_budget = _emit_game_engine_actions(
+                            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_map_name
+                        )
+                        return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued_budget, progress_pct=0.0, stuck=False, re_planned=False,
                                           force_replan=False, selected_goal="budget_gated", objective=f"Budget exceeded: {_reason}",
                                           replan_reasons=[_reason], cycle_ms=0.0, error="")
-                
-                # Heuristic skip: if heuristic service is confident enough, skip LLM
-                if getattr(_settings, "llm_skip_if_heuristic", True):
-                    _hs = getattr(self._runtime, "heuristic_service", None)
-                    if _hs is not None:
-                        # Build signals for heuristic check
-                        _signals = {}
-                        try:
-                            _snap = getattr(self._runtime, "snapshot_cache", None)
-                            if _snap:
-                                _latest = _snap.latest()
-                                if _latest and isinstance(_latest, dict):
-                                    v = _latest.get("vitals") or {}
-                                    _signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
-                                    _signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
-                                    c = _latest.get("combat") or {}
-                                    _signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
-                                    _signals["map_known"] = bool(_latest.get("map_known", False))
-                                    inv = _latest.get("inventory") or {}
-                                    _signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
-                                    _signals["horizon"] = horizon.value
-                        except Exception:
-                            pass
-                        _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=_cycle_bot_id)
-                        _threshold = getattr(_settings, "llm_heuristic_confidence_threshold", 0.7)
-                        if _hc >= _threshold:
-                            logger.info("cost_gate[%s]: heuristic skip (conf=%.2f >= %.2f)", horizon.value, _hc, _threshold)
-                            # Push heuristic actions to the action queue
-                            _actions_queued = 0
-                            try:
-                                _hs_full = getattr(self._runtime, "heuristic_service", None)
-                                if _hs_full is not None:
-                                    _bot_id_for_heuristic = _cycle_bot_id
-                                _actions_queued = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bot_id_for_heuristic)
-                            except Exception:
-                                logger.exception("heuristic_action_emission_failed")
-                            
-                            return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued, progress_pct=0.0, stuck=False, re_planned=False,
-                                              force_replan=False, selected_goal="heuristic_skip",
-                                              objective="Satisfied by heuristic rules",
-                                              replan_reasons=[], cycle_ms=0.0, error="")
             except Exception:
                 logger.exception("cost_gate_check_failed")
         

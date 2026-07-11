@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Multi-Account Manager — Start/stop 3 bots, stagger reconnects, avoid dual-login.
+Multi-Account Manager — Start/stop N bots, stagger reconnects, avoid dual-login.
 =============================================================================
 Solves the #1 problem: bots keep killing each other's sessions.
+Now supports unlimited bots with zone assignment coordination.
 """
 
 import logging
@@ -24,13 +25,14 @@ class MultiAccountManager:
     - Bots connect one at a time (staggered by 10s)
     - Old sessions are properly cleaned before reconnect
     - Bot processes are monitored and auto-restarted
-    - All bots are killed cleanly on shutdown
+    - Zone assignments are coordinated to avoid overlap
+    - Unlimited bot support (not just 3)
     """
 
     def __init__(self, base_dir: str, profiles: list[str],
                  config: dict[str, Any] | None = None):
         self._base = Path(base_dir)
-        self._profiles = profiles  # ["kicapmasin", "kicapmasin2", "kicapmasin3"]
+        self._profiles = profiles  # ["kicapmasin", "kicapmasin2", ...]
         self._config = config or {}
         self._lock = Lock()
         self._processes: dict[str, subprocess.Popen] = {}
@@ -38,6 +40,7 @@ class MultiAccountManager:
         self._running = False
         self._stagger_delay = int(self._config.get("stagger_delay", 10))
         self._server_timeout = int(self._config.get("server_timeout", 120))
+        self._zone_assignments: dict[str, str] = {}  # profile -> map_name
 
     def start_all(self) -> dict[str, int]:
         """Start all bots with staggered delays."""
@@ -155,11 +158,17 @@ class MultiAccountManager:
         """Return status of all bots."""
         result = {}
         for profile in self._profiles:
+            proc = self._processes.get(profile)
             result[profile] = {
                 "running": self.is_running(profile),
-                "pid": self._processes.get(profile).pid if self._processes.get(profile) else None,
+                "pid": proc.pid if proc else None,
+                "zone": self._zone_assignments.get(profile, "unassigned"),
             }
         return result
+
+    def assign_zones(self, zone_assignments: dict[str, str]) -> None:
+        """Assign hunting zones to bots for coordinated multi-bot farming."""
+        self._zone_assignments.update(zone_assignments)
 
     def start_monitor(self, interval_s: int = 30) -> None:
         """Start background thread to monitor bot health."""
@@ -187,7 +196,6 @@ class MultiAccountManager:
                         del self._processes[profile]
 
             # Restart dead bots outside the lock
-            # (We need to re-check because _start_bot acquires the lock)
             self._restart_dead_bots()
 
     def _restart_dead_bots(self) -> None:
