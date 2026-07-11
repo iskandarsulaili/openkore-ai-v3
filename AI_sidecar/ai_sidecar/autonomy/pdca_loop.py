@@ -1399,6 +1399,24 @@ class PDCALoop:
             except Exception:
                 logger.exception("cost_gate_check_failed")
         
+        # ── FALLBACK: emit game engine + swarm + vendor + skill actions into queue
+        # This runs in ALL modes (saver, standard, max) as a safety net.
+        # If the LLM path succeeds, these are just extra queued actions.
+        # If the LLM path fails, the bot still has meaningful actions.
+        _fallback_ge = _emit_game_engine_actions(
+            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=""
+        )
+        _fallback_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+        _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+        _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+        _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+        _fallback_total = _fallback_ge + _fallback_hs + _fallback_swarm + _fallback_vendor + _fallback_skill
+        if _fallback_total > 0:
+            logger.info(
+                "fallback_emitters: ge=%d hs=%d swarm=%d vendor=%d skill=%d",
+                _fallback_ge, _fallback_hs, _fallback_swarm, _fallback_vendor, _fallback_skill,
+            )
+        
         start = time.monotonic()
         plan_id: str | None = self._artifact_id(self._active_plan[horizon])
         actions_queued = 0
