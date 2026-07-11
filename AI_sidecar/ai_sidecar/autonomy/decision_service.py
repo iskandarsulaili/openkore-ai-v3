@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import inspect
 import logging
 from threading import Thread
 from typing import Any
 
-from ai_sidecar.autonomy.goal_stack import compute_goal_stack
+from ai_sidecar.autonomy.goal_stack import compute_goal_stack, summarize_goal_stack
+from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, SwarmGoalCoordinator, CrossHorizonSynergy, GoalHorizon
 from ai_sidecar.autonomy.mission_agent import MissionAgentService
 from ai_sidecar.autonomy.mission_context import AutonomyMissionContextAssembler
 from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge
@@ -48,6 +49,9 @@ class DecisionService:
     ro_knowledge: ROKnowledgeBundle | None = None
     mission_context_assembler: AutonomyMissionContextAssembler | None = None
     mission_agent: MissionAgentService | None = None
+    goal_decomposer: GoalDecomposer = field(default_factory=GoalDecomposer)
+    swarm_coordinator: SwarmGoalCoordinator = field(default_factory=SwarmGoalCoordinator)
+    synergy_engine: CrossHorizonSynergy = field(default_factory=CrossHorizonSynergy)
 
     def __post_init__(self) -> None:
         if self.mission_context_assembler is None:
@@ -165,6 +169,42 @@ class DecisionService:
                 goal_state=goal_state,
             )
             goal_state = refined_goal_state
+
+        # ── Goal Decomposition ──────────────────────────────────────
+        # Decompose the selected goal into sub-goals across horizons
+        # (tactical → short → medium → long) with dependency chains
+        decomposition = self.goal_decomposer.decompose(
+            bot_id=meta.bot_id,
+            assessment=goal_state.assessment,
+            goal_stack=goal_state.goal_stack,
+            selected=goal_state.selected_goal,
+        )
+        next_sg = self.goal_decomposer.next_action(bot_id=meta.bot_id)
+
+        # Detect cross-horizon conflicts
+        conflicts = self.synergy_engine.detect_conflicts(decomposition=decomposition)
+
+        # Swarm-aware zone assignment
+        available_zones = [f"prt_fild08", "prt_fild04", "pay_fild08", "pay_fild04",
+                           "gef_fild14", "moc_fild17", "mjolnir_04"]
+        assigned_zone = self.swarm_coordinator.assign_zone(
+            bot_id=meta.bot_id, available_zones=available_zones,
+            decomposition=decomposition,
+        )
+
+        logger.info(
+            "autonomy_goal_decomposition",
+            extra={
+                "event": "autonomy_goal_decomposition",
+                "bot_id": meta.bot_id,
+                "parent_goal": decomposition.parent.value,
+                "sub_goals": len(decomposition.sub_goals),
+                "next_action": str(next_sg.objective if next_sg else "none"),
+                "next_horizon": str(next_sg.horizon.value if next_sg else "none"),
+                "conflicts": len(conflicts),
+                "assigned_zone": str(assigned_zone or "none"),
+            },
+        )
 
         self.runtime.persist_goal_state(bot_id=meta.bot_id, state=goal_state)
 

@@ -612,6 +612,22 @@ class RuntimeState:
         with self._counter_lock:
             return dict(self.counters)
 
+    def goal_decomposition_progress(self) -> dict[str, object]:
+        """Return goal decomposition progress for all bots."""
+        deco = getattr(self, "autonomy_decider", None)
+        if deco is None:
+            return {}
+        decomposer = getattr(deco, "goal_decomposer", None)
+        if decomposer is None:
+            return {}
+        bots = self.bot_registry.bot_ids() if hasattr(self.bot_registry, "bot_ids") else []
+        result = {}
+        for bot_id in bots:
+            progress = decomposer.progress(bot_id=bot_id)
+            if progress:
+                result[bot_id] = progress
+        return result
+
     def _background_task_done(self, task: asyncio.Task[None]) -> None:
         try:
             self._background_tasks.remove(task)

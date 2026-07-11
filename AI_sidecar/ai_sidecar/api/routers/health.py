@@ -102,4 +102,5 @@ def ready(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
         "pdca_circuit_breaker_tripped": readiness.get("pdca_circuit_breaker_tripped"),
         "autonomy_policy": dict(runtime.autonomy_policy),
         "counters": runtime.counter_snapshot(),
+        "goal_decomposition": runtime.goal_decomposition_progress() if hasattr(runtime, "goal_decomposition_progress") else {},
     }
