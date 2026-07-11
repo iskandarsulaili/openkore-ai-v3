@@ -185,6 +185,8 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
                         if bot_level == 0:
                             bot_level = int(latest.get("base_level", latest.get("level", 1)) or 1)
                         bot_class = str(_prog.get("job_name", "") or latest.get("job_name", latest.get("class", "novice")) or "novice")
+                        logger.info("SNAPSHOT_DEBUG_DICT: progression=%s base_level=%s bot_class=%s",
+                                    dict(_prog), _prog.get("base_level"), bot_class)
                     else:
                         # Object-style snapshot — read from progression attribute
                         _prog = getattr(latest, "progression", None)
@@ -194,6 +196,10 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
                         if bot_level == 0:
                             bot_level = int(getattr(latest, "base_level", 1) or 1)
                             bot_class = str(getattr(latest, "job_name", "novice") or "novice")
+                        logger.info("SNAPSHOT_DEBUG_OBJ: progression=%s base_level=%s bot_class=%s",
+                                    getattr(_prog, '__dict__', {}) if _prog else None,
+                                    getattr(_prog, 'base_level', 'MISSING') if _prog else 'NO_PROG',
+                                    bot_class)
         except Exception:
             pass
         
