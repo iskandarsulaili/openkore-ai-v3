@@ -13,6 +13,7 @@ from rAthena data. The LLM is only needed for truly novel situations.
 from __future__ import annotations
 
 import logging
+from threading import RLock
 from enum import Enum
 from typing import Any
 
@@ -37,6 +38,7 @@ class CostModeManager:
 
     def __init__(self, mode: str = "standard"):
         self.mode = self._parse_mode(mode)
+        self._lock = RLock()
         self._novel_situation_count: dict[str, int] = {}  # bot_id -> count
         self._last_llm_call: dict[str, float] = {}  # bot_id -> timestamp
 

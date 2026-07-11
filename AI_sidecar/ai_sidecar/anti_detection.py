@@ -16,6 +16,7 @@ Features:
 from __future__ import annotations
 
 import logging
+from threading import RLock
 import random
 import time
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ class AntiDetection:
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
+        self._lock = RLock()
         self._profiles: dict[str, HumanProfile] = {}
         self._session_start: dict[str, float] = {}
         self._last_chat: dict[str, float] = {}

@@ -121,7 +121,7 @@ class P2PKnowledgeNode:
                        bot B's knowledge on server Y.
         """
         self._bot_id = bot_id
-        self._listen_port = listen_port or (18090 + hash(bot_id) % 100)
+        self._listen_port = listen_port or (18090 + abs(hash(bot_id)) % 1000)
         self._server_id = server_id  # Isolates knowledge per server
         self._peers: set[str] = set(known_peers or [])
         self._lock = threading.RLock()

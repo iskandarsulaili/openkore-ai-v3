@@ -9,6 +9,7 @@ nearest matching NPC. Works on any server without configuration.
 from __future__ import annotations
 
 import logging
+from threading import RLock
 import math
 from typing import Any
 
@@ -65,6 +66,7 @@ class NPCDiscoveryEngine:
     """
 
     def __init__(self):
+        self._lock = RLock()
         self._discovered_npcs: dict[str, dict[str, Any]] = {}  # map_name -> npc info
         self._last_scan_map: str = ""
 
