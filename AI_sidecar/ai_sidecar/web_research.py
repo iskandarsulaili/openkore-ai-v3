@@ -149,14 +149,26 @@ class WebResearchEngine:
             return
         try:
             # Store as shared knowledge entry
-            knowledge_entry = {
-                "type": "web_research",
-                "topic": result.topic,
-                "query": result.query,
-                "summary": result.summary[:500],
-                "source": result.source_url,
-                "timestamp": result.timestamp,
-            }
+            from ai_sidecar.experience_db import ExperienceEntry
+            import time
+            knowledge_entry = ExperienceEntry(
+                bot_id="web_research",
+                timestamp=time.time(),
+                context_type="web_research",
+                map_name="",
+                monster_name="",
+                role="",
+                action_taken=f"research:{result.topic}",
+                success=True,
+                reward=0.0,
+                details={
+                    "topic": result.topic,
+                    "query": result.query,
+                    "summary": result.summary[:500],
+                    "source": result.source_url,
+                    "timestamp": result.timestamp,
+                },
+            )
             # The ExperienceDatabase accepts record() for storing observations
             if hasattr(self._exp_db, "record"):
                 self._exp_db.record(knowledge_entry)
