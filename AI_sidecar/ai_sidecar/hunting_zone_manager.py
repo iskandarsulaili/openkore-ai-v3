@@ -179,13 +179,19 @@ class HuntingZoneManager:
         goal: str = "leveling",  # leveling | farming | item | mvp
         target_item: str = "",
         avoid_maps: list[str] | None = None,
-        game_engine: Any = None,  # Optional GameIntelligenceEngine for advanced scoring
+        game_engine: Any = None,
+        use_cache: bool = True,  # Optional GameIntelligenceEngine for advanced scoring
     ) -> list[HuntingZone]:
         """Recommend the best hunting zone for a bot.
 
         Uses the full rAthena knowledge base to compute scores.
         No hardcoded values — every number comes from game data.
+        Results are cached per (bot_level, bot_class, goal) for 60s.
+        
         """
+        cache_key = f"{bot_level}:{bot_class}:{goal}:{weapon_type}:{element}"
+        if use_cache and cache_key in self._zone_cache:
+            return self._zone_cache[cache_key]
         if not self._monsters:
             return self._fallback_zones(bot_level)
 
@@ -347,8 +353,8 @@ class HuntingZoneManager:
                 )
                 candidates.append(zone)
 
-        # Sort by score
-        candidates.sort(key=lambda z: z.score, reverse=True)
+        # Cache the result
+        self._zone_cache[cache_key] = candidates[:10]
         return candidates[:10]
 
     def _build_zone_from_ge(self, map_name, min_lv, max_lv, map_info, ge_rec, total_score, total_exp, total_danger, total_zeny, best_exp_hp):

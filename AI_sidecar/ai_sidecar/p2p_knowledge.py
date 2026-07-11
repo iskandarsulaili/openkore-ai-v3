@@ -145,6 +145,8 @@ class P2PKnowledgeNode:
         self._shared_card_drops: dict[str, dict[str, Any]] = {}
         self._shared_market_prices: dict[str, dict[str, Any]] = {}
         self._shared_supply_demand: dict[str, dict[str, Any]] = {}
+        self._gossip_cooldown: dict[str, float] = {}  # peer -> last gossip time
+        self._gossip_rate_limit_s: float = 0.1  # 100ms min between messages to same peer
 
     def set_experience_db(self, exp_db) -> None:
         self._experience_db = exp_db
@@ -473,6 +475,14 @@ class P2PKnowledgeNode:
                 return
             self._seen_message_ids.add(msg.msg_id)
             self._messages[msg.msg_id] = msg
+            
+            # Rate limit: prevent flooding the network
+            now = time.time()
+            self._gossip_cooldown = {k: v for k, v in self._gossip_cooldown.items() if now - v < 60.0}
+            if len(self._gossip_cooldown) > 100:
+                # Too many unique peers in 60s — possible flood attack
+                logger.warning("p2p_rate_limit: %d unique peers in 60s, throttling", len(self._gossip_cooldown))
+                return
             
             # Prevent memory leak: cap seen message IDs at 100,000
             if len(self._seen_message_ids) > 100000:

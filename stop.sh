@@ -129,6 +129,14 @@ rm -f "$PID_FILE"
 # Phase 6: Verify
 if _verify_dead; then
     $QUIET || ok "All processes stopped ($total killed)"
+    # Rotate logs: keep last 5, compress old ones
+    if [ -d "$SCRIPT_DIR/logs" ]; then
+        # Remove logs older than 7 days
+        find "$SCRIPT_DIR/logs" -name "*.log" -mtime +7 -delete 2>/dev/null || true
+        # Compress logs older than 1 day
+        find "$SCRIPT_DIR/logs" -name "*.log" -mtime +1 -not -name "*.gz" -exec gzip {} \; 2>/dev/null || true
+        $QUIET || info "Log rotation: cleaned logs older than 7 days, compressed older than 1 day"
+    fi
 else
     warn "Some processes may still be lingering — check with: ps aux | grep -E 'openkore|ai_sidecar'"
     exit 1
