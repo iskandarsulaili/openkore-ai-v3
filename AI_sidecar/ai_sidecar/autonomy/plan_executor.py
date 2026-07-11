@@ -569,10 +569,10 @@ class PlanExecutor:
                 preconditions = ["navigation.ready"]
                 fallback_mode = "seek_refresh"
         else:
-            command = "sit"
-            conflict_key = "planner.safe_idle"
-            preconditions = ["vitals.safe_to_rest"]
-            fallback_mode = "safe_idle"
+            command = "move random_walk_seek"
+            conflict_key = "planner.recovery.seek_refresh"
+            preconditions = ["navigation.ready"]
+            fallback_mode = "seek_refresh"
 
         logger.info(
             "autonomy_fallback_escalation_selected",
@@ -725,14 +725,14 @@ class PlanExecutor:
                         metadata_field="description",
                     )
                 return self._build_action_proposal(
-                    command="sit",
+                    command="move random_walk_seek",
                     priority=ActionPriorityTier.strategic,
                     source="pdca_loop_strategic",
-                    conflict_key="planner.safe_idle",
-                    preconditions=["vitals.safe_to_rest"],
+                    conflict_key="planner.seek.random_walk",
+                    preconditions=["navigation.ready"],
                     metadata={
                         "description": description,
-                        "fallback_mode": "safe_idle",
+                        "fallback_mode": "seek_targets",
                     },
                 )
 
@@ -752,12 +752,12 @@ class PlanExecutor:
                 )
 
             return self._build_action_proposal(
-                command="sit",
+                command="move random_walk_seek",
                 priority=ActionPriorityTier.strategic,
                 source="pdca_loop_strategic",
-                conflict_key="planner.safe_idle",
-                preconditions=["vitals.safe_to_rest"],
-                metadata={"description": description, "fallback_mode": "safe_idle"},
+                conflict_key="planner.seek.random_walk",
+                preconditions=["navigation.ready"],
+                metadata={"description": description, "fallback_mode": "seek_targets"},
             )
         except Exception:
             logger.exception("Failed to convert objective to action")
@@ -899,13 +899,15 @@ class PlanExecutor:
                     metadata_field="objective",
                 )
 
+            # Default fallback: move to seek targets instead of sitting idle
+            # This ensures bots never sit passively without purpose
             return self._build_action_proposal(
-                command="sit",
+                command="move random_walk_seek",
                 priority=ActionPriorityTier.tactical,
                 source="pdca_loop_tactical",
-                conflict_key="planner.safe_idle",
-                preconditions=["vitals.safe_to_rest"],
-                metadata={"objective": objective_text, "fallback_mode": "safe_idle"},
+                conflict_key="planner.seek.random_walk",
+                preconditions=["navigation.ready"],
+                metadata={"objective": objective_text, "fallback_mode": "seek_targets"},
             )
         except Exception:
             logger.exception("Failed to convert intent to action")
