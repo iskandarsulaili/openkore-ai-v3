@@ -330,7 +330,7 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
         
         # Build bot list for swarm API — roles is a list from discover_roles(), not a dict
         _roles_list = roles if isinstance(roles, list) else (list(roles.values()) if isinstance(roles, dict) else ["idle"])
-        _bots_list = [{"role": r, "hp_pct": 1.0, "bot_id": f"{bot_id}_{i}"} for i, r in enumerate(_roles_list[:3])]
+        _bots_list = [{"role": r, "hp_pct": 1.0, "bot_id": f"{bot_id}_{i}"} for i, r in enumerate(_roles_list[:12])]
         
         # Select formation based on party size and threat
         party_size = 1
@@ -440,6 +440,11 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
                     bots={b["bot_id"]: b for b in _bots_list},
                 )
                 _combo_state[bot_id] = {"name": combo.name, "step": 0}
+            # Prune old combo states (keep last 100 bots)
+            if len(_combo_state) > 100:
+                _keys = list(_combo_state.keys())
+                for _k in _keys[:-50]:
+                    del _combo_state[_k]
             runtime_state.swarm_combo_state = _combo_state
         
         # 7. Swarm reflex assessment
@@ -465,6 +470,11 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
                 if _gd_progress.get("parent"):
                     _long_term = str(_gd_progress["parent"])
                     _long_term_goals[bot_id] = _long_term
+                    # Prune old entries (keep last 100 bots)
+                    if len(_long_term_goals) > 100:
+                        _keys = list(_long_term_goals.keys())
+                        for _k in _keys[:-50]:
+                            del _long_term_goals[_k]
                     runtime_state.long_term_goals = _long_term_goals
                 _conflicts = _synergy.detect_conflicts(
                     short_term_goal=formation.value, long_term_goal=_long_term

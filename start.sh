@@ -26,8 +26,10 @@ PID_FILE="$SCRIPT_DIR/.openkore-pids"
 # Bot profiles — auto-discover from .bot_profiles/ directory
 declare -A BOT_MASTER BOT_USER BOT_PASS BOT_CHAR
 BOT_NAMES=()
+shopt -s nullglob
 for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
     _name="$(basename "$_profile_dir")"
+shopt -u nullglob
     BOT_NAMES+=("$_name")
     BOT_MASTER["$_name"]="Asgards Glory"
     BOT_USER["$_name"]="$_name"

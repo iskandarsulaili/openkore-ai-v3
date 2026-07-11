@@ -4930,20 +4930,28 @@ def _seed_db(db) -> None:
         from ai_sidecar.experience_db import ExperienceEntry
         import datetime
         now = datetime.datetime.now()
-        # Prontera area - level 1-15 hunting maps
+        # Multi-town seed data for all common starting towns
         seeds = [
             # (context, map, monster, action)
+            # Prontera area
             ("combat", "prontera", "poring", "move prt_fild08"),
             ("combat", "prontera", "lunatic", "move prt_fild08"),
-            ("combat", "prontera", "poring", "ai auto"),
-            ("combat", "prt_fild01", "", "ai auto"),
-            ("combat", "prt_fild02", "", "ai auto"),
-            ("combat", "prt_fild03", "", "ai auto"),
-            ("combat", "prt_fild04", "", "ai auto"),
-            ("combat", "prt_fild05", "", "ai auto"),
             ("combat", "prt_fild08", "", "ai auto"),
             ("navigation", "prontera", "", "move prt_fild08"),
             ("navigation", "prt_fild08", "", "move prontera"),
+            # Payon area
+            ("combat", "payon", "", "move pay_fild08"),
+            ("combat", "pay_fild08", "", "ai auto"),
+            ("navigation", "payon", "", "move pay_fild08"),
+            # Morocc area
+            ("combat", "morocc", "", "move moc_fild03"),
+            ("combat", "moc_fild03", "", "ai auto"),
+            ("navigation", "morocc", "", "move moc_fild03"),
+            # Geffen area
+            ("combat", "geffen", "", "move gef_fild02"),
+            ("combat", "gef_fild02", "", "ai auto"),
+            ("navigation", "geffen", "", "move gef_fild02"),
+            # General
             ("economy", "prontera", "", "ai auto"),
             ("recovery", "prontera", "", "sit"),
             ("recovery", "prt_fild08", "", "sit"),

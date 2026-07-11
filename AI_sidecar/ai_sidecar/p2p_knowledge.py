@@ -195,13 +195,16 @@ class P2PKnowledgeNode:
                 return False
 
     def stop_server(self) -> None:
-        """Stop the HTTP server."""
+        """Stop the HTTP server and gossip thread pool."""
         with self._lock:
             self._running = False
             if self._server:
                 self._server.shutdown()
                 self._server = None
                 self._server_thread = None
+            # Shut down gossip thread pool
+            if hasattr(self, '_gossip_pool'):
+                self._gossip_pool.shutdown(wait=False)
 
     def add_peer(self, peer_address: str) -> None:
         """Add a peer to the knowledge network."""
