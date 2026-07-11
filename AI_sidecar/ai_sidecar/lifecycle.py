@@ -596,6 +596,24 @@ class RuntimeState:
     _autonomy_startup_gate_by_bot: dict[str, dict[str, object]] = field(default_factory=dict)
     persistence_degraded: bool = False
 
+    # === Agent-added modules (must be declared for dataclass) ===
+    cost_mode_manager: object | None = None
+    hunting_zone_manager: object | None = None
+    anti_detection: object | None = None
+    game_engine: object | None = None
+    swarm_tactics: object | None = None
+    role_discovery: object | None = None
+    goal_decomposer: object | None = None
+    npc_discovery: object | None = None
+    server_adaptation: object | None = None
+    p2p_node: object | None = None
+    p2p_manager: object | None = None
+    swarm_reflex: object | None = None
+    synergy_engine: object | None = None
+    swarm_coordinator: object | None = None
+    swarm_combo_state: dict[str, object] = field(default_factory=dict)
+    long_term_goals: dict[str, str] = field(default_factory=dict)
+
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
         with self._counter_lock:
             self.counters[key] = self.counters.get(key, 0) + n
