@@ -58,7 +58,7 @@ def _mission_schema() -> dict[str, object]:
 class MissionAgentService:
     model_router: Any
     timeout_seconds: float = 35.0
-    max_retries: int = 1
+    max_retries: int = 3
     max_prompt_chars: int = 26000
     workload: str = "autonomy_mission_decision"
 
