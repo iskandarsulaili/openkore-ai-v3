@@ -28,6 +28,8 @@ from ai_sidecar.fleet.swarm_ai import (
 )
 from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon
 from ai_sidecar.npc_discovery import NPCDiscoveryEngine
+from ai_sidecar.server_adaptation import ServerAdaptationEngine
+from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +235,20 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
                 bot_id, best_zone.map_name, best_zone.primary_monster,
                 best_zone.score, best_zone.exp_per_hp, best_zone.danger_score, best_zone.zeny_per_kill,
             )
+            # Broadcast hunting zone to P2P network
+            _p2p = getattr(runtime_state, "p2p_node", None)
+            if _p2p is not None:
+                try:
+                    _p2p.broadcast_hunting_zone(
+                        map_name=best_zone.map_name,
+                        monster_name=best_zone.primary_monster,
+                        score=best_zone.score,
+                        exp_per_hp=best_zone.exp_per_hp,
+                        danger_score=best_zone.danger_score,
+                        zeny_per_kill=best_zone.zeny_per_kill,
+                    )
+                except Exception:
+                    pass
             return 1
         
         # Need to move to the hunting zone
@@ -1039,6 +1055,40 @@ class PDCALoop:
                     try:
                         _nd = NPCDiscoveryEngine()
                         self._runtime.npc_discovery = _nd
+                    except Exception:
+                        pass
+                
+                # Initialize server adaptation if not present
+                _sa = getattr(self._runtime, "server_adaptation", None)
+                if _sa is None:
+                    try:
+                        _sa = ServerAdaptationEngine(
+                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                        )
+                        self._runtime.server_adaptation = _sa
+                    except Exception:
+                        pass
+                
+                # Initialize P2P knowledge node if not present
+                _p2p = getattr(self._runtime, "p2p_node", None)
+                if _p2p is None:
+                    try:
+                        _p2p = P2PKnowledgeNode(
+                            bot_id=_cycle_bot_id,
+                            listen_port=18090 + hash(_cycle_bot_id) % 100,
+                            server_id=_cycle_bot_id.split(":")[0] if ":" in _cycle_bot_id else "default",
+                        )
+                        # Wire to experience DB
+                        _exp_db = getattr(self._runtime, "experience_db", None)
+                        if _exp_db is not None:
+                            _p2p.set_experience_db(_exp_db)
+                        _p2p_npc = getattr(self._runtime, "npc_discovery", None)
+                        if _p2p_npc is not None:
+                            _p2p.set_npc_discovery(_p2p_npc)
+                        _p2p_sa = getattr(self._runtime, "server_adaptation", None)
+                        if _p2p_sa is not None:
+                            _p2p.set_server_adaptation(_p2p_sa)
+                        self._runtime.p2p_node = _p2p
                     except Exception:
                         pass
                 
