@@ -27,6 +27,7 @@ from ai_sidecar.fleet.swarm_ai import (
     FormationType, SkillCombo,
 )
 from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon
+from ai_sidecar.npc_discovery import NPCDiscoveryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -442,22 +443,41 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 bot_id = str(latest["bot_id"])
         bot_id = bot_id or "default"
         
-        # Determine nearest town from map name
-        town_map = "prontera"
-        if "payon" in map_name.lower() or "pay_" in map_name.lower():
-            town_map = "payon"
-        elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
-            town_map = "morocc"
-        elif "geffen" in map_name.lower() or "gef_" in map_name.lower():
-            town_map = "geffen"
-        elif "aldebaran" in map_name.lower() or "alde_" in map_name.lower():
-            town_map = "aldebaran"
-        elif "yuno" in map_name.lower():
-            town_map = "yuno"
+        # Determine nearest town from map name using NPC discovery
+        npc_disc = getattr(runtime_state, "npc_discovery", None)
+        if npc_disc is not None:
+            town_map = npc_disc.get_nearest_town_for_map(map_name)
+        else:
+            # Fallback if NPC discovery not available
+            town_map = "prontera"
+            if "payon" in map_name.lower() or "pay_" in map_name.lower():
+                town_map = "payon"
+            elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
+                town_map = "morocc"
+            elif "geffen" in map_name.lower() or "gef_" in map_name.lower():
+                town_map = "geffen"
+            elif "aldebaran" in map_name.lower() or "alde_" in map_name.lower():
+                town_map = "aldebaran"
+            elif "yuno" in map_name.lower():
+                town_map = "yuno"
+            elif "xmas" in map_name.lower():
+                town_map = "xmas"
+            elif "amatsu" in map_name.lower() or "ama_" in map_name.lower():
+                town_map = "amatsu"
         
         # Check if already in town
         if map_name and town_map in map_name.lower():
-            # In town — emit sell/storage commands
+            # In town — discover NPC positions dynamically
+            # Try to find vendor NPC, fall back to storage NPC
+            npc_cmd = None
+            if npc_disc is not None:
+                npc_cmd = npc_disc.get_command_for_service(latest, map_name, "vendor")
+                if not npc_cmd:
+                    npc_cmd = npc_disc.get_command_for_service(latest, map_name, "storage")
+            
+            # If NPC discovered, use talknpc; otherwise just ai auto
+            cmd = npc_cmd if npc_cmd else "ai auto"
+            
             aq = getattr(runtime_state, "action_queue", None)
             if aq is None:
                 return 0
@@ -468,7 +488,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             proposal = ActionProposal(
                 action_id=f"vendor_{horizon}_{_short_id}",
                 kind="command",
-                command="ai auto",
+                command=cmd,
                 priority_tier=ActionPriorityTier.tactical,
                 source="planner",
                 created_at=datetime.now(UTC),
@@ -482,7 +502,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 },
             )
             aq.enqueue(bot_id, proposal)
-            _log.info("vendor_action: bot=%s town=%s weight=%.0f%%", bot_id, town_map, weight_ratio * 100)
+            _log.info("vendor_action: bot=%s town=%s weight=%.0f%% cmd=%s", bot_id, town_map, weight_ratio * 100, cmd)
             return 1
         
         # Not in town — route to nearest town
@@ -1010,6 +1030,15 @@ class PDCALoop:
                     try:
                         _gd = GoalDecomposer()
                         self._runtime.goal_decomposer = _gd
+                    except Exception:
+                        pass
+                
+                # Initialize NPC discovery if not present
+                _nd = getattr(self._runtime, "npc_discovery", None)
+                if _nd is None:
+                    try:
+                        _nd = NPCDiscoveryEngine()
+                        self._runtime.npc_discovery = _nd
                     except Exception:
                         pass
                 
