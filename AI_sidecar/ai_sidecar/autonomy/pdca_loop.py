@@ -170,7 +170,7 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
                     pass
         bot_id = bot_id or "default"
         
-        # Get bot level from snapshot (may be nested in progression dict)
+        # Get bot level from snapshot
         bot_level = 1
         bot_class = "novice"
         try:
@@ -179,17 +179,21 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
                 latest = snapshots.latest()
                 if latest is not None:
                     if isinstance(latest, dict):
-                        bot_level = int(latest.get("base_level", latest.get("level", 0)) or 0)
+                        # Dict-style snapshot — try progression sub-object first
+                        _prog = latest.get("progression") or latest.get("raw", {}).get("progression") or {}
+                        bot_level = int(_prog.get("base_level", _prog.get("level", 0)) or 0)
                         if bot_level == 0:
-                            _prog = latest.get("progression") or latest.get("raw", {}).get("progression") or {}
-                            bot_level = int(_prog.get("base_level", _prog.get("level", 1)) or 1)
-                        bot_class = str(latest.get("job_name", latest.get("class", "novice")) or "novice")
-                        if bot_class == "novice":
-                            _prog = latest.get("progression") or latest.get("raw", {}).get("progression") or {}
-                            bot_class = str(_prog.get("job_name", "novice") or "novice")
+                            bot_level = int(latest.get("base_level", latest.get("level", 1)) or 1)
+                        bot_class = str(_prog.get("job_name", "") or latest.get("job_name", latest.get("class", "novice")) or "novice")
                     else:
-                        bot_level = int(getattr(latest, "base_level", 1) or 1)
-                        bot_class = str(getattr(latest, "job_name", "novice") or "novice")
+                        # Object-style snapshot — read from progression attribute
+                        _prog = getattr(latest, "progression", None)
+                        if _prog is not None:
+                            bot_level = int(getattr(_prog, "base_level", 0) or 0)
+                            bot_class = str(getattr(_prog, "job_name", "") or "novice")
+                        if bot_level == 0:
+                            bot_level = int(getattr(latest, "base_level", 1) or 1)
+                            bot_class = str(getattr(latest, "job_name", "novice") or "novice")
         except Exception:
             pass
         
