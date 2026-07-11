@@ -1,0 +1,7882 @@
+{
+  "version": 1,
+  "ingested_at": 1783735878.0191011,
+  "source": "rathena",
+  "stats": {
+    "monsters": 2675,
+    "maps": 18,
+    "job_exp_tables": 0,
+    "level_ranges": 7
+  },
+  "monsters": [
+    {
+      "type": "monster",
+      "name": "SCORPION",
+      "display_name": "Scorpion",
+      "level": 16,
+      "hp": 136,
+      "base_exp": 169,
+      "job_exp": 115,
+      "race": "Insect",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 7,
+      "defense": 16,
+      "drops": [
+        {
+          "item": "Boody_Red",
+          "rate": 35
+        },
+        {
+          "item": "Scorpion's_Tail",
+          "rate": 2750
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 29
+        },
+        {
+          "item": "Solid_Shell",
+          "rate": 105
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Fine_Grit",
+          "rate": 500
+        },
+        {
+          "item": "Lusty_Iron",
+          "rate": 10
+        },
+        {
+          "item": "Scorpion_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PORING",
+      "display_name": "Poring",
+      "level": 1,
+      "hp": 55,
+      "base_exp": 150,
+      "job_exp": 40,
+      "race": "Plant",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 1,
+      "defense": 2,
+      "drops": [
+        {
+          "item": "Jellopy",
+          "rate": 7000
+        },
+        {
+          "item": "Knife_",
+          "rate": 100
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 400
+        },
+        {
+          "item": "Apple",
+          "rate": 1000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Apple",
+          "rate": 150
+        },
+        {
+          "item": "Unripe_Apple",
+          "rate": 20
+        },
+        {
+          "item": "Poring_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "HORNET",
+      "display_name": "Hornet",
+      "level": 11,
+      "hp": 85,
+      "base_exp": 158,
+      "job_exp": 90,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 2,
+      "defense": 7,
+      "drops": [
+        {
+          "item": "Wind_Of_Verdure",
+          "rate": 80
+        },
+        {
+          "item": "Bee_Sting",
+          "rate": 8000
+        },
+        {
+          "item": "Jellopy",
+          "rate": 3000
+        },
+        {
+          "item": "Main_Gauche_",
+          "rate": 20
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 500
+        },
+        {
+          "item": "Honey",
+          "rate": 100
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Hornet_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "FARMILIAR",
+      "display_name": "Familiar",
+      "level": 24,
+      "hp": 330,
+      "base_exp": 200,
+      "job_exp": 152,
+      "race": "Brute",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 17,
+      "defense": 26,
+      "drops": [
+        {
+          "item": "Tooth_Of_Bat",
+          "rate": 2750
+        },
+        {
+          "item": "Falchion_",
+          "rate": 10
+        },
+        {
+          "item": "Ribbon_",
+          "rate": 8
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Grape",
+          "rate": 50
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 350
+        },
+        {
+          "item": "Center_Potion",
+          "rate": 25
+        },
+        {
+          "item": "Farmiliar_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "FABRE",
+      "display_name": "Fabre",
+      "level": 6,
+      "hp": 59,
+      "base_exp": 158,
+      "job_exp": 65,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 24,
+      "drops": [
+        {
+          "item": "Fluff",
+          "rate": 7000
+        },
+        {
+          "item": "Feather",
+          "rate": 1000
+        },
+        {
+          "item": "Club_",
+          "rate": 80
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 3000
+        },
+        {
+          "item": "Clover",
+          "rate": 1000
+        },
+        {
+          "item": "Club",
+          "rate": 200
+        },
+        {
+          "item": "Fabre_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PUPA",
+      "display_name": "Pupa",
+      "level": 4,
+      "hp": 51,
+      "base_exp": 157,
+      "job_exp": 55,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 24,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 600
+        },
+        {
+          "item": "Chrysalis",
+          "rate": 7000
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 700
+        },
+        {
+          "item": "Guard_",
+          "rate": 20
+        },
+        {
+          "item": "Shell",
+          "rate": 1000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 500
+        },
+        {
+          "item": "Pupa_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CONDOR",
+      "display_name": "Condor",
+      "level": 12,
+      "hp": 105,
+      "base_exp": 160,
+      "job_exp": 95,
+      "race": "Brute",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 3,
+      "defense": 7,
+      "drops": [
+        {
+          "item": "Talon",
+          "rate": 8000
+        },
+        {
+          "item": "Bow_",
+          "rate": 100
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Arrow_Container",
+          "rate": 50
+        },
+        {
+          "item": "Meat",
+          "rate": 400
+        },
+        {
+          "item": "Feather_Of_Birds",
+          "rate": 3000
+        },
+        {
+          "item": "Orange",
+          "rate": 600
+        },
+        {
+          "item": "Condor_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "WILOW",
+      "display_name": "Willow",
+      "level": 8,
+      "hp": 78,
+      "base_exp": 160,
+      "job_exp": 75,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 1,
+      "defense": 38,
+      "drops": [
+        {
+          "item": "Tree_Root",
+          "rate": 9000
+        },
+        {
+          "item": "Wooden_Block",
+          "rate": 100
+        },
+        {
+          "item": "Resin",
+          "rate": 2000
+        },
+        {
+          "item": "Sweet_Potato",
+          "rate": 1000
+        },
+        {
+          "item": "Tree_Of_Archer_3",
+          "rate": 3000
+        },
+        {
+          "item": "Tree_Of_Archer_2",
+          "rate": 2000
+        },
+        {
+          "item": "Tree_Of_Archer_1",
+          "rate": 1000
+        },
+        {
+          "item": "Wilow_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CHONCHON",
+      "display_name": "Chonchon",
+      "level": 5,
+      "hp": 48,
+      "base_exp": 150,
+      "job_exp": 60,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 27,
+      "drops": [
+        {
+          "item": "Iron",
+          "rate": 50
+        },
+        {
+          "item": "Shell",
+          "rate": 7000
+        },
+        {
+          "item": "Jellopy",
+          "rate": 2000
+        },
+        {
+          "item": "Cutter_",
+          "rate": 50
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Chonchon_Doll",
+          "rate": 6
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 200
+        },
+        {
+          "item": "Chonchon_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "RODA_FROG",
+      "display_name": "Roda Frog",
+      "level": 13,
+      "hp": 140,
+      "base_exp": 162,
+      "job_exp": 100,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 4,
+      "defense": 12,
+      "drops": [
+        {
+          "item": "Sticky_Webfoot",
+          "rate": 4500
+        },
+        {
+          "item": "Spawn",
+          "rate": 500
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 300
+        },
+        {
+          "item": "Azure_Jewel",
+          "rate": 8
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Roda_Frog_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "WOLF",
+      "display_name": "Wolf",
+      "level": 45,
+      "hp": 1091,
+      "base_exp": 369,
+      "job_exp": 301,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 89,
+      "defense": 55,
+      "drops": [
+        {
+          "item": "Emveretarcon",
+          "rate": 10
+        },
+        {
+          "item": "Claw_Of_Wolves",
+          "rate": 4500
+        },
+        {
+          "item": "Mantle_",
+          "rate": 5
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Monster's_Feed",
+          "rate": 525
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 2750
+        },
+        {
+          "item": "Strawberry",
+          "rate": 300
+        },
+        {
+          "item": "Wolf_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SPORE",
+      "display_name": "Spore",
+      "level": 18,
+      "hp": 223,
+      "base_exp": 175,
+      "job_exp": 125,
+      "race": "Plant",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 8,
+      "defense": 12,
+      "drops": [
+        {
+          "item": "Mushroom_Spore",
+          "rate": 8000
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Spore_Doll",
+          "rate": 10
+        },
+        {
+          "item": "Hat",
+          "rate": 30
+        },
+        {
+          "item": "Poison_Spore",
+          "rate": 10
+        },
+        {
+          "item": "Strawberry",
+          "rate": 600
+        },
+        {
+          "item": "Spore_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ZOMBIE",
+      "display_name": "Zombie",
+      "level": 17,
+      "hp": 204,
+      "base_exp": 189,
+      "job_exp": 112,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 8,
+      "defense": 20,
+      "drops": [
+        {
+          "item": "Decayed_Nail",
+          "rate": 9000
+        },
+        {
+          "item": "Cardinal_Jewel_",
+          "rate": 6
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 1000
+        },
+        {
+          "item": "Horrendous_Mouth",
+          "rate": 50
+        },
+        {
+          "item": "White_Jewel",
+          "rate": 70
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Zombie_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ARCHER_SKELETON",
+      "display_name": "Archer Skeleton",
+      "level": 50,
+      "hp": 1458,
+      "base_exp": 436,
+      "job_exp": 327,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 101,
+      "defense": 47,
+      "drops": [
+        {
+          "item": "Skel_Bone",
+          "rate": 2250
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 35
+        },
+        {
+          "item": "Apple_Of_Archer",
+          "rate": 2
+        },
+        {
+          "item": "Great_Bow_",
+          "rate": 18
+        },
+        {
+          "item": "Fire_Arrow_Container",
+          "rate": 30
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 900
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Archer_Skeleton_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CREAMY",
+      "display_name": "Creamy",
+      "level": 23,
+      "hp": 247,
+      "base_exp": 196,
+      "job_exp": 148,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 16,
+      "defense": 28,
+      "drops": [
+        {
+          "item": "Powder_Of_Butterfly",
+          "rate": 8000
+        },
+        {
+          "item": "Silk_Robe_",
+          "rate": 20
+        },
+        {
+          "item": "Honey",
+          "rate": 200
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Fancy_Flower",
+          "rate": 20
+        },
+        {
+          "item": "Flower",
+          "rate": 500
+        },
+        {
+          "item": "Wind_Scroll_1_3",
+          "rate": 100
+        },
+        {
+          "item": "Creamy_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PECOPECO",
+      "display_name": "Peco Peco",
+      "level": 25,
+      "hp": 354,
+      "base_exp": 204,
+      "job_exp": 156,
+      "race": "Brute",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 23,
+      "defense": 48,
+      "drops": [
+        {
+          "item": "Bill_Of_Birds",
+          "rate": 4500
+        },
+        {
+          "item": "Sandals_",
+          "rate": 10
+        },
+        {
+          "item": "Yellow_Herb",
+          "rate": 100
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Wand",
+          "rate": 50
+        },
+        {
+          "item": "Orange",
+          "rate": 500
+        },
+        {
+          "item": "Pecopeco_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MANDRAGORA",
+      "display_name": "Mandragora",
+      "level": 13,
+      "hp": 140,
+      "base_exp": 170,
+      "job_exp": 100,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 3,
+      "size": "Medium",
+      "attack": 4,
+      "defense": 13,
+      "drops": [
+        {
+          "item": "Yellow_Live",
+          "rate": 60
+        },
+        {
+          "item": "Stem",
+          "rate": 8000
+        },
+        {
+          "item": "Spear_",
+          "rate": 30
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 400
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Four_Leaf_Clover",
+          "rate": 1
+        },
+        {
+          "item": "Whip_Of_Earth",
+          "rate": 5
+        },
+        {
+          "item": "Mandragora_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ORK_WARRIOR",
+      "display_name": "Orc Warrior",
+      "level": 44,
+      "hp": 1047,
+      "base_exp": 361,
+      "job_exp": 293,
+      "race": "Demihuman",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 84,
+      "defense": 52,
+      "drops": [
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Orcish_Voucher",
+          "rate": 4500
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 20
+        },
+        {
+          "item": "Cigar",
+          "rate": 2
+        },
+        {
+          "item": "Battle_Axe_",
+          "rate": 5
+        },
+        {
+          "item": "Orcish_Axe",
+          "rate": 3
+        },
+        {
+          "item": "Round_Buckler",
+          "rate": 2
+        },
+        {
+          "item": "Orc_Warrior_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "WORM_TAIL",
+      "display_name": "Wormtail",
+      "level": 17,
+      "hp": 186,
+      "base_exp": 180,
+      "job_exp": 120,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 8,
+      "defense": 16,
+      "drops": [
+        {
+          "item": "Yellow_Live",
+          "rate": 30
+        },
+        {
+          "item": "Emveretarcon",
+          "rate": 13
+        },
+        {
+          "item": "Pointed_Scale",
+          "rate": 2750
+        },
+        {
+          "item": "Pike_",
+          "rate": 15
+        },
+        {
+          "item": "Yellow_Herb",
+          "rate": 35
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Green_Lace",
+          "rate": 50
+        },
+        {
+          "item": "Worm_Tail_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SNAKE",
+      "display_name": "Boa",
+      "level": 18,
+      "hp": 203,
+      "base_exp": 183,
+      "job_exp": 125,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 9,
+      "defense": 9,
+      "drops": [
+        {
+          "item": "Scale_Of_Snakes",
+          "rate": 8000
+        },
+        {
+          "item": "Katana_",
+          "rate": 20
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 800
+        },
+        {
+          "item": "Emveretarcon",
+          "rate": 100
+        },
+        {
+          "item": "Posionous_Canine",
+          "rate": 800
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Strawberry",
+          "rate": 3000
+        },
+        {
+          "item": "Snake_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MUNAK",
+      "display_name": "Munak",
+      "level": 58,
+      "hp": 2002,
+      "base_exp": 548,
+      "job_exp": 422,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 141,
+      "defense": 77,
+      "drops": [
+        {
+          "item": "Danggie",
+          "rate": 4500
+        },
+        {
+          "item": "Munak_Turban",
+          "rate": 1
+        },
+        {
+          "item": "Shoes_",
+          "rate": 8
+        },
+        {
+          "item": "Amulet",
+          "rate": 10
+        },
+        {
+          "item": "Ninja_Suit",
+          "rate": 1
+        },
+        {
+          "item": "Adventure_Suit",
+          "rate": 50
+        },
+        {
+          "item": "Girl's_Diary",
+          "rate": 3
+        },
+        {
+          "item": "Munak_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SOLDIER_SKELETON",
+      "display_name": "Soldier Skeleton",
+      "level": 34,
+      "hp": 691,
+      "base_exp": 284,
+      "job_exp": 198,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 43,
+      "defense": 53,
+      "drops": [
+        {
+          "item": "Skel_Bone",
+          "rate": 2750
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 30
+        },
+        {
+          "item": "Dagger_",
+          "rate": 6
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 350
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Chain_Mail_",
+          "rate": 1
+        },
+        {
+          "item": "Stiletto",
+          "rate": 25
+        },
+        {
+          "item": "Soldier_Skeleton_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ISIS",
+      "display_name": "Isis",
+      "level": 59,
+      "hp": 2252,
+      "base_exp": 510,
+      "job_exp": 457,
+      "race": "Demon",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 146,
+      "defense": 83,
+      "drops": [
+        {
+          "item": "Scales_Shell",
+          "rate": 2668
+        },
+        {
+          "item": "Circlet_",
+          "rate": 3
+        },
+        {
+          "item": "Necklace",
+          "rate": 1
+        },
+        {
+          "item": "Crystal_Jewel___",
+          "rate": 75
+        },
+        {
+          "item": "Crystal_Jewel__",
+          "rate": 10
+        },
+        {
+          "item": "Shining_Scales",
+          "rate": 500
+        },
+        {
+          "item": "Crystal_Jewel_",
+          "rate": 3
+        },
+        {
+          "item": "Isis_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ANACONDAQ",
+      "display_name": "Anacondaq",
+      "level": 100,
+      "hp": 9233,
+      "base_exp": 1387,
+      "job_exp": 1316,
+      "race": "Brute",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 451,
+      "defense": 92,
+      "drops": [
+        {
+          "item": "White_Powder",
+          "rate": 100
+        },
+        {
+          "item": "Posionous_Canine",
+          "rate": 4500
+        },
+        {
+          "item": "Scarlet_Lance",
+          "rate": 50
+        },
+        {
+          "item": "Scale_Of_Snakes",
+          "rate": 750
+        },
+        {
+          "item": "Scales_Shell",
+          "rate": 100
+        },
+        {
+          "item": "Doram_Only_Suit",
+          "rate": 20
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 25
+        },
+        {
+          "item": "Anacondaq_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "POPORING",
+      "display_name": "Poporing",
+      "level": 30,
+      "hp": 489,
+      "base_exp": 229,
+      "job_exp": 181,
+      "race": "Plant",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 31,
+      "defense": 36,
+      "drops": [
+        {
+          "item": "Sticky_Mucus",
+          "rate": 6000
+        },
+        {
+          "item": "Garlet",
+          "rate": 1000
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Grape",
+          "rate": 200
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Main_Gauche",
+          "rate": 20
+        },
+        {
+          "item": "Apple",
+          "rate": 125
+        },
+        {
+          "item": "Poporing_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "VERIT",
+      "display_name": "Verit",
+      "level": 52,
+      "hp": 1642,
+      "base_exp": 479,
+      "job_exp": 362,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 111,
+      "defense": 63,
+      "drops": [
+        {
+          "item": "Immortal_Heart",
+          "rate": 4500
+        },
+        {
+          "item": "Zargon",
+          "rate": 350
+        },
+        {
+          "item": "Rotten_Bandage",
+          "rate": 550
+        },
+        {
+          "item": "White_Herb",
+          "rate": 300
+        },
+        {
+          "item": "Skul_Ring",
+          "rate": 1
+        },
+        {
+          "item": "Flower_Ring",
+          "rate": 100
+        },
+        {
+          "item": "Armlet_Of_Obedience",
+          "rate": 10
+        },
+        {
+          "item": "Verit_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ELDER_WILOW",
+      "display_name": "Elder Willow",
+      "level": 34,
+      "hp": 535,
+      "base_exp": 259,
+      "job_exp": 210,
+      "race": "Plant",
+      "element": "Fire",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 43,
+      "defense": 45,
+      "drops": [
+        {
+          "item": "Boody_Red",
+          "rate": 25
+        },
+        {
+          "item": "Resin",
+          "rate": 4500
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 20
+        },
+        {
+          "item": "Elder_Branch",
+          "rate": 1
+        },
+        {
+          "item": "Fire_Scroll_1_3",
+          "rate": 50
+        },
+        {
+          "item": "Branch_Of_Dead_Tree",
+          "rate": 50
+        },
+        {
+          "item": "Elder_Wilow_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "THARA_FROG",
+      "display_name": "Thara Frog",
+      "level": 40,
+      "hp": 975,
+      "base_exp": 300,
+      "job_exp": 251,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 49,
+      "defense": 37,
+      "drops": [
+        {
+          "item": "Emveretarcon",
+          "rate": 23
+        },
+        {
+          "item": "Spawn",
+          "rate": 2750
+        },
+        {
+          "item": "Scell",
+          "rate": 300
+        },
+        {
+          "item": "White_Herb",
+          "rate": 15
+        },
+        {
+          "item": "Red_Jewel",
+          "rate": 3
+        },
+        {
+          "item": "Sticky_Webfoot",
+          "rate": 1000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Thara_Frog_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "HUNTER_FLY",
+      "display_name": "Hunter Fly",
+      "level": 63,
+      "hp": 1902,
+      "base_exp": 588,
+      "job_exp": 532,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 2,
+      "size": "Small",
+      "attack": 153,
+      "defense": 46,
+      "drops": [
+        {
+          "item": "Rough_Wind",
+          "rate": 15
+        },
+        {
+          "item": "Steel",
+          "rate": 50
+        },
+        {
+          "item": "Solid_Shell",
+          "rate": 2668
+        },
+        {
+          "item": "Zargon",
+          "rate": 650
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 65
+        },
+        {
+          "item": "Mini_Propeller",
+          "rate": 1
+        },
+        {
+          "item": "Damascus_",
+          "rate": 1
+        },
+        {
+          "item": "Hunter_Fly_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "GHOUL",
+      "display_name": "Ghoul",
+      "level": 61,
+      "hp": 2429,
+      "base_exp": 620,
+      "job_exp": 480,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 157,
+      "defense": 78,
+      "drops": [
+        {
+          "item": "Horrendous_Mouth",
+          "rate": 3000
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 55
+        },
+        {
+          "item": "White_Herb",
+          "rate": 350
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 400
+        },
+        {
+          "item": "Skul_Ring",
+          "rate": 30
+        },
+        {
+          "item": "Mementos",
+          "rate": 75
+        },
+        {
+          "item": "Ghoul_Leg",
+          "rate": 1
+        },
+        {
+          "item": "Ghoul_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SIDE_WINDER",
+      "display_name": "Side Winder",
+      "level": 70,
+      "hp": 2698,
+      "base_exp": 677,
+      "job_exp": 621,
+      "race": "Brute",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 211,
+      "defense": 101,
+      "drops": [
+        {
+          "item": "Shining_Scales",
+          "rate": 2668
+        },
+        {
+          "item": "Zargon",
+          "rate": 700
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 67
+        },
+        {
+          "item": "Tsurugi_",
+          "rate": 1
+        },
+        {
+          "item": "Posionous_Canine",
+          "rate": 1250
+        },
+        {
+          "item": "Scale_Of_Snakes",
+          "rate": 2500
+        },
+        {
+          "item": "White_Herb",
+          "rate": 500
+        },
+        {
+          "item": "Side_Winder_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "OSIRIS",
+      "display_name": "Osiris",
+      "level": 68,
+      "hp": 1175840,
+      "base_exp": 122760,
+      "job_exp": 100440,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 4,
+      "size": "Medium",
+      "attack": 1980,
+      "defense": 172,
+      "drops": [
+        {
+          "item": "Shadowdecon",
+          "rate": 50
+        },
+        {
+          "item": "Assasin_Dagger",
+          "rate": 75
+        },
+        {
+          "item": "Crown",
+          "rate": 100
+        },
+        {
+          "item": "Jamadhar_",
+          "rate": 300
+        },
+        {
+          "item": "Sacred_Marks",
+          "rate": 500
+        },
+        {
+          "item": "Spinx_Helm",
+          "rate": 75
+        },
+        {
+          "item": "Cakram",
+          "rate": 50
+        },
+        {
+          "item": "Osiris_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "BAPHOMET",
+      "display_name": "Baphomet",
+      "level": 81,
+      "hp": 668000,
+      "base_exp": 218089,
+      "job_exp": 167053,
+      "race": "Demon",
+      "element": "Dark",
+      "element_level": 3,
+      "size": "Large",
+      "attack": 3150,
+      "defense": 379,
+      "drops": [
+        {
+          "item": "Crescent_Scythe",
+          "rate": 200
+        },
+        {
+          "item": "Magestic_Goat",
+          "rate": 150
+        },
+        {
+          "item": "Crescent_Scythe_",
+          "rate": 25
+        },
+        {
+          "item": "Emperium",
+          "rate": 250
+        },
+        {
+          "item": "Magestic_Goat_",
+          "rate": 5
+        },
+        {
+          "item": "Zelunium",
+          "rate": 50
+        },
+        {
+          "item": "Oridecon",
+          "rate": 2086
+        },
+        {
+          "item": "Baphomet_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "GOLEM",
+      "display_name": "Golem",
+      "level": 61,
+      "hp": 2324,
+      "base_exp": 564,
+      "job_exp": 508,
+      "race": "Formless",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Large",
+      "attack": 172,
+      "defense": 190,
+      "drops": [
+        {
+          "item": "Steel",
+          "rate": 75
+        },
+        {
+          "item": "Stone_Heart",
+          "rate": 4500
+        },
+        {
+          "item": "Zargon",
+          "rate": 110
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 35
+        },
+        {
+          "item": "Siver_Guard",
+          "rate": 3
+        },
+        {
+          "item": "Yellow_Gemstone",
+          "rate": 100
+        },
+        {
+          "item": "Iron",
+          "rate": 175
+        },
+        {
+          "item": "Golem_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MUMMY",
+      "display_name": "Mummy",
+      "level": 55,
+      "hp": 1899,
+      "base_exp": 512,
+      "job_exp": 390,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 126,
+      "defense": 95,
+      "drops": [
+        {
+          "item": "Rotten_Bandage",
+          "rate": 4500
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 50
+        },
+        {
+          "item": "Mementos",
+          "rate": 275
+        },
+        {
+          "item": "Glove",
+          "rate": 1
+        },
+        {
+          "item": "Silver_Ring",
+          "rate": 5
+        },
+        {
+          "item": "Panacea",
+          "rate": 125
+        },
+        {
+          "item": "Yellow_Herb",
+          "rate": 425
+        },
+        {
+          "item": "Mummy_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "STEEL_CHONCHON",
+      "display_name": "Steel Chonchon",
+      "level": 48,
+      "hp": 985,
+      "base_exp": 379,
+      "job_exp": 328,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 84,
+      "defense": 57,
+      "drops": [
+        {
+          "item": "Wind_Of_Verdure",
+          "rate": 45
+        },
+        {
+          "item": "Steel",
+          "rate": 15
+        },
+        {
+          "item": "Garlet",
+          "rate": 1200
+        },
+        {
+          "item": "Shell",
+          "rate": 4500
+        },
+        {
+          "item": "Solid_Shell",
+          "rate": 15
+        },
+        {
+          "item": "Iron",
+          "rate": 100
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Steel_Chonchon_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "OBEAUNE",
+      "display_name": "Obeaune",
+      "level": 53,
+      "hp": 1776,
+      "base_exp": 446,
+      "job_exp": 393,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 93,
+      "defense": 48,
+      "drops": [
+        {
+          "item": "Mistic_Frozen",
+          "rate": 7
+        },
+        {
+          "item": "Heart_Of_Mermaid",
+          "rate": 4500
+        },
+        {
+          "item": "Fin_Helm",
+          "rate": 1
+        },
+        {
+          "item": "Saint_Robe_",
+          "rate": 5
+        },
+        {
+          "item": "Skyblue_Jewel",
+          "rate": 5
+        },
+        {
+          "item": "Fin",
+          "rate": 250
+        },
+        {
+          "item": "Witherless_Rose",
+          "rate": 15
+        },
+        {
+          "item": "Obeaune_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MARC",
+      "display_name": "Marc",
+      "level": 56,
+      "hp": 1963,
+      "base_exp": 477,
+      "job_exp": 424,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 2,
+      "size": "Medium",
+      "attack": 105,
+      "defense": 55,
+      "drops": [
+        {
+          "item": "Mistic_Frozen",
+          "rate": 9
+        },
+        {
+          "item": "Gill",
+          "rate": 4500
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 48
+        },
+        {
+          "item": "Fin",
+          "rate": 500
+        },
+        {
+          "item": "Skyblue_Jewel",
+          "rate": 5
+        },
+        {
+          "item": "White_Herb",
+          "rate": 350
+        },
+        {
+          "item": "Marc_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DOPPELGANGER",
+      "display_name": "Doppelganger",
+      "level": 77,
+      "hp": 380000,
+      "base_exp": 172260,
+      "job_exp": 125280,
+      "race": "Demon",
+      "element": "Dark",
+      "element_level": 3,
+      "size": "Medium",
+      "attack": 2103,
+      "defense": 246,
+      "drops": [
+        {
+          "item": "Plate_Armor_",
+          "rate": 125
+        },
+        {
+          "item": "Broad_Sword_",
+          "rate": 110
+        },
+        {
+          "item": "Zweihander",
+          "rate": 75
+        },
+        {
+          "item": "Sharp_Gear",
+          "rate": 175
+        },
+        {
+          "item": "Lance_",
+          "rate": 275
+        },
+        {
+          "item": "Elunium",
+          "rate": 1843
+        },
+        {
+          "item": "Shadowdecon",
+          "rate": 50
+        },
+        {
+          "item": "Doppelganger_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "PECOPECO_EGG",
+      "display_name": "Peco Peco Egg",
+      "level": 7,
+      "hp": 70,
+      "base_exp": 152,
+      "job_exp": 70,
+      "race": "Formless",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Small",
+      "attack": 1,
+      "defense": 16,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 125
+        },
+        {
+          "item": "Shell",
+          "rate": 750
+        },
+        {
+          "item": "Guard_",
+          "rate": 1
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 200
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 200
+        },
+        {
+          "item": "White_Platter",
+          "rate": 5
+        },
+        {
+          "item": "Pecopeco_Egg_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "THIEF_BUG_EGG",
+      "display_name": "Thief Bug Egg",
+      "level": 20,
+      "hp": 290,
+      "base_exp": 181,
+      "job_exp": 135,
+      "race": "Insect",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 64,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 600
+        },
+        {
+          "item": "Chrysalis",
+          "rate": 5000
+        },
+        {
+          "item": "Guard_",
+          "rate": 1
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 300
+        },
+        {
+          "item": "Red_Gemstone",
+          "rate": 50
+        },
+        {
+          "item": "Black_Ladle",
+          "rate": 5
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 125
+        },
+        {
+          "item": "Thief_Bug_Egg_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PICKY",
+      "display_name": "Picky",
+      "level": 9,
+      "hp": 70,
+      "base_exp": 154,
+      "job_exp": 80,
+      "race": "Brute",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 21,
+      "drops": [
+        {
+          "item": "Feather_Of_Birds",
+          "rate": 7000
+        },
+        {
+          "item": "Feather",
+          "rate": 1000
+        },
+        {
+          "item": "Cotton_Shirt_",
+          "rate": 200
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Milk",
+          "rate": 1000
+        },
+        {
+          "item": "Yellow_Gemstone",
+          "rate": 60
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Picky_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PICKY_",
+      "display_name": "Picky",
+      "level": 10,
+      "hp": 77,
+      "base_exp": 155,
+      "job_exp": 85,
+      "race": "Brute",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 48,
+      "drops": [
+        {
+          "item": "Feather_Of_Birds",
+          "rate": 7000
+        },
+        {
+          "item": "Feather",
+          "rate": 1000
+        },
+        {
+          "item": "Egg_Shell",
+          "rate": 30
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Milk",
+          "rate": 1000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Tiny_Egg_Shell",
+          "rate": 20
+        },
+        {
+          "item": "Picky__Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "THIEF_BUG",
+      "display_name": "Thief Bug",
+      "level": 21,
+      "hp": 238,
+      "base_exp": 188,
+      "job_exp": 140,
+      "race": "Insect",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Small",
+      "attack": 12,
+      "defense": 24,
+      "drops": [
+        {
+          "item": "Worm_Peelings",
+          "rate": 3000
+        },
+        {
+          "item": "Leather_Jacket_",
+          "rate": 40
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 175
+        },
+        {
+          "item": "Jellopy",
+          "rate": 1000
+        },
+        {
+          "item": "Leather_Jacket",
+          "rate": 60
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 125
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Thief_Bug_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ROCKER",
+      "display_name": "Rocker",
+      "level": 15,
+      "hp": 155,
+      "base_exp": 174,
+      "job_exp": 110,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 6,
+      "defense": 16,
+      "drops": [
+        {
+          "item": "Grasshopper's_Leg",
+          "rate": 8000
+        },
+        {
+          "item": "Guitar_Of_Vast_Land",
+          "rate": 5
+        },
+        {
+          "item": "Green_Feeler",
+          "rate": 5
+        },
+        {
+          "item": "Javelin_",
+          "rate": 80
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Grasshopper_Doll",
+          "rate": 10
+        },
+        {
+          "item": "Hinalle",
+          "rate": 10
+        },
+        {
+          "item": "Rocker_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "THIEF_BUG_",
+      "display_name": "Thief Bug Female",
+      "level": 28,
+      "hp": 475,
+      "base_exp": 219,
+      "job_exp": 171,
+      "race": "Insect",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 25,
+      "defense": 28,
+      "drops": [
+        {
+          "item": "Worm_Peelings",
+          "rate": 3000
+        },
+        {
+          "item": "Garlet",
+          "rate": 125
+        },
+        {
+          "item": "Blade_",
+          "rate": 8
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 200
+        },
+        {
+          "item": "Red_Gemstone",
+          "rate": 25
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 150
+        },
+        {
+          "item": "Thief_Bug_Female_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "THIEF_BUG__",
+      "display_name": "Thief Bug Male",
+      "level": 30,
+      "hp": 537,
+      "base_exp": 229,
+      "job_exp": 181,
+      "race": "Insect",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 28,
+      "defense": 40,
+      "drops": [
+        {
+          "item": "Emveretarcon",
+          "rate": 20
+        },
+        {
+          "item": "Insect_Feeler",
+          "rate": 2750
+        },
+        {
+          "item": "Worm_Peelings",
+          "rate": 750
+        },
+        {
+          "item": "Slayer_",
+          "rate": 5
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Bluish_Green_Jewel",
+          "rate": 3
+        },
+        {
+          "item": "Katana",
+          "rate": 25
+        },
+        {
+          "item": "Thief_Bug_Male_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MUKA",
+      "display_name": "Muka",
+      "level": 23,
+      "hp": 337,
+      "base_exp": 205,
+      "job_exp": 148,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 19,
+      "defense": 28,
+      "drops": [
+        {
+          "item": "Yellow_Live",
+          "rate": 35
+        },
+        {
+          "item": "Cactus_Needle",
+          "rate": 4500
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 200
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 500
+        },
+        {
+          "item": "Guisarme",
+          "rate": 25
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 125
+        },
+        {
+          "item": "Muka_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SMOKIE",
+      "display_name": "Smokie",
+      "level": 29,
+      "hp": 414,
+      "base_exp": 235,
+      "job_exp": 176,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 29,
+      "defense": 26,
+      "drops": [
+        {
+          "item": "Raccoon_Leaf",
+          "rate": 2750
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 2750
+        },
+        {
+          "item": "Sweet_Potato",
+          "rate": 400
+        },
+        {
+          "item": "Cat_Hairband",
+          "rate": 1
+        },
+        {
+          "item": "Raccoondog_Doll",
+          "rate": 1
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Bluish_Green_Jewel",
+          "rate": 1
+        },
+        {
+          "item": "Smokie_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "YOYO",
+      "display_name": "Yoyo",
+      "level": 38,
+      "hp": 694,
+      "base_exp": 300,
+      "job_exp": 237,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 55,
+      "defense": 40,
+      "drops": [
+        {
+          "item": "Yoyo_Tail",
+          "rate": 4500
+        },
+        {
+          "item": "Banana",
+          "rate": 750
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Cacao",
+          "rate": 450
+        },
+        {
+          "item": "Monkey_Doll",
+          "rate": 5
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 12
+        },
+        {
+          "item": "Strawberry",
+          "rate": 500
+        },
+        {
+          "item": "Yoyo_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "METALLER",
+      "display_name": "Metaller",
+      "level": 55,
+      "hp": 1487,
+      "base_exp": 466,
+      "job_exp": 413,
+      "race": "Insect",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 126,
+      "defense": 72,
+      "drops": [
+        {
+          "item": "Boody_Red",
+          "rate": 30
+        },
+        {
+          "item": "Grasshopper's_Leg",
+          "rate": 3250
+        },
+        {
+          "item": "Amazing_Foxtail",
+          "rate": 15
+        },
+        {
+          "item": "Model_Foxtail",
+          "rate": 15
+        },
+        {
+          "item": "Singing_Plant",
+          "rate": 10
+        },
+        {
+          "item": "Shell",
+          "rate": 1500
+        },
+        {
+          "item": "Guitar_Of_Passion",
+          "rate": 5
+        },
+        {
+          "item": "Metaller_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MISTRESS",
+      "display_name": "Mistress",
+      "level": 78,
+      "hp": 378000,
+      "base_exp": 184140,
+      "job_exp": 150660,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 4,
+      "size": "Small",
+      "attack": 985,
+      "defense": 287,
+      "drops": [
+        {
+          "item": "Gungnir",
+          "rate": 75
+        },
+        {
+          "item": "Honey",
+          "rate": 5000
+        },
+        {
+          "item": "Coronet",
+          "rate": 125
+        },
+        {
+          "item": "Old_Card_Album",
+          "rate": 500
+        },
+        {
+          "item": "Young_Twig",
+          "rate": 5
+        },
+        {
+          "item": "Zelunium",
+          "rate": 50
+        },
+        {
+          "item": "Red_Square_Bag",
+          "rate": 50
+        },
+        {
+          "item": "Mistress_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "BIGFOOT",
+      "display_name": "Bigfoot",
+      "level": 29,
+      "hp": 506,
+      "base_exp": 235,
+      "job_exp": 176,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 33,
+      "defense": 55,
+      "drops": [
+        {
+          "item": "Bear's_Foot",
+          "rate": 4500
+        },
+        {
+          "item": "Poo_Poo_Hat",
+          "rate": 3
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 2500
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Sweet_Potato",
+          "rate": 750
+        },
+        {
+          "item": "Honey",
+          "rate": 225
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 22
+        },
+        {
+          "item": "BigFoot_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "NIGHTMARE",
+      "display_name": "Nightmare",
+      "level": 69,
+      "hp": 2366,
+      "base_exp": 598,
+      "job_exp": 641,
+      "race": "Demon",
+      "element": "Ghost",
+      "element_level": 3,
+      "size": "Large",
+      "attack": 225,
+      "defense": 116,
+      "drops": [
+        {
+          "item": "Horseshoe",
+          "rate": 3000
+        },
+        {
+          "item": "Blue_Herb",
+          "rate": 250
+        },
+        {
+          "item": "Rosary",
+          "rate": 1
+        },
+        {
+          "item": "Old_Blue_Box",
+          "rate": 15
+        },
+        {
+          "item": "Blue_Potion",
+          "rate": 50
+        },
+        {
+          "item": "Infiltrator",
+          "rate": 1
+        },
+        {
+          "item": "Oridecon",
+          "rate": 30
+        },
+        {
+          "item": "Nightmare_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PORING_",
+      "display_name": "Santa Poring",
+      "level": 3,
+      "hp": 69,
+      "base_exp": 2,
+      "job_exp": 2,
+      "race": "Plant",
+      "element": "Holy",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 12,
+      "defense": 0,
+      "drops": [
+        {
+          "item": "Candy",
+          "rate": 5000
+        },
+        {
+          "item": "Candy_Striper",
+          "rate": 3000
+        },
+        {
+          "item": "Buche_De_Noel",
+          "rate": 2000
+        },
+        {
+          "item": "Event_Cake",
+          "rate": 2000
+        },
+        {
+          "item": "Sour_Cream_Pancake",
+          "rate": 1000
+        },
+        {
+          "item": "Vivid_Notation",
+          "rate": 1000
+        },
+        {
+          "item": "Fire_Cracker_Xmas",
+          "rate": 2000
+        },
+        {
+          "item": "Santa's_Hat",
+          "rate": 100
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "LUNATIC",
+      "display_name": "Lunatic",
+      "level": 3,
+      "hp": 48,
+      "base_exp": 150,
+      "job_exp": 50,
+      "race": "Brute",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Small",
+      "attack": 1,
+      "defense": 18,
+      "drops": [
+        {
+          "item": "Clover",
+          "rate": 7000
+        },
+        {
+          "item": "Feather",
+          "rate": 3000
+        },
+        {
+          "item": "Pierrot_Nose",
+          "rate": 4
+        },
+        {
+          "item": "Sword_",
+          "rate": 100
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Carrot",
+          "rate": 3000
+        },
+        {
+          "item": "Rainbow_Carrot",
+          "rate": 20
+        },
+        {
+          "item": "Lunatic_Card",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MEGALODON",
+      "display_name": "Megalodon",
+      "level": 46,
+      "hp": 1249,
+      "base_exp": 397,
+      "job_exp": 292,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 85,
+      "defense": 52,
+      "drops": [
+        {
+          "item": "Rotten_Scale",
+          "rate": 2750
+        },
+        {
+          "item": "Skel_Bone",
+          "rate": 750
+        },
+        {
+          "item": "Blue_Herb",
+          "rate": 40
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Violet_Jewel",
+          "rate": 5
+        },
+        {
+          "item": "Old_Blue_Box",
+          "rate": 1
+        },
+        {
+          "item": "Rotten_Fish",
+          "rate": 10
+        },
+        {
+          "item": "Megalodon_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "STROUF",
+      "display_name": "Strouf",
+      "level": 61,
+      "hp": 2746,
+      "base_exp": 564,
+      "job_exp": 508,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 3,
+      "size": "Large",
+      "attack": 141,
+      "defense": 67,
+      "drops": [
+        {
+          "item": "Fin",
+          "rate": 2668
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 58
+        },
+        {
+          "item": "Chain_Mail_",
+          "rate": 1
+        },
+        {
+          "item": "Trident_",
+          "rate": 1
+        },
+        {
+          "item": "Feather",
+          "rate": 1500
+        },
+        {
+          "item": "Skyblue_Jewel",
+          "rate": 10
+        },
+        {
+          "item": "Gill",
+          "rate": 750
+        },
+        {
+          "item": "Strouf_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "VADON",
+      "display_name": "Vadon",
+      "level": 45,
+      "hp": 1091,
+      "base_exp": 352,
+      "job_exp": 301,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 57,
+      "defense": 54,
+      "drops": [
+        {
+          "item": "Crystal_Blue",
+          "rate": 20
+        },
+        {
+          "item": "Nipper",
+          "rate": 4500
+        },
+        {
+          "item": "Garlet",
+          "rate": 1500
+        },
+        {
+          "item": "Padded_Armor_",
+          "rate": 3
+        },
+        {
+          "item": "Solid_Shell",
+          "rate": 50
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 20
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Vadon_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CORNUTUS",
+      "display_name": "Cornutus",
+      "level": 48,
+      "hp": 1229,
+      "base_exp": 379,
+      "job_exp": 328,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 66,
+      "defense": 42,
+      "drops": [
+        {
+          "item": "Crystal_Blue",
+          "rate": 23
+        },
+        {
+          "item": "Conch",
+          "rate": 2750
+        },
+        {
+          "item": "Scell",
+          "rate": 400
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 27
+        },
+        {
+          "item": "Shield_",
+          "rate": 3
+        },
+        {
+          "item": "Solid_Shell",
+          "rate": 500
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Cornutus_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "HYDRA",
+      "display_name": "Hydra",
+      "level": 34,
+      "hp": 661,
+      "base_exp": 259,
+      "job_exp": 210,
+      "race": "Plant",
+      "element": "Water",
+      "element_level": 2,
+      "size": "Small",
+      "attack": 31,
+      "defense": 20,
+      "drops": [
+        {
+          "item": "Emveretarcon",
+          "rate": 13
+        },
+        {
+          "item": "Tentacle",
+          "rate": 2750
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 750
+        },
+        {
+          "item": "Detrimindexta",
+          "rate": 10
+        },
+        {
+          "item": "Panacea",
+          "rate": 3
+        },
+        {
+          "item": "Meat",
+          "rate": 350
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Hydra_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SWORD_FISH",
+      "display_name": "Swordfish",
+      "level": 57,
+      "hp": 2203,
+      "base_exp": 488,
+      "job_exp": 435,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 2,
+      "size": "Large",
+      "attack": 122,
+      "defense": 52,
+      "drops": [
+        {
+          "item": "Mistic_Frozen",
+          "rate": 5
+        },
+        {
+          "item": "Sharp_Scale",
+          "rate": 4500
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 17
+        },
+        {
+          "item": "Snowy_Horn",
+          "rate": 1
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 25
+        },
+        {
+          "item": "Katana_",
+          "rate": 13
+        },
+        {
+          "item": "Gill",
+          "rate": 300
+        },
+        {
+          "item": "Sword_Fish_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "KUKRE",
+      "display_name": "Kukre",
+      "level": 42,
+      "hp": 962,
+      "base_exp": 328,
+      "job_exp": 277,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 50,
+      "defense": 33,
+      "drops": [
+        {
+          "item": "Crystal_Blue",
+          "rate": 15
+        },
+        {
+          "item": "Worm_Peelings",
+          "rate": 2750
+        },
+        {
+          "item": "Garlet",
+          "rate": 200
+        },
+        {
+          "item": "Monster's_Feed",
+          "rate": 250
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Insect_Feeler",
+          "rate": 225
+        },
+        {
+          "item": "Earthworm_The_Dude",
+          "rate": 10
+        },
+        {
+          "item": "Kukre_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "PIRATE_SKEL",
+      "display_name": "Pirate Skeleton",
+      "level": 48,
+      "hp": 1351,
+      "base_exp": 416,
+      "job_exp": 310,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 93,
+      "defense": 53,
+      "drops": [
+        {
+          "item": "Skel_Bone",
+          "rate": 1500
+        },
+        {
+          "item": "Pirate_Bandana",
+          "rate": 8
+        },
+        {
+          "item": "Cookbook06",
+          "rate": 3
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Falchion",
+          "rate": 125
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 22
+        },
+        {
+          "item": "Well_Dried_Bone",
+          "rate": 10
+        },
+        {
+          "item": "Pirate_Skel_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "KAHO",
+      "display_name": "Kaho",
+      "level": 98,
+      "hp": 7229,
+      "base_exp": 1349,
+      "job_exp": 1278,
+      "race": "Demon",
+      "element": "Fire",
+      "element_level": 4,
+      "size": "Medium",
+      "attack": 433,
+      "defense": 106,
+      "drops": [
+        {
+          "item": "Flame_Heart",
+          "rate": 15
+        },
+        {
+          "item": "Coal",
+          "rate": 75
+        },
+        {
+          "item": "Burning_Heart",
+          "rate": 1500
+        },
+        {
+          "item": "Fire_Scroll_1_3",
+          "rate": 50
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 500
+        },
+        {
+          "item": "Red_Gemstone",
+          "rate": 150
+        },
+        {
+          "item": "Alchol",
+          "rate": 3
+        },
+        {
+          "item": "Kaho_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CRAB",
+      "display_name": "Crab",
+      "level": 43,
+      "hp": 1004,
+      "base_exp": 336,
+      "job_exp": 285,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 52,
+      "defense": 36,
+      "drops": [
+        {
+          "item": "Crap_Shell",
+          "rate": 2750
+        },
+        {
+          "item": "Nipper",
+          "rate": 750
+        },
+        {
+          "item": "Stone",
+          "rate": 350
+        },
+        {
+          "item": "Sparkling_Dust",
+          "rate": 7
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 19
+        },
+        {
+          "item": "Crab_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SHELLFISH",
+      "display_name": "Shellfish",
+      "level": 50,
+      "hp": 1326,
+      "base_exp": 397,
+      "job_exp": 346,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 71,
+      "defense": 43,
+      "drops": [
+        {
+          "item": "Clam_Shell",
+          "rate": 2750
+        },
+        {
+          "item": "Flesh_Of_Clam",
+          "rate": 500
+        },
+        {
+          "item": "Stone",
+          "rate": 250
+        },
+        {
+          "item": "Grit",
+          "rate": 500
+        },
+        {
+          "item": "Sparkling_Dust",
+          "rate": 5
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 9
+        },
+        {
+          "item": "Shellfish_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SKELETON",
+      "display_name": "Skeleton",
+      "level": 27,
+      "hp": 445,
+      "base_exp": 235,
+      "job_exp": 156,
+      "race": "Undead",
+      "element": "Undead",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 25,
+      "defense": 21,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 90
+        },
+        {
+          "item": "Skel_Bone",
+          "rate": 1600
+        },
+        {
+          "item": "Mace_",
+          "rate": 80
+        },
+        {
+          "item": "Jellopy",
+          "rate": 3000
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Skul_Ring",
+          "rate": 30
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Skeleton_Card",
+          "rate": 10
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "POISON_SPORE",
+      "display_name": "Poison Spore",
+      "level": 26,
+      "hp": 379,
+      "base_exp": 209,
+      "job_exp": 161,
+      "race": "Plant",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 23,
+      "defense": 40,
+      "drops": [
+        {
+          "item": "Poison_Spore",
+          "rate": 4500
+        },
+        {
+          "item": "Hat_",
+          "rate": 10
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 275
+        },
+        {
+          "item": "Blue_Herb",
+          "rate": 30
+        },
+        {
+          "item": "Karvodailnirol",
+          "rate": 25
+        },
+        {
+          "item": "Mushroom_Spore",
+          "rate": 600
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Poison_Spore_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "RED_PLANT",
+      "display_name": "Red Plant",
+      "level": 1,
+      "hp": 5,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Red_Herb",
+          "rate": 5000
+        },
+        {
+          "item": "Flower",
+          "rate": 500
+        },
+        {
+          "item": "Shoot",
+          "rate": 500
+        },
+        {
+          "item": "Stem",
+          "rate": 500
+        },
+        {
+          "item": "Poison_Herb_Rantana",
+          "rate": 150
+        },
+        {
+          "item": "Fluff",
+          "rate": 250
+        },
+        {
+          "item": "Ment",
+          "rate": 50
+        },
+        {
+          "item": "Centimental_Flower",
+          "rate": 20
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "BLUE_PLANT",
+      "display_name": "Blue Plant",
+      "level": 1,
+      "hp": 10,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Blue_Herb",
+          "rate": 2750
+        },
+        {
+          "item": "Flower",
+          "rate": 500
+        },
+        {
+          "item": "Shoot",
+          "rate": 500
+        },
+        {
+          "item": "Stem",
+          "rate": 250
+        },
+        {
+          "item": "Poison_Herb_Nerium",
+          "rate": 150
+        },
+        {
+          "item": "Fruit_Of_Mastela",
+          "rate": 25
+        },
+        {
+          "item": "Grape",
+          "rate": 500
+        },
+        {
+          "item": "Centimental_Leaf",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "GREEN_PLANT",
+      "display_name": "Green Plant",
+      "level": 1,
+      "hp": 5,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Green_Herb",
+          "rate": 3500
+        },
+        {
+          "item": "Poison_Herb_Makulata",
+          "rate": 150
+        },
+        {
+          "item": "Bitter_Herb",
+          "rate": 10
+        },
+        {
+          "item": "Stem",
+          "rate": 1500
+        },
+        {
+          "item": "Pointed_Scale",
+          "rate": 750
+        },
+        {
+          "item": "Aloe",
+          "rate": 25
+        },
+        {
+          "item": "Leaflet_Of_Aloe",
+          "rate": 25
+        },
+        {
+          "item": "Centimental_Leaf",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "YELLOW_PLANT",
+      "display_name": "Yellow Plant",
+      "level": 1,
+      "hp": 6,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Yellow_Herb",
+          "rate": 2750
+        },
+        {
+          "item": "Flower",
+          "rate": 500
+        },
+        {
+          "item": "Shoot",
+          "rate": 500
+        },
+        {
+          "item": "Stem",
+          "rate": 250
+        },
+        {
+          "item": "Poison_Herb_Seratum",
+          "rate": 150
+        },
+        {
+          "item": "Singing_Plant",
+          "rate": 3
+        },
+        {
+          "item": "Fluff",
+          "rate": 250
+        },
+        {
+          "item": "Centimental_Flower",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "WHITE_PLANT",
+      "display_name": "White Plant",
+      "level": 1,
+      "hp": 7,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "White_Herb",
+          "rate": 2750
+        },
+        {
+          "item": "Flower",
+          "rate": 500
+        },
+        {
+          "item": "Deadly_Noxious_Herb",
+          "rate": 10
+        },
+        {
+          "item": "Stem",
+          "rate": 1500
+        },
+        {
+          "item": "Poison_Herb_Seratum",
+          "rate": 150
+        },
+        {
+          "item": "Leaflet_Of_Aloe",
+          "rate": 25
+        },
+        {
+          "item": "Hinalle",
+          "rate": 25
+        },
+        {
+          "item": "Centimental_Flower",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "SHINING_PLANT",
+      "display_name": "Shining Plant",
+      "level": 1,
+      "hp": 20,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Holy",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Blue_Herb",
+          "rate": 5000
+        },
+        {
+          "item": "Yellow_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "White_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Illusion_Flower",
+          "rate": 3
+        },
+        {
+          "item": "Seed_Of_Yggdrasil",
+          "rate": 5
+        },
+        {
+          "item": "Honey",
+          "rate": 500
+        },
+        {
+          "item": "Yggdrasilberry",
+          "rate": 5
+        },
+        {
+          "item": "Emperium",
+          "rate": 5
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "BLACK_MUSHROOM",
+      "display_name": "Black Mushroom",
+      "level": 1,
+      "hp": 5,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Alchol",
+          "rate": 50
+        },
+        {
+          "item": "Detrimindexta",
+          "rate": 50
+        },
+        {
+          "item": "Dew_Laden_Moss",
+          "rate": 20
+        },
+        {
+          "item": "Feather",
+          "rate": 2000
+        },
+        {
+          "item": "Crystal_Blue",
+          "rate": 800
+        },
+        {
+          "item": "Mushroom_Spore",
+          "rate": 5000
+        },
+        {
+          "item": "Mushroom_Spore",
+          "rate": 5000
+        },
+        {
+          "item": "Poison_Spore",
+          "rate": 5000
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "RED_MUSHROOM",
+      "display_name": "Red Mushroom",
+      "level": 1,
+      "hp": 5,
+      "base_exp": 0,
+      "job_exp": 0,
+      "race": "Plant",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 1,
+      "defense": 100,
+      "drops": [
+        {
+          "item": "Alchol",
+          "rate": 50
+        },
+        {
+          "item": "Karvodailnirol",
+          "rate": 50
+        },
+        {
+          "item": "Dew_Laden_Moss",
+          "rate": 20
+        },
+        {
+          "item": "Feather",
+          "rate": 1000
+        },
+        {
+          "item": "Boody_Red",
+          "rate": 500
+        },
+        {
+          "item": "Mushroom_Spore",
+          "rate": 5000
+        },
+        {
+          "item": "Mushroom_Spore",
+          "rate": 5000
+        },
+        {
+          "item": "Poison_Spore",
+          "rate": 5000
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "GOLDEN_BUG",
+      "display_name": "Golden Thief Bug",
+      "level": 65,
+      "hp": 222750,
+      "base_exp": 102060,
+      "job_exp": 77760,
+      "race": "Insect",
+      "element": "Fire",
+      "element_level": 2,
+      "size": "Large",
+      "attack": 952,
+      "defense": 159,
+      "drops": [
+        {
+          "item": "Gold",
+          "rate": 500
+        },
+        {
+          "item": "Golden_Mace",
+          "rate": 75
+        },
+        {
+          "item": "Golden_Gear",
+          "rate": 125
+        },
+        {
+          "item": "Golden_Bell",
+          "rate": 250
+        },
+        {
+          "item": "Emperium",
+          "rate": 150
+        },
+        {
+          "item": "Elunium",
+          "rate": 1000
+        },
+        {
+          "item": "Shadowdecon",
+          "rate": 50
+        },
+        {
+          "item": "Golden_Bug_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "ORK_HERO",
+      "display_name": "Orc Hero",
+      "level": 50,
+      "hp": 362000,
+      "base_exp": 53460,
+      "job_exp": 48600,
+      "race": "Demihuman",
+      "element": "Earth",
+      "element_level": 2,
+      "size": "Large",
+      "attack": 662,
+      "defense": 197,
+      "drops": [
+        {
+          "item": "Token_of_OrcGeneral",
+          "rate": 4850
+        },
+        {
+          "item": "Monkey_Circlet",
+          "rate": 250
+        },
+        {
+          "item": "Right_Epsilon",
+          "rate": 75
+        },
+        {
+          "item": "Shield_",
+          "rate": 125
+        },
+        {
+          "item": "Orcish_Sword",
+          "rate": 500
+        },
+        {
+          "item": "Shadowdecon",
+          "rate": 50
+        },
+        {
+          "item": "Giant_Axe",
+          "rate": 50
+        },
+        {
+          "item": "Orc_Hero_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": true
+    },
+    {
+      "type": "monster",
+      "name": "VOCAL",
+      "display_name": "Vocal",
+      "level": 18,
+      "hp": 3317,
+      "base_exp": 49,
+      "job_exp": 39,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 71,
+      "defense": 77,
+      "drops": [
+        {
+          "item": "Oldman's_Romance",
+          "rate": 25
+        },
+        {
+          "item": "Grasshopper's_Leg",
+          "rate": 4000
+        },
+        {
+          "item": "Azure_Jewel",
+          "rate": 500
+        },
+        {
+          "item": "Grasshopper_Doll",
+          "rate": 750
+        },
+        {
+          "item": "Angel's_Arrival",
+          "rate": 500
+        },
+        {
+          "item": "Light_Granule",
+          "rate": 250
+        },
+        {
+          "item": "Guitar_Of_Gentle_Breeze",
+          "rate": 5
+        },
+        {
+          "item": "Vocal_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "TOAD",
+      "display_name": "Toad",
+      "level": 27,
+      "hp": 660,
+      "base_exp": 81,
+      "job_exp": 91,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 70,
+      "defense": 24,
+      "drops": [
+        {
+          "item": "Big_Sis'_Ribbon",
+          "rate": 25
+        },
+        {
+          "item": "Honey",
+          "rate": 1000
+        },
+        {
+          "item": "Bluish_Green_Jewel",
+          "rate": 500
+        },
+        {
+          "item": "Light_Granule",
+          "rate": 250
+        },
+        {
+          "item": "Alchol",
+          "rate": 50
+        },
+        {
+          "item": "Detrimindexta",
+          "rate": 50
+        },
+        {
+          "item": "Kiss_Of_Angel",
+          "rate": 500
+        },
+        {
+          "item": "Toad_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "MASTERING",
+      "display_name": "Mastering",
+      "level": 42,
+      "hp": 1260,
+      "base_exp": 157,
+      "job_exp": 177,
+      "race": "Plant",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 80,
+      "defense": 48,
+      "drops": [
+        {
+          "item": "Snowy_Horn",
+          "rate": 100
+        },
+        {
+          "item": "Unripe_Apple",
+          "rate": 25
+        },
+        {
+          "item": "Scarlet_Jewel",
+          "rate": 500
+        },
+        {
+          "item": "Angel's_Safeguard",
+          "rate": 500
+        },
+        {
+          "item": "Light_Granule",
+          "rate": 250
+        },
+        {
+          "item": "Apple",
+          "rate": 4000
+        },
+        {
+          "item": "Apple_Juice",
+          "rate": 2000
+        },
+        {
+          "item": "Mastering_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DRAGON_FLY",
+      "display_name": "Dragon Fly",
+      "level": 47,
+      "hp": 1035,
+      "base_exp": 180,
+      "job_exp": 202,
+      "race": "Insect",
+      "element": "Wind",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 102,
+      "defense": 57,
+      "drops": [
+        {
+          "item": "Sweet_Gents",
+          "rate": 100
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 4000
+        },
+        {
+          "item": "Violet_Jewel",
+          "rate": 750
+        },
+        {
+          "item": "Chonchon_Doll",
+          "rate": 1000
+        },
+        {
+          "item": "Clip",
+          "rate": 1500
+        },
+        {
+          "item": "Lusty_Iron",
+          "rate": 25
+        },
+        {
+          "item": "Grape_Juice",
+          "rate": 1500
+        },
+        {
+          "item": "Dragon_Fly_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "VAGABOND_WOLF",
+      "display_name": "Vagabond Wolf",
+      "level": 93,
+      "hp": 8203,
+      "base_exp": 853,
+      "job_exp": 1300,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 519,
+      "defense": 102,
+      "drops": [
+        {
+          "item": "Western_Grace",
+          "rate": 100
+        },
+        {
+          "item": "Claw_Of_Wolves",
+          "rate": 4000
+        },
+        {
+          "item": "Golden_Jewel",
+          "rate": 750
+        },
+        {
+          "item": "Star_Dust_Blade",
+          "rate": 50
+        },
+        {
+          "item": "Angel's_Warmth",
+          "rate": 500
+        },
+        {
+          "item": "Light_Granule",
+          "rate": 250
+        },
+        {
+          "item": "Monster_Juice",
+          "rate": 25
+        },
+        {
+          "item": "Vagabond_Wolf_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ECLIPSE",
+      "display_name": "Eclipse",
+      "level": 31,
+      "hp": 625,
+      "base_exp": 103,
+      "job_exp": 116,
+      "race": "Brute",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Medium",
+      "attack": 60,
+      "defense": 50,
+      "drops": [
+        {
+          "item": "Fillet",
+          "rate": 100
+        },
+        {
+          "item": "Red_Herb",
+          "rate": 4000
+        },
+        {
+          "item": "White_Jewel",
+          "rate": 600
+        },
+        {
+          "item": "Light_Granule",
+          "rate": 250
+        },
+        {
+          "item": "Four_Leaf_Clover",
+          "rate": 1
+        },
+        {
+          "item": "Rainbow_Carrot",
+          "rate": 25
+        },
+        {
+          "item": "Angel's_Protection",
+          "rate": 500
+        },
+        {
+          "item": "Eclipse_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "AMBERNITE",
+      "display_name": "Ambernite",
+      "level": 19,
+      "hp": 265,
+      "base_exp": 178,
+      "job_exp": 130,
+      "race": "Insect",
+      "element": "Water",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 9,
+      "defense": 28,
+      "drops": [
+        {
+          "item": "Crystal_Blue",
+          "rate": 50
+        },
+        {
+          "item": "Snail's_Shell",
+          "rate": 8000
+        },
+        {
+          "item": "Garlet",
+          "rate": 2000
+        },
+        {
+          "item": "Shell",
+          "rate": 3000
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 20
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 200
+        },
+        {
+          "item": "Ambernite_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ANDRE",
+      "display_name": "Andre",
+      "level": 33,
+      "hp": 537,
+      "base_exp": 265,
+      "job_exp": 204,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 40,
+      "defense": 55,
+      "drops": [
+        {
+          "item": "Worm_Peelings",
+          "rate": 4500
+        },
+        {
+          "item": "Garlet",
+          "rate": 500
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 250
+        },
+        {
+          "item": "Yellow_Live",
+          "rate": 25
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 175
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 14
+        },
+        {
+          "item": "Andre_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ANGELING",
+      "display_name": "Angeling",
+      "level": 77,
+      "hp": 19800,
+      "base_exp": 1683,
+      "job_exp": 1346,
+      "race": "Angel",
+      "element": "Holy",
+      "element_level": 4,
+      "size": "Medium",
+      "attack": 391,
+      "defense": 72,
+      "drops": [
+        {
+          "item": "Angelic_Chain",
+          "rate": 50
+        },
+        {
+          "item": "Scapulare_",
+          "rate": 30
+        },
+        {
+          "item": "Spirit_Chain",
+          "rate": 1
+        },
+        {
+          "item": "White_Herb",
+          "rate": 1000
+        },
+        {
+          "item": "Apple",
+          "rate": 14
+        },
+        {
+          "item": "Emperium",
+          "rate": 20
+        },
+        {
+          "item": "Angeling_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ANT_EGG",
+      "display_name": "Ant Egg",
+      "level": 28,
+      "hp": 469,
+      "base_exp": 219,
+      "job_exp": 171,
+      "race": "Formless",
+      "element": "Neutral",
+      "element_level": 3,
+      "size": "Small",
+      "attack": 1,
+      "defense": 68,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 160
+        },
+        {
+          "item": "Shell",
+          "rate": 1000
+        },
+        {
+          "item": "Jellopy",
+          "rate": 1000
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 325
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 100
+        },
+        {
+          "item": "Andre_Egg_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ANUBIS",
+      "display_name": "Anubis",
+      "level": 105,
+      "hp": 38826,
+      "base_exp": 3013,
+      "job_exp": 3597,
+      "race": "Demihuman",
+      "element": "Undead",
+      "element_level": 2,
+      "size": "Large",
+      "attack": 984,
+      "defense": 103,
+      "drops": [
+        {
+          "item": "Runstone_Ancient",
+          "rate": 5
+        },
+        {
+          "item": "Healing_Staff",
+          "rate": 5
+        },
+        {
+          "item": "White_Wing_Suits",
+          "rate": 50
+        },
+        {
+          "item": "Oridecon",
+          "rate": 53
+        },
+        {
+          "item": "Sacred_Masque",
+          "rate": 2183
+        },
+        {
+          "item": "Mitten_Of_Presbyter",
+          "rate": 1
+        },
+        {
+          "item": "Blessed_Wand",
+          "rate": 2
+        },
+        {
+          "item": "Anubis_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ARGIOPE",
+      "display_name": "Argiope",
+      "level": 75,
+      "hp": 3570,
+      "base_exp": 794,
+      "job_exp": 734,
+      "race": "Insect",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 270,
+      "defense": 88,
+      "drops": [
+        {
+          "item": "Short_Leg",
+          "rate": 2668
+        },
+        {
+          "item": "Zargon",
+          "rate": 600
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 88
+        },
+        {
+          "item": "Boots_",
+          "rate": 3
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 750
+        },
+        {
+          "item": "Violet_Jewel",
+          "rate": 5
+        },
+        {
+          "item": "Argiope_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "ARGOS",
+      "display_name": "Argos",
+      "level": 47,
+      "hp": 1300,
+      "base_exp": 370,
+      "job_exp": 319,
+      "race": "Insect",
+      "element": "Poison",
+      "element_level": 1,
+      "size": "Large",
+      "attack": 97,
+      "defense": 58,
+      "drops": [
+        {
+          "item": "Spiderweb",
+          "rate": 4500
+        },
+        {
+          "item": "Scell",
+          "rate": 600
+        },
+        {
+          "item": "Short_Leg",
+          "rate": 250
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 31
+        },
+        {
+          "item": "Green_Herb",
+          "rate": 335
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Bark_Shorts",
+          "rate": 8
+        },
+        {
+          "item": "Argos_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "BAPHOMET_",
+      "display_name": "Baphomet Jr.",
+      "level": 57,
+      "hp": 1763,
+      "base_exp": 488,
+      "job_exp": 435,
+      "race": "Demon",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 110,
+      "defense": 70,
+      "drops": [
+        {
+          "item": "Evil_Horn",
+          "rate": 250
+        },
+        {
+          "item": "Oridecon",
+          "rate": 32
+        },
+        {
+          "item": "Halberd_",
+          "rate": 1
+        },
+        {
+          "item": "Yggdrasilberry",
+          "rate": 25
+        },
+        {
+          "item": "Yellow_Herb",
+          "rate": 650
+        },
+        {
+          "item": "Boots",
+          "rate": 25
+        },
+        {
+          "item": "Baphomet__Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "BATHORY",
+      "display_name": "Bathory",
+      "level": 86,
+      "hp": 6040,
+      "base_exp": 1035,
+      "job_exp": 970,
+      "race": "Demihuman",
+      "element": "Dark",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 297,
+      "defense": 61,
+      "drops": [
+        {
+          "item": "Sparkling_Dust",
+          "rate": 100
+        },
+        {
+          "item": "Starsand_Of_Witch",
+          "rate": 2425
+        },
+        {
+          "item": "Star_Sparkling",
+          "rate": 2
+        },
+        {
+          "item": "Scarlet_Rod",
+          "rate": 50
+        },
+        {
+          "item": "Star_Crumb",
+          "rate": 15
+        },
+        {
+          "item": "Old_Magic_Book",
+          "rate": 8
+        },
+        {
+          "item": "Old_Broom",
+          "rate": 10
+        },
+        {
+          "item": "Bathory_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "CARAMEL",
+      "display_name": "Caramel",
+      "level": 25,
+      "hp": 319,
+      "base_exp": 214,
+      "job_exp": 156,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 21,
+      "defense": 39,
+      "drops": [
+        {
+          "item": "Porcupine_Spike",
+          "rate": 4500
+        },
+        {
+          "item": "Coat_",
+          "rate": 3
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 2750
+        },
+        {
+          "item": "Glaive_",
+          "rate": 5
+        },
+        {
+          "item": "Spear_",
+          "rate": 8
+        },
+        {
+          "item": "Pike_",
+          "rate": 10
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Caramel_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "COCO",
+      "display_name": "Coco",
+      "level": 38,
+      "hp": 694,
+      "base_exp": 300,
+      "job_exp": 237,
+      "race": "Brute",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 55,
+      "defense": 37,
+      "drops": [
+        {
+          "item": "Acorn",
+          "rate": 4500
+        },
+        {
+          "item": "Hood_",
+          "rate": 10
+        },
+        {
+          "item": "Fluff",
+          "rate": 1500
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 1250
+        },
+        {
+          "item": "Sweet_Potato",
+          "rate": 250
+        },
+        {
+          "item": "Sandals_",
+          "rate": 13
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Coco_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DENIRO",
+      "display_name": "Deniro",
+      "level": 31,
+      "hp": 480,
+      "base_exp": 253,
+      "job_exp": 192,
+      "race": "Insect",
+      "element": "Earth",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 34,
+      "defense": 52,
+      "drops": [
+        {
+          "item": "Worm_Peelings",
+          "rate": 4500
+        },
+        {
+          "item": "Garlet",
+          "rate": 1500
+        },
+        {
+          "item": "Sticky_Mucus",
+          "rate": 600
+        },
+        {
+          "item": "Boody_Red",
+          "rate": 25
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Iron_Ore",
+          "rate": 225
+        },
+        {
+          "item": "Elunium_Stone",
+          "rate": 17
+        },
+        {
+          "item": "Andre_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DESERT_WOLF",
+      "display_name": "Desert Wolf",
+      "level": 103,
+      "hp": 10244,
+      "base_exp": 1585,
+      "job_exp": 1507,
+      "race": "Brute",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Medium",
+      "attack": 511,
+      "defense": 114,
+      "drops": [
+        {
+          "item": "Katar_",
+          "rate": 1
+        },
+        {
+          "item": "Claw_Of_Desert_Wolf",
+          "rate": 2750
+        },
+        {
+          "item": "Mink_Coat",
+          "rate": 1
+        },
+        {
+          "item": "Wolf_Blood",
+          "rate": 5
+        },
+        {
+          "item": "Durga",
+          "rate": 1
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 27
+        },
+        {
+          "item": "Scarlet_Dagger",
+          "rate": 50
+        },
+        {
+          "item": "Desert_Wolf_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DESERT_WOLF_B",
+      "display_name": "Baby Desert Wolf",
+      "level": 14,
+      "hp": 113,
+      "base_exp": 164,
+      "job_exp": 105,
+      "race": "Brute",
+      "element": "Fire",
+      "element_level": 1,
+      "size": "Small",
+      "attack": 5,
+      "defense": 13,
+      "drops": [
+        {
+          "item": "Phracon",
+          "rate": 43
+        },
+        {
+          "item": "Animal's_Skin",
+          "rate": 2750
+        },
+        {
+          "item": "Adventurere's_Suit_",
+          "rate": 40
+        },
+        {
+          "item": "Wing_Of_Fly",
+          "rate": 500
+        },
+        {
+          "item": "Cotton_Shirt",
+          "rate": 100
+        },
+        {
+          "item": "Asura_",
+          "rate": 3
+        },
+        {
+          "item": "Orange",
+          "rate": 500
+        },
+        {
+          "item": "Desert_Wolf_Babe_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    },
+    {
+      "type": "monster",
+      "name": "DEVIACE",
+      "display_name": "Deviace",
+      "level": 60,
+      "hp": 2324,
+      "base_exp": 521,
+      "job_exp": 468,
+      "race": "Fish",
+      "element": "Water",
+      "element_level": 4,
+      "size": "Medium",
+      "attack": 121,
+      "defense": 51,
+      "drops": [
+        {
+          "item": "Mistic_Frozen",
+          "rate": 13
+        },
+        {
+          "item": "Tooth_Of_Ancient_Fish",
+          "rate": 4500
+        },
+        {
+          "item": "Lip_Of_Ancient_Fish",
+          "rate": 500
+        },
+        {
+          "item": "Antenna",
+          "rate": 1
+        },
+        {
+          "item": "Detrimindexta",
+          "rate": 100
+        },
+        {
+          "item": "Katar_Of_Cold_Icicle",
+          "rate": 2
+        },
+        {
+          "item": "Oridecon_Stone",
+          "rate": 81
+        },
+        {
+          "item": "Deviace_Card",
+          "rate": 1
+        }
+      ],
+      "mvp_drops": false
+    }
+  ],
+  "grind_recommendations": [
+    {
+      "level_range": "1-10",
+      "recommended_monsters": [
+        {
+          "name": "MIME_MONKEY",
+          "display_name": "Mime Monkey",
+          "level": 1,
+          "base_exp": 1969,
+          "job_exp": 1351,
+          "hp": 1,
+          "exp_per_hp": 1969.0,
+          "element": "Water",
+          "race": "Plant",
+          "drops": [
+            {
+              "item": "Lemon",
+              "rate": 4666
+            }
+          ]
+        },
+        {
+          "name": "DROPS",
+          "display_name": "Drops",
+          "level": 2,
+          "base_exp": 150,
+          "job_exp": 45,
+          "hp": 46,
+          "exp_per_hp": 3.2609,
+          "element": "Fire",
+          "race": "Plant",
+          "drops": [
+            {
+              "item": "Jellopy",
+              "rate": 7000
+            },
+            {
+              "item": "Rod_",
+              "rate": 80
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 600
+            },
+            {
+              "item": "Apple",
+              "rate": 1000
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Apple",
+              "rate": 400
+            },
+            {
+              "item": "Orange_Juice",
+              "rate": 20
+            },
+            {
+              "item": "Drops_Card",
+              "rate": 20
+            }
+          ]
+        },
+        {
+          "name": "C3_DROPS",
+          "display_name": "Drops Ringleader",
+          "level": 2,
+          "base_exp": 750,
+          "job_exp": 675,
+          "hp": 230,
+          "exp_per_hp": 3.2609,
+          "element": "Fire",
+          "race": "Plant",
+          "drops": [
+            {
+              "item": "Jellopy",
+              "rate": 10000
+            },
+            {
+              "item": "Rod_",
+              "rate": 400
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 3000
+            },
+            {
+              "item": "Apple",
+              "rate": 5000
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Apple",
+              "rate": 2000
+            },
+            {
+              "item": "Orange_Juice",
+              "rate": 100
+            },
+            {
+              "item": "Drops_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "CHONCHON",
+          "display_name": "Chonchon",
+          "level": 5,
+          "base_exp": 150,
+          "job_exp": 60,
+          "hp": 48,
+          "exp_per_hp": 3.125,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Iron",
+              "rate": 50
+            },
+            {
+              "item": "Shell",
+              "rate": 7000
+            },
+            {
+              "item": "Jellopy",
+              "rate": 2000
+            },
+            {
+              "item": "Cutter_",
+              "rate": 50
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Chonchon_Doll",
+              "rate": 6
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 200
+            },
+            {
+              "item": "Chonchon_Card",
+              "rate": 20
+            }
+          ]
+        },
+        {
+          "name": "LUNATIC",
+          "display_name": "Lunatic",
+          "level": 3,
+          "base_exp": 150,
+          "job_exp": 50,
+          "hp": 48,
+          "exp_per_hp": 3.125,
+          "element": "Neutral",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Clover",
+              "rate": 7000
+            },
+            {
+              "item": "Feather",
+              "rate": 3000
+            },
+            {
+              "item": "Pierrot_Nose",
+              "rate": 4
+            },
+            {
+              "item": "Sword_",
+              "rate": 100
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Carrot",
+              "rate": 3000
+            },
+            {
+              "item": "Rainbow_Carrot",
+              "rate": 20
+            },
+            {
+              "item": "Lunatic_Card",
+              "rate": 20
+            }
+          ]
+        },
+        {
+          "name": "C3_LUNATIC",
+          "display_name": "Lunatic Ringleader",
+          "level": 3,
+          "base_exp": 750,
+          "job_exp": 750,
+          "hp": 240,
+          "exp_per_hp": 3.125,
+          "element": "Neutral",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Clover",
+              "rate": 10000
+            },
+            {
+              "item": "Feather",
+              "rate": 10000
+            },
+            {
+              "item": "Pierrot_Nose",
+              "rate": 20
+            },
+            {
+              "item": "Sword_",
+              "rate": 500
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Carrot",
+              "rate": 10000
+            },
+            {
+              "item": "Rainbow_Carrot",
+              "rate": 100
+            },
+            {
+              "item": "Lunatic_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "C5_CHONCHON",
+          "display_name": "Elusive Chonchon",
+          "level": 5,
+          "base_exp": 750,
+          "job_exp": 900,
+          "hp": 240,
+          "exp_per_hp": 3.125,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Iron",
+              "rate": 250
+            },
+            {
+              "item": "Shell",
+              "rate": 10000
+            },
+            {
+              "item": "Jellopy",
+              "rate": 10000
+            },
+            {
+              "item": "Cutter_",
+              "rate": 250
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Chonchon_Doll",
+              "rate": 30
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 1000
+            },
+            {
+              "item": "Chonchon_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "PUPA",
+          "display_name": "Pupa",
+          "level": 4,
+          "base_exp": 157,
+          "job_exp": 55,
+          "hp": 51,
+          "exp_per_hp": 3.0784,
+          "element": "Earth",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Phracon",
+              "rate": 600
+            },
+            {
+              "item": "Chrysalis",
+              "rate": 7000
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 700
+            },
+            {
+              "item": "Guard_",
+              "rate": 20
+            },
+            {
+              "item": "Shell",
+              "rate": 1000
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 500
+            },
+            {
+              "item": "Pupa_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "E_CONDOR",
+          "display_name": "Condor",
+          "level": 10,
+          "base_exp": 45,
+          "job_exp": 45,
+          "hp": 15,
+          "exp_per_hp": 3.0,
+          "element": "Holy",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Immortality_Egg",
+              "rate": 500
+            }
+          ]
+        },
+        {
+          "name": "PORING",
+          "display_name": "Poring",
+          "level": 1,
+          "base_exp": 150,
+          "job_exp": 40,
+          "hp": 55,
+          "exp_per_hp": 2.7273,
+          "element": "Water",
+          "race": "Plant",
+          "drops": [
+            {
+              "item": "Jellopy",
+              "rate": 7000
+            },
+            {
+              "item": "Knife_",
+              "rate": 100
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 400
+            },
+            {
+              "item": "Apple",
+              "rate": 1000
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Apple",
+              "rate": 150
+            },
+            {
+              "item": "Unripe_Apple",
+              "rate": 20
+            },
+            {
+              "item": "Poring_Card",
+              "rate": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "11-20",
+      "recommended_monsters": [
+        {
+          "name": "FIREPIT",
+          "display_name": "Fire Pit",
+          "level": 17,
+          "base_exp": 58,
+          "job_exp": 43,
+          "hp": 10,
+          "exp_per_hp": 5.8,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": []
+        },
+        {
+          "name": "SONIA",
+          "display_name": "Sonia",
+          "level": 17,
+          "base_exp": 58,
+          "job_exp": 43,
+          "hp": 20,
+          "exp_per_hp": 2.9,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": [
+            {
+              "item": "YummyStem",
+              "rate": 1000
+            }
+          ]
+        },
+        {
+          "name": "HORNET",
+          "display_name": "Hornet",
+          "level": 11,
+          "base_exp": 158,
+          "job_exp": 90,
+          "hp": 85,
+          "exp_per_hp": 1.8588,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Wind_Of_Verdure",
+              "rate": 80
+            },
+            {
+              "item": "Bee_Sting",
+              "rate": 8000
+            },
+            {
+              "item": "Jellopy",
+              "rate": 3000
+            },
+            {
+              "item": "Main_Gauche_",
+              "rate": 20
+            },
+            {
+              "item": "Green_Herb",
+              "rate": 500
+            },
+            {
+              "item": "Honey",
+              "rate": 100
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Hornet_Card",
+              "rate": 20
+            }
+          ]
+        },
+        {
+          "name": "C5_HORNET",
+          "display_name": "Elusive Hornet",
+          "level": 11,
+          "base_exp": 790,
+          "job_exp": 1350,
+          "hp": 425,
+          "exp_per_hp": 1.8588,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Wind_Of_Verdure",
+              "rate": 400
+            },
+            {
+              "item": "Bee_Sting",
+              "rate": 10000
+            },
+            {
+              "item": "Jellopy",
+              "rate": 10000
+            },
+            {
+              "item": "Main_Gauche_",
+              "rate": 100
+            },
+            {
+              "item": "Green_Herb",
+              "rate": 2500
+            },
+            {
+              "item": "Honey",
+              "rate": 500
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Hornet_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "CONDOR",
+          "display_name": "Condor",
+          "level": 12,
+          "base_exp": 160,
+          "job_exp": 95,
+          "hp": 105,
+          "exp_per_hp": 1.5238,
+          "element": "Wind",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Talon",
+              "rate": 8000
+            },
+            {
+              "item": "Bow_",
+              "rate": 100
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Arrow_Container",
+              "rate": 50
+            },
+            {
+              "item": "Meat",
+              "rate": 400
+            },
+            {
+              "item": "Feather_Of_Birds",
+              "rate": 3000
+            },
+            {
+              "item": "Orange",
+              "rate": 600
+            },
+            {
+              "item": "Condor_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "DESERT_WOLF_B",
+          "display_name": "Baby Desert Wolf",
+          "level": 14,
+          "base_exp": 164,
+          "job_exp": 105,
+          "hp": 113,
+          "exp_per_hp": 1.4513,
+          "element": "Fire",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Phracon",
+              "rate": 43
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 2750
+            },
+            {
+              "item": "Adventurere's_Suit_",
+              "rate": 40
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Cotton_Shirt",
+              "rate": 100
+            },
+            {
+              "item": "Asura_",
+              "rate": 3
+            },
+            {
+              "item": "Orange",
+              "rate": 500
+            },
+            {
+              "item": "Desert_Wolf_Babe_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C3_DESERT_WOLF_B",
+          "display_name": "Baby Desert Wolf Ringlea",
+          "level": 14,
+          "base_exp": 820,
+          "job_exp": 1575,
+          "hp": 565,
+          "exp_per_hp": 1.4513,
+          "element": "Fire",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Phracon",
+              "rate": 215
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 10000
+            },
+            {
+              "item": "Adventurere's_Suit_",
+              "rate": 200
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Cotton_Shirt",
+              "rate": 500
+            },
+            {
+              "item": "Asura_",
+              "rate": 15
+            },
+            {
+              "item": "Orange",
+              "rate": 2500
+            },
+            {
+              "item": "Desert_Wolf_Babe_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "C4_DESERT_WOLF_B",
+          "display_name": "Furious Baby Desert Wolf",
+          "level": 14,
+          "base_exp": 820,
+          "job_exp": 1575,
+          "hp": 565,
+          "exp_per_hp": 1.4513,
+          "element": "Fire",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Phracon",
+              "rate": 215
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 10000
+            },
+            {
+              "item": "Adventurere's_Suit_",
+              "rate": 200
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Cotton_Shirt",
+              "rate": 500
+            },
+            {
+              "item": "Asura_",
+              "rate": 15
+            },
+            {
+              "item": "Orange",
+              "rate": 2500
+            },
+            {
+              "item": "Desert_Wolf_Babe_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "SAVAGE_BABE",
+          "display_name": "Savage Babe",
+          "level": 14,
+          "base_exp": 172,
+          "job_exp": 105,
+          "hp": 127,
+          "exp_per_hp": 1.3543,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Animal's_Skin",
+              "rate": 4500
+            },
+            {
+              "item": "Axe_",
+              "rate": 50
+            },
+            {
+              "item": "Meat",
+              "rate": 250
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Feather",
+              "rate": 425
+            },
+            {
+              "item": "Phracon",
+              "rate": 40
+            },
+            {
+              "item": "Sweet_Milk",
+              "rate": 20
+            },
+            {
+              "item": "Savage_Babe_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C1_SAVAGE_BABE",
+          "display_name": "Swift Savage Babe",
+          "level": 14,
+          "base_exp": 860,
+          "job_exp": 1575,
+          "hp": 635,
+          "exp_per_hp": 1.3543,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Animal's_Skin",
+              "rate": 10000
+            },
+            {
+              "item": "Axe_",
+              "rate": 250
+            },
+            {
+              "item": "Meat",
+              "rate": 1250
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Feather",
+              "rate": 2125
+            },
+            {
+              "item": "Phracon",
+              "rate": 200
+            },
+            {
+              "item": "Sweet_Milk",
+              "rate": 100
+            },
+            {
+              "item": "Savage_Babe_Card",
+              "rate": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "21-35",
+      "recommended_monsters": [
+        {
+          "name": "KOBOLD_4",
+          "display_name": "Kobold",
+          "level": 31,
+          "base_exp": 4582500,
+          "job_exp": 4582500,
+          "hp": 10,
+          "exp_per_hp": 458250.0,
+          "element": "Poison",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Steel",
+              "rate": 25
+            },
+            {
+              "item": "Cobold_Hair",
+              "rate": 2668
+            },
+            {
+              "item": "Zargon",
+              "rate": 50
+            },
+            {
+              "item": "Hammer_",
+              "rate": 3
+            },
+            {
+              "item": "Buckler_",
+              "rate": 2
+            },
+            {
+              "item": "Yellow_Herb",
+              "rate": 50
+            },
+            {
+              "item": "Axe",
+              "rate": 75
+            }
+          ]
+        },
+        {
+          "name": "KOBOLD_5",
+          "display_name": "Kobold",
+          "level": 31,
+          "base_exp": 4582500,
+          "job_exp": 4582500,
+          "hp": 10,
+          "exp_per_hp": 458250.0,
+          "element": "Fire",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Steel",
+              "rate": 20
+            },
+            {
+              "item": "Cobold_Hair",
+              "rate": 2668
+            },
+            {
+              "item": "Zargon",
+              "rate": 50
+            },
+            {
+              "item": "Morning_Star_",
+              "rate": 3
+            },
+            {
+              "item": "Buckler_",
+              "rate": 2
+            },
+            {
+              "item": "Yellow_Herb",
+              "rate": 50
+            },
+            {
+              "item": "Club",
+              "rate": 75
+            }
+          ]
+        },
+        {
+          "name": "STAINER",
+          "display_name": "Stainer",
+          "level": 21,
+          "base_exp": 188,
+          "job_exp": 140,
+          "hp": 212,
+          "exp_per_hp": 0.8868,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Wind_Of_Verdure",
+              "rate": 35
+            },
+            {
+              "item": "Emveretarcon",
+              "rate": 15
+            },
+            {
+              "item": "Colorful_Shell",
+              "rate": 4500
+            },
+            {
+              "item": "Garlet",
+              "rate": 1050
+            },
+            {
+              "item": "Elunium_Stone",
+              "rate": 13
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 150
+            },
+            {
+              "item": "Stainer_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C5_STAINER",
+          "display_name": "Elusive Stainer",
+          "level": 21,
+          "base_exp": 940,
+          "job_exp": 2100,
+          "hp": 1060,
+          "exp_per_hp": 0.8868,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Wind_Of_Verdure",
+              "rate": 175
+            },
+            {
+              "item": "Emveretarcon",
+              "rate": 75
+            },
+            {
+              "item": "Colorful_Shell",
+              "rate": 10000
+            },
+            {
+              "item": "Garlet",
+              "rate": 5250
+            },
+            {
+              "item": "Elunium_Stone",
+              "rate": 65
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 750
+            },
+            {
+              "item": "Stainer_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "CREAMY",
+          "display_name": "Creamy",
+          "level": 23,
+          "base_exp": 196,
+          "job_exp": 148,
+          "hp": 247,
+          "exp_per_hp": 0.7935,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Powder_Of_Butterfly",
+              "rate": 8000
+            },
+            {
+              "item": "Silk_Robe_",
+              "rate": 20
+            },
+            {
+              "item": "Honey",
+              "rate": 200
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Fancy_Flower",
+              "rate": 20
+            },
+            {
+              "item": "Flower",
+              "rate": 500
+            },
+            {
+              "item": "Wind_Scroll_1_3",
+              "rate": 100
+            },
+            {
+              "item": "Creamy_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C1_CREAMY",
+          "display_name": "Swift Creamy",
+          "level": 23,
+          "base_exp": 980,
+          "job_exp": 2220,
+          "hp": 1235,
+          "exp_per_hp": 0.7935,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Powder_Of_Butterfly",
+              "rate": 10000
+            },
+            {
+              "item": "Silk_Robe_",
+              "rate": 100
+            },
+            {
+              "item": "Honey",
+              "rate": 1000
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Fancy_Flower",
+              "rate": 100
+            },
+            {
+              "item": "Flower",
+              "rate": 2500
+            },
+            {
+              "item": "Wind_Scroll_1_3",
+              "rate": 500
+            },
+            {
+              "item": "Creamy_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "THIEF_BUG",
+          "display_name": "Thief Bug",
+          "level": 21,
+          "base_exp": 188,
+          "job_exp": 140,
+          "hp": 238,
+          "exp_per_hp": 0.7899,
+          "element": "Neutral",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Worm_Peelings",
+              "rate": 3000
+            },
+            {
+              "item": "Leather_Jacket_",
+              "rate": 40
+            },
+            {
+              "item": "Red_Herb",
+              "rate": 175
+            },
+            {
+              "item": "Jellopy",
+              "rate": 1000
+            },
+            {
+              "item": "Leather_Jacket",
+              "rate": 60
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 125
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Thief_Bug_Card",
+              "rate": 20
+            }
+          ]
+        },
+        {
+          "name": "C3_THIEF_BUG",
+          "display_name": "Thief Bug Ringleader",
+          "level": 21,
+          "base_exp": 940,
+          "job_exp": 2100,
+          "hp": 1190,
+          "exp_per_hp": 0.7899,
+          "element": "Neutral",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Worm_Peelings",
+              "rate": 10000
+            },
+            {
+              "item": "Leather_Jacket_",
+              "rate": 200
+            },
+            {
+              "item": "Red_Herb",
+              "rate": 875
+            },
+            {
+              "item": "Jellopy",
+              "rate": 5000
+            },
+            {
+              "item": "Leather_Jacket",
+              "rate": 300
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 625
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Thief_Bug_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "C4_THIEF_BUG",
+          "display_name": "Furious Thief Bug",
+          "level": 21,
+          "base_exp": 940,
+          "job_exp": 2100,
+          "hp": 1190,
+          "exp_per_hp": 0.7899,
+          "element": "Neutral",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Worm_Peelings",
+              "rate": 10000
+            },
+            {
+              "item": "Leather_Jacket_",
+              "rate": 200
+            },
+            {
+              "item": "Red_Herb",
+              "rate": 875
+            },
+            {
+              "item": "Jellopy",
+              "rate": 5000
+            },
+            {
+              "item": "Leather_Jacket",
+              "rate": 300
+            },
+            {
+              "item": "Iron_Ore",
+              "rate": 625
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Thief_Bug_Card",
+              "rate": 100
+            }
+          ]
+        },
+        {
+          "name": "TAROU",
+          "display_name": "Tarou",
+          "level": 22,
+          "base_exp": 192,
+          "job_exp": 144,
+          "hp": 285,
+          "exp_per_hp": 0.6737,
+          "element": "Dark",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Rat_Tail",
+              "rate": 4500
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 1500
+            },
+            {
+              "item": "Feather",
+              "rate": 400
+            },
+            {
+              "item": "Monster's_Feed",
+              "rate": 500
+            },
+            {
+              "item": "Ora_Ora",
+              "rate": 1
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Tarou_Card",
+              "rate": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "36-50",
+      "recommended_monsters": [
+        {
+          "name": "YOYO",
+          "display_name": "Yoyo",
+          "level": 38,
+          "base_exp": 300,
+          "job_exp": 237,
+          "hp": 694,
+          "exp_per_hp": 0.4323,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Yoyo_Tail",
+              "rate": 4500
+            },
+            {
+              "item": "Banana",
+              "rate": 750
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Cacao",
+              "rate": 450
+            },
+            {
+              "item": "Monkey_Doll",
+              "rate": 5
+            },
+            {
+              "item": "Oridecon_Stone",
+              "rate": 12
+            },
+            {
+              "item": "Strawberry",
+              "rate": 500
+            },
+            {
+              "item": "Yoyo_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "COCO",
+          "display_name": "Coco",
+          "level": 38,
+          "base_exp": 300,
+          "job_exp": 237,
+          "hp": 694,
+          "exp_per_hp": 0.4323,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Acorn",
+              "rate": 4500
+            },
+            {
+              "item": "Hood_",
+              "rate": 10
+            },
+            {
+              "item": "Fluff",
+              "rate": 1500
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 1250
+            },
+            {
+              "item": "Sweet_Potato",
+              "rate": 250
+            },
+            {
+              "item": "Sandals_",
+              "rate": 13
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Coco_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C1_YOYO",
+          "display_name": "Swift Yoyo",
+          "level": 38,
+          "base_exp": 1500,
+          "job_exp": 3555,
+          "hp": 3470,
+          "exp_per_hp": 0.4323,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Yoyo_Tail",
+              "rate": 10000
+            },
+            {
+              "item": "Banana",
+              "rate": 3750
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Cacao",
+              "rate": 2250
+            },
+            {
+              "item": "Monkey_Doll",
+              "rate": 25
+            },
+            {
+              "item": "Oridecon_Stone",
+              "rate": 60
+            },
+            {
+              "item": "Strawberry",
+              "rate": 2500
+            },
+            {
+              "item": "Yoyo_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "C1_COCO",
+          "display_name": "Swift Coco",
+          "level": 38,
+          "base_exp": 1500,
+          "job_exp": 3555,
+          "hp": 3470,
+          "exp_per_hp": 0.4323,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Acorn",
+              "rate": 10000
+            },
+            {
+              "item": "Hood_",
+              "rate": 50
+            },
+            {
+              "item": "Fluff",
+              "rate": 7500
+            },
+            {
+              "item": "Animal's_Skin",
+              "rate": 6250
+            },
+            {
+              "item": "Sweet_Potato",
+              "rate": 1250
+            },
+            {
+              "item": "Sandals_",
+              "rate": 65
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 2500
+            },
+            {
+              "item": "Coco_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "COOKIE_XMAS",
+          "display_name": "Christmas Cookie",
+          "level": 37,
+          "base_exp": 279,
+          "job_exp": 230,
+          "hp": 661,
+          "exp_per_hp": 0.4221,
+          "element": "Holy",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Well_Baked_Cookie",
+              "rate": 2000
+            },
+            {
+              "item": "Scarlet_Jewel",
+              "rate": 23
+            },
+            {
+              "item": "Zargon",
+              "rate": 100
+            },
+            {
+              "item": "Hood_",
+              "rate": 13
+            },
+            {
+              "item": "Gift_Box",
+              "rate": 3
+            },
+            {
+              "item": "Cold_Scroll_1_3",
+              "rate": 50
+            },
+            {
+              "item": "Red_Herb",
+              "rate": 850
+            },
+            {
+              "item": "Cookie_XMAS_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "WHISPER",
+          "display_name": "Whisper",
+          "level": 46,
+          "base_exp": 325,
+          "job_exp": 328,
+          "hp": 796,
+          "exp_per_hp": 0.4083,
+          "element": "Ghost",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Sparkling_Dust",
+              "rate": 75
+            },
+            {
+              "item": "Transparent_Cloth",
+              "rate": 2668
+            },
+            {
+              "item": "Spirit_Chain",
+              "rate": 1
+            },
+            {
+              "item": "Silver_Robe_",
+              "rate": 5
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Whisper_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "MARTIN",
+          "display_name": "Martin",
+          "level": 39,
+          "base_exp": 307,
+          "job_exp": 244,
+          "hp": 769,
+          "exp_per_hp": 0.3992,
+          "element": "Earth",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Moustache_Of_Mole",
+              "rate": 4500
+            },
+            {
+              "item": "Nail_Of_Mole",
+              "rate": 2500
+            },
+            {
+              "item": "Jur_",
+              "rate": 5
+            },
+            {
+              "item": "Goggle_",
+              "rate": 3
+            },
+            {
+              "item": "Safety_Helmet",
+              "rate": 1
+            },
+            {
+              "item": "Battered_Pot",
+              "rate": 5
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Martin_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "GIEARTH",
+          "display_name": "Giearth",
+          "level": 42,
+          "base_exp": 344,
+          "job_exp": 277,
+          "hp": 866,
+          "exp_per_hp": 0.3972,
+          "element": "Earth",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Great_Nature",
+              "rate": 15
+            },
+            {
+              "item": "Coal",
+              "rate": 75
+            },
+            {
+              "item": "Elder_Pixie's_Beard",
+              "rate": 2750
+            },
+            {
+              "item": "Elven_Ears",
+              "rate": 1
+            },
+            {
+              "item": "Cap_",
+              "rate": 5
+            },
+            {
+              "item": "Sparkling_Dust",
+              "rate": 50
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Giearth_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "ORC_BABY",
+          "display_name": "Orc Baby",
+          "level": 43,
+          "base_exp": 352,
+          "job_exp": 285,
+          "hp": 904,
+          "exp_per_hp": 0.3894,
+          "element": "Earth",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Large_Jellopy",
+              "rate": 500
+            },
+            {
+              "item": "Pacifier",
+              "rate": 50
+            },
+            {
+              "item": "Viking_Helm",
+              "rate": 1
+            },
+            {
+              "item": "Milk",
+              "rate": 2500
+            },
+            {
+              "item": "Milk_Bottle",
+              "rate": 100
+            },
+            {
+              "item": "Bib",
+              "rate": 50
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Orc_Baby_Card_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "STEEL_CHONCHON",
+          "display_name": "Steel Chonchon",
+          "level": 48,
+          "base_exp": 379,
+          "job_exp": 328,
+          "hp": 985,
+          "exp_per_hp": 0.3848,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Wind_Of_Verdure",
+              "rate": 45
+            },
+            {
+              "item": "Steel",
+              "rate": 15
+            },
+            {
+              "item": "Garlet",
+              "rate": 1200
+            },
+            {
+              "item": "Shell",
+              "rate": 4500
+            },
+            {
+              "item": "Solid_Shell",
+              "rate": 15
+            },
+            {
+              "item": "Iron",
+              "rate": 100
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Steel_Chonchon_Card",
+              "rate": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "51-70",
+      "recommended_monsters": [
+        {
+          "name": "MD_SKELETON_60",
+          "display_name": "Skeleton",
+          "level": 60,
+          "base_exp": 1380,
+          "job_exp": 1370,
+          "hp": 2120,
+          "exp_per_hp": 0.6509,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": [
+            {
+              "item": "Oridecon",
+              "rate": 9
+            },
+            {
+              "item": "Skel_Bone",
+              "rate": 1600
+            },
+            {
+              "item": "Sword_Mace_",
+              "rate": 8
+            },
+            {
+              "item": "Brigan",
+              "rate": 3000
+            },
+            {
+              "item": "Red_Slim_Potion",
+              "rate": 1000
+            },
+            {
+              "item": "Skul_Ring",
+              "rate": 30
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Skeleton_Card",
+              "rate": 10
+            }
+          ]
+        },
+        {
+          "name": "MD_FARMILIAR_60",
+          "display_name": "Familiar",
+          "level": 60,
+          "base_exp": 1240,
+          "job_exp": 1180,
+          "hp": 2050,
+          "exp_per_hp": 0.6049,
+          "element": "Dark",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Tooth_Of_Bat",
+              "rate": 2750
+            },
+            {
+              "item": "Saber_",
+              "rate": 10
+            },
+            {
+              "item": "Sweet_Gents",
+              "rate": 8
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Grape_Juice",
+              "rate": 50
+            },
+            {
+              "item": "Red_Slim_Potion",
+              "rate": 350
+            },
+            {
+              "item": "Center_Potion",
+              "rate": 25
+            },
+            {
+              "item": "Farmiliar_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "MD_ZOMBIE_60",
+          "display_name": "Zombie",
+          "level": 60,
+          "base_exp": 1410,
+          "job_exp": 1240,
+          "hp": 2580,
+          "exp_per_hp": 0.5465,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": [
+            {
+              "item": "Decayed_Nail",
+              "rate": 9000
+            },
+            {
+              "item": "Cardinal_Jewel_",
+              "rate": 6
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 1000
+            },
+            {
+              "item": "Horrendous_Mouth",
+              "rate": 500
+            },
+            {
+              "item": "White_Jewel",
+              "rate": 70
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Holy_Bonnet_",
+              "rate": 2
+            },
+            {
+              "item": "Zombie_Card",
+              "rate": 10
+            }
+          ]
+        },
+        {
+          "name": "GOLDEN_BUG",
+          "display_name": "Golden Thief Bug",
+          "level": 65,
+          "base_exp": 102060,
+          "job_exp": 77760,
+          "hp": 222750,
+          "exp_per_hp": 0.4582,
+          "element": "Fire",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Gold",
+              "rate": 500
+            },
+            {
+              "item": "Golden_Mace",
+              "rate": 75
+            },
+            {
+              "item": "Golden_Gear",
+              "rate": 125
+            },
+            {
+              "item": "Golden_Bell",
+              "rate": 250
+            },
+            {
+              "item": "Emperium",
+              "rate": 150
+            },
+            {
+              "item": "Elunium",
+              "rate": 1000
+            },
+            {
+              "item": "Shadowdecon",
+              "rate": 50
+            },
+            {
+              "item": "Golden_Bug_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "HORONG",
+          "display_name": "Horong",
+          "level": 66,
+          "base_exp": 625,
+          "job_exp": 569,
+          "hp": 1701,
+          "exp_per_hp": 0.3674,
+          "element": "Fire",
+          "race": "Formless",
+          "drops": [
+            {
+              "item": "Stone_Heart",
+              "rate": 3250
+            },
+            {
+              "item": "Zargon",
+              "rate": 250
+            },
+            {
+              "item": "Bomb_Wick",
+              "rate": 3
+            },
+            {
+              "item": "Fire_Arrow_Container",
+              "rate": 50
+            },
+            {
+              "item": "Elunium_Stone",
+              "rate": 59
+            },
+            {
+              "item": "Baked_Yam",
+              "rate": 10
+            },
+            {
+              "item": "Alchol",
+              "rate": 25
+            },
+            {
+              "item": "Horong_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "GREATEST_GENERAL",
+          "display_name": "Greatest General",
+          "level": 55,
+          "base_exp": 466,
+          "job_exp": 413,
+          "hp": 1405,
+          "exp_per_hp": 0.3317,
+          "element": "Fire",
+          "race": "Formless",
+          "drops": [
+            {
+              "item": "Brigan",
+              "rate": 1000
+            },
+            {
+              "item": "Wooden_Block",
+              "rate": 1000
+            },
+            {
+              "item": "Club",
+              "rate": 50
+            },
+            {
+              "item": "Inspector_Certificate",
+              "rate": 150
+            },
+            {
+              "item": "Stop_Post",
+              "rate": 1
+            },
+            {
+              "item": "Yellow_Herb",
+              "rate": 125
+            },
+            {
+              "item": "Earth_Scroll_1_3",
+              "rate": 50
+            },
+            {
+              "item": "Greatest_General_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C1_GREATEST_GENERAL",
+          "display_name": "Swift Greatest General",
+          "level": 55,
+          "base_exp": 2330,
+          "job_exp": 6195,
+          "hp": 7025,
+          "exp_per_hp": 0.3317,
+          "element": "Fire",
+          "race": "Formless",
+          "drops": [
+            {
+              "item": "Brigan",
+              "rate": 5000
+            },
+            {
+              "item": "Wooden_Block",
+              "rate": 5000
+            },
+            {
+              "item": "Club",
+              "rate": 250
+            },
+            {
+              "item": "Inspector_Certificate",
+              "rate": 750
+            },
+            {
+              "item": "Stop_Post",
+              "rate": 5
+            },
+            {
+              "item": "Yellow_Herb",
+              "rate": 625
+            },
+            {
+              "item": "Earth_Scroll_1_3",
+              "rate": 250
+            },
+            {
+              "item": "Greatest_General_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "KIND_OF_BEETLE",
+          "display_name": "Beetle King",
+          "level": 55,
+          "base_exp": 489,
+          "job_exp": 413,
+          "hp": 1487,
+          "exp_per_hp": 0.3289,
+          "element": "Earth",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Solid_Peeling",
+              "rate": 3250
+            },
+            {
+              "item": "Beetle_Nipper",
+              "rate": 2250
+            },
+            {
+              "item": "Insect_Feeler",
+              "rate": 500
+            },
+            {
+              "item": "Worm_Peelings",
+              "rate": 250
+            },
+            {
+              "item": "Guard_",
+              "rate": 1
+            },
+            {
+              "item": "Kind_Of_Beetle_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "C4_KIND_OF_BEETLE",
+          "display_name": "Furious Beetle King",
+          "level": 55,
+          "base_exp": 2445,
+          "job_exp": 6195,
+          "hp": 7435,
+          "exp_per_hp": 0.3289,
+          "element": "Earth",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Solid_Peeling",
+              "rate": 10000
+            },
+            {
+              "item": "Beetle_Nipper",
+              "rate": 10000
+            },
+            {
+              "item": "Insect_Feeler",
+              "rate": 2500
+            },
+            {
+              "item": "Worm_Peelings",
+              "rate": 1250
+            },
+            {
+              "item": "Guard_",
+              "rate": 5
+            },
+            {
+              "item": "Kind_Of_Beetle_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "BABY_LEOPARD",
+          "display_name": "Baby Leopard",
+          "level": 68,
+          "base_exp": 586,
+          "job_exp": 627,
+          "hp": 1793,
+          "exp_per_hp": 0.3268,
+          "element": "Ghost",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Leopard_Skin",
+              "rate": 2600
+            },
+            {
+              "item": "Leopard_Talon",
+              "rate": 1600
+            },
+            {
+              "item": "Oridecon_Stone",
+              "rate": 75
+            },
+            {
+              "item": "Meat",
+              "rate": 1000
+            },
+            {
+              "item": "Dagger_",
+              "rate": 50
+            },
+            {
+              "item": "Baby_Leopard_Card",
+              "rate": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "71-90",
+      "recommended_monsters": [
+        {
+          "name": "MD_SKELETON_80",
+          "display_name": "Skeleton",
+          "level": 80,
+          "base_exp": 2500,
+          "job_exp": 2200,
+          "hp": 4070,
+          "exp_per_hp": 0.6143,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": [
+            {
+              "item": "Oridecon",
+              "rate": 36
+            },
+            {
+              "item": "Skel_Bone",
+              "rate": 1600
+            },
+            {
+              "item": "Sword_Mace_",
+              "rate": 32
+            },
+            {
+              "item": "Brigan",
+              "rate": 3000
+            },
+            {
+              "item": "Red_Slim_Potion",
+              "rate": 1000
+            },
+            {
+              "item": "Skul_Ring",
+              "rate": 30
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Skeleton_Card",
+              "rate": 10
+            }
+          ]
+        },
+        {
+          "name": "MD_FARMILIAR_80",
+          "display_name": "Familiar",
+          "level": 80,
+          "base_exp": 2380,
+          "job_exp": 2060,
+          "hp": 3990,
+          "exp_per_hp": 0.5965,
+          "element": "Dark",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Tooth_Of_Bat",
+              "rate": 2750
+            },
+            {
+              "item": "Saber_",
+              "rate": 40
+            },
+            {
+              "item": "Sweet_Gents",
+              "rate": 8
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Grape_Juice",
+              "rate": 100
+            },
+            {
+              "item": "Red_Slim_Potion",
+              "rate": 350
+            },
+            {
+              "item": "Center_Potion",
+              "rate": 25
+            },
+            {
+              "item": "Farmiliar_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "MOONLIGHT",
+          "display_name": "Moonlight Flower",
+          "level": 79,
+          "base_exp": 183744,
+          "job_exp": 135720,
+          "hp": 324000,
+          "exp_per_hp": 0.5671,
+          "element": "Fire",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Spectral_Spear",
+              "rate": 250
+            },
+            {
+              "item": "Moonlight_Sword",
+              "rate": 50
+            },
+            {
+              "item": "Long_Mace",
+              "rate": 75
+            },
+            {
+              "item": "Punisher",
+              "rate": 250
+            },
+            {
+              "item": "Silver_Knife_Of_Chaste",
+              "rate": 325
+            },
+            {
+              "item": "Shadowdecon",
+              "rate": 50
+            },
+            {
+              "item": "Staff_Of_Bordeaux",
+              "rate": 50
+            },
+            {
+              "item": "Moonlight_Flower_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "MD_ZOMBIE_80",
+          "display_name": "Zombie",
+          "level": 80,
+          "base_exp": 2570,
+          "job_exp": 2010,
+          "hp": 4990,
+          "exp_per_hp": 0.515,
+          "element": "Undead",
+          "race": "Undead",
+          "drops": [
+            {
+              "item": "Decayed_Nail",
+              "rate": 9000
+            },
+            {
+              "item": "Cardinal_Jewel_",
+              "rate": 24
+            },
+            {
+              "item": "Sticky_Mucus",
+              "rate": 1000
+            },
+            {
+              "item": "Horrendous_Mouth",
+              "rate": 1000
+            },
+            {
+              "item": "White_Jewel",
+              "rate": 140
+            },
+            {
+              "item": "Wing_Of_Fly",
+              "rate": 500
+            },
+            {
+              "item": "Holy_Bonnet_",
+              "rate": 4
+            },
+            {
+              "item": "Zombie_Card",
+              "rate": 10
+            }
+          ]
+        },
+        {
+          "name": "LADY_TANEE",
+          "display_name": "Lady Tanee",
+          "level": 80,
+          "base_exp": 183744,
+          "job_exp": 130500,
+          "hp": 360000,
+          "exp_per_hp": 0.5104,
+          "element": "Wind",
+          "race": "Plant",
+          "drops": [
+            {
+              "item": "Agi_Dish10",
+              "rate": 2500
+            },
+            {
+              "item": "Tropical_Banana",
+              "rate": 2000
+            },
+            {
+              "item": "Fantastic_Cooking_Kits",
+              "rate": 500
+            },
+            {
+              "item": "Banana_Hat",
+              "rate": 500
+            },
+            {
+              "item": "Shadowdecon",
+              "rate": 50
+            },
+            {
+              "item": "Old_Violet_Box",
+              "rate": 1000
+            },
+            {
+              "item": "Kakkung_",
+              "rate": 3000
+            },
+            {
+              "item": "Lady_Tanee_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "EVENT_MOON",
+          "display_name": "Moonlight Flower",
+          "level": 80,
+          "base_exp": 14850,
+          "job_exp": 13500,
+          "hp": 30000,
+          "exp_per_hp": 0.495,
+          "element": "Fire",
+          "race": "Brute",
+          "drops": []
+        },
+        {
+          "name": "DRACULA",
+          "display_name": "Dracula",
+          "level": 75,
+          "base_exp": 171864,
+          "job_exp": 122760,
+          "hp": 350000,
+          "exp_per_hp": 0.491,
+          "element": "Dark",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Yggdrasilberry",
+              "rate": 10000
+            },
+            {
+              "item": "Wizardy_Staff",
+              "rate": 15
+            },
+            {
+              "item": "Balistar",
+              "rate": 15
+            },
+            {
+              "item": "Cape_Of_Ancient_Lord",
+              "rate": 40
+            },
+            {
+              "item": "Ring_",
+              "rate": 10
+            },
+            {
+              "item": "Book_Of_The_Apocalypse",
+              "rate": 10
+            },
+            {
+              "item": "Zelunium",
+              "rate": 50
+            },
+            {
+              "item": "Dracula_Card",
+              "rate": 5
+            }
+          ]
+        },
+        {
+          "name": "MISTRESS",
+          "display_name": "Mistress",
+          "level": 78,
+          "base_exp": 184140,
+          "job_exp": 150660,
+          "hp": 378000,
+          "exp_per_hp": 0.4871,
+          "element": "Wind",
+          "race": "Insect",
+          "drops": [
+            {
+              "item": "Gungnir",
+              "rate": 75
+            },
+            {
+              "item": "Honey",
+              "rate": 5000
+            },
+            {
+              "item": "Coronet",
+              "rate": 125
+            },
+            {
+              "item": "Old_Card_Album",
+              "rate": 500
+            },
+            {
+              "item": "Young_Twig",
+              "rate": 5
+            },
+            {
+              "item": "Zelunium",
+              "rate": 50
+            },
+            {
+              "item": "Red_Square_Bag",
+              "rate": 50
+            },
+            {
+              "item": "Mistress_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "DOPPELGANGER",
+          "display_name": "Doppelganger",
+          "level": 77,
+          "base_exp": 172260,
+          "job_exp": 125280,
+          "hp": 380000,
+          "exp_per_hp": 0.4533,
+          "element": "Dark",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Plate_Armor_",
+              "rate": 125
+            },
+            {
+              "item": "Broad_Sword_",
+              "rate": 110
+            },
+            {
+              "item": "Zweihander",
+              "rate": 75
+            },
+            {
+              "item": "Sharp_Gear",
+              "rate": 175
+            },
+            {
+              "item": "Lance_",
+              "rate": 275
+            },
+            {
+              "item": "Elunium",
+              "rate": 1843
+            },
+            {
+              "item": "Shadowdecon",
+              "rate": 50
+            },
+            {
+              "item": "Doppelganger_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "MD_OCTOPUS",
+          "display_name": "Octopus",
+          "level": 90,
+          "base_exp": 2000,
+          "job_exp": 1000,
+          "hp": 6000,
+          "exp_per_hp": 0.3333,
+          "element": "Water",
+          "race": "Fish",
+          "drops": [
+            {
+              "item": "Chinese_Ink",
+              "rate": 2500
+            },
+            {
+              "item": "Tentacle",
+              "rate": 2500
+            },
+            {
+              "item": "Mini_Octopus_Card",
+              "rate": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "level_range": "91+",
+      "recommended_monsters": [
+        {
+          "name": "BANGUNGOT_3",
+          "display_name": "Bangungot",
+          "level": 115,
+          "base_exp": 781541,
+          "job_exp": 837321,
+          "hp": 250,
+          "exp_per_hp": 3126.164,
+          "element": "Dark",
+          "race": "Demon",
+          "drops": [
+            {
+              "item": "Bangungot_Doll",
+              "rate": 2000
+            },
+            {
+              "item": "Bangungot_Spirit_Piece",
+              "rate": 2000
+            },
+            {
+              "item": "Ancient_Grudge",
+              "rate": 2000
+            },
+            {
+              "item": "Bangungot_Boots",
+              "rate": 1000
+            },
+            {
+              "item": "Kalasak",
+              "rate": 100
+            },
+            {
+              "item": "Ancient_Grudge",
+              "rate": 10000
+            },
+            {
+              "item": "Bangungot_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "B_MAGALETA_",
+          "display_name": "High Priest Margaretha",
+          "level": 99,
+          "base_exp": 2298780,
+          "job_exp": 593460,
+          "hp": 1092910,
+          "exp_per_hp": 2.1034,
+          "element": "Holy",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "SCR_MT_ROBOTS",
+          "display_name": "Can Robot",
+          "level": 155,
+          "base_exp": 61,
+          "job_exp": 58,
+          "hp": 30,
+          "exp_per_hp": 2.0333,
+          "element": "Neutral",
+          "race": "Formless",
+          "drops": [
+            {
+              "item": "Burnt_Parts",
+              "rate": 1000
+            },
+            {
+              "item": "Sturdy_Iron_Piece",
+              "rate": 1500
+            },
+            {
+              "item": "Old_Steel_Plate",
+              "rate": 2000
+            },
+            {
+              "item": "LargeScrap",
+              "rate": 50
+            },
+            {
+              "item": "OldTank",
+              "rate": 50
+            },
+            {
+              "item": "Shadowdecon_Ore",
+              "rate": 50
+            },
+            {
+              "item": "Zelunium_Ore",
+              "rate": 50
+            },
+            {
+              "item": "Scr_MT_Robots_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "B_KATRINN_",
+          "display_name": "High Wizard Kathryne",
+          "level": 99,
+          "base_exp": 2164428,
+          "job_exp": 736515,
+          "hp": 1069920,
+          "exp_per_hp": 2.023,
+          "element": "Ghost",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "EP17_1_R4885_BESTIA",
+          "display_name": "R48-85-Bestia",
+          "level": 174,
+          "base_exp": 9770000,
+          "job_exp": 6513333,
+          "hp": 4885000,
+          "exp_per_hp": 2.0,
+          "element": "Neutral",
+          "race": "Brute",
+          "drops": [
+            {
+              "item": "Piece_Of_Bone_Armor",
+              "rate": 3950
+            },
+            {
+              "item": "Yggdrasilberry",
+              "rate": 3500
+            },
+            {
+              "item": "Old_Violet_Box",
+              "rate": 3500
+            },
+            {
+              "item": "EP17_1_EVT02",
+              "rate": 4950
+            },
+            {
+              "item": "Zelunium",
+              "rate": 50
+            },
+            {
+              "item": "R48_85_Bestia_Card",
+              "rate": 1
+            }
+          ]
+        },
+        {
+          "name": "B_SHECIL_",
+          "display_name": "Sniper Cecil",
+          "level": 99,
+          "base_exp": 2210220,
+          "job_exp": 686700,
+          "hp": 1349000,
+          "exp_per_hp": 1.6384,
+          "element": "Wind",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "B_SEYREN_",
+          "display_name": "Lord Knight Seyren",
+          "level": 99,
+          "base_exp": 2611224,
+          "job_exp": 706486,
+          "hp": 1647590,
+          "exp_per_hp": 1.5849,
+          "element": "Fire",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "B_EREMES_",
+          "display_name": "Assassin Cross Eremes",
+          "level": 99,
+          "base_exp": 2205036,
+          "job_exp": 716571,
+          "hp": 1411230,
+          "exp_per_hp": 1.5625,
+          "element": "Poison",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "B_HARWORD_",
+          "display_name": "Mastersmith Howard",
+          "level": 99,
+          "base_exp": 2161263,
+          "job_exp": 639450,
+          "hp": 1460000,
+          "exp_per_hp": 1.4803,
+          "element": "Earth",
+          "race": "Demihuman",
+          "drops": [
+            {
+              "item": "Evil_Mind",
+              "rate": 5000
+            }
+          ]
+        },
+        {
+          "name": "EVENT_HYDRO",
+          "display_name": "Hydrolancer",
+          "level": 99,
+          "base_exp": 2160000,
+          "job_exp": 900000,
+          "hp": 1880000,
+          "exp_per_hp": 1.1489,
+          "element": "Ghost",
+          "race": "Angel",
+          "drops": [
+            {
+              "item": "Evil_Dragon_Head",
+              "rate": 5000
+            },
+            {
+              "item": "Dragon_Killer",
+              "rate": 250
+            },
+            {
+              "item": "Gemmed_Crown",
+              "rate": 250
+            },
+            {
+              "item": "Pole_Axe",
+              "rate": 250
+            },
+            {
+              "item": "Int_Dish10",
+              "rate": 750
+            },
+            {
+              "item": "Treasure_Box",
+              "rate": 2750
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "level_penalty": [
+    {
+      "Type": "Exp",
+      "LevelDifferences": [
+        {
+          "Difference": 16,
+          "Rate": 40
+        },
+        {
+          "Difference": 15,
+          "Rate": 115
+        },
+        {
+          "Difference": 14,
+          "Rate": 120
+        },
+        {
+          "Difference": 13,
+          "Rate": 125
+        },
+        {
+          "Difference": 12,
+          "Rate": 130
+        },
+        {
+          "Difference": 11,
+          "Rate": 135
+        },
+        {
+          "Difference": 10,
+          "Rate": 140
+        },
+        {
+          "Difference": 9,
+          "Rate": 135
+        },
+        {
+          "Difference": 8,
+          "Rate": 130
+        },
+        {
+          "Difference": 7,
+          "Rate": 125
+        },
+        {
+          "Difference": 6,
+          "Rate": 120
+        },
+        {
+          "Difference": 5,
+          "Rate": 115
+        },
+        {
+          "Difference": 4,
+          "Rate": 110
+        },
+        {
+          "Difference": 3,
+          "Rate": 105
+        },
+        {
+          "Difference": -6,
+          "Rate": 95
+        },
+        {
+          "Difference": -11,
+          "Rate": 90
+        },
+        {
+          "Difference": -16,
+          "Rate": 85
+        },
+        {
+          "Difference": -21,
+          "Rate": 60
+        },
+        {
+          "Difference": -26,
+          "Rate": 35
+        },
+        {
+          "Difference": -31,
+          "Rate": 10
+        }
+      ]
+    },
+    {
+      "Type": "Drop",
+      "LevelDifferences": [
+        {
+          "Difference": 16,
+          "Rate": 50
+        },
+        {
+          "Difference": 13,
+          "Rate": 60
+        },
+        {
+          "Difference": 10,
+          "Rate": 70
+        },
+        {
+          "Difference": 7,
+          "Rate": 80
+        },
+        {
+          "Difference": 4,
+          "Rate": 90
+        },
+        {
+          "Difference": -4,
+          "Rate": 90
+        },
+        {
+          "Difference": -7,
+          "Rate": 80
+        },
+        {
+          "Difference": -10,
+          "Rate": 70
+        },
+        {
+          "Difference": -13,
+          "Rate": 60
+        },
+        {
+          "Difference": -16,
+          "Rate": 50
+        }
+      ]
+    }
+  ]
+}
