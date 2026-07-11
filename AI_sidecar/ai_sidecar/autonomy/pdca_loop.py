@@ -1075,7 +1075,7 @@ class PDCALoop:
                     try:
                         _p2p = P2PKnowledgeNode(
                             bot_id=_cycle_bot_id,
-                            listen_port=18090 + hash(_cycle_bot_id) % 100,
+                            listen_port=18090 + abs(hash(_cycle_bot_id)) % 1000,
                             server_id=_cycle_bot_id.split(":")[0] if ":" in _cycle_bot_id else "default",
                         )
                         # Wire to experience DB
@@ -1278,6 +1278,28 @@ class PDCALoop:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
                             _cmd = _extract_command_from_goal(_goal, _obj)
+                            
+                            # Query goal decomposer for next sub-goal
+                            _gd = getattr(self._runtime, "goal_decomposer", None)
+                            if _gd is not None:
+                                try:
+                                    # Decompose the selected goal into sub-goals
+                                    from ai_sidecar.contracts.autonomy import GoalDirective
+                                    _directive = GoalDirective(
+                                        goal_key=goal_state.selected_goal.goal_key,
+                                        objective=goal_state.selected_goal.objective,
+                                    )
+                                    _gd.decompose(bot_id=_bot, selected=_directive)
+                                    # Get next actionable sub-goal
+                                    _next = _gd.next_action(bot_id=_bot)
+                                    if _next is not None:
+                                        _cmd = _next.metadata.get("action", _cmd)
+                                        _obj = _next.objective
+                                        logger.info("pdca_goal_decomposed: bot=%s sub_goal=%s action=%s",
+                                                   _bot, _next.id, _cmd)
+                                except Exception:
+                                    logger.exception("pdca_goal_decomposition_failed")
+                            
                             # Query ExperienceDatabase for best action
                             try:
                                 if hasattr(self._runtime, "experience_db") and self._runtime.experience_db is not None:
