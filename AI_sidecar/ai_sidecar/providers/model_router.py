@@ -39,6 +39,10 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
         "providers": [],
         "models": {},
     },
+    "autonomy_mission_decision": {
+        "providers": ["openai", "ollama"],
+        "models": {"openai": "deepseek-v4-flash", "ollama": "/home/lot399/models/Qwen3.6-27B-UD-Q4_K_XL.gguf"},
+    },
     "tactical_short_reasoning": {
         "providers": ["openai", "ollama"],
         "models": {"openai": "deepseek-v4-flash", "ollama": "/home/lot399/models/Qwen3.6-27B-UD-Q4_K_XL.gguf"},
