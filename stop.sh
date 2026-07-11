@@ -36,41 +36,53 @@ for arg in "$@"; do
     esac
 done
 
+# Patterns to kill — covers all openkore, sidecar, and related processes
+KILL_PATTERNS=(
+    "openkore\.pl"
+    "ai_sidecar\.app"
+    "llama-grammar-proxy"
+    "python3.*ai_sidecar"
+    "perl.*openkore"
+)
+
+_kill_all() {
+    local sig="$1"
+    local label="$2"
+    local killed=0
+    for pattern in "${KILL_PATTERNS[@]}"; do
+        local pids
+        pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            for pid in $pids; do
+                if kill "$sig" "$pid" 2>/dev/null; then
+                    killed=$((killed + 1))
+                    $VERBOSE && info "Killed $label PID $pid ($pattern)"
+                fi
+            done
+        fi
+    done
+    echo "$killed"
+}
+
 _kill_pidfile() {
+    local sig="$1"
     local killed=0
     if [ -f "$PID_FILE" ]; then
         while IFS= read -r pid; do
             [ -z "$pid" ] && continue
-            if kill $SIGNAL "$pid" 2>/dev/null; then
+            if kill "$sig" "$pid" 2>/dev/null; then
                 killed=$((killed + 1))
                 $VERBOSE && info "Killed PID $pid (from pidfile)"
             fi
         done < "$PID_FILE"
         rm -f "$PID_FILE"
     fi
-    return $killed
-}
-
-_kill_pgrep() {
-    local pattern="$1"
-    local label="$2"
-    local killed=0
-    local pids
-    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        for pid in $pids; do
-            if kill $SIGNAL "$pid" 2>/dev/null; then
-                killed=$((killed + 1))
-                $VERBOSE && info "Killed $label PID $pid"
-            fi
-        done
-    fi
-    return $killed
+    echo "$killed"
 }
 
 _verify_dead() {
     local remaining
-    remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|llama-grammar-proxy" 2>/dev/null || true)
+    remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|llama-grammar-proxy|python3.*ai_sidecar|perl.*openkore" 2>/dev/null || true)
     if [ -n "$remaining" ]; then
         warn "Stubborn processes still alive: $(echo "$remaining" | tr '\n' ' ')"
         return 1
@@ -84,31 +96,29 @@ total=0
 
 # Phase 1: Kill from pidfile (graceful first unless -9)
 if [ -z "$SIGNAL" ]; then
-    _kill_pidfile && total=$((total + $?))
+    count=$(_kill_pidfile "-15")
+    total=$((total + count))
 fi
 
-# Phase 2: Kill by process name
+# Phase 2: Graceful SIGTERM to all matching processes
 if [ -z "$SIGNAL" ]; then
-    # Graceful first
-    _kill_pgrep "openkore\.pl" "openkore" && total=$((total + $?))
-    _kill_pgrep "ai_sidecar\.app" "sidecar" && total=$((total + $?))
-    _kill_pgrep "llama-grammar-proxy" "grammar-proxy" && total=$((total + $?))
-    sleep 1
+    count=$(_kill_all "-15" "graceful")
+    total=$((total + count))
+    sleep 2
 fi
 
-# Phase 3: Force kill anything remaining
-_kill_pgrep "openkore\.pl" "openkore" && total=$((total + $?))
-_kill_pgrep "ai_sidecar\.app" "sidecar" && total=$((total + $?))
-_kill_pgrep "llama-grammar-proxy" "grammar-proxy" && total=$((total + $?))
+# Phase 3: Force SIGKILL to anything still alive
+count=$(_kill_all "-9" "force")
+total=$((total + count))
 sleep 1
 
-# Phase 4: Nuclear option — SIGKILL any stragglers
-remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|llama-grammar-proxy" 2>/dev/null || true)
+# Phase 4: Nuclear — SIGKILL any stragglers by PID
+remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|llama-grammar-proxy|python3.*ai_sidecar|perl.*openkore" 2>/dev/null || true)
 if [ -n "$remaining" ]; then
     for pid in $remaining; do
         kill -9 "$pid" 2>/dev/null || true
         total=$((total + 1))
-        $VERBOSE && warn "Force-killed PID $pid (SIGKILL)"
+        $VERBOSE && warn "Nuclear SIGKILL PID $pid"
     done
     sleep 1
 fi

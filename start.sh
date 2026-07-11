@@ -342,7 +342,7 @@ case "${1:-all}" in
         _tail_all
         ;;
     stop)
-        stop_all
+        bash "$SCRIPT_DIR/stop.sh"
         ;;
     status)
         show_status
@@ -352,8 +352,9 @@ case "${1:-all}" in
         ;;
     all|start)
         _load_env
-        # Kill any previously running processes to avoid "server recognizes last connection"
-        stop_all
+        # Kill any previously running processes to ensure clean start
+        info "Cleaning up any existing processes..."
+        bash "$SCRIPT_DIR/stop.sh" -q || true
         sleep 2
         label "OPENKORE AI V3 — Starting Full Stack"
         echo -e "  Sidecar: port ${CYAN}$SIDECAR_PORT${NC}"
