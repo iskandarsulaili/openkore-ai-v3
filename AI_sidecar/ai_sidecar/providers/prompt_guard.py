@@ -46,6 +46,13 @@ class PromptGuard:
         text = self._strip_code_fence((value or "").strip())
         if not text:
             return None
+        # Try to find JSON object in the text (handles deepseek-v4-flash's reasoning field)
+        # Remove any text before the first { that isn't part of the JSON
+        obj_start = text.find("{")
+        if obj_start < 0:
+            return None
+        if obj_start > 0:
+            text = text[obj_start:]
         try:
             parsed = json.loads(text)
             if isinstance(parsed, dict):
