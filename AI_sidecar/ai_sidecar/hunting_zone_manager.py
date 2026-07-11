@@ -139,12 +139,17 @@ class HuntingZoneManager:
 
     def __init__(self, knowledge_path: str = "knowledge/knowledge.json"):
         self._lock = RLock()
+        self._coordinator = None  # SwarmGoalCoordinator, set externally
         self._monsters: list[dict[str, Any]] = []
         self._mob_skills: dict[str, list[dict[str, Any]]] = {}
         self._map_drops: dict[str, Any] = {}
         self._load_knowledge(knowledge_path)
         self._zone_cache: dict[str, list[HuntingZone]] = {}
         self._zone_assignment: dict[str, str] = {}  # bot_id -> map_name
+
+    def set_coordinator(self, coordinator):
+        """Set the SwarmGoalCoordinator for multi-bot zone assignment coordination."""
+        self._coordinator = coordinator
 
     def _load_knowledge(self, path: str) -> None:
         """Load rAthena knowledge from the pre-extracted JSON."""

@@ -22,6 +22,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import StrEnum
+from threading import RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -434,6 +435,7 @@ class SwarmTacticsEngine:
     """
 
     def __init__(self):
+        self._lock = RLock()
         self._state: dict[str, SwarmTacticalState] = {}  # party_id -> state
         self._party_roles: dict[str, dict[str, str]] = {}  # party_id -> {bot_id: role}
         self._cooldowns: dict[str, float] = defaultdict(float)
@@ -678,6 +680,7 @@ class SwarmReflexSystem:
     """
 
     def __init__(self):
+        self._lock = RLock()
         self._cooldowns: dict[str, float] = defaultdict(float)
 
     def assess(self, *, party_id: str, bots: list[dict[str, Any]],

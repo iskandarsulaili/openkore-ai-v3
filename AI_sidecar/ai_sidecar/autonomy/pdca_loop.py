@@ -1418,7 +1418,17 @@ class PDCALoop:
                                         goal_key=goal_state.selected_goal.goal_key,
                                         objective=goal_state.selected_goal.objective,
                                     )
-                                    _gd.decompose(bot_id=_bot, selected=_directive)
+                                    # Resolve bot_level from snapshot for goal decomposer
+                                    _bot_level = 1
+                                    if latest_snapshot is not None:
+                                        try:
+                                            if isinstance(latest_snapshot, dict):
+                                                _bot_level = int(latest_snapshot.get("base_level", latest_snapshot.get("level", 1)) or 1)
+                                            else:
+                                                _bot_level = int(getattr(latest_snapshot, "base_level", 1) or 1)
+                                        except Exception:
+                                            pass
+                                    _gd.decompose(bot_id=_bot, selected=_directive, bot_level=_bot_level)
                                     # Get next actionable sub-goal
                                     _next = _gd.next_action(bot_id=_bot)
                                     if _next is not None:

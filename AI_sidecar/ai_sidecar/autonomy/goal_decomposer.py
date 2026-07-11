@@ -17,6 +17,7 @@ Key design:
 
 from __future__ import annotations
 import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, UTC
@@ -69,9 +70,25 @@ class SwarmGoalCoordinator:
 
 class CrossHorizonSynergy:
     """Detects/resolves conflicts between short-term and long-term goals."""
-    def __init__(self): self._lock = RLock()
+    def __init__(self): 
+        self._lock = RLock()
+        self._synergy_log: list[dict[str, Any]] = []
+
     def detect_conflicts(self, short_term_goal: str, long_term_goal: str) -> list[str]:
-        return []
+        conflicts = []
+        if not short_term_goal or not long_term_goal:
+            return conflicts
+        # Example: if short-term is "grind on prt_fild08" but long-term is "job change to Knight"
+        # which requires being in Morocc, that's a conflict
+        st = short_term_goal.lower()
+        lt = long_term_goal.lower()
+        if "prt_fild" in st and ("morocc" in lt or "payon" in lt):
+            conflicts.append("short_term_zone_conflicts_with_long_term_goal")
+        if "grind" in st and "job" in lt:
+            conflicts.append("grinding_delays_job_advancement")
+        if conflicts:
+            self._synergy_log.append({"short": short_term_goal, "long": long_term_goal, "conflicts": conflicts, "time": time.time()})
+        return conflicts
 
 class GoalDecomposer:
     """Decomposes high-level goals into actionable sub-goals across 4 horizons.

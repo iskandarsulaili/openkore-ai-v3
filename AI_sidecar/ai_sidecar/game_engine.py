@@ -15,6 +15,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,7 @@ class GameIntelligenceEngine:
     """
 
     def __init__(self, knowledge_path: str | None = None, rathena_path: str = ""):
+        self._lock = RLock()
         self._monsters: list[dict[str, Any]] = []
         self._items: dict[str, dict[str, Any]] = {}
         self._mob_skills: dict[str, list[dict[str, Any]]] = {}  # mob_id -> skills
