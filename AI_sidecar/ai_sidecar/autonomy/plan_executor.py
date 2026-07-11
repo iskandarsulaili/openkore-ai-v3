@@ -496,7 +496,47 @@ class PlanExecutor:
                 clean = token.strip()
                 if clean and clean not in preferred:
                     preferred.append(clean)
+
+        # If no fleet constraints available, query knowledge database
+        if not preferred:
+            preferred = self._query_knowledge_grind_maps()
+
         return preferred
+
+    def _query_knowledge_grind_maps(self) -> list[str]:
+        """Query the experience database for known good hunting maps."""
+        runtime = self._runtime
+        exp_db = getattr(runtime, "experience_db", None)
+        if exp_db is None:
+            return []
+        try:
+            # Query combat/grind experience entries to find maps with success
+            combat_entries = exp_db.query(context_type="combat", limit=200)
+            grind_entries = exp_db.query(context_type="grind", limit=200)
+            all_entries = combat_entries + grind_entries
+            if not all_entries:
+                # First-time cold start — no knowledge yet. LLM will guide.
+                # The LLM conscious layer generates the first plan.
+                return []
+
+            # Score maps by success rate
+            from collections import defaultdict
+            map_stats: dict[str, list[bool]] = defaultdict(list)
+            for e in all_entries:
+                if e.map_name:
+                    map_stats[e.map_name].append(e.success)
+
+            # Return maps sorted by success rate, minimum 3 samples
+            scored = []
+            for map_name, outcomes in map_stats.items():
+                if len(outcomes) >= 3:
+                    rate = sum(1 for s in outcomes if s) / len(outcomes)
+                    scored.append((rate, map_name))
+            scored.sort(reverse=True)
+            return [m for _, m in scored[:5]]
+        except Exception:
+            logger.debug("PlanExecutor: knowledge query failed", exc_info=True)
+            return []
 
     def _preferred_grind_target(self, *, bot_id: str) -> str:
         preferred = self._preferred_grind_maps(bot_id=bot_id)
