@@ -300,8 +300,10 @@ class HuntingZoneManager:
                     - danger * 0.5  # Danger penalty
                 )
 
-                # Filter out data anomalies (HP <= 50 with abnormally high EXP)
-                # These are special instance/MvP monsters with wrong data
+                # Filter out data anomalies (HP <= 5 — these are special/spawn monsters with wrong data)
+                if hp <= 5:
+                    score = min(score, 5.0)
+                # Filter out instance/MvP monsters with abnormally high EXP for their HP
                 if hp <= 50 and (base_exp + job_exp) > 50000:
                     score = min(score, 10.0)
 
