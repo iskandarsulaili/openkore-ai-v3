@@ -14,6 +14,7 @@ import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ class HuntingZoneManager:
     }
 
     def __init__(self, knowledge_path: str = "knowledge/knowledge.json"):
+        self._lock = RLock()
         self._monsters: list[dict[str, Any]] = []
         self._mob_skills: dict[str, list[dict[str, Any]]] = {}
         self._map_drops: dict[str, Any] = {}
@@ -390,19 +392,21 @@ class HuntingZoneManager:
         """Assign a unique hunting zone to a bot, avoiding overlap with other bots.
 
         This enables unlimited multi-bot farming without competition.
+        Thread-safe: uses RLock.
         """
-        existing = existing_assignments or {}
-        assigned_maps = set(existing.values())
+        with self._lock:
+            existing = existing_assignments or {}
+            assigned_maps = set(existing.values())
 
-        zones = self.recommend_zone(
-            bot_level=bot_level,
-            bot_class=bot_class,
-            weapon_type=weapon_type,
-            element=element,
-            party_size=party_size,
-            goal=goal,
-            avoid_maps=list(assigned_maps),
-        )
+            zones = self.recommend_zone(
+                bot_level=bot_level,
+                bot_class=bot_class,
+                weapon_type=weapon_type,
+                element=element,
+                party_size=party_size,
+                goal=goal,
+                avoid_maps=list(assigned_maps),
+            )
 
         if not zones:
             # Fall back to any zone (allow sharing if no unique zones left)

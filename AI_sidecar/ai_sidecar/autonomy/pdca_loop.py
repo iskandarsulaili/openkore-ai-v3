@@ -1089,6 +1089,19 @@ class PDCALoop:
                         if _p2p_sa is not None:
                             _p2p.set_server_adaptation(_p2p_sa)
                         self._runtime.p2p_node = _p2p
+                        # Start P2P HTTP server to receive messages from peers
+                        _p2p_started = _p2p.start_server()
+                        if _p2p_started:
+                            logger.info("p2p_node_ready: bot=%s port=%d server_id=%s",
+                                       _cycle_bot_id, _p2p._listen_port, _p2p._server_id)
+                        # Register with P2P network manager
+                        _p2p_mgr = getattr(self._runtime, "p2p_manager", None)
+                        if _p2p_mgr is None:
+                            _p2p_mgr = P2PNetworkManager()
+                            self._runtime.p2p_manager = _p2p_mgr
+                        _p2p_mgr.register_node(_cycle_bot_id, _p2p)
+                        # Connect to all known peers
+                        _p2p_mgr.connect_all()
                     except Exception:
                         pass
                 

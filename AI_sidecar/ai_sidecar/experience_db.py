@@ -109,8 +109,12 @@ class ExperienceDatabase:
             return successes / len(entries)
 
     def best_action(self, *, context_type: str, map_name: str = "",
-                    monster_name: str = "", min_samples: int = 3) -> tuple[str, float]:
-        """Return the action with the highest success rate for the given context."""
+                    monster_name: str = "", min_samples: int = 1) -> tuple[str, float]:
+        """Return the action with the highest success rate for the given context.
+        
+        min_samples=1 means even a single data point is usable.
+        This avoids cold-start problems where the bot has no learned behavior.
+        """
         with self._lock:
             entries = self.query(context_type=context_type, map_name=map_name,
                                  monster_name=monster_name, limit=1000)
