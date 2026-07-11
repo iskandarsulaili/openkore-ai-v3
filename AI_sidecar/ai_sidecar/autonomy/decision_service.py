@@ -10,6 +10,10 @@ from typing import Any
 
 from ai_sidecar.autonomy.goal_stack import compute_goal_stack, summarize_goal_stack
 from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, SwarmGoalCoordinator, CrossHorizonSynergy, GoalHorizon
+from ai_sidecar.fleet.swarm_ai import (
+    SwarmTacticsEngine, SwarmReflexSystem, RoleDiscoveryEngine,
+    FormationType, SwarmTacticalState, swarm_telemetry,
+)
 from ai_sidecar.autonomy.mission_agent import MissionAgentService
 from ai_sidecar.autonomy.mission_context import AutonomyMissionContextAssembler
 from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge
@@ -52,6 +56,8 @@ class DecisionService:
     goal_decomposer: GoalDecomposer = field(default_factory=GoalDecomposer)
     swarm_coordinator: SwarmGoalCoordinator = field(default_factory=SwarmGoalCoordinator)
     synergy_engine: CrossHorizonSynergy = field(default_factory=CrossHorizonSynergy)
+    swarm_tactics: SwarmTacticsEngine = field(default_factory=SwarmTacticsEngine)
+    swarm_reflex: SwarmReflexSystem = field(default_factory=SwarmReflexSystem)
 
     def __post_init__(self) -> None:
         if self.mission_context_assembler is None:

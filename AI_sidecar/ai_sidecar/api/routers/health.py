@@ -103,4 +103,5 @@ def ready(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
         "autonomy_policy": dict(runtime.autonomy_policy),
         "counters": runtime.counter_snapshot(),
         "goal_decomposition": runtime.goal_decomposition_progress() if hasattr(runtime, "goal_decomposition_progress") else {},
+        "swarm_telemetry": runtime.swarm_telemetry_snapshot() if hasattr(runtime, "swarm_telemetry_snapshot") else {},
     }

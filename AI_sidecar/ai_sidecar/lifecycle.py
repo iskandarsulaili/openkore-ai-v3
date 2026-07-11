@@ -628,6 +628,24 @@ class RuntimeState:
                 result[bot_id] = progress
         return result
 
+    def swarm_telemetry_snapshot(self) -> dict[str, object]:
+        """Return swarm telemetry for all parties."""
+        deco = getattr(self, "autonomy_decider", None)
+        if deco is None:
+            return {}
+        tactics = getattr(deco, "swarm_tactics", None)
+        if tactics is None:
+            return {}
+        results = {}
+        fleet = getattr(self, "fleet_coordinator_service", None)
+        if fleet is None:
+            return {}
+        parties = getattr(fleet, "_parties", {})
+        for party_id in parties:
+            state = tactics.get_or_create_state(party_id)
+            results[party_id] = swarm_telemetry(state, party_id)
+        return results
+
     def _background_task_done(self, task: asyncio.Task[None]) -> None:
         try:
             self._background_tasks.remove(task)

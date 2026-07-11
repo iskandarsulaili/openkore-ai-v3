@@ -20,6 +20,17 @@ from ai_sidecar.fleet.self_learning import (
     SkillEffectiveness,
     ItemEffectiveness,
 )
+from ai_sidecar.fleet.swarm_ai import (
+    SwarmTacticsEngine,
+    SwarmReflexSystem,
+    RoleDiscoveryEngine,
+    FormationType,
+    SkillCombo,
+    SwarmTacticalState,
+    swarm_telemetry,
+    FORMATIONS,
+    SKILL_COMBOS,
+)
 
 __all__ = [
     # Legacy
@@ -45,4 +56,14 @@ __all__ = [
     "PerformanceRecord",
     "SkillEffectiveness",
     "ItemEffectiveness",
+    # Swarm AI
+    "SwarmTacticsEngine",
+    "SwarmReflexSystem",
+    "RoleDiscoveryEngine",
+    "FormationType",
+    "SkillCombo",
+    "SwarmTacticalState",
+    "swarm_telemetry",
+    "FORMATIONS",
+    "SKILL_COMBOS",
 ]
