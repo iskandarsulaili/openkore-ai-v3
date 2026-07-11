@@ -256,6 +256,8 @@ def _normalize_provider_policy_rules(raw_rules: dict[str, object]) -> dict[str, 
 
 def _provider_registration_viability(provider_name: str) -> tuple[bool, str]:
     if provider_name == "ollama":
+        if not settings.provider_ollama_enabled:
+            return False, "provider_disabled"
         if not str(settings.provider_ollama_base_url).strip():
             return False, "base_url_missing"
         if not str(settings.provider_ollama_default_model).strip():
@@ -263,6 +265,8 @@ def _provider_registration_viability(provider_name: str) -> tuple[bool, str]:
         return True, ""
 
     if provider_name == "openai":
+        if not settings.provider_openai_enabled:
+            return False, "provider_disabled"
         if not str(settings.provider_openai_api_key).strip():
             return False, "api_key_missing"
         if not str(settings.provider_openai_base_url).strip():
@@ -272,6 +276,8 @@ def _provider_registration_viability(provider_name: str) -> tuple[bool, str]:
         return True, ""
 
     if provider_name == "deepseek":
+        if not settings.provider_deepseek_enabled:
+            return False, "provider_disabled"
         if not str(settings.provider_deepseek_api_key).strip():
             return False, "api_key_missing"
         if not str(settings.provider_deepseek_base_url).strip():
