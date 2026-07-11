@@ -68,6 +68,7 @@ class OpenAIAdapter(LLMProvider):
             ],
             "temperature": 0.2,
             "max_tokens": 1800,
+            "stream": False,
         }
         # json_object response format is disabled for local Qwen models
         # which don't support it. Schema validation is done on the response.  
