@@ -5394,6 +5394,12 @@ def create_runtime() -> RuntimeState:
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))
 
+    # Load persisted experience database
+    if sqlite_path is not None and runtime.experience_db is not None:
+        exp_path = str(sqlite_path).replace(".sqlite", "_experience.sqlite")
+        loaded = runtime.experience_db.load(exp_path)
+        logger.info("experience_db_loaded: %d entries from %s", loaded, exp_path)
+
     # Persist cost tracker state
     if runtime.cost_tracker and runtime.sqlite_path:
         runtime.cost_tracker.persist(str(runtime.sqlite_path))
