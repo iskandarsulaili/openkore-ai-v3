@@ -19,10 +19,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-err()   { echo -e "${RED}[ERROR]${NC} $*"; }
+info()  { echo -e "${CYAN}[INFO]${NC}  $*" >&2; }
+ok()    { echo -e "${GREEN}[OK]${NC}    $*" >&2; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*" >&2; }
+err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 VERBOSE=false
 QUIET=false
