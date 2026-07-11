@@ -328,8 +328,9 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             except Exception:
                 pass
         
-        # Build bot list for swarm API
-        _bots_list = [{"role": r, "hp_pct": 1.0} for r in (list(roles.values()) if roles else ["idle"])]
+        # Build bot list for swarm API — roles is a list from discover_roles(), not a dict
+        _roles_list = roles if isinstance(roles, list) else (list(roles.values()) if isinstance(roles, dict) else ["idle"])
+        _bots_list = [{"role": r, "hp_pct": 1.0, "bot_id": f"{bot_id}_{i}"} for i, r in enumerate(_roles_list[:3])]
         
         # Select formation based on party size and threat
         party_size = 1
@@ -365,12 +366,56 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             team_hp_avg=team_hp_avg,
         )
         
-        # Select skill combo based on roles and target
+        # WIRE ALL SWARM SUBSYSTEMS:
+        # 1. Formation positioning
+        formation_positions = swarm.get_formation_positions(
+            formation=formation,
+            bots=_bots_list,
+            anchor_x=0, anchor_y=0,  # Relative to target
+        )
+        
+        # 2. Movement suggestion for this bot
+        move_cmd = swarm.suggest_movement(
+            party_id=bot_id,
+            bot_id=bot_id,
+            formation=formation,
+            positions=formation_positions,
+        )
+        
+        # 3. Aggro management
+        tank_id = None
+        for b in _bots_list:
+            if b["role"] == "tank":
+                tank_id = b["bot_id"]
+                break
+        aggro_cmd = swarm.manage_aggro(
+            party_id=bot_id,
+            bots=_bots_list,
+            tank_id=tank_id,
+        )
+        
+        # 4. Heal suggestion
+        heal_target = swarm.suggest_heal_target(
+            party_id=bot_id,
+            bots=_bots_list,
+        )
+        
+        # 5. Select skill combo based on roles and target
         combo = swarm.select_combo(
             party_id=bot_id,
             bots=_bots_list,
             target_type="boss" if threat_level >= 4 else "normal",
         )
+        
+        # 6. Skill combo execution
+        combo_cmd = None
+        if combo is not None:
+            combo_cmd = swarm.execute_combo_step(
+                party_id=bot_id,
+                combo=combo,
+                step_index=0,
+                bots={b["bot_id"]: b for b in _bots_list},
+            )
         
         # Emit formation command
         aq = getattr(runtime_state, "action_queue", None)
@@ -385,10 +430,29 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
         
         # Emit formation action
         _short_id = _hashlib.md5(f"{bot_id}_swarm_fmt_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+        
+        # Determine the actual command to execute
+        cmd = "ai auto"
+        cmd_meta = f"Formation: {formation.value}"
+        
+        # Priority: combo > aggro > heal > movement > formation
+        if combo_cmd and combo is not None:
+            cmd = combo_cmd
+            cmd_meta = f"Combo: {combo.name} step 1"
+        elif aggro_cmd:
+            cmd = aggro_cmd
+            cmd_meta = f"Aggro: {aggro_cmd}"
+        elif heal_target:
+            cmd = f"ai auto"  # Healer will handle via reflex
+            cmd_meta = f"Heal target: {heal_target}"
+        elif move_cmd:
+            cmd = move_cmd
+            cmd_meta = f"Move to formation: {formation.value}"
+        
         proposal = ActionProposal(
             action_id=f"swarm_fmt_{horizon}_{_short_id}",
             kind="command",
-            command="ai auto",
+            command=cmd,
             priority_tier=ActionPriorityTier.tactical,
             source="fleet",
             created_at=datetime.now(UTC),
