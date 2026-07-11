@@ -83,11 +83,14 @@ class GoalDecomposer:
     def __init__(self, hunting_zone_manager=None):
         self._lock = RLock()
         self._hzm = hunting_zone_manager
+        self._swarm_coordinator: SwarmGoalCoordinator | None = None
         self._decompositions: dict[str, GoalDecomposition] = {}
         self._completed: dict[str, set[str]] = defaultdict(set)
         self._current_goal: dict[str, Optional[str]] = {}
 
     def set_hunting_zone_manager(self, hzm): self._hzm = hzm
+    
+    def set_swarm_coordinator(self, coord): self._swarm_coordinator = coord
 
     def decompose(self, bot_id: str, assessment=None, goal_stack=None, selected=None, bot_level=1):
         if selected is None: return None

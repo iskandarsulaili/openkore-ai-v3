@@ -26,7 +26,7 @@ from ai_sidecar.fleet.swarm_ai import (
     SwarmTacticsEngine, SwarmReflexSystem, RoleDiscoveryEngine,
     FormationType, SkillCombo,
 )
-from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon
+from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon, CrossHorizonSynergy
 from ai_sidecar.npc_discovery import NPCDiscoveryEngine
 from ai_sidecar.server_adaptation import ServerAdaptationEngine
 from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
@@ -407,15 +407,61 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             target_type="boss" if threat_level >= 4 else "normal",
         )
         
-        # 6. Skill combo execution
+        # 6. Skill combo execution with step advancement
         combo_cmd = None
+        combo_step = 0
         if combo is not None:
-            combo_cmd = swarm.execute_combo_step(
-                party_id=bot_id,
-                combo=combo,
-                step_index=0,
-                bots={b["bot_id"]: b for b in _bots_list},
-            )
+            # Track combo state across cycles using runtime state
+            _combo_state = getattr(runtime_state, "swarm_combo_state", {})
+            _party_combo = _combo_state.get(bot_id, {})
+            _active_combo_name = _party_combo.get("name", "")
+            _active_step = _party_combo.get("step", 0)
+            
+            if _active_combo_name == combo.name:
+                # Continuing the same combo — advance step
+                combo_step = _active_step + 1
+                if swarm.is_combo_complete(party_id=bot_id, combo=combo):
+                    swarm.complete_combo(party_id=bot_id, combo=combo)
+                    _combo_state[bot_id] = {}
+                    combo_step = 0
+                    combo_cmd = None
+                    _log.info("swarm_combo_complete: bot=%s combo=%s", bot_id, combo.name)
+                else:
+                    # Execute current step
+                    combo_cmd = swarm.execute_combo_step(
+                        party_id=bot_id, combo=combo, step_index=combo_step,
+                        bots={b["bot_id"]: b for b in _bots_list},
+                    )
+                    _combo_state[bot_id] = {"name": combo.name, "step": combo_step}
+            else:
+                # New combo — start at step 0
+                combo_cmd = swarm.execute_combo_step(
+                    party_id=bot_id, combo=combo, step_index=0,
+                    bots={b["bot_id"]: b for b in _bots_list},
+                )
+                _combo_state[bot_id] = {"name": combo.name, "step": 0}
+            runtime_state.swarm_combo_state = _combo_state
+        
+        # 7. Swarm reflex assessment
+        reflex_cmd = None
+        _swarm_reflex = getattr(runtime_state, "swarm_reflex", None)
+        if _swarm_reflex is not None:
+            _signals = {"mvp_spotted": "", "nearby_hostiles": threat_level, "pvp_attacked": ""}
+            _reflex_result = _swarm_reflex.assess(party_id=bot_id, bots=_bots_list, signals=_signals)
+            if _reflex_result:
+                reflex_cmd = _reflex_result.get("action", "")
+                _log.info("swarm_reflex: bot=%s response=%s", bot_id, _reflex_result.get("response", ""))
+        
+        # 8. Cross-horizon synergy check
+        _gd = getattr(runtime_state, "goal_decomposer", None)
+        if _gd is not None:
+            _synergy = getattr(runtime_state, "synergy_engine", None)
+            if _synergy is not None:
+                _conflicts = _synergy.detect_conflicts(
+                    short_term_goal=formation.value, long_term_goal=""
+                )
+                if _conflicts:
+                    _log.info("goal_conflict: bot=%s conflicts=%s", bot_id, _conflicts)
         
         # Emit formation command
         aq = getattr(runtime_state, "action_queue", None)
@@ -1166,6 +1212,25 @@ class PDCALoop:
                         _p2p_mgr.register_node(_cycle_bot_id, _p2p)
                         # Connect to all known peers
                         _p2p_mgr.connect_all()
+                    except Exception:
+                        pass
+                
+                # Initialize swarm reflex if not present
+                _sr = getattr(self._runtime, "swarm_reflex", None)
+                if _sr is None:
+                    try:
+                        from ai_sidecar.fleet.swarm_ai import SwarmReflexSystem
+                        _sr = SwarmReflexSystem()
+                        self._runtime.swarm_reflex = _sr
+                    except Exception:
+                        pass
+                
+                # Initialize synergy engine if not present
+                _se = getattr(self._runtime, "synergy_engine", None)
+                if _se is None:
+                    try:
+                        _se = CrossHorizonSynergy()
+                        self._runtime.synergy_engine = _se
                     except Exception:
                         pass
                 
