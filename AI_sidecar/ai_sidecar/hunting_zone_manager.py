@@ -80,21 +80,60 @@ class HuntingZoneManager:
 
     # Known hunting maps with monster spawns (from OpenKore field data + rAthena)
     # These are the actual map names, not hardcoded preferences
+    # Includes fields, dungeons, and MVP rooms for full 1-99 coverage
     KNOWN_MAPS = {
-        "prt_fild08": {"min_level": 1, "max_level": 15, "town": "prontera"},
-        "prt_fild04": {"min_level": 10, "max_level": 25, "town": "prontera"},
-        "pay_fild08": {"min_level": 20, "max_level": 35, "town": "payon"},
-        "pay_fild04": {"min_level": 30, "max_level": 50, "town": "payon"},
-        "moc_fild03": {"min_level": 35, "max_level": 55, "town": "morocc"},
-        "gef_fild02": {"min_level": 40, "max_level": 60, "town": "geffen"},
-        "gef_fild05": {"min_level": 45, "max_level": 65, "town": "geffen"},
-        "mjolnir_04": {"min_level": 25, "max_level": 40, "town": "prontera"},
-        "moc_fild17": {"min_level": 50, "max_level": 70, "town": "morocc"},
-        "gef_fild10": {"min_level": 55, "max_level": 75, "town": "geffen"},
-        "pay_fild11": {"min_level": 60, "max_level": 80, "town": "payon"},
-        "xmas_fild01": {"min_level": 65, "max_level": 85, "town": "xmas"},
-        "yuno_fild07": {"min_level": 70, "max_level": 90, "town": "yuno"},
-        "ama_fild01": {"min_level": 80, "max_level": 99, "town": "amatsu"},
+        # Fields
+        "prt_fild08": {"min_level": 1, "max_level": 15, "town": "prontera", "type": "field"},
+        "prt_fild04": {"min_level": 10, "max_level": 25, "town": "prontera", "type": "field"},
+        "pay_fild08": {"min_level": 20, "max_level": 35, "town": "payon", "type": "field"},
+        "pay_fild04": {"min_level": 30, "max_level": 50, "town": "payon", "type": "field"},
+        "moc_fild03": {"min_level": 35, "max_level": 55, "town": "morocc", "type": "field"},
+        "gef_fild02": {"min_level": 40, "max_level": 60, "town": "geffen", "type": "field"},
+        "gef_fild05": {"min_level": 45, "max_level": 65, "town": "geffen", "type": "field"},
+        "mjolnir_04": {"min_level": 25, "max_level": 40, "town": "prontera", "type": "field"},
+        "moc_fild17": {"min_level": 50, "max_level": 70, "town": "morocc", "type": "field"},
+        "gef_fild10": {"min_level": 55, "max_level": 75, "town": "geffen", "type": "field"},
+        "pay_fild11": {"min_level": 60, "max_level": 80, "town": "payon", "type": "field"},
+        "xmas_fild01": {"min_level": 65, "max_level": 85, "town": "xmas", "type": "field"},
+        "yuno_fild07": {"min_level": 70, "max_level": 90, "town": "yuno", "type": "field"},
+        "ama_fild01": {"min_level": 80, "max_level": 99, "town": "amatsu", "type": "field"},
+        # Dungeons
+        "pay_dun00": {"min_level": 15, "max_level": 30, "town": "payon", "type": "dungeon"},
+        "pay_dun01": {"min_level": 20, "max_level": 40, "town": "payon", "type": "dungeon"},
+        "pay_dun02": {"min_level": 30, "max_level": 50, "town": "payon", "type": "dungeon"},
+        "pay_dun03": {"min_level": 40, "max_level": 60, "town": "payon", "type": "dungeon"},
+        "gef_dun00": {"min_level": 25, "max_level": 45, "town": "geffen", "type": "dungeon"},
+        "gef_dun01": {"min_level": 35, "max_level": 55, "town": "geffen", "type": "dungeon"},
+        "gef_dun02": {"min_level": 45, "max_level": 65, "town": "geffen", "type": "dungeon"},
+        "gef_dun03": {"min_level": 55, "max_level": 75, "town": "geffen", "type": "dungeon"},
+        "moc_dun01": {"min_level": 30, "max_level": 50, "town": "morocc", "type": "dungeon"},
+        "moc_dun02": {"min_level": 40, "max_level": 60, "town": "morocc", "type": "dungeon"},
+        "moc_dun03": {"min_level": 50, "max_level": 70, "town": "morocc", "type": "dungeon"},
+        "moc_dun04": {"min_level": 60, "max_level": 80, "town": "morocc", "type": "dungeon"},
+        "gl_dun01": {"min_level": 65, "max_level": 85, "town": "geffen", "type": "dungeon"},
+        "gl_dun02": {"min_level": 75, "max_level": 99, "town": "geffen", "type": "dungeon"},
+        "gl_knt01": {"min_level": 80, "max_level": 99, "town": "geffen", "type": "dungeon"},
+        "gl_knt02": {"min_level": 85, "max_level": 99, "town": "geffen", "type": "dungeon"},
+        # MVP rooms
+        "moc_pry01": {"min_level": 50, "max_level": 80, "town": "morocc", "type": "mvp"},
+        "moc_pry02": {"min_level": 60, "max_level": 85, "town": "morocc", "type": "mvp"},
+        "moc_pry03": {"min_level": 70, "max_level": 99, "town": "morocc", "type": "mvp"},
+        "moc_pry04": {"min_level": 80, "max_level": 99, "town": "morocc", "type": "mvp"},
+        "moc_pry05": {"min_level": 85, "max_level": 99, "town": "morocc", "type": "mvp"},
+        "gl_prison": {"min_level": 70, "max_level": 99, "town": "geffen", "type": "mvp"},
+        "gl_prison1": {"min_level": 75, "max_level": 99, "town": "geffen", "type": "mvp"},
+        "abyss_01": {"min_level": 70, "max_level": 99, "town": "aldebaran", "type": "mvp"},
+        "abyss_02": {"min_level": 75, "max_level": 99, "town": "aldebaran", "type": "mvp"},
+        "abyss_03": {"min_level": 80, "max_level": 99, "town": "aldebaran", "type": "mvp"},
+        # High-level endgame
+        "thor_v01": {"min_level": 85, "max_level": 99, "town": "yuno", "type": "dungeon"},
+        "thor_v02": {"min_level": 90, "max_level": 99, "town": "yuno", "type": "dungeon"},
+        "thor_v03": {"min_level": 95, "max_level": 99, "town": "yuno", "type": "dungeon"},
+        "nif_dun01": {"min_level": 75, "max_level": 99, "town": "yuno", "type": "dungeon"},
+        "nif_dun02": {"min_level": 80, "max_level": 99, "town": "yuno", "type": "dungeon"},
+        "ice_dun01": {"min_level": 70, "max_level": 90, "town": "xmas", "type": "dungeon"},
+        "ice_dun02": {"min_level": 75, "max_level": 95, "town": "xmas", "type": "dungeon"},
+        "ice_dun03": {"min_level": 80, "max_level": 99, "town": "xmas", "type": "dungeon"},
     }
 
     def __init__(self, knowledge_path: str = "knowledge/knowledge.json"):
@@ -135,9 +174,10 @@ class HuntingZoneManager:
         weapon_type: str = "Dagger",
         element: str = "Neutral",
         party_size: int = 1,
-        goal: str = "leveling",  # leveling | farming | item
+        goal: str = "leveling",  # leveling | farming | item | mvp
         target_item: str = "",
         avoid_maps: list[str] | None = None,
+        game_engine: Any = None,  # Optional GameIntelligenceEngine for advanced scoring
     ) -> list[HuntingZone]:
         """Recommend the best hunting zone for a bot.
 
@@ -172,7 +212,41 @@ class HuntingZoneManager:
             if not map_monsters:
                 continue
 
-            # Score the map based on its monsters
+            # Use game engine scoring if available (more accurate)
+            if game_engine is not None:
+                try:
+                    ge_recs = game_engine.recommend_hunting(
+                        bot_level=bot_level,
+                        bot_class=bot_class,
+                        weapon_type=weapon_type,
+                        element=element,
+                        party_size=party_size,
+                        goal="leveling" if goal != "mvp" else "leveling",
+                    )
+                    # Filter game engine recommendations to this map's monsters
+                    ge_map_monsters = [r for r in ge_recs if r.primary_mob in [m.get("name","") for m in map_monsters]]
+                    if ge_map_monsters:
+                        best_ge = ge_map_monsters[0]
+                        # Use game engine's score as primary
+                        total_score = best_ge.score * 100
+                        total_exp = best_ge.base_exp + best_ge.job_exp
+                        best_monster = best_ge.primary_mob
+                        best_exp_hp = best_ge.exp_per_hp
+                        total_danger = 0.0
+                        total_zeny = best_ge.drops[0] if best_ge.drops else 0
+                        # Still fill zone data
+                        if total_score > 0 and best_monster:
+                            zone = self._build_zone_from_ge(
+                                map_name, min_lv, max_lv, map_info, best_ge,
+                                total_score, total_exp, total_danger, total_zeny, best_exp_hp
+                            )
+                            if zone:
+                                candidates.append(zone)
+                        continue
+                except Exception:
+                    pass
+
+            # Fallback: score the map based on its monsters (original logic)
             total_score = 0.0
             total_exp = 0
             total_zeny = 0.0
@@ -267,6 +341,33 @@ class HuntingZoneManager:
         # Sort by score
         candidates.sort(key=lambda z: z.score, reverse=True)
         return candidates[:10]
+
+    def _build_zone_from_ge(self, map_name, min_lv, max_lv, map_info, ge_rec, total_score, total_exp, total_danger, total_zeny, best_exp_hp):
+        """Build a HuntingZone from a GameIntelligenceEngine recommendation."""
+        try:
+            return HuntingZone(
+                map_name=map_name,
+                primary_monster=ge_rec.primary_mob,
+                monster_level=ge_rec.mob_level,
+                monster_hp=ge_rec.hp,
+                base_exp=ge_rec.base_exp,
+                job_exp=ge_rec.job_exp,
+                exp_per_hp=round(ge_rec.exp_per_hp, 4),
+                element=ge_rec.element,
+                race=ge_rec.race,
+                size=ge_rec.size,
+                element_efficiency=ge_rec.element_efficiency,
+                size_efficiency=1.0,
+                race_efficiency=1.0,
+                level_penalty=ge_rec.level_penalty,
+                effective_exp=ge_rec.effective_exp,
+                danger_score=round(total_danger, 2),
+                zeny_per_kill=round(total_zeny, 2),
+                score=round(total_score, 2),
+                reason=f"Lv{min_lv}-{max_lv} {map_info.get('type','field')} | {ge_rec.reason}",
+            )
+        except Exception:
+            return None
 
     def assign_zone(
         self,

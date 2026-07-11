@@ -187,11 +187,15 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
         # Get existing zone assignments for multi-bot coordination
         existing_assignments = getattr(runtime_state, "zone_assignments", {})
         
+        # Get game engine for advanced scoring
+        game_engine = getattr(runtime_state, "game_engine", None)
+        
         # Recommend hunting zone
         zones = hzm.recommend_zone(
             bot_level=bot_level,
             bot_class=bot_class,
             goal="leveling" if horizon in ("short_term", "medium_term") else "farming",
+            game_engine=game_engine,
         )
         
         if not zones:
@@ -307,35 +311,48 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             except Exception:
                 pass
         
+        # Build bot list for swarm API
+        _bots_list = [{"role": r, "hp_pct": 1.0} for r in (list(roles.values()) if roles else ["idle"])]
+        
         # Select formation based on party size and threat
         party_size = 1
         threat_level = 0
         aoe_risk = False
+        team_hp_avg = 1.0
         try:
             if snapshot is not None:
                 if isinstance(snapshot, dict):
                     party_size = int(snapshot.get("party_size", 1) or 1)
                     c = snapshot.get("combat", {}) or {}
                     threat_level = int(c.get("aggro_count", 0) or 0)
+                    vitals = snapshot.get("vitals", {}) or {}
+                    hp = float(vitals.get("hp_ratio", 1.0) or 1.0)
+                    team_hp_avg = hp
                 else:
                     party_size = int(getattr(snapshot, "party_size", 1) or 1)
                     c = getattr(snapshot, "combat", None) or {}
                     threat_level = int(getattr(c, "aggro_count", 0) or 0)
+                    vitals = getattr(snapshot, "vitals", None) or {}
+                    hp = float(getattr(vitals, "hp_ratio", 1.0) or 1.0)
+                    team_hp_avg = hp
         except Exception:
             pass
         
+        # Use party_id = bot_id, pass bots list with roles
         formation = swarm.select_formation(
-            party_size=party_size,
+            party_id=bot_id,
+            bots=_bots_list,
             target_count=threat_level,
             threat_level=threat_level,
             aoe_risk=aoe_risk,
-            team_hp_avg=1.0,
+            team_hp_avg=team_hp_avg,
         )
         
         # Select skill combo based on roles and target
         combo = swarm.select_combo(
-            party_roles=list(roles.values()) if roles else [],
-            target_type="normal" if threat_level < 4 else "boss",
+            party_id=bot_id,
+            bots=_bots_list,
+            target_type="boss" if threat_level >= 4 else "normal",
         )
         
         # Emit formation command
@@ -560,6 +577,80 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
         bot_id = bot_id or "default"
         
         best = skills[0]
+        recommended_element = best.get("recommended_element", "Neutral")
+        
+        # Map element to actual skill command based on class
+        # Element converters: every class can use element via converters/endow
+        # Magic classes: direct element spells
+        # Physical classes: weapon element via converters (ss endow, etc.)
+        element_to_skill = {
+            "Holy": "ss heal",  # Heal vs Undead, or aspersio
+            "Fire": "ss fire_bolt",
+            "Water": "ss cold_bolt",
+            "Wind": "ss lightning_bolt",
+            "Earth": "ss stone_curse",
+            "Poison": "ss venom_dust",
+            "Ghost": "ss magnus",
+            "Undead": "ss turn_undead",
+            "Dark": "ss grimtooth",
+        }
+        
+        # Class-specific skill mapping
+        class_to_skill = {
+            "mage": "ss fire_bolt",
+            "wizard": "ss fire_bolt",
+            "high_wizard": "ss fire_bolt",
+            "arch_mage": "ss fire_bolt",
+            "acolyte": "ss heal",
+            "priest": "ss heal",
+            "high_priest": "ss heal",
+            "arch_bishop": "ss heal",
+            "cardinal": "ss heal",
+            "swordman": "ss magnum_break",
+            "knight": "ss bowling_bash",
+            "lord_knight": "ss bowling_bash",
+            "rune_knight": "ss bowling_bash",
+            "dragon_knight": "ss bowling_bash",
+            "thief": "ss double_attack",
+            "assassin": "ss sonic_blow",
+            "assassin_cross": "ss sonic_blow",
+            "guillotine_cross": "ss sonic_blow",
+            "shadow_cross": "ss sonic_blow",
+            "archer": "ss double_strafing",
+            "hunter": "ss double_strafing",
+            "sniper": "ss double_strafing",
+            "ranger": "ss aimed_bolt",
+            "windhawk": "ss aimed_bolt",
+            "merchant": "ss mammonite",
+            "blacksmith": "ss mammonite",
+            "whitesmith": "ss mammonite",
+            "meister": "ss mammonite",
+            "alchemist": "ss acid_demonstration",
+            "creator": "ss acid_demonstration",
+            "genetic": "ss cart_cannon",
+            "biolo": "ss cart_cannon",
+        }
+        
+        # Determine best skill command
+        skill_cmd = None
+        bot_class_lower = bot_class.lower().replace(" ", "_").replace("-", "_")
+        
+        # Try element-based skill first (for magic classes)
+        if bot_class_lower in ("mage", "wizard", "high_wizard", "arch_mage", "soul_linker", "soul_reaper", "soul_ascetic", "sage", "professor", "sorcerer", "elemental_master"):
+            if recommended_element in element_to_skill:
+                skill_cmd = element_to_skill[recommended_element]
+        
+        # Fall back to class default skill
+        if not skill_cmd:
+            for key, cmd in class_to_skill.items():
+                if key in bot_class_lower:
+                    skill_cmd = cmd
+                    break
+        
+        # Final fallback: ai auto
+        if not skill_cmd:
+            skill_cmd = "ai auto"
+        
         aq = getattr(runtime_state, "action_queue", None)
         if aq is None:
             return 0
@@ -571,7 +662,7 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
         proposal = ActionProposal(
             action_id=f"skill_{horizon}_{_short_id}",
             kind="command",
-            command="ai auto",
+            command=skill_cmd,
             priority_tier=ActionPriorityTier.tactical,
             source="planner",
             created_at=datetime.now(UTC),
@@ -579,17 +670,17 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             idempotency_key=f"skill_{horizon}_{_short_id}",
             metadata={
                 "goal": "combat",
-                "objective": f"Use {best['recommended_element']} vs {mob_element} ({best['damage_multiplier']:.0%})",
+                "objective": f"Use {skill_cmd} vs {mob_element} ({best['damage_multiplier']:.0%})",
                 "horizon": horizon, "bot_id": bot_id, "source": "skill_ai",
-                "recommended_element": best["recommended_element"],
+                "recommended_element": recommended_element,
                 "damage_multiplier": best["damage_multiplier"],
                 "mob_element": mob_element,
             },
         )
         aq.enqueue(bot_id, proposal)
         _log.info(
-            "skill_action: bot=%s element=%s mult=%.0f%% vs %s",
-            bot_id, best["recommended_element"], best["damage_multiplier"] * 100, mob_element,
+            "skill_action: bot=%s cmd=%s element=%s mult=%.0f%% vs %s",
+            bot_id, skill_cmd, recommended_element, best["damage_multiplier"] * 100, mob_element,
         )
         return 1
     except Exception:
