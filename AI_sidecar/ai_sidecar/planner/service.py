@@ -102,13 +102,13 @@ class PlannerService:
             ActionProposal(
                 action_id=f"fallback-{uuid4().hex[:20]}",
                 kind="command",
-                command="sit",
+                command="ai auto",
                 priority_tier=ActionPriorityTier.tactical,
-                conflict_key="planner.safe_idle",
-                preconditions=["vitals.safe_to_rest"],
+                conflict_key="planner.fallback_auto",
+                preconditions=["session.in_game"],
                 created_at=now,
                 expires_at=now + timedelta(seconds=90),
-                idempotency_key=f"fallback:{bot_id}:safe_idle"[:128],
+                idempotency_key=f"fallback:{bot_id}:auto"[:128],
                 metadata={"source": "planner_fallback", "objective": context.objective},
             )
         ]

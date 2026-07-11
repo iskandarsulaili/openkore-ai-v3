@@ -569,10 +569,10 @@ class PlanExecutor:
                 preconditions = ["navigation.ready"]
                 fallback_mode = "seek_refresh"
         else:
-            command = "move random_walk_seek"
-            conflict_key = "planner.recovery.seek_refresh"
-            preconditions = ["navigation.ready"]
-            fallback_mode = "seek_refresh"
+            command = "ai auto"
+            conflict_key = "planner.fallback_auto"
+            preconditions = ["session.in_game"]
+            fallback_mode = "auto_ai"
 
         logger.info(
             "autonomy_fallback_escalation_selected",
@@ -725,14 +725,14 @@ class PlanExecutor:
                         metadata_field="description",
                     )
                 return self._build_action_proposal(
-                    command="move random_walk_seek",
+                    command="ai auto",
                     priority=ActionPriorityTier.strategic,
                     source="pdca_loop_strategic",
-                    conflict_key="planner.seek.random_walk",
-                    preconditions=["navigation.ready"],
+                    conflict_key="planner.fallback_auto",
+                    preconditions=["session.in_game"],
                     metadata={
                         "description": description,
-                        "fallback_mode": "seek_targets",
+                        "fallback_mode": "auto_ai",
                     },
                 )
 
@@ -752,12 +752,12 @@ class PlanExecutor:
                 )
 
             return self._build_action_proposal(
-                command="move random_walk_seek",
+                command="ai auto",
                 priority=ActionPriorityTier.strategic,
                 source="pdca_loop_strategic",
-                conflict_key="planner.seek.random_walk",
-                preconditions=["navigation.ready"],
-                metadata={"description": description, "fallback_mode": "seek_targets"},
+                conflict_key="planner.fallback_auto",
+                preconditions=["session.in_game"],
+                metadata={"description": description, "fallback_mode": "auto_ai"},
             )
         except Exception:
             logger.exception("Failed to convert objective to action")
@@ -899,15 +899,17 @@ class PlanExecutor:
                     metadata_field="objective",
                 )
 
-            # Default fallback: move to seek targets instead of sitting idle
-            # This ensures bots never sit passively without purpose
+            # Default fallback: enable OpenKore's full auto AI
+            # ai auto enables auto-attack, auto-move, auto-loot, auto-heal
+            # This is the most meaningful default — delegates to the game client's
+            # own intelligence rather than aimless wandering
             return self._build_action_proposal(
-                command="move random_walk_seek",
+                command="ai auto",
                 priority=ActionPriorityTier.tactical,
                 source="pdca_loop_tactical",
-                conflict_key="planner.seek.random_walk",
-                preconditions=["navigation.ready"],
-                metadata={"objective": objective_text, "fallback_mode": "seek_targets"},
+                conflict_key="planner.fallback_auto",
+                preconditions=["session.in_game"],
+                metadata={"objective": objective_text, "fallback_mode": "auto_ai"},
             )
         except Exception:
             logger.exception("Failed to convert intent to action")
