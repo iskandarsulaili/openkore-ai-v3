@@ -473,6 +473,16 @@ class P2PKnowledgeNode:
                 return
             self._seen_message_ids.add(msg.msg_id)
             self._messages[msg.msg_id] = msg
+            
+            # Prevent memory leak: cap seen message IDs at 100,000
+            if len(self._seen_message_ids) > 100000:
+                self._seen_message_ids = set(list(self._seen_message_ids)[-50000:])
+            # Cap stored messages at 10,000
+            if len(self._messages) > 10000:
+                # Remove oldest messages (non-expired ones)
+                sorted_msgs = sorted(self._messages.items(), key=lambda x: x[1].timestamp)
+                for msg_id, _ in sorted_msgs[:len(self._messages) - 10000]:
+                    del self._messages[msg_id]
 
         # Process locally
         self._process_message(msg)

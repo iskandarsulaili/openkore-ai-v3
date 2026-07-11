@@ -1704,6 +1704,9 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'loot pickup delegated to OpenKore auto-loot configuration');
 	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto' || $rewrite_kind eq 'map_move_already_auto' || $rewrite_kind eq 'teleport_already_auto') {
 		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
+	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
+		my $ok = eval { Commands::run($effective_command); 1; };
+		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
 	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {
@@ -2477,11 +2480,18 @@ sub _rewrite_runtime_command {
 	# OpenKore's auto AI uses lockMap to navigate to and stay on a map.
 	# Setting lockMap first, then enabling auto AI, gives the bot a
 	# meaningful destination instead of aimless wandering.
+	# Also handle coordinate moves: "move 181 186" → direct movement
 	if ($normalized =~ /^move\s+(.+)$/) {
-		my $target_map = $1;
+		my $target = $1;
+		# Check if target is numeric coordinates (x y) — not a map name
+		if ($target =~ /^\d+\s+\d+$/) {
+			# Coordinate-based move — pass through directly, do NOT set lockMap
+			# OpenKore's move command accepts x y coordinates for pixel movement
+			return ($trimmed, 'coordinate_move_raw');
+		}
 		# Only set lockMap for valid map names (not special commands)
-		if ($target_map !~ /^(savepoint|random_walk_seek)$/) {
-			configModify("lockMap", $target_map);
+		if ($target !~ /^(savepoint|random_walk_seek)$/) {
+			configModify("lockMap", $target);
 			configModify("lockMap_x", "");
 			configModify("lockMap_y", "");
 			configModify("lockMap_randX", 0);

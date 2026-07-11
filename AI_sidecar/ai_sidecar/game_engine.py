@@ -270,59 +270,74 @@ class GameIntelligenceEngine:
                 logger.warning("Failed to load knowledge from %s: %s", path, e)
 
         # Load knowledge from local file if not provided
+        loaded = False
         if not self._monsters:
-            local_path = Path(__file__).parent.parent.parent / "knowledge" / "knowledge.json"
-            if local_path.exists():
-                self._load_knowledge(str(local_path))
-                # Also load mob skills from the knowledge JSON
-                from_path = local_path
-            else:
-                from_path = None
+            for candidate in [
+                path,
+                str(Path(__file__).parent.parent.parent / "knowledge" / "knowledge.json"),
+                str(Path(__file__).parent.parent / "knowledge" / "knowledge.json"),
+                "knowledge/knowledge.json",
+            ]:
+                if candidate and Path(candidate).exists():
+                    try:
+                        with open(candidate) as f:
+                            data = json.load(f)
+                        self._monsters = data.get("monsters", [])
+                        loaded = True
+                        logger.info("Loaded %d monsters from %s", len(self._monsters), candidate)
+                        break
+                    except Exception:
+                        continue
 
-        # Load mob skills from local knowledge if available
+        # Load mob skills from knowledge JSON
         if not self._mob_skills:
-            skills_path = Path(__file__).parent.parent.parent / "knowledge" / "knowledge.json"
-            if skills_path.exists():
-                try:
-                    with open(skills_path) as f:
-                        data = json.load(f)
-                    raw_skills = data.get("mob_skills", {})
-                    for mob_id_str, skill_list in raw_skills.items():
-                        self._mob_skills[str(mob_id_str)] = skill_list
-                        # Build danger warnings
-                        for skill in skill_list:
-                            for danger_type, keywords in {
-                                "stun": ["STUNATTACK", "STUN"],
-                                "freeze": ["FREEZE", "FROSTDIVER", "STORMGUST"],
-                                "poison": ["POISONATTACK", "POISON", "VENOM"],
-                                "curse": ["CURSEATTACK", "CURSE"],
-                                "aoe": ["HELLJUDGEMENT", "EARTHQUAKE", "DARKBREATH",
-                                        "METEORASSAULT", "METEORSTORM"],
-                                "summon": ["SUMMONSLAVE", "CALLSLAVE"],
-                                "heal": ["ALLHEAL", "POWERUP", "AGIUP"],
-                                "combo": ["COMBOATTACK", "SONICBLOW"],
-                            }.items():
-                                skill_name = skill.get("skill", "").upper()
-                                if any(kw in skill_name for kw in keywords):
-                                    rate = int(skill.get("rate", 0) or 0)
-                                    if rate > 500:
-                                        # Find the monster name
-                                        for mob in self._monsters:
-                                            mob_id = str(mob.get("id", 0))
-                                            if mob_id == mob_id_str:
-                                                mob_name = mob.get("name", "")
-                                                if mob_name not in self._mob_skill_warnings:
-                                                    self._mob_skill_warnings[mob_name] = []
-                                                warning = f"{danger_type}:{skill.get('skill','')} (rate={rate}%)"
-                                                if warning not in self._mob_skill_warnings[mob_name]:
-                                                    self._mob_skill_warnings[mob_name].append(warning)
-                                                break
-                                    break
-                    logger.info("Loaded mob skills for %d monsters from local knowledge", len(self._mob_skills))
-                except Exception as e:
-                    logger.warning("Failed to load mob skills from local knowledge: %s", e)
+            for candidate in [
+                path,
+                str(Path(__file__).parent.parent.parent / "knowledge" / "knowledge.json"),
+                str(Path(__file__).parent.parent / "knowledge" / "knowledge.json"),
+                "knowledge/knowledge.json",
+            ]:
+                if candidate and Path(candidate).exists():
+                    try:
+                        with open(candidate) as f:
+                            data = json.load(f)
+                        raw_skills = data.get("mob_skills", {})
+                        for mob_id_str, skill_list in raw_skills.items():
+                            self._mob_skills[str(mob_id_str)] = skill_list
+                            for skill in skill_list:
+                                for danger_type, keywords in {
+                                    "stun": ["STUNATTACK", "STUN"],
+                                    "freeze": ["FREEZE", "FROSTDIVER", "STORMGUST"],
+                                    "poison": ["POISONATTACK", "POISON", "VENOM"],
+                                    "curse": ["CURSEATTACK", "CURSE"],
+                                    "aoe": ["HELLJUDGEMENT", "EARTHQUAKE", "DARKBREATH",
+                                            "METEORASSAULT", "METEORSTORM"],
+                                    "summon": ["SUMMONSLAVE", "CALLSLAVE"],
+                                    "heal": ["ALLHEAL", "POWERUP", "AGIUP"],
+                                    "combo": ["COMBOATTACK", "SONICBLOW"],
+                                }.items():
+                                    skill_name = skill.get("skill", "").upper()
+                                    if any(kw in skill_name for kw in keywords):
+                                        rate = int(skill.get("rate", 0) or 0)
+                                        if rate > 500:
+                                            for mob in self._monsters:
+                                                mob_id = str(mob.get("id", 0))
+                                                if mob_id == mob_id_str:
+                                                    mob_name = mob.get("name", "")
+                                                    if mob_name not in self._mob_skill_warnings:
+                                                        self._mob_skill_warnings[mob_name] = []
+                                                    warning = f"{danger_type}:{skill.get('skill','')} (rate={rate}%)"
+                                                    if warning not in self._mob_skill_warnings[mob_name]:
+                                                        self._mob_skill_warnings[mob_name].append(warning)
+                                                    break
+                                        break
+                        logger.info("Loaded mob skills for %d monsters from %s", len(self._mob_skills), candidate)
+                        break
+                    except Exception:
+                        continue
 
-        logger.warning("No game knowledge loaded — recommendations will be generic")
+        if not self._monsters:
+            logger.warning("No game knowledge loaded — recommendations will be generic")
 
     def recommend_hunting(self, *,
                           bot_level: int = 1,
