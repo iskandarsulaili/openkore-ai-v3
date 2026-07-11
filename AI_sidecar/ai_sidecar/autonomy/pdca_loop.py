@@ -452,16 +452,26 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
                 reflex_cmd = _reflex_result.get("action", "")
                 _log.info("swarm_reflex: bot=%s response=%s", bot_id, _reflex_result.get("response", ""))
         
-        # 8. Cross-horizon synergy check
+        # 8. Cross-horizon synergy check with real long-term goal
         _gd = getattr(runtime_state, "goal_decomposer", None)
         if _gd is not None:
             _synergy = getattr(runtime_state, "synergy_engine", None)
             if _synergy is not None:
+                # Track long-term goal across PDCA cycles via runtime state
+                _long_term_goals = getattr(runtime_state, "long_term_goals", {})
+                _long_term = _long_term_goals.get(bot_id, "")
+                # Update long-term goal from goal decomposer's progress
+                _gd_progress = _gd.progress(bot_id=bot_id)
+                if _gd_progress.get("parent"):
+                    _long_term = str(_gd_progress["parent"])
+                    _long_term_goals[bot_id] = _long_term
+                    runtime_state.long_term_goals = _long_term_goals
                 _conflicts = _synergy.detect_conflicts(
-                    short_term_goal=formation.value, long_term_goal=""
+                    short_term_goal=formation.value, long_term_goal=_long_term
                 )
                 if _conflicts:
-                    _log.info("goal_conflict: bot=%s conflicts=%s", bot_id, _conflicts)
+                    _log.info("goal_conflict: bot=%s short=%s long=%s conflicts=%s",
+                              bot_id, formation.value, _long_term, _conflicts)
         
         # Emit formation command
         aq = getattr(runtime_state, "action_queue", None)
@@ -1231,6 +1241,24 @@ class PDCALoop:
                     try:
                         _se = CrossHorizonSynergy()
                         self._runtime.synergy_engine = _se
+                    except Exception:
+                        pass
+                
+                # Initialize swarm goal coordinator if not present
+                _sgc = getattr(self._runtime, "swarm_coordinator", None)
+                if _sgc is None:
+                    try:
+                        from ai_sidecar.autonomy.goal_decomposer import SwarmGoalCoordinator
+                        _sgc = SwarmGoalCoordinator()
+                        self._runtime.swarm_coordinator = _sgc
+                        # Wire into HZM for multi-bot zone coordination
+                        _hzm_existing = getattr(self._runtime, "hunting_zone_manager", None)
+                        if _hzm_existing is not None:
+                            _hzm_existing.set_coordinator(_sgc)
+                        # Wire into goal decomposer
+                        _gd_existing = getattr(self._runtime, "goal_decomposer", None)
+                        if _gd_existing is not None:
+                            _gd_existing.set_swarm_coordinator(_sgc)
                     except Exception:
                         pass
                 
