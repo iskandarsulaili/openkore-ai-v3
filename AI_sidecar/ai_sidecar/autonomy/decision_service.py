@@ -188,23 +188,36 @@ class DecisionService:
         next_sg = self.goal_decomposer.next_action(bot_id=meta.bot_id)
 
         # Detect cross-horizon conflicts
-        conflicts = self.synergy_engine.detect_conflicts(decomposition=decomposition)
+        if decomposition is not None:
+            st_goal = str(decomposition.parent.value) if decomposition.parent else ""
+            lt_goals = [str(sg.objective) for sg in decomposition.sub_goals.values() if sg.horizon.value in ("long_term", "medium_term")]
+            conflicts = self.synergy_engine.detect_conflicts(st_goal, "; ".join(lt_goals[:2]))
+        else:
+            conflicts = []
 
-        # Swarm-aware zone assignment
-        available_zones = [f"prt_fild08", "prt_fild04", "pay_fild08", "pay_fild04",
+        # Swarm-aware zone assignment — pick a zone based on available hunting areas
+        available_zones = ["prt_fild08", "prt_fild04", "pay_fild08", "pay_fild04",
                            "gef_fild14", "moc_fild17", "mjolnir_04"]
-        assigned_zone = self.swarm_coordinator.assign_zone(
-            bot_id=meta.bot_id, available_zones=available_zones,
-            decomposition=decomposition,
-        )
+        assigned_zone = None
+        if decomposition and decomposition.sub_goals:
+            # Extract target map from sub-goals if present
+            for sg in decomposition.sub_goals.values():
+                tgt = sg.metadata.get("target_map", "") if isinstance(sg.metadata, dict) else ""
+                if tgt:
+                    assigned_zone = str(tgt)
+                    break
+        if not assigned_zone and available_zones:
+            assigned_zone = available_zones[0]
+        if assigned_zone:
+            self.swarm_coordinator.assign_zone(bot_id=meta.bot_id, zone=assigned_zone)
 
         logger.info(
             "autonomy_goal_decomposition",
             extra={
                 "event": "autonomy_goal_decomposition",
                 "bot_id": meta.bot_id,
-                "parent_goal": decomposition.parent.value,
-                "sub_goals": len(decomposition.sub_goals),
+                "parent_goal": decomposition.parent.value if decomposition else "none",
+                "sub_goals": len(decomposition.sub_goals) if decomposition else 0,
                 "next_action": str(next_sg.objective if next_sg else "none"),
                 "next_horizon": str(next_sg.horizon.value if next_sg else "none"),
                 "conflicts": len(conflicts),
