@@ -1403,8 +1403,19 @@ class PDCALoop:
         # This runs in ALL modes (saver, standard, max) as a safety net.
         # If the LLM path succeeds, these are just extra queued actions.
         # If the LLM path fails, the bot still has meaningful actions.
+        # Read map_name from snapshot for game engine routing
+        _fb_map_name = ""
+        try:
+            _fb_snap = self._get_latest_snapshot()
+            if _fb_snap is not None:
+                if isinstance(_fb_snap, dict):
+                    _fb_map_name = str(_fb_snap.get("map", _fb_snap.get("position", {}).get("map", "")) or "")
+                else:
+                    _fb_map_name = str(getattr(getattr(_fb_snap, "position", None), "map", "") or "")
+        except Exception:
+            pass
         _fallback_ge = _emit_game_engine_actions(
-            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=""
+            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_fb_map_name
         )
         _fallback_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
         _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
