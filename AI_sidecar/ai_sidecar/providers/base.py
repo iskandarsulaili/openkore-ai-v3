@@ -132,8 +132,8 @@ class LLMProvider:
                     if response.status_code >= 400:
                         error = f"http_{response.status_code}"
                         if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < retries:
-                            # 503 OmniRoute overload — longer backoff
-                            wait = 3.0 if response.status_code == 503 else 0.2
+                            # OmniRoute proxy overload — longer backoff for 502/503
+                            wait = 3.0 if response.status_code in {502, 503} else 0.2
                             await asyncio.sleep(min(wait * (attempt + 1), 15.0))
                             continue
                         self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)
@@ -251,7 +251,9 @@ class LLMProvider:
                     if response.status_code >= 400:
                         error = f"http_{response.status_code}"
                         if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < retries:
-                            await asyncio.sleep(min(0.2 * (attempt + 1), 1.0))
+                            # OmniRoute proxy overload — longer backoff for 502/503
+                            wait = 3.0 if response.status_code in {502, 503} else 0.2
+                            await asyncio.sleep(min(wait * (attempt + 1), 15.0))
                             continue
                         self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)
                         self._record_failure()
