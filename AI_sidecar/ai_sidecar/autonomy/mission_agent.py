@@ -174,6 +174,7 @@ class MissionAgentService:
     def _system_prompt(self) -> str:
         return (
             "You are the authoritative mission-decision layer between deterministic state assembly and deterministic execution. "
+            "Respond with ONLY valid JSON. No markdown, no code fences, no extra text. "
             "Return JSON that matches schema exactly and never add top-level keys outside {decision}. "
             "Treat context.invariants.reasoning_protocol as mandatory eight-phase reasoning order and enforce it internally before writing output. "
             "Ground every claim in provided context only (assessment, deterministic_goal_stack, snapshot, enriched_state, runtime_facts, knowledge_summary, invariants). "

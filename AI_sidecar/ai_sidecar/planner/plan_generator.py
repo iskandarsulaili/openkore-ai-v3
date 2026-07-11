@@ -747,6 +747,7 @@ class PlanGenerator:
         )
         base_prompt = (
             "You are the local sidecar conscious planner for Ragnarok Online bots. "
+            "Respond with ONLY valid JSON. No markdown, no code fences, no extra text. "
             "Output only strict JSON following schema. "
             "Do not emit free-form commands outside schema. "
             "Steps must be a non-empty array with concrete descriptions. "
