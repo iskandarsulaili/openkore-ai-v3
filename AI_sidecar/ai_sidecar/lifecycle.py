@@ -211,7 +211,15 @@ def _should_deny_provider(workload: str, provider_name: str, provider_base_url: 
     # Never deny any provider — the user explicitly configured their chain
     return False
 
-_LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = ("prt_fild08",)
+_LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = (
+    "prt_fild08",
+    "prt_fild04",
+    "pay_fild08",
+    "pay_fild04",
+    "gef_fild14",
+    "moc_fild17",
+    "mjolnir_04",
+)
 
 
 def _default_macro_plugin_name() -> str:

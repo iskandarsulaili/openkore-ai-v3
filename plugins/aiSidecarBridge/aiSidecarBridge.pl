@@ -2461,10 +2461,20 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-	# Handle map-name moves: "move prt_fild08" → "ai auto"
-	# OpenKore doesn't understand map names in the move command.
-	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
-	if ($normalized =~ /^move\s+/) {
+	# Handle map-name moves: "move prt_fild08" → set lockMap + ai auto
+	# OpenKore's auto AI uses lockMap to navigate to and stay on a map.
+	# Setting lockMap first, then enabling auto AI, gives the bot a
+	# meaningful destination instead of aimless wandering.
+	if ($normalized =~ /^move\s+(.+)$/) {
+		my $target_map = $1;
+		# Only set lockMap for valid map names (not special commands)
+		if ($target_map !~ /^(savepoint|random_walk_seek)$/) {
+			configModify("lockMap", $target_map);
+			configModify("lockMap_x", "");
+			configModify("lockMap_y", "");
+			configModify("lockMap_randX", 0);
+			configModify("lockMap_randY", 0);
+		}
 		if (_ai_already_auto_mode()) {
 			return ('', 'map_move_already_auto');
 		}
