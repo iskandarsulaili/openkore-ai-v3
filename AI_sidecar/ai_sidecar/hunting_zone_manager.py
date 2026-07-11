@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import random
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
@@ -145,6 +146,8 @@ class HuntingZoneManager:
         self._map_drops: dict[str, Any] = {}
         self._load_knowledge(knowledge_path)
         self._zone_cache: dict[str, list[HuntingZone]] = {}
+        self._zone_cache_ttl: float = 60.0  # seconds
+        self._zone_cache_timestamps: dict[str, float] = {}
         self._zone_assignment: dict[str, str] = {}  # bot_id -> map_name
 
     def set_coordinator(self, coordinator):
@@ -196,7 +199,9 @@ class HuntingZoneManager:
         """
         cache_key = f"{bot_level}:{bot_class}:{goal}:{weapon_type}:{element}"
         if use_cache and cache_key in self._zone_cache:
-            return self._zone_cache[cache_key]
+            _ts = self._zone_cache_timestamps.get(cache_key, 0)
+            if time.time() - _ts < self._zone_cache_ttl:
+                return self._zone_cache[cache_key]
         if not self._monsters:
             return self._fallback_zones(bot_level)
 
@@ -360,6 +365,7 @@ class HuntingZoneManager:
 
         # Cache the result
         self._zone_cache[cache_key] = candidates[:10]
+        self._zone_cache_timestamps[cache_key] = time.time()
         return candidates[:10]
 
     def _build_zone_from_ge(self, map_name, min_lv, max_lv, map_info, ge_rec, total_score, total_exp, total_danger, total_zeny, best_exp_hp):

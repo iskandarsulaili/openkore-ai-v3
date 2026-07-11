@@ -685,9 +685,10 @@ class SwarmReflexSystem:
 
     def assess(self, *, party_id: str, bots: list[dict[str, Any]],
                signals: dict[str, Any]) -> dict[str, Any] | None:
-        """Assess if a swarm reflex action is needed."""
-        now = time.time()
-        results = {}
+        """Assess if a swarm reflex action is needed. Thread-safe via RLock."""
+        with self._lock:
+            now = time.time()
+            results = {}
 
         # 1. Party member death — immediate response
         dead = [b for b in bots if b.get("is_dead", False)]

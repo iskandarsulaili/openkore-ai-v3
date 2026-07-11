@@ -1012,10 +1012,23 @@ class PDCALoop:
             self._running = False
 
     async def stop(self) -> None:
-        """Stop the PDCA loop gracefully."""
+        """Stop the PDCA loop gracefully. Cleans up P2P nodes."""
         self._running = False
         if hasattr(self, '_thread') and self._thread is not None:
             self._thread.join(timeout=3)
+        # Clean up P2P nodes
+        _p2p = getattr(self._runtime, "p2p_node", None)
+        if _p2p is not None:
+            try:
+                _p2p.stop_server()
+            except Exception:
+                pass
+        _p2p_mgr = getattr(self._runtime, "p2p_manager", None)
+        if _p2p_mgr is not None:
+            try:
+                _p2p_mgr.stop_all_servers()
+            except Exception:
+                pass
         logger.info("PDCALoop stopped")
 
     async def get_status(self) -> dict[str, Any]:

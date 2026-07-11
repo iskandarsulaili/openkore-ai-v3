@@ -356,9 +356,11 @@ class GameIntelligenceEngine:
 
         Considers: level, class, weapon/element, party size, goal.
         Returns sorted list of recommendations (best first).
+        Thread-safe via RLock.
         """
-        if not self._monsters:
-            return self._generic_recommendation(bot_level)
+        with self._lock:
+            if not self._monsters:
+                return self._generic_recommendation(bot_level)
 
         avoid = set(avoid_mobs or [])
         archetype = CLASS_ARCHETYPES.get(bot_class.lower(), CLASS_ARCHETYPES["novice"])

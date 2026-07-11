@@ -24,6 +24,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
 from urllib.request import Request, urlopen
@@ -60,10 +61,11 @@ class P2PRequestHandler(BaseHTTPRequestHandler):
         pass  # Suppress HTTP server log noise
 
     def do_POST(self):
-        """Handle incoming knowledge messages."""
+        """Handle incoming knowledge messages. Max 1MB per message."""
+        max_size = 1 * 1024 * 1024  # 1MB max
         content_length = int(self.headers.get("Content-Length", 0))
-        if content_length == 0:
-            self.send_response(400)
+        if content_length == 0 or content_length > max_size:
+            self.send_response(413 if content_length > max_size else 400)
             self.end_headers()
             return
 
@@ -135,6 +137,7 @@ class P2PKnowledgeNode:
         self._server_adaptation = None
 
         # Shared knowledge
+        self._gossip_pool = ThreadPoolExecutor(max_workers=4)
         self._shared_hunting_zones: dict[str, dict[str, Any]] = {}
         self._shared_npc_locations: dict[str, dict[str, Any]] = {}
         self._shared_server_rates: dict[str, float] = {}
