@@ -3,12 +3,16 @@
 # openkore-ai-v3 — Start Script for Multi-User Multi-Char Production Stack
 # ============================================================================
 # Usage:
-#   ./start.sh                 Start sidecar + all 3 bots + tail all logs
+#   ./start.sh                 Start sidecar + all bots + P2P network + tail all logs
 #   ./start.sh sidecar         Start sidecar only
 #   ./start.sh bot <name>      Start one bot by profile name
 #   ./start.sh stop            Kill all processes
 #   ./start.sh status          Show status of all processes
 #   ./start.sh tail            Tail logs of running processes
+#
+# P2P knowledge network starts automatically when PDCA loop initializes.
+# Each bot gets its own P2P node on port 18090+hash(bot_id)%100.
+# No manual P2P setup needed — just run ./start.sh and everything connects.
 # ============================================================================
 set -euo pipefail
 

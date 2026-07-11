@@ -38,6 +38,8 @@ class KnowledgeMessage:
     msg_id: str
     sender_bot_id: str
     msg_type: str  # "experience" | "hunting_zone" | "npc_location" | "server_rate" | "alert"
+                   # | "item_drop" | "item_valuation" | "item_price" | "card_drop"
+                   # | "market_price" | "trade_offer" | "supply_demand"
     payload: dict[str, Any]
     timestamp: float
     ttl: int = 300  # seconds before this message is stale
@@ -137,6 +139,12 @@ class P2PKnowledgeNode:
         self._shared_npc_locations: dict[str, dict[str, Any]] = {}
         self._shared_server_rates: dict[str, float] = {}
         self._shared_alerts: list[dict[str, Any]] = []
+        self._shared_item_drops: dict[str, dict[str, Any]] = {}
+        self._shared_item_valuations: dict[str, dict[str, Any]] = {}
+        self._shared_item_prices: dict[str, dict[str, Any]] = {}
+        self._shared_card_drops: dict[str, dict[str, Any]] = {}
+        self._shared_market_prices: dict[str, dict[str, Any]] = {}
+        self._shared_supply_demand: dict[str, dict[str, Any]] = {}
 
     def set_experience_db(self, exp_db) -> None:
         self._experience_db = exp_db
@@ -301,6 +309,163 @@ class P2PKnowledgeNode:
         self._gossip(msg)
         return msg_id
 
+    def broadcast_item_drop(self, monster_name: str, item_name: str,
+                             dropped: bool, server_rate: float = 1.0) -> str:
+        """Share an item drop observation with all peers.
+        
+        Items, cards, and equipment vary by server. Custom servers have
+        their own item IDs, drop lists, and card effects. By sharing
+        drop observations across the P2P network, all bots learn which
+        items actually drop, at what rate, and whether they're worth farming.
+        """
+        msg_id = f"{self._bot_id}_drop_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="item_drop",
+            payload={
+                "monster_name": monster_name,
+                "item_name": item_name,
+                "dropped": dropped,
+                "server_rate": server_rate,
+                "is_card": "card" in item_name.lower(),
+                "is_equipment": any(kw in item_name.lower() for kw in
+                    ["sword", "armor", "shield", "boots", "cloak", "hat", "helm",
+                     "staff", "bow", "dagger", "mace", "spear", "ring", "earring",
+                     "necklace", "brooch", "glove", "muffler"]),
+            },
+            timestamp=time.time(),
+        )
+        self._gossip(msg)
+        return msg_id
+
+    def broadcast_item_valuation(self, item_name: str, value: str,
+                                   action: str, reason: str) -> str:
+        """Share an item valuation with all peers.
+        
+        What's worth keeping vs selling varies by server economy.
+        When bot A learns that a custom item is valuable, bot B
+        benefits without having to discover it independently.
+        """
+        msg_id = f"{self._bot_id}_val_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="item_valuation",
+            payload={
+                "item_name": item_name,
+                "value": value,  # "high" | "medium" | "low"
+                "action": action,  # "keep" | "sell" | "store"
+                "reason": reason,
+            },
+            timestamp=time.time(),
+        )
+        self._gossip(msg)
+        return msg_id
+
+    def broadcast_item_price(self, item_name: str, npc_buy_price: int,
+                               npc_sell_price: int, market_price: int = 0) -> str:
+        """Share NPC price observations with all peers.
+        
+        NPC buy/sell prices vary by server. Vending prices even more so.
+        Shared price knowledge helps all bots value items correctly.
+        """
+        msg_id = f"{self._bot_id}_price_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="item_price",
+            payload={
+                "item_name": item_name,
+                "npc_buy_price": npc_buy_price,
+                "npc_sell_price": npc_sell_price,
+                "market_price": market_price,
+                "timestamp": time.time(),
+            },
+            timestamp=time.time(),
+            ttl=86400,  # Prices change slowly, 24h TTL
+        )
+        self._gossip(msg)
+        return msg_id
+
+    def broadcast_card_drop(self, monster_name: str, card_name: str,
+                              dropped: bool) -> str:
+        """Share a card drop observation with all peers.
+        
+        Cards are the most server-variable item. Rate, effect, and
+        which monster drops which card all change between servers.
+        Every bot benefits from pooled card drop observations.
+        """
+        msg_id = f"{self._bot_id}_card_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="card_drop",
+            payload={
+                "monster_name": monster_name,
+                "card_name": card_name,
+                "dropped": dropped,
+                "is_card": True,
+            },
+            timestamp=time.time(),
+            ttl=86400,  # Card rates are stable, 24h TTL
+        )
+        self._gossip(msg)
+        return msg_id
+
+    def broadcast_market_price(self, item_name: str, price: int,
+                                 listing_count: int = 1, trend: str = "stable") -> str:
+        """Share observed player vending price with all peers.
+        
+        Market prices are driven by other players, not NPCs. When bot A
+        sees an item being sold for X zeny, it shares that observation.
+        Over time, the P2P network builds a real-time supply/demand map.
+        """
+        msg_id = f"{self._bot_id}_mkt_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="market_price",
+            payload={
+                "item_name": item_name,
+                "price": price,
+                "listing_count": listing_count,
+                "trend": trend,
+                "timestamp": time.time(),
+            },
+            timestamp=time.time(),
+            ttl=3600,
+        )
+        self._gossip(msg)
+        return msg_id
+
+    def broadcast_supply_demand(self, item_name: str, supply: str,
+                                  demand: str, confidence: float = 0.5) -> str:
+        """Share a supply/demand observation with all peers.
+        
+        supply: "abundant" | "common" | "scarce" | "rare"  
+        demand: "low" | "medium" | "high" | "critical"
+        
+        When all bots agree an item is scarce with high demand, the
+        network recommends farming it.
+        """
+        msg_id = f"{self._bot_id}_sd_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="supply_demand",
+            payload={
+                "item_name": item_name,
+                "supply": supply,
+                "demand": demand,
+                "confidence": confidence,
+            },
+            timestamp=time.time(),
+            ttl=3600,
+        )
+        self._gossip(msg)
+        return msg_id
+
     def _gossip(self, msg: KnowledgeMessage) -> None:
         """Send a message to all peers (gossip protocol)."""
         with self._lock:
@@ -402,6 +567,18 @@ class P2PKnowledgeNode:
                 self._process_server_rate(msg)
             elif msg.msg_type == "alert":
                 self._process_alert(msg)
+            elif msg.msg_type == "item_drop":
+                self._process_item_drop(msg)
+            elif msg.msg_type == "item_valuation":
+                self._process_item_valuation(msg)
+            elif msg.msg_type == "item_price":
+                self._process_item_price(msg)
+            elif msg.msg_type == "card_drop":
+                self._process_card_drop(msg)
+            elif msg.msg_type == "market_price":
+                self._process_market_price(msg)
+            elif msg.msg_type == "supply_demand":
+                self._process_supply_demand(msg)
         except Exception:
             logger.exception("p2p_process_message_failed: type=%s", msg.msg_type)
 
@@ -470,6 +647,325 @@ class P2PKnowledgeNode:
             if len(self._shared_alerts) > 100:
                 self._shared_alerts = self._shared_alerts[-100:]
 
+    def _process_item_drop(self, msg: KnowledgeMessage) -> None:
+        """Process an item drop observation from a peer.
+        
+        Records the observation and recomputes drop rate patterns.
+        When multiple bots report drops of the same item from the same
+        monster, the estimated drop rate becomes more accurate.
+        """
+        p = msg.payload
+        monster = p.get("monster_name", "")
+        item = p.get("item_name", "")
+        dropped = p.get("dropped", False)
+        is_card = p.get("is_card", False)
+        key = f"{monster}:{item}"
+        
+        with self._lock:
+            if key not in self._shared_item_drops:
+                self._shared_item_drops[key] = {
+                    "monster": monster,
+                    "item": item,
+                    "is_card": is_card,
+                    "observations": [],
+                    "total_kills": 0,
+                    "total_drops": 0,
+                    "observed_rate": 0.0,
+                    "expected_rate": 0.0,
+                    "variance": 0.0,
+                    "last_observed": 0.0,
+                    "reported_by": set(),
+                }
+            record = self._shared_item_drops[key]
+            record["observations"].append(dropped)
+            record["total_kills"] += 1
+            if dropped:
+                record["total_drops"] += 1
+            record["observed_rate"] = record["total_drops"] / max(record["total_kills"], 1)
+            record["last_observed"] = msg.timestamp
+            record["reported_by"].add(msg.sender_bot_id)
+            
+            # Check expected rate from knowledge DB
+            if self._server_adaptation is not None:
+                profile = self._server_adaptation.get_profile()
+                record["expected_rate"] = profile.drop_rate * 0.01  # 1% base
+            else:
+                record["expected_rate"] = 0.01
+            
+            # Compute variance: |observed - expected| / expected
+            if record["expected_rate"] > 0:
+                record["variance"] = abs(record["observed_rate"] - record["expected_rate"]) / record["expected_rate"]
+            
+            # PATTERN DETECTION: if variance > 3x, this server has custom rates
+            if record["variance"] > 3.0 and record["total_kills"] >= 10:
+                logger.info("p2p_drop_pattern: monster=%s item=%s observed=%.4f expected=%.4f variance=%.1fx (CUSTOM RATE)",
+                           monster, item, record["observed_rate"], record["expected_rate"], record["variance"])
+                # Broadcast alert about custom drop rate
+                self.broadcast_alert("custom_drop_rate", 
+                    f"Custom drop rate detected: {item} from {monster} ({record['observed_rate']:.2%} vs {record['expected_rate']:.2%} expected)",
+                    {"monster": monster, "item": item, "observed_rate": record["observed_rate"]})
+            
+            # PATTERN DETECTION: if item drops 0 times in 50+ kills, it's disabled
+            if record["total_kills"] >= 50 and record["total_drops"] == 0:
+                logger.info("p2p_drop_pattern: monster=%s item=%s NEVER DROPS (50+ kills, 0 drops) — DISABLED ON SERVER",
+                           monster, item)
+                self.broadcast_alert("disabled_item",
+                    f"Item disabled on server: {item} from {monster} (0 drops in {record['total_kills']} kills)",
+                    {"monster": monster, "item": item, "total_kills": record["total_kills"]})
+
+    def _process_item_valuation(self, msg: KnowledgeMessage) -> None:
+        """Process an item valuation from a peer.
+        
+        Builds consensus on what items are worth keeping vs selling.
+        If 3+ bots independently value the same item as "sell", it's junk.
+        If 3+ bots value it as "keep", it's valuable.
+        """
+        p = msg.payload
+        item = p.get("item_name", "")
+        value = p.get("value", "medium")
+        action = p.get("action", "sell")
+        reason = p.get("reason", "")
+        
+        with self._lock:
+            if item not in self._shared_item_valuations:
+                self._shared_item_valuations[item] = {
+                    "valuations": [],
+                    "consensus_value": "unknown",
+                    "consensus_action": "sell",
+                    "confidence": 0.0,
+                    "reported_by": set(),
+                }
+            record = self._shared_item_valuations[item]
+            record["valuations"].append({"value": value, "action": action, "reason": reason, "bot": msg.sender_bot_id})
+            record["reported_by"].add(msg.sender_bot_id)
+            
+            # Compute consensus: majority vote
+            values = [v["value"] for v in record["valuations"]]
+            high_count = sum(1 for v in values if v == "high")
+            low_count = sum(1 for v in values if v == "low")
+            if high_count > low_count and high_count >= 2:
+                record["consensus_value"] = "high"
+                record["consensus_action"] = "keep"
+                record["confidence"] = min(1.0, high_count / 5.0)
+            elif low_count > high_count and low_count >= 2:
+                record["consensus_value"] = "low"
+                record["consensus_action"] = "sell"
+                record["confidence"] = min(1.0, low_count / 5.0)
+            
+            # PATTERN DETECTION: item with high consensus is worth farming
+            if record["consensus_value"] == "high" and record["confidence"] >= 0.6:
+                logger.info("p2p_valuation_pattern: item=%s value=high confidence=%.0f%% bots=%d",
+                           item, record["confidence"] * 100, len(record["reported_by"]))
+
+    def _process_item_price(self, msg: KnowledgeMessage) -> None:
+        """Process an NPC price observation from a peer.
+        
+        Tracks price ranges across the network. When 3+ bots report
+        the same item price, that price is confirmed.
+        """
+        p = msg.payload
+        item = p.get("item_name", "")
+        buy_price = p.get("npc_buy_price", 0)
+        sell_price = p.get("npc_sell_price", 0)
+        
+        with self._lock:
+            if item not in self._shared_item_prices:
+                self._shared_item_prices[item] = {
+                    "buy_prices": [],
+                    "sell_prices": [],
+                    "confirmed_buy": 0,
+                    "confirmed_sell": 0,
+                    "reported_by": set(),
+                }
+            record = self._shared_item_prices[item]
+            record["buy_prices"].append(buy_price)
+            record["sell_prices"].append(sell_price)
+            record["reported_by"].add(msg.sender_bot_id)
+            
+            # Use median for confirmed price
+            if len(record["buy_prices"]) >= 3:
+                sorted_buys = sorted(record["buy_prices"])
+                record["confirmed_buy"] = sorted_buys[len(sorted_buys) // 2]
+            if len(record["sell_prices"]) >= 3:
+                sorted_sells = sorted(record["sell_prices"])
+                record["confirmed_sell"] = sorted_sells[len(sorted_sells) // 2]
+
+    def _process_card_drop(self, msg: KnowledgeMessage) -> None:
+        """Process a card drop observation from a peer.
+        
+        Cards are the most server-variable items. Dedicated tracking
+        with pattern detection for custom card rates.
+        """
+        p = msg.payload
+        monster = p.get("monster_name", "")
+        card = p.get("card_name", "")
+        dropped = p.get("dropped", False)
+        key = f"{monster}:{card}"
+        
+        with self._lock:
+            if key not in self._shared_card_drops:
+                self._shared_card_drops[key] = {
+                    "monster": monster,
+                    "card": card,
+                    "observations": [],
+                    "total_kills": 0,
+                    "total_drops": 0,
+                    "observed_rate": 0.0,
+                    "expected_rate": 0.0001,  # 0.01% base card rate
+                    "variance": 0.0,
+                    "last_observed": 0.0,
+                    "reported_by": set(),
+                }
+            record = self._shared_card_drops[key]
+            record["observations"].append(dropped)
+            record["total_kills"] += 1
+            if dropped:
+                record["total_drops"] += 1
+            record["observed_rate"] = record["total_drops"] / max(record["total_kills"], 1)
+            record["last_observed"] = msg.timestamp
+            record["reported_by"].add(msg.sender_bot_id)
+            
+            # PATTERN DETECTION: high card rate = server feature
+            if record["total_kills"] >= 100 and record["observed_rate"] > 0.001:
+                # More than 0.1% = high rate server
+                logger.info("p2p_card_pattern: monster=%s card=%s rate=%.4f (HIGH CARD RATE)",
+                           monster, card, record["observed_rate"])
+                self.broadcast_alert("high_card_rate",
+                    f"High card rate: {card} from {monster} ({record['observed_rate']:.2%})",
+                    {"monster": monster, "card": card, "rate": record["observed_rate"]})
+            
+            # PATTERN DETECTION: card drop confirmed
+            if record["total_drops"] >= 1:
+                logger.info("p2p_card_confirmed: monster=%s card=%s confirmed by %s (kills=%d)",
+                           monster, card, msg.sender_bot_id, record["total_kills"])
+
+    def _process_market_price(self, msg: KnowledgeMessage) -> None:
+        """Process a market price observation from a peer.
+        
+        Builds a real-time price map. When 5+ bots report similar prices
+        for the same item, that price is confirmed as the market rate.
+        Detects trends: if prices are dropping, sell now. If rising, hold.
+        """
+        p = msg.payload
+        item = p.get("item_name", "")
+        price = p.get("price", 0)
+        listing_count = p.get("listing_count", 1)
+        trend = p.get("trend", "stable")
+        
+        with self._lock:
+            if item not in self._shared_market_prices:
+                self._shared_market_prices[item] = {
+                    "prices": [],
+                    "confirmed_price": 0,
+                    "min_price": 0,
+                    "max_price": 0,
+                    "avg_price": 0,
+                    "trend": "unknown",
+                    "listings_seen": 0,
+                    "reported_by": set(),
+                    "last_updated": 0.0,
+                }
+            record = self._shared_market_prices[item]
+            record["prices"].append(price)
+            record["listings_seen"] += listing_count
+            record["reported_by"].add(msg.sender_bot_id)
+            record["last_updated"] = msg.timestamp
+            
+            # Compute stats
+            if len(record["prices"]) >= 3:
+                sorted_p = sorted(record["prices"])
+                record["confirmed_price"] = sorted_p[len(sorted_p) // 2]
+                record["min_price"] = sorted_p[0]
+                record["max_price"] = sorted_p[-1]
+                record["avg_price"] = sum(sorted_p) / len(sorted_p)
+            
+            # Trend detection: compare recent vs older prices
+            if len(record["prices"]) >= 5:
+                recent = record["prices"][-3:]
+                older = record["prices"][:3]
+                if sum(recent) / 3 < sum(older) / 3 * 0.9:
+                    record["trend"] = "falling"
+                elif sum(recent) / 3 > sum(older) / 3 * 1.1:
+                    record["trend"] = "rising"
+                else:
+                    record["trend"] = "stable"
+            
+            # PATTERN: if price is falling, alert bots to sell now
+            if record["trend"] == "falling" and len(record["prices"]) >= 5:
+                logger.info("p2p_market_pattern: item=%s price=%d trend=%s (SELL NOW)",
+                           item, record["confirmed_price"], record["trend"])
+                self.broadcast_alert("sell_now",
+                    f"Price dropping: {item} at {record['confirmed_price']}z ({record['trend']})",
+                    {"item": item, "price": record["confirmed_price"], "trend": record["trend"]})
+
+    def _process_supply_demand(self, msg: KnowledgeMessage) -> None:
+        """Process a supply/demand observation from a peer.
+        
+        Builds consensus on market supply and demand. When 3+ bots agree
+        an item is "scarce" with "high" demand, that's a farming opportunity.
+        """
+        p = msg.payload
+        item = p.get("item_name", "")
+        supply = p.get("supply", "common")
+        demand = p.get("demand", "medium")
+        confidence = p.get("confidence", 0.5)
+        
+        with self._lock:
+            if item not in self._shared_supply_demand:
+                self._shared_supply_demand[item] = {
+                    "observations": [],
+                    "consensus_supply": "unknown",
+                    "consensus_demand": "unknown",
+                    "confidence": 0.0,
+                    "reported_by": set(),
+                    "farming_recommendation": None,
+                }
+            record = self._shared_supply_demand[item]
+            record["observations"].append({"supply": supply, "demand": demand, "confidence": confidence})
+            record["reported_by"].add(msg.sender_bot_id)
+            
+            # Compute consensus
+            supplies = [o["supply"] for o in record["observations"]]
+            demands = [o["demand"] for o in record["observations"]]
+            
+            supply_score = 0
+            for s in supplies:
+                if s == "abundant": supply_score += 1
+                elif s == "common": supply_score += 2
+                elif s == "scarce": supply_score += 3
+                elif s == "rare": supply_score += 4
+            avg_supply = supply_score / max(len(supplies), 1)
+            if avg_supply >= 3.5: record["consensus_supply"] = "rare"
+            elif avg_supply >= 2.5: record["consensus_supply"] = "scarce"
+            elif avg_supply >= 1.5: record["consensus_supply"] = "common"
+            else: record["consensus_supply"] = "abundant"
+            
+            demand_score = 0
+            for d in demands:
+                if d == "low": demand_score += 1
+                elif d == "medium": demand_score += 2
+                elif d == "high": demand_score += 3
+                elif d == "critical": demand_score += 4
+            avg_demand = demand_score / max(len(demands), 1)
+            if avg_demand >= 3.5: record["consensus_demand"] = "critical"
+            elif avg_demand >= 2.5: record["consensus_demand"] = "high"
+            elif avg_demand >= 1.5: record["consensus_demand"] = "medium"
+            else: record["consensus_demand"] = "low"
+            
+            record["confidence"] = min(1.0, len(record["reported_by"]) / 5.0)
+            
+            # PATTERN: scarce + high demand = farm this
+            if record["consensus_supply"] in ("scarce", "rare") and record["consensus_demand"] in ("high", "critical"):
+                record["farming_recommendation"] = "farm"
+                if record["confidence"] >= 0.4:
+                    logger.info("p2p_market_opportunity: item=%s supply=%s demand=%s (FARM THIS)",
+                               item, record["consensus_supply"], record["consensus_demand"])
+                    self.broadcast_alert("farming_opportunity",
+                        f"Market opportunity: {item} ({record['consensus_supply']}/{record['consensus_demand']})",
+                        {"item": item, "supply": record["consensus_supply"], "demand": record["consensus_demand"]})
+            elif record["consensus_supply"] == "abundant" and record["consensus_demand"] == "low":
+                record["farming_recommendation"] = "avoid"
+
     def get_shared_hunting_zones(self) -> dict[str, dict[str, Any]]:
         with self._lock:
             return dict(self._shared_hunting_zones)
@@ -486,6 +982,53 @@ class P2PKnowledgeNode:
         with self._lock:
             return self._shared_alerts[-limit:]
 
+    def get_shared_item_drops(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_item_drops)
+
+    def get_shared_item_valuations(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_item_valuations)
+
+    def get_shared_item_prices(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_item_prices)
+
+    def get_shared_card_drops(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_card_drops)
+
+    def get_shared_item_valuation(self, item_name: str) -> dict[str, Any]:
+        """Get the consensus valuation for a specific item."""
+        with self._lock:
+            return dict(self._shared_item_valuations.get(item_name, {}))
+
+    def get_shared_item_price(self, item_name: str) -> dict[str, Any]:
+        """Get the confirmed price for a specific item."""
+        with self._lock:
+            return dict(self._shared_item_prices.get(item_name, {}))
+
+    def get_shared_card_drop(self, monster_name: str, card_name: str) -> dict[str, Any]:
+        with self._lock:
+            key = f"{monster_name}:{card_name}"
+            return dict(self._shared_card_drops.get(key, {}))
+
+    def get_shared_market_prices(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_market_prices)
+
+    def get_shared_supply_demand(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self._shared_supply_demand)
+
+    def get_shared_market_price(self, item_name: str) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._shared_market_prices.get(item_name, {}))
+
+    def get_shared_supply_demand_for(self, item_name: str) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._shared_supply_demand.get(item_name, {}))
+
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -500,6 +1043,15 @@ class P2PKnowledgeNode:
                 "shared_hunting_zones": len(self._shared_hunting_zones),
                 "shared_npc_locations": len(self._shared_npc_locations),
                 "shared_alerts": len(self._shared_alerts),
+                "shared_item_drops": len(self._shared_item_drops),
+                "shared_item_valuations": len(self._shared_item_valuations),
+                "shared_item_prices": len(self._shared_item_prices),
+                "shared_card_drops": len(self._shared_card_drops),
+                "reported_cards": len(self._shared_card_drops),
+                "reported_items": len(self._shared_item_drops),
+                "shared_market_prices": len(self._shared_market_prices),
+                "shared_supply_demand": len(self._shared_supply_demand),
+                "farming_opportunities": sum(1 for v in self._shared_supply_demand.values() if v.get("farming_recommendation") == "farm"),
             }
 
 
