@@ -721,20 +721,253 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
     return 0
 
 
+
+# ── Class skill definitions for _emit_skill_actions ───────────────────────────────────────────
+# Keyed by canonical class name, each entry has attack and buff lists of (skill_name, min_base_level).
+CLASS_SKILLS: dict[str, dict[str, list[tuple[str, int]]]] = {
+    "acolyte": {"attack": [("basic_attack", 1)], "buffs": [("heal", 1), ("cure", 1), ("increase_agility", 15), ("bless", 20)]},
+    "alchemist": {"attack": [("acid_demonstration", 40)], "buffs": [("increase_agility", 1), ("bless", 1), ("fire_ins", 30), ("learning_potion", 50)]},
+    "arch_bishop": {"attack": [("magnus_exorcismus", 50), ("adventus", 90)], "buffs": [("heal", 1), ("cure", 1), ("increase_agility", 15), ("bless", 20), ("highness_heal", 40), ("resurection", 30), ("assumptio", 70), ("epiclesis", 100)]},
+    "arch_mage": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("frost_diver", 15), ("fire_ball", 30), ("fire_wall", 40), ("frost_nova", 50), ("storm_gust", 60), ("meteor_storm", 70), ("heaven_drive", 80), ("crimson_arrow", 100)], "buffs": [("increase_agility", 1), ("energy_coat", 40), ("mystical_amplification", 70)]},
+    "archer": {"attack": [("double_strafing", 1), ("arrow_shower", 20)], "buffs": [("increase_agility", 1)]},
+    "assassin": {"attack": [("double_attack", 1), ("sonic_blow", 30), ("grimtooth", 50)], "buffs": [("hiding", 15), ("venom_dust", 40)]},
+    "assassin_cross": {"attack": [("double_attack", 1), ("sonic_blow", 30), ("grimtooth", 50)], "buffs": [("hiding", 15), ("venom_dust", 40), ("enchant_poison", 60)]},
+    "bard": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("musical_instrument", 50)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "biolo": {"attack": [("cart_cannon", 1), ("acid_terror", 70), ("hell_plant", 80), ("bio_explosion", 100)], "buffs": [("increase_agility", 1), ("bless", 1), ("fire_ins", 30), ("learning_potion", 50), ("sphere_mine", 60)]},
+    "blacksmith": {"attack": [("mammonite", 30), ("cart_revolution", 40), ("hammer_fall", 50)], "buffs": [("increase_agility", 1), ("weapon_perfection", 40), ("overthrust", 60)]},
+    "cardinal": {"attack": [("magnus_exorcismus", 50)], "buffs": [("heal", 1), ("cure", 1), ("increase_agility", 15), ("bless", 20), ("highness_heal", 40), ("resurection", 30), ("assumptio", 70), ("epiclesis", 100)]},
+    "champion": {"attack": [("triple_attack", 1), ("chain_combo", 30), ("finger_offensive", 50), ("asura", 70)], "buffs": [("increase_agility", 1), ("bless", 1), ("enchant_rage", 60)]},
+    "clown": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("musical_instrument", 50), ("metallic_sound", 70)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "creator": {"attack": [("acid_demonstration", 40), ("acid_terror", 70)], "buffs": [("increase_agility", 1), ("bless", 1), ("fire_ins", 30), ("learning_potion", 50)]},
+    "dancer": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("arrow_vulcan", 50)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "dragon_knight": {"attack": [("bowling_bash", 1), ("brandish_spear", 30), ("pierce", 50), ("spiral_pierce", 70), ("rune_mastery", 90), ("dragon_breath", 100)], "buffs": [("provoke", 1), ("aura_blade", 60), ("enchant_blade", 80)]},
+    "elemental_master": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("diamond_dust", 80), ("lightning_cloud", 80), ("violet_force", 80), ("elemental_kill", 100)], "buffs": [("increase_agility", 1), ("energy_coat", 30), ("fiber_lock", 60), ("memorize", 70)]},
+    "genetic": {"attack": [("cart_cannon", 1), ("acid_terror", 70), ("hell_plant", 80)], "buffs": [("increase_agility", 1), ("bless", 1), ("fire_ins", 30), ("learning_potion", 50), ("sphere_mine", 60)]},
+    "guillotine_cross": {"attack": [("double_attack", 1), ("sonic_blow", 30), ("grimtooth", 50), ("cross_impact", 80)], "buffs": [("hiding", 15), ("venom_dust", 40), ("enchant_poison", 60), ("new_poison_research", 70)]},
+    "gunslinger": {"attack": [("chain_action", 1), ("rapid_shower", 30), ("tracking", 50)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "gypsy": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("arrow_vulcan", 50), ("ravenous_wolf", 70)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "high_priest": {"attack": [("magnus_exorcismus", 50)], "buffs": [("heal", 1), ("cure", 1), ("increase_agility", 15), ("bless", 20), ("highness_heal", 40), ("resurection", 30), ("assumptio", 70)]},
+    "high_wizard": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("frost_diver", 15), ("fire_ball", 30), ("fire_wall", 40), ("frost_nova", 50), ("storm_gust", 60), ("meteor_storm", 70), ("heaven_drive", 80)], "buffs": [("increase_agility", 1), ("energy_coat", 40)]},
+    "hunter": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("blitz_beat", 40), ("beast_tamer", 60)], "buffs": [("increase_agility", 1)]},
+    "kagerou": {"attack": [("throw_shuriken", 1), ("throw_kunai", 20), ("fire_blossom", 35), ("crimson_seal", 60)], "buffs": [("increase_agility", 1)]},
+    "knight": {"attack": [("bowling_bash", 1), ("brandish_spear", 30), ("pierce", 50)], "buffs": [("provoke", 1)]},
+    "lord_knight": {"attack": [("bowling_bash", 1), ("brandish_spear", 30), ("pierce", 50), ("spiral_pierce", 70)], "buffs": [("provoke", 1), ("aura_blade", 60)]},
+    "mage": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("frost_diver", 15), ("stone_curse", 30)], "buffs": []},
+    "meister": {"attack": [("mammonite", 30), ("cart_revolution", 40), ("hammer_fall", 50), ("mighty_push", 80)], "buffs": [("increase_agility", 1), ("weapon_perfection", 40), ("overthrust", 60)]},
+    "merchant": {"attack": [("mammonite", 30), ("cart_revolution", 40)], "buffs": [("increase_agility", 1)]},
+    "minstrel": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("musical_instrument", 50), ("metallic_sound", 70), ("sound_blend", 90)], "buffs": [("increase_agility", 1), ("bless", 1), ("lyrical", 80)]},
+    "monk": {"attack": [("triple_attack", 1), ("chain_combo", 30), ("finger_offensive", 50)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "ninja": {"attack": [("throw_shuriken", 1), ("throw_kunai", 20), ("fire_blossom", 35)], "buffs": [("increase_agility", 1)]},
+    "novice": {"attack": [("basic_attack", 1)], "buffs": []},
+    "oboro": {"attack": [("throw_shuriken", 1), ("throw_kunai", 20), ("fire_blossom", 35), ("dragon_seal", 60)], "buffs": [("increase_agility", 1)]},
+    "paladin": {"attack": [("holy_cross", 1), ("shield_boomerang", 30), ("grand_cross", 50)], "buffs": [("provoke", 1), ("increase_agility", 1)]},
+    "priest": {"attack": [("magnus_exorcismus", 50)], "buffs": [("heal", 1), ("cure", 1), ("increase_agility", 15), ("bless", 20), ("highness_heal", 40), ("resurection", 30)]},
+    "professor": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("dispel", 50)], "buffs": [("increase_agility", 1), ("energy_coat", 30), ("fiber_lock", 60), ("memorize", 70)]},
+    "ranger": {"attack": [("aimed_bolt", 1), ("arrow_shower", 20), ("blitz_beat", 40), ("beast_tamer", 60), ("true_sight", 70), ("cambias_volley", 90)], "buffs": [("increase_agility", 1), ("wind_walk", 70)]},
+    "rebel": {"attack": [("chain_action", 1), ("rapid_shower", 30), ("tracking", 50), ("void_man", 80)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "rogue": {"attack": [("double_attack", 1), ("steal", 10), ("backstab", 30)], "buffs": [("hiding", 15), ("stalk", 40)]},
+    "royal_guard": {"attack": [("holy_cross", 1), ("shield_boomerang", 30), ("grand_cross", 50), ("cannon_spear", 80)], "buffs": [("provoke", 1), ("increase_agility", 1)]},
+    "rune_knight": {"attack": [("bowling_bash", 1), ("brandish_spear", 30), ("pierce", 50), ("spiral_pierce", 70), ("rune_mastery", 90)], "buffs": [("provoke", 1), ("aura_blade", 60), ("enchant_blade", 80)]},
+    "sage": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1)], "buffs": [("increase_agility", 1), ("energy_coat", 30)]},
+    "shadow_chaser": {"attack": [("double_attack", 1), ("steal", 10), ("backstab", 30), ("triangle_shot", 60), ("masquerade", 90)], "buffs": [("hiding", 15), ("stalk", 40), ("preserve", 70)]},
+    "shadow_cross": {"attack": [("double_attack", 1), ("sonic_blow", 30), ("grimtooth", 50), ("cross_impact", 80), ("shadow_eternal", 100)], "buffs": [("hiding", 15), ("venom_dust", 40), ("enchant_poison", 60), ("new_poison_research", 70)]},
+    "sniper": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("blitz_beat", 40), ("beast_tamer", 60), ("true_sight", 70)], "buffs": [("increase_agility", 1)]},
+    "sorcerer": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("diamond_dust", 80), ("lightning_cloud", 80), ("violet_force", 80)], "buffs": [("increase_agility", 1), ("energy_coat", 30), ("fiber_lock", 60), ("memorize", 70)]},
+    "soul_ascetic": {"attack": [("fire_bolt", 20), ("cold_bolt", 20), ("lightning_bolt", 20), ("eska", 50), ("esma", 60), ("es_soul", 90)], "buffs": [("ka_ahi", 30), ("ka_na", 30), ("estun", 40)]},
+    "soul_linker": {"attack": [("fire_bolt", 20), ("cold_bolt", 20), ("lightning_bolt", 20), ("eska", 50)], "buffs": [("ka_ahi", 30), ("ka_na", 30), ("estun", 40), ("esma", 60)]},
+    "soul_reaper": {"attack": [("fire_bolt", 20), ("cold_bolt", 20), ("lightning_bolt", 20), ("eska", 50), ("esma", 60)], "buffs": [("ka_ahi", 30), ("ka_na", 30), ("estun", 40)]},
+    "stalker": {"attack": [("double_attack", 1), ("steal", 10), ("backstab", 30), ("triangle_shot", 60)], "buffs": [("hiding", 15), ("stalk", 40), ("preserve", 70)]},
+    "star_gladiator": {"attack": [("basic_attack", 1), ("star_strike", 50)], "buffs": [("increase_agility", 1), ("bless", 1), ("wrath_crocodile", 30), ("fusion_crocodile", 30)]},
+    "super_novice": {"attack": [("basic_attack", 1)], "buffs": [("increase_agility", 40), ("bless", 40)]},
+    "sura": {"attack": [("triple_attack", 1), ("chain_combo", 30), ("finger_offensive", 50), ("asura", 70), ("fist_ancient", 90)], "buffs": [("increase_agility", 1), ("bless", 1), ("enchant_rage", 60)]},
+    "swordman": {"attack": [("bash", 1), ("magnum_break", 25)], "buffs": [("provoke", 1)]},
+    "taekwon": {"attack": [("flying_side_kick", 1), ("whirlwind_kick", 30)], "buffs": [("increase_agility", 1)]},
+    "thief": {"attack": [("double_attack", 1), ("steal", 10)], "buffs": [("hiding", 15)]},
+    "wanderer": {"attack": [("double_strafing", 1), ("arrow_shower", 20), ("arrow_vulcan", 50), ("ravenous_wolf", 70), ("dazzler", 90)], "buffs": [("increase_agility", 1), ("bless", 1)]},
+    "whitesmith": {"attack": [("mammonite", 30), ("cart_revolution", 40), ("hammer_fall", 50)], "buffs": [("increase_agility", 1), ("weapon_perfection", 40), ("overthrust", 60)]},
+    "windhawk": {"attack": [("aimed_bolt", 1), ("arrow_shower", 20), ("blitz_beat", 40), ("beast_tamer", 60), ("true_sight", 70), ("cambias_volley", 90)], "buffs": [("increase_agility", 1), ("wind_walk", 70)]},
+    "wizard": {"attack": [("fire_bolt", 1), ("cold_bolt", 1), ("lightning_bolt", 1), ("frost_diver", 15), ("fire_ball", 30), ("fire_wall", 40), ("frost_nova", 50), ("storm_gust", 60), ("meteor_storm", 70)], "buffs": [("increase_agility", 1), ("energy_coat", 40)]},
+}
+
+# Buff names that can be checked against snapshot active_buffs.
+# Maps skill name → canonical active_buff string.
+_BUFF_ALIASES: dict[str, str] = {
+    "increase_agility": "agi_up",
+    "bless": "bless",
+    "provoke": "provoke",
+    "hiding": "hiding",
+    "venom_dust": "venom_dust",
+    "enchant_poison": "enchant_poison",
+    "weapon_perfection": "weapon_perfection",
+    "overthrust": "overthrust",
+    "energy_coat": "energy_coat",
+    "aura_blade": "aura_blade",
+    "assumptio": "assumptio",
+    "enchant_rage": "enchant_rage",
+    "wind_walk": "wind_walk",
+    "ka_ahi": "ka_ahi",
+    "ka_na": "ka_na",
+    "estun": "estun",
+    "esma": "esma",
+    "preserve": "preserve",
+    "mystical_amplification": "mystical_amplification",
+    "enchant_blade": "enchant_blade",
+    "wrath_crocodile": "wrath_crocodile",
+    "fusion_crocodile": "fusion_crocodile",
+    "memorize": "memorize",
+    "fiber_lock": "fiber_lock",
+    "lyrical": "lyrical",
+    "stalk": "stalk",
+    "new_poison_research": "new_poison_research",
+    "sphere_mine": "sphere_mine",
+    "cure": "cure",
+    "heal": "heal",
+    "highness_heal": "highness_heal",
+    "resurection": "resurection",
+    "epiclesis": "epiclesis",
+    "fire_ins": "fire_ins",
+    "learning_potion": "learning_potion",
+}
+
+# Map OpenKore job_name strings → canonical CLASS_SKILLS keys.
+_CLASS_ALIASES: dict[str, str] = {
+    "novice": "novice",
+    "super_novice": "super_novice",
+    "swordman": "swordman",
+    "knight": "knight",
+    "lord_knight": "lord_knight",
+    "rune_knight": "rune_knight",
+    "dragon_knight": "dragon_knight",
+    "paladin": "paladin",
+    "royal_guard": "royal_guard",
+    "mage": "mage",
+    "wizard": "wizard",
+    "high_wizard": "high_wizard",
+    "arch_mage": "arch_mage",
+    "sage": "sage",
+    "professor": "professor",
+    "sorcerer": "sorcerer",
+    "elemental_master": "elemental_master",
+    "acolyte": "acolyte",
+    "priest": "priest",
+    "high_priest": "high_priest",
+    "arch_bishop": "arch_bishop",
+    "cardinal": "cardinal",
+    "monk": "monk",
+    "champion": "champion",
+    "sura": "sura",
+    "archer": "archer",
+    "hunter": "hunter",
+    "sniper": "sniper",
+    "ranger": "ranger",
+    "windhawk": "windhawk",
+    "bard": "bard",
+    "clown": "clown",
+    "minstrel": "minstrel",
+    "dancer": "dancer",
+    "gypsy": "gypsy",
+    "wanderer": "wanderer",
+    "thief": "thief",
+    "assassin": "assassin",
+    "assassin_cross": "assassin_cross",
+    "guillotine_cross": "guillotine_cross",
+    "shadow_cross": "shadow_cross",
+    "rogue": "rogue",
+    "stalker": "stalker",
+    "shadow_chaser": "shadow_chaser",
+    "merchant": "merchant",
+    "blacksmith": "blacksmith",
+    "whitesmith": "whitesmith",
+    "meister": "meister",
+    "alchemist": "alchemist",
+    "creator": "creator",
+    "genetic": "genetic",
+    "biolo": "biolo",
+    "soul_linker": "soul_linker",
+    "soul_reaper": "soul_reaper",
+    "soul_ascetic": "soul_ascetic",
+    "star_gladiator": "star_gladiator",
+    "taekwon": "taekwon",
+    "gunslinger": "gunslinger",
+    "rebel": "rebel",
+    "ninja": "ninja",
+    "kagerou": "kagerou",
+    "oboro": "oboro",
+}
+
+def _resolve_bot_class(bot_class_raw: str) -> str:
+    """Normalise raw class name to a canonical CLASS_SKILLS key."""
+    raw = bot_class_raw.lower().strip().replace(" ", "_").replace("-", "_")
+    if raw in _CLASS_ALIASES:
+        return _CLASS_ALIASES[raw]
+    # Substring fallback
+    for alias_key, canonical in _CLASS_ALIASES.items():
+        if alias_key in raw or raw in alias_key:
+            return canonical
+    return "novice"
+
+
+def _level_gate(skill_name: str, min_base_level: int, bot_level: int) -> bool:
+    """Return True if bot level >= required level for skill."""
+    return bot_level >= min_base_level
+
+
+def _is_buff_active(buff_name: str, active_buffs: list[str]) -> bool:
+    """Return True if a buff with this name or alias is already active."""
+    buff_lower = buff_name.lower().strip()
+    alias = _BUFF_ALIASES.get(buff_lower, buff_lower)
+    for active in active_buffs:
+        act = active.lower().strip()
+        if act == buff_lower or act == alias or alias in act or buff_lower in act:
+            return True
+    return False
+
+
+def _extract_active_buffs(snapshot) -> list[str]:
+    """Extract active buff names from a snapshot (handles dict + object)."""
+    if isinstance(snapshot, dict):
+        return list(snapshot.get("active_buffs", []) or [])
+    raw = getattr(snapshot, "raw", None) or {}
+    if isinstance(raw, dict):
+        return list(raw.get("active_buffs", []) or [])
+    return []
+
+
+def _extract_bot_level(snapshot) -> int:
+    """Extract bot base level from a snapshot (handles dict + object)."""
+    if isinstance(snapshot, dict):
+        v = snapshot.get("vitals") or {}
+        level = v.get("level", 0) or 0
+        if level > 0:
+            return int(level)
+        prog = snapshot.get("progression") or {}
+        return int(prog.get("base_level", 1) or 1)
+    # Object mode
+    v = getattr(snapshot, "vitals", None)
+    if v is not None:
+        level = getattr(v, "level", 0) or 0
+        if level > 0:
+            return int(level)
+    prog = getattr(snapshot, "progression", None)
+    if prog is not None:
+        return int(getattr(prog, "base_level", 1) or 1)
+    return 1
+
+
 def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
-    """Emit skill rotation actions based on game engine recommendations.
-    
-    Uses game engine's recommend_skills_for_mob() to determine optimal
-    skills against current targets. Replaces empty attackSkillSlot blocks.
-    """
+    """Emit skill rotation actions with SP management, level gating, buff reuse prevention,
+    and rotation tracking.
+
+    Returns number of actions queued."""
     import logging
     _log = logging.getLogger(__name__)
+
     try:
         game_engine = getattr(runtime_state, "game_engine", None)
         if game_engine is None:
             return 0
-        
-        # Get snapshot for current mob info
+
+        # ── Snapshot ──
         snapshots = getattr(runtime_state, "snapshot_cache", None)
         if snapshots is None:
             return 0
@@ -744,155 +977,252 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             return 0
         if latest is None:
             return 0
-        
-        # Get current target info
+
+        aq = getattr(runtime_state, "action_queue", None)
+        if aq is None:
+            return 0
+
+        # ── Resolve bot_id ──
+        if not bot_id:
+            if isinstance(latest, dict):
+                bot_id = str(latest.get("bot_id", "default"))
+            else:
+                bot_id = getattr(latest, "bot_id", "default") or "default"
+        bot_id = bot_id or "default"
+
+        # ── Extract bot info (dict + object handling) ──
+        bot_class = "novice"
+        bot_level = 1
+        sp_ratio = 1.0
+        active_buffs: list[str] = []
         mob_element = "Neutral"
         mob_race = "Formless"
         mob_size = "Medium"
-        bot_class = "novice"
+
         if isinstance(latest, dict):
+            bot_class = str(latest.get("job_name", latest.get("class", "novice")) or "novice")
+            bot_level = _extract_bot_level(latest)
+            v = latest.get("vitals") or {}
+            sp_ratio = float(v.get("sp_ratio", 1.0) or 1.0)
             target = latest.get("target", {}) or {}
             mob_element = str(target.get("element", "Neutral") or "Neutral")
             mob_race = str(target.get("race", "Formless") or "Formless")
             mob_size = str(target.get("size", "Medium") or "Medium")
-            bot_class = str(latest.get("job_name", latest.get("class", "novice")) or "novice")
+            active_buffs = _extract_active_buffs(latest)
         else:
+            bot_class = str(getattr(latest, "job_name", "novice") or "novice")
+            bot_level = _extract_bot_level(latest)
+            vt = getattr(latest, "vitals", None)
+            sp_ratio = float(getattr(vt, "sp_ratio", 1.0) or 1.0) if vt else 1.0
             target = getattr(latest, "target", None) or {}
             mob_element = str(getattr(target, "element", "Neutral") or "Neutral")
             mob_race = str(getattr(target, "race", "Formless") or "Formless")
             mob_size = str(getattr(target, "size", "Medium") or "Medium")
-            bot_class = str(getattr(latest, "job_name", "novice") or "novice")
-        
-        # Get skill recommendation
+            active_buffs = _extract_active_buffs(latest)
+
+        # ── SP management: low SP → basic attack only ──
+        if sp_ratio < 0.3:
+            _log.info(
+                "skill_action[%s]: sp_ratio=%.2f < 0.3 → basic attack only",
+                bot_id, sp_ratio,
+            )
+            from datetime import UTC, datetime, timedelta
+            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+            import hashlib as _hashlib
+            import time as _time
+            _short_id = _hashlib.md5(f"{bot_id}_ata_{horizon}_{_time.time()}".encode()).hexdigest()[:16]
+            proposal = ActionProposal(
+                action_id=f"atk_{horizon}_{_short_id}",
+                kind="command",
+                command="attack_skill basic_attack",
+                priority_tier=ActionPriorityTier.tactical,
+                source="planner",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                idempotency_key=f"atk_{horizon}_{_short_id}",
+                metadata={
+                    "goal": "combat",
+                    "objective": "Basic attack (low SP)",
+                    "horizon": horizon,
+                    "bot_id": bot_id,
+                    "source": "skill_ai",
+                    "low_sp": True,
+                    "sp_ratio": sp_ratio,
+                },
+            )
+            aq.enqueue(bot_id, proposal)
+            return 1
+
+        # ── Resolve canonical class key ──
+        canonical_class = _resolve_bot_class(bot_class)
+        class_data = CLASS_SKILLS.get(canonical_class)
+        if class_data is None:
+            # Try substring matching against all keys
+            for key, data in CLASS_SKILLS.items():
+                if key in bot_class.lower().replace(" ", "_"):
+                    class_data = data
+                    canonical_class = key
+                    break
+        if class_data is None:
+            _log.warning("skill_action[%s]: unknown class '%s', skipping", bot_id, bot_class)
+            return 0
+
+        # ── Build eligible skill list (level-gated) ──
+        eligible_attacks: list[str] = []
+        eligible_buffs: list[str] = []
+
+        for skill_name, min_level in class_data.get("attack", []):
+            if _level_gate(skill_name, min_level, bot_level):
+                eligible_attacks.append(skill_name)
+
+        for skill_name, min_level in class_data.get("buffs", []):
+            if _level_gate(skill_name, min_level, bot_level):
+                eligible_buffs.append(skill_name)
+
+        # ── Get element recommendation from game engine ──
         skills = game_engine.recommend_skills_for_mob(
             job_name=bot_class,
             mob_element=mob_element,
             mob_race=mob_race,
             mob_size=mob_size,
         )
-        
-        if not skills:
-            return 0
-        
-        # Resolve bot_id
-        if not bot_id:
-            if isinstance(latest, dict) and latest.get("bot_id"):
-                bot_id = str(latest["bot_id"])
-        bot_id = bot_id or "default"
-        
-        best = skills[0]
-        recommended_element = best.get("recommended_element", "Neutral")
-        
-        # Map element to actual skill command based on class
-        # Element converters: every class can use element via converters/endow
-        # Magic classes: direct element spells
-        # Physical classes: weapon element via converters (ss endow, etc.)
-        element_to_skill = {
-            "Holy": "ss heal",  # Heal vs Undead, or aspersio
-            "Fire": "ss fire_bolt",
-            "Water": "ss cold_bolt",
-            "Wind": "ss lightning_bolt",
-            "Earth": "ss stone_curse",
-            "Poison": "ss venom_dust",
-            "Ghost": "ss magnus",
-            "Undead": "ss turn_undead",
-            "Dark": "ss grimtooth",
-        }
-        
-        # Class-specific skill mapping
-        class_to_skill = {
-            "mage": "ss fire_bolt",
-            "wizard": "ss fire_bolt",
-            "high_wizard": "ss fire_bolt",
-            "arch_mage": "ss fire_bolt",
-            "acolyte": "ss heal",
-            "priest": "ss heal",
-            "high_priest": "ss heal",
-            "arch_bishop": "ss heal",
-            "cardinal": "ss heal",
-            "swordman": "ss magnum_break",
-            "knight": "ss bowling_bash",
-            "lord_knight": "ss bowling_bash",
-            "rune_knight": "ss bowling_bash",
-            "dragon_knight": "ss bowling_bash",
-            "thief": "ss double_attack",
-            "assassin": "ss sonic_blow",
-            "assassin_cross": "ss sonic_blow",
-            "guillotine_cross": "ss sonic_blow",
-            "shadow_cross": "ss sonic_blow",
-            "archer": "ss double_strafing",
-            "hunter": "ss double_strafing",
-            "sniper": "ss double_strafing",
-            "ranger": "ss aimed_bolt",
-            "windhawk": "ss aimed_bolt",
-            "merchant": "ss mammonite",
-            "blacksmith": "ss mammonite",
-            "whitesmith": "ss mammonite",
-            "meister": "ss mammonite",
-            "alchemist": "ss acid_demonstration",
-            "creator": "ss acid_demonstration",
-            "genetic": "ss cart_cannon",
-            "biolo": "ss cart_cannon",
-        }
-        
-        # Determine best skill command
-        skill_cmd = None
-        bot_class_lower = bot_class.lower().replace(" ", "_").replace("-", "_")
-        
-        # Try element-based skill first (for magic classes)
-        if bot_class_lower in ("mage", "wizard", "high_wizard", "arch_mage", "soul_linker", "soul_reaper", "soul_ascetic", "sage", "professor", "sorcerer", "elemental_master"):
-            if recommended_element in element_to_skill:
-                skill_cmd = element_to_skill[recommended_element]
-        
-        # Fall back to class default skill
-        if not skill_cmd:
-            for key, cmd in class_to_skill.items():
-                if key in bot_class_lower:
-                    skill_cmd = cmd
-                    break
-        
-        # Final fallback: ai auto
-        if not skill_cmd:
-            skill_cmd = "ai auto"
-        
-        aq = getattr(runtime_state, "action_queue", None)
-        if aq is None:
-            return 0
-        
+
+        # ── Initialise rotation state per bot ──
+        rotation_state: dict = getattr(runtime_state, "skill_rotation_state", None)
+        if rotation_state is None:
+            rotation_state = {}
+            object.__setattr__(runtime_state, "skill_rotation_state", rotation_state)
+
+        bot_rotation = rotation_state.setdefault(bot_id, {
+            "attack_index": 0,
+            "buff_index": 0,
+            "last_buff_ts": 0.0,
+            "total_pick_count": 0,
+        })
+
+        now = time.time()
+
+        # ── Decide: buff or attack? ──
+        # Emit a buff roughly every 5 cycles if any buffs are available and not already active
+        should_buff = (
+            bool(eligible_buffs)
+            and bot_rotation["total_pick_count"] % 5 == 0
+            and (now - bot_rotation.get("last_buff_ts", 0.0)) > 30.0
+        )
+
         from datetime import UTC, datetime, timedelta
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
         import hashlib as _hashlib
-        _short_id = _hashlib.md5(f"{bot_id}_skill_{horizon}_{time.time()}".encode()).hexdigest()[:16]
-        proposal = ActionProposal(
-            action_id=f"skill_{horizon}_{_short_id}",
-            kind="command",
-            command=skill_cmd,
-            priority_tier=ActionPriorityTier.tactical,
-            source="planner",
-            created_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC) + timedelta(seconds=60),
-            idempotency_key=f"skill_{horizon}_{_short_id}",
-            metadata={
-                "goal": "combat",
-                "objective": f"Use {skill_cmd} vs {mob_element} ({best['damage_multiplier']:.0%})",
-                "horizon": horizon, "bot_id": bot_id, "source": "skill_ai",
-                "recommended_element": recommended_element,
-                "damage_multiplier": best["damage_multiplier"],
-                "mob_element": mob_element,
-            },
-        )
-        aq.enqueue(bot_id, proposal)
-        _log.info(
-            "skill_action: bot=%s cmd=%s element=%s mult=%.0f%% vs %s",
-            bot_id, skill_cmd, recommended_element, best["damage_multiplier"] * 100, mob_element,
-        )
-        return 1
+        import time as _time
+
+        actions_queued = 0
+
+        if should_buff:
+            # Filter out buffs already active
+            fresh_buffs = [
+                name for name in eligible_buffs
+                if not _is_buff_active(name, active_buffs)
+            ]
+            if fresh_buffs:
+                b_idx = bot_rotation["buff_index"] % len(fresh_buffs)
+                buff_cmd = fresh_buffs[b_idx]
+                bot_rotation["buff_index"] = (bot_rotation["buff_index"] + 1) % len(fresh_buffs)
+                bot_rotation["last_buff_ts"] = now
+                bot_rotation["total_pick_count"] += 1
+
+                _short_id = _hashlib.md5(f"{bot_id}_buff_{horizon}_{_time.time()}".encode()).hexdigest()[:16]
+                proposal = ActionProposal(
+                    action_id=f"skill_{horizon}_{_short_id}",
+                    kind="command",
+                    command=f"ss {buff_cmd}",
+                    priority_tier=ActionPriorityTier.tactical,
+                    source="planner",
+                    created_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                    idempotency_key=f"skill_{horizon}_{_short_id}",
+                    metadata={
+                        "goal": "combat",
+                        "objective": f"Buff with {buff_cmd}",
+                        "horizon": horizon,
+                        "bot_id": bot_id,
+                        "source": "skill_ai",
+                        "skill_type": "buff",
+                        "skill_name": buff_cmd,
+                        "rotation_index": bot_rotation["attack_index"],
+                        "bot_level": bot_level,
+                        "sp_ratio": sp_ratio,
+                    },
+                )
+                aq.enqueue(bot_id, proposal)
+                _log.info(
+                    "skill_action[%s]: buff=%s level=%d sp_ratio=%.2f (rotation=%d)",
+                    bot_id, buff_cmd, bot_level, sp_ratio,
+                    bot_rotation["attack_index"],
+                )
+                actions_queued = 1
+
+        # ── Emit attack skill ──
+        if eligible_attacks:
+            a_idx = bot_rotation["attack_index"] % len(eligible_attacks)
+            attack_cmd = eligible_attacks[a_idx]
+            bot_rotation["attack_index"] = (bot_rotation["attack_index"] + 1) % len(eligible_attacks)
+            bot_rotation["total_pick_count"] += 1
+
+            # If skills recommendation found a good element, prefer that
+            recommended_element = "Neutral"
+            damage_mult = 1.0
+            if skills:
+                recommended_element = skills[0].get("recommended_element", "Neutral")
+                damage_mult = skills[0].get("damage_multiplier", 1.0)
+
+            # Build objective string
+            if attack_cmd == "basic_attack":
+                command = f"attack_skill {attack_cmd}"
+                obj = f"Basic attack vs {mob_element}"
+            else:
+                command = f"ss {attack_cmd}"
+                obj = f"Use {attack_cmd} vs {mob_element}"
+
+            _short_id = _hashlib.md5(f"{bot_id}_atk_{horizon}_{_time.time()}_{a_idx}".encode()).hexdigest()[:16]
+            proposal = ActionProposal(
+                action_id=f"skill_{horizon}_{_short_id}",
+                kind="command",
+                command=command,
+                priority_tier=ActionPriorityTier.tactical,
+                source="planner",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                idempotency_key=f"skill_{horizon}_{_short_id}",
+                metadata={
+                    "goal": "combat",
+                    "objective": obj,
+                    "horizon": horizon,
+                    "bot_id": bot_id,
+                    "source": "skill_ai",
+                    "skill_type": "attack",
+                    "skill_name": attack_cmd,
+                    "rotation_index": bot_rotation["attack_index"],
+                    "bot_level": bot_level,
+                    "bot_class": canonical_class,
+                    "sp_ratio": sp_ratio,
+                    "recommended_element": recommended_element,
+                    "damage_multiplier": damage_mult,
+                    "mob_element": mob_element,
+                },
+            )
+            aq.enqueue(bot_id, proposal)
+            _log.info(
+                "skill_action[%s]: cmd=%s element=%s mult=%.0f%% level=%d sp_ratio=%.2f (rotation=%d)",
+                bot_id, command, recommended_element, damage_mult * 100,
+                bot_level, sp_ratio, bot_rotation["attack_index"],
+            )
+            actions_queued += 1
+
+        return actions_queued
+
     except Exception:
         _log.exception("skill_action_emission_failed")
-    return 0
-
-
-
+        return 0
 _STARTUP_GATE_MIN_EVENTS = 2
 _STARTUP_GATE_MAX_CREW_FAILURES = 2
 

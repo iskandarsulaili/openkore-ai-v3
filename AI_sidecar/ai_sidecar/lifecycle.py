@@ -108,7 +108,7 @@ from ai_sidecar.fleet import (
 )
 from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
 from ai_sidecar.fleet.self_learning import (
-    SelfLearningSystem,
+    FleetLearningSystem as SelfLearningSystem,
     PerformanceRecord,
     SkillEffectiveness,
     ItemEffectiveness,
@@ -553,6 +553,26 @@ class RuntimeState:
     experience_db: ExperienceDatabase | None = None
     npc_dialog: NPCDialogEngine | None = None
     web_research: WebResearchEngine | None = None
+    # ── New god-tier AI systems ──
+    role_manager: "RoleManager | None" = None
+    goal_stack: "GoalStackComputation | None" = None
+    memory_retrieval: "MemoryRetrievalService | None" = None
+    reflex_emitter: "ActionEmitter | None" = None
+    hunting_zone_manager: "HuntingZoneManager | None" = None
+    game_engine: "GameIntelligenceEngine | None" = None
+    swarm_tactics: "SwarmTacticsEngine | None" = None
+    anti_detection: "AntiDetection | None" = None
+    role_discovery: "RoleDiscoveryEngine | None" = None
+    cost_mode_manager: "CostModeManager | None" = None
+    goal_decomposer: "GoalDecomposer | None" = None
+    npc_discovery: "NPCDiscoveryEngine | None" = None
+    server_adaptation: "ServerAdaptationEngine | None" = None
+    p2p_node: "P2PKnowledgeNode | None" = None
+    p2p_manager: "P2PNetworkManager | None" = None
+    swarm_reflex: "SwarmReflexSystem | None" = None
+    synergy_engine: "CrossHorizonSynergy | None" = None
+    swarm_coordinator: "SwarmGoalCoordinator | None" = None
+    fleet_learning: "FleetLearningSystem | None" = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
@@ -5294,7 +5314,7 @@ def create_runtime() -> RuntimeState:
     fleet_coordinator = FleetCoordinatorService()
     self_learning_system = SelfLearningSystem(
         db_path=str(sqlite_path) if sqlite_path is not None else None,
-        max_records=100000,
+        max_outcomes_per_zone=1000,
     )
 
     action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
