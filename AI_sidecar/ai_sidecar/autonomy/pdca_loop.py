@@ -2235,7 +2235,7 @@ class PDCALoop:
         continuity_goal_state_present = bool(goal_state is not None or status.get("continuity_goal_state_present", False))
         history_ready = bool(continuity_goal_state_present or status.get("history_ready", False))
         # Also consider gate ready if we've had snapshot activity for > 30s even without position data
-        elapsed_s = float(status.get("elapsed_s", 0.0) or 0.0)
+        elapsed_s = max(0.0, float(status.get("elapsed_s") or 0.0))
         if not snapshot_ready and bool(snapshot is not None) and elapsed_s > 30.0:
             snapshot_ready = True
         minimum_readiness = bool(bot_ready and history_ready)
