@@ -625193,5 +625193,286 @@
       "Level": 274,
       "Exp": 43080365334
     }
+  ],
+  "macro_patterns": [
+    {
+      "pattern_id": "auto_potion_hp",
+      "category": "survival",
+      "description": "Auto-use HP potion when HP drops below 50%",
+      "triggers": [
+        {
+          "type": "vitals.hp_ratio",
+          "op": "lte",
+          "value": 0.5
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "use red_potion",
+          "description": "Use HP potion",
+          "timeout_seconds": 2.0
+        }
+      ],
+      "cooldown_seconds": 2.0
+    },
+    {
+      "pattern_id": "auto_potion_sp",
+      "category": "survival",
+      "description": "Auto-use SP potion when SP drops below 30%",
+      "triggers": [
+        {
+          "type": "vitals.sp_ratio",
+          "op": "lte",
+          "value": 0.3
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "use blue_potion",
+          "description": "Use SP potion",
+          "timeout_seconds": 2.0
+        }
+      ],
+      "cooldown_seconds": 3.0
+    },
+    {
+      "pattern_id": "emergency_teleport",
+      "category": "survival",
+      "description": "Teleport to savepoint when HP critically low (15%)",
+      "triggers": [
+        {
+          "type": "vitals.hp_ratio",
+          "op": "lte",
+          "value": 0.15
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ai manual",
+          "description": "Stop auto AI"
+        },
+        {
+          "command": "teleport",
+          "description": "Teleport to savepoint",
+          "timeout_seconds": 5.0
+        },
+        {
+          "command": "ai auto",
+          "description": "Re-enable AI"
+        }
+      ],
+      "cooldown_seconds": 10.0,
+      "exclusive": true
+    },
+    {
+      "pattern_id": "death_recovery",
+      "category": "survival",
+      "description": "After death, respawn and return to hunting zone",
+      "triggers": [
+        {
+          "type": "event.event_type",
+          "op": "eq",
+          "value": "player_died"
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ai auto",
+          "description": "Respawn with auto AI"
+        },
+        {
+          "command": "ai auto",
+          "description": "Re-enter auto mode with lockMap"
+        }
+      ],
+      "cooldown_seconds": 15.0,
+      "exclusive": true
+    },
+    {
+      "pattern_id": "auto_buff",
+      "category": "survival",
+      "description": "Cast class buffs when out of combat",
+      "triggers": [
+        {
+          "type": "combat.is_in_combat",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ss increase_agility",
+          "description": "Cast Agi Up",
+          "timeout_seconds": 3.0
+        },
+        {
+          "command": "ss bless",
+          "description": "Cast Bless",
+          "timeout_seconds": 3.0
+        }
+      ],
+      "cooldown_seconds": 60.0
+    },
+    {
+      "pattern_id": "sell_junk_items",
+      "category": "economy",
+      "description": "Sell junk items to NPC when inventory is near full",
+      "triggers": [
+        {
+          "type": "inventory.overweight_ratio",
+          "op": "gte",
+          "value": 0.85
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "move prontera",
+          "description": "Return to town",
+          "timeout_seconds": 30.0
+        },
+        {
+          "command": "ai auto",
+          "description": "Auto-sell through AI"
+        }
+      ],
+      "cooldown_seconds": 60.0
+    },
+    {
+      "pattern_id": "storage_deposit",
+      "category": "economy",
+      "description": "Deposit loot into Kafra storage when inventory full",
+      "triggers": [
+        {
+          "type": "inventory.item_count",
+          "op": "gte",
+          "value": 90
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "move prontera",
+          "description": "Return to town",
+          "timeout_seconds": 30.0
+        },
+        {
+          "command": "ai auto",
+          "description": "Let AI handle storage"
+        }
+      ],
+      "cooldown_seconds": 120.0
+    },
+    {
+      "pattern_id": "buy_supplies",
+      "category": "economy",
+      "description": "Buy potions/supplies when stock is low",
+      "triggers": [
+        {
+          "type": "inventory.item_count",
+          "op": "lte",
+          "value": 5
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "move prontera",
+          "description": "Return to town",
+          "timeout_seconds": 30.0
+        },
+        {
+          "command": "ai auto",
+          "description": "Let AI buy supplies via auto-buy config"
+        }
+      ],
+      "required_zeny": 1000,
+      "cooldown_seconds": 120.0
+    },
+    {
+      "pattern_id": "mob_swarm_escape",
+      "category": "combat",
+      "description": "Escape when surrounded by too many monsters",
+      "triggers": [
+        {
+          "type": "combat.aggro_count",
+          "op": "gte",
+          "value": 5
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ai auto",
+          "description": "Reset AI to recalculate route"
+        }
+      ],
+      "cooldown_seconds": 15.0
+    },
+    {
+      "pattern_id": "job_change_routine",
+      "category": "quest",
+      "description": "Navigate to job change NPC and initiate advancement",
+      "triggers": [
+        {
+          "type": "progression.job_change_ready",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "move prontera",
+          "description": "Go to job change town",
+          "timeout_seconds": 30.0
+        },
+        {
+          "command": "ai auto",
+          "description": "Let AI handle NPC interaction"
+        }
+      ],
+      "cooldown_seconds": 300.0,
+      "exclusive": true
+    },
+    {
+      "pattern_id": "stat_allocation",
+      "category": "quest",
+      "description": "Allocate stat points when leveling up",
+      "triggers": [
+        {
+          "type": "progression.stat_points_available",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ai auto",
+          "description": "Let LLM planner decide stat allocation"
+        }
+      ],
+      "cooldown_seconds": 1.0
+    },
+    {
+      "pattern_id": "auto_party_buff",
+      "category": "social",
+      "description": "Cast party-wide buffs when party members are nearby",
+      "triggers": [
+        {
+          "type": "social.party_nearby",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "action_sequence": [
+        {
+          "command": "ss increase_agility",
+          "description": "Party Agi Up",
+          "timeout_seconds": 3.0
+        },
+        {
+          "command": "ss bless",
+          "description": "Party Bless",
+          "timeout_seconds": 3.0
+        }
+      ],
+      "cooldown_seconds": 60.0
+    }
   ]
 }

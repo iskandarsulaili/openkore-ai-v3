@@ -1761,6 +1761,20 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("npc_dialog_init_failed: %s", e)
                 
+                # ── NEW: Initialize Macro Intelligence ──
+                _macro_ai = getattr(self._runtime, "macro_intelligence", None)
+                if _macro_ai is None:
+                    try:
+                        from ai_sidecar.autonomy.macro_intelligence import MacroIntelligence
+                        from pathlib import Path
+                        _knowledge_path = str(Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json")
+                        _macro_ai = MacroIntelligence(knowledge_path=_knowledge_path)
+                        self._runtime.macro_intelligence = _macro_ai
+                        _pattern_count = len(_macro_ai.get_all_patterns())
+                        logger.info("macro_intelligence_initialized: %d patterns loaded", _pattern_count)
+                    except Exception as e:
+                        logger.warning("macro_intelligence_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)

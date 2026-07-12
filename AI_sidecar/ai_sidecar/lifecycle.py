@@ -579,6 +579,7 @@ class RuntimeState:
     skill_rotation_state: dict[str, object] = field(default_factory=dict)
     swarm_combo_state: dict[str, object] = field(default_factory=dict)
     long_term_goals: dict[str, str] = field(default_factory=dict)
+    macro_intelligence: object | None = None
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
