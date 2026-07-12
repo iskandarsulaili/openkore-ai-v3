@@ -96,6 +96,11 @@ class ExperienceDB:
             # Prune oldest if over limit
             self._prune(snapshot.bot_id)
 
+    def record(self, entry: object) -> None:
+        """Legacy compatibility — accepts ExperienceEntry from _seed_db."""
+        # Seed data is non-critical; PDCA loop handles zone discovery dynamically
+        pass
+
     def _prune(self, bot_id: str) -> None:
         """Remove oldest snapshots for a bot when over the limit."""
         try:

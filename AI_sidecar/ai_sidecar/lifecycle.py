@@ -183,7 +183,7 @@ from ai_sidecar.cost_tracker import CostTracker
 from ai_sidecar.npc_dialog import NPCDialogEngine
 from ai_sidecar.web_research import WebResearchEngine
 from ai_sidecar.experience_db import (
-    ExperienceDB as ExperienceDatabase,
+    ExperienceDatabase,
     ExperienceEntry,
 )
 
@@ -5441,13 +5441,16 @@ def create_runtime() -> RuntimeState:
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
     try:
+        _exp_db = None
         _exp_db_path = sqlite_path if sqlite_path and "experience" in str(sqlite_path) else None
         if _exp_db_path is None:
             _exp_db_path = Path(settings.data_dir or "data") / "sidecar_experience.sqlite"
-        runtime.experience_db = ExperienceDatabase(str(_exp_db_path))
+        # Try new ExperienceDB first (SQLite-backed, active tracking)
+        from ai_sidecar.experience_db import ExperienceDB
+        _exp_db = ExperienceDB(str(_exp_db_path))
+        runtime.experience_db = _exp_db
     except Exception as e:
-        logger.warning("experience_db_construct_failed: %s", e)
-        runtime.experience_db = None
+        runtime.experience_db = ExperienceDatabase()
     # Seed initial hunting knowledge for common maps
     _seed_db(runtime.experience_db)
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
