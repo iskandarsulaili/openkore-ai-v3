@@ -1145,6 +1145,52 @@ class PDCALoop:
         # Resolve current bot_id for cost gate
         _cycle_bot_id = self._resolve_cost_gate_bot_id()
         
+        # ── Ensure all sub-services are initialized before any path ──
+        if self._runtime is not None:
+            try:
+                from ai_sidecar.config import settings as _settings
+                # Initialize hunting zone manager if not present
+                _hzm = getattr(self._runtime, "hunting_zone_manager", None)
+                if _hzm is None:
+                    _hzm = HuntingZoneManager(
+                        getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                    )
+                    self._runtime.hunting_zone_manager = _hzm
+                # Initialize game engine if not present
+                _ge = getattr(self._runtime, "game_engine", None)
+                if _ge is None:
+                    try:
+                        _ge = GameIntelligenceEngine(
+                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                        )
+                        self._runtime.game_engine = _ge
+                    except Exception:
+                        pass
+                # Initialize swarm tactics if not present
+                _swarm = getattr(self._runtime, "swarm_tactics", None)
+                if _swarm is None:
+                    try:
+                        _swarm = SwarmTacticsEngine()
+                        self._runtime.swarm_tactics = _swarm
+                    except Exception:
+                        pass
+                # Initialize anti-detection if not present
+                _ad = getattr(self._runtime, "anti_detection", None)
+                if _ad is None:
+                    _ad = AntiDetection(enabled=getattr(_settings, "anti_detection_enabled", True))
+                    self._runtime.anti_detection = _ad
+                # Initialize role discovery if not present
+                _role_disc = getattr(self._runtime, "role_discovery", None)
+                if _role_disc is None:
+                    try:
+                        from ai_sidecar.fleet.swarm_ai import RoleDiscoveryEngine
+                        _role_disc = RoleDiscoveryEngine()
+                        self._runtime.role_discovery = _role_disc
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        
         # ── Cost gate with 3 modes ──────────────────────────
         if self._runtime is not None:
             _ct = getattr(self._runtime, "cost_tracker", None)
@@ -1159,44 +1205,6 @@ class PDCALoop:
                 if _cost_mode is None:
                     _cost_mode = CostModeManager(_cost_mode_str)
                     self._runtime.cost_mode_manager = _cost_mode
-                
-                # Initialize hunting zone manager if not present
-                _hzm = getattr(self._runtime, "hunting_zone_manager", None)
-                if _hzm is None:
-                    _hzm = HuntingZoneManager(
-                        getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
-                    )
-                    self._runtime.hunting_zone_manager = _hzm
-                
-                # Initialize anti-detection if not present
-                _ad = getattr(self._runtime, "anti_detection", None)
-                if _ad is None:
-                    _ad = AntiDetection(enabled=getattr(_settings, "anti_detection_enabled", True))
-                    self._runtime.anti_detection = _ad
-                
-                # Initialize game engine if not present
-                _ge = getattr(self._runtime, "game_engine", None)
-                if _ge is None:
-                    try:
-                        _ge = GameIntelligenceEngine(
-                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
-                        )
-                        self._runtime.game_engine = _ge
-                    except Exception:
-                        pass
-                
-                # Initialize swarm tactics if not present
-                _swarm = getattr(self._runtime, "swarm_tactics", None)
-                if _swarm is None:
-                    try:
-                        _swarm = SwarmTacticsEngine()
-                        self._runtime.swarm_tactics = _swarm
-                    except Exception:
-                        pass
-                
-                # Initialize role discovery if not present
-                _role_disc = getattr(self._runtime, "role_discovery", None)
-                if _role_disc is None:
                     try:
                         _role_disc = RoleDiscoveryEngine()
                         self._runtime.role_discovery = _role_disc
