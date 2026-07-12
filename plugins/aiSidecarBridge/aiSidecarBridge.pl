@@ -891,6 +891,7 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_51 => 'exp',
 		aiSidecarPolicy_allow_52 => 'storageprice',
 		aiSidecarPolicy_allow_53 => 'reparse',
+		aiSidecarPolicy_allow_54 => 'ss',
 
 		aiSidecarPolicy_deny_0 => 'quit',
 		aiSidecarPolicy_deny_1 => 'plugin',
@@ -2514,6 +2515,11 @@ sub _rewrite_runtime_command {
 			return ('', 'teleport_already_auto');
 		}
 		return ('ai auto', 'teleport_rewritten');
+	}
+
+	# Handle attack_skill — already handled by auto-AI, no-op
+	if ($normalized =~ /^attack_skill\b/) {
+		return ('', 'attack_skill_delegated');
 	}
 
 	return ($trimmed, '');
