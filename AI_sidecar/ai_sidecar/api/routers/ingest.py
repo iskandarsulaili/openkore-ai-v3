@@ -49,10 +49,6 @@ def ingest_snapshot(
     payload.observed_at = datetime.now(UTC)
     # Bot is sending snapshots — it knows its map. Enable heuristic.
     payload.map_known = True
-    # DEBUG: log progression data to trace bot_level=1 issue
-    import sys
-    prog = payload.progression
-    print(f"INGEST_SNAPSHOT: bot={payload.meta.bot_id} progression={prog} base_level={getattr(prog, 'base_level', 'MISSING')}", file=sys.stderr, flush=True)
     runtime.ingest_snapshot(payload)
     logger.info(
         "snapshot_ingested",
