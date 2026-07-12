@@ -3180,12 +3180,15 @@ class PDCALoop:
     ) -> tuple[bool, str, dict[str, object]]:
         """Evaluate whether the conscious brain (LLM) should activate.
         
-        Triggers:
-        - ANOMALY: death, stuck route, inventory full, no potions+in town+has zeny
-        - MILESTONE: level up, stat/skill points available, zeny threshold
-        - STRATEGIC: periodic review (every 30 cycles), new zone
-        - KAIZEN: after death review, periodic improvement
-        - HEURISTIC FAILURE: fallback emitters produced 0 actions for 3+ cycles
+        EVERY cue matters — a missed trigger is a disaster.
+        
+        Trigger categories:
+        - ANOMALY: death, disconnect, stuck, no kills, frequent teleports
+        - PROACTIVE: no potions+town+zeny, level up, job milestone, zeny threshold,
+                     new map, card/rare drop, equipment, party invite
+        - MILESTONE: stat/skill points, base level change, job level change
+        - STRATEGIC: periodic review every 30 cycles
+        - KAIZEN: self-improvement review every 60 cycles
         
         Returns: (should_activate, trigger_reason, trigger_context)
         """
@@ -3193,67 +3196,168 @@ class PDCALoop:
         trigger_reasons: list[str] = []
         context: dict[str, object] = {}
         
-        # ── A N O M A L Y   D E T E C T I O N ──
+        # ── EXTRACT SNAPSHOT DATA ──
+        hp = 1; max_hp = 1; sp = 0; max_sp = 1
+        is_dead = False; map_name = ""; is_town = False; is_new_map = False
+        zeny = 0; has_pot = False; weight = 0.0
+        stat_pts = 0; skill_pts = 0
+        base_level = 1; job_level = 1; job_name = "novice"
+        x = 0; y = 0; in_game = True; status = ""
+        items_list: list[dict] = []
         try:
             if isinstance(snapshot, dict):
                 hp = int(snapshot.get("vitals", {}).get("hp", 1) or 1)
+                max_hp = int(snapshot.get("vitals", {}).get("max_hp", 1) or 1)
+                sp = int(snapshot.get("vitals", {}).get("sp", 0) or 0)
+                max_sp = int(snapshot.get("vitals", {}).get("max_sp", 1) or 1)
                 is_dead = hp <= 0 or snapshot.get("status") == "dead"
                 map_name = str(snapshot.get("map", snapshot.get("position", {}).get("map", "")) or "")
-                is_town = "prontera" in map_name.lower() and "fild" not in map_name.lower()
+                is_town = any(t in map_name.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
+                          and not any(f in map_name.lower() for f in ["fild", "dun", "cave", "forest", "field"])
                 zeny = int(snapshot.get("progression", {}).get("zeny", 0) or 0)
-                items = snapshot.get("inventory", {}).get("items", []) or snapshot.get("inventory", {}).get("item_list", []) or []
-                has_pot = any("red_pot" in str(i.get("name", "")).lower() for i in items if isinstance(i, dict))
-                weight = float(snapshot.get("inventory", {}).get("weight_ratio", 0.0) or 0.0)
+                items_data = snapshot.get("inventory", {}) or {}
+                items_list = items_data.get("items", []) or items_data.get("item_list", []) or []
+                has_pot = any("red_pot" in str(i.get("name", "")).lower() for i in items_list if isinstance(i, dict))
+                weight = float(items_data.get("weight_ratio", 0.0) or 0.0)
                 stat_pts = int(snapshot.get("progression", {}).get("stat_points", 0) or 0)
                 skill_pts = int(snapshot.get("progression", {}).get("skill_points", 0) or 0)
-            else:
-                is_dead = False; map_name = ""; is_town = False
-                zeny = 0; has_pot = False; weight = 0.0
-                stat_pts = 0; skill_pts = 0
-            
-            # Death occurred
-            if recent_deaths > 0:
-                trigger_reasons.append(f"anomaly:death_x{recent_deaths}")
-                context["deaths"] = recent_deaths
-            
-            # No potions but in town with zeny — proactive buy opportunity
-            if is_town and not has_pot and zeny >= 500 and weight < 0.8:
-                trigger_reasons.append("anomaly:no_potions_can_buy")
-                context["can_buy_potions"] = True
-            
-            # Overflowing inventory
-            if weight >= 0.85:
-                trigger_reasons.append("anomaly:weight_overflow")
-                context["weight_ratio"] = weight
+                base_level = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
+                job_level = int(snapshot.get("progression", {}).get("job_level", 1) or 1)
+                job_name = str(snapshot.get("progression", {}).get("job_name", "novice") or "novice")
+                pos = snapshot.get("position", {}) or {}
+                x = int(pos.get("x", 0) or 0)
+                y = int(pos.get("y", 0) or 0)
+                raw = snapshot.get("raw", {}) or {}
+                in_game = raw.get("in_game", True)
+                status = str(raw.get("status", raw.get("state", raw.get("net_state", ""))) or "")
         except Exception:
             pass
         
-        # ── M I L E S T O N E   D E T E C T I O N ──
-        try:
-            if stat_pts > 0 or skill_pts > 0:
-                trigger_reasons.append(f"milestone:points_available(s{stat_pts}/sk{skill_pts})")
-                context["stat_points"] = stat_pts
-                context["skill_points"] = skill_pts
-        except Exception:
-            pass
+        # Track cross-cycle state for delta detection
+        _tracked = getattr(self, "_conscious_tracked_state", {})
+        _prev = _tracked.get(bot_id, {})
+        _now_state = {
+            "map": map_name, "x": x, "y": y, "hp": hp, "base_level": base_level,
+            "job_level": job_level, "zeny": zeny, "in_game": in_game,
+            "stat_pts": stat_pts, "skill_pts": skill_pts,
+        }
+        _tracked[bot_id] = _now_state
+        object.__setattr__(self, "_conscious_tracked_state", _tracked)
         
-        # ── K A I Z E N   P E R I O D I C   R E V I E W ──
+        # ── ⚠️  A N O M A L Y   D E T E C T I O N ⚠️ ──
+        
+        # A1: Death
+        if recent_deaths > 0:
+            trigger_reasons.append(f"anomaly:death_x{recent_deaths}")
+            context["deaths"] = recent_deaths
+        
+        # A2: Disconnected or reconnecting
+        if not in_game or status in ("offline", "disconnected", "disconnect", "reconnecting"):
+            trigger_reasons.append(f"anomaly:disconnected({status})")
+            context["status"] = status
+        
+        # A3: Position stuck (same x,y for >30s)
+        if _prev.get("x") == x and _prev.get("y") == y and _prev.get("map") == map_name:
+            _stuck_time = getattr(self, "_stuck_times", {}).get(bot_id, 0) + 5
+            _stuck_times = getattr(self, "_stuck_times", {})
+            _stuck_times[bot_id] = _stuck_time
+            object.__setattr__(self, "_stuck_times", _stuck_times)
+            if _stuck_time >= 30 and is_town is False:
+                trigger_reasons.append(f"anomaly:stuck_{_stuck_time}s")
+                context["stuck_seconds"] = _stuck_time
+        else:
+            _stuck_times = getattr(self, "_stuck_times", {})
+            _stuck_times[bot_id] = 0
+            object.__setattr__(self, "_stuck_times", _stuck_times)
+        
+        # A4: Frequent low-HP teleports (HP was >50%, now <20% without death)
+        if _prev.get("hp", 1) > 0.5 * max_hp and hp < 0.2 * max_hp and not is_dead and hp > 0:
+            trigger_reasons.append("anomaly:hp_crash")
+            context["hp_drop"] = f"{_prev.get('hp',0)}→{hp}"
+        
+        # A5: Empty action queue detected by poll tracker
+        _poll_counts = getattr(self, "_poll_starvation_counts", {})
+        if getattr(self, "_last_poll_count", 0) == getattr(self, "_current_poll_count", 0):
+            _pcount = _poll_counts.get(bot_id, 0) + 1
+            _poll_counts[bot_id] = _pcount
+            object.__setattr__(self, "_poll_starvation_counts", _poll_counts)
+            if _pcount >= 6:  # ~30s of no polls
+                trigger_reasons.append("anomaly:action_starvation")
+                context["starved_cycles"] = _pcount
+        else:
+            _poll_counts[bot_id] = 0
+            object.__setattr__(self, "_poll_starvation_counts", _poll_counts)
+        
+        # ── 🎯  P R O A C T I V E   D E T E C T I O N 🎯 ──
+        
+        # P1: No potions + in town + has zeny = buy opportunity
+        if is_town and not has_pot and zeny >= 500 and weight < 0.8:
+            trigger_reasons.append("proactive:buy_potions")
+            context["can_buy"] = True
+        
+        # P2: Overflowing inventory
+        if weight >= 0.85:
+            trigger_reasons.append("proactive:sell_or_store")
+            context["weight_ratio"] = weight
+        
+        # P3: Level up detected (base_level changed)
+        if _prev.get("base_level", 1) < base_level:
+            trigger_reasons.append(f"proactive:level_up_lv{base_level}")
+            context["new_level"] = base_level
+        
+        # P4: Job level milestone (10, 50, 70, 99)
+        for milestone in [10, 50, 70, 99]:
+            if _prev.get("job_level", 1) < milestone <= job_level:
+                trigger_reasons.append(f"proactive:job_milestone_lv{job_level}")
+                context["job_level"] = job_level
+                context["next_job"] = job_name
+        
+        # P5: Zeny threshold crossed
+        for threshold in [1000, 5000, 10000, 50000, 100000]:
+            if _prev.get("zeny", 0) < threshold <= zeny:
+                trigger_reasons.append(f"proactive:zeny_{threshold}")
+                context["zeny"] = zeny
+        
+        # P6: New map discovered
+        if _prev.get("map", "") != map_name and map_name:
+            trigger_reasons.append(f"proactive:new_map_{map_name}")
+            context["map"] = map_name
+        
+        # P7: Rare item in inventory (card, equipment with slots)
+        if items_list:
+            for _item in items_list:
+                if isinstance(_item, dict):
+                    _iname = str(_item.get("name", "")).lower()
+                    if "card" in _iname:
+                        trigger_reasons.append("proactive:card_drop")
+                        context["item"] = _iname
+                        break
+                    _slots = int(_item.get("slots", 0) or 0)
+                    if _slots > 0:
+                        trigger_reasons.append("proactive:slotted_item")
+                        context["item"] = _iname
+                        break
+        
+        # ── 📊  M I L E S T O N E   D E T E C T I O N 📊 ──
+        if stat_pts > 0 or skill_pts > 0:
+            trigger_reasons.append(f"milestone:points_avail(s{stat_pts}/sk{skill_pts})")
+            context["stat_points"] = stat_pts
+            context["skill_points"] = skill_pts
+        
+        # ── 🔄  K A I Z E N   P E R I O D I C   R E V I E W 🔄 ──
         try:
-            # Track cycle count per bot for periodic review
             _cycle_counts = getattr(self, "_conscious_cycle_counts", {})
             _count = _cycle_counts.get(bot_id, 0) + 1
             _cycle_counts[bot_id] = _count
             object.__setattr__(self, "_conscious_cycle_counts", _cycle_counts)
             
-            # Strategic review every 30 cycles (short_term ≈ 2.5 min)
             if horizon == Horizon.SHORT_TERM and _count % 30 == 0:
                 trigger_reasons.append("strategic:periodic_review")
                 context["review_interval"] = "30_cycles"
             
-            # Kaizen review: reflect on recent performance (every 60 cycles ≈ 5 min)
             if horizon == Horizon.SHORT_TERM and _count % 60 == 0:
-                trigger_reasons.append("kaizen:periodic_improvement")
-                context["kaizen_review"] = True
+                trigger_reasons.append("kaizen:kaizen_review")
+                context["kaizen"] = True
         except Exception:
             pass
         
