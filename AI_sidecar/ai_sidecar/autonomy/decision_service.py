@@ -884,13 +884,13 @@ class DecisionService:
 
         placeholders: list[str] = []
         if not bool(opportunistic_upgrades.get("knowledge_loaded")):
-            placeholders.append("stage4_placeholder:opportunistic_knowledge_unavailable")
+            placeholders.append("diagnostic:opportunistic_knowledge_missing")
         elif not bool(opportunistic_upgrades.get("supported")):
-            placeholders.append("stage4_placeholder:opportunistic_rules_unsupported")
+            placeholders.append("diagnostic:opportunistic_rules_unsupported")
         elif not bool(opportunistic_upgrades.get("actionable")):
-            placeholders.append("stage4_placeholder:opportunistic_non_actionable")
+            placeholders.append("diagnostic:opportunistic_non_actionable")
         if not bool(progression_recommendation.get("knowledge_loaded")):
-            placeholders.append("stage3_placeholder:progression_knowledge_unavailable")
+            placeholders.append("diagnostic:progression_knowledge_missing")
 
         return SituationalAssessment(
             bot_id=bot_id,

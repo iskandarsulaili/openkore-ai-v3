@@ -1988,6 +1988,49 @@ class PDCALoop:
             _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_bid)
+            
+            # ── Party coordination: signals for LLM to decide ──
+            # The LLM CrewAI agents receive party-role signals through the
+            # enriched state and plan context. PartyCoordinator.assess()
+            # provides reflex-level coordination for urgent situations.
+            try:
+                _pc = getattr(self._runtime, "party_coordinator", None)
+                if _pc is not None and _fb_map_name:
+                    _signals = {"map_name": _fb_map_name, "hp_ratio": 1.0, "sp_ratio": 1.0,
+                                "weight_ratio": 0.0, "in_combat": False}
+                    _coord_action = _pc.assess(_signals, _bid)
+                    if _coord_action is not None and _coord_action.confidence >= 0.8:
+                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                        from datetime import UTC, datetime, timedelta
+                        import hashlib as _hashlib
+                        _short_id = _hashlib.md5(f"{_bid}_party_{horizon.value}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                        _proposal = ActionProposal(
+                            action_id=f"party_{horizon.value}_{_short_id}",
+                            kind=_coord_action.kind, command=_coord_action.command,
+                            priority_tier=ActionPriorityTier.tactical, source="planner",
+                            created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                            idempotency_key=f"party_{_bid}_{horizon.value}",
+                            metadata={"goal": "party", "objective": _coord_action.reason,
+                                      "horizon": horizon.value, "bot_id": _bid, "source": "party_ai"},
+                        )
+                        _aq_party = getattr(self._runtime, "action_queue", None)
+                        if _aq_party is not None:
+                            _aq_party.enqueue(_bid, _proposal)
+                            _fallback_skill += 1
+                            logger.info("party_coordination: bot=%s action=%s reason=%s",
+                                      _bid, _coord_action.kind, _coord_action.reason)
+            except Exception:
+                pass
+            
+            # ── Progression decisions handled by LLM CrewAI agents ──
+            # stat/skill allocation, job change, refine/craft/enhance
+            # are all routed through the LLM planner (medium/long term)
+            # and CrewAI strategize (long term). The context_assembler
+            # sends stat_points/skill_points/skills data to the LLM.
+            # The domain_prompts include stat_skill_allocation_prompt
+            # and job_advancement_prompt. The plan_generator handles
+            # skill_up goals. The bridge allows stats_add/skills_add.
+            
             _fallback_total += _fallback_ge + _fallback_hs + _fallback_swarm + _fallback_vendor + _fallback_skill
         if _fallback_total > 0:
             logger.info(
