@@ -63,13 +63,39 @@ for role, classes in _ROLE_DEFINITIONS:
 class RoleInfo:
     """Runtime state for a single bot's role assignment."""
     bot_id: str
-    role: str | None
-    confidence: float
-    source: str  # "auto" | "manual"
-    job_class: str
-    level: int
-    expires_at: datetime | None
+    role: str | None = None
+    confidence: float = 0.0
+    source: str = "auto"
+    job_class: str = "novice"
+    level: int = 1
+    expires_at: datetime | None = None
     registered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(slots=True)
+class LegacyRoleManager:
+    """Legacy single-bot role manager — preserved for lifecycle fleet coordinator.
+    
+    Old API: RoleManager(bot_id=bot_id) with update() and current() methods.
+    """
+    bot_id: str
+    role: str | None = None
+    confidence: float = 0.0
+    expires_at: datetime | None = None
+    source: str = "local"
+
+    def update(self, *, role: str | None, confidence: float, ttl_seconds: int, source: str) -> None:
+        self.role = role
+        self.confidence = float(confidence)
+        self.expires_at = datetime.now(UTC) + timedelta(seconds=max(5, int(ttl_seconds)))
+        self.source = source
+
+    def current(self) -> dict[str, object]:
+        now = datetime.now(UTC)
+        expired = self.expires_at is not None and self.expires_at <= now
+        if expired:
+            return {"role": None, "confidence": 0.0, "expires_at": self.expires_at, "source": self.source}
+        return {"role": self.role, "confidence": self.confidence, "expires_at": self.expires_at, "source": self.source}
 
 
 # ---------------------------------------------------------------------------

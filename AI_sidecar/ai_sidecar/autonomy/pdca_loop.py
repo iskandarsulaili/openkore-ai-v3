@@ -1710,8 +1710,9 @@ class PDCALoop:
                 _mem = getattr(self._runtime, "memory_retrieval", None)
                 if _mem is None:
                     try:
-                        from ai_sidecar.memory.retrieval import MemoryRetrievalService
+                        from ai_sidecar.memory.retrieval import MemoryRetrievalService, InMemoryMemoryProvider
                         _mem = MemoryRetrievalService()
+                        _mem.provider = InMemoryMemoryProvider()
                         self._runtime.memory_retrieval = _mem
                         logger.info("memory_retrieval_initialized")
                     except Exception as e:

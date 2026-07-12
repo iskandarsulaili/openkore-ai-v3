@@ -182,7 +182,10 @@ from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
 from ai_sidecar.npc_dialog import NPCDialogEngine
 from ai_sidecar.web_research import WebResearchEngine
-from ai_sidecar.experience_db import ExperienceDatabase, ExperienceEntry
+from ai_sidecar.experience_db import (
+    ExperienceDB as ExperienceDatabase,
+    ExperienceEntry,
+)
 
 logger = logging.getLogger(__name__)
 fleet_logger = structlog.get_logger("ai_sidecar.fleet_sync")
@@ -3298,11 +3301,12 @@ class RuntimeState:
             "counters": counters,
         }
 
-    def _fleet_role_manager(self, *, bot_id: str) -> RoleManager:
+    def _fleet_role_manager(self, *, bot_id: str) -> "LegacyRoleManager":
         with self._fleet_role_lock:
             manager = self._fleet_roles.get(bot_id)
             if manager is None:
-                manager = RoleManager(bot_id=bot_id)
+                from ai_sidecar.fleet.role_manager import LegacyRoleManager
+                manager = LegacyRoleManager(bot_id=bot_id)
                 self._fleet_roles[bot_id] = manager
             return manager
 
@@ -5435,7 +5439,14 @@ def create_runtime() -> RuntimeState:
 
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
-    runtime.experience_db = ExperienceDatabase()
+    try:
+        _exp_db_path = sqlite_path if sqlite_path and "experience" in str(sqlite_path) else None
+        if _exp_db_path is None:
+            _exp_db_path = Path(settings.data_dir or "data") / "sidecar_experience.sqlite"
+        runtime.experience_db = ExperienceDatabase(str(_exp_db_path))
+    except Exception as e:
+        logger.warning("experience_db_construct_failed: %s", e)
+        runtime.experience_db = None
     # Seed initial hunting knowledge for common maps
     _seed_db(runtime.experience_db)
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
