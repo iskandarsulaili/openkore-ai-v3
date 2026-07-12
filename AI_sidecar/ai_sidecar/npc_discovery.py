@@ -217,3 +217,40 @@ class NPCDiscoveryEngine:
             "last_scan_map": self._last_scan_map,
             "services": list(NPC_SERVICE_PATTERNS.keys()),
         }
+# ── Map Access Requirements ──────────────────────────────────────────────
+# Maps that require NPC interaction to enter/leave.
+MAP_ACCESS_REQUIREMENTS: dict[str, dict[str, object]] = {
+    "pay_dun00": {"town": "payon", "npc_patterns": ["dungeon", "portal", "man", "payon", "cave"],
+                  "description": "Payon Dungeon entrance via NPC near (115, 175) in payon"},
+    "pay_dun01": {"town": "payon", "npc_patterns": ["dungeon", "portal", "man", "payon", "cave"],
+                  "description": "Payon Dungeon 2F via NPC in payon"},
+    "gef_dun00": {"town": "geffen", "npc_patterns": ["dungeon", "portal", "guard", "geffen", "tower"],
+                  "description": "Geffen Dungeon entrance via NPC in geffen"},
+    "moc_dun00": {"town": "morocc", "npc_patterns": ["dungeon", "pyramid", "portal", "morocc"],
+                  "description": "Morroc Pyramid entrance via NPC in morocc"},
+    "amatsu": {"town": "alberta", "npc_patterns": ["ship", "captain", "ferry", "sail", "amatsu"],
+               "description": "Amatsu requires ship NPC in alberta"},
+    "gonryun": {"town": "yuno", "npc_patterns": ["portal", "gate", "temple", "monk"],
+                "description": "Gonryun requires NPC interaction in yuno"},
+    "tur_dun01": {"town": "aldebaran", "npc_patterns": ["ship", "captain", "turtle", "island"],
+                  "description": "Turtle Island requires ship NPC in aldebaran"},
+    "c_tower1": {"town": "aldebaran", "npc_patterns": ["clock", "tower", "portal", "aldebaran"],
+                 "description": "Clock Tower entrance via NPC in aldebaran"},
+}
+
+
+def requires_npc_access(map_name: str) -> dict[str, object] | None:
+    """Check if a map requires NPC interaction to access."""
+    map_lower = map_name.lower().replace(".gat", "")
+    for dungeon_map, info in MAP_ACCESS_REQUIREMENTS.items():
+        if dungeon_map in map_lower or map_lower in dungeon_map:
+            return info
+    return None
+
+
+def get_town_for_gated_map(map_name: str) -> str | None:
+    """Get the town where the access NPC lives for a gated map."""
+    access = requires_npc_access(map_name)
+    if access:
+        return str(access["town"])
+    return None

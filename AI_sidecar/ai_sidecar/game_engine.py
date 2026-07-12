@@ -496,6 +496,19 @@ class GameIntelligenceEngine:
                 reason=f"Lv{mob_level} {mob_element} {mob_race} | EXP/HP={exp_per_hp:.2f} | "
                        f"Eff={element_eff:.1f}x | Penalty={penalty:.0%}",
             )
+            # Check if this mob's map requires NPC access
+            try:
+                from ai_sidecar.npc_discovery import requires_npc_access, get_town_for_gated_map
+                # Default map name derived from mob's spawn areas
+                mob_map = mob.get("map_name", "")
+                if mob_map and requires_npc_access(mob_map):
+                    rec.map_name = mob_map
+                    _town = get_town_for_gated_map(mob_map)
+                    if _town:
+                        rec.reason += f" | NPC gate: talk to NPC in {_town}"
+                        rec.score *= 0.8  # Penalize: NPC interaction overhead
+            except Exception:
+                pass
             recommendations.append(rec)
 
         # Sort by score descending
