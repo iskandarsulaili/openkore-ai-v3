@@ -1755,9 +1755,14 @@ class PDCALoop:
                 if _npc_dialog is None:
                     try:
                         from ai_sidecar.npc_dialog import NPCDialogEngine
-                        _npc_dialog = NPCDialogEngine()
+                        # Wire LLM adapter for NPC response decisions
+                        _llm_adapter = None
+                        _mr = getattr(self._runtime, "model_router", None)
+                        if _mr is not None and hasattr(_mr, 'generate_text'):
+                            _llm_adapter = _mr.generate_text
+                        _npc_dialog = NPCDialogEngine(llm_adapter=_llm_adapter)
                         self._runtime.npc_dialog = _npc_dialog
-                        logger.info("npc_dialog_initialized")
+                        logger.info("npc_dialog_initialized: llm=%s", "wired" if _llm_adapter else "none")
                     except Exception as e:
                         logger.warning("npc_dialog_init_failed: %s", e)
                 
@@ -2037,13 +2042,9 @@ class PDCALoop:
                 pass
             
             # ── Progression decisions handled by LLM CrewAI agents ──
-            # stat/skill allocation, job change, refine/craft/enhance
-            # are all routed through the LLM planner (medium/long term)
-            # and CrewAI strategize (long term). The context_assembler
-            # sends stat_points/skill_points/skills data to the LLM.
-            # The domain_prompts include stat_skill_allocation_prompt
-            # and job_advancement_prompt. The plan_generator handles
-            # skill_up goals. The bridge allows stats_add/skills_add.
+            # All economy, survival, progression decisions flow through
+            # the LLM planner. The context_assembler sends zeny, inventory,
+            # stats, skills, and all bot state to the LLM.
             
             _fallback_total += _fallback_ge + _fallback_hs + _fallback_swarm + _fallback_vendor + _fallback_skill
         if _fallback_total > 0:
