@@ -2013,7 +2013,7 @@ class PDCALoop:
                     _signals = {"map_name": _fb_map_name, "hp_ratio": 1.0, "sp_ratio": 1.0,
                                 "weight_ratio": 0.0, "in_combat": False}
                     _coord_action = _pc.assess(_signals, _bid)
-                    if _coord_action is not None and _coord_action.confidence >= 0.8:
+                    if _coord_action is not None and _coord_action.confidence >= 0.5:
                         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                         from datetime import UTC, datetime, timedelta
                         import hashlib as _hashlib
