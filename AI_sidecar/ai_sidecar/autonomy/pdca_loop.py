@@ -1385,7 +1385,7 @@ class PDCALoop:
                     try:
                         _br = getattr(self._runtime, "bot_registry", None)
                         if _br is not None:
-                            _all_bot_ids = [str(b.get("bot_id","")) for b in _br.list_bots() if isinstance(b, dict) and b.get("bot_id")]
+                            _all_bot_ids = [str(b.bot_id) for b in _br.list() if hasattr(b, "bot_id") and b.bot_id]
                     except Exception:
                         pass
                     if not _all_bot_ids:
@@ -1447,7 +1447,7 @@ class PDCALoop:
         try:
             _br = getattr(self._runtime, "bot_registry", None)
             if _br is not None:
-                _all_bot_ids = [str(b.get("bot_id","")) for b in _br.list_bots() if isinstance(b, dict) and b.get("bot_id")]
+                _all_bot_ids = [str(b.bot_id) for b in _br.list() if hasattr(b, "bot_id") and b.bot_id]
         except Exception:
             pass
         if not _all_bot_ids:
