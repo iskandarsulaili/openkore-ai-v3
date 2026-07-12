@@ -1717,11 +1717,11 @@ class PDCALoop:
                     try:
                         from ai_sidecar.memory.retrieval import MemoryRetrievalService, InMemoryMemoryProvider
                         _mem = MemoryRetrievalService()
-                        _mem.provider = InMemoryMemoryProvider()
+                        _mem.provider = InMemoryMemoryProvider(max_entries=5000)
                         self._runtime.memory_retrieval = _mem
-                        logger.info("memory_retrieval_initialized")
+                        logger.info("memory_retrieval_initialized: provider=InMemoryMemoryProvider")
                     except Exception as e:
-                        logger.warning("memory_init_failed: %s", e)
+                        logger.debug("memory_init_skipped: %s", e)
                 
                 # ── NEW: Initialize Reflex Rule Engine ──
                 _reflex_engine = getattr(self._runtime, "reflex_engine", None)
@@ -2846,6 +2846,9 @@ class PDCALoop:
         elapsed_s = max(0.0, float(status.get("elapsed_s") or 0.0))
         if not snapshot_ready and bool(snapshot is not None) and elapsed_s > 30.0:
             snapshot_ready = True
+        # Force gate open after 30s regardless of history — bots need to act
+        if not history_ready and elapsed_s > 30.0:
+            history_ready = True
         minimum_readiness = bool(bot_ready and history_ready)
 
         fleet_status = self._fleet_status()
