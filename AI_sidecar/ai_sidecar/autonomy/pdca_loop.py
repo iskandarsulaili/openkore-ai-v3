@@ -221,9 +221,46 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
             _log.info("game_engine_no_zones: bot=%s level=%d - using fallback", bot_id, bot_level)
             # Fallback: use fallback zones for this level
             zones = hzm._fallback_zones(bot_level) if hasattr(hzm, '_fallback_zones') else []
-            if not zones:
-                _log.info("game_engine_no_zones_fallback_empty: bot=%s level=%d", bot_id, bot_level)
-                return 0
+        if not zones:
+            _log.info("game_engine_no_zones_fallback_empty: bot=%s level=%d - using hardcoded prt_fild08", bot_id, bot_level)
+            # Ultimate fallback: always give the bot a move command
+            from datetime import UTC, datetime, timedelta
+            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+            import hashlib as _hashlib
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is not None:
+                _short_id = _hashlib.md5(f"{bot_id}_game_engine_fallback_{time.time()}".encode()).hexdigest()[:16]
+                _target_map = "prt_fild08"
+                # Check if bot is already there
+                if map_name and _target_map in map_name:
+                    proposal = ActionProposal(
+                        action_id=f"ge_fb_{_short_id}",
+                        kind="command", command="ai auto",
+                        priority_tier=ActionPriorityTier.tactical,
+                        source="planner",
+                        created_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                        idempotency_key=f"ge_fb_{bot_id}_auto",
+                        metadata={"goal": "grind", "objective": f"Hunt on {_target_map}",
+                                  "horizon": horizon, "bot_id": bot_id, "source": "game_engine_fallback"},
+                    )
+                else:
+                    proposal = ActionProposal(
+                        action_id=f"ge_fb_{_short_id}",
+                        kind="command", command=f"move {_target_map}",
+                        priority_tier=ActionPriorityTier.strategic,
+                        source="planner",
+                        created_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                        idempotency_key=f"ge_fb_{bot_id}_move",
+                        metadata={"goal": "travel", "objective": f"Move to {_target_map}",
+                                  "horizon": horizon, "bot_id": bot_id, "source": "game_engine_fallback",
+                                  "target_map": _target_map, "reason": "ultimate_fallback"},
+                    )
+                aq.enqueue(bot_id, proposal)
+                _log.info("game_engine_ultimate_fallback: bot=%s target=%s", bot_id, _target_map)
+                return 1
+            return 0
         
         best_zone = zones[0]
         
