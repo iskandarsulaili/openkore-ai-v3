@@ -1828,7 +1828,6 @@ class PDCALoop:
                     # Read snapshot for trigger evaluation
                     _conscious_snap = None
                     _conscious_deaths = 0
-                    _conscious_fallback = _fallback_total if '_fallback_total' in dir() else 0
                     _snap_cons = getattr(self._runtime, "snapshot_cache", None)
                     if _snap_cons is not None:
                         try:
@@ -1851,7 +1850,6 @@ class PDCALoop:
                         bot_id=_cycle_bot_id,
                         snapshot=_conscious_snap,
                         recent_deaths=_conscious_deaths,
-                        fallback_action_count=_conscious_fallback,
                     )
                     _use_llm = _should_wake
                     if _use_llm:
@@ -3179,7 +3177,6 @@ class PDCALoop:
         bot_id: str,
         snapshot: Any,
         recent_deaths: int,
-        fallback_action_count: int,
     ) -> tuple[bool, str, dict[str, object]]:
         """Evaluate whether the conscious brain (LLM) should activate.
         
@@ -3240,7 +3237,7 @@ class PDCALoop:
         except Exception:
             pass
         
-        # ── S T R A T E G I C   P E R I O D I C   R E V I E W ──
+        # ── K A I Z E N   P E R I O D I C   R E V I E W ──
         try:
             # Track cycle count per bot for periodic review
             _cycle_counts = getattr(self, "_conscious_cycle_counts", {})
@@ -3259,20 +3256,6 @@ class PDCALoop:
                 context["kaizen_review"] = True
         except Exception:
             pass
-        
-        # ── H E U R I S T I C   F A I L U R E ──
-        if fallback_action_count == 0:
-            _failure_counts = getattr(self, "_heuristic_failure_counts", {})
-            _fcount = _failure_counts.get(bot_id, 0) + 1
-            _failure_counts[bot_id] = _fcount
-            object.__setattr__(self, "_heuristic_failure_counts", _failure_counts)
-            if _fcount >= 3:
-                trigger_reasons.append("heuristic_failure:no_actions_3_cycles")
-                context["failure_count"] = _fcount
-        else:
-            _failure_counts = getattr(self, "_heuristic_failure_counts", {})
-            _failure_counts[bot_id] = 0
-            object.__setattr__(self, "_heuristic_failure_counts", _failure_counts)
         
         # Make decision
         should_activate = len(trigger_reasons) > 0
