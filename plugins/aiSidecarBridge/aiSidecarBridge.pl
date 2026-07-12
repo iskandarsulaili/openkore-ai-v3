@@ -1707,6 +1707,9 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'loot pickup delegated to OpenKore auto-loot configuration');
 	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto' || $rewrite_kind eq 'map_move_already_auto' || $rewrite_kind eq 'teleport_already_auto') {
 		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
+	} elsif ($rewrite_kind eq 'map_move_toggle_manual') {
+		my $ok = eval { Commands::run("ai manual"); 1; };
+		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
@@ -2501,7 +2504,8 @@ sub _rewrite_runtime_command {
 			$::config{"lockMap_randY"} = 0;
 		}
 		if (_ai_already_auto_mode()) {
-			return ('ai auto', 'map_move_already_auto');
+			# Toggle AI mode to force route recalculation with new lockMap
+			return ('ai manual', 'map_move_toggle_manual');
 		}
 		return ('ai auto', 'map_move_rewritten');
 	}
