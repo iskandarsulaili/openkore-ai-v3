@@ -283,7 +283,7 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
             action_id=f"ge_move_{horizon}_{_short_id}",
             kind="command",
             command=f"move {best_zone.map_name}",
-            priority_tier=ActionPriorityTier.strategic,
+            priority_tier=ActionPriorityTier.tactical,
             source="planner",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(seconds=120),
