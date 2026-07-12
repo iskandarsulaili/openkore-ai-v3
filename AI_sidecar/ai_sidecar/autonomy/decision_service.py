@@ -68,8 +68,6 @@ class DecisionService:
                 self.mission_agent = MissionAgentService(
                     model_router=model_router,
                     workload=self.mission_workload,
-                    timeout_seconds=90.0,
-                    max_prompt_chars=12000,
                 )
 
         if self.ro_knowledge is not None:
