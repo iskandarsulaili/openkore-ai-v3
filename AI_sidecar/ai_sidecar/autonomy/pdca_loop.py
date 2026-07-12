@@ -1430,10 +1430,20 @@ class PDCALoop:
             except Exception:
                 logger.exception("cost_gate_check_failed")
         
-        # ── FALLBACK: emit game engine + swarm + vendor + skill actions into queue
-        # This runs in ALL modes (saver, standard, max) as a safety net.
+        # ── FALLBACK: always emit game engine + swarm + vendor + skill actions into queue
+        # This runs in ALL modes before the LLM path, so bots always have actions.
         # If the LLM path succeeds, these are just extra queued actions.
         # If the LLM path fails, the bot still has meaningful actions.
+        # Emit for ALL registered bots, not just the resolved one
+        _all_bot_ids: list[str] = []
+        try:
+            _br = getattr(self._runtime, "bot_registry", None)
+            if _br is not None:
+                _all_bot_ids = [str(b.get("bot_id","")) for b in _br.list_bots() if isinstance(b, dict) and b.get("bot_id")]
+        except Exception:
+            pass
+        if not _all_bot_ids:
+            _all_bot_ids = [_cycle_bot_id]
         # Read map_name from snapshot for game engine routing
         _fb_map_name = ""
         try:
@@ -1445,18 +1455,19 @@ class PDCALoop:
                     _fb_map_name = str(getattr(getattr(_fb_snap, "position", None), "map", "") or "")
         except Exception:
             pass
-        _fallback_ge = _emit_game_engine_actions(
-            self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_fb_map_name
-        )
-        _fallback_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
-        _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
-        _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
-        _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
-        _fallback_total = _fallback_ge + _fallback_hs + _fallback_swarm + _fallback_vendor + _fallback_skill
+        _fallback_total = 0
+        for _bid in _all_bot_ids:
+            _fallback_ge = _emit_game_engine_actions(
+                self._runtime, horizon.value, bot_id=_bid, map_name=_fb_map_name
+            )
+            _fallback_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
+            _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_bid)
+            _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_bid)
+            _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_bid)
+            _fallback_total += _fallback_ge + _fallback_hs + _fallback_swarm + _fallback_vendor + _fallback_skill
         if _fallback_total > 0:
             logger.info(
-                "fallback_emitters: ge=%d hs=%d swarm=%d vendor=%d skill=%d",
-                _fallback_ge, _fallback_hs, _fallback_swarm, _fallback_vendor, _fallback_skill,
+                "fallback_emitters: total=%d bots=%d", _fallback_total, len(_all_bot_ids),
             )
         
         start = time.monotonic()
