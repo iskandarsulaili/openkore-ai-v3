@@ -515,6 +515,24 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
         queued = 0
         
         # Emit formation action
+        # Skip if bot is in a town (no hunting needed) — game engine will route out
+        _in_town = False
+        try:
+            _snap = getattr(runtime_state, "snapshot_cache", None)
+            if _snap is not None and bot_id:
+                _s = _snap.get(bot_id) if hasattr(_snap, 'get') else _snap.latest()
+                if _s is not None:
+                    _map = str(getattr(getattr(_s, 'position', None), 'map', '') or '')
+                    if _map and any(t in _map.lower() for t in ['prontera', 'morocc', 'payon', 'geffen', 'aldebaran', 'yuno', 'xmas', 'amatsu']):
+                        _in_town = True
+        except Exception:
+            pass
+        
+        # Don't emit swarm actions in town — game engine will route bot to hunting zone
+        if _in_town:
+            _log.info("swarm_skipped_town: bot=%s map=%s", bot_id, _map if '_map' in dir() else '?')
+            return 0
+        
         _short_id = _hashlib.md5(f"{bot_id}_swarm_fmt_{horizon}_{time.time()}".encode()).hexdigest()[:16]
         
         # Determine the actual command to execute
