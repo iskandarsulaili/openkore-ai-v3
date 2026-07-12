@@ -2498,7 +2498,7 @@ sub _rewrite_runtime_command {
 			$config{"lockMap_randY"} = 0;
 		}
 		if (_ai_already_auto_mode()) {
-			return ('', 'map_move_already_auto');
+			return ('ai auto', 'map_move_already_auto');
 		}
 		return ('ai auto', 'map_move_rewritten');
 	}
