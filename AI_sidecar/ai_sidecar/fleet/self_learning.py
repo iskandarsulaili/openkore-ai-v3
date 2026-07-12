@@ -1,9 +1,15 @@
-"""Self-learning system — cross-bot experience, strategy adaptation, skill & item optimization."""
+"""Fleet self-learning system — zone ELO scoring, party composition learning, mined-out detection.
+
+Tracks experience rates per zone, computes ELO scores for zone difficulty/reward,
+recommends optimal zones based on bot level, detects when zones are "mined out",
+and learns optimal party compositions from historical success rates.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
 import threading
 import time
@@ -16,340 +22,647 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PerformanceRecord:
+class ZoneOutcome:
+    """Result of a bot spending time in a zone."""
     bot_id: str
-    context_type: str
     map_name: str
-    monster_name: str
-    role: str
-    action_taken: str
-    success: bool
-    reward: float
-    duration_ms: float
-    hp_consumed: float
-    sp_consumed: float
-    items_used: list[str]
-    skills_used: list[str]
-    timestamp: float
+    bot_level: int  # base level at the time
+    duration_minutes: float
+    base_exp_gained: float
+    job_exp_gained: float
+    zeny_gained: float
+    death_count: int = 0
+    party_size: int = 1
+    party_composition: dict[str, int] = field(default_factory=dict)
+    # e.g. {"Knight": 1, "Priest": 1, "Wizard": 1}
+    success: bool = True
+    timestamp: float = field(default_factory=time.time)
     details: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
-class SkillEffectiveness:
-    skill_name: str
-    context_type: str
-    bot_class: str
-    map_name: str
-    monster_name: str
-    role: str
-    attempts: int = 0
-    successes: int = 0
-    avg_damage: float = 0.0
-    avg_healing: float = 0.0
-    avg_sp_cost: float = 0.0
-    dps: float = 0.0
-    score: float = 0.0
+class FleetLearningSystem:
+    """Fleet-level learning: zone optimization, party composition, mined-out detection.
 
+    Tracks experience rates per zone, computes ELO-like scores,
+    recommends zones based on bot level, detects mined-out zones,
+    and learns optimal party compositions.
 
-@dataclass
-class ItemEffectiveness:
-    item_name: str
-    context_type: str
-    map_name: str
-    role: str
-    attempts: int = 0
-    successes: int = 0
-    avg_hp_restored: float = 0.0
-    avg_sp_restored: float = 0.0
-    score: float = 0.0
-
-
-class SelfLearningSystem:
-    """Cross-bot experience & strategy optimization system.
-
-    Tracks performance per role/strategy/map/monster across all bots.
-    Learns optimal skill rotations and item usage patterns.
-    Persists to SQLite for cross-session durability.
+    Thread-safe. Persists to SQLite for cross-session durability.
     """
 
-    def __init__(self, db_path: str | Path | None = None, max_records: int = 100000):
+    # ELO constants
+    ELO_K = 32         # Sensitivity of ELO adjustments
+    ELO_INITIAL = 1500  # Starting ELO for a new zone
+
+    # Mined-out detection
+    MINED_OUT_WINDOW = 10   # Check last N outcomes for a zone
+    MINED_OUT_THRESHOLD = 0.5  # If exp rate dropped by 50%+, consider mined out
+
+    def __init__(self, db_path: str | Path | None = None, max_outcomes_per_zone: int = 1000):
         self._lock = threading.RLock()
-        self._max_records = max_records
-        self._records: list[PerformanceRecord] = []
-        self._skill_effectiveness: dict[str, SkillEffectiveness] = {}
-        self._item_effectiveness: dict[str, ItemEffectiveness] = {}
-        self._strategy_scores: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self._db_path = str(db_path) if db_path else None
+        self._max_outcomes_per_zone = max_outcomes_per_zone
+
+        # In-memory caches (synced from DB on init)
+        self._outcomes: list[ZoneOutcome] = []
+        self._zone_stats: dict[str, dict[str, Any]] = {}  # map_name -> stats dict
+        self._party_compositions: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        # map_name -> list of composition records
+
         if self._db_path:
             self._init_db()
+            self._load_from_db()
 
     # ── SQLite persistence ──────────────────────────────────────────────
 
     def _init_db(self) -> None:
         try:
             db = sqlite3.connect(self._db_path, timeout=5.0)
-            db.execute("""CREATE TABLE IF NOT EXISTS self_learning_records (
-                bot_id TEXT, context_type TEXT, map_name TEXT, monster_name TEXT,
-                role TEXT, action_taken TEXT, success INTEGER, reward REAL,
-                duration_ms REAL, hp_consumed REAL, sp_consumed REAL,
-                items_used TEXT, skills_used TEXT, timestamp REAL, details TEXT
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""CREATE TABLE IF NOT EXISTS zone_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_id TEXT NOT NULL,
+                map_name TEXT NOT NULL,
+                bot_level INTEGER NOT NULL,
+                duration_minutes REAL NOT NULL,
+                base_exp_gained REAL NOT NULL DEFAULT 0,
+                job_exp_gained REAL NOT NULL DEFAULT 0,
+                zeny_gained REAL NOT NULL DEFAULT 0,
+                death_count INTEGER NOT NULL DEFAULT 0,
+                party_size INTEGER NOT NULL DEFAULT 1,
+                party_composition TEXT NOT NULL DEFAULT '{}',
+                success INTEGER NOT NULL DEFAULT 1,
+                timestamp REAL NOT NULL,
+                details TEXT NOT NULL DEFAULT '{}'
             )""")
-            db.execute("""CREATE TABLE IF NOT EXISTS self_learning_strategies (
-                context_type TEXT, map_name TEXT, role TEXT, action_taken TEXT,
-                attempts INTEGER, successes INTEGER, avg_reward REAL, score REAL,
-                PRIMARY KEY (context_type, map_name, role, action_taken)
+            db.execute("""CREATE INDEX IF NOT EXISTS idx_zo_map
+                ON zone_outcomes(map_name, timestamp DESC)""")
+            db.execute("""CREATE INDEX IF NOT EXISTS idx_zo_bot
+                ON zone_outcomes(bot_id, timestamp DESC)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS zone_elo (
+                map_name TEXT PRIMARY KEY,
+                elo_score REAL NOT NULL DEFAULT 1500,
+                total_outcomes INTEGER NOT NULL DEFAULT 0,
+                avg_base_exp_rate REAL NOT NULL DEFAULT 0,
+                avg_job_exp_rate REAL NOT NULL DEFAULT 0,
+                avg_zeny_rate REAL NOT NULL DEFAULT 0,
+                avg_party_size REAL NOT NULL DEFAULT 1,
+                success_rate REAL NOT NULL DEFAULT 0.5,
+                mined_out INTEGER NOT NULL DEFAULT 0,
+                last_updated REAL NOT NULL
             )""")
-            db.execute("""CREATE TABLE IF NOT EXISTS self_learning_skills (
-                skill_name TEXT, context_type TEXT, bot_class TEXT, map_name TEXT,
-                monster_name TEXT, role TEXT, attempts INTEGER, successes INTEGER,
-                avg_damage REAL, avg_healing REAL, avg_sp_cost REAL, dps REAL, score REAL,
-                PRIMARY KEY (skill_name, context_type, bot_class, map_name, monster_name)
+            db.execute("""CREATE TABLE IF NOT EXISTS party_compositions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                map_name TEXT NOT NULL,
+                composition_json TEXT NOT NULL,
+                party_size INTEGER NOT NULL,
+                total_runs INTEGER NOT NULL DEFAULT 0,
+                successful_runs INTEGER NOT NULL DEFAULT 0,
+                avg_base_exp_rate REAL NOT NULL DEFAULT 0,
+                avg_job_exp_rate REAL NOT NULL DEFAULT 0,
+                avg_zeny_rate REAL NOT NULL DEFAULT 0,
+                success_rate REAL NOT NULL DEFAULT 0.5,
+                score REAL NOT NULL DEFAULT 0,
+                last_used REAL NOT NULL
             )""")
-            db.execute("""CREATE TABLE IF NOT EXISTS self_learning_items (
-                item_name TEXT, context_type TEXT, map_name TEXT, role TEXT,
-                attempts INTEGER, successes INTEGER, avg_hp_restored REAL,
-                avg_sp_restored REAL, score REAL,
-                PRIMARY KEY (item_name, context_type, map_name, role)
-            )""")
+            db.execute("""CREATE INDEX IF NOT EXISTS idx_pc_map_score
+                ON party_compositions(map_name, score DESC)""")
             db.commit()
             db.close()
         except Exception as e:
-            logger.warning("SelfLearningSystem: DB init failed: %s", e)
+            logger.warning("FleetLearningSystem: DB init failed: %s", e)
 
-    def _save_record(self, record: PerformanceRecord) -> None:
+    def _save_outcome(self, outcome: ZoneOutcome) -> None:
         if not self._db_path:
             return
         try:
             db = sqlite3.connect(self._db_path, timeout=3.0)
             db.execute(
-                "INSERT INTO self_learning_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (record.bot_id, record.context_type, record.map_name, record.monster_name,
-                 record.role, record.action_taken, int(record.success), record.reward,
-                 record.duration_ms, record.hp_consumed, record.sp_consumed,
-                 json.dumps(record.items_used), json.dumps(record.skills_used),
-                 record.timestamp, json.dumps(record.details)),
+                """INSERT INTO zone_outcomes
+                   (bot_id, map_name, bot_level, duration_minutes,
+                    base_exp_gained, job_exp_gained, zeny_gained,
+                    death_count, party_size, party_composition,
+                    success, timestamp, details)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (outcome.bot_id, outcome.map_name, outcome.bot_level,
+                 outcome.duration_minutes,
+                 outcome.base_exp_gained, outcome.job_exp_gained, outcome.zeny_gained,
+                 outcome.death_count, outcome.party_size,
+                 json.dumps(outcome.party_composition),
+                 int(outcome.success), outcome.timestamp,
+                 json.dumps(outcome.details)),
             )
             db.commit()
             db.close()
         except Exception as e:
-            logger.debug("SelfLearningSystem: save failed: %s", e)
+            logger.debug("FleetLearningSystem: save_outcome failed: %s", e)
 
-    def _load_records(self, limit: int = 5000) -> list[dict[str, Any]]:
+    def _load_from_db(self) -> None:
         if not self._db_path:
-            return []
+            return
         try:
-            db = sqlite3.connect(self._db_path, timeout=3.0)
+            db = sqlite3.connect(self._db_path, timeout=5.0)
+            # Load recent outcomes
             cursor = db.execute(
-                "SELECT * FROM self_learning_records ORDER BY timestamp DESC LIMIT ?", (limit,))
-            rows = []
+                "SELECT * FROM zone_outcomes ORDER BY timestamp DESC LIMIT 5000"
+            )
             for row in cursor.fetchall():
-                rows.append({
-                    "bot_id": row[0], "context_type": row[1], "map_name": row[2],
-                    "monster_name": row[3], "role": row[4], "action_taken": row[5],
-                    "success": bool(row[6]), "reward": row[7], "duration_ms": row[8],
-                    "hp_consumed": row[9], "sp_consumed": row[10],
-                    "items_used": json.loads(row[11]) if row[11] else [],
-                    "skills_used": json.loads(row[12]) if row[12] else [],
-                    "timestamp": row[13], "details": json.loads(row[14]) if row[14] else {},
-                })
-            db.close()
-            return rows
-        except Exception as e:
-            logger.debug("SelfLearningSystem: load failed: %s", e)
-            return []
+                outcome = ZoneOutcome(
+                    bot_id=row[1], map_name=row[2], bot_level=row[3],
+                    duration_minutes=row[4],
+                    base_exp_gained=row[5], job_exp_gained=row[6],
+                    zeny_gained=row[7], death_count=row[8],
+                    party_size=row[9],
+                    party_composition=json.loads(row[10]) if row[10] else {},
+                    success=bool(row[11]),
+                    timestamp=row[12],
+                    details=json.loads(row[13]) if row[13] else {},
+                )
+                self._outcomes.append(outcome)
 
-    # ── Record experience ───────────────────────────────────────────────
-
-    def record(self, record: PerformanceRecord) -> None:
-        """Record a performance datapoint."""
-        with self._lock:
-            self._records.append(record)
-            if len(self._records) > self._max_records:
-                self._records = self._records[-self._max_records:]
-
-            # Update strategy score
-            key = (record.context_type, record.map_name, record.role)
-            strat_key = f"{record.context_type}:{record.map_name}:{record.role}:{record.action_taken}"
-            stats = self._strategy_scores[strat_key]
-            stats["attempts"] = stats.get("attempts", 0) + 1
-            stats["successes"] = stats.get("successes", 0) + (1 if record.success else 0)
-            avg = stats.get("avg_reward", 0.0)
-            n = stats["attempts"]
-            stats["avg_reward"] = (avg * (n - 1) + record.reward) / n
-            sr = stats["successes"] / stats["attempts"]
-            stats["score"] = sr * 0.6 + (stats["avg_reward"] / max(1.0, stats["avg_reward"] + 100)) * 0.4
-
-            # Update skill effectiveness
-            for skill in record.skills_used:
-                skey = f"{skill}:{record.context_type}:{record.bot_id}:{record.map_name}:{record.monster_name}"
-                se = self._skill_effectiveness.setdefault(
-                    skey, SkillEffectiveness(
-                        skill_name=skill, context_type=record.context_type,
-                        bot_class=record.bot_id, map_name=record.map_name,
-                        monster_name=record.monster_name, role=record.role))
-                se.attempts += 1
-                if record.success:
-                    se.successes += 1
-                avg_dmg = record.details.get("damage_dealt", 0.0)
-                avg_heal = record.details.get("healing_done", 0.0)
-                sp_cost = record.details.get("sp_cost", 0.0)
-                if se.attempts > 0:
-                    se.avg_damage = (se.avg_damage * (se.attempts - 1) + avg_dmg) / se.attempts
-                    se.avg_healing = (se.avg_healing * (se.attempts - 1) + avg_heal) / se.attempts
-                    se.avg_sp_cost = (se.avg_sp_cost * (se.attempts - 1) + sp_cost) / se.attempts
-                dur_s = max(0.001, record.duration_ms / 1000.0)
-                se.dps = (se.avg_damage + se.avg_healing) / dur_s
-                sr = se.successes / max(1, se.attempts)
-                se.score = sr * 0.3 + (se.dps / max(1.0, se.dps + 1000)) * 0.4 + (1.0 - min(1.0, se.avg_sp_cost / 100.0)) * 0.3
-
-            # Update item effectiveness
-            for item in record.items_used:
-                ikey = f"{item}:{record.context_type}:{record.map_name}:{record.role}"
-                ie = self._item_effectiveness.setdefault(
-                    ikey, ItemEffectiveness(
-                        item_name=item, context_type=record.context_type,
-                        map_name=record.map_name, role=record.role))
-                ie.attempts += 1
-                if record.success:
-                    ie.successes += 1
-                hp_r = record.details.get("hp_restored", 0.0)
-                sp_r = record.details.get("sp_restored", 0.0)
-                if ie.attempts > 0:
-                    ie.avg_hp_restored = (ie.avg_hp_restored * (ie.attempts - 1) + hp_r) / ie.attempts
-                    ie.avg_sp_restored = (ie.avg_sp_restored * (ie.attempts - 1) + sp_r) / ie.attempts
-                sr = ie.successes / max(1, ie.attempts)
-                ie.score = sr * 0.5 + (ie.avg_hp_restored / max(1.0, ie.avg_hp_restored + 500)) * 0.3 + (
-                    ie.avg_sp_restored / max(1.0, ie.avg_sp_restored + 200)) * 0.2
-
-        self._save_record(record)
-
-    # ── Query learned knowledge ─────────────────────────────────────────
-
-    def best_strategy(self, context_type: str, map_name: str = "", role: str = "",
-                      min_samples: int = 3) -> tuple[str, float]:
-        """Return the best (action, score) for a given context."""
-        with self._lock:
-            best_action, best_score = "", 0.0
-            prefix = f"{context_type}:{map_name}:{role}:"
-            for key, stats in self._strategy_scores.items():
-                if key.startswith(prefix):
-                    score = stats.get("score", 0.0)
-                    attempts = stats.get("attempts", 0)
-                    if attempts >= min_samples and score > best_score:
-                        best_score = score
-                        best_action = key.split(":")[-1]
-            return best_action, best_score
-
-    def best_skill_rotation(self, context_type: str, bot_class: str = "",
-                            map_name: str = "", monster_name: str = "",
-                            role: str = "", limit: int = 6) -> list[dict[str, Any]]:
-        """Return the best skills ranked by effectiveness."""
-        with self._lock:
-            candidates: list[SkillEffectiveness] = []
-            for se in self._skill_effectiveness.values():
-                if se.context_type != context_type:
-                    continue
-                if bot_class and se.bot_class != bot_class:
-                    continue
-                if monster_name and se.monster_name != monster_name:
-                    continue
-                if role and se.role != role:
-                    continue
-                candidates.append(se)
-            candidates.sort(key=lambda x: x.score, reverse=True)
-            return [
-                {"skill": c.skill_name, "score": c.score, "avg_damage": c.avg_damage,
-                 "avg_healing": c.avg_healing, "avg_sp_cost": c.avg_sp_cost,
-                 "dps": c.dps, "attempts": c.attempts, "success_rate": c.successes / max(1, c.attempts)}
-                for c in candidates[:limit]
-            ]
-
-    def best_items(self, context_type: str, map_name: str = "",
-                   role: str = "", limit: int = 10) -> list[dict[str, Any]]:
-        """Return the best items ranked by effectiveness."""
-        with self._lock:
-            candidates: list[ItemEffectiveness] = []
-            for ie in self._item_effectiveness.values():
-                if ie.context_type != context_type:
-                    continue
-                if map_name and ie.map_name != map_name:
-                    continue
-                if role and ie.role != role:
-                    continue
-                candidates.append(ie)
-            candidates.sort(key=lambda x: x.score, reverse=True)
-            return [
-                {"item": c.item_name, "score": c.score, "avg_hp_restored": c.avg_hp_restored,
-                 "avg_sp_restored": c.avg_sp_restored, "attempts": c.attempts,
-                 "success_rate": c.successes / max(1, c.attempts)}
-                for c in candidates[:limit]
-            ]
-
-    def strategy_adaptation(self, context_type: str, map_name: str = "",
-                            role: str = "") -> dict[str, Any]:
-        """Produce a strategy adaptation recommendation based on past performance."""
-        best_action, best_score = self.best_strategy(context_type, map_name, role)
-        current_avg_score = 0.0
-        with self._lock:
-            scores = [
-                s.get("score", 0.0)
-                for k, s in self._strategy_scores.items()
-                if k.startswith(f"{context_type}:{map_name}:{role}:")
-            ]
-            current_avg_score = sum(scores) / max(1, len(scores))
-        return {
-            "context_type": context_type,
-            "map_name": map_name,
-            "role": role,
-            "best_action": best_action,
-            "best_score": best_score,
-            "current_avg_score": current_avg_score,
-            "improvement_potential": best_score - current_avg_score,
-            "should_adapt": best_score > current_avg_score + 0.1,
-        }
-
-    def cross_bot_recommendation(self, bot_id: str, context_type: str) -> dict[str, Any]:
-        """Get recommendations from other bots' experience for a given context."""
-        with self._lock:
-            # Load other bots' records from DB
-            other_records = [r for r in self._records if r.bot_id != bot_id and r.context_type == context_type]
-            if not other_records:
-                return {
-                    "has_cross_bot_data": False,
-                    "best_action": "",
-                    "confidence": 0.0,
-                    "peer_count": 0,
+            # Load zone ELO scores
+            cursor = db.execute("SELECT * FROM zone_elo")
+            for row in cursor.fetchall():
+                self._zone_stats[row[0]] = {
+                    "elo_score": row[1],
+                    "total_outcomes": row[2],
+                    "avg_base_exp_rate": row[3],
+                    "avg_job_exp_rate": row[4],
+                    "avg_zeny_rate": row[5],
+                    "avg_party_size": row[6],
+                    "success_rate": row[7],
+                    "mined_out": bool(row[8]),
+                    "last_updated": row[9],
                 }
 
-            action_stats: dict[str, list[bool]] = {}
-            for r in other_records:
-                if r.action_taken:
-                    action_stats.setdefault(r.action_taken, []).append(r.success)
+            # Load party compositions
+            cursor = db.execute(
+                "SELECT * FROM party_compositions ORDER BY score DESC"
+            )
+            for row in cursor.fetchall():
+                self._party_compositions[row[0]].append({
+                    "map_name": row[0],
+                    "composition": json.loads(row[1]),
+                    "party_size": row[2],
+                    "total_runs": row[3],
+                    "successful_runs": row[4],
+                    "avg_base_exp_rate": row[5],
+                    "avg_job_exp_rate": row[6],
+                    "avg_zeny_rate": row[7],
+                    "success_rate": row[8],
+                    "score": row[9],
+                    "last_used": row[10],
+                })
 
-            best_action, best_rate = "", 0.0
-            for action, outcomes in action_stats.items():
-                rate = sum(1 for s in outcomes if s) / len(outcomes)
-                if rate > best_rate and len(outcomes) >= 3:
-                    best_rate = rate
-                    best_action = action
+            db.close()
+            logger.info(
+                "FleetLearningSystem: loaded %d outcomes, %d zones, %d compositions",
+                len(self._outcomes), len(self._zone_stats),
+                sum(len(v) for v in self._party_compositions.values()),
+            )
+        except Exception as e:
+            logger.warning("FleetLearningSystem: load failed: %s", e)
+
+    # ── Public API ──────────────────────────────────────────────────────
+
+    def record_outcome(self, outcome: ZoneOutcome) -> None:
+        """Record a zone outcome and update all derived metrics."""
+        with self._lock:
+            self._outcomes.append(outcome)
+            map_name = outcome.map_name
+
+            # Prune in-memory list
+            zone_outcomes = [o for o in self._outcomes if o.map_name == map_name]
+            if len(zone_outcomes) > self._max_outcomes_per_zone:
+                excess = len(zone_outcomes) - self._max_outcomes_per_zone
+                self._outcomes = [o for o in self._outcomes
+                                  if o.map_name != map_name or
+                                  o not in zone_outcomes[:excess]]
+
+            # Update zone ELO
+            self._update_zone_elo(outcome)
+
+            # Update party composition knowledge
+            if outcome.party_composition:
+                self._update_party_composition(outcome)
+
+        # Persist outside lock
+        self._save_outcome(outcome)
+        self._persist_zone_stats(map_name)
+        if outcome.party_composition:
+            self._persist_party_composition(outcome.map_name)
+
+    def get_zone_score(self, map_name: str) -> dict[str, Any]:
+        """Get comprehensive scoring for a zone."""
+        with self._lock:
+            stats = self._zone_stats.get(map_name)
+            if stats is None:
+                return {
+                    "map_name": map_name,
+                    "elo_score": self.ELO_INITIAL,
+                    "confidence": 0.0,
+                    "total_outcomes": 0,
+                    "avg_base_exp_rate": 0.0,
+                    "avg_job_exp_rate": 0.0,
+                    "avg_zeny_rate": 0.0,
+                    "avg_party_size": 1.0,
+                    "success_rate": 0.5,
+                    "mined_out": False,
+                    "mined_out_confidence": 0.0,
+                }
 
             return {
-                "has_cross_bot_data": True,
-                "best_action": best_action,
-                "success_rate": best_rate,
-                "peer_count": len(other_records),
-                "unique_bots": len(set(r.bot_id for r in other_records)),
+                "map_name": map_name,
+                "elo_score": stats["elo_score"],
+                "confidence": min(1.0, stats["total_outcomes"] / 50.0),
+                "total_outcomes": stats["total_outcomes"],
+                "avg_base_exp_rate": stats["avg_base_exp_rate"],
+                "avg_job_exp_rate": stats["avg_job_exp_rate"],
+                "avg_zeny_rate": stats["avg_zeny_rate"],
+                "avg_party_size": stats["avg_party_size"],
+                "success_rate": stats["success_rate"],
+                "mined_out": stats.get("mined_out", False),
+                "mined_out_confidence": stats.get("mined_out_confidence", 0.0),
             }
+
+    def get_best_zone(
+        self, bot_level: int, min_samples: int = 3,
+        exclude_mined_out: bool = True, top_n: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Recommend the best zone(s) based on ELO + bot level.
+
+        Zones are scored by a weighted formula:
+        - ELO score (zone difficulty/reward)
+        - Base exp rate (higher = better)
+        - Level appropriateness (not too high/low)
+        - Not mined out
+
+        Returns top_n zones sorted by composite score.
+        """
+        with self._lock:
+            candidates: list[dict[str, Any]] = []
+            for map_name, stats in self._zone_stats.items():
+                if stats["total_outcomes"] < min_samples:
+                    continue
+                if exclude_mined_out and stats.get("mined_out", False):
+                    continue
+
+                # Level appropriateness: zone avg level vs bot level
+                elo = stats["elo_score"]
+                # Normalize ELO to a 0-1 range (typical range 1000-2000)
+                elo_score_norm = max(0.0, min(1.0, (elo - 1000.0) / 1000.0))
+
+                # Exp rate normalized (cap at 10M/hour as 1.0)
+                base_rate_norm = min(1.0, stats["avg_base_exp_rate"] / 10_000_000.0)
+
+                # Level match: zones with ELO ~ bot_level*10 are appropriate
+                # (elite = level 150 -> ELO ~ 1500, so bot_level*10 roughly maps)
+                target_elo = bot_level * 10
+                level_match = max(0.0, 1.0 - abs(elo - target_elo) / 500.0)
+
+                # Success rate
+                sr = stats["success_rate"]
+
+                # Composite score
+                composite = (
+                    elo_score_norm * 0.25 +
+                    base_rate_norm * 0.30 +
+                    level_match * 0.25 +
+                    sr * 0.20
+                )
+
+                candidates.append({
+                    "map_name": map_name,
+                    "composite_score": composite,
+                    "elo_score": elo,
+                    "avg_base_exp_rate": stats["avg_base_exp_rate"],
+                    "avg_job_exp_rate": stats["avg_job_exp_rate"],
+                    "avg_zeny_rate": stats["avg_zeny_rate"],
+                    "success_rate": sr,
+                    "confidence": min(1.0, stats["total_outcomes"] / 50.0),
+                    "mined_out": stats.get("mined_out", False),
+                })
+
+            candidates.sort(key=lambda x: x["composite_score"], reverse=True)
+            return candidates[:top_n]
+
+    def get_party_composition(self, map_name: str) -> dict[str, Any]:
+        """Get the best known party composition for a zone.
+
+        Returns the composition with the highest score, or a default recommendation.
+        """
+        with self._lock:
+            comps = self._party_compositions.get(map_name, [])
+            if not comps:
+                return {
+                    "map_name": map_name,
+                    "composition": {},
+                    "party_size": 1,
+                    "success_rate": 0.5,
+                    "score": 0.0,
+                    "total_runs": 0,
+                    "confidence": 0.0,
+                }
+
+            best = max(comps, key=lambda c: c["score"])
+            return {
+                "map_name": map_name,
+                "composition": best["composition"],
+                "party_size": best["party_size"],
+                "success_rate": best["success_rate"],
+                "score": best["score"],
+                "total_runs": best["total_runs"],
+                "confidence": min(1.0, best["total_runs"] / 20.0),
+            }
+
+    # ── Internal: Zone ELO ──────────────────────────────────────────────
+
+    def _update_zone_elo(self, outcome: ZoneOutcome) -> None:
+        """Update ELO score for a zone based on outcome."""
+        map_name = outcome.map_name
+        if map_name not in self._zone_stats:
+            self._zone_stats[map_name] = {
+                "elo_score": self.ELO_INITIAL,
+                "total_outcomes": 0,
+                "avg_base_exp_rate": 0.0,
+                "avg_job_exp_rate": 0.0,
+                "avg_zeny_rate": 0.0,
+                "avg_party_size": 1.0,
+                "success_rate": 0.5,
+                "mined_out": False,
+                "mined_out_confidence": 0.0,
+                "last_updated": outcome.timestamp,
+                # Track recent rates for mined-out detection
+                "_recent_base_rates": [],
+            }
+
+        stats = self._zone_stats[map_name]
+        n = stats["total_outcomes"]
+
+        # Update running averages
+        stats["avg_base_exp_rate"] = (
+            (stats["avg_base_exp_rate"] * n + outcome.base_exp_gained / max(0.001, outcome.duration_minutes / 60.0))
+            / (n + 1)
+        ) if outcome.duration_minutes > 0 else 0.0
+        stats["avg_job_exp_rate"] = (
+            (stats["avg_job_exp_rate"] * n + outcome.job_exp_gained / max(0.001, outcome.duration_minutes / 60.0))
+            / (n + 1)
+        ) if outcome.duration_minutes > 0 else 0.0
+        stats["avg_zeny_rate"] = (
+            (stats["avg_zeny_rate"] * n + outcome.zeny_gained / max(0.001, outcome.duration_minutes / 60.0))
+            / (n + 1)
+        )
+        stats["avg_party_size"] = (
+            (stats["avg_party_size"] * n + outcome.party_size) / (n + 1)
+        )
+        stats["total_outcomes"] = n + 1
+
+        # Update success rate
+        successes = sum(1 for o in self._outcomes if o.map_name == map_name and o.success)
+        total = sum(1 for o in self._outcomes if o.map_name == map_name)
+        stats["success_rate"] = successes / max(1, total)
+
+        # ELO update: treat zone as "player" and outcome as win/loss
+        # Expected score based on current ELO
+        expected = 1.0 / (1.0 + math.pow(10, (1500 - stats["elo_score"]) / 400.0))
+        actual = 1.0 if outcome.success else 0.0
+
+        # Death penalty: adjust actual score downward
+        if outcome.death_count > 0:
+            death_penalty = min(0.5, outcome.death_count * 0.1)
+            actual = max(0.0, actual - death_penalty)
+
+        # Bonus for high exp gain
+        if outcome.base_exp_gained > 0 and outcome.duration_minutes > 0:
+            exp_per_hour = outcome.base_exp_gained / max(0.001, outcome.duration_minutes / 60.0)
+            if exp_per_hour > 1_000_000:  # >1M exp/hr = bonus
+                actual = min(1.0, actual + 0.1)
+
+        delta = self.ELO_K * (actual - expected)
+        stats["elo_score"] = max(500.0, min(2500.0, stats["elo_score"] + delta))
+        stats["last_updated"] = outcome.timestamp
+
+        # Detect mined out
+        self._check_mined_out(map_name, outcome)
+
+    def _check_mined_out(self, map_name: str, outcome: ZoneOutcome) -> None:
+        """Detect if a zone is 'mined out' (exp rate dropping significantly)."""
+        stats = self._zone_stats[map_name]
+
+        # Track recent base EXP rates
+        exp_rate = 0.0
+        if outcome.duration_minutes > 0:
+            exp_rate = outcome.base_exp_gained / max(0.001, outcome.duration_minutes / 60.0)
+
+        recent_rates = stats.setdefault("_recent_base_rates", [])
+        recent_rates.append(exp_rate)
+        # Keep only the most recent N
+        if len(recent_rates) > self.MINED_OUT_WINDOW:
+            recent_rates.pop(0)
+
+        # Need enough data points
+        if len(recent_rates) < self.MINED_OUT_WINDOW:
+            return
+
+        # Compare first half vs second half
+        half = self.MINED_OUT_WINDOW // 2
+        early_avg = sum(recent_rates[:half]) / half
+        late_avg = sum(recent_rates[half:]) / half
+
+        if early_avg > 0 and late_avg > 0:
+            drop_ratio = late_avg / early_avg
+            # If the latest rate dropped significantly
+            if drop_ratio < (1.0 - self.MINED_OUT_THRESHOLD):
+                stats["mined_out"] = True
+                # Confidence increases with more confirming data
+                confirmations = 0
+                for i in range(half, len(recent_rates)):
+                    if recent_rates[i] < early_avg * (1.0 - self.MINED_OUT_THRESHOLD):
+                        confirmations += 1
+                stats["mined_out_confidence"] = confirmations / half
+            else:
+                # Gradually reduce mined_out flag if rates recover
+                if stats["mined_out"] and drop_ratio > 0.8:
+                    stats["mined_out_confidence"] = max(
+                        0.0, stats.get("mined_out_confidence", 0.0) - 0.1
+                    )
+                    if stats["mined_out_confidence"] <= 0.0:
+                        stats["mined_out"] = False
+
+    # ── Internal: Party composition ─────────────────────────────────────
+
+    def _update_party_composition(self, outcome: ZoneOutcome) -> None:
+        """Update party composition knowledge for a zone."""
+        map_name = outcome.map_name
+        comps = self._party_compositions[map_name]
+        comp_json = json.dumps(outcome.party_composition, sort_keys=True)
+
+        # Find existing entry for this composition
+        existing = None
+        for c in comps:
+            if json.dumps(c["composition"], sort_keys=True) == comp_json:
+                existing = c
+                break
+
+        exp_rate = 0.0
+        if outcome.duration_minutes > 0:
+            exp_rate = outcome.base_exp_gained / max(0.001, outcome.duration_minutes / 60.0)
+
+        if existing:
+            n = existing["total_runs"]
+            existing["total_runs"] = n + 1
+            existing["successful_runs"] += 1 if outcome.success else 0
+            existing["avg_base_exp_rate"] = (
+                existing["avg_base_exp_rate"] * n + exp_rate
+            ) / (n + 1)
+            existing["last_used"] = outcome.timestamp
+            sr = existing["successful_runs"] / existing["total_runs"]
+            existing["success_rate"] = sr
+            # Score: success_rate * 0.5 + normalized_exp_rate * 0.5
+            norm_rate = min(1.0, existing["avg_base_exp_rate"] / 10_000_000.0)
+            existing["score"] = sr * 0.5 + norm_rate * 0.5
+        else:
+            new_entry = {
+                "map_name": map_name,
+                "composition": outcome.party_composition,
+                "party_size": outcome.party_size,
+                "total_runs": 1,
+                "successful_runs": 1 if outcome.success else 0,
+                "avg_base_exp_rate": exp_rate,
+                "avg_job_exp_rate": 0.0,
+                "avg_zeny_rate": outcome.zeny_gained / max(0.001, outcome.duration_minutes / 60.0) if outcome.duration_minutes > 0 else 0.0,
+                "success_rate": 1.0 if outcome.success else 0.0,
+                "score": 0.5 + (min(1.0, exp_rate / 10_000_000.0)) * 0.5 if outcome.success else 0.0,
+                "last_used": outcome.timestamp,
+            }
+            comps.append(new_entry)
+
+        # Sort compositions by score descending
+        comps.sort(key=lambda c: c["score"], reverse=True)
+
+    # ── Persistence helpers ─────────────────────────────────────────────
+
+    def _persist_zone_stats(self, map_name: str) -> None:
+        if not self._db_path:
+            return
+        with self._lock:
+            stats = self._zone_stats.get(map_name)
+            if not stats:
+                return
+        try:
+            db = sqlite3.connect(self._db_path, timeout=3.0)
+            db.execute(
+                """INSERT OR REPLACE INTO zone_elo
+                   (map_name, elo_score, total_outcomes,
+                    avg_base_exp_rate, avg_job_exp_rate, avg_zeny_rate,
+                    avg_party_size, success_rate, mined_out, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (map_name, stats["elo_score"], stats["total_outcomes"],
+                 stats["avg_base_exp_rate"], stats["avg_job_exp_rate"],
+                 stats["avg_zeny_rate"], stats["avg_party_size"],
+                 stats["success_rate"], int(stats.get("mined_out", False)),
+                 stats["last_updated"]),
+            )
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.debug("FleetLearningSystem: persist_zone_stats failed: %s", e)
+
+    def _persist_party_composition(self, map_name: str) -> None:
+        if not self._db_path:
+            return
+        with self._lock:
+            comps = list(self._party_compositions.get(map_name, []))
+        try:
+            db = sqlite3.connect(self._db_path, timeout=3.0)
+            # Delete old entries for this map, insert current ones
+            db.execute(
+                "DELETE FROM party_compositions WHERE map_name = ?", (map_name,)
+            )
+            for c in comps:
+                db.execute(
+                    """INSERT INTO party_compositions
+                       (map_name, composition_json, party_size,
+                        total_runs, successful_runs,
+                        avg_base_exp_rate, avg_job_exp_rate, avg_zeny_rate,
+                        success_rate, score, last_used)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (map_name, json.dumps(c["composition"]), c["party_size"],
+                     c["total_runs"], c["successful_runs"],
+                     c["avg_base_exp_rate"], c.get("avg_job_exp_rate", 0.0),
+                     c.get("avg_zeny_rate", 0.0),
+                     c["success_rate"], c["score"], c["last_used"]),
+                )
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.debug("FleetLearningSystem: persist_party_comp failed: %s", e)
+
+    # ── Utility ─────────────────────────────────────────────────────────
+
+    def get_all_zones(self) -> list[dict[str, Any]]:
+        """Return all known zones with their scores."""
+        with self._lock:
+            return [
+                self.get_zone_score(map_name)
+                for map_name in self._zone_stats
+            ]
+
+    def get_mined_out_zones(self) -> list[dict[str, Any]]:
+        """Return zones currently flagged as mined out."""
+        with self._lock:
+            return [
+                {
+                    "map_name": map_name,
+                    "confidence": stats.get("mined_out_confidence", 0.0),
+                    "avg_base_exp_rate": stats["avg_base_exp_rate"],
+                    "elo_score": stats["elo_score"],
+                }
+                for map_name, stats in self._zone_stats.items()
+                if stats.get("mined_out", False)
+            ]
+
+    def reset_zone(self, map_name: str) -> None:
+        """Reset zone stats (e.g., after a game update repopulates the zone)."""
+        with self._lock:
+            if map_name in self._zone_stats:
+                del self._zone_stats[map_name]
+            self._outcomes = [o for o in self._outcomes if o.map_name != map_name]
+            self._party_compositions.pop(map_name, None)
+
+        if self._db_path:
+            try:
+                db = sqlite3.connect(self._db_path, timeout=3.0)
+                db.execute("DELETE FROM zone_elo WHERE map_name = ?", (map_name,))
+                db.execute("DELETE FROM zone_outcomes WHERE map_name = ?", (map_name,))
+                db.execute(
+                    "DELETE FROM party_compositions WHERE map_name = ?", (map_name,)
+                )
+                db.commit()
+                db.close()
+            except Exception:
+                pass
 
     def stats(self) -> dict[str, Any]:
+        """Return aggregate statistics for the fleet learning system."""
         with self._lock:
+            mined_out_count = sum(
+                1 for s in self._zone_stats.values() if s.get("mined_out", False)
+            )
             return {
-                "total_records": len(self._records),
-                "unique_strategies": len(self._strategy_scores),
-                "unique_skills": len(self._skill_effectiveness),
-                "unique_items": len(self._item_effectiveness),
-                "by_context": dict(sorted(
-                    (k, len([r for r in self._records if r.context_type == k]))
-                    for k in set(r.context_type for r in self._records)
-                )),
+                "total_outcomes": len(self._outcomes),
+                "known_zones": len(self._zone_stats),
+                "known_compositions": sum(len(v) for v in self._party_compositions.values()),
+                "mined_out_zones": mined_out_count,
+                "unique_bots": len(set(o.bot_id for o in self._outcomes)),
+                "unique_maps": len(set(o.map_name for o in self._outcomes)),
             }
+
+
+# ── Backward-compatible alias ────────────────────────────────────────
+SelfLearningSystem = FleetLearningSystem
+
+# ── Backward-compatible aliases ────────────────────────────────────────
+PerformanceRecord = ZoneOutcome
+SkillEffectiveness = ZoneOutcome  # Legacy: generalized outcome type
+ItemEffectiveness = ZoneOutcome   # Legacy: generalized outcome type

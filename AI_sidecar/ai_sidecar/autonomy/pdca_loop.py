@@ -1331,6 +1331,100 @@ class PDCALoop:
                     except Exception:
                         pass
                 
+                # ── NEW: Initialize Role Manager ──
+                _role_mgr = getattr(self._runtime, "role_manager", None)
+                if _role_mgr is None:
+                    try:
+                        from ai_sidecar.fleet.role_manager import RoleManager
+                        _role_mgr = RoleManager()
+                        self._runtime.role_manager = _role_mgr
+                        logger.info("role_manager_initialized")
+                    except Exception as e:
+                        logger.warning("role_manager_init_failed: %s", e)
+                
+                # ── NEW: Initialize Experience DB ──
+                _exp_db = getattr(self._runtime, "experience_db", None)
+                if _exp_db is None:
+                    try:
+                        from ai_sidecar.experience_db import ExperienceDB
+                        _db_path = getattr(_settings, "experience_db_path", "data/experience.db")
+                        _exp_db = ExperienceDB(db_path=_db_path)
+                        self._runtime.experience_db = _exp_db
+                        logger.info("experience_db_initialized: path=%s", _db_path)
+                    except Exception as e:
+                        logger.warning("experience_db_init_failed: %s", e)
+                
+                # ── NEW: Initialize Fleet Learning System ──
+                _fleet_learn = getattr(self._runtime, "fleet_learning", None)
+                if _fleet_learn is None:
+                    try:
+                        from ai_sidecar.fleet.self_learning import FleetLearningSystem
+                        _fleet_learn = FleetLearningSystem()
+                        self._runtime.fleet_learning = _fleet_learn
+                        logger.info("fleet_learning_initialized")
+                    except Exception as e:
+                        logger.warning("fleet_learning_init_failed: %s", e)
+                
+                # ── NEW: Initialize Goal Stack ──
+                _goal_stack = getattr(self._runtime, "goal_stack", None)
+                if _goal_stack is None:
+                    try:
+                        from ai_sidecar.autonomy.goal_stack import GoalStackComputation
+                        _goal_stack = GoalStackComputation()
+                        self._runtime.goal_stack = _goal_stack
+                        logger.info("goal_stack_initialized")
+                    except Exception as e:
+                        logger.warning("goal_stack_init_failed: %s", e)
+                
+                # ── NEW: Initialize Memory Retrieval ──
+                _mem = getattr(self._runtime, "memory_retrieval", None)
+                if _mem is None:
+                    try:
+                        from ai_sidecar.memory.retrieval import MemoryRetrievalService
+                        _mem = MemoryRetrievalService()
+                        self._runtime.memory_retrieval = _mem
+                        logger.info("memory_retrieval_initialized")
+                    except Exception as e:
+                        logger.warning("memory_init_failed: %s", e)
+                
+                # ── NEW: Initialize Reflex Rule Engine ──
+                _reflex_engine = getattr(self._runtime, "reflex_engine", None)
+                if _reflex_engine is None:
+                    try:
+                        from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
+                        _reflex_engine = ReflexRuleEngine()
+                        self._runtime.reflex_engine = _reflex_engine
+                        logger.info("reflex_engine_initialized")
+                    except Exception as e:
+                        logger.warning("reflex_engine_init_failed: %s", e)
+                
+                # ── NEW: Initialize Reflex Action Emitter ──
+                _reflex_emitter = getattr(self._runtime, "reflex_emitter", None)
+                if _reflex_emitter is None:
+                    try:
+                        from ai_sidecar.reflex.action_emitter import ActionEmitter
+                        from pathlib import Path
+                        _reflex_emitter = ActionEmitter(
+                            workspace_root=Path("."),
+                            contract_version="v1",
+                            action_ttl_seconds=60,
+                        )
+                        self._runtime.reflex_emitter = _reflex_emitter
+                        logger.info("reflex_emitter_initialized")
+                    except Exception as e:
+                        logger.warning("reflex_emitter_init_failed: %s", e)
+                
+                # ── NEW: Initialize NPC Dialog ──
+                _npc_dialog = getattr(self._runtime, "npc_dialog", None)
+                if _npc_dialog is None:
+                    try:
+                        from ai_sidecar.npc_dialog import NPCDialogEngine
+                        _npc_dialog = NPCDialogEngine()
+                        self._runtime.npc_dialog = _npc_dialog
+                        logger.info("npc_dialog_initialized")
+                    except Exception as e:
+                        logger.warning("npc_dialog_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -1475,6 +1569,8 @@ class PDCALoop:
         _fallback_total = 0
         for _bid in _all_bot_ids:
             _fb_map_name = ""
+            _bot_class = "novice"
+            _bot_level = 1
             try:
                 _fb_cache = getattr(self._runtime, "snapshot_cache", None)
                 if _fb_cache is not None:
@@ -1482,8 +1578,71 @@ class PDCALoop:
                     if _fb_snap is not None:
                         if isinstance(_fb_snap, dict):
                             _fb_map_name = str(_fb_snap.get("map", _fb_snap.get("position", {}).get("map", "")) or "")
+                            _bot_class = str(_fb_snap.get("job_name", _fb_snap.get("class", "novice")) or "novice")
+                            _prog = _fb_snap.get("progression", {})
+                            _bot_level = int(_prog.get("base_level", _prog.get("level", 0)) or 0)
+                            if _bot_level == 0:
+                                _bot_level = int(_fb_snap.get("base_level", _fb_snap.get("level", 1)) or 1)
                         else:
                             _fb_map_name = str(getattr(getattr(_fb_snap, "position", None), "map", "") or "")
+                            _prog = getattr(_fb_snap, "progression", None)
+                            if _prog is not None:
+                                _bot_level = int(getattr(_prog, "base_level", 0) or 0)
+                                _bot_class = str(getattr(_prog, "job_name", "novice") or "novice")
+                            if _bot_level == 0:
+                                _bot_level = int(getattr(_fb_snap, "base_level", 1) or 1)
+                                _bot_class = str(getattr(_fb_snap, "job_name", "novice") or "novice")
+                        
+                        # ── Auto-register bot with role manager ──
+                        try:
+                            _rm = getattr(self._runtime, "role_manager", None)
+                            if _rm is not None:
+                                _rm.register_bot(bot_id=_bid, class_name=_bot_class, level=_bot_level)
+                        except Exception:
+                            pass
+                        
+                        # ── Record experience snapshot to DB ──
+                        try:
+                            _exp_db = getattr(self._runtime, "experience_db", None)
+                            if _exp_db is not None:
+                                if isinstance(_fb_snap, dict):
+                                    _prog_data = _fb_snap.get("progression", {}) or {}
+                                    _vitals = _fb_snap.get("vitals", {}) or {}
+                                    _inv = _fb_snap.get("inventory", {}) or {}
+                                    from ai_sidecar.experience_db import ExpSnapshot
+                                    _exp_snap = ExpSnapshot(
+                                        bot_id=_bid,
+                                        base_level=_bot_level,
+                                        job_level=int(_prog_data.get("job_level", 1) or 1),
+                                        base_exp=int(_prog_data.get("base_exp", 0) or 0),
+                                        job_exp=int(_prog_data.get("job_exp", 0) or 0),
+                                        zeny=int(_prog_data.get("zeny", 0) or 0),
+                                        map_name="",
+                                    )
+                                    _exp_db.record_exp_snapshot(_exp_snap)
+                                    # Log leveling speed
+                                    _ls = _exp_db.get_leveling_speed(bot_id=_bid)
+                                    if _ls.get("time_at_current_level_min", 0) > 0:
+                                        _plateau = _exp_db.get_plateau_warnings(bot_id=_bid)
+                                        if _plateau:
+                                            logger.info("exp_plateau: bot=%s level=%d mins=%d",
+                                                       _bid, _ls.get("current_base_level", 0),
+                                                       _ls.get("time_at_current_level_min", 0))
+                        except Exception:
+                            pass
+                        
+                        # ── Store episodic memory of this cycle ──
+                        try:
+                            _mem = getattr(self._runtime, "memory_retrieval", None)
+                            if _mem is not None:
+                                _mem.capture_snapshot(
+                                    bot_id=_bid,
+                                    tick_id=f"pdca_{horizon.value}_{time.monotonic_ns()}",
+                                    summary=f"Level {_bot_level} {_bot_class} on {_fb_map_name}",
+                                    payload={"map": _fb_map_name, "level": _bot_level, "class": _bot_class},
+                                )
+                        except Exception:
+                            pass
             except Exception:
                 pass
             _fallback_ge = _emit_game_engine_actions(
