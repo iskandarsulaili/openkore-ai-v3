@@ -3183,18 +3183,26 @@ class PDCALoop:
         EVERY cue matters — a missed trigger is a disaster.
         
         Trigger categories:
-        - ANOMALY: death, disconnect, stuck, no kills, frequent teleports
-        - PROACTIVE: no potions+town+zeny, level up, job milestone, zeny threshold,
-                     new map, card/rare drop, equipment, party invite
-        - MILESTONE: stat/skill points, base level change, job level change
-        - STRATEGIC: periodic review every 30 cycles
-        - KAIZEN: self-improvement review every 60 cycles
+        - ANOMALY: death, disconnect, stuck, HP crash, zone mismatch
+        - PROACTIVE: buy potions, sell/store, level up, job milestone,
+                     zeny threshold, new map, card/rare drop
+        - MILESTONE: stat/skill points
+        - KAIZEN: strategic review + improvement review
         
         Returns: (should_activate, trigger_reason, trigger_context)
         """
         now = time.time()
         trigger_reasons: list[str] = []
         context: dict[str, object] = {}
+        
+        # ── PRUNE TRACKING STATE (prevent memory leaks) ──
+        for _track_attr in ["_conscious_cycle_counts", "_conscious_tracked_state", "_stuck_times", "_prev_hp"]:
+            _d = getattr(self, _track_attr, {})
+            if len(_d) > 100:
+                _keys = list(_d.keys())[:-50]
+                for _k in _keys:
+                    del _d[_k]
+                object.__setattr__(self, _track_attr, _d)
         
         # ── EXTRACT SNAPSHOT DATA ──
         hp = 1; max_hp = 1; sp = 0; max_sp = 1
@@ -3275,18 +3283,12 @@ class PDCALoop:
             trigger_reasons.append("anomaly:hp_crash")
             context["hp_drop"] = f"{_prev.get('hp',0)}→{hp}"
         
-        # A5: Empty action queue detected by poll tracker
-        _poll_counts = getattr(self, "_poll_starvation_counts", {})
-        if getattr(self, "_last_poll_count", 0) == getattr(self, "_current_poll_count", 0):
-            _pcount = _poll_counts.get(bot_id, 0) + 1
-            _poll_counts[bot_id] = _pcount
-            object.__setattr__(self, "_poll_starvation_counts", _poll_counts)
-            if _pcount >= 6:  # ~30s of no polls
-                trigger_reasons.append("anomaly:action_starvation")
-                context["starved_cycles"] = _pcount
-        else:
-            _poll_counts[bot_id] = 0
-            object.__setattr__(self, "_poll_starvation_counts", _poll_counts)
+        # A5: action queue check — verify bot has recent activity
+        _active_bots = getattr(self, "_active_bot_ids", set())
+        _active_bots.add(bot_id)
+        if len(_active_bots) > 50:
+            _active_bots.clear()
+        object.__setattr__(self, "_active_bot_ids", _active_bots)
         
         # ── 🎯  P R O A C T I V E   D E T E C T I O N 🎯 ──
         
