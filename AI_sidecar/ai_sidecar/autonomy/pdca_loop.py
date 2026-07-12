@@ -1372,30 +1372,41 @@ class PDCALoop:
                 
                 if not _use_llm:
                     # Emit game engine + heuristic + swarm + vendor + skill actions
-                    _actions_queued_ge = _emit_game_engine_actions(
-                        self._runtime, horizon.value, bot_id=_cycle_bot_id, map_name=_map_name
-                    )
-                    _actions_queued_hs = 0
+                    # Emit for ALL registered bots, not just the resolved one
+                    _all_bot_ids: list[str] = []
                     try:
-                        if _hs is not None:
-                            _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                        _br = getattr(self._runtime, "bot_registry", None)
+                        if _br is not None:
+                            _all_bot_ids = [str(b.get("bot_id","")) for b in _br.list_bots() if isinstance(b, dict) and b.get("bot_id")]
                     except Exception:
                         pass
-                    _actions_queued_swarm = _emit_swarm_actions(
-                        self._runtime, horizon.value, bot_id=_cycle_bot_id
-                    )
-                    _actions_queued_vendor = _emit_vendor_actions(
-                        self._runtime, horizon.value, bot_id=_cycle_bot_id
-                    )
-                    _actions_queued_skill = _emit_skill_actions(
-                        self._runtime, horizon.value, bot_id=_cycle_bot_id
-                    )
-                    _total_actions = _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
+                    if not _all_bot_ids:
+                        _all_bot_ids = [_cycle_bot_id]
+                    _total_actions = 0
+                    for _bid in _all_bot_ids:
+                        _actions_queued_ge = _emit_game_engine_actions(
+                            self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
+                        )
+                        _actions_queued_hs = 0
+                        try:
+                            if _hs is not None:
+                                _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
+                        except Exception:
+                            pass
+                        _actions_queued_swarm = _emit_swarm_actions(
+                            self._runtime, horizon.value, bot_id=_bid
+                        )
+                        _actions_queued_vendor = _emit_vendor_actions(
+                            self._runtime, horizon.value, bot_id=_bid
+                        )
+                        _actions_queued_skill = _emit_skill_actions(
+                            self._runtime, horizon.value, bot_id=_bid
+                        )
+                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
                     logger.info(
-                        "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f ge=%d hs=%d swarm=%d vendor=%d skill=%d",
+                        "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
                         horizon.value, _cost_mode.mode.value, _hc,
-                        _actions_queued_ge, _actions_queued_hs,
-                        _actions_queued_swarm, _actions_queued_vendor, _actions_queued_skill,
+                        _total_actions, len(_all_bot_ids),
                     )
                     return PDCAResult(horizon=horizon, plan_id="", actions_queued=_total_actions, progress_pct=0.0, stuck=False, re_planned=False,
                                       force_replan=False, selected_goal="cost_gated", objective=f"Cost mode {_cost_mode.mode.value}",
