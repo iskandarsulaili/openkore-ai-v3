@@ -1452,19 +1452,22 @@ class PDCALoop:
             pass
         if not _all_bot_ids:
             _all_bot_ids = [_cycle_bot_id]
-        # Read map_name from snapshot for game engine routing
+        # Read map_name from snapshot for game engine routing — per bot_id
         _fb_map_name = ""
-        try:
-            _fb_snap = self._get_latest_snapshot()
-            if _fb_snap is not None:
-                if isinstance(_fb_snap, dict):
-                    _fb_map_name = str(_fb_snap.get("map", _fb_snap.get("position", {}).get("map", "")) or "")
-                else:
-                    _fb_map_name = str(getattr(getattr(_fb_snap, "position", None), "map", "") or "")
-        except Exception:
-            pass
         _fallback_total = 0
         for _bid in _all_bot_ids:
+            _fb_map_name = ""
+            try:
+                _fb_cache = getattr(self._runtime, "snapshot_cache", None)
+                if _fb_cache is not None:
+                    _fb_snap = _fb_cache.get(_bid)
+                    if _fb_snap is not None:
+                        if isinstance(_fb_snap, dict):
+                            _fb_map_name = str(_fb_snap.get("map", _fb_snap.get("position", {}).get("map", "")) or "")
+                        else:
+                            _fb_map_name = str(getattr(getattr(_fb_snap, "position", None), "map", "") or "")
+            except Exception:
+                pass
             _fallback_ge = _emit_game_engine_actions(
                 self._runtime, horizon.value, bot_id=_bid, map_name=_fb_map_name
             )
