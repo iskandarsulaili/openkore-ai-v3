@@ -47,6 +47,21 @@ _DIRECT_ALLOWED_ROOTS: tuple[str, ...] = (
     "eventmacro",
     "talknpc",
     "take",
+    "ss",          # Use skill (e.g. ss fire_bolt)
+    "use",         # Use item (e.g. use red_potion)
+    "buy",         # Buy from NPC (e.g. buy 1 red_potion 10)
+    "sell",        # Sell to NPC
+    "stats_add",   # Allocate stat points (e.g. stats_add str 1)
+    "skills_add",  # Allocate skill points (e.g. skills_add NV_BASIC 1)
+    "stat_add",    # Alternative stat allocation command
+    "party",       # Party management (e.g. party invite)
+    "teleport",    # Teleport to save point
+    "equip",       # Equip item
+    "storage",     # Storage management
+    "respond",     # NPC dialog response
+    "follow",      # Follow another player/bot
+    "sit",         # Sit to restore HP/SP
+    "stand",       # Stand up
 )
 
 
