@@ -2491,11 +2491,11 @@ sub _rewrite_runtime_command {
 		}
 		# Only set lockMap for valid map names (not special commands)
 		if ($target !~ /^(savepoint|random_walk_seek)$/) {
-			configModify("lockMap", $target);
-			configModify("lockMap_x", "");
-			configModify("lockMap_y", "");
-			configModify("lockMap_randX", 0);
-			configModify("lockMap_randY", 0);
+			$config{"lockMap"} = $target;
+			$config{"lockMap_x"} = "";
+			$config{"lockMap_y"} = "";
+			$config{"lockMap_randX"} = 0;
+			$config{"lockMap_randY"} = 0;
 		}
 		if (_ai_already_auto_mode()) {
 			return ('', 'map_move_already_auto');
