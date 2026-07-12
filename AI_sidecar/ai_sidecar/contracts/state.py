@@ -67,7 +67,7 @@ class InventoryItemDigest(BaseModel):
 class ProgressionDigest(BaseModel):
     """Character job/level progression snapshot — optional, provided by bridge v2."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     job_id: int | None = None
     job_name: str | None = None
@@ -79,6 +79,8 @@ class ProgressionDigest(BaseModel):
     job_exp_max: int | None = None
     skill_points: int | None = None
     stat_points: int | None = None
+    zeny: int | None = None
+    weight: int | None = None
 
 
 class SkillDigest(BaseModel):

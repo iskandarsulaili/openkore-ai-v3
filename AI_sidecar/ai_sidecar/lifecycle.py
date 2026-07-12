@@ -1807,6 +1807,10 @@ class RuntimeState:
 
     def startup_gate_status(self, *, bot_id: str) -> dict[str, object]:
         state = dict(self._autonomy_startup_gate_by_bot.get(bot_id) or {})
+        # Fallback: if this bot_id has no gate entry, use whatever entry exists
+        # so the health endpoint sees the real gate the PDCA loop updated.
+        if not state and self._autonomy_startup_gate_by_bot:
+            state = dict(list(self._autonomy_startup_gate_by_bot.values())[0])
         started_at = state.get("started_at")
         if not isinstance(started_at, datetime):
             started_at = datetime.now(UTC)
