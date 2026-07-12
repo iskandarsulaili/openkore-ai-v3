@@ -218,8 +218,12 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
         )
         
         if not zones:
-            _log.info("game_engine_no_zones: bot=%s level=%d", bot_id, bot_level)
-            return 0
+            _log.info("game_engine_no_zones: bot=%s level=%d - trying fallback", bot_id, bot_level)
+            # Fallback zones: dynamically computed from knowledge data + level range
+            zones = hzm._fallback_zones(bot_level) if hasattr(hzm, '_fallback_zones') else []
+            if not zones:
+                _log.info("game_engine_no_zones_all_empty: bot=%s level=%d", bot_id, bot_level)
+                return 0
         
         best_zone = zones[0]
         
