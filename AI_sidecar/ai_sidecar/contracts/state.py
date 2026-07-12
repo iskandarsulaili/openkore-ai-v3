@@ -71,8 +71,8 @@ class ProgressionDigest(BaseModel):
 
     job_id: int | None = None
     job_name: str | None = None
-    base_level: int | None = None
-    job_level: int | None = None
+    base_level: int = 1
+    job_level: int = 1
     base_exp: int | None = None
     base_exp_max: int | None = None
     job_exp: int | None = None
