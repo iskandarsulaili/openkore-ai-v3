@@ -195,19 +195,14 @@ class DecisionService:
         else:
             conflicts = []
 
-        # Swarm-aware zone assignment — pick a zone based on available hunting areas
-        available_zones = ["prt_fild08", "prt_fild04", "pay_fild08", "pay_fild04",
-                           "gef_fild14", "moc_fild17", "mjolnir_04"]
+        # Swarm-aware zone assignment — dynamic from decomposition target_map only, no hardcoded zones
         assigned_zone = None
         if decomposition and decomposition.sub_goals:
-            # Extract target map from sub-goals if present
             for sg in decomposition.sub_goals.values():
                 tgt = sg.metadata.get("target_map", "") if isinstance(sg.metadata, dict) else ""
                 if tgt:
                     assigned_zone = str(tgt)
                     break
-        if not assigned_zone and available_zones:
-            assigned_zone = available_zones[0]
         if assigned_zone:
             self.swarm_coordinator.assign_zone(bot_id=meta.bot_id, zone=assigned_zone)
 

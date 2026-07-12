@@ -277,6 +277,8 @@ class ModelRouter:
                     fallback_used=idx > 0,
                 )
 
+            import sys
+            print(f"PROVIDER_FAIL: workload={request.task} provider={provider_name} model={model} error={response.error} latency_ms={response.latency_ms}", file=sys.stderr, flush=True)
             logger.warning(
                 "provider_route_attempt_failed",
                 extra={
