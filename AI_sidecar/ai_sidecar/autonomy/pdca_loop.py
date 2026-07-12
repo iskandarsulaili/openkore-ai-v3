@@ -1099,6 +1099,11 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             "last_buff_ts": 0.0,
             "total_pick_count": 0,
         })
+        # Prune old rotation state entries (keep last 100 bots)
+        if len(rotation_state) > 100:
+            _keys = list(rotation_state.keys())
+            for _k in _keys[:-50]:
+                del rotation_state[_k]
 
         now = time.time()
 

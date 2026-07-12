@@ -671,14 +671,69 @@ class ReflexRuleEngine:
 
     def _default_rules(self) -> list[ReflexRule]:
         return [
+            # ═══════════════════════════════════════════════════════════
+            # SURVIVAL: Heal when HP low in combat
+            # ═══════════════════════════════════════════════════════════
             ReflexRule(
                 rule_id="emergency_heal_potion",
                 enabled=True,
                 priority=5,
                 trigger=ReflexTriggerClause(
                     all=[
-                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.35),
+                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.50),
                         ReflexPredicate(fact="combat.is_in_combat", op="eq", value=True),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="use red_potion",
+                    priority_tier="reflex",
+                    conflict_key="survival.heal",
+                    metadata={"category": "emergency_heal"},
+                ),
+                fallback_macro="reflex_survival_heal",
+                cooldown_ms=2000,
+                circuit_breaker_key="combat.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
+            ),
+            # ═══════════════════════════════════════════════════════════
+            # SURVIVAL: Heal when HP < 30% (deadly)
+            # ═══════════════════════════════════════════════════════════
+            ReflexRule(
+                rule_id="emergency_orange_potion",
+                enabled=True,
+                priority=3,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.30),
+                    ]
+                ),
+                guards=[],
+                action_template=ReflexActionTemplate(
+                    kind="command",
+                    command="use orange_potion",
+                    priority_tier="reflex",
+                    conflict_key="survival.heal",
+                    metadata={"category": "emergency_heal"},
+                ),
+                fallback_macro="reflex_survival_orange",
+                cooldown_ms=2000,
+                circuit_breaker_key="combat.default",
+                category=ReflexCategory.survival,
+                planner_interop=ReflexPlannerInterop.override,
+            ),
+            # ═══════════════════════════════════════════════════════════
+            # SURVIVAL: Escape teleport at 15% HP (lethal)
+            # ═══════════════════════════════════════════════════════════
+            ReflexRule(
+                rule_id="lethal_escape_teleport",
+                enabled=True,
+                priority=1,
+                trigger=ReflexTriggerClause(
+                    all=[
+                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.15),
                     ]
                 ),
                 guards=[],
@@ -686,55 +741,46 @@ class ReflexRuleEngine:
                     kind="command",
                     command="ai manual",
                     priority_tier="reflex",
-                    conflict_key="survival.heal",
-                    metadata={
-                        "category": "emergency_heal",
-                        "bridge_compat": {
-                            "status": "rewritten",
-                            "original_command": "do ai manual",
-                            "rewritten_command": "ai manual",
-                            "reason": "bridge_root_not_allowed",
-                        },
-                    },
+                    conflict_key="survival.escape",
+                    metadata={"category": "lethal_escape"},
                 ),
-                fallback_macro="reflex_survival_heal",
-                cooldown_ms=1500,
+                fallback_macro="reflex_survival_escape",
+                cooldown_ms=5000,
                 circuit_breaker_key="combat.default",
                 category=ReflexCategory.survival,
                 planner_interop=ReflexPlannerInterop.override,
             ),
+            # ═══════════════════════════════════════════════════════════
+            # SURVIVAL: Death recovery — respawn and return to hunting
+            # ═══════════════════════════════════════════════════════════
             ReflexRule(
-                rule_id="lethal_escape_teleport",
+                rule_id="death_recovery",
                 enabled=True,
                 priority=1,
                 trigger=ReflexTriggerClause(
-                    all=[
-                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.18),
-                        ReflexPredicate(fact="combat.is_in_combat", op="eq", value=True),
+                    any=[
+                        ReflexPredicate(fact="event.event_type", op="eq", value="player_died"),
+                        ReflexPredicate(fact="vitals.hp", op="eq", value=0),
+                        ReflexPredicate(fact="state.is_dead", op="eq", value=True),
                     ]
                 ),
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="",
+                    command="ai auto",
                     priority_tier="reflex",
-                    conflict_key="survival.escape",
-                    metadata={
-                        "category": "lethal_escape",
-                        "bridge_compat": {
-                            "status": "suppressed",
-                            "original_command": "teleport",
-                            "reason": "bridge_root_not_allowed",
-                            "fallback_strategy": "fallback_macro",
-                        },
-                    },
+                    conflict_key="survival.respawn",
+                    metadata={"category": "death_recovery", "action": "respawn_and_return"},
                 ),
-                fallback_macro="reflex_survival_escape",
-                cooldown_ms=3000,
-                circuit_breaker_key="combat.default",
+                fallback_macro="reflex_death_recovery",
+                cooldown_ms=10000,
+                circuit_breaker_key="queue.default",
                 category=ReflexCategory.survival,
                 planner_interop=ReflexPlannerInterop.override,
             ),
+            # ═══════════════════════════════════════════════════════════
+            # NAVIGATION: Route stuck recovery
+            # ═══════════════════════════════════════════════════════════
             ReflexRule(
                 rule_id="route_stuck_recovery",
                 enabled=True,
@@ -748,7 +794,7 @@ class ReflexRuleEngine:
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="ai clear",
+                    command="ai auto",
                     priority_tier="reflex",
                     conflict_key="navigation.unstuck",
                     metadata={"category": "route_stuck"},
@@ -759,6 +805,9 @@ class ReflexRuleEngine:
                 category=ReflexCategory.combat,
                 planner_interop=ReflexPlannerInterop.complement,
             ),
+            # ═══════════════════════════════════════════════════════════
+            # INVENTORY: Weight overflow → return to town to sell
+            # ═══════════════════════════════════════════════════════════
             ReflexRule(
                 rule_id="weight_overflow_handling",
                 enabled=True,
@@ -771,18 +820,10 @@ class ReflexRuleEngine:
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="ai manual",
+                    command="move prontera",
                     priority_tier="reflex",
                     conflict_key="inventory.weight_guard",
-                    metadata={
-                        "category": "weight_overflow",
-                        "bridge_compat": {
-                            "status": "rewritten",
-                            "original_command": "sit",
-                            "rewritten_command": "ai manual",
-                            "reason": "bridge_root_not_allowed",
-                        },
-                    },
+                    metadata={"category": "weight_overflow", "target_town": "prontera"},
                 ),
                 fallback_macro="reflex_weight_overflow",
                 cooldown_ms=4000,
