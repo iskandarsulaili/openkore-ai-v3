@@ -28,7 +28,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Path to knowledge.json (resolved relative to this file)
-_KNOWLEDGE_PATH = Path(__file__).resolve().parent.parent.parent / "knowledge" / "knowledge.json"
+_KNOWLEDGE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "knowledge" / "knowledge.json"
 
 
 @dataclass
