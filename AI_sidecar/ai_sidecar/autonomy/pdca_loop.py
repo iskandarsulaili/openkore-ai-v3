@@ -1918,7 +1918,7 @@ class PDCALoop:
                 _soc_intel = getattr(self._runtime, "social_intelligence", None)
                 if _soc_intel is None:
                     try:
-                        from ai_sidecar.social_intelligence import SocialIntelligence
+                        from ai_sidecar.social_intelligence import SocialIntelligenceV2 as SocialIntelligence
                         _soc_intel = SocialIntelligence()
                         self._runtime.social_intelligence = _soc_intel
                         logger.info("social_intelligence_initialized")
