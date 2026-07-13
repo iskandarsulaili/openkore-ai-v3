@@ -173,7 +173,8 @@ class GameIntelligenceEngine:
         """
         skill_path = Path(rathena_path) / "db" / "re" / "mob_skill_db.txt"
         if not skill_path.exists():
-            skill_path = Path(rathena_path) / "db" / "mob_skill_db.txt"
+            # Try local knowledge/rathena_db path
+            skill_path = Path(__file__).parent.parent.parent / "knowledge" / "rathena_db" / "db" / "re" / "mob_skill_db.txt"
         if not skill_path.exists():
             logger.warning("mob_skill_db.txt not found at %s", skill_path)
             return
@@ -323,7 +324,7 @@ class GameIntelligenceEngine:
                                         rate = int(skill.get("rate", 0) or 0)
                                         if rate > 500:
                                             for mob in self._monsters:
-                                                mob_id = str(mob.get("id", 0))
+                                                mob_id = str(mob.get("Id", mob.get("id", 0)))
                                                 if mob_id == mob_id_str:
                                                     mob_name = mob.get("name", "")
                                                     if mob_name not in self._mob_skill_warnings:
