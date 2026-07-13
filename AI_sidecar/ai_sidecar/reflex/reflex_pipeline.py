@@ -98,13 +98,35 @@ class ReflexPipeline:
         check, no queue — just push the command directly.
         """
         try:
-            # Log the direct emission
             logger.info("reflex_direct: bot=%s cmd=%s", bot_id, command)
             self._stats["bypass_emitted"] += 1
             return True
         except Exception as e:
             logger.warning("reflex_direct_failed: %s", e)
             return False
+    
+    def emit_test(self, bot_id: str) -> dict[str, Any]:
+        """Emit a test reflex to verify the pipeline works end-to-end."""
+        from ai_sidecar.contracts.reflex import ReflexRule, ReflexActionTemplate, ReflexTriggerClause, ReflexCategory, ReflexPlannerInterop
+        from ai_sidecar.contracts.actions import ActionPriorityTier
+        
+        rule = ReflexRule(
+            rule_id="test_reflex",
+            priority=80,
+            trigger=ReflexTriggerClause(all=[]),
+            action_template=ReflexActionTemplate(
+                command="ai manual",
+                kind="command",
+                conflict_key="",
+                priority_tier=ActionPriorityTier.reflex,
+            ),
+            category=ReflexCategory.survival,
+            planner_interop=ReflexPlannerInterop.override,
+        )
+        
+        result = self.emit(bot_id, rule, "ai manual", lambda p, b: (True, None, "test_action_id", "test"))
+        logger.info("reflex_pipeline_test: bot=%s result=%s", bot_id, result)
+        return result
     
     def counters(self) -> dict[str, int]:
         with self._lock:

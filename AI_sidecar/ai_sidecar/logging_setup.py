@@ -15,10 +15,22 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        if hasattr(record, "event"):
-            payload["event"] = record.event
-        if hasattr(record, "bot_id"):
-            payload["bot_id"] = record.bot_id
+        # Include ALL extra fields from the LogRecord
+        for key in dir(record):
+            if key.startswith("_") or key in ("args", "msg", "exc_info", "exc_text", "stack_info",
+                                                "filename", "funcName", "levelname", "levelno",
+                                                "lineno", "module", "msecs", "name", "pathname",
+                                                "process", "processName", "relativeCreated",
+                                                "thread", "threadName", "created", "message",
+                                                "getMessage", "prefix", "kwargs"):
+                continue
+            value = getattr(record, key, None)
+            if value is not None:
+                try:
+                    json.dumps(value)
+                    payload[key] = value
+                except (TypeError, ValueError):
+                    payload[key] = str(value)
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False)
