@@ -3485,7 +3485,7 @@ class PDCALoop:
         context: dict[str, object] = {}
         
         # ── PRUNE TRACKING STATE (prevent memory leaks) ──
-        for _track_attr in ["_conscious_cycle_counts", "_conscious_tracked_state", "_stuck_start_times", "_prev_hp"]:
+        for _track_attr in ["_conscious_cycle_counts", "_conscious_tracked_state", "_stuck_start_times", "_prev_hp", "_last_trigger_context"]:
             _d = getattr(self, _track_attr, {})
             if len(_d) > 100:
                 _keys = list(_d.keys())[:-50]
