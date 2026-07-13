@@ -2006,20 +2006,21 @@ class PDCALoop:
                     # - Strategic tier: every 2.5min, full evaluation, full model
                     # Both tiers feed into the same LLM but with different context depth
                     _tactical_trigger = False
-                    _tactical_cycle = getattr(self, "_tactical_cycle", 0) + 1
-                    object.__setattr__(self, "_tactical_cycle", _tactical_cycle)
-                    if horizon == Horizon.SHORT_TERM and _tactical_cycle % 6 == 0:  # Every 30s
-                        _tactical_trigger = True
-                        # Check for tactical-level triggers (HP trend, combat effectiveness)
-                        try:
-                            if _conscious_snap and isinstance(_conscious_snap, dict):
-                                _vitals = _conscious_snap.get("vitals", {})
-                                _hp_trend = _vitals.get("hp_trend", 0)
-                                if _hp_trend < -0.1:  # HP dropping fast
-                                    _tactical_trigger = True
-                                    _trigger_reason = "tactical:hp_dropping"
-                        except Exception:
-                            pass
+                    if horizon == Horizon.SHORT_TERM:
+                        _tactical_cycle = getattr(self, "_tactical_cycle", 0) + 1
+                        object.__setattr__(self, "_tactical_cycle", _tactical_cycle)
+                        if _tactical_cycle % 6 == 0:  # Every 30s (6 × 5s cycles)
+                            _tactical_trigger = True
+                            # Check for tactical-level triggers (HP trend, combat effectiveness)
+                            try:
+                                if _conscious_snap and isinstance(_conscious_snap, dict):
+                                    _vitals = _conscious_snap.get("vitals", {})
+                                    _hp_trend = _vitals.get("hp_trend", 0)
+                                    if _hp_trend < -0.1:  # HP dropping fast
+                                        _tactical_trigger = True
+                                        _trigger_reason = "tactical:hp_dropping"
+                            except Exception:
+                                pass
                     
                     if _tactical_trigger and not _use_llm:
                         _use_llm = True
@@ -3385,7 +3386,7 @@ class PDCALoop:
         context: dict[str, object] = {}
         
         # ── PRUNE TRACKING STATE (prevent memory leaks) ──
-        for _track_attr in ["_conscious_cycle_counts", "_conscious_tracked_state", "_stuck_times", "_prev_hp"]:
+        for _track_attr in ["_conscious_cycle_counts", "_conscious_tracked_state", "_stuck_start_times", "_prev_hp"]:
             _d = getattr(self, _track_attr, {})
             if len(_d) > 100:
                 _keys = list(_d.keys())[:-50]
@@ -3453,19 +3454,21 @@ class PDCALoop:
             trigger_reasons.append(f"anomaly:disconnected({status})")
             context["status"] = status
         
-        # A3: Position stuck (same x,y for >30s)
+        # A3: Position stuck (same x,y for >30s using real time)
         if _prev.get("x") == x and _prev.get("y") == y and _prev.get("map") == map_name:
-            _stuck_time = getattr(self, "_stuck_times", {}).get(bot_id, 0) + 5
-            _stuck_times = getattr(self, "_stuck_times", {})
-            _stuck_times[bot_id] = _stuck_time
-            object.__setattr__(self, "_stuck_times", _stuck_times)
-            if _stuck_time >= 30 and is_town is False:
-                trigger_reasons.append(f"anomaly:stuck_{_stuck_time}s")
-                context["stuck_seconds"] = _stuck_time
+            _stuck_start = getattr(self, "_stuck_start_times", {}).get(bot_id, now)
+            _stuck_start_times = getattr(self, "_stuck_start_times", {})
+            if bot_id not in _stuck_start_times:
+                _stuck_start_times[bot_id] = now
+            object.__setattr__(self, "_stuck_start_times", _stuck_start_times)
+            _stuck_elapsed = now - _stuck_start_times.get(bot_id, now)
+            if _stuck_elapsed >= 30.0 and is_town is False:
+                trigger_reasons.append(f"anomaly:stuck_{int(_stuck_elapsed)}s")
+                context["stuck_seconds"] = int(_stuck_elapsed)
         else:
-            _stuck_times = getattr(self, "_stuck_times", {})
-            _stuck_times[bot_id] = 0
-            object.__setattr__(self, "_stuck_times", _stuck_times)
+            _stuck_start_times = getattr(self, "_stuck_start_times", {})
+            _stuck_start_times[bot_id] = now
+            object.__setattr__(self, "_stuck_start_times", _stuck_start_times)
         
         # A4: Frequent low-HP teleports (HP was >50%, now <20% without death)
         if _prev.get("hp", 1) > 0.5 * max_hp and hp < 0.2 * max_hp and not is_dead and hp > 0:
@@ -3537,18 +3540,19 @@ class PDCALoop:
         
         # ── 🔄  K A I Z E N   P E R I O D I C   R E V I E W 🔄 ──
         try:
-            _cycle_counts = getattr(self, "_conscious_cycle_counts", {})
-            _count = _cycle_counts.get(bot_id, 0) + 1
-            _cycle_counts[bot_id] = _count
-            object.__setattr__(self, "_conscious_cycle_counts", _cycle_counts)
-            
-            if horizon == Horizon.SHORT_TERM and _count % 30 == 0:
-                trigger_reasons.append("strategic:periodic_review")
-                context["review_interval"] = "30_cycles"
-            
-            if horizon == Horizon.SHORT_TERM and _count % 60 == 0:
-                trigger_reasons.append("kaizen:kaizen_review")
-                context["kaizen"] = True
+            if horizon == Horizon.SHORT_TERM:
+                _cycle_counts = getattr(self, "_conscious_cycle_counts", {})
+                _count = _cycle_counts.get(bot_id, 0) + 1
+                _cycle_counts[bot_id] = _count
+                object.__setattr__(self, "_conscious_cycle_counts", _cycle_counts)
+                
+                if _count % 30 == 0:
+                    trigger_reasons.append("strategic:periodic_review")
+                    context["review_interval"] = "30_cycles"
+                
+                if _count % 60 == 0:
+                    trigger_reasons.append("kaizen:kaizen_review")
+                    context["kaizen"] = True
                 # ── AUTO-TRAIN ML MODELS on kaizen cycle ──
                 try:
                     _ml_harness = getattr(self._runtime, "ml_training", None)
