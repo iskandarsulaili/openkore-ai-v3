@@ -88,9 +88,9 @@ class NavigationIntuition:
         
         for name, props in towns.items():
             node = MapNode(name=name)
-            node.is_town = props["is_town"]
-            node.has_kafra = props["has_kafra"]
-            node.has_vendor = props["has_vendor"]
+            node.is_town = props.get("is_town", False)
+            node.has_kafra = props.get("has_kafra", False)
+            node.has_vendor = props.get("has_vendor", False)
             node.has_blacksmith = props.get("has_blacksmith", False)
             self._maps[name] = node
         

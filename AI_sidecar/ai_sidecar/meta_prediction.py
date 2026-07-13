@@ -20,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass
 class MetaPrediction:
     """Predicts meta shifts and recommends proactive adaptation."""
     
@@ -28,8 +28,9 @@ class MetaPrediction:
     _meta_history: dict[str, list[dict[str, Any]]] = field(default_factory=lambda: defaultdict(list))
     _stats: dict[str, int] = field(default_factory=lambda: {"predictions_made": 0, "adaptations_applied": 0})
     
-    # Known meta cycles (time-based)
-    META_CYCLES: dict[str, dict[str, Any]] = {
+    def __post_init__(self) -> None:
+        # Known meta cycles (time-based) — initialized here to avoid mutable default issues
+        self.META_CYCLES: dict[str, dict[str, Any]] = {
         "woe_season": {
             "description": "WoE season — tanky builds and AoE skills dominate",
             "recommended_classes": ["knight", "wizard", "priest"],
