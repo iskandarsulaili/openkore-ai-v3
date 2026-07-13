@@ -1805,6 +1805,97 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("quest_auto_init_failed: %s", e)
                 
+                # ── NEW: Initialize High-Frequency Reflex ──
+                _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
+                if _hf_reflex is None:
+                    try:
+                        from ai_sidecar.reflex.highfreq_reflex import HighFreqReflex
+                        _hf_reflex = HighFreqReflex()
+                        self._runtime.highfreq_reflex = _hf_reflex
+                        logger.info("highfreq_reflex_initialized")
+                    except Exception as e:
+                        logger.warning("highfreq_reflex_init_failed: %s", e)
+                
+                # ── NEW: Initialize Map Knowledge ──
+                _map_know = getattr(self._runtime, "map_knowledge", None)
+                if _map_know is None:
+                    try:
+                        from ai_sidecar.map_knowledge import MapKnowledge
+                        from pathlib import Path
+                        _map_know = MapKnowledge(
+                            knowledge_path=Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                        )
+                        self._runtime.map_knowledge = _map_know
+                        logger.info("map_knowledge_initialized: %d maps", _map_know.counters()["maps"])
+                    except Exception as e:
+                        logger.warning("map_knowledge_init_failed: %s", e)
+                
+                # ── NEW: Initialize Movement Optimizer ──
+                _mov_opt = getattr(self._runtime, "movement_optimizer", None)
+                if _mov_opt is None:
+                    try:
+                        from ai_sidecar.movement_optimizer import MovementOptimizer
+                        _mov_opt = MovementOptimizer()
+                        self._runtime.movement_optimizer = _mov_opt
+                        logger.info("movement_optimizer_initialized")
+                    except Exception as e:
+                        logger.warning("movement_opt_init_failed: %s", e)
+                
+                # ── NEW: Initialize Combat Tactics ──
+                _combat_tac = getattr(self._runtime, "combat_tactics", None)
+                if _combat_tac is None:
+                    try:
+                        from ai_sidecar.combat_tactics import CombatTactics
+                        _combat_tac = CombatTactics()
+                        self._runtime.combat_tactics = _combat_tac
+                        logger.info("combat_tactics_initialized")
+                    except Exception as e:
+                        logger.warning("combat_tactics_init_failed: %s", e)
+                
+                # ── NEW: Initialize Party Skill Coordinator ──
+                _party_skill = getattr(self._runtime, "party_skill_coordinator", None)
+                if _party_skill is None:
+                    try:
+                        from ai_sidecar.party_skill_coordinator import PartySkillCoordinator
+                        _party_skill = PartySkillCoordinator()
+                        self._runtime.party_skill_coordinator = _party_skill
+                        logger.info("party_skill_coordinator_initialized")
+                    except Exception as e:
+                        logger.warning("party_skill_init_failed: %s", e)
+                
+                # ── NEW: Initialize Economy Optimizer ──
+                _econ_opt = getattr(self._runtime, "economy_optimizer", None)
+                if _econ_opt is None:
+                    try:
+                        from ai_sidecar.economy_optimizer import EconomyOptimizer
+                        _econ_opt = EconomyOptimizer()
+                        self._runtime.economy_optimizer = _econ_opt
+                        logger.info("economy_optimizer_initialized")
+                    except Exception as e:
+                        logger.warning("economy_opt_init_failed: %s", e)
+                
+                # ── NEW: Initialize Gear Progression ──
+                _gear_prog = getattr(self._runtime, "gear_progression", None)
+                if _gear_prog is None:
+                    try:
+                        from ai_sidecar.gear_progression import GearProgression
+                        _gear_prog = GearProgression()
+                        self._runtime.gear_progression = _gear_prog
+                        logger.info("gear_progression_initialized")
+                    except Exception as e:
+                        logger.warning("gear_progression_init_failed: %s", e)
+                
+                # ── NEW: Initialize MVP Tactics ──
+                _mvp_tac = getattr(self._runtime, "mvp_tactics", None)
+                if _mvp_tac is None:
+                    try:
+                        from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
+                        _mvp_tac = CombatOptimizer(knowledge_path=None)
+                        self._runtime.mvp_tactics = _mvp_tac
+                        logger.info("mvp_tactics_initialized")
+                    except Exception as e:
+                        logger.warning("mvp_tactics_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -1877,6 +1968,31 @@ class PDCALoop:
                         recent_deaths=_conscious_deaths,
                     )
                     _use_llm = _should_wake
+                    
+                    # Two-tier conscious brain:
+                    # - Tactical tier: every 30s, lighter evaluation, faster model
+                    # - Strategic tier: every 2.5min, full evaluation, full model
+                    # Both tiers feed into the same LLM but with different context depth
+                    _tactical_trigger = False
+                    _tactical_cycle = getattr(self, "_tactical_cycle", 0) + 1
+                    object.__setattr__(self, "_tactical_cycle", _tactical_cycle)
+                    if horizon == Horizon.SHORT_TERM and _tactical_cycle % 6 == 0:  # Every 30s
+                        _tactical_trigger = True
+                        # Check for tactical-level triggers (HP trend, combat effectiveness)
+                        try:
+                            if _conscious_snap and isinstance(_conscious_snap, dict):
+                                _vitals = _conscious_snap.get("vitals", {})
+                                _hp_trend = _vitals.get("hp_trend", 0)
+                                if _hp_trend < -0.1:  # HP dropping fast
+                                    _tactical_trigger = True
+                                    _trigger_reason = "tactical:hp_dropping"
+                        except Exception:
+                            pass
+                    
+                    if _tactical_trigger and not _use_llm:
+                        _use_llm = True
+                        logger.info("conscious_tactical_trigger: bot=%s", _cycle_bot_id)
+                    
                     if _use_llm:
                         logger.info(
                             "conscious_trigger: bot=%s reason=%s ctx=%s",

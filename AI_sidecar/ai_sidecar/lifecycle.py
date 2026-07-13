@@ -596,6 +596,14 @@ class RuntimeState:
     ml_macro_distiller: MacroDistillationEngine | None = None
     fleet_sync_client: FleetSyncClient | None = None
     fleet_constraint_state: ConstraintIngestionState | None = None
+    highfreq_reflex: object | None = None
+    map_knowledge: object | None = None
+    movement_optimizer: object | None = None
+    combat_tactics: object | None = None
+    party_skill_coordinator: object | None = None
+    economy_optimizer: object | None = None
+    gear_progression: object | None = None
+    mvp_tactics: object | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
     fleet_coordinator: "FleetCoordinatorService | None" = None
