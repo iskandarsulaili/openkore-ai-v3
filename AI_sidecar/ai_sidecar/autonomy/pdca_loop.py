@@ -1514,7 +1514,8 @@ class PDCALoop:
                 if _ge is None:
                     try:
                         _ge = GameIntelligenceEngine(
-                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
+                            rathena_path=getattr(_settings, "rathena_path", "/home/lot399/rathena"),
                         )
                         self._runtime.game_engine = _ge
                     except Exception:
