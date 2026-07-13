@@ -604,6 +604,9 @@ class RuntimeState:
     economy_optimizer: object | None = None
     gear_progression: object | None = None
     mvp_tactics: object | None = None
+    server_awareness: object | None = None
+    social_intelligence: object | None = None
+    predictive_planner: object | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
     fleet_coordinator: "FleetCoordinatorService | None" = None

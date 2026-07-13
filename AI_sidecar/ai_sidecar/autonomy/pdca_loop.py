@@ -1896,6 +1896,39 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("mvp_tactics_init_failed: %s", e)
                 
+                # ── NEW: Initialize Server Awareness ──
+                _srv_aware = getattr(self._runtime, "server_awareness", None)
+                if _srv_aware is None:
+                    try:
+                        from ai_sidecar.server_awareness import ServerAwareness
+                        _srv_aware = ServerAwareness()
+                        self._runtime.server_awareness = _srv_aware
+                        logger.info("server_awareness_initialized")
+                    except Exception as e:
+                        logger.warning("server_awareness_init_failed: %s", e)
+                
+                # ── NEW: Initialize Social Intelligence ──
+                _soc_intel = getattr(self._runtime, "social_intelligence", None)
+                if _soc_intel is None:
+                    try:
+                        from ai_sidecar.social_intelligence import SocialIntelligence
+                        _soc_intel = SocialIntelligence()
+                        self._runtime.social_intelligence = _soc_intel
+                        logger.info("social_intelligence_initialized")
+                    except Exception as e:
+                        logger.warning("social_intelligence_init_failed: %s", e)
+                
+                # ── NEW: Initialize Predictive Planner ──
+                _pred_plan = getattr(self._runtime, "predictive_planner", None)
+                if _pred_plan is None:
+                    try:
+                        from ai_sidecar.predictive_planner import PredictivePlanner
+                        _pred_plan = PredictivePlanner()
+                        self._runtime.predictive_planner = _pred_plan
+                        logger.info("predictive_planner_initialized")
+                    except Exception as e:
+                        logger.warning("predictive_planner_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -3621,6 +3654,57 @@ class PDCALoop:
                         if _available:
                             trigger_reasons.append(f"quest:available_{len(_available)}")
                             context["available_quests"] = _available[:3]
+                except Exception:
+                    pass
+                # ── CHECK SERVER AWARENESS on kaizen cycle ──
+                try:
+                    _srv = getattr(self._runtime, "server_awareness", None)
+                    if _srv is not None:
+                        _state = _srv.get_server_state(str(snapshot.get("map", "")) if isinstance(snapshot, dict) else "")
+                        if _state.get("is_woe"):
+                            trigger_reasons.append("server:woe_active")
+                            context["woe"] = True
+                        if _state.get("risk_level") == "high":
+                            trigger_reasons.append("server:high_risk_window")
+                            context["risk"] = "high"
+                        if _state.get("player_density", 0) > 5:
+                            trigger_reasons.append(f"server:crowded_{_state['player_density']}")
+                            context["density"] = _state["player_density"]
+                        if _srv.is_lagging():
+                            trigger_reasons.append("server:lagging")
+                            context["lag"] = True
+                except Exception:
+                    pass
+                # ── CHECK SOCIAL INTELLIGENCE on kaizen cycle ──
+                try:
+                    _soc = getattr(self._runtime, "social_intelligence", None)
+                    if _soc is not None:
+                        _strategies = _soc.get_learned_strategies()
+                        if _strategies:
+                            trigger_reasons.append(f"social:learned_{len(_strategies)}")
+                            context["learned_strategies"] = _strategies[:3]
+                except Exception:
+                    pass
+                # ── CHECK PREDICTIVE PLANNER on kaizen cycle ──
+                try:
+                    _pred = getattr(self._runtime, "predictive_planner", None)
+                    if _pred is not None and isinstance(snapshot, dict):
+                        _level = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
+                        _zeny = int(snapshot.get("progression", {}).get("zeny", 0) or 0)
+                        _inv = snapshot.get("inventory", {}) or {}
+                        _items = _inv.get("items", []) or _inv.get("item_list", []) or []
+                        _potion_count = sum(1 for i in _items if isinstance(i, dict) and "red_pot" in str(i.get("name", "")).lower())
+                        _potion_pred = _pred.predict_potion_needs(_potion_count, _level, "")
+                        if _potion_pred.get("critical"):
+                            trigger_reasons.append("predict:potion_critical")
+                            context["potion_minutes"] = round(_potion_pred["minutes_remaining"], 1)
+                        elif _potion_pred.get("should_buy_soon"):
+                            trigger_reasons.append("predict:potion_low")
+                            context["potion_minutes"] = round(_potion_pred["minutes_remaining"], 1)
+                        _gear_pred = _pred.predict_gear_upgrade(_level, 0, _zeny)
+                        if _gear_pred:
+                            trigger_reasons.append(f"predict:gear_upgrade_lv{_gear_pred['recommend_level']}")
+                            context["gear_upgrade"] = _gear_pred
                 except Exception:
                     pass
         except Exception:
