@@ -1716,8 +1716,9 @@ class PDCALoop:
                 if _mem is None:
                     try:
                         from ai_sidecar.memory.retrieval import MemoryRetrievalService, InMemoryMemoryProvider
-                        _mem = MemoryRetrievalService()
-                        _mem.provider = InMemoryMemoryProvider(max_entries=5000)
+                        _mem = MemoryRetrievalService(
+                            provider=InMemoryMemoryProvider(max_entries=5000)
+                        )
                         self._runtime.memory_retrieval = _mem
                         logger.info("memory_retrieval_initialized: provider=InMemoryMemoryProvider")
                     except Exception as e:
@@ -3381,6 +3382,17 @@ class PDCALoop:
                             context["ml_trained"] = True
                 except Exception:
                     logger.exception("ml_auto_train_failed")
+                # ── CHECK MACRO PATTERNS on kaizen cycle ──
+                try:
+                    _macro_ai = getattr(self._runtime, "macro_intelligence", None)
+                    if _macro_ai is not None and isinstance(snapshot, dict):
+                        _patterns = _macro_ai.get_patterns_for_context(bot_state=snapshot)
+                        if _patterns:
+                            _pattern_ids = [p.pattern_id for p in _patterns[:5]]
+                            trigger_reasons.append(f"kaizen:macro_patterns_{len(_patterns)}")
+                            context["macro_patterns"] = _pattern_ids
+                except Exception:
+                    pass
         except Exception:
             pass
         
