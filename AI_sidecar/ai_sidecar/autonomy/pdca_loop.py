@@ -2152,97 +2152,107 @@ class PDCALoop:
                 
                 try:
                     # Read snapshot for trigger evaluation — PER BOT, not global
-                    _conscious_snap = None
+                    # Iterate ALL bots in the snapshot cache, not just _cycle_bot_id
                     _conscious_deaths = 0
                     _snap_cons = getattr(self._runtime, "snapshot_cache", None)
                     if _snap_cons is not None:
-                        try:
-                            _conscious_snap = _snap_cons.get(_cycle_bot_id)
-                        except Exception:
-                            pass
-                    if _conscious_snap is not None:
-                        # Handle both dict and BotStateSnapshot objects
-                        if isinstance(_conscious_snap, dict):
-                            _snap_dict = _conscious_snap
-                        else:
-                            # BotStateSnapshot object — convert to dict-like access
-                            _snap_dict = {}
+                        # Get all bot IDs with valid snapshots
+                        _all_snap_bots = _snap_cons.bot_ids()
+                        if not _all_snap_bots:
+                            # Fallback: try the cycle bot id
+                            _all_snap_bots = [_cycle_bot_id]
+                        for _snap_bot_id in _all_snap_bots:
                             try:
-                                _snap_dict["vitals"] = {
-                                    "hp": getattr(getattr(_conscious_snap, "vitals", None), "hp", 1),
-                                    "max_hp": getattr(getattr(_conscious_snap, "vitals", None), "max_hp", 1),
-                                    "sp": getattr(getattr(_conscious_snap, "vitals", None), "sp", 0),
-                                    "max_sp": getattr(getattr(_conscious_snap, "vitals", None), "max_sp", 1),
-                                    "base_level": getattr(getattr(_conscious_snap, "progression", None), "base_level", 1),
-                                }
-                                _snap_dict["combat"] = {
-                                    "aggro_count": getattr(getattr(_conscious_snap, "combat", None), "aggro_count", 0),
-                                }
-                                _snap_dict["map"] = getattr(getattr(_conscious_snap, "position", None), "map", "")
-                                _snap_dict["inventory"] = {
-                                    "zeny": getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0),
-                                }
-                                _snap_dict["zeny"] = getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0)
-                                _snap_dict["base_level"] = getattr(getattr(_conscious_snap, "progression", None), "base_level", 1)
+                                _conscious_snap = _snap_cons.get(_snap_bot_id)
                             except Exception:
+                                _conscious_snap = None
+                            if _conscious_snap is None:
+                                continue
+                            # Use this bot's actual ID for the reflex check
+                            _reflex_bot_id = _snap_bot_id
+                            
+                            # Handle both dict and BotStateSnapshot objects
+                            if isinstance(_conscious_snap, dict):
+                                _snap_dict = _conscious_snap
+                            else:
+                                # BotStateSnapshot object — convert to dict-like access
                                 _snap_dict = {}
-                        _conscious_snap = _snap_dict
-                        
-                        if isinstance(_conscious_snap, dict) and _conscious_snap:
-                            _current_hp = int(_conscious_snap.get("vitals", {}).get("hp", 1) or 1)
-                            _prev_hp = getattr(self, "_prev_hp", {})
-                            _bot_prev_hp = _prev_hp.get(_cycle_bot_id, _current_hp)
-                            if _bot_prev_hp > 0 and _current_hp == 0:
-                                _conscious_deaths = 1
-                            _prev_hp[_cycle_bot_id] = _current_hp
-                            object.__setattr__(self, "_prev_hp", _prev_hp)
-                            # ── HIGH-FREQUENCY REFLEX CHECK ──
-                            _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
-                            if _hf_reflex is not None:
-                                _vitals = _conscious_snap.get("vitals", {})
-                                _hp = int(_vitals.get("hp", 1) or 1)
-                                _max_hp = int(_vitals.get("max_hp", 1) or 1)
-                                _sp = int(_vitals.get("sp", 0) or 0)
-                                _max_sp = int(_vitals.get("max_sp", 1) or 1)
-                                _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
-                                _is_dead = _hp <= 0
-                                _map = str(_conscious_snap.get("map", "") or "")
-                                _is_town = any(t in _map.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
-                                          and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
-                                _inv = _conscious_snap.get("inventory", {}) or {}
-                                _items = _inv.get("items", []) or _inv.get("item_list", []) or []
-                                _has_pots = True  # Assume pots available — the optimizer will select correctly
-                                _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
-                                _level = int(_vitals.get("base_level", _conscious_snap.get("base_level", 1)) or 1)
-                                _reflex_action = _hf_reflex.check_and_act(
-                                    _cycle_bot_id, _hp, _max_hp, _sp, _max_sp,
-                                    _aggro, _is_dead, _is_town, _has_pots, _map,
-                                    zeny=_zeny, level=_level,
-                                    reflex_pipeline=getattr(self._runtime, "reflex_pipeline", None),
-                                )
-                                if _reflex_action:
-                                    logger.info("highfreq_reflex_action: bot=%s cmd=%s", _cycle_bot_id, _reflex_action)
-                                    # Inject directly into action queue via reflex pipeline
-                                    _rp = getattr(self._runtime, "reflex_pipeline", None)
-                                    if _rp is not None:
-                                        from ai_sidecar.contracts.reflex import ReflexRule, ReflexActionTemplate, ReflexTriggerClause, ReflexCategory, ReflexPlannerInterop
-                                        from ai_sidecar.contracts.actions import ActionPriorityTier
-                                        _rule = ReflexRule(
-                                            rule_id="highfreq_reflex",
-                                            priority=80,
-                                            trigger=ReflexTriggerClause(all=[]),
-                                            action_template=ReflexActionTemplate(
-                                                command=_reflex_action,
-                                                kind="command",
-                                                conflict_key="",
-                                                priority_tier=ActionPriorityTier.reflex,
-                                            ),
-                                            category=ReflexCategory.survival,
-                                            planner_interop=ReflexPlannerInterop.override,
-                                        )
-                                        _aq = getattr(self._runtime, "action_queue", None)
-                                        if _aq is not None:
-                                            _rp.emit(_cycle_bot_id, _rule, _reflex_action, _aq.enqueue)
+                                try:
+                                    _snap_dict["vitals"] = {
+                                        "hp": getattr(getattr(_conscious_snap, "vitals", None), "hp", 1),
+                                        "max_hp": getattr(getattr(_conscious_snap, "vitals", None), "max_hp", 1),
+                                        "sp": getattr(getattr(_conscious_snap, "vitals", None), "sp", 0),
+                                        "max_sp": getattr(getattr(_conscious_snap, "vitals", None), "max_sp", 1),
+                                        "base_level": getattr(getattr(_conscious_snap, "progression", None), "base_level", 1),
+                                    }
+                                    _snap_dict["combat"] = {
+                                        "aggro_count": getattr(getattr(_conscious_snap, "combat", None), "aggro_count", 0),
+                                    }
+                                    _snap_dict["map"] = getattr(getattr(_conscious_snap, "position", None), "map", "")
+                                    _snap_dict["inventory"] = {
+                                        "zeny": getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0),
+                                    }
+                                    _snap_dict["zeny"] = getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0)
+                                    _snap_dict["base_level"] = getattr(getattr(_conscious_snap, "progression", None), "base_level", 1)
+                                except Exception:
+                                    _snap_dict = {}
+                            _conscious_snap = _snap_dict
+                            
+                            if isinstance(_conscious_snap, dict) and _conscious_snap:
+                                _current_hp = int(_conscious_snap.get("vitals", {}).get("hp", 1) or 1)
+                                _prev_hp = getattr(self, "_prev_hp", {})
+                                _bot_prev_hp = _prev_hp.get(_reflex_bot_id, _current_hp)
+                                if _bot_prev_hp > 0 and _current_hp == 0:
+                                    _conscious_deaths = 1
+                                _prev_hp[_reflex_bot_id] = _current_hp
+                                object.__setattr__(self, "_prev_hp", _prev_hp)
+                                # ── HIGH-FREQUENCY REFLEX CHECK ──
+                                _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
+                                if _hf_reflex is not None:
+                                    _vitals = _conscious_snap.get("vitals", {})
+                                    _hp = int(_vitals.get("hp", 1) or 1)
+                                    _max_hp = int(_vitals.get("max_hp", 1) or 1)
+                                    _sp = int(_vitals.get("sp", 0) or 0)
+                                    _max_sp = int(_vitals.get("max_sp", 1) or 1)
+                                    _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
+                                    _is_dead = _hp <= 0
+                                    _map = str(_conscious_snap.get("map", "") or "")
+                                    _is_town = any(t in _map.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
+                                              and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
+                                    _inv = _conscious_snap.get("inventory", {}) or {}
+                                    _items = _inv.get("items", []) or _inv.get("item_list", []) or []
+                                    _has_pots = True
+                                    _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
+                                    _level = int(_vitals.get("base_level", _conscious_snap.get("base_level", 1)) or 1)
+                                    _reflex_action = _hf_reflex.check_and_act(
+                                        _reflex_bot_id, _hp, _max_hp, _sp, _max_sp,
+                                        _aggro, _is_dead, _is_town, _has_pots, _map,
+                                        zeny=_zeny, level=_level,
+                                        reflex_pipeline=getattr(self._runtime, "reflex_pipeline", None),
+                                    )
+                                    if _reflex_action:
+                                        logger.info("highfreq_reflex_action: bot=%s cmd=%s", _reflex_bot_id, _reflex_action)
+                                        # Inject directly into action queue via reflex pipeline
+                                        _rp = getattr(self._runtime, "reflex_pipeline", None)
+                                        if _rp is not None:
+                                            from ai_sidecar.contracts.reflex import ReflexRule, ReflexActionTemplate, ReflexTriggerClause, ReflexCategory, ReflexPlannerInterop
+                                            from ai_sidecar.contracts.actions import ActionPriorityTier
+                                            _rule = ReflexRule(
+                                                rule_id="highfreq_reflex",
+                                                priority=80,
+                                                trigger=ReflexTriggerClause(all=[]),
+                                                action_template=ReflexActionTemplate(
+                                                    command=_reflex_action,
+                                                    kind="command",
+                                                    conflict_key="",
+                                                    priority_tier=ActionPriorityTier.reflex,
+                                                ),
+                                                category=ReflexCategory.survival,
+                                                planner_interop=ReflexPlannerInterop.override,
+                                            )
+                                            _aq = getattr(self._runtime, "action_queue", None)
+                                            if _aq is not None:
+                                                _rp.emit(_reflex_bot_id, _rule, _reflex_action, _aq.enqueue)
                     
                     _should_wake, _trigger_reason, _trigger_ctx = self._evaluate_conscious_triggers(
                         horizon=horizon,
