@@ -323,13 +323,15 @@ class ActionEmitter:
     ) -> ActionProposal:
         now = datetime.now(UTC)
         action_id = f"reflex-{rule.rule_id}-{uuid4().hex[:16]}"
-        conflict_key = conflict_key if conflict_key is not None else (rule.action_template.conflict_key or f"reflex.{rule.rule_id}")
+        # Use empty string for conflict_key to bypass arbiter conflict check
+        # This allows multiple reflex actions to be queued simultaneously
+        resolved_conflict_key = "" if conflict_key is None else conflict_key
         return ActionProposal(
             action_id=action_id,
             kind=kind,
             command=command,
             priority_tier=ActionPriorityTier.reflex,
-            conflict_key=conflict_key,
+            conflict_key=resolved_conflict_key,
             created_at=now,
             expires_at=now + timedelta(seconds=self._action_ttl_seconds),
             idempotency_key=f"reflex:{rule.rule_id}:{trigger_id}:{execution_target}",
