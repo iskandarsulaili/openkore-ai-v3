@@ -2064,6 +2064,13 @@ class PDCALoop:
                             "conscious_trigger: bot=%s reason=%s ctx=%s",
                             _cycle_bot_id, _trigger_reason, _trigger_ctx,
                         )
+                        # Store trigger context for LLM path to consume
+                        object.__setattr__(self, "_last_trigger_context", {
+                            "reason": _trigger_reason,
+                            "context": _trigger_ctx,
+                            "timestamp": time.time(),
+                            "bot_id": _cycle_bot_id,
+                        })
                 except Exception:
                     logger.exception("conscious_trigger_eval_failed")
                 
@@ -3755,7 +3762,15 @@ class PDCALoop:
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:
             return {}
-        return {
+        result: dict[str, object] = {
             "map": getattr(getattr(snapshot, "position", None), "map", None),
             "tick_id": getattr(snapshot, "tick_id", None),
         }
+        # Inject trigger context if available
+        _trigger = getattr(self, "_last_trigger_context", None)
+        if _trigger is not None and isinstance(_trigger, dict):
+            _age = time.time() - float(_trigger.get("timestamp", 0))
+            if _age < 60.0:  # Only inject triggers less than 60s old
+                result["trigger_reason"] = str(_trigger.get("reason", ""))
+                result["trigger_context"] = dict(_trigger.get("context", {}))
+        return result
