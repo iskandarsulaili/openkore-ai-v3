@@ -611,6 +611,10 @@ class RuntimeState:
     risk_assessment: object | None = None
     server_profiler: object | None = None
     knowledge_graph: object | None = None
+    combat_instinct: object | None = None
+    party_intelligence: object | None = None
+    market_intelligence: object | None = None
+    woe_intelligence: object | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
     fleet_coordinator: "FleetCoordinatorService | None" = None

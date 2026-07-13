@@ -1983,6 +1983,50 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("knowledge_graph_init_failed: %s", e)
                 
+                # ── NEW: Initialize Combat Instinct ──
+                _ci = getattr(self._runtime, "combat_instinct", None)
+                if _ci is None:
+                    try:
+                        from ai_sidecar.combat_instinct import CombatInstinctEngine
+                        _ci = CombatInstinctEngine()
+                        self._runtime.combat_instinct = _ci
+                        logger.info("combat_instinct_initialized")
+                    except Exception as e:
+                        logger.warning("combat_instinct_init_failed: %s", e)
+                
+                # ── NEW: Initialize Party Intelligence ──
+                _pi = getattr(self._runtime, "party_intelligence", None)
+                if _pi is None:
+                    try:
+                        from ai_sidecar.party_intelligence import PartyIntelligence
+                        _pi = PartyIntelligence()
+                        self._runtime.party_intelligence = _pi
+                        logger.info("party_intelligence_initialized")
+                    except Exception as e:
+                        logger.warning("party_intelligence_init_failed: %s", e)
+                
+                # ── NEW: Initialize Market Intelligence ──
+                _mi = getattr(self._runtime, "market_intelligence", None)
+                if _mi is None:
+                    try:
+                        from ai_sidecar.market_intelligence import MarketIntelligence
+                        _mi = MarketIntelligence()
+                        self._runtime.market_intelligence = _mi
+                        logger.info("market_intelligence_initialized")
+                    except Exception as e:
+                        logger.warning("market_intelligence_init_failed: %s", e)
+                
+                # ── NEW: Initialize WoE Intelligence ──
+                _wi = getattr(self._runtime, "woe_intelligence", None)
+                if _wi is None:
+                    try:
+                        from ai_sidecar.woe_intelligence import WoEIntelligence
+                        _wi = WoEIntelligence()
+                        self._runtime.woe_intelligence = _wi
+                        logger.info("woe_intelligence_initialized")
+                    except Exception as e:
+                        logger.warning("woe_intelligence_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -3847,6 +3891,58 @@ class PDCALoop:
                         _spots = _kg.find_farming_spot(_level)
                         if _spots:
                             context["recommended_spots"] = _spots[:3]
+                except Exception:
+                    pass
+                # ── CHECK COMBAT INSTINCT on kaizen cycle ──
+                try:
+                    _ci = getattr(self._runtime, "combat_instinct", None)
+                    if _ci is not None and isinstance(snapshot, dict):
+                        _hp = int(snapshot.get("vitals", {}).get("hp", 1) or 1)
+                        _max_hp = int(snapshot.get("vitals", {}).get("max_hp", 1) or 1)
+                        _hp_drop = int(snapshot.get("vitals", {}).get("hp_drop", 0) or 0)
+                        if _hp_drop > _max_hp * 0.2:
+                            _analysis = _ci.analyze_damage(
+                                bot_id, _hp_drop, _hp, _max_hp,
+                                nearby_monsters=snapshot.get("monsters", [])
+                            )
+                            if _analysis.get("threat_level") in ("high", "critical"):
+                                trigger_reasons.append(f"combat:{_analysis['cause']}")
+                                context["combat_analysis"] = _analysis
+                except Exception:
+                    pass
+                # ── CHECK PARTY INTELLIGENCE on kaizen cycle ──
+                try:
+                    _pi = getattr(self._runtime, "party_intelligence", None)
+                    if _pi is not None:
+                        _party_health = _pi.assess_party_health()
+                        if _party_health.get("status") == "critical":
+                            trigger_reasons.append("party:critical_health")
+                            context["party_health"] = _party_health
+                except Exception:
+                    pass
+                # ── CHECK MARKET INTELLIGENCE on kaizen cycle ──
+                try:
+                    _mi = getattr(self._runtime, "market_intelligence", None)
+                    if _mi is not None:
+                        _arb = _mi.find_arbitrage()
+                        if _arb:
+                            trigger_reasons.append(f"market:arbitrage_{len(_arb)}")
+                            context["arbitrage"] = _arb[:3]
+                        if _mi.is_woe_time():
+                            trigger_reasons.append("market:woe_price_spike")
+                except Exception:
+                    pass
+                # ── CHECK WOE INTELLIGENCE on kaizen cycle ──
+                try:
+                    _wi = getattr(self._runtime, "woe_intelligence", None)
+                    if _wi is not None:
+                        _woe = _wi.get_woe_status()
+                        if _woe.get("active"):
+                            trigger_reasons.append("woe:active")
+                            context["woe"] = _woe
+                        elif _woe.get("recommendation") == "prepare":
+                            trigger_reasons.append("woe:preparing")
+                            context["woe"] = _woe
                 except Exception:
                     pass
         except Exception:
