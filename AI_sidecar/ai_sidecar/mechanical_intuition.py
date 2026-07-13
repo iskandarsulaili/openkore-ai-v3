@@ -40,55 +40,53 @@ class MechanicalIntuition:
     def __post_init__(self) -> None:
         # Known breakpoints per class (initialized here to avoid mutable default issues)
         self.BREAKPOINTS = {
-        "swordman": [
-            StatBreakpoint("STR", 80, "str_80", "80 STR for ATK bonus vs size, diminishing after", is_sweet_spot=True),
-            StatBreakpoint("AGI", 70, "agi_70", "70 AGI for 95% flee vs most mobs, cap at 99", is_sweet_spot=True),
-            StatBreakpoint("VIT", 40, "vit_40", "40 VIT for stun immunity, diminishing after 60", is_sweet_spot=True),
-            StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate, 50 for perfect hit vs most", is_sweet_spot=True),
-            StatBreakpoint("LUK", 1, "luk_1", "LUK only for crit builds, otherwise 1", is_sweet_spot=True),
-        ],
-        "mage": [
-            StatBreakpoint("INT", 99, "int_99", "99 INT for max MATK, hard cap", is_cap=True),
-            StatBreakpoint("DEX", 30, "dex_30", "30 DEX for cast time reduction sweet spot", is_sweet_spot=True),
-            StatBreakpoint("DEX", 60, "dex_60", "60 DEX for 70% cast reduction cap", is_cap=True),
-            StatBreakpoint("VIT", 30, "vit_30", "30 VIT for survival, don't overinvest", is_sweet_spot=True),
-            StatBreakpoint("AGI", 1, "agi_1", "AGI useless for mage, 1 base", is_sweet_spot=True),
-        ],
-        "archer": [
-            StatBreakpoint("DEX", 99, "dex_99", "99 DEX for max ATK, hard cap", is_cap=True),
-            StatBreakpoint("AGI", 70, "agi_70", "70 AGI for flee, 80 for ASPD breakpoint", is_sweet_spot=True),
-            StatBreakpoint("INT", 20, "int_20", "20 INT for SP regen, don't overinvest", is_sweet_spot=True),
-            StatBreakpoint("VIT", 20, "vit_20", "20 VIT for survival", is_sweet_spot=True),
-        ],
-        "acolyte": [
-            StatBreakpoint("INT", 80, "int_80", "80 INT for heal power, 99 for max", is_sweet_spot=True),
-            StatBreakpoint("DEX", 30, "dex_30", "30 DEX for cast time, 50 for perfect", is_sweet_spot=True),
-            StatBreakpoint("VIT", 40, "vit_40", "40 VIT for survival, stun immunity", is_sweet_spot=True),
-            StatBreakpoint("STR", 20, "str_20", "20 STR for carry weight", is_sweet_spot=True),
-        ],
-        "merchant": [
-            StatBreakpoint("STR", 80, "str_80", "80 STR for ATK, 99 for max", is_sweet_spot=True),
-            StatBreakpoint("VIT", 50, "vit_50", "50 VIT for tanking, 70 for max", is_sweet_spot=True),
-            StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate", is_sweet_spot=True),
-            StatBreakpoint("AGI", 1, "agi_1", "AGI not needed for merchant", is_sweet_spot=True),
-        ],
-        "thief": [
-            StatBreakpoint("AGI", 80, "agi_80", "80 AGI for ASPD breakpoint, 99 for max", is_sweet_spot=True),
-            StatBreakpoint("STR", 50, "str_50", "50 STR for ATK, 70 for max", is_sweet_spot=True),
-            StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate", is_sweet_spot=True),
-            StatBreakpoint("LUK", 30, "luk_30", "30 LUK for crit if Katar build", is_sweet_spot=True),
-        ],
-    }
-    
-    # Stat caps
-    self.STAT_CAPS = {
-        "STR": 99, "AGI": 99, "VIT": 99, "INT": 99, "DEX": 99, "LUK": 99,
-    }
-    
-    # Diminishing return thresholds
-    self.DIMINISHING_THRESHOLDS = {
-        "STR": 80, "AGI": 70, "VIT": 60, "INT": 80, "DEX": 50, "LUK": 30,
-    }
+            "swordman": [
+                StatBreakpoint("STR", 80, "str_80", "80 STR for ATK bonus vs size, diminishing after", is_sweet_spot=True),
+                StatBreakpoint("AGI", 70, "agi_70", "70 AGI for 95% flee vs most mobs, cap at 99", is_sweet_spot=True),
+                StatBreakpoint("VIT", 40, "vit_40", "40 VIT for stun immunity, diminishing after 60", is_sweet_spot=True),
+                StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate, 50 for perfect hit vs most", is_sweet_spot=True),
+                StatBreakpoint("LUK", 1, "luk_1", "LUK only for crit builds, otherwise 1", is_sweet_spot=True),
+            ],
+            "mage": [
+                StatBreakpoint("INT", 99, "int_99", "99 INT for max MATK, hard cap", is_cap=True),
+                StatBreakpoint("DEX", 30, "dex_30", "30 DEX for cast time reduction sweet spot", is_sweet_spot=True),
+                StatBreakpoint("DEX", 60, "dex_60", "60 DEX for 70% cast reduction cap", is_cap=True),
+                StatBreakpoint("VIT", 30, "vit_30", "30 VIT for survival, don't overinvest", is_sweet_spot=True),
+                StatBreakpoint("AGI", 1, "agi_1", "AGI useless for mage, 1 base", is_sweet_spot=True),
+            ],
+            "archer": [
+                StatBreakpoint("DEX", 99, "dex_99", "99 DEX for max ATK, hard cap", is_cap=True),
+                StatBreakpoint("AGI", 70, "agi_70", "70 AGI for flee, 80 for ASPD breakpoint", is_sweet_spot=True),
+                StatBreakpoint("INT", 20, "int_20", "20 INT for SP regen, don't overinvest", is_sweet_spot=True),
+                StatBreakpoint("VIT", 20, "vit_20", "20 VIT for survival", is_sweet_spot=True),
+            ],
+            "acolyte": [
+                StatBreakpoint("INT", 80, "int_80", "80 INT for heal power, 99 for max", is_sweet_spot=True),
+                StatBreakpoint("DEX", 30, "dex_30", "30 DEX for cast time, 50 for perfect", is_sweet_spot=True),
+                StatBreakpoint("VIT", 40, "vit_40", "40 VIT for survival, stun immunity", is_sweet_spot=True),
+                StatBreakpoint("STR", 20, "str_20", "20 STR for carry weight", is_sweet_spot=True),
+            ],
+            "merchant": [
+                StatBreakpoint("STR", 80, "str_80", "80 STR for ATK, 99 for max", is_sweet_spot=True),
+                StatBreakpoint("VIT", 50, "vit_50", "50 VIT for tanking, 70 for max", is_sweet_spot=True),
+                StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate", is_sweet_spot=True),
+                StatBreakpoint("AGI", 1, "agi_1", "AGI not needed for merchant", is_sweet_spot=True),
+            ],
+            "thief": [
+                StatBreakpoint("AGI", 80, "agi_80", "80 AGI for ASPD breakpoint, 99 for max", is_sweet_spot=True),
+                StatBreakpoint("STR", 50, "str_50", "50 STR for ATK, 70 for max", is_sweet_spot=True),
+                StatBreakpoint("DEX", 30, "dex_30", "30 DEX for hit rate", is_sweet_spot=True),
+                StatBreakpoint("LUK", 30, "luk_30", "30 LUK for crit if Katar build", is_sweet_spot=True),
+            ],
+        }
+        # Stat caps
+        self.STAT_CAPS = {
+            "STR": 99, "AGI": 99, "VIT": 99, "INT": 99, "DEX": 99, "LUK": 99,
+        }
+        # Diminishing return thresholds
+        self.DIMINISHING_THRESHOLDS = {
+            "STR": 80, "AGI": 70, "VIT": 60, "INT": 80, "DEX": 50, "LUK": 30,
+        }
     
     def get_breakpoints(self, player_class: str) -> list[StatBreakpoint]:
         """Get relevant stat breakpoints for a class."""
