@@ -591,6 +591,8 @@ class RuntimeState:
     ml_training: TrainingHarness | None = None
     ml_shadow: ShadowModeEvaluator | None = None
     ml_promotion: GuardedPromotionPipeline | None = None
+    combat_optimizer: object | None = None
+    quest_automation: object | None = None
     ml_macro_distiller: MacroDistillationEngine | None = None
     fleet_sync_client: FleetSyncClient | None = None
     fleet_constraint_state: ConstraintIngestionState | None = None

@@ -1781,6 +1781,30 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("macro_intelligence_init_failed: %s", e)
                 
+                # ── NEW: Initialize Combat Optimizer ──
+                _combat_opt = getattr(self._runtime, "combat_optimizer", None)
+                if _combat_opt is None:
+                    try:
+                        from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
+                        from pathlib import Path
+                        _knowledge_path = Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                        _combat_opt = CombatOptimizer(knowledge_path=_knowledge_path)
+                        self._runtime.combat_optimizer = _combat_opt
+                        logger.info("combat_optimizer_initialized")
+                    except Exception as e:
+                        logger.warning("combat_opt_init_failed: %s", e)
+                
+                # ── NEW: Initialize Quest Automation ──
+                _quest_auto = getattr(self._runtime, "quest_automation", None)
+                if _quest_auto is None:
+                    try:
+                        from ai_sidecar.autonomy.quest_automation import QuestAutomation
+                        _quest_auto = QuestAutomation()
+                        self._runtime.quest_automation = _quest_auto
+                        logger.info("quest_automation_initialized")
+                    except Exception as e:
+                        logger.warning("quest_auto_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -3391,6 +3415,44 @@ class PDCALoop:
                             _pattern_ids = [p.pattern_id for p in _patterns[:5]]
                             trigger_reasons.append(f"kaizen:macro_patterns_{len(_patterns)}")
                             context["macro_patterns"] = _pattern_ids
+                except Exception:
+                    pass
+                # ── CHECK COMBAT OPTIMIZER on kaizen cycle ──
+                try:
+                    _combat_opt = getattr(self._runtime, "combat_optimizer", None)
+                    if _combat_opt is not None and isinstance(snapshot, dict):
+                        _monster_name = str(snapshot.get("target", snapshot.get("monster", "")) or "")
+                        if _monster_name:
+                            _is_mvp = _combat_opt.is_mvp(_monster_name)
+                            _threat = _combat_opt.assess_threat(_monster_name, int(snapshot.get("progression", {}).get("base_level", 1) or 1))
+                            _element_adv = _combat_opt.get_element_advantage(
+                                str(snapshot.get("monster_element", "neutral"))
+                            )
+                            if _is_mvp:
+                                trigger_reasons.append("combat:mvp_detected")
+                                context["mvp"] = _monster_name
+                            if _threat > 0.7:
+                                trigger_reasons.append(f"combat:high_threat_{_threat:.1f}")
+                                context["threat"] = _threat
+                            if _element_adv < 0.5:
+                                trigger_reasons.append("combat:element_disadvantage")
+                                context["element_adv"] = _element_adv
+                except Exception:
+                    pass
+                # ── CHECK QUEST AUTOMATION on kaizen cycle ──
+                try:
+                    _quest_auto = getattr(self._runtime, "quest_automation", None)
+                    if _quest_auto is not None and isinstance(snapshot, dict):
+                        _base_lv = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
+                        _job_lv = int(snapshot.get("progression", {}).get("job_level", 1) or 1)
+                        _job = str(snapshot.get("progression", {}).get("job_name", "novice") or "novice")
+                        _zeny = int(snapshot.get("progression", {}).get("zeny", 0) or 0)
+                        _available = _quest_auto.get_available_quests(
+                            bot_id, _base_lv, _job_lv, _job, _zeny
+                        )
+                        if _available:
+                            trigger_reasons.append(f"quest:available_{len(_available)}")
+                            context["available_quests"] = _available[:3]
                 except Exception:
                     pass
         except Exception:
