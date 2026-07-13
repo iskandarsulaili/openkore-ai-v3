@@ -3777,6 +3777,18 @@ class PDCALoop:
                         if _builds:
                             trigger_reasons.append(f"build:available_{len(_builds)}")
                             context["available_builds"] = [b["name"] for b in _builds[:3]]
+                        # Check if bot has an active build
+                        _active = _bm._active_builds.get(bot_id)
+                        if _active is None and _builds:
+                            trigger_reasons.append("build:needs_selection")
+                            context["build_options"] = [b["name"] for b in _builds[:3]]
+                        # Check stat allocation guidance
+                        _stat_pts = int(snapshot.get("progression", {}).get("stat_points", 0) or 0)
+                        if _stat_pts > 0 and _active:
+                            _next_stat = _bm.get_next_stat(bot_id, {"STR": 0, "AGI": 0, "VIT": 0, "INT": 0, "DEX": 0, "LUK": 0})
+                            if _next_stat:
+                                context["recommended_stat"] = _next_stat
+                                context["build_name"] = _active.get("name", "unknown")
                 except Exception:
                     pass
                 # ── CHECK RISK ASSESSMENT on kaizen cycle ──
@@ -3785,11 +3797,30 @@ class PDCALoop:
                     if _ra is not None and isinstance(snapshot, dict):
                         _hp = int(snapshot.get("vitals", {}).get("hp", 1) or 1)
                         _max_hp = int(snapshot.get("vitals", {}).get("max_hp", 1) or 1)
+                        _sp = int(snapshot.get("vitals", {}).get("sp", 0) or 0)
+                        _max_sp = int(snapshot.get("vitals", {}).get("max_sp", 1) or 1)
                         _level = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
-                        _risk_ctx = {"hp_pct": _hp / max(_max_hp, 1), "level": _level}
+                        _zeny = int(snapshot.get("progression", {}).get("zeny", 0) or 0)
+                        _target = str(snapshot.get("target", snapshot.get("monster", "")) or "")
+                        _is_mvp = False
+                        _kg = getattr(self._runtime, "knowledge_graph", None)
+                        if _kg is not None and _target:
+                            _is_mvp = _kg._monsters.get(_target.lower(), {}).get("Modes.Mvp", False)
+                        _risk_ctx = {
+                            "hp_pct": _hp / max(_max_hp, 1),
+                            "sp_pct": _sp / max(_max_sp, 1),
+                            "level": _level,
+                            "target_level": _level + 5,
+                            "zeny": _zeny,
+                            "is_mvp": _is_mvp,
+                            "has_escape": True,
+                            "player_density": 0,
+                            "is_woe": False,
+                            "risk_window": "low",
+                        }
                         _assessment = _ra.assess("general_farming", _risk_ctx)
-                        if _assessment.get("recommendation") == "avoid":
-                            trigger_reasons.append("risk:avoid_current_action")
+                        if _assessment.get("recommendation") in ("avoid", "cautious"):
+                            trigger_reasons.append(f"risk:{_assessment['recommendation']}")
                             context["risk"] = _assessment
                 except Exception:
                     pass

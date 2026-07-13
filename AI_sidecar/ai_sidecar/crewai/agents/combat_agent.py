@@ -21,10 +21,9 @@ from .base_agent import BehaviorProfile
 
 logger = logging.getLogger(__name__)
 
-# Element chart: element_name -> (attack_modifiers dict, defense_modifiers dict)
-# Attack: element_name -> {target_element: multiplier}
-# Defense: element_name -> {attacker_element: multiplier}
-ELEMENT_CHART: dict[str, dict[str, float]] = {
+# Element chart loaded from knowledge_graph at runtime
+# Fallback hardcoded chart for when knowledge_graph is unavailable
+_FALLBACK_ELEMENT_CHART: dict[str, dict[str, float]] = {
     "neutral": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.0, "wind": 1.0, "holy": 1.0, "shadow": 1.0, "ghost": 1.0, "undead": 1.0},
     "water": {"neutral": 1.0, "water": 0.25, "earth": 0.75, "fire": 1.5, "wind": 1.0, "holy": 1.0, "shadow": 1.0, "ghost": 1.0, "undead": 1.0},
     "earth": {"neutral": 1.0, "water": 1.5, "earth": 0.25, "fire": 1.0, "wind": 0.75, "holy": 1.0, "shadow": 1.0, "ghost": 1.0, "undead": 1.0},
@@ -36,7 +35,9 @@ ELEMENT_CHART: dict[str, dict[str, float]] = {
     "undead": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.5, "wind": 1.0, "holy": 2.0, "shadow": 0.5, "ghost": 1.0, "undead": 0.25},
 }
 
-MVP_MONSTERS: set[str] = {
+# MVP monsters loaded from knowledge.json at runtime
+# Fallback set for when knowledge is unavailable
+_FALLBACK_MVP_MONSTERS: set[str] = {
     "anglng", "detale", "deviling", "dokebi", "dragon_tail", "edga", "eow", "eyra",
     "gh_mvp", "glddm", "golden_bug", "gtb", "hatii", "inca", "jakk", "kasa", "katz",
     "kimmy", "kraken", "loli", "lord_aye", "lord_kaho", "maero", "master_bee", "maya",
@@ -94,6 +95,7 @@ class CombatOptimizer:
     _lock: RLock = field(default_factory=RLock)
     _monster_data: dict[str, dict[str, Any]] = field(default_factory=dict)
     _element_skills: dict[str, list[str]] = field(default_factory=dict)
+    _element_chart: dict[str, dict[str, float]] = field(default_factory=dict)
     _mvp_alerted: set[str] = field(default_factory=set)
     _kite_state: dict[str, dict[str, Any]] = field(default_factory=dict)
     
@@ -101,19 +103,44 @@ class CombatOptimizer:
         if self.knowledge_path is not None and self.knowledge_path.exists():
             try:
                 data = json.loads(self.knowledge_path.read_text(encoding="utf-8"))
+                # Load element chart from knowledge.json
+                elements_raw = data.get("elements", {})
+                if isinstance(elements_raw, dict):
+                    for mode_key in ["re", "pre-re"]:
+                        mode_data = elements_raw.get(mode_key, {})
+                        if isinstance(mode_data, dict):
+                            body = mode_data.get("Body", [])
+                            if isinstance(body, list):
+                                for entry in body:
+                                    if isinstance(entry, dict):
+                                        level = entry.get("Level", 1)
+                                        if level != 1:
+                                            continue
+                                        for atk_ele, def_map in entry.items():
+                                            if atk_ele == "Level":
+                                                continue
+                                            if isinstance(def_map, dict):
+                                                for def_ele, dmg_pct in def_map.items():
+                                                    dmg = float(dmg_pct) / 100.0
+                                                    atk_key = str(atk_ele).lower()
+                                                    def_key = str(def_ele).lower()
+                                                    if atk_key not in self._element_chart:
+                                                        self._element_chart[atk_key] = {}
+                                                    self._element_chart[atk_key][def_key] = dmg
+                # Load monster data
                 monsters = data.get("monsters", data.get("monster_db", []))
                 if isinstance(monsters, list):
                     for m in monsters:
-                        name = str(m.get("name", m.get("id", ""))).lower()
+                        name = str(m.get("Name", m.get("name", m.get("id", "")))).lower()
                         self._monster_data[name] = {
-                            "element": str(m.get("element", m.get("element_type", "neutral"))).lower(),
-                            "race": str(m.get("race", m.get("race_type", "formless"))).lower(),
-                            "hp": int(m.get("hp", 0) or 0),
-                            "level": int(m.get("level", 1) or 1),
-                            "mvp": str(m.get("mvp", m.get("boss", ""))).lower() in ("true", "yes", "1"),
-                            "size": str(m.get("size", "medium")).lower(),
-                            "def": int(m.get("def", 0) or 0),
-                            "mdef": int(m.get("mdef", 0) or 0),
+                            "element": str(m.get("Element", m.get("element", "neutral"))).lower(),
+                            "race": str(m.get("Race", m.get("race", "formless"))).lower(),
+                            "hp": int(m.get("Hp", m.get("hp", 0)) or 0),
+                            "level": int(m.get("Level", m.get("level", 1)) or 1),
+                            "mvp": bool(m.get("Modes.Mvp", False)),
+                            "size": str(m.get("Size", m.get("size", "medium"))).lower(),
+                            "def": int(m.get("Defense", m.get("def", 0)) or 0),
+                            "mdef": int(m.get("MagicDefense", m.get("mdef", 0)) or 0),
                         }
                 # Build element -> skill mapping from monster data
                 self._build_element_skills()
@@ -136,10 +163,18 @@ class CombatOptimizer:
         }
     
     def get_element_advantage(self, monster_element: str, player_element: str = "neutral") -> float:
-        """Get elemental damage multiplier against a monster."""
+        """Get elemental damage multiplier against a monster.
+        
+        Uses rAthena-accurate element chart from knowledge.json if available,
+        falls back to hardcoded chart otherwise.
+        """
         monster_element = monster_element.lower()
         player_element = player_element.lower()
-        attack_chart = ELEMENT_CHART.get(player_element, {})
+        # Try knowledge.json's element chart first
+        if hasattr(self, '_element_chart') and self._element_chart:
+            attack_chart = self._element_chart.get(player_element, {})
+            return float(attack_chart.get(monster_element, 1.0))
+        attack_chart = _FALLBACK_ELEMENT_CHART.get(player_element, {})
         return float(attack_chart.get(monster_element, 1.0))
     
     def recommend_skill(self, monster_name: str, player_class: str = "novice", known_skills: list[str] | None = None) -> str | None:
@@ -166,7 +201,7 @@ class CombatOptimizer:
         name = monster_name.lower()
         if name in self._monster_data:
             return bool(self._monster_data[name].get("mvp", False))
-        return any(mvp in name for mvp in MVP_MONSTERS)
+        return any(mvp in name for mvp in _FALLBACK_MVP_MONSTERS)
     
     def assess_threat(self, monster_name: str, player_level: int = 1) -> float:
         """Assess threat level of a monster (0.0 = harmless, 1.0 = lethal)."""
