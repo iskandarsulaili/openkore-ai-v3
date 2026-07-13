@@ -1513,9 +1513,13 @@ class PDCALoop:
                 _ge = getattr(self._runtime, "game_engine", None)
                 if _ge is None:
                     try:
+                        _rathena_path = getattr(_settings, "rathena_path", None)
+                        if not _rathena_path:
+                            from pathlib import Path
+                            _rathena_path = str(Path(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")
                         _ge = GameIntelligenceEngine(
                             getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
-                            rathena_path=getattr(_settings, "rathena_path", str(Path(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")),
+                            rathena_path=_rathena_path,
                         )
                         self._runtime.game_engine = _ge
                         logger.info("game_engine_initialized: %d monsters, %d mob skills",
