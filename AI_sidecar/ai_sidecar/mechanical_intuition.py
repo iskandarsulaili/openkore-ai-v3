@@ -39,7 +39,7 @@ class MechanicalIntuition:
     
     def __post_init__(self) -> None:
         # Known breakpoints per class (initialized here to avoid mutable default issues)
-        self.BREAKPOINTS: dict[str, list[StatBreakpoint]] = {
+        self.BREAKPOINTS = {
         "swordman": [
             StatBreakpoint("STR", 80, "str_80", "80 STR for ATK bonus vs size, diminishing after", is_sweet_spot=True),
             StatBreakpoint("AGI", 70, "agi_70", "70 AGI for 95% flee vs most mobs, cap at 99", is_sweet_spot=True),
