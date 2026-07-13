@@ -1,6 +1,11 @@
 # Reflex Rules Configuration
 # Each rule is evaluated in priority order (lower number = higher priority).
 # Format: YAML with fact predicates matching ReflexPredicate structure.
+#
+# IMPORTANT: All conflict_key values are empty string "" to bypass the
+# action arbiter's conflict check. This allows multiple reflex actions
+# to be queued simultaneously — a pro player doesn't wait for permission
+# to potion when HP drops.
 
 rules:
   - rule_id: emergency_heal_potion
@@ -16,9 +21,9 @@ rules:
     guards: []
     action:
       kind: command
-      command: "ai manual"
+      command: "use Red Potion"
       priority_tier: reflex
-      conflict_key: survival.heal
+      conflict_key: ""
     fallback_macro: reflex_survival_heal
 
   - rule_id: lethal_escape_teleport
@@ -34,9 +39,9 @@ rules:
     guards: []
     action:
       kind: command
-      command: ""
+      command: "ai manual"
       priority_tier: reflex
-      conflict_key: survival.escape
+      conflict_key: ""
     fallback_macro: reflex_teleport_escape
 
   - rule_id: self_heal_skill
@@ -55,7 +60,7 @@ rules:
       kind: command
       command: "ss heal"
       priority_tier: reflex
-      conflict_key: survival.heal
+      conflict_key: ""
 
   - rule_id: agile_flee_many
     enabled: true
@@ -72,7 +77,7 @@ rules:
       kind: command
       command: "ai manual"
       priority_tier: reflex
-      conflict_key: combat.flee
+      conflict_key: ""
     fallback_macro: reflex_flee_overwhelmed
 
   - rule_id: safe_auto_resume
@@ -92,7 +97,7 @@ rules:
       kind: command
       command: "ai auto"
       priority_tier: reflex
-      conflict_key: interaction.resume_auto
+      conflict_key: ""
 
   - rule_id: weight_warning
     enabled: true
@@ -109,7 +114,7 @@ rules:
       kind: command
       command: "ai auto"
       priority_tier: reflex
-      conflict_key: inventory.weight_guard
+      conflict_key: ""
     metadata:
       note: "Weight warning — let LLM plan vendor route. ai auto keeps bot safe while inventory fills."
 
@@ -129,7 +134,7 @@ rules:
       kind: command
       command: "take"
       priority_tier: reflex
-      conflict_key: loot.pickup
+      conflict_key: ""
 
   - rule_id: party_heal_ally
     enabled: true
@@ -147,7 +152,7 @@ rules:
       kind: command
       command: "ai manual"
       priority_tier: reflex
-      conflict_key: party.heal
+      conflict_key: ""
     metadata:
       note: "Party heal request — switch to manual so reflex/LLM can target specific ally for healing via 'sp heal <player#>'"
 
@@ -169,7 +174,7 @@ rules:
       kind: command
       command: "sit"
       priority_tier: reflex
-      conflict_key: recovery.sit
+      conflict_key: ""
 
   - rule_id: aggro_attack
     enabled: true
@@ -188,6 +193,39 @@ rules:
       kind: command
       command: "ai auto"
       priority_tier: reflex
-      conflict_key: combat.attack
+      conflict_key: ""
     metadata:
-      note: "Aggro present — ai auto handles auto-attack. 'attack' bare is not a valid OpenKore command without a monster number."
+      note: "Aggro present — ai auto handles auto-attack."
+
+  - rule_id: mob_swarm_combat_stance
+    enabled: true
+    priority: 6
+    category: combat
+    cooldown_ms: 3000
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "combat.aggro_count", op: "gte", value: 5 }
+    guards: []
+    action:
+      kind: command
+      command: "ai manual"
+      priority_tier: reflex
+      conflict_key: ""
+
+  - rule_id: emergency_orange_potion
+    enabled: true
+    priority: 3
+    category: survival
+    cooldown_ms: 2000
+    circuit_breaker_key: combat.default
+    trigger:
+      all:
+        - { fact: "vitals.hp_ratio", op: "lte", value: 0.25 }
+        - { fact: "combat.is_in_combat", op: "eq", value: true }
+    guards: []
+    action:
+      kind: command
+      command: "use Orange Potion"
+      priority_tier: reflex
+      conflict_key: ""

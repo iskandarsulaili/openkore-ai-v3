@@ -366,10 +366,13 @@ class ActionEmitter:
         return self._sanitize_plugin(metadata.get("event_macro_plugin"), fallback="eventMacro")
 
     def _eventmacro_conflict_key_for_rule(self, rule: ReflexRule) -> str:
-        base_conflict_key = rule.action_template.conflict_key or f"reflex.{rule.rule_id}"
+        base = rule.action_template.conflict_key
+        # If base conflict key is empty, eventmacro also gets empty — no conflict
+        if not base:
+            return ""
         suffix = ".eventmacro"
         max_base_len = max(1, 128 - len(suffix))
-        trimmed_base = base_conflict_key[:max_base_len]
+        trimmed_base = base[:max_base_len]
         return f"{trimmed_base}{suffix}"
 
     def _is_safe_token(self, value: str) -> bool:

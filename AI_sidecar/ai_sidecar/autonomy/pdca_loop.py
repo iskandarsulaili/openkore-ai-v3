@@ -1827,6 +1827,15 @@ class PDCALoop:
                     try:
                         from ai_sidecar.reflex.highfreq_reflex import HighFreqReflex
                         _hf_reflex = HighFreqReflex()
+                        # Wire healing optimizer for dynamic potion selection
+                        try:
+                            from ai_sidecar.reflex.healing_optimizer import HealingOptimizer
+                            _ho = HealingOptimizer()
+                            _ho.load()
+                            _hf_reflex.healing_optimizer = _ho
+                            logger.info("healing_optimizer_wired")
+                        except Exception as e:
+                            logger.warning("healing_optimizer_wire_failed: %s", e)
                         self._runtime.highfreq_reflex = _hf_reflex
                         logger.info("highfreq_reflex_initialized")
                     except Exception as e:
@@ -2175,10 +2184,13 @@ class PDCALoop:
                                           and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
                                 _inv = _conscious_snap.get("inventory", {}) or {}
                                 _items = _inv.get("items", []) or _inv.get("item_list", []) or []
-                                _has_pots = any("red_pot" in str(i.get("name", "")).lower() for i in _items if isinstance(i, dict))
+                                _has_pots = True  # Assume pots available — the optimizer will select correctly
+                                _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
+                                _level = int(_vitals.get("base_level", _conscious_snap.get("base_level", 1)) or 1)
                                 _reflex_action = _hf_reflex.check_and_act(
                                     _cycle_bot_id, _hp, _max_hp, _sp, _max_sp,
                                     _aggro, _is_dead, _is_town, _has_pots, _map,
+                                    zeny=_zeny, level=_level,
                                     reflex_pipeline=getattr(self._runtime, "reflex_pipeline", None),
                                 )
                                 if _reflex_action:

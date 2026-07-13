@@ -7,6 +7,9 @@ via the bridge — no 5-second PDCA wait.
 
 The LLM reviews reflex effectiveness on kaizen cycles and can adjust
 thresholds dynamically based on observed survival patterns.
+
+Healing is dynamically optimized — uses knowledge.json to select the
+best potion for the bot's current level, HP deficit, and zeny.
 """
 
 from __future__ import annotations
@@ -22,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Default reflex thresholds (LLM can override these via kaizen review)
 DEFAULT_THRESHOLDS: dict[str, float] = {
-    "heal_potion_hp_pct": 0.50,      # Use red potion at 50% HP
-    "emergency_potion_hp_pct": 0.30, # Use orange potion at 30% HP
+    "heal_potion_hp_pct": 0.50,      # Use healing item at 50% HP
+    "emergency_potion_hp_pct": 0.30, # Use emergency heal at 30% HP
     "escape_teleport_hp_pct": 0.15,  # Teleport at 15% HP
     "sit_rest_hp_pct": 0.40,         # Sit to rest at 40% HP (out of combat)
     "sit_rest_sp_pct": 0.20,         # Sit to rest at 20% SP (out of combat)
@@ -51,6 +54,9 @@ class HighFreqReflex:
     POTION_COOLDOWN = 2.0
     TELEPORT_COOLDOWN = 10.0
     SIT_COOLDOWN = 5.0
+    
+    # Reference to healing optimizer (set at init time)
+    healing_optimizer: object | None = None
     
     def start(self) -> None:
         """Start the high-frequency monitor in a background asyncio task."""
@@ -120,25 +126,70 @@ class HighFreqReflex:
         """Single tick of the high-frequency monitor."""
         with self._lock:
             self._stats["checks"] += 1
+    
+    def _get_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
+                          zeny: int, level: int) -> str | None:
+        """Get the best healing command using the healing optimizer.
         
-        # Read latest snapshot from cache
-        # This is called from the PDCA context — we read shared state
-        # The actual HP check happens via the snapshot cache
-        # For now, this is a framework that the PDCA loop feeds data into
-        pass
+        Returns 'use <Item Name>' or None if no suitable heal found.
+        Falls back to reasonable defaults if optimizer isn't loaded.
+        """
+        if self.healing_optimizer is not None:
+            try:
+                result = self.healing_optimizer.select_healing_command(
+                    hp=hp, max_hp=max_hp, sp=sp, max_sp=max_sp,
+                    zeny=zeny, level=level, prefer_hp=True,
+                )
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning("highfreq_reflex_heal_opt_failed: %s", e)
+        
+        # Fallback: use level-appropriate defaults
+        if level < 30:
+            return "use Red Potion"
+        elif level < 60:
+            return "use Orange Potion"
+        elif level < 90:
+            return "use White Potion"
+        else:
+            return "use White Potion"  # Best general-purpose heal
+    
+    def _get_emergency_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
+                                    zeny: int, level: int) -> str | None:
+        """Get the best emergency heal command."""
+        if self.healing_optimizer is not None:
+            try:
+                result = self.healing_optimizer.select_healing_command(
+                    hp=hp, max_hp=max_hp, sp=sp, max_sp=max_sp,
+                    zeny=zeny, level=level, prefer_hp=True,
+                )
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning("highfreq_reflex_emergency_opt_failed: %s", e)
+        
+        # Fallback: high-level emergency heal
+        if level < 40:
+            return "use Orange Potion"
+        elif level < 80:
+            return "use White Potion"
+        else:
+            return "use White Potion"
     
     def check_and_act(self, bot_id: str, hp: int, max_hp: int, sp: int, max_sp: int,
                       aggro_count: int, is_dead: bool, is_town: bool,
                       has_potions: bool, current_map: str,
+                      zeny: int = 0, level: int = 1,
                       reflex_pipeline: object | None = None) -> str | None:
         """Check vitals and return an action command if needed.
         
         Called from PDCA loop's snapshot processing — NOT from the async task.
-        The async task is the framework; actual data comes from snapshots.
-        This gives us 50ms reaction time instead of 5s.
+        Uses HealingOptimizer to dynamically select the best healing item
+        based on the bot's level, HP deficit, and zeny.
         
         If reflex_pipeline is provided, emits through the pipeline instead of
-        returning a string — this ensures the action actually reaches the bot.
+        returning a string — bypassing the arbiter for critical actions.
         """
         now = time.time()
         hp_pct = hp / max_hp if max_hp > 0 else 1.0
@@ -160,9 +211,6 @@ class HighFreqReflex:
         prev_hp = self._last_hp.get(bot_id, hp)
         self._last_hp[bot_id] = hp
         
-        # HP crash detected (HP dropped significantly since last check)
-        hp_dropped = prev_hp > hp + 10
-        
         # ── EMERGENCY: Escape teleport at 15% HP ──
         if hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.15) and not is_town:
             with self._lock:
@@ -175,25 +223,25 @@ class HighFreqReflex:
                 return None
             return cmd
         
-        # ── EMERGENCY: Orange potion at 30% HP ──
+        # ── EMERGENCY: Healing item at 30% HP ──
         if hp_pct <= thresholds.get("emergency_potion_hp_pct", 0.30) and has_potions:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
-            logger.info("highfreq_reflex: bot=%s emergency_potion hp=%.0f%%", bot_id, hp_pct * 100)
-            cmd = "use orange_potion"
+            cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "ai manual"
+            logger.info("highfreq_reflex: bot=%s emergency_heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
                 return None
             return cmd
         
-        # ── SURVIVAL: Heal potion at 50% HP ──
+        # ── SURVIVAL: Healing item at 50% HP ──
         if hp_pct <= thresholds.get("heal_potion_hp_pct", 0.50) and has_potions:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
-            logger.info("highfreq_reflex: bot=%s heal_potion hp=%.0f%%", bot_id, hp_pct * 100)
-            cmd = "use red_potion"
+            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "ai manual"
+            logger.info("highfreq_reflex: bot=%s heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
                 return None
@@ -211,5 +259,17 @@ class HighFreqReflex:
                     reflex_pipeline.emit_direct(bot_id, cmd)
                     return None
                 return cmd
+        
+        # ── SP recovery: Use SP healing item when below threshold ──
+        if sp_pct <= thresholds.get("sit_rest_sp_pct", 0.20) and has_potions and not is_town and aggro_count == 0:
+            with self._lock:
+                self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
+                self._stats["actions"] += 1
+            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "sit"
+            logger.info("highfreq_reflex: bot=%s sp_heal=%s sp=%.0f%%", bot_id, cmd, sp_pct * 100)
+            if reflex_pipeline is not None:
+                reflex_pipeline.emit_direct(bot_id, cmd)
+                return None
+            return cmd
         
         return None
