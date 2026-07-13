@@ -1919,8 +1919,7 @@ class PDCALoop:
                         pass
                     _hc = getattr(_hs, "confidence_for", lambda h, *a, **kw: 0.0)(horizon.value, signals=_signals, bot_id=_cycle_bot_id)
                 
-                # Check if this is a novel situation (first time seeing this map/state)
-                _is_novel = False
+                # Read map name for routing
                 _map_name = ""
                 try:
                     _snap = getattr(self._runtime, "snapshot_cache", None)
