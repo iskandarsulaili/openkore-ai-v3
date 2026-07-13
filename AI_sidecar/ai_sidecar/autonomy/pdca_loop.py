@@ -1515,11 +1515,13 @@ class PDCALoop:
                     try:
                         _ge = GameIntelligenceEngine(
                             getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
-                            rathena_path=getattr(_settings, "rathena_path", str(Path(__file__).parent.parent.parent / "knowledge" / "rathena_db")),
+                            rathena_path=getattr(_settings, "rathena_path", str(Path(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")),
                         )
                         self._runtime.game_engine = _ge
-                    except Exception:
-                        pass
+                        logger.info("game_engine_initialized: %d monsters, %d mob skills",
+                                    len(_ge._monsters), len(_ge._mob_skills))
+                    except Exception as e:
+                        logger.warning("game_engine_init_failed: %s", e)
                 # Initialize swarm tactics if not present
                 _swarm = getattr(self._runtime, "swarm_tactics", None)
                 if _swarm is None:

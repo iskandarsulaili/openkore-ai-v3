@@ -174,7 +174,7 @@ class GameIntelligenceEngine:
         skill_path = Path(rathena_path) / "db" / "re" / "mob_skill_db.txt"
         if not skill_path.exists():
             # Try local knowledge/rathena_db path
-            skill_path = Path(__file__).parent.parent.parent / "knowledge" / "rathena_db" / "db" / "re" / "mob_skill_db.txt"
+            skill_path = Path(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db" / "db" / "re" / "mob_skill_db.txt"
         if not skill_path.exists():
             logger.warning("mob_skill_db.txt not found at %s", skill_path)
             return
