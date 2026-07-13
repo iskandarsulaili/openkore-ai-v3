@@ -2161,7 +2161,34 @@ class PDCALoop:
                         except Exception:
                             pass
                     if _conscious_snap is not None:
+                        # Handle both dict and BotStateSnapshot objects
                         if isinstance(_conscious_snap, dict):
+                            _snap_dict = _conscious_snap
+                        else:
+                            # BotStateSnapshot object — convert to dict-like access
+                            _snap_dict = {}
+                            try:
+                                _snap_dict["vitals"] = {
+                                    "hp": getattr(getattr(_conscious_snap, "vitals", None), "hp", 1),
+                                    "max_hp": getattr(getattr(_conscious_snap, "vitals", None), "max_hp", 1),
+                                    "sp": getattr(getattr(_conscious_snap, "vitals", None), "sp", 0),
+                                    "max_sp": getattr(getattr(_conscious_snap, "vitals", None), "max_sp", 1),
+                                    "base_level": getattr(getattr(_conscious_snap, "progression", None), "base_level", 1),
+                                }
+                                _snap_dict["combat"] = {
+                                    "aggro_count": getattr(getattr(_conscious_snap, "combat", None), "aggro_count", 0),
+                                }
+                                _snap_dict["map"] = getattr(getattr(_conscious_snap, "position", None), "map", "")
+                                _snap_dict["inventory"] = {
+                                    "zeny": getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0),
+                                }
+                                _snap_dict["zeny"] = getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0)
+                                _snap_dict["base_level"] = getattr(getattr(_conscious_snap, "progression", None), "base_level", 1)
+                            except Exception:
+                                _snap_dict = {}
+                        _conscious_snap = _snap_dict
+                        
+                        if isinstance(_conscious_snap, dict) and _conscious_snap:
                             _current_hp = int(_conscious_snap.get("vitals", {}).get("hp", 1) or 1)
                             _prev_hp = getattr(self, "_prev_hp", {})
                             _bot_prev_hp = _prev_hp.get(_cycle_bot_id, _current_hp)

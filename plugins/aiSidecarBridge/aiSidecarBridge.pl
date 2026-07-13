@@ -2527,11 +2527,17 @@ sub _rewrite_runtime_command {
 
 	# Handle teleport — OpenKore doesn't have a teleport command.
 	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
+	# If the bot has the Teleport skill, use it directly.
 	if ($normalized eq 'teleport') {
-		if (_ai_already_auto_mode()) {
-			return ('', 'teleport_already_auto');
-		}
-		return ('ai auto', 'teleport_rewritten');
+	    if (_ai_already_auto_mode()) {
+	        return ('', 'teleport_already_auto');
+	    }
+	    # Try using the teleport skill first
+	    my $teleport_skill = eval { $char->skills->get('AL_TELEPORT') } || eval { $char->skills->get('TF_TELEPORT') };
+	    if ($teleport_skill) {
+	        return ('use_skill teleport', 'teleport_skill_used');
+	    }
+	    return ('ai auto', 'teleport_rewritten');
 	}
 
 	# Handle attack_skill — already handled by auto-AI, no-op
