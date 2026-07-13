@@ -99,7 +99,14 @@ def _get_cpu_count() -> int:
 
 
 def _detect_cuda() -> dict[str, Any] | None:
-    """Detect CUDA-capable NVIDIA GPU via nvidia-smi."""
+    """Detect CUDA-capable NVIDIA GPU via nvidia-smi.
+    
+    Scores GPUs by a combination of VRAM sufficiency and performance:
+    - If both GPUs have enough VRAM (>8GB), picks the one with higher
+      compute capability (faster architecture).
+    - If only one GPU has sufficient VRAM, picks that one.
+    - Falls back to VRAM-only comparison as last resort.
+    """
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total,compute_cap",
@@ -110,23 +117,40 @@ def _detect_cuda() -> dict[str, Any] | None:
             return None
         
         lines = result.stdout.strip().split("\n")
-        # Pick the GPU with the most memory
-        best = None
-        best_mem = 0
+        devices = []
         for line in lines:
             parts = [p.strip() for p in line.split(",")]
             if len(parts) >= 3:
                 try:
-                    mem = float(parts[1])
-                    if mem > best_mem:
-                        best_mem = mem
-                        best = {
-                            "name": parts[0],
-                            "memory_gb": mem / 1024,
-                            "capability": parts[2],
-                        }
+                    mem_mb = float(parts[1])
+                    cap = parts[2]
+                    cap_major = float(cap.split(".")[0]) if "." in cap else 0
+                    devices.append({
+                        "name": parts[0],
+                        "memory_gb": mem_mb / 1024,
+                        "capability": cap,
+                        "cap_major": cap_major,
+                        "memory_mb": mem_mb,
+                    })
                 except ValueError:
                     continue
+        
+        if not devices:
+            return None
+        
+        # Score each device: higher is better
+        # If VRAM > 8GB (min threshold for sklearn models), prefer compute capability
+        # Otherwise, prefer VRAM
+        VRAM_THRESHOLD_MB = 8192
+        for d in devices:
+            if d["memory_mb"] >= VRAM_THRESHOLD_MB:
+                # Enough VRAM — score primarily by compute capability
+                d["_score"] = d["cap_major"] * 100 + d["memory_mb"] / 1024
+            else:
+                # Not enough VRAM — score by VRAM (need minimum)
+                d["_score"] = d["memory_mb"]
+        
+        best = max(devices, key=lambda d: d["_score"])
         return best
     except Exception:
         return None
