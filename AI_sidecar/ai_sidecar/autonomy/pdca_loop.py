@@ -1941,18 +1941,17 @@ class PDCALoop:
                 _trigger_ctx: dict[str, object] = {}
                 
                 try:
-                    # Read snapshot for trigger evaluation
+                    # Read snapshot for trigger evaluation — PER BOT, not global
                     _conscious_snap = None
                     _conscious_deaths = 0
                     _snap_cons = getattr(self._runtime, "snapshot_cache", None)
                     if _snap_cons is not None:
                         try:
-                            _conscious_snap = _snap_cons.latest()
+                            _conscious_snap = _snap_cons.get(_cycle_bot_id)
                         except Exception:
                             pass
                     if _conscious_snap is not None:
                         if isinstance(_conscious_snap, dict):
-                            _last_death_map = getattr(self, "_last_death_map", {})
                             _current_hp = int(_conscious_snap.get("vitals", {}).get("hp", 1) or 1)
                             _prev_hp = getattr(self, "_prev_hp", {})
                             _bot_prev_hp = _prev_hp.get(_cycle_bot_id, _current_hp)
@@ -1960,6 +1959,40 @@ class PDCALoop:
                                 _conscious_deaths = 1
                             _prev_hp[_cycle_bot_id] = _current_hp
                             object.__setattr__(self, "_prev_hp", _prev_hp)
+                            # ── HIGH-FREQUENCY REFLEX CHECK ──
+                            _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
+                            if _hf_reflex is not None:
+                                _vitals = _conscious_snap.get("vitals", {})
+                                _hp = int(_vitals.get("hp", 1) or 1)
+                                _max_hp = int(_vitals.get("max_hp", 1) or 1)
+                                _sp = int(_vitals.get("sp", 0) or 0)
+                                _max_sp = int(_vitals.get("max_sp", 1) or 1)
+                                _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
+                                _is_dead = _hp <= 0
+                                _map = str(_conscious_snap.get("map", "") or "")
+                                _is_town = any(t in _map.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
+                                          and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
+                                _inv = _conscious_snap.get("inventory", {}) or {}
+                                _items = _inv.get("items", []) or _inv.get("item_list", []) or []
+                                _has_pots = any("red_pot" in str(i.get("name", "")).lower() for i in _items if isinstance(i, dict))
+                                _reflex_action = _hf_reflex.check_and_act(
+                                    _cycle_bot_id, _hp, _max_hp, _sp, _max_sp,
+                                    _aggro, _is_dead, _is_town, _has_pots, _map,
+                                )
+                                if _reflex_action:
+                                    logger.info("highfreq_reflex_action: bot=%s cmd=%s", _cycle_bot_id, _reflex_action)
+                                    # Inject directly into action queue
+                                    _aq = getattr(self._runtime, "action_queue", None)
+                                    if _aq is not None:
+                                        from ai_sidecar.contracts.actions import ActionProposal
+                                        _proposal = ActionProposal(
+                                            bot_id=_cycle_bot_id,
+                                            command=_reflex_action,
+                                            priority=0,  # Highest priority
+                                            source="highfreq_reflex",
+                                            horizon="short_term",
+                                        )
+                                        _aq.enqueue(_cycle_bot_id, _proposal)
                     
                     _should_wake, _trigger_reason, _trigger_ctx = self._evaluate_conscious_triggers(
                         horizon=horizon,
