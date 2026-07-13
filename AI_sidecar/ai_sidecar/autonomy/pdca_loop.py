@@ -2027,6 +2027,50 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("woe_intelligence_init_failed: %s", e)
                 
+                # ── NEW: Initialize Navigation Intuition ──
+                _ni = getattr(self._runtime, "navigation_intuition", None)
+                if _ni is None:
+                    try:
+                        from ai_sidecar.navigation_intuition import NavigationIntuition
+                        _ni = NavigationIntuition()
+                        self._runtime.navigation_intuition = _ni
+                        logger.info("navigation_intuition_initialized")
+                    except Exception as e:
+                        logger.warning("navigation_intuition_init_failed: %s", e)
+                
+                # ── NEW: Initialize Mechanical Intuition ──
+                _mech = getattr(self._runtime, "mechanical_intuition", None)
+                if _mech is None:
+                    try:
+                        from ai_sidecar.mechanical_intuition import MechanicalIntuition
+                        _mech = MechanicalIntuition()
+                        self._runtime.mechanical_intuition = _mech
+                        logger.info("mechanical_intuition_initialized")
+                    except Exception as e:
+                        logger.warning("mechanical_intuition_init_failed: %s", e)
+                
+                # ── NEW: Initialize Opportunity Cost Optimizer ──
+                _oc = getattr(self._runtime, "opportunity_cost", None)
+                if _oc is None:
+                    try:
+                        from ai_sidecar.opportunity_cost import OpportunityCostOptimizer
+                        _oc = OpportunityCostOptimizer()
+                        self._runtime.opportunity_cost = _oc
+                        logger.info("opportunity_cost_initialized")
+                    except Exception as e:
+                        logger.warning("opportunity_cost_init_failed: %s", e)
+                
+                # ── NEW: Initialize Meta Prediction ──
+                _mp = getattr(self._runtime, "meta_prediction", None)
+                if _mp is None:
+                    try:
+                        from ai_sidecar.meta_prediction import MetaPrediction
+                        _mp = MetaPrediction()
+                        self._runtime.meta_prediction = _mp
+                        logger.info("meta_prediction_initialized")
+                    except Exception as e:
+                        logger.warning("meta_prediction_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -3943,6 +3987,76 @@ class PDCALoop:
                         elif _woe.get("recommendation") == "prepare":
                             trigger_reasons.append("woe:preparing")
                             context["woe"] = _woe
+                except Exception:
+                    pass
+                # ── CHECK NAVIGATION INTUITION on kaizen cycle ──
+                try:
+                    _ni = getattr(self._runtime, "navigation_intuition", None)
+                    if _ni is not None and isinstance(snapshot, dict):
+                        _map = str(snapshot.get("map", "") or "")
+                        _target = str(snapshot.get("target_map", "") or "")
+                        if _map and _target and _map != _target:
+                            _route = _ni.find_route(_map, _target)
+                            if len(_route) > 3:
+                                trigger_reasons.append(f"nav:long_route_{len(_route)}_maps")
+                                context["route"] = _route
+                            _travel_time = _ni.estimate_travel_time(_map, _target)
+                            if _travel_time > 120:
+                                context["travel_time_s"] = _travel_time
+                except Exception:
+                    pass
+                # ── CHECK MECHANICAL INTUITION on kaizen cycle ──
+                try:
+                    _mech = getattr(self._runtime, "mechanical_intuition", None)
+                    if _mech is not None and isinstance(snapshot, dict):
+                        _class = str(snapshot.get("progression", {}).get("job_name", "novice") or "novice")
+                        _stats = {
+                            "STR": int(snapshot.get("progression", {}).get("str", 0) or 0),
+                            "AGI": int(snapshot.get("progression", {}).get("agi", 0) or 0),
+                            "VIT": int(snapshot.get("progression", {}).get("vit", 0) or 0),
+                            "INT": int(snapshot.get("progression", {}).get("int", 0) or 0),
+                            "DEX": int(snapshot.get("progression", {}).get("dex", 0) or 0),
+                            "LUK": int(snapshot.get("progression", {}).get("luk", 0) or 0),
+                        }
+                        _evals = _mech.evaluate_stats(_class, _stats)
+                        _wasted = [e for e in _evals if e.get("wasted", 0) > 0]
+                        if _wasted:
+                            trigger_reasons.append(f"mech:wasted_stats_{len(_wasted)}")
+                            context["stat_warnings"] = _wasted[:3]
+                        _next_stat = _mech.get_next_stat_recommendation(_class, _stats)
+                        if _next_stat:
+                            context["recommended_stat"] = _next_stat
+                except Exception:
+                    pass
+                # ── CHECK OPPORTUNITY COST on kaizen cycle ──
+                try:
+                    _oc = getattr(self._runtime, "opportunity_cost", None)
+                    if _oc is not None and isinstance(snapshot, dict):
+                        _weight = float(snapshot.get("inventory", {}).get("weight_ratio", 0.0) or 0.0)
+                        _pots = int(snapshot.get("inventory", {}).get("potion_count", 0) or 0)
+                        _return = _oc.should_return_to_town(bot_id, _weight, _pots)
+                        if _return.get("should_return"):
+                            trigger_reasons.append(f"uptime:{_return['reason']}")
+                            context["return_advice"] = _return
+                        _uptime = _oc.get_uptime(bot_id)
+                        if _uptime.get("uptime_pct", 100) < 50:
+                            trigger_reasons.append("uptime:low_efficiency")
+                            context["uptime"] = _uptime
+                except Exception:
+                    pass
+                # ── CHECK META PREDICTION on kaizen cycle ──
+                try:
+                    _mp = getattr(self._runtime, "meta_prediction", None)
+                    if _mp is not None and isinstance(snapshot, dict):
+                        _class = str(snapshot.get("progression", {}).get("job_name", "novice") or "novice")
+                        _meta = _mp.predict_meta_shift()
+                        if _meta.get("meta") == "woe_season":
+                            trigger_reasons.append("meta:woe_season")
+                            context["meta"] = _meta
+                        _build_rec = _mp.get_build_recommendation(_class, 1)
+                        if _build_rec.get("is_avoided"):
+                            trigger_reasons.append(f"meta:{_class}_off_meta")
+                            context["meta_advice"] = _build_rec
                 except Exception:
                     pass
         except Exception:
