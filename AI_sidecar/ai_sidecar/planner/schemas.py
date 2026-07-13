@@ -163,6 +163,7 @@ class PlannerPlanRequest(BaseModel):
     horizon: PlanHorizon = PlanHorizon.tactical
     force_replan: bool = False
     max_steps: int = Field(default=8, ge=1, le=64)
+    context_overrides: dict[str, object] = Field(default_factory=dict)
 
 
 class PlannerExplainRequest(BaseModel):

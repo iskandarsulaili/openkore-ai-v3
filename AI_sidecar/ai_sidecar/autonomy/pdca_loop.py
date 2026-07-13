@@ -2779,6 +2779,7 @@ class PDCALoop:
                         horizon=PlanHorizon.tactical,
                         force_replan=force_replan,
                         max_steps=8,
+                        context_overrides=self._context_overrides(snapshot),
                     )
                 )
                 if result and getattr(result, "ok", False) and result.tactical_bundle is not None:
@@ -2793,6 +2794,7 @@ class PDCALoop:
                         horizon=PlanHorizon.tactical,
                         force_replan=force_replan,
                         max_steps=4,
+                        context_overrides=self._context_overrides(snapshot),
                     )
                 )
                 if result and getattr(result, "ok", False) and result.tactical_bundle is not None:
