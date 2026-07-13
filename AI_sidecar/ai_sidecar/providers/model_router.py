@@ -184,6 +184,19 @@ class ModelRouter:
         last_response: PlannerModelResponse | None = None
         attempted_providers: list[str] = []
         attempted_models: dict[str, str] = {}
+        
+        # ── Retry with exponential backoff + jitter ──
+        import random as _random
+        _max_retries = 3
+        _base_delay = 1.0
+        response: PlannerModelResponse = PlannerModelResponse(
+            ok=False, provider="", model="",
+            trace_id=request.trace_id, latency_ms=0.0,
+            content=None, raw_text="",
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            error="no_provider_attempted",
+        )
+        
         for idx, provider_name in enumerate(provider_order):
             provider = self._providers.get(provider_name)
             if provider is None:
@@ -206,76 +219,134 @@ class ModelRouter:
 
             attempted_providers.append(provider_name)
             attempted_models[provider_name] = model
-            logger.info(
-                "provider_route_attempt",
-                extra={
-                    "event": "provider_route_attempt",
-                    "workload": request.task,
-                    "provider": provider_name,
-                    "model": model,
-                    "attempt_index": idx,
-                    "trace_id": request.trace_id,
-                    "bot_id": request.bot_id,
-                },
-            )
+            
+            # Retry loop for this provider
+            for retry in range(_max_retries):
+                logger.info(
+                    "provider_route_attempt",
+                    extra={
+                        "event": "provider_route_attempt",
+                        "workload": request.task,
+                        "provider": provider_name,
+                        "model": model,
+                        "attempt_index": idx,
+                        "retry": retry,
+                        "trace_id": request.trace_id,
+                        "bot_id": request.bot_id,
+                    },
+                )
 
-            response = await provider.generate_structured(
-                PlannerModelRequest(
-                    bot_id=request.bot_id,
-                    trace_id=request.trace_id,
-                    task=request.task,
-                    model=model,
-                    system_prompt=request.system_prompt,
-                    user_prompt=request.user_prompt,
-                    schema=request.schema,
-                    timeout_seconds=request.timeout_seconds,
-                    max_retries=request.max_retries,
-                    metadata=dict(request.metadata),
-                )
-            )
-            if response.ok:
-                actual_provider = str(response.provider or provider_name)
-                actual_model = str(response.model or model)
-                if idx > 0:
-                    logger.warning(
-                        "provider_route_fallback_used",
-                        extra={
-                            "event": "provider_route_fallback_used",
-                            "workload": request.task,
-                            "planned_provider": decision.selected_provider,
-                            "actual_provider": actual_provider,
-                            "actual_model": actual_model,
-                            "attempted_providers": list(attempted_providers),
-                            "trace_id": request.trace_id,
-                            "bot_id": request.bot_id,
-                        },
+                response = await provider.generate_structured(
+                    PlannerModelRequest(
+                        bot_id=request.bot_id,
+                        trace_id=request.trace_id,
+                        task=request.task,
+                        model=model,
+                        system_prompt=request.system_prompt,
+                        user_prompt=request.user_prompt,
+                        schema=request.schema,
+                        timeout_seconds=request.timeout_seconds,
+                        max_retries=request.max_retries,
+                        metadata=dict(request.metadata),
                     )
-                else:
+                )
+                
+                # ── Structured parse recovery ──
+                if not response.ok and response.error == "structured_parse_failed" and response.raw_text:
+                    # Try to extract JSON from raw text
+                    recovered = self._recover_structured(response.raw_text)
+                    if recovered is not None:
+                        response = PlannerModelResponse(
+                            ok=True,
+                            provider=response.provider or provider_name,
+                            model=response.model or model,
+                            trace_id=response.trace_id,
+                            latency_ms=response.latency_ms,
+                            content=recovered,
+                            raw_text=response.raw_text,
+                            usage=response.usage,
+                            error="",
+                        )
+                        logger.info(
+                            "provider_route_parse_recovered",
+                            extra={
+                                "event": "provider_route_parse_recovered",
+                                "workload": request.task,
+                                "provider": provider_name,
+                                "model": model,
+                                "trace_id": request.trace_id,
+                                "bot_id": request.bot_id,
+                            },
+                        )
+                
+                if response.ok:
+                    actual_provider = str(response.provider or provider_name)
+                    actual_model = str(response.model or model)
+                    if idx > 0 or retry > 0:
+                        logger.warning(
+                            "provider_route_fallback_used",
+                            extra={
+                                "event": "provider_route_fallback_used",
+                                "workload": request.task,
+                                "planned_provider": decision.selected_provider,
+                                "actual_provider": actual_provider,
+                                "actual_model": actual_model,
+                                "attempted_providers": list(attempted_providers),
+                                "retry": retry,
+                                "trace_id": request.trace_id,
+                                "bot_id": request.bot_id,
+                            },
+                        )
+                    else:
+                        logger.info(
+                            "provider_route_primary_succeeded",
+                            extra={
+                                "event": "provider_route_primary_succeeded",
+                                "workload": request.task,
+                                "provider": actual_provider,
+                                "model": actual_model,
+                                "trace_id": request.trace_id,
+                                "bot_id": request.bot_id,
+                            },
+                        )
+                    self._emit_route_metric(workload=request.task, provider=actual_provider, model=actual_model)
+                    return response, RoutingDecision(
+                        workload=decision.workload,
+                        provider_order=list(decision.provider_order),
+                        selected_provider=actual_provider,
+                        selected_model=actual_model,
+                        fallback_chain=provider_order[idx + 1 :],
+                        policy_version=decision.policy_version,
+                        planned_provider=decision.selected_provider,
+                        planned_model=decision.selected_model,
+                        attempted_providers=list(attempted_providers),
+                        attempted_models=dict(attempted_models),
+                        fallback_used=idx > 0 or retry > 0,
+                    )
+
+                # Check if this error is retryable
+                if not self._is_retryable_error(response.error):
+                    break  # Don't retry non-retryable errors
+                
+                # Exponential backoff with jitter
+                if retry < _max_retries - 1:
+                    delay = _base_delay * (2 ** retry) + _random.random() * 0.5
                     logger.info(
-                        "provider_route_primary_succeeded",
+                        "provider_route_retry",
                         extra={
-                            "event": "provider_route_primary_succeeded",
+                            "event": "provider_route_retry",
                             "workload": request.task,
-                            "provider": actual_provider,
-                            "model": actual_model,
+                            "provider": provider_name,
+                            "model": model,
+                            "retry": retry,
+                            "delay_ms": int(delay * 1000),
+                            "error": response.error,
                             "trace_id": request.trace_id,
                             "bot_id": request.bot_id,
                         },
                     )
-                self._emit_route_metric(workload=request.task, provider=actual_provider, model=actual_model)
-                return response, RoutingDecision(
-                    workload=decision.workload,
-                    provider_order=list(decision.provider_order),
-                    selected_provider=actual_provider,
-                    selected_model=actual_model,
-                    fallback_chain=provider_order[idx + 1 :],
-                    policy_version=decision.policy_version,
-                    planned_provider=decision.selected_provider,
-                    planned_model=decision.selected_model,
-                    attempted_providers=list(attempted_providers),
-                    attempted_models=dict(attempted_models),
-                    fallback_used=idx > 0,
-                )
+                    import asyncio
+                    await asyncio.sleep(delay)
 
             import sys
             print(f"PROVIDER_FAIL: workload={request.task} provider={provider_name} model={model} error={response.error} latency_ms={response.latency_ms}", file=sys.stderr, flush=True)
@@ -342,6 +413,71 @@ class ModelRouter:
         for name in sorted(self._providers):
             rows.append(await self._providers[name].health(bot_id=bot_id))
         return rows
+
+    def _recover_structured(self, raw_text: str) -> dict | None:
+        """Attempt to recover structured JSON from raw LLM output.
+        
+        Handles common failure modes:
+        - JSON embedded in markdown code blocks (```json ... ```)
+        - Trailing commas
+        - Single quotes instead of double quotes
+        - Leading/trailing non-JSON text
+        """
+        import re as _re
+        
+        text = raw_text.strip()
+        if not text:
+            return None
+        
+        # Try 1: Extract from markdown code block
+        code_match = _re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, _re.DOTALL)
+        if code_match:
+            candidate = code_match.group(1).strip()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+        
+        # Try 2: Find first { and last } — extract JSON object
+        start = text.find('{')
+        end = text.rfind('}')
+        if start >= 0 and end > start:
+            candidate = text[start:end+1]
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+        
+        # Try 3: Repair common issues
+        try:
+            # Replace single quotes with double quotes (for simple cases)
+            repaired = _re.sub(r"(?<!\\)'", '"', candidate)
+            # Remove trailing commas before closing braces
+            repaired = _re.sub(r',\s*}', '}', repaired)
+            repaired = _re.sub(r',\s*]', ']', repaired)
+            return json.loads(repaired)
+        except (json.JSONDecodeError, UnboundLocalError, NameError):
+            pass
+        
+        return None
+
+    def _is_retryable_error(self, error: str) -> bool:
+        """Determine if an error is worth retrying.
+        
+        Retryable: timeout, rate limit, service unavailable, parse failures
+        Non-retryable: auth errors, invalid requests, context overflow
+        """
+        if not error:
+            return True
+        error_lower = error.lower()
+        # Non-retryable
+        if any(kw in error_lower for kw in ["auth", "unauthorized", "forbidden", "invalid_api", "context_length", "context_window"]):
+            return False
+        # Retryable
+        if any(kw in error_lower for kw in ["timeout", "rate_limit", "unavailable", "overloaded", "parse", "structured", "server_error", "503", "502", "429"]):
+            return True
+        # Default: retry once
+        return True
 
     def update_policy(self, *, rules: dict[str, dict[str, Any]]) -> RoutePolicy:
         with self._lock:

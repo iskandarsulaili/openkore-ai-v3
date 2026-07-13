@@ -2351,61 +2351,85 @@ sub _http_post_json {
 	$connect_timeout = 0.001 if $connect_timeout <= 0;
 	$io_timeout = 0.001 if $io_timeout <= 0;
 
-	my $sock = IO::Socket::INET->new(
-		PeerHost => $host,
-		PeerPort => $port,
-		Proto => 'tcp',
-		Timeout => $connect_timeout,
-	);
+	# ── Connection reuse (HTTP Keep-Alive) ──
+	# Cache the socket to avoid TCP handshake overhead on every request
+	state $cached_sock;
+	state $cached_host = '';
+	state $cached_port = 0;
+
+	my $sock;
+	if ($cached_sock && $cached_host eq $host && $cached_port == $port) {
+	    $sock = $cached_sock;
+	} else {
+	    # Close old socket if host/port changed
+	    if ($cached_sock) {
+	        close $cached_sock;
+	        $cached_sock = undef;
+	    }
+	    $sock = IO::Socket::INET->new(
+	        PeerHost => $host,
+	        PeerPort => $port,
+	        Proto => 'tcp',
+	        Timeout => $connect_timeout,
+	    );
+	    if ($sock) {
+	        $cached_sock = $sock;
+	        $cached_host = $host;
+	        $cached_port = $port;
+	    }
+	}
 	if (!$sock) {
-		return {
-			status => 0,
-			error => _trim('connect_failed:' . ($! || 'socket_open_failed'), 220),
-			json => undef,
-			raw => '',
-		};
+	    return {
+	        status => 0,
+	        error => _trim('connect_failed:' . ($! || 'socket_open_failed'), 220),
+	        json => undef,
+	        raw => '',
+	    };
 	}
 	$sock->autoflush(1);
 
 	my $request = join(
-		"\r\n",
-		"POST $request_path HTTP/1.1",
-		"Host: $host:$port",
-		"Content-Type: application/json",
-		"Accept: application/json",
-		"Connection: close",
-		"Content-Length: " . length($body),
-		'',
-		$body,
+	    "\r\n",
+	    "POST $request_path HTTP/1.1",
+	    "Host: $host:$port",
+	    "Content-Type: application/json",
+	    "Accept: application/json",
+	    "Connection: keep-alive",
+	    "Content-Length: " . length($body),
+	    '',
+	    $body,
 	);
 
 	my $raw_response = '';
 	my $io_error = '';
 	my $ok = eval {
-		local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
-		alarm($io_timeout);
-		print {$sock} $request;
-		while (1) {
-			my $chunk = '';
-			my $read = sysread($sock, $chunk, 4096);
-			last if !defined $read || $read <= 0;
-			$raw_response .= $chunk;
-			last if length($raw_response) > 1_000_000;
-		}
-		1;
+	    local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
+	    alarm($io_timeout);
+	    print {$sock} $request;
+	    while (1) {
+	        my $chunk = '';
+	        my $read = sysread($sock, $chunk, 4096);
+	        last if !defined $read || $read <= 0;
+	        $raw_response .= $chunk;
+	        last if length($raw_response) > 1_000_000;
+	    }
+	    1;
 	};
 	$io_error = $@ if !$ok;
 	alarm(0);
-	close $sock;
+	# Don't close the socket on success — keep-alive reuses it
+	# Only close on error to reset the connection
 	if (!$ok) {
-		$io_error = _trim($io_error || 'io_failure', 220);
-		$io_error =~ s/\s+$//;
-		return {
-			status => 0,
-			error => $io_error,
-			json => undef,
-			raw => '',
-		};
+	    close $sock;
+	    $cached_sock = undef;
+	    $io_error = _trim($io_error || 'io_failure', 220);
+	    $io_error =~ s/\s+$//;
+	    return {
+	        status => 0,
+	        error => $io_error,
+	        json => undef,
+	        raw => '',
+	    };
 	}
 
 	my ($headers, $response_body) = split(/\r?\n\r?\n/, $raw_response, 2);
