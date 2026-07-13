@@ -2544,18 +2544,32 @@ sub _rewrite_runtime_command {
 	# and call $item->use() directly.
 	if ($normalized =~ /^use\s+(.+)$/) {
 	    my $item_name = $1;
-	    my $item = eval { $char->inventory->getByName($item_name) };
-	    if ($item) {
-	        $item->use();
-	        return ('', "use_item_$item_name");
+	    # Normalize: replace underscores with spaces for matching
+	    $item_name =~ s/_/ /g;
+	    # Guard: $char must be defined and have inventory
+	    if (defined $char && defined $char->{inventory}) {
+	        # Try exact match first
+	        my $item = eval { $char->inventory->getByName($item_name) };
+	        if ($item) {
+	            $item->use();
+	            return ('', "use_item_$item_name");
+	        }
+	        # Try case-insensitive partial match
+	        my @all_items = eval { @{$char->{inventory}} };
+	        if (@all_items) {
+	            my $lc_name = lc($item_name);
+	            my @matches = grep { defined $_ && defined $_->{name} && lc($_->{name}) eq $lc_name } @all_items;
+	            if (!@matches) {
+	                @matches = grep { defined $_ && defined $_->{name} && lc($_->{name}) =~ /\Q$lc_name\E/ } @all_items;
+	            }
+	            if (@matches) {
+	                $matches[0]->use();
+	                return ('', "use_item_$item_name");
+	            }
+	        }
 	    }
-	    # Try partial match
-	    my @matches = eval { $char->inventory->getItemsBySubstring($item_name) };
-	    if (@matches) {
-	        $matches[0]->use();
-	        return ('', "use_item_$item_name");
-	    }
-	    return ($trimmed, '');  # Fall through to Commands::run (will show error)
+	    # Item not found or char not ready — return empty to suppress error
+	    return ('', "use_item_not_found_$item_name");
 	}
 
 	# Handle ai manual — no-op if already in manual mode
