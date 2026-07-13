@@ -646,7 +646,12 @@ class ReflexRuleEngine:
         )
 
     def record_outcome(self, *, bot_id: str, rule_id: str, success: bool) -> None:
-        """Record the outcome of a fired reflex rule."""
+        """Record the outcome of a fired reflex rule.
+        
+        Only counts explicit successes/failures from bot acknowledgements.
+        Missing acks are NOT counted as failures — the action was queued
+        successfully, the bot-side execution is a separate concern.
+        """
         with self._lock:
             rules = self._rules_by_bot.get(bot_id)
             if rules and rule_id in rules:
@@ -656,12 +661,11 @@ class ReflexRuleEngine:
                     rule.outcome_tracking["successes"] = rule.outcome_tracking.get("successes", 0) + 1
                 else:
                     rule.outcome_tracking["failures"] = rule.outcome_tracking.get("failures", 0) + 1
-                # Auto-disable rules with >80% failure rate after 10+ fires
+                # Log high failure rates but NEVER auto-disable — let the LLM decide
                 fires = rule.outcome_tracking.get("fires", 0)
                 failures = rule.outcome_tracking.get("failures", 0)
                 if fires >= 10 and failures / fires > 0.8:
-                    rule.enabled = False
-                    logger.warning("reflex_rule_auto_disabled: %s (%d/%d failures)", rule_id, failures, fires)
+                    logger.warning("reflex_rule_high_failure_rate: %s (%d/%d failures) — LLM will review on next kaizen cycle", rule_id, failures, fires)
 
     def outcome_stats(self, *, bot_id: str) -> dict[str, dict[str, int]]:
         """Return outcome stats for all rules for a bot."""
