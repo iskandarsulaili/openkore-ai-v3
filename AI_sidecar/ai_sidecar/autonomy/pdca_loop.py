@@ -3327,10 +3327,16 @@ class PDCALoop:
             "last_error": "fleet_constraint_state_unavailable",
         }
 
-    def _snapshot_disconnected(self, snapshot: BotStateSnapshot) -> bool:
+    def _snapshot_disconnected(self, snapshot: BotStateSnapshot | dict[str, object]) -> bool:
         raw = getattr(snapshot, "raw", {})
         if not isinstance(raw, dict):
-            return False
+            # Handle dict snapshots
+            if isinstance(snapshot, dict):
+                raw = snapshot.get("raw", {})
+                if not isinstance(raw, dict):
+                    raw = {}
+            else:
+                return False
         if raw.get("in_game") is False:
             return True
         status = str(raw.get("status") or raw.get("state") or raw.get("net_state") or "").strip().lower()
