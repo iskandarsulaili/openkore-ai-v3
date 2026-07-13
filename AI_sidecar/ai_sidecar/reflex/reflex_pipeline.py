@@ -15,6 +15,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Callable
+from uuid import uuid4
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
 from ai_sidecar.contracts.reflex import ReflexRule
@@ -30,6 +31,11 @@ class ReflexPipeline:
     _last_emission: dict[str, float] = field(default_factory=dict)
     _emission_cooldown: dict[str, float] = field(default_factory=lambda: defaultdict(lambda: 1.0))
     _stats: dict[str, int] = field(default_factory=lambda: {"direct_emitted": 0, "bypass_emitted": 0, "cooldown_blocked": 0})
+    _action_queue: object | None = field(default=None)
+    
+    def set_action_queue(self, queue: object) -> None:
+        """Set the action queue reference for direct emissions."""
+        self._action_queue = queue
     
     def emit(self, bot_id: str, rule: ReflexRule, command: str,
              queue_action: Callable, bypass_arbiter: Callable | None = None) -> dict[str, Any]:
@@ -63,7 +69,7 @@ class ReflexPipeline:
         
         # Normal path: queue with no conflict key (allows multiple reflex actions)
         proposal = ActionProposal(
-            action_id=f"reflex-{rule_id}-{int(now * 1000)}",
+            action_id=f"reflex-{rule_id}-{uuid4().hex[:16]}",
             kind="command",
             command=command,
             priority_tier=ActionPriorityTier.reflex,
@@ -95,12 +101,38 @@ class ReflexPipeline:
         """Direct emission bypass — pushes command straight to bot without arbiter.
         
         This is the fastest path for critical reflexes. No proposal, no conflict
-        check, no queue — just push the command directly.
+        check, no queue — just push the command directly to the bot's action queue
+        with a reflex-priority proposal that bypasses all checks.
         """
         try:
-            logger.info("reflex_direct: bot=%s cmd=%s", bot_id, command)
-            self._stats["bypass_emitted"] += 1
-            return True
+            now = time.time()
+            proposal = ActionProposal(
+                action_id=f"reflex-direct-{uuid4().hex[:16]}",
+                kind="command",
+                command=command,
+                priority_tier=ActionPriorityTier.reflex,
+                conflict_key="",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=3),
+                idempotency_key=f"reflex:direct:{int(now)}",
+                metadata={
+                    "source": "reflex",
+                    "latency_budget_ms": 10,
+                    "reflex_direct": True,
+                },
+            )
+            if self._action_queue is not None:
+                accepted, status, action_id, reason = self._action_queue.enqueue(bot_id, proposal)
+                if accepted:
+                    logger.info("reflex_direct: bot=%s cmd=%s action_id=%s", bot_id, command, action_id)
+                    self._stats["bypass_emitted"] += 1
+                    return True
+                else:
+                    logger.warning("reflex_direct_queue_rejected: bot=%s cmd=%s reason=%s", bot_id, command, reason)
+                    return False
+            else:
+                logger.warning("reflex_direct_no_queue: bot=%s cmd=%s", bot_id, command)
+                return False
         except Exception as e:
             logger.warning("reflex_direct_failed: %s", e)
             return False

@@ -15,9 +15,10 @@ use Settings;
 use Time::HiRes qw(alarm time usleep);
 
 # Anti-detection: random delay to simulate human reaction time
+# Reduced for pro-level reaction speed: 10-50ms instead of 100-500ms
 my $ANTI_DETECTION_ENABLED = 1;
-my $ANTI_DETECTION_MIN_DELAY_MS = 100;
-my $ANTI_DETECTION_MAX_DELAY_MS = 500;
+my $ANTI_DETECTION_MIN_DELAY_MS = 10;
+my $ANTI_DETECTION_MAX_DELAY_MS = 50;
 
 Plugins::register(
 	'aiSidecarBridge',

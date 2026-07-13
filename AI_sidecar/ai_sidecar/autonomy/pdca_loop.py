@@ -2082,6 +2082,13 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("reflex_pipeline_init_failed: %s", e)
                 
+                # Wire action queue into reflex pipeline for direct emissions
+                _rp = getattr(self._runtime, "reflex_pipeline", None)
+                if _rp is not None:
+                    _aq = getattr(self._runtime, "action_queue", None)
+                    if _aq is not None:
+                        _rp.set_action_queue(_aq)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
