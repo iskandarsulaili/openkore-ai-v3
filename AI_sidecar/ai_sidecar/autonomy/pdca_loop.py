@@ -1929,6 +1929,53 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("predictive_planner_init_failed: %s", e)
                 
+                # ── NEW: Initialize Build Manager ──
+                _build_mgr = getattr(self._runtime, "build_manager", None)
+                if _build_mgr is None:
+                    try:
+                        from ai_sidecar.build_manager import BuildManager
+                        _build_mgr = BuildManager()
+                        self._runtime.build_manager = _build_mgr
+                        logger.info("build_manager_initialized")
+                    except Exception as e:
+                        logger.warning("build_manager_init_failed: %s", e)
+                
+                # ── NEW: Initialize Risk Assessment ──
+                _risk = getattr(self._runtime, "risk_assessment", None)
+                if _risk is None:
+                    try:
+                        from ai_sidecar.risk_assessment import RiskAssessment
+                        _risk = RiskAssessment()
+                        self._runtime.risk_assessment = _risk
+                        logger.info("risk_assessment_initialized")
+                    except Exception as e:
+                        logger.warning("risk_assessment_init_failed: %s", e)
+                
+                # ── NEW: Initialize Server Profiler ──
+                _srv_prof = getattr(self._runtime, "server_profiler", None)
+                if _srv_prof is None:
+                    try:
+                        from ai_sidecar.server_profiler import ServerProfiler
+                        _srv_prof = ServerProfiler()
+                        self._runtime.server_profiler = _srv_prof
+                        logger.info("server_profiler_initialized")
+                    except Exception as e:
+                        logger.warning("server_profiler_init_failed: %s", e)
+                
+                # ── NEW: Initialize Knowledge Graph ──
+                _kg = getattr(self._runtime, "knowledge_graph", None)
+                if _kg is None:
+                    try:
+                        from ai_sidecar.knowledge_graph import KnowledgeGraph
+                        from pathlib import Path
+                        _kg = KnowledgeGraph(
+                            knowledge_path=Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                        )
+                        self._runtime.knowledge_graph = _kg
+                        logger.info("knowledge_graph_initialized: %s", _kg.counters())
+                    except Exception as e:
+                        logger.warning("knowledge_graph_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -3712,6 +3759,51 @@ class PDCALoop:
                         if _gear_pred:
                             trigger_reasons.append(f"predict:gear_upgrade_lv{_gear_pred['recommend_level']}")
                             context["gear_upgrade"] = _gear_pred
+                except Exception:
+                    pass
+                # ── CHECK BUILD MANAGER on kaizen cycle ──
+                try:
+                    _bm = getattr(self._runtime, "build_manager", None)
+                    if _bm is not None and isinstance(snapshot, dict):
+                        _job = str(snapshot.get("progression", {}).get("job_name", "novice") or "novice")
+                        _builds = _bm.get_available_builds(_job)
+                        if _builds:
+                            trigger_reasons.append(f"build:available_{len(_builds)}")
+                            context["available_builds"] = [b["name"] for b in _builds[:3]]
+                except Exception:
+                    pass
+                # ── CHECK RISK ASSESSMENT on kaizen cycle ──
+                try:
+                    _ra = getattr(self._runtime, "risk_assessment", None)
+                    if _ra is not None and isinstance(snapshot, dict):
+                        _hp = int(snapshot.get("vitals", {}).get("hp", 1) or 1)
+                        _max_hp = int(snapshot.get("vitals", {}).get("max_hp", 1) or 1)
+                        _level = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
+                        _risk_ctx = {"hp_pct": _hp / max(_max_hp, 1), "level": _level}
+                        _assessment = _ra.assess("general_farming", _risk_ctx)
+                        if _assessment.get("recommendation") == "avoid":
+                            trigger_reasons.append("risk:avoid_current_action")
+                            context["risk"] = _assessment
+                except Exception:
+                    pass
+                # ── CHECK SERVER PROFILER on kaizen cycle ──
+                try:
+                    _sp = getattr(self._runtime, "server_profiler", None)
+                    if _sp is not None:
+                        _personality = _sp.get_server_personality()
+                        if _personality.get("strictness") == "strict":
+                            trigger_reasons.append("server:strict_gm")
+                            context["gm_risk"] = _personality["gm_risk"]
+                except Exception:
+                    pass
+                # ── CHECK KNOWLEDGE GRAPH on kaizen cycle ──
+                try:
+                    _kg = getattr(self._runtime, "knowledge_graph", None)
+                    if _kg is not None and isinstance(snapshot, dict):
+                        _level = int(snapshot.get("progression", {}).get("base_level", 1) or 1)
+                        _spots = _kg.find_farming_spot(_level)
+                        if _spots:
+                            context["recommended_spots"] = _spots[:3]
                 except Exception:
                     pass
         except Exception:

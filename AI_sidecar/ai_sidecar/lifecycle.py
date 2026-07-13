@@ -607,6 +607,10 @@ class RuntimeState:
     server_awareness: object | None = None
     social_intelligence: object | None = None
     predictive_planner: object | None = None
+    build_manager: object | None = None
+    risk_assessment: object | None = None
+    server_profiler: object | None = None
+    knowledge_graph: object | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
     fleet_coordinator: "FleetCoordinatorService | None" = None
