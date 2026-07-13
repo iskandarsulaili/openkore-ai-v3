@@ -82,6 +82,9 @@ class TrainingHarness:
     def _train_encounter_classifier(self, rows: list[dict[str, object]], *, incremental: bool) -> dict[str, object]:
         del incremental
         classes = sorted({str(row.get("label") or "balanced") for row in rows})
+        if len(classes) < 2:
+            logger.warning("ml_train_encounter_skipped: only %d class(es) available", len(classes))
+            return {"type": "encounter_classifier_sgd", "model": None, "classes": classes, "class_to_idx": {}}
         class_to_idx = {label: idx for idx, label in enumerate(classes)}
         x_train = [_family_vector(row) for row in rows]
         y_train = [class_to_idx[str(row.get("label") or "balanced")] for row in rows]

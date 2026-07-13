@@ -507,8 +507,8 @@ class GameIntelligenceEngine:
                     if _town:
                         rec.reason += f" | NPC gate: talk to NPC in {_town}"
                         rec.score *= 0.8  # Penalize: NPC interaction overhead
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("ge_npc_gate_skipped: %s", e)
             recommendations.append(rec)
 
         # Sort by score descending

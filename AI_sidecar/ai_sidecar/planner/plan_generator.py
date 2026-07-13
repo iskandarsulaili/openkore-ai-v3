@@ -760,7 +760,8 @@ class PlanGenerator:
             "Never fabricate formulas, rates, NPC scripts, map mechanics, or prerequisites absent from context. "
             "If evidence is insufficient, abstain conservatively by adding explicit unknown constraints/hypotheses and avoiding speculative steps. "
             "Keep every proposed step executable by existing deterministic bridge surfaces and avoid unsupported command roots. "
-            f"Known upgrade rule ids (reference only): {known_rule_ids[:12]}."
+            f'Known upgrade rule ids (reference only): {known_rule_ids[:12]}. '
+            f'Trigger context: reason={context.context_overrides.get("trigger_reason", "none")} context={str(context.context_overrides.get("trigger_context", {}))[:200]}. '
         )
         prompt_limit = int(self.max_user_prompt_chars) + 14000
         domain_blocks: list[str] = []

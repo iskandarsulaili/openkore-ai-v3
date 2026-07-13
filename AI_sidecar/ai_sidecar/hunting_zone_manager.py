@@ -261,8 +261,8 @@ class HuntingZoneManager:
                             if zone:
                                 candidates.append(zone)
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("hzm_zone_build_skipped: %s", e)
 
             # Fallback: score the map based on its monsters (original logic)
             total_score = 0.0
