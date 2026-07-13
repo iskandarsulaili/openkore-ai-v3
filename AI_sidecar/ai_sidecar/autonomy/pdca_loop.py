@@ -3360,6 +3360,27 @@ class PDCALoop:
             if horizon == Horizon.SHORT_TERM and _count % 60 == 0:
                 trigger_reasons.append("kaizen:kaizen_review")
                 context["kaizen"] = True
+                # ── AUTO-TRAIN ML MODELS on kaizen cycle ──
+                try:
+                    _ml_harness = getattr(self._runtime, "ml_training", None)
+                    if _ml_harness is not None:
+                        from ai_sidecar.contracts.ml_subconscious import ModelFamily
+                        _trained_any = False
+                        for _family in ModelFamily:
+                            _version, _samples, _metrics, _ab = _ml_harness.train(
+                                family=_family, bot_id=bot_id,
+                                incremental=True, max_samples=500,
+                            )
+                            if _version:
+                                _trained_any = True
+                                logger.info(
+                                    "ml_auto_trained: family=%s version=%s samples=%d metrics=%s",
+                                    _family.value, _version, _samples, _metrics,
+                                )
+                        if _trained_any:
+                            context["ml_trained"] = True
+                except Exception:
+                    logger.exception("ml_auto_train_failed")
         except Exception:
             pass
         

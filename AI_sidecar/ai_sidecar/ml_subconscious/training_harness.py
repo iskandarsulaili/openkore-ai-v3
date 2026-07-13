@@ -10,6 +10,7 @@ from typing import Any
 from ai_sidecar.contracts.ml_subconscious import ModelFamily
 from ai_sidecar.ml_subconscious.labeling_pipeline import LabelingPipeline
 from ai_sidecar.ml_subconscious.model_registry import ModelRegistry, vectorize_state_features
+from ai_sidecar.ml_subconscious.device_detection import get_device
 
 logger = logging.getLogger(__name__)
 
