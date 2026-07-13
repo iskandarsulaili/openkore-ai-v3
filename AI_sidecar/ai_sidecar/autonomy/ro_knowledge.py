@@ -62,6 +62,9 @@ _DIRECT_ALLOWED_ROOTS: tuple[str, ...] = (
     "follow",      # Follow another player/bot
     "sit",         # Sit to restore HP/SP
     "stand",       # Stand up
+    "respawn",     # Respawn at save point after death
+    "identify",    # Identify unknown items
+    "trade",       # Trade with another player
 )
 
 
