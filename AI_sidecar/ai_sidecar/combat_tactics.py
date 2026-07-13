@@ -19,9 +19,7 @@ class CombatTactics:
     """Per-class combat tactics and skill combos."""
     
     _lock: RLock = field(default_factory=RLock)
-    
-    # Per-class skill combos with timing
-    CLASS_COMBOS: dict[str, list[dict[str, Any]]] = {
+    _class_combos: dict[str, list[dict[str, Any]]] = field(default_factory=lambda: {
         "mage": [
             {"skills": ["ss cold_bolt", "ss fire_bolt"], "condition": "element_water", "description": "Freeze then burn"},
             {"skills": ["ss fire_bolt", "ss fire_bolt"], "condition": "element_earth", "description": "Fire vs earth"},
@@ -65,21 +63,15 @@ class CombatTactics:
             {"skills": ["ss heal", "ss heal"], "condition": "hp<0.5", "description": "Self-heal spam"},
             {"skills": ["ss magnificat", "ss kyrie_eleison"], "condition": "party", "description": "Party buffs"},
         ],
-    }
+    })
     
-    # Kiting behavior per class
-    KITE_CLASSES: set[str] = {"archer", "hunter", "sniper", "mage", "wizard", "high_wizard", "sorcerer", "warlock"}
+    _kite_classes: set[str] = field(default_factory=lambda: {"archer", "hunter", "sniper", "mage", "wizard", "high_wizard", "sorcerer", "warlock"})
     
-    # Monster size → weapon type mapping
-    SIZE_WEAPONS: dict[str, str] = {
-        "small": "dagger",
-        "medium": "sword",
-        "large": "spear",
-    }
+    _size_weapons: dict[str, str] = field(default_factory=lambda: {"small": "dagger", "medium": "sword", "large": "spear"})
     
     def get_combo(self, player_class: str, monster_element: str, hp_pct: float, aggro_count: int, has_party: bool) -> list[str]:
         """Get the best skill combo for the current situation."""
-        combos = self.CLASS_COMBOS.get(player_class.lower(), [])
+        combos = self._class_combos.get(player_class.lower(), [])
         if not combos:
             return []
         
@@ -123,13 +115,13 @@ class CombatTactics:
     
     def should_kite(self, player_class: str, hp_pct: float) -> bool:
         """Determine if the player should kite."""
-        if player_class.lower() in self.KITE_CLASSES and hp_pct < 0.6:
+        if player_class.lower() in self._kite_classes and hp_pct < 0.6:
             return True
         return hp_pct < 0.3  # Everyone kites at low HP
     
     def get_weapon_for_size(self, monster_size: str) -> str | None:
         """Get the best weapon type for a monster's size."""
-        return self.SIZE_WEAPONS.get(monster_size.lower())
+        return self._size_weapons.get(monster_size.lower())
     
     def counters(self) -> dict[str, int]:
-        return {"combos": sum(len(v) for v in self.CLASS_COMBOS.values())}
+        return {"combos": sum(len(v) for v in self._class_combos.values())}

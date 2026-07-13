@@ -22,18 +22,15 @@ class PartySkillCoordinator:
     
     _lock: RLock = field(default_factory=RLock)
     
-    # Party skill combos: [prep_skill, main_skill, followup_skill]
-    # prep_skill is cast first, main_skill follows after prep_time_s
-    PARTY_COMBOS: list[dict[str, Any]] = [
+    _party_combos: list[dict[str, Any]] = field(default_factory=lambda: [
         {"prep": "ss magnificat", "main": "ss storm_gust", "prep_time_s": 3.0, "description": "Magnificat → Storm Gust"},
         {"prep": "ss kyrie_eleison", "main": "ss bowling_bash", "prep_time_s": 2.0, "description": "Kyrie → Bowling Bash"},
         {"prep": "ss providentia", "main": "ss bowling_bash", "prep_time_s": 2.0, "description": "Providence → Bowling Bash"},
         {"prep": "ss apple_of_idun", "main": "ss storm_gust", "prep_time_s": 1.0, "description": "Apple of Idun → Storm Gust"},
         {"prep": "ss assassin_cross", "main": "ss sonic_blow", "prep_time_s": 1.0, "description": "Assassin Cross → Sonic Blow"},
-    ]
+    ])
     
-    # Party buffs with SP cost and duration
-    PARTY_BUFFS: dict[str, dict[str, Any]] = {
+    _party_buffs: dict[str, dict[str, Any]] = field(default_factory=lambda: {
         "magnificat": {"sp_cost": 40, "duration_s": 300, "classes": ["priest", "high_priest"]},
         "kyrie_eleison": {"sp_cost": 30, "duration_s": 300, "classes": ["priest", "high_priest"]},
         "gloria": {"sp_cost": 20, "duration_s": 300, "classes": ["priest", "high_priest"]},
@@ -41,7 +38,7 @@ class PartySkillCoordinator:
         "apple_of_idun": {"sp_cost": 30, "duration_s": 120, "classes": ["bard"]},
         "poem_of_bragi": {"sp_cost": 40, "duration_s": 120, "classes": ["bard"]},
         "assassin_cross": {"sp_cost": 20, "duration_s": 60, "classes": ["assassin_cross"]},
-    }
+    })
     
     _last_buff_time: dict[str, float] = field(default_factory=dict)
     _active_combos: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -55,7 +52,7 @@ class PartySkillCoordinator:
             bot_id = member.get("bot_id", "")
             player_class = member.get("class", "novice").lower()
             
-            for buff_name, buff_info in self.PARTY_BUFFS.items():
+            for buff_name, buff_info in self._party_buffs.items():
                 if player_class in buff_info["classes"]:
                     # Check cooldown
                     last_time = self._last_buff_time.get(f"{bot_id}:{buff_name}", 0)
@@ -71,14 +68,14 @@ class PartySkillCoordinator:
         commands: list[str] = []
         member_classes = [m.get("class", "").lower() for m in party_members]
         
-        for combo in self.PARTY_COMBOS:
+        for combo in self._party_combos:
             prep_skill = combo["prep"].replace("ss ", "")
             main_skill = combo["main"].replace("ss ", "")
             
             # Check if party has both skills
             prep_class = None
             main_class = None
-            for buff_name, buff_info in self.PARTY_BUFFS.items():
+            for buff_name, buff_info in self._party_buffs.items():
                 if buff_name == prep_skill:
                     for cls in buff_info["classes"]:
                         if cls in member_classes:
@@ -97,4 +94,4 @@ class PartySkillCoordinator:
         return commands[:6]  # Max 6 combo commands
     
     def counters(self) -> dict[str, int]:
-        return {"combos": len(self.PARTY_COMBOS), "buffs": len(self.PARTY_BUFFS)}
+        return {"combos": len(self._party_combos), "buffs": len(self._party_buffs)}
