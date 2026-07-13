@@ -2715,12 +2715,19 @@ class PDCALoop:
         )
         return not allowed
 
-    def _resolve_bot_id(self, snapshot: BotStateSnapshot | None = None) -> str:
-        if snapshot is not None and getattr(snapshot, "meta", None) is not None:
-            bot_id = getattr(snapshot.meta, "bot_id", None)
-            if bot_id:
-                self._last_bot_id = str(bot_id)
-                return self._last_bot_id
+    def _resolve_bot_id(self, snapshot: BotStateSnapshot | dict[str, object] | None = None) -> str:
+        if snapshot is not None:
+            if isinstance(snapshot, dict):
+                bot_id = snapshot.get("bot_id", snapshot.get("id", ""))
+                if bot_id:
+                    self._last_bot_id = str(bot_id)
+                    return self._last_bot_id
+            else:
+                if getattr(snapshot, "meta", None) is not None:
+                    bot_id = getattr(snapshot.meta, "bot_id", None)
+                    if bot_id:
+                        self._last_bot_id = str(bot_id)
+                        return self._last_bot_id
 
         if self._last_bot_id:
             return self._last_bot_id
@@ -2782,8 +2789,11 @@ class PDCALoop:
             pass
         return self._default_bot_id
 
-    def _objective_for(self, *, horizon: Horizon, snapshot: BotStateSnapshot | None) -> str:
-        current_map = getattr(getattr(snapshot, "position", None), "map", None) or "unknown"
+    def _objective_for(self, *, horizon: Horizon, snapshot: BotStateSnapshot | dict[str, object] | None) -> str:
+        if isinstance(snapshot, dict):
+            current_map = str(snapshot.get("map", snapshot.get("position", {}).get("map", "unknown")) or "unknown")
+        else:
+            current_map = getattr(getattr(snapshot, "position", None), "map", None) or "unknown"
         if horizon == Horizon.LONG_TERM:
             return f"advance long-term progression: grind and level up safely from {current_map}"
         if horizon == Horizon.MEDIUM_TERM:
@@ -3621,10 +3631,15 @@ class PDCALoop:
             **context,
         }
 
-    def _snapshot_reconnect_age_s(self, snapshot: BotStateSnapshot) -> float | None:
-        raw = getattr(snapshot, "raw", {})
-        if not isinstance(raw, dict):
-            return None
+    def _snapshot_reconnect_age_s(self, snapshot: BotStateSnapshot | dict[str, object]) -> float | None:
+        if isinstance(snapshot, dict):
+            raw = snapshot.get("raw", {})
+            if not isinstance(raw, dict):
+                raw = {}
+        else:
+            raw = getattr(snapshot, "raw", {})
+            if not isinstance(raw, dict):
+                return None
         for key in ("reconnect_age_s", "disconnect_age_s", "offline_age_s"):
             value = raw.get(key)
             if isinstance(value, (int, float)):
@@ -3636,10 +3651,15 @@ class PDCALoop:
                     continue
         return None
 
-    def _overweight_ratio(self, snapshot: BotStateSnapshot) -> float:
-        vitals = getattr(snapshot, "vitals", None)
-        weight = getattr(vitals, "weight", None)
-        weight_max = getattr(vitals, "weight_max", None)
+    def _overweight_ratio(self, snapshot: BotStateSnapshot | dict[str, object]) -> float:
+        if isinstance(snapshot, dict):
+            inv = snapshot.get("inventory", {}) or {}
+            weight = int(inv.get("weight", 0) or 0)
+            weight_max = int(inv.get("weight_max", 1) or 1)
+        else:
+            vitals = getattr(snapshot, "vitals", None)
+            weight = getattr(vitals, "weight", None)
+            weight_max = getattr(vitals, "weight_max", None)
         if not isinstance(weight, int) or not isinstance(weight_max, int) or weight_max <= 0:
             return 0.0
         return max(0.0, min(2.0, float(weight) / float(weight_max)))
