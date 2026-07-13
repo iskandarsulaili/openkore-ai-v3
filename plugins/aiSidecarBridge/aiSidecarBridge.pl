@@ -972,21 +972,22 @@ sub _attempt_register {
 }
 
 sub _send_snapshot {
-	return if !_bridge_enabled();
-	if (!$net || $net->getState() != Network::IN_GAME) {
-		return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
-	}
+    return if !_bridge_enabled();
+    return if !$registered;  # Don't send snapshots until registered
+    if (!$net || $net->getState() != Network::IN_GAME) {
+        return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
+    }
 
-	my $snapshot = _build_snapshot_payload();
-	my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
-	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
-		_throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
-		_emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
-	}
+    my $snapshot = _build_snapshot_payload();
+    my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
+    if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+        _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
+        _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
+    }
 
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_actorsEnabled', 1)) {
-		_send_actor_delta_from_snapshot($snapshot);
-	}
+    if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_actorsEnabled', 1)) {
+        _send_actor_delta_from_snapshot($snapshot);
+    }
 }
 
 sub _build_snapshot_payload {
@@ -2534,7 +2535,43 @@ sub _rewrite_runtime_command {
 
 	# Handle attack_skill — already handled by auto-AI, no-op
 	if ($normalized =~ /^attack_skill\b/) {
-		return ('', 'attack_skill_delegated');
+	    return ('', 'attack_skill_delegated');
+	}
+
+	# Handle use <item> — find item in inventory and use it
+	# OpenKore doesn't have a generic "use" console command.
+	# We must look up the item by name in the character's inventory
+	# and call $item->use() directly.
+	if ($normalized =~ /^use\s+(.+)$/) {
+	    my $item_name = $1;
+	    my $item = eval { $char->inventory->getByName($item_name) };
+	    if ($item) {
+	        $item->use();
+	        return ('', "use_item_$item_name");
+	    }
+	    # Try partial match
+	    my @matches = eval { $char->inventory->getItemsBySubstring($item_name) };
+	    if (@matches) {
+	        $matches[0]->use();
+	        return ('', "use_item_$item_name");
+	    }
+	    return ($trimmed, '');  # Fall through to Commands::run (will show error)
+	}
+
+	# Handle ai manual — no-op if already in manual mode
+	if ($normalized eq 'ai manual') {
+	    if (!_ai_already_auto_mode()) {
+	        return ('', 'ai_manual_already_manual');
+	    }
+	    return ($trimmed, '');
+	}
+
+	# Handle ai auto — no-op if already in auto mode
+	if ($normalized eq 'ai auto') {
+	    if (_ai_already_auto_mode()) {
+	        return ('', 'ai_auto_already_auto');
+	    }
+	    return ($trimmed, '');
 	}
 
 	return ($trimmed, '');
