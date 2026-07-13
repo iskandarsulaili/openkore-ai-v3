@@ -245,7 +245,7 @@ class GameIntelligenceEngine:
                         if any(kw in skill_name.upper() for kw in keywords):
                             # Find the mob name for this ID
                             for mob in self._monsters:
-                                check_id = mob.get("id", 0) or 0
+                                check_id = mob.get("Id", mob.get("id", 0)) or 0
                                 if str(check_id) == mob_id_str or check_id == mob_id:
                                     mob_name = mob.get("name", str(mob_id))
                                     if mob_name not in self._mob_skill_warnings:
@@ -322,18 +322,17 @@ class GameIntelligenceEngine:
                                     skill_name = skill.get("skill", "").upper()
                                     if any(kw in skill_name for kw in keywords):
                                         rate = int(skill.get("rate", 0) or 0)
-                                        if rate > 500:
+                                        if rate > 1:  # rAthena uses 10000=100%, so 1=0.01% — catch any meaningful skill
                                             for mob in self._monsters:
                                                 mob_id = str(mob.get("Id", mob.get("id", 0)))
                                                 if mob_id == mob_id_str:
                                                     mob_name = mob.get("name", "")
                                                     if mob_name not in self._mob_skill_warnings:
                                                         self._mob_skill_warnings[mob_name] = []
-                                                    warning = f"{danger_type}:{skill.get('skill','')} (rate={rate}%)"
+                                                    warning = f"{danger_type}:{skill.get('skill','')} (rate={rate})"
                                                     if warning not in self._mob_skill_warnings[mob_name]:
                                                         self._mob_skill_warnings[mob_name].append(warning)
                                                     break
-                                        break
                         logger.info("Loaded mob skills for %d monsters from %s", len(self._mob_skills), candidate)
                         break
                     except Exception:
