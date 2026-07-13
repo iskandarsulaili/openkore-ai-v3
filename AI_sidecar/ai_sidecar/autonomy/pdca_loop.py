@@ -2107,6 +2107,94 @@ class PDCALoop:
                     if _aq is not None:
                         _rp.set_action_queue(_aq)
                 
+                # ── NEW: Initialize Long-Term Memory ──
+                _ltm = getattr(self._runtime, "long_term_memory", None)
+                if _ltm is None:
+                    try:
+                        from ai_sidecar.memory.long_term_memory import LongTermMemory
+                        _ltm = LongTermMemory()
+                        self._runtime.long_term_memory = _ltm
+                        logger.info("long_term_memory_initialized")
+                    except Exception as e:
+                        logger.warning("long_term_memory_init_failed: %s", e)
+                
+                # ── NEW: Initialize Fleet Coordinator ──
+                _fleet = getattr(self._runtime, "fleet_coordinator", None)
+                if _fleet is None:
+                    try:
+                        from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
+                        _fleet = FleetCoordinator()
+                        self._runtime.fleet_coordinator = _fleet
+                        logger.info("fleet_coordinator_initialized")
+                    except Exception as e:
+                        logger.warning("fleet_coordinator_init_failed: %s", e)
+                
+                # ── NEW: Initialize Timing Awareness ──
+                _timing = getattr(self._runtime, "timing_awareness", None)
+                if _timing is None:
+                    try:
+                        from ai_sidecar.timing.timing_awareness import TimingAwareness
+                        _timing = TimingAwareness()
+                        self._runtime.timing_awareness = _timing
+                        logger.info("timing_awareness_initialized")
+                    except Exception as e:
+                        logger.warning("timing_awareness_init_failed: %s", e)
+                
+                # ── NEW: Initialize Social Manipulator ──
+                _social = getattr(self._runtime, "social_manipulator", None)
+                if _social is None:
+                    try:
+                        from ai_sidecar.social.social_manipulator import SocialManipulator
+                        _social = SocialManipulator()
+                        self._runtime.social_manipulator = _social
+                        logger.info("social_manipulator_initialized")
+                    except Exception as e:
+                        logger.warning("social_manipulator_init_failed: %s", e)
+                
+                # ── NEW: Initialize WoE Predictor ──
+                _woe = getattr(self._runtime, "woe_predictor", None)
+                if _woe is None:
+                    try:
+                        from ai_sidecar.woe.woe_predictor import WoEPredictor
+                        _woe = WoEPredictor()
+                        self._runtime.woe_predictor = _woe
+                        logger.info("woe_predictor_initialized")
+                    except Exception as e:
+                        logger.warning("woe_predictor_init_failed: %s", e)
+                
+                # ── NEW: Initialize Opportunity Cost Engine ──
+                _opp = getattr(self._runtime, "opportunity_cost", None)
+                if _opp is None:
+                    try:
+                        from ai_sidecar.economy.opportunity_cost import OpportunityCostEngine
+                        _opp = OpportunityCostEngine()
+                        self._runtime.opportunity_cost = _opp
+                        logger.info("opportunity_cost_initialized")
+                    except Exception as e:
+                        logger.warning("opportunity_cost_init_failed: %s", e)
+                
+                # ── NEW: Initialize Innovation Engine ──
+                _innov = getattr(self._runtime, "innovation_engine", None)
+                if _innov is None:
+                    try:
+                        from ai_sidecar.innovation.innovation_engine import InnovationEngine
+                        _innov = InnovationEngine()
+                        self._runtime.innovation_engine = _innov
+                        logger.info("innovation_engine_initialized")
+                    except Exception as e:
+                        logger.warning("innovation_engine_init_failed: %s", e)
+                
+                # ── NEW: Initialize Edge Case Handler ──
+                _edge = getattr(self._runtime, "edge_case_handler", None)
+                if _edge is None:
+                    try:
+                        from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
+                        _edge = EdgeCaseHandler()
+                        self._runtime.edge_case_handler = _edge
+                        logger.info("edge_case_handler_initialized")
+                    except Exception as e:
+                        logger.warning("edge_case_handler_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -4212,4 +4300,92 @@ class PDCALoop:
                 if _age < 60.0:  # Only inject triggers less than 60s old
                     result["trigger_reason"] = str(_bot_trigger.get("reason", ""))
                     result["trigger_context"] = dict(_bot_trigger.get("context", {}))
+        
+        # ── Inject Long-Term Memory Context ──
+        try:
+            _ltm = getattr(self._runtime, "long_term_memory", None)
+            if _ltm is not None:
+                from datetime import datetime, timezone
+                _map = result.get("map", "")
+                _mem_ctx = _ltm.get_relevant_context(
+                    current_map=str(_map or ""),
+                    current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
+                    current_activity="farming",
+                    limit=5,
+                )
+                if _mem_ctx:
+                    result["long_term_memory"] = _mem_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Timing Context ──
+        try:
+            _timing = getattr(self._runtime, "timing_awareness", None)
+            if _timing is not None:
+                _timing_ctx = _timing.get_timing_context()
+                if _timing_ctx:
+                    result["timing_context"] = _timing_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Fleet Context ──
+        try:
+            _fleet = getattr(self._runtime, "fleet_coordinator", None)
+            if _fleet is not None:
+                _fleet_ctx = _fleet.get_party_summary()
+                if _fleet_ctx:
+                    result["fleet_context"] = _fleet_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Social Context ──
+        try:
+            _social = getattr(self._runtime, "social_manipulator", None)
+            if _social is not None:
+                _social_ctx = _social.get_social_context()
+                if _social_ctx:
+                    result["social_context"] = _social_ctx
+        except Exception:
+            pass
+        
+        # ── Inject WoE Context ──
+        try:
+            _woe = getattr(self._runtime, "woe_predictor", None)
+            if _woe is not None:
+                _woe_ctx = _woe.get_woe_context()
+                if _woe_ctx:
+                    result["woe_context"] = _woe_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Opportunity Cost Context ──
+        try:
+            _opp = getattr(self._runtime, "opportunity_cost", None)
+            if _opp is not None:
+                _opp_ctx = _opp.get_opportunity_context()
+                if _opp_ctx:
+                    result["opportunity_context"] = _opp_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Innovation Context ──
+        try:
+            _innov = getattr(self._runtime, "innovation_engine", None)
+            if _innov is not None:
+                _innov_ctx = _innov.get_innovation_context()
+                if _innov_ctx:
+                    result["innovation_context"] = _innov_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Edge Case Context ──
+        try:
+            _edge = getattr(self._runtime, "edge_case_handler", None)
+            if _edge is not None:
+                _edge_ctx = _edge.get_edge_context()
+                if _edge_ctx:
+                    result["edge_context"] = _edge_ctx
+        except Exception:
+            pass
+        
         return result
