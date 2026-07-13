@@ -115,31 +115,65 @@ class KnowledgeGraph:
                         if isinstance(jobs, dict):
                             self._item_classes[key] = [str(j).lower() for j, v in jobs.items() if v]
         
-        # Build element chart
-        elements = data.get("elements", {})
-        if isinstance(elements, dict):
-            body = elements.get("Body", [])
-            if isinstance(body, list):
+        # Build element chart from attr_fix data (rAthena format: Level + element->element->damage%)
+        elements_raw = data.get("elements", {})
+        if isinstance(elements_raw, dict):
+            # Try re/pre-re keys first
+            for mode_key in ["re", "pre-re"]:
+                mode_data = elements_raw.get(mode_key, {})
+                if isinstance(mode_data, dict):
+                    body = mode_data.get("Body", [])
+                    if isinstance(body, list):
+                        for entry in body:
+                            if isinstance(entry, dict):
+                                level = entry.get("Level", 1)
+                                if level != 1:
+                                    continue
+                                for atk_ele, def_map in entry.items():
+                                    if atk_ele == "Level":
+                                        continue
+                                    if isinstance(def_map, dict):
+                                        for def_ele, dmg_pct in def_map.items():
+                                            dmg = float(dmg_pct) / 100.0
+                                            atk_key = str(atk_ele).lower()
+                                            def_key = str(def_ele).lower()
+                                            if atk_key not in self._element_chart:
+                                                self._element_chart[atk_key] = {}
+                                            self._element_chart[atk_key][def_key] = dmg
+            # Try Body array directly (old format)
+            body = elements_raw.get("Body", [])
+            if isinstance(body, list) and not self._element_chart:
                 for entry in body:
                     if isinstance(entry, dict):
-                        atk_ele = str(entry.get("AttackElement", "")).lower()
-                        def_ele = str(entry.get("DefenseElement", "")).lower()
-                        dmg = float(entry.get("Damage", 1.0))
-                        if atk_ele and def_ele:
-                            if atk_ele not in self._element_chart:
-                                self._element_chart[atk_ele] = {}
-                            self._element_chart[atk_ele][def_ele] = dmg
+                        level = entry.get("Level", 1)
+                        if level != 1:
+                            continue
+                        for atk_ele, def_map in entry.items():
+                            if atk_ele == "Level":
+                                continue
+                            if isinstance(def_map, dict):
+                                for def_ele, dmg_pct in def_map.items():
+                                    dmg = float(dmg_pct) / 100.0
+                                    atk_key = str(atk_ele).lower()
+                                    def_key = str(def_ele).lower()
+                                    if atk_key not in self._element_chart:
+                                        self._element_chart[atk_key] = {}
+                                    self._element_chart[atk_key][def_key] = dmg
         
-        # Build class-skill mapping from skill trees
+        # Build class-skill mapping from skill trees (rAthena format: Job + Tree)
         for entry in data.get("skill_trees", []):
             if isinstance(entry, dict):
-                class_name = str(entry.get("Class", "")).lower()
-                skill = str(entry.get("Skill", "")).lower()
-                if class_name and skill:
-                    if class_name not in self._class_skills:
-                        self._class_skills[class_name] = []
-                    if skill not in self._class_skills[class_name]:
-                        self._class_skills[class_name].append(skill)
+                class_name = str(entry.get("Job", entry.get("Class", ""))).lower()
+                tree = entry.get("Tree", [])
+                if isinstance(tree, list):
+                    for skill_entry in tree:
+                        if isinstance(skill_entry, dict):
+                            skill = str(skill_entry.get("Name", "")).lower()
+                            if class_name and skill:
+                                if class_name not in self._class_skills:
+                                    self._class_skills[class_name] = []
+                                if skill not in self._class_skills[class_name]:
+                                    self._class_skills[class_name].append(skill)
         
         # Build map connections from map_knowledge defaults
         from ai_sidecar.map_knowledge import DEFAULT_MAP_DATA

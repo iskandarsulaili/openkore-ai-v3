@@ -202,14 +202,16 @@ def ingest_refine_data(rathena_path: str) -> dict[str, Any]:
 
 
 def ingest_elemental_data(rathena_path: str) -> dict[str, Any]:
-    """Ingest elemental data (attr_fix.yml)."""
-    fpath = os.path.join(rathena_path, "db", "attr_fix.yml")
-    if os.path.exists(fpath):
-        data = _parse_yaml_raw(fpath)
-        if data:
-            logger.info("  attr_fix.yml: loaded")
-            return _safe_value(data) if isinstance(data, (dict, list)) else {}
-    return {}
+    """Ingest elemental data (attr_fix.yml — re + pre-re)."""
+    result: dict[str, Any] = {}
+    for mode in ["re", "pre-re"]:
+        fpath = os.path.join(rathena_path, "db", mode, "attr_fix.yml")
+        if os.path.exists(fpath):
+            data = _parse_yaml_raw(fpath)
+            if data:
+                result[mode] = _safe_value(data)
+                logger.info("  attr_fix/%s: loaded", mode)
+    return result
 
 
 def ingest_pet_data(rathena_path: str) -> list[dict[str, Any]]:
