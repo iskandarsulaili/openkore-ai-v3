@@ -187,7 +187,18 @@ class ModelRegistry:
                     "path": str(artifact),
                 }
             )
-            family_entry["versions"] = versions[-40:]
+            # Prune old versions: keep last 40, DELETE old files
+            old_versions = list(family_entry.get("versions") or [])
+            if len(old_versions) > 40:
+                excess = old_versions[:-40]
+                family_entry["versions"] = old_versions[-40:]
+                for _old in excess:
+                    _old_path = Path(str(_old.get("path") or ""))
+                    try:
+                        if _old_path.exists():
+                            _old_path.unlink()
+                    except Exception:
+                        pass
 
             family_entry["ab"] = {
                 "champion": current_active if not should_activate else version,
