@@ -1743,8 +1743,9 @@ class PDCALoop:
                             action_ttl_seconds=60,
                         )
                         self._runtime.reflex_engine = _reflex_engine
-                        # Load reflex rules from YAML — use absolute path since uvicorn --app-dir changes cwd
-                        _yaml_path = Path("/home/lot399/openkore-ai-v3/AI_sidecar/ai_sidecar/reflex/reflex_rules.yaml")
+                        # Load reflex rules from YAML — use __file__-relative path for portability
+                        _here = Path(__file__).resolve().parent.parent
+                        _yaml_path = _here / "reflex" / "reflex_rules.yaml"
                         _rules_loaded = _reflex_engine.load_rules_from_yaml(_yaml_path)
                         logger.info("reflex_engine_initialized: %d rules loaded", _rules_loaded)
                     except Exception as e:

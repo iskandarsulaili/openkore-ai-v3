@@ -5542,8 +5542,9 @@ def create_runtime() -> RuntimeState:
     )
     # Load reflex rules from YAML if available
     try:
+            _here = Path(__file__).resolve().parent
             _count = runtime.reflex_engine.load_rules_from_yaml(
-                Path("ai_sidecar", "reflex", "reflex_rules.yaml")
+                _here / "reflex" / "reflex_rules.yaml"
             )
             if _count > 0:
                 logger.info("reflex_rules_yaml_loaded: %d rules from YAML", _count)
