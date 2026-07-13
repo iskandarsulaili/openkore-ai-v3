@@ -1736,9 +1736,17 @@ class PDCALoop:
                 if _reflex_engine is None:
                     try:
                         from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
-                        _reflex_engine = ReflexRuleEngine()
+                        from pathlib import Path
+                        _reflex_engine = ReflexRuleEngine(
+                            workspace_root=Path("."),
+                            contract_version="v1",
+                            action_ttl_seconds=60,
+                        )
                         self._runtime.reflex_engine = _reflex_engine
-                        logger.info("reflex_engine_initialized")
+                        # Load reflex rules from YAML
+                        _yaml_path = Path("AI_sidecar/ai_sidecar/reflex/reflex_rules.yaml")
+                        _rules_loaded = _reflex_engine.load_rules_from_yaml(_yaml_path)
+                        logger.info("reflex_engine_initialized: %d rules loaded", _rules_loaded)
                     except Exception as e:
                         logger.warning("reflex_engine_init_failed: %s", e)
                 
