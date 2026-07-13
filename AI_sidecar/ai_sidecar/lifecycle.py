@@ -619,6 +619,7 @@ class RuntimeState:
     mechanical_intuition: object | None = None
     opportunity_cost: object | None = None
     meta_prediction: object | None = None
+    reflex_pipeline: object | None = None
     fleet_outcome_reporter: OutcomeReporter | None = None
     fleet_conflict_resolver: FleetConflictResolver | None = None
     fleet_coordinator: "FleetCoordinatorService | None" = None

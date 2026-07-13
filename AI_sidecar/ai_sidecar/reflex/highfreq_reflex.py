@@ -129,12 +129,16 @@ class HighFreqReflex:
     
     def check_and_act(self, bot_id: str, hp: int, max_hp: int, sp: int, max_sp: int,
                       aggro_count: int, is_dead: bool, is_town: bool,
-                      has_potions: bool, current_map: str) -> str | None:
+                      has_potions: bool, current_map: str,
+                      reflex_pipeline: object | None = None) -> str | None:
         """Check vitals and return an action command if needed.
         
         Called from PDCA loop's snapshot processing — NOT from the async task.
         The async task is the framework; actual data comes from snapshots.
         This gives us 50ms reaction time instead of 5s.
+        
+        If reflex_pipeline is provided, emits through the pipeline instead of
+        returning a string — this ensures the action actually reaches the bot.
         """
         now = time.time()
         hp_pct = hp / max_hp if max_hp > 0 else 1.0
@@ -165,7 +169,11 @@ class HighFreqReflex:
                 self._cooldown_until[bot_id] = now + self.TELEPORT_COOLDOWN
                 self._stats["actions"] += 1
             logger.info("highfreq_reflex: bot=%s escape_teleport hp=%.0f%%", bot_id, hp_pct * 100)
-            return "ai manual"
+            cmd = "ai manual"
+            if reflex_pipeline is not None:
+                reflex_pipeline.emit_direct(bot_id, cmd)
+                return None
+            return cmd
         
         # ── EMERGENCY: Orange potion at 30% HP ──
         if hp_pct <= thresholds.get("emergency_potion_hp_pct", 0.30) and has_potions:
@@ -173,7 +181,11 @@ class HighFreqReflex:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
             logger.info("highfreq_reflex: bot=%s emergency_potion hp=%.0f%%", bot_id, hp_pct * 100)
-            return "use orange_potion"
+            cmd = "use orange_potion"
+            if reflex_pipeline is not None:
+                reflex_pipeline.emit_direct(bot_id, cmd)
+                return None
+            return cmd
         
         # ── SURVIVAL: Heal potion at 50% HP ──
         if hp_pct <= thresholds.get("heal_potion_hp_pct", 0.50) and has_potions:
@@ -181,7 +193,11 @@ class HighFreqReflex:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
             logger.info("highfreq_reflex: bot=%s heal_potion hp=%.0f%%", bot_id, hp_pct * 100)
-            return "use red_potion"
+            cmd = "use red_potion"
+            if reflex_pipeline is not None:
+                reflex_pipeline.emit_direct(bot_id, cmd)
+                return None
+            return cmd
         
         # ── SURVIVAL: Sit to rest (out of combat) ──
         if aggro_count == 0 and not is_town:
@@ -190,6 +206,10 @@ class HighFreqReflex:
                     self._cooldown_until[bot_id] = now + self.SIT_COOLDOWN
                     self._stats["actions"] += 1
                 logger.info("highfreq_reflex: bot=%s sit_rest hp=%.0f%% sp=%.0f%%", bot_id, hp_pct * 100, sp_pct * 100)
-                return "sit"
+                cmd = "sit"
+                if reflex_pipeline is not None:
+                    reflex_pipeline.emit_direct(bot_id, cmd)
+                    return None
+                return cmd
         
         return None

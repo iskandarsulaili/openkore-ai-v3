@@ -2071,6 +2071,17 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("meta_prediction_init_failed: %s", e)
                 
+                # ── NEW: Initialize Reflex Pipeline ──
+                _rp = getattr(self._runtime, "reflex_pipeline", None)
+                if _rp is None:
+                    try:
+                        from ai_sidecar.reflex.reflex_pipeline import ReflexPipeline
+                        _rp = ReflexPipeline()
+                        self._runtime.reflex_pipeline = _rp
+                        logger.info("reflex_pipeline_initialized")
+                    except Exception as e:
+                        logger.warning("reflex_pipeline_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -2152,21 +2163,31 @@ class PDCALoop:
                                 _reflex_action = _hf_reflex.check_and_act(
                                     _cycle_bot_id, _hp, _max_hp, _sp, _max_sp,
                                     _aggro, _is_dead, _is_town, _has_pots, _map,
+                                    reflex_pipeline=getattr(self._runtime, "reflex_pipeline", None),
                                 )
                                 if _reflex_action:
                                     logger.info("highfreq_reflex_action: bot=%s cmd=%s", _cycle_bot_id, _reflex_action)
-                                    # Inject directly into action queue
-                                    _aq = getattr(self._runtime, "action_queue", None)
-                                    if _aq is not None:
-                                        from ai_sidecar.contracts.actions import ActionProposal
-                                        _proposal = ActionProposal(
-                                            bot_id=_cycle_bot_id,
-                                            command=_reflex_action,
-                                            priority=0,  # Highest priority
-                                            source="highfreq_reflex",
-                                            horizon="short_term",
+                                    # Inject directly into action queue via reflex pipeline
+                                    _rp = getattr(self._runtime, "reflex_pipeline", None)
+                                    if _rp is not None:
+                                        from ai_sidecar.contracts.reflex import ReflexRule, ReflexActionTemplate, ReflexTriggerClause, ReflexCategory, ReflexPlannerInterop
+                                        from ai_sidecar.contracts.actions import ActionPriorityTier
+                                        _rule = ReflexRule(
+                                            rule_id="highfreq_reflex",
+                                            priority=80,
+                                            trigger=ReflexTriggerClause(all=[]),
+                                            action_template=ReflexActionTemplate(
+                                                command=_reflex_action,
+                                                kind="command",
+                                                conflict_key="",
+                                                priority_tier=ActionPriorityTier.reflex,
+                                            ),
+                                            category=ReflexCategory.survival,
+                                            planner_interop=ReflexPlannerInterop.override,
                                         )
-                                        _aq.enqueue(_cycle_bot_id, _proposal)
+                                        _aq = getattr(self._runtime, "action_queue", None)
+                                        if _aq is not None:
+                                            _rp.emit(_cycle_bot_id, _rule, _reflex_action, _aq.enqueue)
                     
                     _should_wake, _trigger_reason, _trigger_ctx = self._evaluate_conscious_triggers(
                         horizon=horizon,

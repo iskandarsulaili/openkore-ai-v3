@@ -141,17 +141,29 @@ class ActionArbiter:
                 )
 
         if proposal.conflict_key:
-            conflicts = self._conflicts_for_bot(resolved_bot_id, proposal.conflict_key)
-            logger.info(
-                "action_admission_conflict_check",
-                extra={
-                    "event": "action_admission_conflict_check",
-                    "bot_id": resolved_bot_id,
-                    "action_id": proposal.action_id,
-                    "conflict_key": proposal.conflict_key,
-                    "conflict_count": len(conflicts),
-                },
-            )
+            # Reflex actions with empty conflict key bypass conflict check
+            if proposal.conflict_key == "":
+                logger.info(
+                    "action_admission_reflex_bypass",
+                    extra={
+                        "event": "action_admission_reflex_bypass",
+                        "bot_id": resolved_bot_id,
+                        "action_id": proposal.action_id,
+                        "priority": proposal.priority_tier.value,
+                    },
+                )
+            else:
+                conflicts = self._conflicts_for_bot(resolved_bot_id, proposal.conflict_key)
+                logger.info(
+                    "action_admission_conflict_check",
+                    extra={
+                        "event": "action_admission_conflict_check",
+                        "bot_id": resolved_bot_id,
+                        "action_id": proposal.action_id,
+                        "conflict_key": proposal.conflict_key,
+                        "conflict_count": len(conflicts),
+                    },
+                )
 
         if self._constraint_state is not None:
             fleet_result = self._check_fleet_constraints(proposal, resolved_bot_id)
