@@ -2118,13 +2118,16 @@ class PDCALoop:
                             "conscious_trigger: bot=%s reason=%s ctx=%s",
                             _cycle_bot_id, _trigger_reason, _trigger_ctx,
                         )
-                        # Store trigger context for LLM path to consume
-                        object.__setattr__(self, "_last_trigger_context", {
+                        # Store trigger context for LLM path to consume — PER BOT
+                        _trigger_store = getattr(self, "_last_trigger_context", {})
+                        if not isinstance(_trigger_store, dict):
+                            _trigger_store = {}
+                        _trigger_store[_cycle_bot_id] = {
                             "reason": _trigger_reason,
                             "context": _trigger_ctx,
                             "timestamp": time.time(),
-                            "bot_id": _cycle_bot_id,
-                        })
+                        }
+                        object.__setattr__(self, "_last_trigger_context", _trigger_store)
                 except Exception:
                     logger.exception("conscious_trigger_eval_failed")
                 
@@ -3898,11 +3901,15 @@ class PDCALoop:
             "map": getattr(getattr(snapshot, "position", None), "map", None),
             "tick_id": getattr(snapshot, "tick_id", None),
         }
-        # Inject trigger context if available
-        _trigger = getattr(self, "_last_trigger_context", None)
-        if _trigger is not None and isinstance(_trigger, dict):
-            _age = time.time() - float(_trigger.get("timestamp", 0))
-            if _age < 60.0:  # Only inject triggers less than 60s old
-                result["trigger_reason"] = str(_trigger.get("reason", ""))
-                result["trigger_context"] = dict(_trigger.get("context", {}))
+        # Extract bot_id from snapshot
+        _bot_id = getattr(snapshot, "bot_id", None) or getattr(snapshot, "id", None) or ""
+        # Inject trigger context if available — PER BOT
+        _trigger_store = getattr(self, "_last_trigger_context", None)
+        if _trigger_store is not None and isinstance(_trigger_store, dict):
+            _bot_trigger = _trigger_store.get(_bot_id) if isinstance(_trigger_store, dict) else None
+            if _bot_trigger is not None and isinstance(_bot_trigger, dict):
+                _age = time.time() - float(_bot_trigger.get("timestamp", 0))
+                if _age < 60.0:  # Only inject triggers less than 60s old
+                    result["trigger_reason"] = str(_bot_trigger.get("reason", ""))
+                    result["trigger_context"] = dict(_bot_trigger.get("context", {}))
         return result
