@@ -157,16 +157,23 @@ def ingest_all_mobs(rathena_path: str) -> list[dict[str, Any]]:
 
 
 def ingest_job_stats(rathena_path: str) -> dict[str, Any]:
-    """Ingest job stats."""
+    """Ingest job stats — handles flattened 'Jobs.X' keys from _parse_yaml."""
     for mode in ["re", "pre-re"]:
         fpath = os.path.join(rathena_path, "db", mode, "job_stats.yml")
         if os.path.exists(fpath):
             parsed = _parse_yaml(fpath)
             result = {}
             for entry in parsed:
+                # Handle flattened 'Jobs.X' format from _parse_yaml
+                for key, value in entry.items():
+                    if key.startswith("Jobs.") and value:
+                        class_name = key.split(".", 1)[1].lower()
+                        if class_name not in result:
+                            result[class_name] = entry
+                # Also handle 'Job' format
                 job = entry.get("Job", entry.get("Class", ""))
                 if job:
-                    result[str(job)] = entry
+                    result[str(job).lower()] = entry
             logger.info("  job_stats/%s: %d jobs", mode, len(result))
             return result
     return {}
