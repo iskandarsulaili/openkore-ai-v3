@@ -81,12 +81,12 @@ class MechanicalIntuition:
     }
     
     # Stat caps
-    STAT_CAPS: dict[str, int] = {
+    self.STAT_CAPS = {
         "STR": 99, "AGI": 99, "VIT": 99, "INT": 99, "DEX": 99, "LUK": 99,
     }
     
     # Diminishing return thresholds
-    DIMINISHING_THRESHOLDS: dict[str, int] = {
+    self.DIMINISHING_THRESHOLDS = {
         "STR": 80, "AGI": 70, "VIT": 60, "INT": 80, "DEX": 50, "LUK": 30,
     }
     
