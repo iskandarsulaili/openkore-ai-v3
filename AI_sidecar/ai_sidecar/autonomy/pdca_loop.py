@@ -3897,12 +3897,16 @@ class PDCALoop:
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:
             return {}
-        result: dict[str, object] = {
-            "map": getattr(getattr(snapshot, "position", None), "map", None),
-            "tick_id": getattr(snapshot, "tick_id", None),
-        }
-        # Extract bot_id from snapshot
-        _bot_id = getattr(snapshot, "bot_id", None) or getattr(snapshot, "id", None) or ""
+        result: dict[str, object] = {}
+        # Handle both BotStateSnapshot objects and plain dicts
+        if isinstance(snapshot, dict):
+            result["map"] = snapshot.get("map", None)
+            result["tick_id"] = snapshot.get("tick_id", None)
+            _bot_id = str(snapshot.get("bot_id", snapshot.get("id", "")) or "")
+        else:
+            result["map"] = getattr(getattr(snapshot, "position", None), "map", None)
+            result["tick_id"] = getattr(snapshot, "tick_id", None)
+            _bot_id = getattr(snapshot, "bot_id", None) or getattr(snapshot, "id", None) or ""
         # Inject trigger context if available — PER BOT
         _trigger_store = getattr(self, "_last_trigger_context", None)
         if _trigger_store is not None and isinstance(_trigger_store, dict):
