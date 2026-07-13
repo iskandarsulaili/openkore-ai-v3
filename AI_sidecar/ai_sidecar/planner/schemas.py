@@ -152,6 +152,7 @@ class PlannerContext(BaseModel):
     invariants: dict[str, object] = Field(default_factory=dict)
     runtime_facts: dict[str, object] = Field(default_factory=dict)
     knowledge_summary: dict[str, object] = Field(default_factory=dict)
+    context_overrides: dict[str, object] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=utc_now)
 
 

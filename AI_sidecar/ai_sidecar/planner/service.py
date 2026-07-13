@@ -137,7 +137,7 @@ class PlannerService:
             if payload.force_replan:
                 self._counters["planner_replans"] += 1
 
-        context = self.context_assembler.assemble(meta=payload.meta, objective=payload.objective, horizon=payload.horizon)
+        context = self.context_assembler.assemble(meta=payload.meta, objective=payload.objective, horizon=payload.horizon, context_overrides=payload.context_overrides)
         _ = self.intent_synthesizer.synthesize(context=context)
 
         plan, tactical_bundle, route, provider, model, latency_ms = await self.plan_generator.generate(

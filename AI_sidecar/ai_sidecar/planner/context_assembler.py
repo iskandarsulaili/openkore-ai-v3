@@ -38,6 +38,7 @@ class PlannerContextAssembler:
         horizon: PlanHorizon,
         event_limit: int = 64,
         memory_limit: int = 8,
+        context_overrides: dict[str, object] | None = None,
     ) -> PlannerContext:
         bot_id = meta.bot_id
         state = self.runtime.enriched_state(bot_id=bot_id)
@@ -347,6 +348,7 @@ class PlannerContextAssembler:
             invariants=invariants,
             runtime_facts=runtime_facts,
             knowledge_summary=knowledge_summary,
+            context_overrides=context_overrides or {},
         )
 
     def _runtime_facts(

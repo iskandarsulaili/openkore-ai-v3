@@ -811,9 +811,10 @@ class PlanGenerator:
             "recent_events": context.recent_events[:30],
             "memory_matches": context.memory_matches[:10],
             "episodes": context.episodes[:10],
-            "macros": context.macros,
-            "reflex": context.reflex,
-            "autonomy_signals": {
+            'macros': context.macros,
+            'reflex': context.reflex,
+            'context_overrides': context.context_overrides,
+            'autonomy_signals': {
                 "preferred_grind_maps": list(signals.get("preferred_grind_maps") or []),
                 "objective_backlog": int(signals.get("objective_backlog") or 0),
                 "planner_stale_hints": list(signals.get("planner_stale_hints") or []),
