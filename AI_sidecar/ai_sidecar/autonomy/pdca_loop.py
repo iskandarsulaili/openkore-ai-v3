@@ -2214,7 +2214,7 @@ class PDCALoop:
                                     _max_hp = int(_vitals.get("max_hp", 1) or 1)
                                     _sp = int(_vitals.get("sp", 0) or 0)
                                     _max_sp = int(_vitals.get("max_sp", 1) or 1)
-                                    _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
+                                    _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0) or 0)
                                     _is_dead = _hp <= 0
                                     _map = str(_conscious_snap.get("map", "") or "")
                                     _is_town = any(t in _map.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
