@@ -273,15 +273,15 @@ class HuntingZoneManager:
             best_exp_hp = 0.0
 
             for mob in map_monsters:
-                mob_level = mob.get("level", 1)
-                hp = mob.get("hp", 1)
-                base_exp = mob.get("base_exp", 0)
-                job_exp = mob.get("job_exp", 0)
-                mob_element = mob.get("element", "Neutral")
-                mob_race = mob.get("race", "Formless")
-                mob_size = mob.get("size", "Medium")
-                mob_name = mob.get("name", "unknown")
-                drops = mob.get("drops", [])
+                mob_level = mob.get("Level", mob.get("level", 1))
+                hp = mob.get("Hp", mob.get("hp", 1))
+                base_exp = mob.get("BaseExp", mob.get("base_exp", 0))
+                job_exp = mob.get("JobExp", mob.get("job_exp", 0))
+                mob_element = mob.get("Element", mob.get("element", "Neutral"))
+                mob_race = mob.get("Race", mob.get("race", "Formless"))
+                mob_size = mob.get("Size", mob.get("size", "Medium"))
+                mob_name = mob.get("Name", mob.get("name", "unknown"))
+                drops = mob.get("Drops", mob.get("drops", []))
 
                 # Level penalty
                 level_diff = abs(mob_level - bot_level)
@@ -302,7 +302,7 @@ class HuntingZoneManager:
                 exp_hp = (base_exp + job_exp) / max(hp, 1)
 
                 # Danger score from mob skills
-                mob_id = str(mob.get("id", 0))
+                mob_id = str(mob.get("Id", mob.get("id", 0)))
                 danger = self._danger_score(mob_id, mob_name)
 
                 # Zeny value from drops

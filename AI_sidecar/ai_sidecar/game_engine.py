@@ -247,7 +247,7 @@ class GameIntelligenceEngine:
                             for mob in self._monsters:
                                 check_id = mob.get("Id", mob.get("id", 0)) or 0
                                 if str(check_id) == mob_id_str or check_id == mob_id:
-                                    mob_name = mob.get("name", str(mob_id))
+                                    mob_name = mob.get("Name", mob.get("name", str(mob_id)))
                                     if mob_name not in self._mob_skill_warnings:
                                         self._mob_skill_warnings[mob_name] = []
                                     warning = f"{danger_type}:{skill_name} (rate={rate}%, cast={cast_time}ms, cond={condition})"
@@ -326,7 +326,7 @@ class GameIntelligenceEngine:
                                             for mob in self._monsters:
                                                 mob_id = str(mob.get("Id", mob.get("id", 0)))
                                                 if mob_id == mob_id_str:
-                                                    mob_name = mob.get("name", "")
+                                                    mob_name = mob.get("Name", mob.get("name", ""))
                                                     if mob_name not in self._mob_skill_warnings:
                                                         self._mob_skill_warnings[mob_name] = []
                                                     warning = f"{danger_type}:{skill.get('skill','')} (rate={rate})"
@@ -369,18 +369,18 @@ class GameIntelligenceEngine:
         recommendations = []
 
         for mob in self._monsters:
-            name = mob.get("name", "")
+            name = mob.get("Name", mob.get("name", ""))
             if name in avoid:
                 continue
 
-            mob_level = int(mob.get("level", 1) or 1)
-            hp = int(mob.get("hp", 1) or 1)
-            base_exp = int(mob.get("base_exp", 0) or 0)
-            job_exp = int(mob.get("job_exp", 0) or 0)
-            mob_element = mob.get("element", "Neutral")
-            mob_race = mob.get("race", "Formless")
-            mob_size = mob.get("size", "Medium")
-            drops = mob.get("drops", [])
+            mob_level = int(mob.get("Level", mob.get("level", 1)) or 1)
+            hp = int(mob.get("Hp", mob.get("hp", 1)) or 1)
+            base_exp = int(mob.get("BaseExp", mob.get("base_exp", 0)) or 0)
+            job_exp = int(mob.get("JobExp", mob.get("job_exp", 0)) or 0)
+            mob_element = mob.get("Element", mob.get("element", "Neutral"))
+            mob_race = mob.get("Race", mob.get("race", "Formless"))
+            mob_size = mob.get("Size", mob.get("size", "Medium"))
+            drops = mob.get("Drops", mob.get("drops", []))
 
             # Level range filter: ±10 levels for efficient hunting
             level_diff = abs(mob_level - bot_level)
@@ -428,8 +428,8 @@ class GameIntelligenceEngine:
             )
 
             # Danger penalty: reduce score for dangerous monsters
-            mob_name = mob.get("name", "")
-            mob_id = str(mob.get("id", 0) or 0)
+            mob_name = mob.get("Name", mob.get("name", ""))
+            mob_id = str(mob.get("Id", mob.get("id", 0)) or 0)
             mob_skills = self._mob_skills.get(mob_id, [])
             danger_factors = []
             for skill in mob_skills:
