@@ -219,14 +219,14 @@ sub on_mainLoop_post {
 	_probe_actor_post_parse($now);
 
 	if (!$registered && $now >= $next_register_at_ms) {
-		$next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 5000);
-		_attempt_register('retry');
+	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
+	    _attempt_register('retry');
 	}
 
 	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
-		my $poll_ok = _poll_next_action();
-		my $next_delay_ms = $poll_ok ? _cfg_int('aiSidecar_pollIntervalMs', 250) : _poll_failure_delay_ms();
-		$next_poll_at_ms = $now + $next_delay_ms;
+	    my $poll_ok = _poll_next_action();
+	    my $next_delay_ms = $poll_ok ? _cfg_int('aiSidecar_pollIntervalMs', 100) : _poll_failure_delay_ms();
+	    $next_poll_at_ms = $now + $next_delay_ms;
 	}
 
 	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms) {

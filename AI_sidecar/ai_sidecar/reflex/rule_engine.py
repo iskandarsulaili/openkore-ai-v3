@@ -629,7 +629,7 @@ class ReflexRuleEngine:
             kind=action_raw.get("kind", "command"),
             command=action_raw.get("command", ""),
             priority_tier=action_raw.get("priority_tier", "reflex"),
-            conflict_key=action_raw.get("conflict_key", "default"),
+            conflict_key=action_raw.get("conflict_key") or "",
         )
         
         return ReflexRule(
