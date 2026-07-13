@@ -111,6 +111,51 @@ class HealingOptimizer:
                 if heal_hp_min <= 0 and heal_sp_min <= 0 and percent_hp <= 0 and percent_sp <= 0:
                     continue
                 
+                # WHITELIST: Only include actual combat potions
+                # Strategy: check if the item name contains "Potion" (case-sensitive, capital P)
+                # or is a known healing item (berry, herb, yggdrasil, condensed, concentrated)
+                name_lower = name.lower()
+                aegis_lower = aegis.lower()
+                
+                # Must be a potion or known healing item
+                is_combat_heal = False
+                
+                # "Potion" in name (capital P — filters out "puri potion", "novice potion" etc.)
+                if "Potion" in name or "Potion" in aegis:
+                    is_combat_heal = True
+                
+                # Known healing items
+                if any(kw in name_lower or kw in aegis_lower for kw in [
+                    "berry", "yggdrasil", "condensed", "concentrated", "slim pot",
+                    "white herb", "blue herb", "yellow herb", "green herb", "red herb",
+                    "panacea", "royal jelly", "mastela",
+                ]):
+                    is_combat_heal = True
+                
+                # Exclude non-combat items
+                if any(kw in name_lower or kw in aegis_lower for kw in [
+                    "novice", "puri", "repair", "monster", "feed", "hinalle", "aloe",
+                    "ketupat", "bao", "mochi", "vita", "fanta", "cola", "sakura",
+                    "steak", "meat", "milk", "shrimp", "coconut", "spaghetti",
+                    "pretzel", "tea", "raffle", "sap", "flower", "bouquet",
+                    "grain", "prickly", "bread", "food", "snack", "cookie", "cake",
+                    "candy", "chocolate", "juice", "muffin", "pie", "pudding",
+                    "sushi", "toast", "burger", "pancake", "salad", "stew", "roast",
+                    "egg", "melon", "biscuit", "bug", "caviar", "jam", "honey",
+                    "mushroom", "pizza", "sandwich", "noodle", "soup", "dumpling",
+                    "ice cream", "popcorn", "jerky", "skewer", "syrup",
+                    "macaron", "baklava", "soda", "fish", "lime",
+                    "choco", "hip", "skull", "bag of", "new year",
+                    "fresh", "girl", "water bottle", "leather",
+                    "larva", "pork", "galbi", "flank", "octopus", "strawberry",
+                    "[not for sale]", "[not for", "not for sale",
+                    "rg ", " rg", "woe ", " woe", "siege",
+                ]):
+                    is_combat_heal = False
+                
+                if not is_combat_heal:
+                    continue
+                
                 buy = int(item.get("Buy", 0) or 0)
                 weight = int(item.get("Weight", 0) or 0)
                 
@@ -205,11 +250,17 @@ class HealingOptimizer:
                 
                 # Score based on what we need
                 if prefer_hp and hp_ratio < 0.5:
-                    # Need HP — score by heal amount vs deficit (don't over-heal)
+                    # COMBAT MODE: HP is critical — prioritize effective heal amount
+                    # Over-healing is CORRECT in combat. A pro player would rather
+                    # waste 50 HP of a White Potion than die because a Red Potion
+                    # didn't heal enough.
                     if total_hp_heal > 0:
-                        over_heal = max(0, total_hp_heal - hp_deficit)
-                        efficiency = total_hp_heal / max(item.buy, 1) if item.buy > 0 else total_hp_heal
-                        score = total_hp_heal * efficiency - over_heal * 2
+                        # Primary score: how much HP does this actually restore?
+                        # Secondary: cost efficiency (tiebreaker only)
+                        # No over-heal penalty — in combat, over-healing saves lives
+                        effective_heal = min(total_hp_heal, hp_deficit * 1.5)  # Allow 50% over-heal
+                        cost_efficiency = total_hp_heal / max(item.buy, 1) if item.buy > 0 else total_hp_heal
+                        score = effective_heal * 100 + cost_efficiency
                     else:
                         score = 0
                 elif sp_ratio < 0.3:
@@ -253,54 +304,55 @@ class HealingOptimizer:
     def _parse_itemheal(self, script: str) -> tuple[int, int, int, int, float, float] | None:
         """Parse 'itemheal rand(45,65),0;' into (hp_min, hp_max, sp_min, sp_max, hp_pct, sp_pct)."""
         try:
-            # Match: itemheal rand(45,65),0; or itemheal rand(100,200),rand(20,30);
-            # Or percentage-based: itemheal 300,0;
             # Remove whitespace
             script = script.replace(" ", "").replace("\n", "").replace("\r", "").replace("\t", "")
             
-            # Match itemheal(...) pattern
-            match = re.search(r'itemheal\(?([^;)]*)\)?', script)
+            # Match itemheal(...) pattern — handle nested parens
+            # Simpler approach: find itemheal then grab everything until ;
+            match = re.search(r'itemheal\s*\(?\s*([^;]+)\s*\)?\s*;', script)
             if not match:
                 return None
             
             args_str = match.group(1)
-            # Split by comma
-            parts = [p.strip() for p in args_str.split(",")]
             
             hp_min, hp_max = 0, 0
             sp_min, sp_max = 0, 0
             hp_pct, sp_pct = 0.0, 0.0
             
+            # Handle rand() expressions — they contain commas inside parens
+            # Split by comma, but NOT commas inside rand(...)
+            # Strategy: replace rand(X,Y) with rand(X|Y) first, split, then restore
+            import re as _re2
+            
+            # Find all rand() expressions and replace inner commas with |
+            def _protect_rand(m):
+                return f"rand({m.group(1)}|{m.group(2)})"
+            protected = _re2.sub(r'rand\((\d+),(\d+)\)', _protect_rand, args_str)
+            
+            parts = [p.strip() for p in protected.split(",")]
+            
             if len(parts) >= 1:
                 hp_part = parts[0]
-                # Check if it's a rand() expression
-                rand_match = re.match(r'rand\((\d+),(\d+)\)', hp_part)
+                # Check if it's a rand() expression (with | separator now)
+                rand_match = re.match(r'rand\((\d+)\|(\d+)\)', hp_part)
                 if rand_match:
                     hp_min = int(rand_match.group(1))
                     hp_max = int(rand_match.group(2))
                 else:
                     try:
-                        val = float(hp_part)
-                        if val < 100:  # Arbitrary threshold: small values = flat heal
-                            hp_min = hp_max = int(val)
-                        else:
-                            hp_pct = val / 100.0
+                        hp_min = hp_max = int(float(hp_part))
                     except ValueError:
                         pass
             
             if len(parts) >= 2:
                 sp_part = parts[1]
-                rand_match = re.match(r'rand\((\d+),(\d+)\)', sp_part)
+                rand_match = re.match(r'rand\((\d+)\|(\d+)\)', sp_part)
                 if rand_match:
                     sp_min = int(rand_match.group(1))
                     sp_max = int(rand_match.group(2))
                 else:
                     try:
-                        val = float(sp_part)
-                        if val < 100:
-                            sp_min = sp_max = int(val)
-                        else:
-                            sp_pct = val / 100.0
+                        sp_min = sp_max = int(float(sp_part))
                     except ValueError:
                         pass
             

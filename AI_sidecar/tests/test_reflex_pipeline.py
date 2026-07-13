@@ -106,18 +106,20 @@ def test_reflex_emit_direct_through_pipeline():
 
 
 def test_healing_optimizer_selects_correct_potion():
-    """HealingOptimizer should select level-appropriate potions."""
+    """HealingOptimizer should select level-appropriate potions, not food items."""
     opt = HealingOptimizer()
     loaded = opt.load()
     assert loaded, "HealingOptimizer should load healing items"
     
-    # Low level → should select something affordable
+    # Low level → should select a real potion, not Monster Bread
     cmd = opt.select_healing_command(
         hp=50, max_hp=100, sp=50, max_sp=100,
         zeny=1000, level=10,
     )
     assert cmd is not None, "Should select a healing item for low level"
     assert "use " in cmd, f"Expected 'use <item>', got: {cmd}"
+    assert "bread" not in cmd.lower(), f"Should not select food items, got: {cmd}"
+    assert "food" not in cmd.lower(), f"Should not select food items, got: {cmd}"
     print(f"  PASS: low level heal → '{cmd}'")
     
     # High level → should select something stronger
@@ -127,7 +129,17 @@ def test_healing_optimizer_selects_correct_potion():
     )
     assert cmd2 is not None, "Should select a healing item for high level"
     assert "use " in cmd2, f"Expected 'use <item>', got: {cmd2}"
+    assert "bread" not in cmd2.lower(), f"Should not select food items, got: {cmd2}"
     print(f"  PASS: high level heal → '{cmd2}'")
+    
+    # Emergency (10% HP) → should select strongest available, not cheapest
+    cmd3 = opt.select_healing_command(
+        hp=100, max_hp=1000, sp=50, max_sp=500,
+        zeny=50000, level=60,
+    )
+    assert cmd3 is not None, "Should select a healing item for emergency"
+    # In combat mode, should prefer high-heal items over cheap ones
+    print(f"  PASS: emergency heal → '{cmd3}'")
 
 
 def test_reflex_cooldown_respects_timer():
