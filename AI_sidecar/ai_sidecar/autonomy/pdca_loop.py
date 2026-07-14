@@ -2543,6 +2543,23 @@ class PDCALoop:
                                     }
                                     _snap_dict["zeny"] = getattr(getattr(_conscious_snap, "vitals", None), "zeny", 0)
                                     _snap_dict["base_level"] = getattr(getattr(_conscious_snap, "progression", None), "base_level", 1)
+                                    # Extract actors with damage data for threat targeting
+                                    _actors_raw = getattr(_conscious_snap, "actors", None) or []
+                                    _snap_dict["actors"] = [
+                                        {
+                                            "id": getattr(a, "actor_id", 0),
+                                            "name": getattr(a, "name", ""),
+                                            "level": getattr(a, "level", 1),
+                                            "hp": getattr(a, "hp", 1),
+                                            "max_hp": getattr(a, "hp_max", 1),
+                                            "distance": getattr(a, "distance", 0) or 0,
+                                            "dmg_to_us": getattr(a, "dmg_to_us", 0) or 0,
+                                            "dmg_to_you": getattr(a, "dmg_to_you", 0) or 0,
+                                            "dmg_from_us": getattr(a, "dmg_from_us", 0) or 0,
+                                        }
+                                        for a in _actors_raw
+                                        if getattr(a, "actor_id", None) is not None
+                                    ]
                                 except Exception:
                                     _snap_dict = {}
                             _conscious_snap = _snap_dict
