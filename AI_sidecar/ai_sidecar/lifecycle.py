@@ -1437,14 +1437,14 @@ class RuntimeState:
             _conv = getattr(self, "conversation_engine", None)
             if _conv is not None:
                 for event in events:
-                    if hasattr(event, "text") and hasattr(event, "speaker"):
-                        _response = _conv.receive_message(
-                            str(getattr(event, "speaker", "unknown")),
-                            str(getattr(event, "text", "")),
-                        )
+                    _text = getattr(event, "text", None)
+                    _tags = getattr(event, "tags", None)
+                    if _text and isinstance(_tags, dict):
+                        _sender = str(_tags.get("sender", "unknown") or "unknown")
+                        _response = _conv.receive_message(_sender, str(_text))
                         if _response:
                             logger.info("conversation_response: to=%s msg=%s",
-                                         getattr(event, "speaker", "?"), _response[:60])
+                                         _sender, _response[:60])
                             # Enqueue the response as a chat command
                             try:
                                 _aq = getattr(self, "action_queue", None)

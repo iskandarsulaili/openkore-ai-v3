@@ -2312,6 +2312,70 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("competitive_evaluator_init_failed: %s", e)
                 
+                # ── NEW: Initialize Market Manipulator ──
+                _mm = getattr(self._runtime, "market_manipulator", None)
+                if _mm is None:
+                    try:
+                        from ai_sidecar.economy.market_manipulator import MarketManipulator
+                        _mm = MarketManipulator()
+                        # Wire enqueue function
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _mm._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"mm-{int(time.time())}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "tactical",
+                            })
+                        self._runtime.market_manipulator = _mm
+                        logger.info("market_manipulator_initialized")
+                    except Exception as e:
+                        logger.warning("market_manipulator_init_failed: %s", e)
+                
+                # ── NEW: Initialize Timing Optimizer ──
+                _to = getattr(self._runtime, "timing_optimizer", None)
+                if _to is None:
+                    try:
+                        from ai_sidecar.timing.timing_optimizer import TimingOptimizer
+                        _to = TimingOptimizer()
+                        self._runtime.timing_optimizer = _to
+                        logger.info("timing_optimizer_initialized")
+                    except Exception as e:
+                        logger.warning("timing_optimizer_init_failed: %s", e)
+                
+                # ── NEW: Initialize Patch Adapter ──
+                _pa = getattr(self._runtime, "patch_adapter", None)
+                if _pa is None:
+                    try:
+                        from ai_sidecar.innovation.patch_adapter import PatchAdapter
+                        _pa = PatchAdapter()
+                        self._runtime.patch_adapter = _pa
+                        logger.info("patch_adapter_initialized")
+                    except Exception as e:
+                        logger.warning("patch_adapter_init_failed: %s", e)
+                
+                # ── NEW: Initialize Multi-Account Synergy ──
+                _mas = getattr(self._runtime, "multi_account_synergy", None)
+                if _mas is None:
+                    try:
+                        from ai_sidecar.fleet.multi_account_synergy import MultiAccountSynergy
+                        _mas = MultiAccountSynergy()
+                        # Wire enqueue function
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"mas-{int(time.time())}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "tactical",
+                            })
+                        self._runtime.multi_account_synergy = _mas
+                        logger.info("multi_account_synergy_initialized")
+                    except Exception as e:
+                        logger.warning("multi_account_synergy_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -2674,6 +2738,31 @@ class PDCALoop:
                                     pass
                                 if _est_zeny_val > 0:
                                     _amb.update_progress("wealth", _est_zeny_val, f"farmed on {_map}")
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Market Manipulator ──
+                        try:
+                            _mm = getattr(self._runtime, "market_manipulator", None)
+                            if _mm is not None:
+                                _mm_zeny = 0
+                                try:
+                                    _mm_zeny = int(_conscious_snap.get("session_zeny", 0) or 0)
+                                except Exception:
+                                    pass
+                                if _mm_zeny > 0:
+                                    _mm.set_capital(_mm_zeny)
+                                    _mm_actions = _mm.evaluate_opportunities()
+                                    for _mma in _mm_actions[:2]:
+                                        _mm.execute_action(_mma)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Multi-Account Synergy ──
+                        try:
+                            _mas = getattr(self._runtime, "multi_account_synergy", None)
+                            if _mas is not None:
+                                _mas.update_status(_reflex_bot_id, "farming" if not _is_dead else "dead", map=_map)
                         except Exception:
                             pass
                     
@@ -4817,6 +4906,46 @@ class PDCALoop:
                 _ce_ctx = _ce.get_competition_context()
                 if _ce_ctx:
                     result["competition_context"] = _ce_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Market Context ──
+        try:
+            _mm = getattr(self._runtime, "market_manipulator", None)
+            if _mm is not None:
+                _mm_ctx = _mm.get_market_context()
+                if _mm_ctx:
+                    result["market_context"] = _mm_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Timing Context ──
+        try:
+            _to = getattr(self._runtime, "timing_optimizer", None)
+            if _to is not None:
+                _to_ctx = _to.get_timing_context()
+                if _to_ctx:
+                    result["timing_context"] = _to_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Patch Context ──
+        try:
+            _pa = getattr(self._runtime, "patch_adapter", None)
+            if _pa is not None:
+                _pa_ctx = _pa.get_adaptation_context()
+                if _pa_ctx:
+                    result["patch_context"] = _pa_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Team Synergy Context ──
+        try:
+            _mas = getattr(self._runtime, "multi_account_synergy", None)
+            if _mas is not None:
+                _mas_ctx = _mas.get_synergy_context()
+                if _mas_ctx:
+                    result["team_synergy_context"] = _mas_ctx
         except Exception:
             pass
         
