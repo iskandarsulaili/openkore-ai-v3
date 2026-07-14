@@ -2995,6 +2995,72 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("exploration_driver_init_failed: %s", e)
 
+                # ── NEW: Initialize Combat Loop ──
+                _cl = getattr(self._runtime, "combat_loop", None)
+                if _cl is None:
+                    try:
+                        from ai_sidecar.combat.combat_loop import get_combat_loop
+                        _cl = get_combat_loop()
+                        self._runtime.combat_loop = _cl
+                        logger.info("combat_loop_initialized")
+                    except Exception as e:
+                        logger.warning("combat_loop_init_failed: %s", e)
+
+                # ── NEW: Initialize Degradation Manager ──
+                _dm = getattr(self._runtime, "degradation_manager", None)
+                if _dm is None:
+                    try:
+                        from ai_sidecar.degradation_manager import get_degradation_manager
+                        _dm = get_degradation_manager()
+                        self._runtime.degradation_manager = _dm
+                        logger.info("degradation_manager_initialized")
+                    except Exception as e:
+                        logger.warning("degradation_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Self Healer ──
+                _sh = getattr(self._runtime, "self_healer", None)
+                if _sh is None:
+                    try:
+                        from ai_sidecar.self_healer import get_self_healer
+                        _sh = get_self_healer()
+                        self._runtime.self_healer = _sh
+                        logger.info("self_healer_initialized")
+                    except Exception as e:
+                        logger.warning("self_healer_init_failed: %s", e)
+
+                # ── NEW: Initialize Time Scheduler ──
+                _ts = getattr(self._runtime, "time_scheduler", None)
+                if _ts is None:
+                    try:
+                        from ai_sidecar.time_scheduler import get_time_scheduler
+                        _ts = get_time_scheduler()
+                        self._runtime.time_scheduler = _ts
+                        logger.info("time_scheduler_initialized")
+                    except Exception as e:
+                        logger.warning("time_scheduler_init_failed: %s", e)
+
+                # ── NEW: Initialize Goal Planner ──
+                _gp = getattr(self._runtime, "goal_planner", None)
+                if _gp is None:
+                    try:
+                        from ai_sidecar.goal_planner import get_goal_planner
+                        _gp = get_goal_planner()
+                        self._runtime.goal_planner = _gp
+                        logger.info("goal_planner_initialized")
+                    except Exception as e:
+                        logger.warning("goal_planner_init_failed: %s", e)
+
+                # ── NEW: Initialize Opportunity Cost Engine ──
+                _oc = getattr(self._runtime, "opportunity_cost_engine", None)
+                if _oc is None:
+                    try:
+                        from ai_sidecar.opportunity_cost_engine import get_opportunity_cost_engine
+                        _oc = get_opportunity_cost_engine()
+                        self._runtime.opportunity_cost_engine = _oc
+                        logger.info("opportunity_cost_engine_initialized")
+                    except Exception as e:
+                        logger.warning("opportunity_cost_engine_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -6298,6 +6364,102 @@ class PDCALoop:
                 _summary = _ed.get_exploration_summary()
                 if _summary:
                     result["exploration_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Combat Loop Context ──
+        try:
+            _cl = getattr(self._runtime, "combat_loop", None)
+            if _cl is not None:
+                _summary = _cl.get_combat_summary()
+                if _summary:
+                    result["combat_loop_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Degradation Manager Context ──
+        try:
+            _dm = getattr(self._runtime, "degradation_manager", None)
+            if _dm is not None:
+                _summary = _dm.get_health_summary()
+                if _summary:
+                    result["degradation_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Self Healer Context ──
+        try:
+            _sh = getattr(self._runtime, "self_healer", None)
+            if _sh is not None:
+                _summary = _sh.get_heal_summary()
+                if _summary:
+                    result["self_heal_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Time Scheduler Context ──
+        try:
+            _ts = getattr(self._runtime, "time_scheduler", None)
+            if _ts is not None:
+                _summary = _ts.get_scheduler_summary()
+                if _summary:
+                    result["time_scheduler_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Goal Planner Context ──
+        try:
+            _gp = getattr(self._runtime, "goal_planner", None)
+            if _gp is not None:
+                _summary = _gp.get_planner_summary()
+                if _summary:
+                    result["goal_planner_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Opportunity Cost Engine Context ──
+        try:
+            _oc = getattr(self._runtime, "opportunity_cost_engine", None)
+            if _oc is not None:
+                _summary = _oc.get_opportunity_summary()
+                if _summary:
+                    result["opportunity_cost_status"] = _summary
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire combat loop to drive behavior ──
+        try:
+            _cl = getattr(self._runtime, "combat_loop", None)
+            _ae = getattr(self._runtime, "action_executor", None)
+            _aq = getattr(self._runtime, "action_queue", None)
+            if _cl is not None and _ae is not None and _aq is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _cl.update_state(_snap)
+                _action = _cl.tick()
+                if _action:
+                    _ae.execute(_action, self._resolve_cost_gate_bot_id(), _aq)
+                    result["combat_action"] = _action
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire time scheduler to drive strategy ──
+        try:
+            _ts = getattr(self._runtime, "time_scheduler", None)
+            if _ts is not None:
+                _strategy = _ts.get_current_strategy()
+                result["time_strategy"] = _strategy
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire degradation manager to monitor modules ──
+        try:
+            _dm = getattr(self._runtime, "degradation_manager", None)
+            if _dm is not None:
+                # Report health for key modules
+                for _mod_name in ["knowledge_loader", "action_executor", "reflex_combat", "predictive_threat"]:
+                    _mod = getattr(self._runtime, _mod_name, None)
+                    if _mod is not None:
+                        _dm.report_success(_mod_name)
         except Exception:
             pass
 
