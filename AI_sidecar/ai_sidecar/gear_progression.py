@@ -157,6 +157,40 @@ class GearProgression:
         results.sort(key=lambda r: r["price"])
         return results[:10]
     
+    def get_auto_equip_recommendation(self, player_class: str, level: int, 
+                                       zeny: int, current_weapon: str = "",
+                                       current_armor: str = "") -> dict[str, Any]:
+        """Get the single best gear upgrade to buy right now."""
+        weapons = self.get_weapon_progression(player_class, level, zeny)
+        armors = self.get_armor_progression(player_class, level, zeny)
+        
+        best = {"weapon": None, "armor": None, "reason": ""}
+        
+        # Find best weapon upgrade
+        for w in weapons[:3]:
+            if w["name"] != current_weapon:
+                best["weapon"] = w
+                break
+        
+        # Find best armor upgrade
+        for a in armors[:3]:
+            if a["name"] != current_armor:
+                best["armor"] = a
+                break
+        
+        if best["weapon"] and best["armor"]:
+            # Recommend whichever gives more value
+            if best["weapon"]["score"] > best["armor"]["score"]:
+                best["reason"] = f"Upgrade weapon to {best['weapon']['name']} (atk:{best['weapon']['atk']})"
+            else:
+                best["reason"] = f"Upgrade armor to {best['armor']['name']} (def:{best['armor']['defense']})"
+        elif best["weapon"]:
+            best["reason"] = f"Upgrade weapon to {best['weapon']['name']}"
+        elif best["armor"]:
+            best["reason"] = f"Upgrade armor to {best['armor']['name']}"
+        
+        return best
+    
     def counters(self) -> dict[str, int]:
         with self._lock:
             return dict(self._stats)

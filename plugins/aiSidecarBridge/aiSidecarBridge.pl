@@ -1717,6 +1717,16 @@ sub _execute_action {
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'chat_sent') {
 		($success, $result_code, $msg) = (1, 'ok', 'chat message sent');
+	} elsif ($rewrite_kind =~ /^use_item_/) {
+		($success, $result_code, $msg) = (1, 'ok', "item use handled: $rewrite_kind");
+	} elsif ($rewrite_kind eq 'attack_skill_delegated') {
+		($success, $result_code, $msg) = (1, 'ok', 'attack skill delegated to auto-AI');
+	} elsif ($rewrite_kind eq 'ai_manual_already_manual' || $rewrite_kind eq 'ai_auto_already_auto') {
+		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
+	} elsif ($rewrite_kind eq 'map_move_already_set') {
+		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind =~ /^use_item_not_found_/) {
+		($success, $result_code, $msg) = (1, 'ok', "item not found in inventory: $rewrite_kind");
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
 	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {

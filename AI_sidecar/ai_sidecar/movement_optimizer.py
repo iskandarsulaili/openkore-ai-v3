@@ -29,6 +29,15 @@ FLY_WING_COST = 500
 BUTTERFLY_WING_COST = 2000
 KAFRA_FEE = 100
 
+# Towns that support the @go command
+GO_TOWNS: set[str] = {
+    "prontera", "morocc", "geffen", "payon", "aldebaran", "yuno",
+    "amatsu", "kunlun", "ayothaya", "einbroch", "lighthalzen",
+    "einbech", "hugel", "rachel", "veins", "juno", "niflheim",
+    "louyang", "umbala", "brasilis", "moscovia", "mala",
+    "xmas", "comodo", "izlude", "alberta", "gonryun",
+}
+
 
 @dataclass(slots=True)
 class MovementOptimizer:
@@ -83,6 +92,18 @@ class MovementOptimizer:
                 "cost": KAFRA_FEE,
                 "command": "talknpc Kafra",
                 "score": 100.0 / max(kafra_time, 1) * 0.9,
+            })
+        
+        # Option 5: @go command (if target is a supported town)
+        _target_base = target_map.split("_")[0] if "_" in target_map else target_map
+        if _target_base in GO_TOWNS:
+            go_time = 2  # Instant teleport
+            options.append({
+                "method": "go_command",
+                "time_s": go_time,
+                "cost": 0,
+                "command": f"move {target_map}",
+                "score": 100.0 / max(go_time, 1) * 1.5,  # Best option
             })
         
         options.sort(key=lambda o: o["score"], reverse=True)

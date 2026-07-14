@@ -2412,6 +2412,39 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("multi_account_synergy_init_failed: %s", e)
                 
+                # ── NEW: Initialize Threat-Based Targeting ──
+                _tt = getattr(self._runtime, "threat_targeting", None)
+                if _tt is None:
+                    try:
+                        from ai_sidecar.combat.threat_targeting import ThreatBasedTargeting
+                        _tt = ThreatBasedTargeting()
+                        self._runtime.threat_targeting = _tt
+                        logger.info("threat_targeting_initialized")
+                    except Exception as e:
+                        logger.warning("threat_targeting_init_failed: %s", e)
+                
+                # ── NEW: Initialize Party Follow Positioning ──
+                _pf = getattr(self._runtime, "party_follow", None)
+                if _pf is None:
+                    try:
+                        from ai_sidecar.party.party_follow import PartyFollowPositioning
+                        _pf = PartyFollowPositioning()
+                        self._runtime.party_follow = _pf
+                        logger.info("party_follow_initialized")
+                    except Exception as e:
+                        logger.warning("party_follow_init_failed: %s", e)
+                
+                # ── NEW: Initialize Party Leader Coordinator ──
+                _pl = getattr(self._runtime, "party_leader", None)
+                if _pl is None:
+                    try:
+                        from ai_sidecar.party.party_leader import PartyLeaderCoordinator
+                        _pl = PartyLeaderCoordinator()
+                        self._runtime.party_leader = _pl
+                        logger.info("party_leader_initialized")
+                    except Exception as e:
+                        logger.warning("party_leader_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -2805,6 +2838,50 @@ class PDCALoop:
                             _mas = getattr(self._runtime, "multi_account_synergy", None)
                             if _mas is not None:
                                 _mas.update_status(_reflex_bot_id, "farming" if not _is_dead else "dead", map=_map)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Threat-Based Targeting ──
+                        try:
+                            _tt = getattr(self._runtime, "threat_targeting", None)
+                            if _tt is not None:
+                                # Update monster data from snapshot
+                                _monsters = _conscious_snap.get("monsters", []) or _conscious_snap.get("actors", []) or []
+                                if isinstance(_monsters, list):
+                                    for _m in _monsters:
+                                        _mid = int(_m.get("id", _m.get("monster_id", 0)) or 0)
+                                        if _mid > 0:
+                                            _tt.update_monster(
+                                                _mid,
+                                                name=str(_m.get("name", "") or ""),
+                                                level=int(_m.get("level", 1) or 1),
+                                                hp=int(_m.get("hp", 1) or 1),
+                                                max_hp=int(_m.get("max_hp", 1) or 1),
+                                                distance=int(_m.get("distance", 0) or 0),
+                                                is_boss=bool(_m.get("is_boss", False)),
+                                                is_aggressive=bool(_m.get("is_aggressive", False)),
+                                                is_casting=bool(_m.get("is_casting", False)),
+                                                casting_skill=str(_m.get("casting_skill", "") or ""),
+                                            )
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Party Leader Coordinator ──
+                        try:
+                            _pl = getattr(self._runtime, "party_leader", None)
+                            if _pl is not None:
+                                _pl.set_leader(_reflex_bot_id, map=_map)
+                                # Update party members from snapshot
+                                _party = _conscious_snap.get("party", []) or _conscious_snap.get("party_members", []) or []
+                                if isinstance(_party, list):
+                                    for _pm in _party:
+                                        _pl.update_member(
+                                            str(_pm.get("name", "") or ""),
+                                            map=str(_pm.get("map", _map) or _map),
+                                            hp_pct=float(_pm.get("hp_pct", 1.0) or 1.0),
+                                            is_in_combat=bool(_pm.get("in_combat", False)),
+                                            is_dead=bool(_pm.get("is_dead", False)),
+                                        )
                         except Exception:
                             pass
                     
@@ -4988,6 +5065,36 @@ class PDCALoop:
                 _mas_ctx = _mas.get_synergy_context()
                 if _mas_ctx:
                     result["team_synergy_context"] = _mas_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Threat Context ──
+        try:
+            _tt = getattr(self._runtime, "threat_targeting", None)
+            if _tt is not None:
+                _tt_ctx = _tt.get_threat_context()
+                if _tt_ctx:
+                    result["threat_context"] = _tt_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Party Formation Context ──
+        try:
+            _pf = getattr(self._runtime, "party_follow", None)
+            if _pf is not None:
+                _pf_ctx = _pf.get_formation_context()
+                if _pf_ctx:
+                    result["party_formation_context"] = _pf_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Party Leader Context ──
+        try:
+            _pl = getattr(self._runtime, "party_leader", None)
+            if _pl is not None:
+                _pl_ctx = _pl.get_leader_context()
+                if _pl_ctx:
+                    result["party_leader_context"] = _pl_ctx
         except Exception:
             pass
         

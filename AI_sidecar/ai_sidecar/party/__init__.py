@@ -1,0 +1,1 @@
+"""Party package."""

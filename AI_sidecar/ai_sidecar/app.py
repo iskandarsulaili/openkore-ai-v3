@@ -22,6 +22,7 @@ from ai_sidecar.api.routers import (
     npc_dialog,
     acknowledgements,
     actions,
+    combat,
     control_domain,
     crewai_v2,
     fleet,
@@ -33,6 +34,7 @@ from ai_sidecar.api.routers import (
     macros,
     ml_subconscious_v2,
     observability_v2,
+    party,
     planner_v2,
     providers_v2,
     reflex,
@@ -194,6 +196,8 @@ def create_app() -> FastAPI:
     app.include_router(ml_subconscious_v2.router)
     app.include_router(fleet_v2.router)
     app.include_router(observability_v2.router)
+    app.include_router(combat.router)
+    app.include_router(party.router)
     app.include_router(fleet_coordinator.router)
     app.include_router(npc_dialog.router)
     # Register autonomy router
