@@ -4474,19 +4474,23 @@ class PDCALoop:
                 if self._memory_pool is None:
                     import concurrent.futures as _cf
                     self._memory_pool = _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mem_search")
-                _future = self._memory_pool.submit(
-                    _ltm.get_relevant_context,
-                    current_map=str(_map or ""),
-                    current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
-                    current_activity="farming",
-                    limit=5,
-                )
-                try:
-                    _mem_ctx = _future.result(timeout=0.5)  # 500ms max
-                    if _mem_ctx:
-                        result["long_term_memory"] = _mem_ctx
-                except _cf.TimeoutError:
-                    logger.warning("long_term_memory_search_timeout")
+                # Non-blocking: if a previous search is still running, skip this cycle
+                if not hasattr(self, "_mem_future") or self._mem_future is None or self._mem_future.done():
+                    self._mem_future = self._memory_pool.submit(
+                        _ltm.get_relevant_context,
+                        current_map=str(_map or ""),
+                        current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
+                        current_activity="farming",
+                        limit=5,
+                    )
+                if self._mem_future is not None and self._mem_future.done():
+                    try:
+                        _mem_ctx = self._mem_future.result(timeout=0)
+                        if _mem_ctx:
+                            result["long_term_memory"] = _mem_ctx
+                    except Exception:
+                        pass
+                    self._mem_future = None
         except Exception:
             pass
         

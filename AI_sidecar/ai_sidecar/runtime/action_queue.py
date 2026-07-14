@@ -226,6 +226,30 @@ class ActionQueue:
                 self._clear_idempotency_index(bot_id, queued.proposal.idempotency_key, action_id)
             return True, queued.status
 
+    @property
+    def completed_actions(self) -> list[dict]:
+        """Return recently completed (acknowledged) actions as dicts."""
+        with self._lock:
+            results = []
+            now = datetime.now(UTC)
+            for bot_id, queue in self._by_bot.items():
+                for q in queue:
+                    if q.status == ActionStatus.acknowledged:
+                        age = (now - q.acknowledged_at).total_seconds() if q.acknowledged_at else 999
+                        if age < 60:  # Only last 60 seconds
+                            results.append({
+                                "action_id": q.proposal.action_id,
+                                "bot_id": bot_id,
+                                "command": q.proposal.command,
+                                "status": q.status.value,
+                                "ack_message": q.ack_message,
+                            })
+            return results
+    
+    @property
+    def completed_actions_count(self) -> int:
+        return len(self.completed_actions)
+    
     def count(self, bot_id: str) -> int:
         now = datetime.now(UTC)
         with self._lock:
