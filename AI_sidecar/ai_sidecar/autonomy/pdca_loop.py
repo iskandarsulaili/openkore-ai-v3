@@ -2336,33 +2336,6 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("competitive_evaluator_init_failed: %s", e)
                 
-                # ── NEW: Initialize Market Manipulator ──
-                _mm = getattr(self._runtime, "market_manipulator", None)
-                if _mm is None:
-                    try:
-                        from ai_sidecar.economy.market_manipulator import MarketManipulator
-                        _mm = MarketManipulator()
-                        # Wire enqueue function
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _mm._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"mm-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"mm-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.market_manipulator = _mm
-                        logger.info("market_manipulator_initialized")
-                    except Exception as e:
-                        logger.warning("market_manipulator_init_failed: %s", e)
-                
                 # ── NEW: Initialize Timing Optimizer ──
                 _to = getattr(self._runtime, "timing_optimizer", None)
                 if _to is None:
