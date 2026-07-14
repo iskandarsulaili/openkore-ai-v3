@@ -7,11 +7,14 @@ based on learned patterns. Thread-safe via RLock.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Final, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +189,14 @@ class DeathAnalyzer:
         self._lock = RLock()
         self._deaths: List[DeathRecord] = []
         self._adjustments: List[BehaviorAdjustment] = []
-        self._start_time: float = time.time()
+        self._start_time = time.time()
+        # ── Permanent avoidance memory ──
+        # One death to a specific pattern = permanent avoidance
+        # Key: "monster_id:skill_name" or "monster_id:cause"
+        self._permanent_avoidances: dict[str, float] = {}  # key -> timestamp of first death
+        self._avoided_monsters: set[int] = set()  # monster IDs we permanently avoid
+        self._avoided_maps: set[str] = set()  # map names we permanently avoid
+        self._avoided_skills: dict[int, set[str]] = {}  # monster_id -> set of skill names to avoid
 
     # -- Recording ---------------------------------------------------------
 
@@ -200,6 +210,31 @@ class DeathAnalyzer:
                 lesson = _generate_lesson(record, record.cause_of_death)
                 object.__setattr__(record, "lesson_learned", lesson)
             self._deaths.append(record)
+
+            # ── Permanent avoidance: one death = permanent memory ──
+            mid = record.monster_id
+            cause = record.cause_of_death
+            map_name = record.map_name
+
+            # Avoid this specific monster permanently
+            if mid > 0:
+                self._avoided_monsters.add(mid)
+                key = f"{mid}:{cause}"
+                if key not in self._permanent_avoidances:
+                    self._permanent_avoidances[key] = record.timestamp
+                    logger.info("permanent_avoidance: monster_id=%d cause=%s (1 death)", mid, cause)
+
+            # Avoid this map if we died here 3+ times
+            map_deaths = sum(1 for d in self._deaths if d.map_name == map_name)
+            if map_deaths >= 3:
+                self._avoided_maps.add(map_name)
+                logger.info("permanent_map_avoidance: map=%s (%d deaths)", map_name, map_deaths)
+
+            # Track dangerous skills for this monster
+            if cause == "boss_skill" and mid > 0:
+                if mid not in self._avoided_skills:
+                    self._avoided_skills[mid] = set()
+                self._avoided_skills[mid].add("unknown_dangerous_skill")
 
     # -- Analysis ----------------------------------------------------------
 
@@ -373,6 +408,46 @@ class DeathAnalyzer:
                         f"({adj.reason})"
                     )
 
+            return "\n".join(lines)
+
+    # ── Permanent Avoidance Queries ──
+
+    def is_monster_avoided(self, monster_id: int) -> bool:
+        """Check if a monster is permanently avoided (1 death = permanent)."""
+        with self._lock:
+            return monster_id in self._avoided_monsters
+
+    def is_map_avoided(self, map_name: str) -> bool:
+        """Check if a map is permanently avoided (3+ deaths)."""
+        with self._lock:
+            return map_name in self._avoided_maps
+
+    def get_avoided_monsters(self) -> set[int]:
+        with self._lock:
+            return set(self._avoided_monsters)
+
+    def get_avoided_maps(self) -> set[str]:
+        with self._lock:
+            return set(self._avoided_maps)
+
+    def get_avoided_skills(self, monster_id: int) -> set[str]:
+        with self._lock:
+            return set(self._avoided_skills.get(monster_id, set()))
+
+    def get_permanent_avoidances(self) -> dict[str, float]:
+        with self._lock:
+            return dict(self._permanent_avoidances)
+
+    def get_avoidance_summary(self) -> str:
+        with self._lock:
+            lines = ["── Permanent Avoidances ──"]
+            lines.append(f"Avoided monsters: {len(self._avoided_monsters)}")
+            lines.append(f"Avoided maps: {len(self._avoided_maps)}")
+            lines.append(f"Permanent avoidances: {len(self._permanent_avoidances)}")
+            if self._avoided_monsters:
+                lines.append(f"Monster IDs: {sorted(self._avoided_monsters)[:10]}...")
+            if self._avoided_maps:
+                lines.append(f"Maps: {', '.join(sorted(self._avoided_maps)[:5])}")
             return "\n".join(lines)
 
     # -- Reset -------------------------------------------------------------

@@ -2577,6 +2577,66 @@ class PDCALoop:
                         logger.info("woe_manager_initialized")
                     except Exception as e:
                         logger.warning("woe_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Reflex Combat Layer ──
+                _rc = getattr(self._runtime, "reflex_combat", None)
+                if _rc is None:
+                    try:
+                        from ai_sidecar.combat.reflex_combat import get_reflex_combat
+                        _rc = get_reflex_combat()
+                        self._runtime.reflex_combat = _rc
+                        logger.info("reflex_combat_initialized: %d reflexes", len(_rc.get_all_reflexes()))
+                    except Exception as e:
+                        logger.warning("reflex_combat_init_failed: %s", e)
+
+                # ── NEW: Initialize Predictive Threat Assessment ──
+                _pt = getattr(self._runtime, "predictive_threat", None)
+                if _pt is None:
+                    try:
+                        from ai_sidecar.combat.predictive_threat import get_predictive_threat
+                        _pt = get_predictive_threat()
+                        self._runtime.predictive_threat = _pt
+                        logger.info("predictive_threat_initialized")
+                    except Exception as e:
+                        logger.warning("predictive_threat_init_failed: %s", e)
+
+                # ── NEW: Initialize Anti-Killsteal ──
+                _aks = getattr(self._runtime, "anti_killsteal", None)
+                if _aks is None:
+                    try:
+                        from ai_sidecar.combat.anti_killsteal import get_anti_killsteal
+                        _aks = get_anti_killsteal()
+                        self._runtime.anti_killsteal = _aks
+                        logger.info("anti_killsteal_initialized")
+                    except Exception as e:
+                        logger.warning("anti_killsteal_init_failed: %s", e)
+
+                # ── NEW: Initialize Social Intelligence ──
+                _si = getattr(self._runtime, "social_intelligence", None)
+                if _si is None:
+                    try:
+                        from ai_sidecar.social.social_intelligence import get_social_intelligence
+                        _si = get_social_intelligence()
+                        # Wire enqueue function for chat messages
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _si.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"si-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"si-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.social_intelligence = _si
+                        logger.info("social_intelligence_initialized")
+                    except Exception as e:
+                        logger.warning("social_intelligence_init_failed: %s", e)
                 
                 # Get heuristic confidence
                 _hc = 0.0
@@ -5445,6 +5505,73 @@ class PDCALoop:
                     _instructions = _wm.get_behavior_instructions()
                     if _instructions:
                         result["woe_instructions"] = _instructions
+        except Exception:
+            pass
+
+        # ── Inject Reflex Combat Context ──
+        try:
+            _rc = getattr(self._runtime, "reflex_combat", None)
+            if _rc is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _situation = {
+                    "target_element": _snap.get("target_element", "neutral"),
+                    "target_size": _snap.get("target_size", "medium"),
+                    "target_race": _snap.get("target_race", "formless"),
+                    "target_hp_pct": float(_snap.get("combat", {}).get("target_hp_pct", 1.0)),
+                    "target_distance": float(_snap.get("combat", {}).get("target_distance", 0)),
+                    "target_is_casting": bool(_snap.get("combat", {}).get("target_is_casting", False)),
+                    "target_is_boss": bool(_snap.get("is_boss", False)),
+                    "aggro_count": int(_snap.get("combat", {}).get("aggro_count", 0)),
+                    "my_hp_pct": float(_snap.get("vitals", {}).get("hp_ratio", 1.0)),
+                    "my_sp_pct": float(_snap.get("vitals", {}).get("sp_ratio", 1.0)),
+                    "my_sp": int(_snap.get("vitals", {}).get("sp", 0)),
+                    "my_job_class": str(_snap.get("job_class", "novice")),
+                    "my_buffs": _snap.get("buffs", []),
+                }
+                _best = _rc.get_best_action(_situation)
+                if _best:
+                    result["reflex_action"] = _best.action
+                    result["reflex_name"] = _best.name
+                    result["reflex_priority"] = _best.priority
+        except Exception:
+            pass
+
+        # ── Inject Predictive Threat Context ──
+        try:
+            _pt = getattr(self._runtime, "predictive_threat", None)
+            if _pt is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _actors = _snap.get("actors", [])
+                if _actors:
+                    _threats = _pt.evaluate_threats(_actors)
+                    if _threats and _threats.threats:
+                        result["threat_summary"] = _threats.summary
+                        if _threats.should_flee:
+                            result["threat_alert"] = "DANGER: flee immediately"
+                        elif _threats.should_interrupt:
+                            result["threat_alert"] = "WARNING: interrupt incoming skill"
+                        elif _threats.should_move:
+                            result["threat_alert"] = "CAUTION: move out of AoE"
+        except Exception:
+            pass
+
+        # ── Inject Anti-Killsteal Context ──
+        try:
+            _aks = getattr(self._runtime, "anti_killsteal", None)
+            if _aks is not None:
+                _summary = _aks.get_ks_summary()
+                if _summary:
+                    result["killsteal_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Social Intelligence Context ──
+        try:
+            _si = getattr(self._runtime, "social_intelligence", None)
+            if _si is not None:
+                _summary = _si.get_social_summary()
+                if _summary:
+                    result["social_status"] = _summary
         except Exception:
             pass
 
