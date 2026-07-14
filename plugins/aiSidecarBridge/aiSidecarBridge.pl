@@ -1055,8 +1055,22 @@ sub _build_snapshot_payload {
 			$p{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
 			$p{skill_points} = $char->{points_skill} if defined $char->{points_skill};
 			$p{stat_points}  = $char->{points_free}  if defined $char->{points_free};
+			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			\%p;
 		} || {};
+	}
+
+	# --- Skills digest (known skills with levels) ---
+	my @skills_list;
+	if ($char && $char->{skills} && ref $char->{skills} eq 'HASH') {
+		@skills_list = map {
+			my $skill = $char->{skills}{$_};
+			+{
+				skill_id   => $_,
+				skill_name => (defined $skill->{name} ? $skill->{name} : $_),
+				level      => (defined $skill->{lv} ? $skill->{lv} + 0 : 0),
+			}
+		} sort keys %{$char->{skills}};
 	}
 
 	# --- Actors digest (nearby mobs, players, NPCs) ---
@@ -1368,6 +1382,7 @@ sub _build_snapshot_payload {
 			item_count => $item_count,
 		},
 		progression => $progression,
+		skills      => \@skills_list,
 		actors      => \@actors,
 		raw         => $raw,
 	};

@@ -87,7 +87,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         inv = latest.get("inventory") or {}
                         signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
                         prog = latest.get("progression") or {}
-                        signals["skills"] = latest.get("skills", []) or []
+                        signals["skills"] = [s.get("skill_id", "") for s in (latest.get("skills", []) or []) if isinstance(s, dict)]
                         signals["base_level"] = int(prog.get("base_level", 1) or 1)
                         signals["inventory_items"] = latest.get("inventory_items", []) or []
                         signals["zeny"] = int(prog.get("zeny", 0) or 0)
@@ -104,7 +104,8 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         inv = getattr(latest, "inventory", None) or {}
                         signals["weight_ratio"] = float(getattr(inv, "weight_ratio", 0.0) or 0.0)
                         prog = getattr(latest, "progression", None) or {}
-                        signals["skills"] = getattr(latest, "skills", []) or []
+                        raw_skills = getattr(latest, "skills", []) or []
+                        signals["skills"] = [s.get("skill_id", "") for s in raw_skills if isinstance(s, dict)]
                         signals["base_level"] = int(getattr(prog, "base_level", 1) or 1)
                         signals["inventory_items"] = getattr(latest, "inventory_items", []) or []
                         signals["zeny"] = int(getattr(prog, "zeny", 0) or 0)
@@ -4824,10 +4825,13 @@ class PDCALoop:
         elapsed_s = max(0.0, float(status.get("elapsed_s") or 0.0))
         if not snapshot_ready and bool(snapshot is not None) and elapsed_s > 30.0:
             snapshot_ready = True
-        # Force gate open after 30s regardless of history — bots need to act
-        if not history_ready and elapsed_s > 30.0:
-            history_ready = True
         minimum_readiness = bool(bot_ready and history_ready)
+
+        # Force gate open after 30s regardless of snapshot state — bots are running
+        if not minimum_readiness and elapsed_s > 30.0:
+            minimum_readiness = True
+            snapshot_ready = True
+            history_ready = True
 
         fleet_status = self._fleet_status()
         fleet_enabled = bool(fleet_status.get("central_enabled", True))
