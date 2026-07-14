@@ -61,7 +61,7 @@ class EdgeCaseHandler:
                 priority=2,
                 actions=[
                     "ai manual",
-                    "teleport",
+                    "tele",
                     "change map",
                 ],
                 cooldown_seconds=300,

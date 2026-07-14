@@ -62,6 +62,67 @@ class HeuristicService:
         # Enriched state signals (emergent discovery)
         _enriched = signals.get("_enriched", None)
 
+        # ── Progression: Learn skills ──
+        skills = signals.get("skills", [])
+        base_level = signals.get("base_level", 1)
+        job_name = signals.get("job_name", "novice").lower()
+        zeny = signals.get("zeny", 0)
+        inventory = signals.get("inventory_items", {})
+        map_name = signals.get("map", "")
+
+        # Learn Basic Skill if not known
+        if "NV_BASIC" not in skills:
+            actions.append(HeuristicAction(
+                kind="command", command="skills add 1",
+                confidence=0.95, domain="progression",
+                reason="Learn Basic Skill to sit and regen",
+            ))
+            weighted_domains["progression"] = 0.95
+            total_confidence = max(total_confidence, 0.95)
+
+        # Learn First Aid if not known and Basic Skill is known
+        elif "NV_FIRSTAID" not in skills:
+            actions.append(HeuristicAction(
+                kind="command", command="skills add 2",
+                confidence=0.90, domain="progression",
+                reason="Learn First Aid for self-healing",
+            ))
+            weighted_domains["progression"] = 0.90
+            total_confidence = max(total_confidence, 0.90)
+
+        # ── Economy: Restock potions ──
+        has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
+        if not has_potion and zeny and zeny > 500 and signals.get("hp_ratio", 1.0) < 0.5:
+            actions.append(HeuristicAction(
+                kind="command", command="buy White Potion 30",
+                confidence=0.85, domain="economy",
+                reason="Restock healing potions (HP low, have zeny)",
+            ))
+            weighted_domains["economy"] = 0.85
+            total_confidence = max(total_confidence, 0.85)
+
+        # ── Economy: Sell junk when overweight ──
+        weight_ratio = signals.get("weight_ratio", 0.0)
+        if weight_ratio > 0.75:
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.70, domain="economy",
+                reason=f"Near encumbered ({weight_ratio:.0%}) — LLM should plan vendor sell route",
+                metadata={"needs_llm_vendor_route": True, "weight_ratio": weight_ratio},
+            ))
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.70)
+            total_confidence = max(total_confidence, 0.70)
+
+        # ── Map progression ──
+        if base_level >= 10 and "prt_fild08" in map_name:
+            actions.append(HeuristicAction(
+                kind="command", command="move prt_fild04",
+                confidence=0.60, domain="exploration",
+                reason=f"Level {base_level} — move to better farming map",
+            ))
+            weighted_domains["exploration"] = 0.60
+            total_confidence = max(total_confidence, 0.60)
+
         # Check recovery signal
         if signals.get("hp_ratio", 1.0) < 0.5:
             hp = signals["hp_ratio"]

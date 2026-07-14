@@ -82,7 +82,7 @@ MACRO_PATTERNS: dict[str, MacroPattern] = {
         description="Teleport to savepoint when HP critically low. Classic escape macro.",
         triggers=[{"type": "vitals.hp_ratio", "op": "lte", "value": 0.15}],
         action_sequence=[MacroAction(command="ai manual", description="Disable AI"),
-                         MacroAction(command="teleport", description="Teleport to savepoint", timeout_seconds=5.0),
+                         MacroAction(command="tele", description="Teleport to savepoint", timeout_seconds=5.0),
                          MacroAction(command="ai auto", description="Re-enable AI")],
         cooldown_seconds=10.0, exclusive=True,
     ),

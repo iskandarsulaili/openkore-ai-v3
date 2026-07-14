@@ -5528,10 +5528,7 @@ def create_runtime() -> RuntimeState:
         max_bots=256,
         role_rotation_cooldown_s=120,
     )
-    runtime.fleet_coordinator = FleetCoordinator(
-        experience_db=runtime.experience_db,
-        coordinator_service=fleet_coordinator_service,
-    )
+    runtime.fleet_coordinator = FleetCoordinator()
     # Restore persisted budget state
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))

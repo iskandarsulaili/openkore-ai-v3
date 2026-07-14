@@ -131,7 +131,7 @@ start_sidecar() {
     info "Starting sidecar..."
     cd "$SIDECAR_DIR"
     source venv/bin/activate
-    nohup python -m ai_sidecar.app > "$SIDECAR_LOG" 2>&1 &
+    nohup "$SIDECAR_DIR/venv/bin/python" -m ai_sidecar.app > "$SIDECAR_LOG" 2>&1 &
     local pid=$!
     _save_pid "$pid"
     deactivate

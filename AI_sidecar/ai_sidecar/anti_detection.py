@@ -56,12 +56,36 @@ class AntiDetection:
         self._last_action: dict[str, float] = {}
         self._consecutive_actions: dict[str, int] = {}
         self._chat_messages = [
-            "lol", "gg", "nice", "brb", "afk", "omw",
-            "ty", "np", "wow", "omg", "lmao", "rip",
-            "gl", "hf", "ez", "wp", "noob", "pro",
-            "where to hunt?", "any party?", "selling stuff",
-            "need buff pls", "ty for party", "gotta go soon",
-            "one more run", "lagging", "dc'd", "back",
+            "any party for prt_fild?",
+            "selling white pots 800z each",
+            "need buff pls",
+            "ty for party",
+            "gg wp",
+            "where to hunt at lvl 50?",
+            "anyone know where savages are?",
+            "brb gotta afk for a bit",
+            "back",
+            "lag spike sorry",
+            "dc'd brb",
+            "anyone selling poring card?",
+            "how much for that weapon?",
+            "nice drop grats",
+            "unlucky",
+            "almost died there lol",
+            "need help with quest",
+            "any priest for party?",
+            "selling stuff in prontera",
+            "check my shop pls",
+            "what's the best bow for hunter?",
+            "anyone know this server's rates?",
+            "first time playing here",
+            "this server is fun",
+            "any active guild recruiting?",
+            "where's the best place to farm?",
+            "anyone want to party?",
+            "need tank for party",
+            "anyone selling arrows?",
+            "how do you get to payon?",
         ]
 
     def ensure_profile(self, bot_id: str) -> HumanProfile:
@@ -225,6 +249,63 @@ class AntiDetection:
             return 0.0
         profile = self.ensure_profile(bot_id)
         return profile.movement_variance
+
+    def get_movement_waypoints(self, bot_id: str, start_x: int, start_y: int, end_x: int, end_y: int) -> list[tuple[int, int]]:
+        """Generate human-like movement waypoints between two points.
+
+        Instead of walking in a straight line, humans:
+        - Walk in slight curves
+        - Occasionally overshoot and correct
+        - Stop briefly to check surroundings
+        - Vary their speed
+
+        Returns a list of (x, y) waypoints that approximate human movement.
+        """
+        if not self.enabled:
+            return [(end_x, end_y)]
+
+        profile = self.ensure_profile(bot_id)
+        variance = profile.movement_variance
+        waypoints: list[tuple[int, int]] = []
+
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = max(1, int((dx**2 + dy**2) ** 0.5))
+
+        # Add intermediate waypoints with variance
+        num_waypoints = max(2, distance // 10)  # One waypoint every ~10 tiles
+        for i in range(1, num_waypoints + 1):
+            t = i / num_waypoints
+            # Base position along the line
+            bx = int(start_x + dx * t)
+            by = int(start_y + dy * t)
+            # Add random variance (human-like curve)
+            jitter = int(variance * 5 * (random.random() * 2 - 1))
+            if i < num_waypoints:
+                bx += jitter
+                by += jitter
+            waypoints.append((bx, by))
+
+        # Occasionally add an overshoot waypoint (5% chance)
+        if random.random() < 0.05 and len(waypoints) > 2:
+            overshoot_idx = random.randint(1, len(waypoints) - 2)
+            ox, oy = waypoints[overshoot_idx]
+            overshoot = int(variance * 10 * (random.random() * 2 - 1))
+            waypoints.insert(overshoot_idx + 1, (ox + overshoot, oy + overshoot))
+
+        return waypoints
+
+    def should_stop_to_check(self, bot_id: str) -> float:
+        """Check if the bot should stop briefly to 'check inventory' or 'look around'.
+
+        Returns stop duration in seconds, or 0 if no stop needed.
+        """
+        if not self.enabled:
+            return 0.0
+        # 3% chance to stop for 1-3 seconds
+        if random.random() < 0.03:
+            return random.uniform(1.0, 3.0)
+        return 0.0
 
     def get_stats(self, bot_id: str) -> dict[str, Any]:
         """Get anti-detection stats for a bot."""

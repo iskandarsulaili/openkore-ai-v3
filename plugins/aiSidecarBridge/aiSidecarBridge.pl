@@ -2,6 +2,7 @@ package aiSidecarBridge;
 
 use strict;
 use warnings;
+use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
@@ -2439,21 +2440,41 @@ sub _http_post_json {
 	    $body,
 	);
 
-	my $raw_response = '';
-	my $io_error = '';
-	my $ok = eval {
-	    local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
-	    alarm($io_timeout);
-	    print {$sock} $request;
-	    while (1) {
-	        my $chunk = '';
-	        my $read = sysread($sock, $chunk, 4096);
-	        last if !defined $read || $read <= 0;
-	        $raw_response .= $chunk;
-	        last if length($raw_response) > 1_000_000;
-	    }
-	    1;
-	};
+		my $raw_response = '';
+		my $io_error = '';
+		my $ok = eval {
+		    local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
+		    alarm($io_timeout);
+		    print {$sock} $request;
+		    # Read headers first (stop at double CRLF)
+		    my $header_buf = '';
+		    while (1) {
+		        my $chunk = '';
+		        my $read = sysread($sock, $chunk, 4096);
+		        last if !defined $read || $read <= 0;
+		        $header_buf .= $chunk;
+		        last if $header_buf =~ /\r?\n\r?\n/;
+		    }
+		    # Parse Content-Length from headers
+		    my $content_length = 0;
+		    if ($header_buf =~ /Content-Length:\s*(\d+)/i) {
+		        $content_length = $1;
+		    }
+		    $raw_response = $header_buf;
+		    # Read remaining body if Content-Length says there's more
+		    if ($content_length > 0) {
+		        my ($headers, $body_so_far) = split(/\r?\n\r?\n/, $header_buf, 2);
+		        my $have = defined $body_so_far ? length($body_so_far) : 0;
+		        while ($have < $content_length) {
+		            my $chunk = '';
+		            my $read = sysread($sock, $chunk, 4096);
+		            last if !defined $read || $read <= 0;
+		            $raw_response .= $chunk;
+		            $have += $read;
+		        }
+		    }
+		    1;
+		};
 	$io_error = $@ if !$ok;
 	alarm(0);
 	# Don't close the socket on success — keep-alive reuses it
@@ -2616,7 +2637,6 @@ sub _rewrite_runtime_command {
 	}
 
 	# Handle use <item> — find item in inventory and use it
-	# OpenKore doesn't have a generic "use" console command.
 	# We must look up the item by name in the character's inventory
 	# and call $item->use() directly.
 	if ($normalized =~ /^use\s+(.+)$/) {
@@ -2866,8 +2886,55 @@ sub _calc_distance {
 # ── Bridge-level emergency reflexes (sub-5ms, pure Perl, no LLM/network) ──
 # Each reflex has its own cooldown tracked in %_reflex_last_fired.
 # In-game actions use Commands::run(). Sidecar alerts use _http_post_json().
+# All reflexes include human-like randomization to avoid detection patterns.
 {
 	my %_reflex_last_fired;
+
+	# Human-like randomization helpers
+	sub _human_delay_ms {
+		# Simulate human reaction time: 150-400ms base + random variance
+		return int(rand(250)) + 150;
+	}
+
+	sub _jitter_cooldown {
+		my ($base_ms, $jitter_pct) = @_;
+		$jitter_pct ||= 0.3;
+		# Add ±30% random jitter to cooldown
+		return int($base_ms * (1.0 + (rand() * 2 - 1) * $jitter_pct));
+	}
+
+	sub _should_fire_reflex {
+		my ($last_fired, $cooldown_ms) = @_;
+		my $now = _now_ms();
+		my $jittered = _jitter_cooldown($cooldown_ms);
+		return ($now - $last_fired) >= $jittered;
+	}
+
+	sub _random_action_delay {
+		# Add 50-200ms random delay before action to look human
+		my $delay_ms = int(rand(150)) + 50;
+		select(undef, undef, undef, $delay_ms / 1000.0) if $delay_ms > 0;
+	}
+
+	# ── Cached healing resources (from sidecar config push) ──
+	my @_heal_items;
+	my @_heal_skills;
+	my $_heal_cache_last_update_ms = 0;
+
+	sub _update_heal_cache {
+		my $now = _now_ms();
+		return if $now - $_heal_cache_last_update_ms < 5000;
+		$_heal_cache_last_update_ms = $now;
+
+		# Read from sidecar-pushed config (comma-separated lists)
+		my $items_str = _cfg('aiSidecar_healItems', '');
+		@_heal_items = split /,/, $items_str;
+		@_heal_items = grep { $_ ne '' } @_heal_items;
+
+		my $skills_str = _cfg('aiSidecar_healSkills', '');
+		@_heal_skills = split /,/, $skills_str;
+		@_heal_skills = grep { $_ ne '' } @_heal_skills;
+	}
 
 	sub _check_bridge_reflexes {
 		my $now = _now_ms();
@@ -2888,39 +2955,77 @@ sub _calc_distance {
 
 		# ── 1. Emergency Heal Reflex ──
 		if ($hp_ratio < 0.35) {
-			my $last = $_reflex_last_fired{heal} || 0;
-			if ($now - $last >= 200) {
-				$_reflex_last_fired{heal} = $now;
-				warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
-				eval { Commands::run("use White Potion"); 1; };
+			if (_should_fire_reflex($_reflex_last_fired{heal} || 0, 200)) {
+				$_reflex_last_fired{heal} = _now_ms();
+				_random_action_delay();
+				_update_heal_cache();
+				my $healed = 0;
+				# Try config-pushed items first
+				for my $item_name (@_heal_items) {
+					my $item = eval { Actor::Item::get($item_name) };
+					if ($item) {
+						warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio, item=$item_name)\n";
+						eval { Commands::run("is $item_name"); 1; };
+						$healed = 1;
+						last;
+					}
+				}
+				# Try config-pushed skills if no items
+				if (!$healed) {
+					for my $skill_name (@_heal_skills) {
+						my $skill = eval { Skill::get($skill_name) };
+						if ($skill && $skill->{level} && $skill->{level} > 0) {
+							warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$char->{hp}/$char->{hp_max}, skill=$skill_name)\n";
+							eval { Commands::run("skill $skill_name 1"); 1; };
+							$healed = 1;
+							last;
+						}
+					}
+				}
+				if (!$healed) {
+					# Nothing available — notify sidecar and wait for it to handle
+					# Only fire once per 30s to avoid spam
+					if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 30000)) {
+						$_reflex_last_fired{no_heal} = _now_ms();
+						warning "[aiSidecarBridge] bridge_reflex:no_heal_resources (HP=$char->{hp}/$char->{hp_max})\n";
+						_http_post_json('/v2/ingest/event', {
+							kind => 'bridge_reflex',
+							reflex => 'no_heal_resources',
+							hp_ratio => $hp_ratio,
+							sp_ratio => $sp_ratio,
+							aggro_count => $aggro_count,
+							weight_ratio => $weight_ratio,
+							ts => _now_ms(),
+						});
+					}
+				}
 			}
 		}
 
 		# ── 2. Emergency Flee Reflex ──
-		if ($hp_ratio < 0.15 && $aggro_count > 3) {
-			my $last = $_reflex_last_fired{flee} || 0;
-			if ($now - $last >= 1000) {
-				$_reflex_last_fired{flee} = $now;
+		if ($hp_ratio < 0.15 && $aggro_count > 0) {
+			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
+				$_reflex_last_fired{flee} = _now_ms();
+				_random_action_delay();
 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$char->{hp}/$char->{hp_max}, aggro=$aggro_count)\n";
 				eval { Commands::run("flee"); 1; };
 			}
 		}
 
 		# ── 3. Emergency Teleport Reflex ──
-		if ($hp_ratio < 0.08) {
-			my $last = $_reflex_last_fired{teleport} || 0;
-			if ($now - $last >= 3000) {
-				$_reflex_last_fired{teleport} = $now;
+		if ($hp_ratio < 0.12) {
+			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
+				$_reflex_last_fired{teleport} = _now_ms();
+				_random_action_delay();
 				warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
-				eval { Commands::run("teleport"); 1; };
+												eval { Commands::run("tele"); 1; };
 			}
 		}
 
 		# ── 4. Aggro Warning Reflex ──
 		if ($aggro_count > 5) {
-			my $last = $_reflex_last_fired{aggro_warning} || 0;
-			if ($now - $last >= 5000) {
-				$_reflex_last_fired{aggro_warning} = $now;
+			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
+				$_reflex_last_fired{aggro_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
 				_http_post_json('/v2/ingest/event', {
 					kind => 'bridge_reflex',
@@ -2934,9 +3039,8 @@ sub _calc_distance {
 
 		# ── 5. Low SP Reflex ──
 		if ($sp_ratio < 0.15) {
-			my $last = $_reflex_last_fired{low_sp} || 0;
-			if ($now - $last >= 10000) {
-				$_reflex_last_fired{low_sp} = $now;
+			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
+				$_reflex_last_fired{low_sp} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$char->{sp}/$char->{sp_max}, ratio=$sp_ratio)\n";
 				_http_post_json('/v2/ingest/event', {
 					kind => 'bridge_reflex',
@@ -2963,9 +3067,9 @@ sub _calc_distance {
 				}
 			}
 			if ($gm_detected) {
-				my $last = $_reflex_last_fired{gm_detected} || 0;
-				if ($now - $last >= 60000) {
-					$_reflex_last_fired{gm_detected} = $now;
+				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
+					$_reflex_last_fired{gm_detected} = _now_ms();
+					_random_action_delay();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					eval { Commands::run("ai manual"); 1; };
 					_http_post_json('/v2/ingest/event', {
@@ -2980,9 +3084,8 @@ sub _calc_distance {
 
 		# ── 7. Weight Warning Reflex ──
 		if ($weight_ratio > 0.85) {
-			my $last = $_reflex_last_fired{weight_warning} || 0;
-			if ($now - $last >= 30000) {
-				$_reflex_last_fired{weight_warning} = $now;
+			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
+				$_reflex_last_fired{weight_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$char->{weight}/$char->{weight_max}, ratio=$weight_ratio)\n";
 				_http_post_json('/v2/ingest/event', {
 					kind => 'bridge_reflex',
@@ -3005,9 +3108,8 @@ sub _calc_distance {
 				}
 			}
 			if ($broken_found) {
-				my $last = $_reflex_last_fired{equipment_broken} || 0;
-				if ($now - $last >= 60000) {
-					$_reflex_last_fired{equipment_broken} = $now;
+				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
+					$_reflex_last_fired{equipment_broken} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
 					_http_post_json('/v2/ingest/event', {
 						kind => 'bridge_reflex',
@@ -3033,9 +3135,9 @@ sub _calc_distance {
 				}
 			}
 			if ($interrupted) {
-				my $last = $_reflex_last_fired{interrupt_cast} || 0;
-				if ($now - $last >= 1500) {
-					$_reflex_last_fired{interrupt_cast} = $now;
+				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, 1500)) {
+					$_reflex_last_fired{interrupt_cast} = _now_ms();
+					_random_action_delay();
 					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
 					eval { Commands::run("skill Bash 10"); 1; };
 				}
@@ -3060,11 +3162,23 @@ sub _calc_distance {
 				}
 			}
 			if ($boss_nearby && $hp_ratio > 0.9) {
-				my $last = $_reflex_last_fired{pre_pot} || 0;
-				if ($now - $last >= 5000) {
-					$_reflex_last_fired{pre_pot} = $now;
-					warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$char->{hp}/$char->{hp_max})\n";
-					eval { Commands::run("use White Potion"); 1; };
+				if (_should_fire_reflex($_reflex_last_fired{pre_pot} || 0, 5000)) {
+					$_reflex_last_fired{pre_pot} = _now_ms();
+					_random_action_delay();
+					_update_heal_cache();
+					my $healed = 0;
+					for my $item_name (@_heal_items) {
+						my $item = eval { Actor::Item::get($item_name) };
+						if ($item) {
+							warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$char->{hp}/$char->{hp_max}, item=$item_name)\n";
+							eval { Commands::run("is $item_name"); 1; };
+							$healed = 1;
+							last;
+						}
+					}
+					if (!$healed) {
+						warning "[aiSidecarBridge] bridge_reflex:pre_pot_no_items (boss within 15 tiles, HP=$char->{hp}/$char->{hp_max})\n";
+					}
 				}
 			}
 		}

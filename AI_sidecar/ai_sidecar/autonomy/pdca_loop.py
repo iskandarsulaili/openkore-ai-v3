@@ -86,6 +86,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["map_known"] = bool(latest.get("map_known", False))
                         inv = latest.get("inventory") or {}
                         signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                        prog = latest.get("progression") or {}
+                        signals["skills"] = latest.get("skills", []) or []
+                        signals["base_level"] = int(prog.get("base_level", 1) or 1)
+                        signals["inventory_items"] = latest.get("inventory_items", []) or []
+                        signals["zeny"] = int(prog.get("zeny", 0) or 0)
+                        pos = latest.get("position") or {}
+                        signals["map"] = str(pos.get("map", "") or "")
+                        signals["job_name"] = str(prog.get("job_name", "novice") or "novice")
                     else:
                         v = getattr(latest, "vitals", None) or {}
                         signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) or 1.0)
@@ -95,6 +103,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["map_known"] = bool(getattr(latest, "map_known", False))
                         inv = getattr(latest, "inventory", None) or {}
                         signals["weight_ratio"] = float(getattr(inv, "weight_ratio", 0.0) or 0.0)
+                        prog = getattr(latest, "progression", None) or {}
+                        signals["skills"] = getattr(latest, "skills", []) or []
+                        signals["base_level"] = int(getattr(prog, "base_level", 1) or 1)
+                        signals["inventory_items"] = getattr(latest, "inventory_items", []) or []
+                        signals["zeny"] = int(getattr(prog, "zeny", 0) or 0)
+                        pos = getattr(latest, "position", None) or {}
+                        signals["map"] = str(getattr(pos, "map", "") or "")
+                        signals["job_name"] = str(getattr(prog, "job_name", "novice") or "novice")
             except Exception:
                 pass
         assessment = hs.assess(signals)
@@ -278,6 +294,43 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
         from datetime import UTC, datetime, timedelta
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
         import hashlib as _hashlib
+
+        # Use pathfinding engine to generate proper route
+        _pathfinding = getattr(runtime_state, "pathfinding_engine", None)
+        if _pathfinding is not None and map_name:
+            _plan = _pathfinding.find_path(map_name, best_zone.map_name)
+            if _plan and _plan.complete:
+                _commands = _pathfinding.to_bridge_commands(_plan)
+                # Queue each step as a separate action
+                for _i, _cmd in enumerate(_commands):
+                    _short_id = _hashlib.md5(f"{bot_id}_ge_move_{horizon}_{time.time()}_{_i}".encode()).hexdigest()[:16]
+                    _proposal = ActionProposal(
+                        action_id=f"ge_move_{horizon}_{_short_id}",
+                        kind="command",
+                        command=f"move {_cmd.get('map', best_zone.map_name)}",
+                        priority_tier=ActionPriorityTier.tactical,
+                        source="planner",
+                        created_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                        idempotency_key=f"ge_move_{horizon}_{_short_id}",
+                        metadata={
+                            "goal": "travel",
+                            "objective": f"Move to {best_zone.map_name} for {best_zone.primary_monster} (step {_i+1}/{len(_commands)})",
+                            "horizon": horizon, "bot_id": bot_id, "source": "game_engine",
+                            "target_map": best_zone.map_name, "reason": best_zone.reason,
+                            "nav_step": _i, "nav_total": len(_commands),
+                            "nav_map": _cmd.get("map", ""),
+                        },
+                    )
+                    aq.enqueue(bot_id, _proposal)
+                _log.info(
+                    "game_engine_move_pathfinding: bot=%s target=%s monster=%s steps=%d reason=%s",
+                    bot_id, best_zone.map_name, best_zone.primary_monster,
+                    len(_commands), best_zone.reason,
+                )
+                return len(_commands)
+
+        # Fallback: direct move command (no pathfinding available)
         _short_id = _hashlib.md5(f"{bot_id}_game_engine_move_{horizon}_{time.time()}".encode()).hexdigest()[:16]
         proposal = ActionProposal(
             action_id=f"ge_move_{horizon}_{_short_id}",
@@ -2507,6 +2560,17 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("economic_engine_init_failed: %s", e)
 
+                # ── NEW: Initialize Economy Orchestrator ──
+                _eo = getattr(self._runtime, "economy_orchestrator", None)
+                if _eo is None:
+                    try:
+                        from ai_sidecar.economy.orchestrator import get_economy_orchestrator
+                        _eo = get_economy_orchestrator()
+                        self._runtime.economy_orchestrator = _eo
+                        logger.info("economy_orchestrator_initialized")
+                    except Exception as e:
+                        logger.warning("economy_orchestrator_init_failed: %s", e)
+
                 # ── NEW: Initialize Death Analysis ──
                 _da = getattr(self._runtime, "death_analysis", None)
                 if _da is None:
@@ -2797,12 +2861,102 @@ class PDCALoop:
                 _ap = getattr(self._runtime, "aggro_pathfinder", None)
                 if _ap is None:
                     try:
-                        from ai_sidecar.combat.aggro_pathfinder import get_aggro_pathfinder
+                        from ai_sidecar.aggro_pathfinder import get_aggro_pathfinder
                         _ap = get_aggro_pathfinder()
                         self._runtime.aggro_pathfinder = _ap
                         logger.info("aggro_pathfinder_initialized")
                     except Exception as e:
                         logger.warning("aggro_pathfinder_init_failed: %s", e)
+
+                # ── NEW: Initialize Portal Knowledge ──
+                _pk = getattr(self._runtime, "portal_knowledge", None)
+                if _pk is None:
+                    try:
+                        from ai_sidecar.portal_knowledge import get_portal_knowledge
+                        _pk = get_portal_knowledge()
+                        self._runtime.portal_knowledge = _pk
+                        logger.info("portal_knowledge_initialized: %d portals, %d maps",
+                                    _pk.portal_count(), _pk.map_count())
+                    except Exception as e:
+                        logger.warning("portal_knowledge_init_failed: %s", e)
+
+                # ── NEW: Initialize Pathfinding Engine ──
+                _pfe = getattr(self._runtime, "pathfinding_engine", None)
+                if _pfe is None:
+                    try:
+                        from ai_sidecar.pathfinding_engine import get_pathfinding_engine
+                        _pfe = get_pathfinding_engine()
+                        self._runtime.pathfinding_engine = _pfe
+                        logger.info("pathfinding_engine_initialized")
+                    except Exception as e:
+                        logger.warning("pathfinding_engine_init_failed: %s", e)
+
+                # ── NEW: Initialize Safe Position Manager ──
+                _spm = getattr(self._runtime, "safe_position_manager", None)
+                if _spm is None:
+                    try:
+                        from ai_sidecar.safe_position import get_safe_position_manager
+                        _spm = get_safe_position_manager()
+                        self._runtime.safe_position_manager = _spm
+                        logger.info("safe_position_manager_initialized: %d maps",
+                                    len(_spm.get_all_safe_maps()))
+                    except Exception as e:
+                        logger.warning("safe_position_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Fly Wing Manager ──
+                _fwm = getattr(self._runtime, "fly_wing_manager", None)
+                if _fwm is None:
+                    try:
+                        from ai_sidecar.fly_wing_manager import get_fly_wing_manager
+                        _fwm = get_fly_wing_manager()
+                        self._runtime.fly_wing_manager = _fwm
+                        logger.info("fly_wing_manager_initialized")
+                    except Exception as e:
+                        logger.warning("fly_wing_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Map Server Knowledge ──
+                _msk = getattr(self._runtime, "map_server_knowledge", None)
+                if _msk is None:
+                    try:
+                        from ai_sidecar.map_server_knowledge import get_map_server_knowledge
+                        _msk = get_map_server_knowledge()
+                        self._runtime.map_server_knowledge = _msk
+                        logger.info("map_server_knowledge_initialized")
+                    except Exception as e:
+                        logger.warning("map_server_knowledge_init_failed: %s", e)
+
+                # ── NEW: Initialize Dynamic Portal Discovery ──
+                _dpd = getattr(self._runtime, "dynamic_portal_discovery", None)
+                if _dpd is None:
+                    try:
+                        from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
+                        _dpd = get_dynamic_portal_discovery()
+                        self._runtime.dynamic_portal_discovery = _dpd
+                        logger.info("dynamic_portal_discovery_initialized")
+                    except Exception as e:
+                        logger.warning("dynamic_portal_discovery_init_failed: %s", e)
+
+                # ── NEW: Initialize Kafra Teleport ──
+                _kt = getattr(self._runtime, "kafra_teleport", None)
+                if _kt is None:
+                    try:
+                        from ai_sidecar.kafra_teleport import get_kafra_teleport
+                        _kt = get_kafra_teleport()
+                        self._runtime.kafra_teleport = _kt
+                        logger.info("kafra_teleport_initialized")
+                    except Exception as e:
+                        logger.warning("kafra_teleport_init_failed: %s", e)
+
+                # ── NEW: Initialize Predictive Aggro ──
+                _pa = getattr(self._runtime, "predictive_aggro", None)
+                if _pa is None:
+                    try:
+                        from ai_sidecar.predictive_aggro import get_predictive_aggro
+                        _pa = get_predictive_aggro()
+                        self._runtime.predictive_aggro = _pa
+                        logger.info("predictive_aggro_initialized")
+                    except Exception as e:
+                        logger.warning("predictive_aggro_init_failed: %s", e)
 
                 # ── NEW: Initialize Guild Manager ──
                 _gm = getattr(self._runtime, "guild_manager", None)
@@ -2995,14 +3149,47 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("exploration_driver_init_failed: %s", e)
 
-                # ── NEW: Initialize Combat Loop ──
+                # ── NEW: Initialize Combat Loop with all subsystems ──
                 _cl = getattr(self._runtime, "combat_loop", None)
                 if _cl is None:
                     try:
                         from ai_sidecar.combat.combat_loop import get_combat_loop
                         _cl = get_combat_loop()
                         self._runtime.combat_loop = _cl
-                        logger.info("combat_loop_initialized")
+
+                        # Wire all combat subsystems into the combat loop
+                        _subsystems = {
+                            "threat_targeting": "ai_sidecar.combat.threat_targeting",
+                            "skill_rotation": "ai_sidecar.combat.skill_rotation",
+                            "elemental_matrix": "ai_sidecar.combat.elemental_matrix",
+                            "buff_maintenance": "ai_sidecar.combat.buff_maintenance",
+                            "gear_swapper": "ai_sidecar.combat.gear_swapper",
+                            "resource_manager": "ai_sidecar.combat.resource_manager",
+                            "reflex_combat": "ai_sidecar.combat.reflex_combat",
+                            "action_executor": "ai_sidecar.combat.action_executor",
+                            "gather_and_kill": "ai_sidecar.combat.gather_and_kill",
+                        }
+                        for _attr, _module_path in _subsystems.items():
+                            _existing = getattr(self._runtime, _attr, None)
+                            if _existing is not None:
+                                _setter = getattr(_cl, f"set_{_attr}", None)
+                                if _setter:
+                                    _setter(_existing)
+                                    logger.debug("combat_loop_wired: %s", _attr)
+
+                        # Wire build manager separately
+                        _bm = getattr(self._runtime, "build_manager", None)
+                        if _bm is not None:
+                            _cl.set_build_manager(_bm)
+                            logger.debug("combat_loop_wired: build_manager")
+
+                        # Wire action queue
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _cl.set_action_queue(_aq)
+                            logger.debug("combat_loop_wired: action_queue")
+
+                        logger.info("combat_loop_initialized_with_subsystems")
                     except Exception as e:
                         logger.warning("combat_loop_init_failed: %s", e)
 
@@ -6428,16 +6615,74 @@ class PDCALoop:
             pass
 
         # ── CLOSED-LOOP: Wire combat loop to drive behavior ──
+        # The combat loop handles its own action enqueuing internally.
+        # We just call update_state + tick to trigger it.
         try:
             _cl = getattr(self._runtime, "combat_loop", None)
-            _ae = getattr(self._runtime, "action_executor", None)
-            _aq = getattr(self._runtime, "action_queue", None)
-            if _cl is not None and _ae is not None and _aq is not None and snapshot:
-                _snap = snapshot if isinstance(snapshot, dict) else {}
+            if _cl is not None and snapshot:
+                if isinstance(snapshot, dict):
+                    _snap = snapshot
+                else:
+                    # Convert Pydantic BotStateSnapshot to dict
+                    _snap = {}
+                    try:
+                        _snap["vitals"] = {
+                            "hp": snapshot.vitals.hp,
+                            "hp_max": snapshot.vitals.hp_max,
+                            "sp": snapshot.vitals.sp,
+                            "sp_max": snapshot.vitals.sp_max,
+                            "hp_ratio": snapshot.vitals.hp_ratio,
+                            "sp_ratio": snapshot.vitals.sp_ratio,
+                            "weight_ratio": snapshot.vitals.weight_ratio,
+                            "job_name": snapshot.vitals.job_name,
+                            "base_level": snapshot.vitals.base_level,
+                            "job_level": snapshot.vitals.job_level,
+                        }
+                        _snap["position"] = {
+                            "map": snapshot.position.map,
+                            "x": snapshot.position.x,
+                            "y": snapshot.position.y,
+                        }
+                        _snap["combat"] = {
+                            "aggro_count": snapshot.combat.aggro_count,
+                            "target_id": snapshot.combat.target_id,
+                            "in_combat": snapshot.combat.in_combat,
+                        }
+                        _snap["actors"] = [
+                            {
+                                "actor_id": a.actor_id,
+                                "name": a.name,
+                                "type": a.actor_type,
+                                "hp": a.hp,
+                                "max_hp": a.max_hp,
+                                "hp_pct": a.hp_pct,
+                                "distance": a.distance,
+                                "element": a.element,
+                                "size": a.size,
+                                "race": a.race,
+                                "is_boss": a.is_boss,
+                                "is_casting": a.is_casting,
+                            }
+                            for a in (snapshot.actors or [])
+                        ]
+                        _snap["inventory"] = {
+                            "zeny": snapshot.inventory.zeny,
+                            "items": snapshot.inventory.items,
+                        }
+                        _snap["skills"] = [
+                            {"name": s.name, "level": s.level}
+                            for s in (snapshot.skills or [])
+                        ]
+                        _snap["status"] = {
+                            "sitting": snapshot.raw.get("sitting", False) if isinstance(snapshot.raw, dict) else False,
+                            "dead": snapshot.raw.get("dead", False) if isinstance(snapshot.raw, dict) else False,
+                        }
+                        _snap["buffs"] = []
+                    except Exception:
+                        pass
                 _cl.update_state(_snap)
                 _action = _cl.tick()
                 if _action:
-                    _ae.execute(_action, self._resolve_cost_gate_bot_id(), _aq)
                     result["combat_action"] = _action
         except Exception:
             pass
