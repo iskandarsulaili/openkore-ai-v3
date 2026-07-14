@@ -222,13 +222,11 @@ class HealingOptimizer:
         
         Returns None if no suitable healing item is available.
         """
-        self._lock.acquire()
-        try:
+        with self._lock:
             if not self._loaded:
                 self.load()
             
             if not self._healing_items:
-                self._lock.release()
                 return None
             
             self._stats["lookups"] += 1
@@ -243,10 +241,9 @@ class HealingOptimizer:
             cached = self._cache.get(cache_key)
             if cached:
                 self._stats["cache_hits"] += 1
-                self._lock.release()
                 return f"use {cached}"
             
-            best_item: HealingItem | None = None
+            best_item = None
             best_score = -1.0
             
             for item in self._healing_items:
@@ -266,46 +263,30 @@ class HealingOptimizer:
                 # Score based on what we need
                 if prefer_hp and hp_ratio < 0.5:
                     # COMBAT MODE: HP is critical — prioritize effective heal amount
-                    # Over-healing is CORRECT in combat. A pro player would rather
-                    # waste 50 HP of a White Potion than die because a Red Potion
-                    # didn't heal enough.
                     if total_hp_heal > 0:
-                        # Primary score: how much HP does this actually restore?
-                        # Secondary: cost efficiency (tiebreaker only)
-                        # No over-heal penalty — in combat, over-healing saves lives
-                        effective_heal = min(total_hp_heal, hp_deficit * 1.5)  # Allow 50% over-heal
+                        effective_heal = min(total_hp_heal, hp_deficit * 1.5)
                         cost_efficiency = total_hp_heal / max(item.buy, 1) if item.buy > 0 else total_hp_heal
                         score = effective_heal * 100 + cost_efficiency
                     else:
                         score = 0
                 elif sp_ratio < 0.3:
-                    # Need SP — score by SP heal
                     score = total_sp_heal / max(item.buy, 1) if item.buy > 0 else total_sp_heal
                 else:
-                    # Maintenance — score by efficiency
                     score = (total_hp_heal + total_sp_heal) / max(item.buy, 1) if item.buy > 0 else (total_hp_heal + total_sp_heal)
                 
                 if score > best_score:
                     best_score = score
                     best_item = item
             
-            self._lock.release()
-            
             if best_item is None:
                 return None
             
             # Cache the result
             self._cache[cache_key] = best_item.name
-            # Prune cache if too large
             if len(self._cache) > 1000:
                 self._cache.clear()
             
             return f"use {best_item.name}"
-        
-        except Exception as e:
-            self._lock.release()
-            logger.warning("healing_optimizer_select_failed: %s", e)
-            return None
     
     def select_sp_healing_command(
         self, *, hp: int, max_hp: int, sp: int, max_sp: int, zeny: int, level: int

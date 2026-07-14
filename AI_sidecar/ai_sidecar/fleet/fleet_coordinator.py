@@ -81,12 +81,21 @@ class FleetCoordinator:
             logger.info("fleet_bot_registered: bot=%s role=%s class=%s", bot_id, role, class_name)
     
     def update_bot_status(self, bot_id: str, *, map: str = "", status: str = "", level: int = 0) -> None:
-        """Update a bot's status."""
+        """Update a bot's status — auto-registers if not yet known."""
         with self._lock:
             bot = self._bots.get(bot_id)
-            if bot:
-                if map:
-                    bot.map = map
+            if bot is None:
+                bot = BotRole(
+                    bot_id=bot_id,
+                    role="farmer",
+                    class_name="",
+                    level=level or 1,
+                    last_seen=time.time(),
+                )
+                self._bots[bot_id] = bot
+                logger.info("fleet_bot_auto_registered: bot=%s map=%s", bot_id, map)
+            if map:
+                bot.map = map
                 if status:
                     bot.status = status
                 if level:
