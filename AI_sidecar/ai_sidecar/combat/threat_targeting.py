@@ -11,7 +11,6 @@ This module evaluates all visible monsters and returns the optimal target.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
@@ -92,7 +91,6 @@ class ThreatBasedTargeting:
                         has_aoe: bool = False) -> dict[str, Any] | None:
         """Evaluate all monsters and return the best target."""
         with self._lock:
-            now = time.time()
             self._stats["evaluations"] += 1
             
             if not self._monsters:

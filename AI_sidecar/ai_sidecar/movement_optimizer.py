@@ -102,7 +102,7 @@ class MovementOptimizer:
                 "method": "go_command",
                 "time_s": go_time,
                 "cost": 0,
-                "command": f"move {target_map}",
+                "command": f"@go {_target_base}",
                 "score": 100.0 / max(go_time, 1) * 1.5,  # Best option
             })
         

@@ -895,6 +895,7 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_54 => 'storageprice',
 		aiSidecarPolicy_allow_55 => 'reparse',
 		aiSidecarPolicy_allow_56 => 'ss',
+		aiSidecarPolicy_allow_57 => '@go',
 
 		aiSidecarPolicy_deny_0 => 'quit',
 		aiSidecarPolicy_deny_1 => 'plugin',

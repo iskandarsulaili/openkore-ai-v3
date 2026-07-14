@@ -2445,6 +2445,17 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("party_leader_init_failed: %s", e)
                 
+                # ── NEW: Initialize Gather-and-Kill ──
+                _gk = getattr(self._runtime, "gather_and_kill", None)
+                if _gk is None:
+                    try:
+                        from ai_sidecar.combat.gather_and_kill import GatherAndKill
+                        _gk = GatherAndKill()
+                        self._runtime.gather_and_kill = _gk
+                        logger.info("gather_and_kill_initialized")
+                    except Exception as e:
+                        logger.warning("gather_and_kill_init_failed: %s", e)
+                
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -2882,6 +2893,17 @@ class PDCALoop:
                                             is_in_combat=bool(_pm.get("in_combat", False)),
                                             is_dead=bool(_pm.get("is_dead", False)),
                                         )
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Gather-and-Kill ──
+                        try:
+                            _gk = getattr(self._runtime, "gather_and_kill", None)
+                            if _gk is not None:
+                                _aggro = int(_conscious_snap.get("aggro_count", 0) or 0)
+                                _has_aoe = bool(_conscious_snap.get("has_aoe", False))
+                                _hp_pct = float(_conscious_snap.get("hp_pct", 1.0) or 1.0)
+                                _gk.evaluate(_aggro, _has_aoe, _hp_pct, is_town=False)
                         except Exception:
                             pass
                     
@@ -5095,6 +5117,16 @@ class PDCALoop:
                 _pl_ctx = _pl.get_leader_context()
                 if _pl_ctx:
                     result["party_leader_context"] = _pl_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Gather-and-Kill Context ──
+        try:
+            _gk = getattr(self._runtime, "gather_and_kill", None)
+            if _gk is not None:
+                _gk_ctx = _gk.get_gather_context()
+                if _gk_ctx:
+                    result["gather_context"] = _gk_ctx
         except Exception:
             pass
         

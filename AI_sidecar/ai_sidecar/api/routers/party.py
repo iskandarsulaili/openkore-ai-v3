@@ -7,6 +7,9 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Depends
 
+from ai_sidecar.api.deps import get_runtime
+from ai_sidecar.lifecycle import RuntimeState
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v2/party", tags=["party"])
@@ -14,7 +17,7 @@ router = APIRouter(prefix="/v2/party", tags=["party"])
 
 @router.post("/follow/position")
 def get_follow_position(
-    runtime=Depends(lambda: __import__("ai_sidecar.lifecycle", fromlist=["get_runtime"]).get_runtime()),
+    runtime: RuntimeState = Depends(get_runtime),
 ):
     """Get the optimal follow position based on party composition."""
     try:
@@ -34,7 +37,7 @@ def get_follow_position(
 
 @router.post("/leader/status")
 def get_leader_status(
-    runtime=Depends(lambda: __import__("ai_sidecar.lifecycle", fromlist=["get_runtime"]).get_runtime()),
+    runtime: RuntimeState = Depends(get_runtime),
 ):
     """Get party leader coordination status."""
     try:

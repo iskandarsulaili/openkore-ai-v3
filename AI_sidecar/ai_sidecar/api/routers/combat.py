@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Depends
 
-from ai_sidecar.combat.threat_targeting import get_threat_targeting
+from ai_sidecar.api.deps import get_runtime
+from ai_sidecar.lifecycle import RuntimeState
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/v2/combat", tags=["combat"])
 
 @router.post("/target")
 def get_combat_target(
-    runtime=Depends(lambda: __import__("ai_sidecar.lifecycle", fromlist=["get_runtime"]).get_runtime()),
+    runtime: RuntimeState = Depends(get_runtime),
 ):
     """Get the optimal combat target based on threat analysis."""
     try:
