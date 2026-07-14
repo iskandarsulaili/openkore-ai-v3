@@ -2556,6 +2556,10 @@ class PDCALoop:
                                             "dmg_to_us": getattr(a, "dmg_to_us", 0) or 0,
                                             "dmg_to_you": getattr(a, "dmg_to_you", 0) or 0,
                                             "dmg_from_us": getattr(a, "dmg_from_us", 0) or 0,
+                                            "name_id": getattr(a, "name_id", None),
+                                            "casting": getattr(a, "casting", None) or "",
+                                            "missed_you": getattr(a, "missed_you", 0) or 0,
+                                            "cast_on_you": getattr(a, "cast_on_you", 0) or 0,
                                         }
                                         for a in _actors_raw
                                         if getattr(a, "actor_id", None) is not None
@@ -2879,6 +2883,21 @@ class PDCALoop:
                                     for _m in _monsters:
                                         _mid = int(_m.get("id", _m.get("monster_id", 0)) or 0)
                                         if _mid > 0:
+                                            # Derive boss/aggressive/casting from bridge fields
+                                            _name_id = _m.get("name_id")
+                                            _casting = str(_m.get("casting", "") or "")
+                                            _missed_you = int(_m.get("missed_you", 0) or 0)
+                                            _cast_on_you = int(_m.get("cast_on_you", 0) or 0)
+                                            _is_boss = False
+                                            if _name_id is not None:
+                                                try:
+                                                    _ge = getattr(self._runtime, "game_engine", None)
+                                                    if _ge is not None and hasattr(_ge, "is_boss"):
+                                                        _is_boss = _ge.is_boss(int(_name_id))
+                                                except Exception:
+                                                    pass
+                                            _is_casting = bool(_casting)
+                                            _is_aggressive = _missed_you > 0 or _cast_on_you > 0
                                             _tt.update_monster(
                                                 _mid,
                                                 name=str(_m.get("name", "") or ""),
@@ -2886,10 +2905,10 @@ class PDCALoop:
                                                 hp=int(_m.get("hp", 1) or 1),
                                                 max_hp=int(_m.get("max_hp", 1) or 1),
                                                 distance=int(_m.get("distance", 0) or 0),
-                                                is_boss=bool(_m.get("is_boss", False)),
-                                                is_aggressive=bool(_m.get("is_aggressive", False)),
-                                                is_casting=bool(_m.get("is_casting", False)),
-                                                casting_skill=str(_m.get("casting_skill", "") or ""),
+                                                is_boss=_is_boss,
+                                                is_aggressive=_is_aggressive,
+                                                is_casting=_is_casting,
+                                                casting_skill=_casting,
                                             )
                                             # Track damage from this monster
                                             _dmg_to_us = int(_m.get("dmg_to_us", 0) or 0)

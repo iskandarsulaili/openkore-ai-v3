@@ -1266,6 +1266,10 @@ class RuntimeState:
                     dmg_to_us=actor.dmg_to_us,
                     dmg_to_you=actor.dmg_to_you,
                     dmg_from_us=actor.dmg_from_us,
+                    name_id=actor.name_id,
+                    casting=actor.casting,
+                    missed_you=actor.missed_you,
+                    cast_on_you=actor.cast_on_you,
                     raw={},
                 )
             )

@@ -341,6 +341,19 @@ class GameIntelligenceEngine:
         if not self._monsters:
             logger.warning("No game knowledge loaded — recommendations will be generic")
 
+    def is_boss(self, monster_id: int) -> bool:
+        """Check if a monster is an MVP/boss by its ID.
+        
+        Uses the Modes.Mvp field from rAthena knowledge data.
+        Thread-safe via RLock.
+        """
+        with self._lock:
+            for m in self._monsters:
+                mid = m.get("Id", m.get("id", 0))
+                if mid == monster_id:
+                    return bool(m.get("Modes.Mvp", False))
+            return False
+
     def recommend_hunting(self, *,
                           bot_level: int = 1,
                           job_name: str = "novice",

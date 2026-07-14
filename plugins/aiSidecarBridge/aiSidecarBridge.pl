@@ -1162,6 +1162,10 @@ sub _build_snapshot_payload {
 			my $dmg_to     = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgTo} || 0) : undef;
 			my $dmg_from   = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgFrom} || 0) : undef;
 			my $dmg_to_you = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgFromYou} || 0) : undef;
+			my $name_id    = defined $args{include_damage} && $args{include_damage} ? ($actor->{nameID} || undef) : undef;
+			my $casting    = defined $args{include_damage} && $args{include_damage} ? ($actor->{casting} || undef) : undef;
+			my $missed_you = defined $args{include_damage} && $args{include_damage} ? ($actor->{missedYou} || 0) : undef;
+			my $cast_on_you = defined $args{include_damage} && $args{include_damage} ? ($actor->{castOnToYou} || 0) : undef;
 			push @actors, {
 				actor_id   => $actor_id,
 				actor_type => $actor_type,
@@ -1175,6 +1179,10 @@ sub _build_snapshot_payload {
 				dmg_to_us  => $dmg_from,
 				dmg_to_you => $dmg_to_you,
 				dmg_from_us => $dmg_to,
+				name_id    => $name_id,
+				casting    => $casting,
+				missed_you => $missed_you,
+				cast_on_you => $cast_on_you,
 			};
 
 			$actor_discovery->{normalize}{kept_total} += 1;
@@ -1404,6 +1412,10 @@ sub _send_actor_delta_from_snapshot {
 			dmg_to_us => $actor->{dmg_to_us},
 			dmg_to_you => $actor->{dmg_to_you},
 			dmg_from_us => $actor->{dmg_from_us},
+			name_id => $actor->{name_id},
+			casting => $actor->{casting},
+			missed_you => $actor->{missed_you},
+			cast_on_you => $actor->{cast_on_you},
 			raw => {},
 		};
 	}

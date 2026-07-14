@@ -180,6 +180,10 @@ class ActorDigest(BaseModel):
     dmg_to_us: int | None = None
     dmg_to_you: int | None = None
     dmg_from_us: int | None = None
+    name_id: int | None = None
+    casting: str | None = None
+    missed_you: int | None = None
+    cast_on_you: int | None = None
 
 
 class BotStateSnapshot(BaseModel):
