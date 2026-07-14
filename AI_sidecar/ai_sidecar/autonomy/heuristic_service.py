@@ -62,13 +62,24 @@ class HeuristicService:
         # Enriched state signals (emergent discovery)
         _enriched = signals.get("_enriched", None)
 
+        # ── Survival: Stay in town if critically low HP ──
+        hp_ratio = signals.get("hp_ratio", 1.0)
+        map_name = signals.get("map", "")
+        if hp_ratio < 0.3 and "prontera" not in map_name:
+            actions.append(HeuristicAction(
+                kind="command", command="move prontera",
+                confidence=0.95, domain="survival",
+                reason=f"Critically low HP ({hp_ratio:.0%}) — retreat to Prontera to regen safely",
+            ))
+            weighted_domains["survival"] = 0.95
+            total_confidence = max(total_confidence, 0.95)
+
         # ── Progression: Learn skills ──
         skills = signals.get("skills", [])
         base_level = signals.get("base_level", 1)
         job_name = signals.get("job_name", "novice").lower()
         zeny = signals.get("zeny", 0)
         inventory = signals.get("inventory_items", {})
-        map_name = signals.get("map", "")
 
         # Learn Basic Skill if not known
         if "NV_BASIC" not in skills:

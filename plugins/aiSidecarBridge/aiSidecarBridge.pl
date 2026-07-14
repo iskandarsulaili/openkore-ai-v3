@@ -3027,13 +3027,18 @@ sub _calc_distance {
 			}
 		}
 
-		# ── 3. Emergency Teleport Reflex ──
+		# ── 3. Emergency Teleport / Sit Reflex ──
 		if ($hp_ratio < 0.12) {
 			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
 				$_reflex_last_fired{teleport} = _now_ms();
 				_random_action_delay();
-				warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
-												eval { Commands::run("tele"); 1; };
+				if ($aggro_count > 0) {
+					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio, aggro=$aggro_count)\n";
+					eval { Commands::run("tele"); 1; };
+				} else {
+					warning "[aiSidecarBridge] bridge_reflex:emergency_sit_regen (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
+					eval { Commands::run("sit"); 1; };
+				}
 			}
 		}
 
