@@ -2217,7 +2217,6 @@ class PDCALoop:
                     try:
                         from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
                         _edge = EdgeCaseHandler()
-                        # Wire enqueue function for executing contingency plans
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
                             _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
@@ -2231,6 +2230,82 @@ class PDCALoop:
                         logger.info("edge_case_handler_initialized")
                     except Exception as e:
                         logger.warning("edge_case_handler_init_failed: %s", e)
+                
+                # ── NEW: Initialize Server Personality ──
+                _sp = getattr(self._runtime, "server_personality", None)
+                if _sp is None:
+                    try:
+                        from ai_sidecar.social.server_personality import ServerPersonalityEngine
+                        _sp = ServerPersonalityEngine()
+                        self._runtime.server_personality = _sp
+                        logger.info("server_personality_initialized")
+                    except Exception as e:
+                        logger.warning("server_personality_init_failed: %s", e)
+                
+                # ── NEW: Initialize Ambition Engine ──
+                _amb = getattr(self._runtime, "ambition_engine", None)
+                if _amb is None:
+                    try:
+                        from ai_sidecar.ambition.ambition_engine import AmbitionEngine
+                        _amb = AmbitionEngine()
+                        self._runtime.ambition_engine = _amb
+                        logger.info("ambition_engine_initialized")
+                    except Exception as e:
+                        logger.warning("ambition_engine_init_failed: %s", e)
+                
+                # ── NEW: Initialize Conversation Engine ──
+                _conv = getattr(self._runtime, "conversation_engine", None)
+                if _conv is None:
+                    try:
+                        from ai_sidecar.social.conversation_engine import ConversationEngine
+                        _conv = ConversationEngine()
+                        self._runtime.conversation_engine = _conv
+                        logger.info("conversation_engine_initialized")
+                    except Exception as e:
+                        logger.warning("conversation_engine_init_failed: %s", e)
+                
+                # ── NEW: Initialize Situational Awareness ──
+                _sit = getattr(self._runtime, "situational_awareness", None)
+                if _sit is None:
+                    try:
+                        from ai_sidecar.social.situational_awareness import SituationalAwareness
+                        _sit = SituationalAwareness()
+                        self._runtime.situational_awareness = _sit
+                        logger.info("situational_awareness_initialized")
+                    except Exception as e:
+                        logger.warning("situational_awareness_init_failed: %s", e)
+                
+                # ── NEW: Initialize Social Participation ──
+                _spart = getattr(self._runtime, "social_participation", None)
+                if _spart is None:
+                    try:
+                        from ai_sidecar.social.social_participation import SocialParticipation
+                        _spart = SocialParticipation()
+                        # Wire enqueue function
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"spart-{int(time.time())}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "tactical",
+                            })
+                        self._runtime.social_participation = _spart
+                        logger.info("social_participation_initialized")
+                    except Exception as e:
+                        logger.warning("social_participation_init_failed: %s", e)
+                
+                # ── NEW: Initialize Competitive Evaluator ──
+                _ce = getattr(self._runtime, "competitive_evaluator", None)
+                if _ce is None:
+                    try:
+                        from ai_sidecar.social.competitive_evaluator import CompetitiveEvaluator
+                        _ce = CompetitiveEvaluator()
+                        self._runtime.competitive_evaluator = _ce
+                        logger.info("competitive_evaluator_initialized")
+                    except Exception as e:
+                        logger.warning("competitive_evaluator_init_failed: %s", e)
                 
                 # Get heuristic confidence
                 _hc = 0.0
@@ -2450,12 +2525,22 @@ class PDCALoop:
                             _aq = getattr(self._runtime, "action_queue", None)
                             if _innov is not None and _aq is not None:
                                 _pending = _innov.get_pending_experiments()
+                                if not _pending:
+                                    # No pending experiments — propose one from knowledge
+                                    try:
+                                        import json as _json
+                                        _kp = Path("knowledge/knowledge.json")
+                                        if _kp.exists():
+                                            with open(_kp) as _kf:
+                                                _knowledge = _json.load(_kf)
+                                            _innov.propose_knowledge_driven_experiment(_knowledge)
+                                            _pending = _innov.get_pending_experiments()
+                                    except Exception:
+                                        pass
                                 for _exp in _pending[:1]:  # Run one experiment at a time
-                                    import random as _rnd
                                     _innov.start_experiment(_exp.name)
-                                    # Run the experiment: move to a random nearby map and farm
-                                    _alt_maps = ["prt_fild08", "pay_fild10", "gef_fild14", "moc_fild22", "ra_fild12"]
-                                    _target_map = _rnd.choice(_alt_maps)
+                                    # Use knowledge-driven target map if available
+                                    _target_map = _exp.metadata.get("map", "prt_fild08") if hasattr(_exp, "metadata") and _exp.metadata else "prt_fild08"
                                     _aq.enqueue(_reflex_bot_id, {
                                         "action_id": f"experiment-{_exp.name}-{int(time.time())}",
                                         "kind": "command",
@@ -2463,8 +2548,7 @@ class PDCALoop:
                                         "conflict_key": "",
                                         "priority_tier": "tactical",
                                     })
-                                    # Schedule outcome measurement after experiment duration
-                                    _exp.duration_minutes = 10  # Short experiment
+                                    _exp.duration_minutes = 10
                                     logger.info("innovation_experiment_started: %s on %s", _exp.name, _target_map)
                         except Exception:
                             pass
@@ -2542,6 +2626,43 @@ class PDCALoop:
                                                     importance=4,
                                                     metadata=_ca,
                                                 )
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Situational Awareness ──
+                        try:
+                            _sit = getattr(self._runtime, "situational_awareness", None)
+                            if _sit is not None and _is_dead:
+                                _sit.record_signal("death", 5, f"Bot died on {_map}", duration_minutes=30)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Competitive Evaluator ──
+                        try:
+                            _ce = getattr(self._runtime, "competitive_evaluator", None)
+                            if _ce is not None:
+                                _players = _conscious_snap.get("players", []) or _conscious_snap.get("nearby_players", []) or []
+                                if isinstance(_players, list):
+                                    for _p in _players:
+                                        _p_name = str(_p.get("name", "") or "")
+                                        if _p_name and _p_name != _reflex_bot_id:
+                                            _ce.spot_competitor(_p_name, _map, level=_level)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Server Personality ──
+                        try:
+                            _sp = getattr(self._runtime, "server_personality", None)
+                            if _sp is not None and _map:
+                                _sp.set_current_server("current", ip="", port=6900)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Ambition Engine ──
+                        try:
+                            _amb = getattr(self._runtime, "ambition_engine", None)
+                            if _amb is not None and _est_zeny > 0:
+                                _amb.update_progress("wealth", _est_zeny, f"farmed on {_map}")
                         except Exception:
                             pass
                     
@@ -4602,6 +4723,66 @@ class PDCALoop:
                 _edge_ctx = _edge.get_edge_context()
                 if _edge_ctx:
                     result["edge_context"] = _edge_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Server Personality Context ──
+        try:
+            _sp = getattr(self._runtime, "server_personality", None)
+            if _sp is not None:
+                _sp_ctx = _sp.get_behavior_context()
+                if _sp_ctx:
+                    result["server_personality"] = _sp_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Ambition Context ──
+        try:
+            _amb = getattr(self._runtime, "ambition_engine", None)
+            if _amb is not None:
+                _amb_ctx = _amb.get_ambition_context()
+                if _amb_ctx:
+                    result["ambition_context"] = _amb_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Conversation Context ──
+        try:
+            _conv = getattr(self._runtime, "conversation_engine", None)
+            if _conv is not None:
+                _conv_ctx = _conv.get_conversation_context()
+                if _conv_ctx:
+                    result["conversation_context"] = _conv_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Situational Context ──
+        try:
+            _sit = getattr(self._runtime, "situational_awareness", None)
+            if _sit is not None:
+                _sit_ctx = _sit.get_situational_context()
+                if _sit_ctx:
+                    result["situational_context"] = _sit_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Social Participation Context ──
+        try:
+            _spart = getattr(self._runtime, "social_participation", None)
+            if _spart is not None:
+                _spart_ctx = _spart.get_participation_context()
+                if _spart_ctx:
+                    result["social_participation"] = _spart_ctx
+        except Exception:
+            pass
+        
+        # ── Inject Competition Context ──
+        try:
+            _ce = getattr(self._runtime, "competitive_evaluator", None)
+            if _ce is not None:
+                _ce_ctx = _ce.get_competition_context()
+                if _ce_ctx:
+                    result["competition_context"] = _ce_ctx
         except Exception:
             pass
         

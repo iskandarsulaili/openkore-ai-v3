@@ -72,6 +72,67 @@ class InnovationEngine:
         logger.info("innovation_experiment_proposed: %s — %s", name, hypothesis)
         return exp
     
+    def propose_knowledge_driven_experiment(self, knowledge: dict | None = None) -> Experiment | None:
+        """Propose an experiment based on game knowledge, not random walk.
+        
+        Uses knowledge.json data to find promising farming spots, mobs with
+        good drop rates, and efficient leveling routes.
+        """
+        if knowledge is None:
+            return None
+        
+        try:
+            items = knowledge.get("items", {}).get("all", [])
+            mobs = knowledge.get("mobs", {}).get("all", [])
+            
+            # Find mobs with valuable drops
+            valuable_mobs = []
+            for mob in mobs:
+                drops = mob.get("drops", []) or mob.get("MvP_Drops", []) or []
+                for drop in drops:
+                    drop_id = drop.get("Id", drop.get("id", 0))
+                    drop_rate = drop.get("Rate", drop.get("rate", 0))
+                    if drop_rate > 0 and drop_rate < 1000:  # Rare drops (under 10%)
+                        valuable_mobs.append({
+                            "name": mob.get("Name", mob.get("name", "unknown")),
+                            "map": mob.get("Map", mob.get("map", "unknown")),
+                            "level": mob.get("Level", mob.get("level", 0)),
+                            "drop_id": drop_id,
+                            "drop_rate": drop_rate,
+                        })
+            
+            if valuable_mobs:
+                # Pick the most promising mob to farm
+                target = valuable_mobs[0]
+                exp = self.propose_experiment(
+                    name=f"farm_{target['name']}",
+                    hypothesis=f"Farm {target['name']} on {target['map']} for rare drops",
+                    duration_minutes=30,
+                )
+                exp.metadata = {"map": target["map"], "mob": target["name"]}
+                return exp
+            
+            # Fallback: find high-density mob areas
+            mob_maps = {}
+            for mob in mobs:
+                m = mob.get("Map", mob.get("map", "unknown"))
+                if m != "unknown":
+                    mob_maps[m] = mob_maps.get(m, 0) + 1
+            
+            if mob_maps:
+                best_map = max(mob_maps, key=mob_maps.get)
+                exp = self.propose_experiment(
+                    name=f"density_test_{best_map.replace('_', '')}",
+                    hypothesis=f"Test farming density on {best_map} ({mob_maps[best_map]} mob types)",
+                    duration_minutes=30,
+                )
+                exp.metadata = {"map": best_map}
+                return exp
+        except Exception as e:
+            logger.warning("innovation_knowledge_proposal_failed: %s", e)
+        
+        return None
+    
     def start_experiment(self, name: str) -> bool:
         """Start a proposed experiment."""
         with self._lock:
