@@ -2455,6 +2455,128 @@ class PDCALoop:
                         logger.info("gather_and_kill_initialized")
                     except Exception as e:
                         logger.warning("gather_and_kill_init_failed: %s", e)
+
+                # ── NEW: Initialize Elemental Combat Matrix ──
+                _em = getattr(self._runtime, "elemental_matrix", None)
+                if _em is None:
+                    try:
+                        from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
+                        _em = get_elemental_matrix()
+                        self._runtime.elemental_matrix = _em
+                        logger.info("elemental_matrix_initialized")
+                    except Exception as e:
+                        logger.warning("elemental_matrix_init_failed: %s", e)
+
+                # ── NEW: Initialize Skill Rotation System ──
+                _srs = getattr(self._runtime, "skill_rotation", None)
+                if _srs is None:
+                    try:
+                        from ai_sidecar.combat.skill_rotation import get_skill_rotation_system
+                        _srs = get_skill_rotation_system()
+                        self._runtime.skill_rotation = _srs
+                        logger.info("skill_rotation_initialized: %d skills, %d rotations",
+                                    len(_srs.get_all_skills()), len(_srs.get_all_rotations()))
+                    except Exception as e:
+                        logger.warning("skill_rotation_init_failed: %s", e)
+
+                # ── NEW: Initialize Map Intelligence ──
+                _mi = getattr(self._runtime, "map_intelligence", None)
+                if _mi is None:
+                    try:
+                        from ai_sidecar.map_intelligence import get_map_intelligence
+                        _mi = get_map_intelligence()
+                        self._runtime.map_intelligence = _mi
+                        logger.info("map_intelligence_initialized: %d maps", len(_mi.get_all_maps()))
+                    except Exception as e:
+                        logger.warning("map_intelligence_init_failed: %s", e)
+
+                # ── NEW: Initialize MVP Mechanics ──
+                _mvp = getattr(self._runtime, "mvp_mechanics", None)
+                if _mvp is None:
+                    try:
+                        from ai_sidecar.combat.mvp_mechanics import get_mvp_mechanics_db
+                        _mvp = get_mvp_mechanics_db()
+                        self._runtime.mvp_mechanics = _mvp
+                        logger.info("mvp_mechanics_initialized: %d MVPs", len(_mvp.get_all_mvps()))
+                    except Exception as e:
+                        logger.warning("mvp_mechanics_init_failed: %s", e)
+
+                # ── NEW: Initialize Gear Swapper ──
+                _gs = getattr(self._runtime, "gear_swapper", None)
+                if _gs is None:
+                    try:
+                        from ai_sidecar.combat.gear_swapper import get_gear_swapper
+                        _gs = get_gear_swapper()
+                        self._runtime.gear_swapper = _gs
+                        logger.info("gear_swapper_initialized: %d gear sets", len(_gs.get_all_gear_sets()))
+                    except Exception as e:
+                        logger.warning("gear_swapper_init_failed: %s", e)
+
+                # ── NEW: Initialize Buff Maintenance ──
+                _bm = getattr(self._runtime, "buff_maintenance", None)
+                if _bm is None:
+                    try:
+                        from ai_sidecar.combat.buff_maintenance import get_buff_manager
+                        _bm = get_buff_manager()
+                        self._runtime.buff_maintenance = _bm
+                        logger.info("buff_maintenance_initialized: %d buffs", len(_bm.get_all_buffs()))
+                    except Exception as e:
+                        logger.warning("buff_maintenance_init_failed: %s", e)
+
+                # ── NEW: Initialize Economic Engine ──
+                _ee = getattr(self._runtime, "economic_engine", None)
+                if _ee is None:
+                    try:
+                        from ai_sidecar.economy.economic_engine import get_economic_engine
+                        _ee = get_economic_engine()
+                        self._runtime.economic_engine = _ee
+                        logger.info("economic_engine_initialized")
+                    except Exception as e:
+                        logger.warning("economic_engine_init_failed: %s", e)
+
+                # ── NEW: Initialize Death Analysis ──
+                _da = getattr(self._runtime, "death_analysis", None)
+                if _da is None:
+                    try:
+                        from ai_sidecar.learning.death_analysis import get_death_analyzer
+                        _da = get_death_analyzer()
+                        self._runtime.death_analysis = _da
+                        logger.info("death_analysis_initialized")
+                    except Exception as e:
+                        logger.warning("death_analysis_init_failed: %s", e)
+
+                # ── NEW: Initialize Leveling Planner ──
+                _lp = getattr(self._runtime, "leveling_planner", None)
+                if _lp is None:
+                    try:
+                        from ai_sidecar.learning.leveling_planner import get_leveling_planner
+                        _lp = get_leveling_planner()
+                        self._runtime.leveling_planner = _lp
+                        logger.info("leveling_planner_initialized")
+                    except Exception as e:
+                        logger.warning("leveling_planner_init_failed: %s", e)
+
+                # ── NEW: Initialize Humanizer ──
+                _hz = getattr(self._runtime, "humanizer", None)
+                if _hz is None:
+                    try:
+                        from ai_sidecar.combat.humanizer import get_humanizer
+                        _hz = get_humanizer()
+                        self._runtime.humanizer = _hz
+                        logger.info("humanizer_initialized")
+                    except Exception as e:
+                        logger.warning("humanizer_init_failed: %s", e)
+
+                # ── NEW: Initialize WoE Manager ──
+                _wm = getattr(self._runtime, "woe_manager", None)
+                if _wm is None:
+                    try:
+                        from ai_sidecar.combat.woe_manager import get_woe_manager
+                        _wm = get_woe_manager()
+                        self._runtime.woe_manager = _wm
+                        logger.info("woe_manager_initialized")
+                    except Exception as e:
+                        logger.warning("woe_manager_init_failed: %s", e)
                 
                 # Get heuristic confidence
                 _hc = 0.0
@@ -5178,5 +5300,141 @@ class PDCALoop:
                     result["gather_context"] = _gk_ctx
         except Exception:
             pass
-        
+
+        # ── Inject Elemental Matrix Context ──
+        try:
+            _em = getattr(self._runtime, "elemental_matrix", None)
+            if _em is not None and _conscious_snap:
+                _target_element = _conscious_snap.get("target_element", "neutral")
+                _target_size = _conscious_snap.get("target_size", "medium")
+                _target_race = _conscious_snap.get("target_race", "formless")
+                _adv = _em.get_elemental_advantage_description(_target_element, _target_size, _target_race)
+                if _adv:
+                    result["elemental_advantage"] = _adv
+        except Exception:
+            pass
+
+        # ── Inject Skill Rotation Context ──
+        try:
+            _srs = getattr(self._runtime, "skill_rotation", None)
+            if _srs is not None and _conscious_snap:
+                _job = str(_conscious_snap.get("job_class", "novice"))
+                _target_element = _conscious_snap.get("target_element", "neutral")
+                _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
+                _sp = int(_conscious_snap.get("vitals", {}).get("sp", 0))
+                _rot_name = _srs.get_recommended_rotation(_job, _target_element, has_aoe=_aggro > 2)
+                if _rot_name:
+                    result["recommended_rotation"] = _rot_name
+        except Exception:
+            pass
+
+        # ── Inject Map Intelligence Context ──
+        try:
+            _mi = getattr(self._runtime, "map_intelligence", None)
+            if _mi is not None and _map_name:
+                _md = _mi.get_map_data(_map_name)
+                if _md:
+                    result["map_data"] = {
+                        "name": _md.name,
+                        "difficulty": _md.difficulty,
+                        "is_dungeon": _md.is_dungeon,
+                        "is_town": _md.is_town,
+                        "monster_density": _md.monster_density,
+                        "recommended_level_range": list(_md.recommended_level_range),
+                    }
+        except Exception:
+            pass
+
+        # ── Inject MVP Mechanics Context ──
+        try:
+            _mvp = getattr(self._runtime, "mvp_mechanics", None)
+            if _mvp is not None and _conscious_snap:
+                _target_id = _conscious_snap.get("target_id", 0)
+                if _target_id:
+                    _mvp_info = _mvp.get_mvp_strategy_summary(int(_target_id))
+                    if _mvp_info:
+                        result["mvp_strategy"] = _mvp_info
+        except Exception:
+            pass
+
+        # ── Inject Gear Swapper Context ──
+        try:
+            _gs = getattr(self._runtime, "gear_swapper", None)
+            if _gs is not None and _conscious_snap:
+                _target_element = _conscious_snap.get("target_element", "neutral")
+                _target_size = _conscious_snap.get("target_size", "medium")
+                _target_race = _conscious_snap.get("target_race", "formless")
+                _is_boss = _conscious_snap.get("is_boss", False)
+                _job = str(_conscious_snap.get("job_class", "novice"))
+                _rec = _gs.get_gear_recommendation({
+                    "element": _target_element,
+                    "size": _target_size,
+                    "race": _target_race,
+                    "is_boss": _is_boss,
+                }, _job)
+                if _rec:
+                    result["gear_recommendation"] = _rec
+        except Exception:
+            pass
+
+        # ── Inject Buff Maintenance Context ──
+        try:
+            _bm = getattr(self._runtime, "buff_maintenance", None)
+            if _bm is not None:
+                _active_buffs = _conscious_snap.get("buffs", []) if _conscious_snap else []
+                _expiring = _bm.get_expiring_buffs(_active_buffs)
+                if _expiring:
+                    result["buffs_expiring"] = [b.name for b in _expiring[:5]]
+        except Exception:
+            pass
+
+        # ── Inject Economic Engine Context ──
+        try:
+            _ee = getattr(self._runtime, "economic_engine", None)
+            if _ee is not None and _map_name:
+                _eco = _ee.get_map_economics(_map_name)
+                if _eco:
+                    result["map_economics"] = {
+                        "zeny_per_hour": _eco.zeny_per_hour,
+                        "exp_per_hour": _eco.exp_per_hour,
+                        "profit_per_hour": _eco.profit_per_hour,
+                        "efficiency_score": _eco.efficiency_score,
+                        "trend": _eco.trend,
+                    }
+        except Exception:
+            pass
+
+        # ── Inject Death Analysis Context ──
+        try:
+            _da = getattr(self._runtime, "death_analysis", None)
+            if _da is not None:
+                _summary = _da.get_learning_summary()
+                if _summary:
+                    result["death_analysis"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Leveling Planner Context ──
+        try:
+            _lp = getattr(self._runtime, "leveling_planner", None)
+            if _lp is not None and _conscious_snap:
+                _level = int(_conscious_snap.get("vitals", {}).get("base_level", 1))
+                _job = str(_conscious_snap.get("job_class", "novice"))
+                _summary = _lp.get_leveling_summary(_level, _job)
+                if _summary:
+                    result["leveling_plan"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject WoE Manager Context ──
+        try:
+            _wm = getattr(self._runtime, "woe_manager", None)
+            if _wm is not None and _map_name:
+                if _wm.is_woe_map(_map_name) or _wm.is_woe_time():
+                    _instructions = _wm.get_behavior_instructions()
+                    if _instructions:
+                        result["woe_instructions"] = _instructions
+        except Exception:
+            pass
+
         return result
