@@ -2428,6 +2428,47 @@ class PDCALoop:
                         except Exception:
                             pass
                         
+                        # ── GM Detection ──
+                        try:
+                            _edge = getattr(self._runtime, "edge_case_handler", None)
+                            if _edge is not None:
+                                # Check player/actor names for GM patterns
+                                _actors = _conscious_snap.get("actors", []) or _conscious_snap.get("nearby", []) or []
+                                if isinstance(_actors, list):
+                                    for _actor in _actors:
+                                        _a_name = str(_actor.get("name", "") or "")
+                                        if any(gm_prefix in _a_name.lower() for gm_prefix in
+                                               ["gm-", "gm_", "gamemaster", "admin", "support", "~gm"]):
+                                            _edge.trigger("gm_spotted", f"GM detected: {_a_name} on {_map}")
+                                            break
+                        except Exception:
+                            pass
+                        
+                        # ── Innovation Experiment Runner ──
+                        try:
+                            _innov = getattr(self._runtime, "innovation_engine", None)
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _innov is not None and _aq is not None:
+                                _pending = _innov.get_pending_experiments()
+                                for _exp in _pending[:1]:  # Run one experiment at a time
+                                    import random as _rnd
+                                    _innov.start_experiment(_exp.name)
+                                    # Run the experiment: move to a random nearby map and farm
+                                    _alt_maps = ["prt_fild08", "pay_fild10", "gef_fild14", "moc_fild22", "ra_fild12"]
+                                    _target_map = _rnd.choice(_alt_maps)
+                                    _aq.enqueue(_reflex_bot_id, {
+                                        "action_id": f"experiment-{_exp.name}-{int(time.time())}",
+                                        "kind": "command",
+                                        "command": f"move {_target_map}",
+                                        "conflict_key": "",
+                                        "priority_tier": "tactical",
+                                    })
+                                    # Schedule outcome measurement after experiment duration
+                                    _exp.duration_minutes = 10  # Short experiment
+                                    logger.info("innovation_experiment_started: %s on %s", _exp.name, _target_map)
+                        except Exception:
+                            pass
+                        
                         # ── Feed WoE Predictor ──
                         try:
                             _woe = getattr(self._runtime, "woe_predictor", None)
