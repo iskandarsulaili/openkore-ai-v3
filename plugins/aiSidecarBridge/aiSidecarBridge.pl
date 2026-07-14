@@ -3018,6 +3018,56 @@ sub _calc_distance {
 				}
 			}
 		}
+
+		# ── 9. Interrupt Cast Reflex ──
+		if ($monstersList) {
+			my $interrupted = 0;
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				my $casting = $monster->{casting} || undef;
+				next if !$casting;
+				my $dist = _calc_distance($monster, $char);
+				if (defined $dist && $dist <= 10) {
+					$interrupted = 1;
+					last;
+				}
+			}
+			if ($interrupted) {
+				my $last = $_reflex_last_fired{interrupt_cast} || 0;
+				if ($now - $last >= 1500) {
+					$_reflex_last_fired{interrupt_cast} = $now;
+					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
+					eval { Commands::run("skill Bash 10"); 1; };
+				}
+			}
+		}
+
+		# ── 10. Pre-Pot Reflex (boss within 15 tiles) ──
+		my @BOSS_IDS = (1038, 1046, 1049, 1059, 1086, 1087, 1088, 1112, 1115, 1147, 1150, 1159, 1205, 1272, 1312, 1313, 1511, 1630, 1639, 1719, 1751, 1871, 1874);
+		my %BOSS_LOOKUP = map { $_ => 1 } @BOSS_IDS;
+		if ($monstersList) {
+			my $boss_nearby = 0;
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				my $name_id = $monster->{nameID} || 0;
+				next if !$name_id;
+				if ($BOSS_LOOKUP{$name_id}) {
+					my $dist = _calc_distance($monster, $char);
+					if (defined $dist && $dist <= 15) {
+						$boss_nearby = 1;
+						last;
+					}
+				}
+			}
+			if ($boss_nearby && $hp_ratio > 0.9) {
+				my $last = $_reflex_last_fired{pre_pot} || 0;
+				if ($now - $last >= 5000) {
+					$_reflex_last_fired{pre_pot} = $now;
+					warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$char->{hp}/$char->{hp_max})\n";
+					eval { Commands::run("use White Potion"); 1; };
+				}
+			}
+		}
 	}
 }
 
