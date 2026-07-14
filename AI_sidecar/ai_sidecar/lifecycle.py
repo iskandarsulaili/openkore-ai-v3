@@ -1432,6 +1432,41 @@ class RuntimeState:
             events=self._accepted_events(events=events, event_ids=result.event_ids),
             source="v2.chat",
         )
+        # ── Route chat messages to conversation engine ──
+        try:
+            _conv = getattr(self, "conversation_engine", None)
+            if _conv is not None:
+                for event in events:
+                    if hasattr(event, "text") and hasattr(event, "speaker"):
+                        _response = _conv.receive_message(
+                            str(getattr(event, "speaker", "unknown")),
+                            str(getattr(event, "text", "")),
+                        )
+                        if _response:
+                            logger.info("conversation_response: to=%s msg=%s",
+                                         getattr(event, "speaker", "?"), _response[:60])
+                            # Enqueue the response as a chat command
+                            try:
+                                _aq = getattr(self, "action_queue", None)
+                                if _aq is not None:
+                                    from datetime import UTC, datetime
+                                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                    _now = datetime.now(UTC)
+                                    _aq.enqueue(payload.meta.bot_id, ActionProposal(
+                                        action_id=f"conv-{int(time.time())}",
+                                        kind="command",
+                                        command=f"chat {_response}",
+                                        conflict_key="",
+                                        priority_tier=ActionPriorityTier.tactical,
+                                        source="manual",
+                                        created_at=_now,
+                                        expires_at=_now,
+                                        idempotency_key=f"conv-{int(time.time())}",
+                                    ))
+                            except Exception:
+                                pass
+        except Exception:
+            pass
         return result
 
     def ingest_config_update(self, payload: ConfigDoctrineFingerprintRequest) -> IngestAcceptedResponse:
