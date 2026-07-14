@@ -55,24 +55,20 @@ class GuildManager:
         self._load_known_guild_skills()
 
     def _load_known_guild_skills(self) -> None:
-        """Load known guild skills and their bonuses."""
-        skills = [
-            ("Guild Blessing", 5, "all_stats", 5, "Increases all stats by 5 per level"),
-            ("Guild Aura", 5, "atk", 10, "Increases ATK by 10 per level"),
-            ("Guild Protection", 5, "def", 5, "Increases DEF by 5 per level"),
-            ("Guild Fortitude", 5, "max_hp", 200, "Increases Max HP by 200 per level"),
-            ("Guild Vitality", 5, "hp_regen", 5, "Increases HP regen by 5% per level"),
-            ("Guild Focus", 5, "hit", 5, "Increases HIT by 5 per level"),
-            ("Guild Evasion", 5, "flee", 5, "Increases FLEE by 5 per level"),
-            ("Guild Resistance", 5, "all_resist", 3, "Increases all resistances by 3% per level"),
-            ("Guild Recovery", 5, "sp_regen", 5, "Increases SP regen by 5% per level"),
-            ("Guild Might", 5, "matk", 10, "Increases MATK by 10 per level"),
-        ]
-        for name, max_lv, stat, val, desc in skills:
-            self._guild_skills[name] = GuildSkill(
-                skill_name=name, max_level=max_lv,
-                stat_bonus=stat, bonus_value=val, description=desc,
-            )
+        """Load guild skills from the knowledge database."""
+        try:
+            from ai_sidecar.knowledge_loader import get_guild_skills
+            db_skills = get_guild_skills()
+            for skill in db_skills:
+                name = skill.get("Name", "")
+                max_lv = skill.get("MaxLevel", 5)
+                desc = skill.get("Description", "")
+                self._guild_skills[name] = GuildSkill(
+                    skill_name=name, max_level=max_lv, description=desc,
+                )
+            logger.info("guild_skills_loaded_from_db: %d skills", len(self._guild_skills))
+        except Exception as e:
+            logger.warning("guild_skills_db_load_failed: %s (DB is the source of truth)", e)
 
     # ── Public API ──
 

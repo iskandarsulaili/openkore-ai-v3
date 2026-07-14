@@ -56,90 +56,27 @@ class QuestAutomation:
         self._load_important_quests()
 
     def _load_important_quests(self) -> None:
-        """Load important quests with permanent stat rewards."""
-        quests = [
-            # Eden Group quests
-            Quest(1, "Eden Group Registration", "main", 1, 99, priority=90,
-                  rewards={"all_stats": 5}, zeny_reward=10000, xp_reward=50000,
-                  notes="Permanent stat boost, do first",
-                  steps=[QuestStep(1, "Talk to Eden Group NPC", "talk", "eden_recruiter")]),
-            Quest(2, "Eden Group Equipment Quest", "main", 12, 99, priority=85,
-                  rewards={"all_stats": 3}, zeny_reward=5000,
-                  notes="Free equipment set",
-                  steps=[QuestStep(1, "Talk to Eden Equipment NPC", "talk", "eden_equipment")]),
-
-            # Ice Cave quests
-            Quest(10, "Ice Cave Investigation", "side", 50, 99, priority=80,
-                  rewards={"int": 5}, zeny_reward=50000, xp_reward=200000,
-                  notes="+5 INT permanent",
-                  steps=[
-                      QuestStep(1, "Talk to researcher in Lutie", "talk", "ice_researcher"),
-                      QuestStep(2, "Kill Ice Titans", "kill", "Ice Titan", 30),
-                      QuestStep(3, "Report back", "talk", "ice_researcher"),
-                  ]),
-
-            # Thanatos Tower quests
-            Quest(20, "Thanatos Tower Access", "side", 70, 99, priority=75,
-                  rewards={"str": 3, "int": 3}, zeny_reward=100000, xp_reward=500000,
-                  notes="MVP access + stat bonuses",
-                  steps=[
-                      QuestStep(1, "Talk to researcher in Rachel", "talk", "thanatos_researcher"),
-                      QuestStep(2, "Collect Thanatos fragments", "collect", "Thanatos Fragment", 10),
-                      QuestStep(3, "Report back", "talk", "thanatos_researcher"),
-                  ]),
-
-            # Bio Labs quests
-            Quest(30, "Bio Labs Access", "side", 75, 99, priority=80,
-                  rewards={"all_stats": 5}, zeny_reward=200000, xp_reward=1000000,
-                  notes="Equipment + stat bonuses",
-                  steps=[
-                      QuestStep(1, "Talk to scientist in Lighthalzen", "talk", "bio_scientist"),
-                      QuestStep(2, "Kill Bio monsters", "kill", "Bio Monster", 50),
-                      QuestStep(3, "Collect samples", "collect", "Bio Sample", 20),
-                      QuestStep(4, "Report back", "talk", "bio_scientist"),
-                  ]),
-
-            # Amatsu quests
-            Quest(40, "Amatsu Ninja Training", "side", 60, 99, priority=70,
-                  rewards={"agi": 3, "dex": 3}, zeny_reward=80000, xp_reward=300000,
-                  notes="Stat bonuses + ninja skills",
-                  steps=[
-                      QuestStep(1, "Talk to ninja master in Amatsu", "talk", "ninja_master"),
-                      QuestStep(2, "Complete training", "kill", "Training Dummy", 20),
-                      QuestStep(3, "Report back", "talk", "ninja_master"),
-                  ]),
-
-            # Kunlun quests
-            Quest(50, "Kunlun Martial Arts", "side", 55, 99, priority=70,
-                  rewards={"str": 3, "vit": 3}, zeny_reward=60000, xp_reward=250000,
-                  notes="Stat bonuses",
-                  steps=[
-                      QuestStep(1, "Talk to martial arts master", "talk", "kunlun_master"),
-                      QuestStep(2, "Complete trials", "kill", "Martial Artist", 30),
-                      QuestStep(3, "Report back", "talk", "kunlun_master"),
-                  ]),
-
-            # Repeatable daily quests
-            Quest(100, "Eden Daily: Monster Hunting", "daily", 40, 99, priority=60,
-                  rewards={"all_stats": 1}, zeny_reward=30000, xp_reward=100000,
-                  notes="Repeatable daily, good XP",
-                  steps=[
-                      QuestStep(1, "Accept daily from Eden", "talk", "eden_daily"),
-                      QuestStep(2, "Kill target monsters", "kill", "Daily Target", 100),
-                      QuestStep(3, "Report back", "talk", "eden_daily"),
-                  ]),
-            Quest(101, "Eden Daily: Material Collection", "daily", 40, 99, priority=55,
-                  zeny_reward=20000, xp_reward=80000,
-                  notes="Repeatable daily, easy materials",
-                  steps=[
-                      QuestStep(1, "Accept daily from Eden", "talk", "eden_daily"),
-                      QuestStep(2, "Collect materials", "collect", "Daily Material", 50),
-                      QuestStep(3, "Report back", "talk", "eden_daily"),
-                  ]),
-        ]
-
-        for q in quests:
-            self._quests[q.quest_id] = q
+        """Load quests from the knowledge database."""
+        try:
+            from ai_sidecar.knowledge_loader import get_quests
+            db_quests = get_quests()
+            for q in db_quests:
+                qid = q.get("Id", 0)
+                title = q.get("Title", f"Quest_{qid}")
+                level = q.get("Level", 1)
+                if qid and title:
+                    self._quests[qid] = Quest(
+                        quest_id=qid,
+                        name=title,
+                        quest_type="side",
+                        min_level=max(1, level - 10),
+                        max_level=level + 10,
+                        priority=50,
+                        notes=f"From knowledge DB: {title}",
+                    )
+            logger.info("quests_loaded_from_db: %d quests", len(self._quests))
+        except Exception as e:
+            logger.warning("quests_db_load_failed: %s (DB is the source of truth)", e)
 
     # ── Public API ──
 

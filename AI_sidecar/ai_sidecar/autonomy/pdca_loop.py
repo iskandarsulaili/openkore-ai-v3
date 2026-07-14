@@ -2892,6 +2892,109 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("quest_automation_init_failed: %s", e)
 
+                # ── NEW: Initialize Multi-Client Combat Coordinator ──
+                _mcc = getattr(self._runtime, "multi_client_coordinator", None)
+                if _mcc is None:
+                    try:
+                        from ai_sidecar.fleet.multi_client_coordinator import get_multi_client_coordinator
+                        _mcc = get_multi_client_coordinator()
+                        self._runtime.multi_client_coordinator = _mcc
+                        logger.info("multi_client_coordinator_initialized")
+                    except Exception as e:
+                        logger.warning("multi_client_coordinator_init_failed: %s", e)
+
+                # ── NEW: Initialize Market Executor ──
+                _mex = getattr(self._runtime, "market_executor", None)
+                if _mex is None:
+                    try:
+                        from ai_sidecar.economy.market_executor import get_market_executor
+                        _mex = get_market_executor()
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _mex.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"mex-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"mex-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.market_executor = _mex
+                        logger.info("market_executor_initialized")
+                    except Exception as e:
+                        logger.warning("market_executor_init_failed: %s", e)
+
+                # ── NEW: Initialize WoE Combat AI ──
+                _wca = getattr(self._runtime, "woe_combat_ai", None)
+                if _wca is None:
+                    try:
+                        from ai_sidecar.combat.woe_combat_ai import get_woe_combat_ai
+                        _wca = get_woe_combat_ai()
+                        self._runtime.woe_combat_ai = _wca
+                        logger.info("woe_combat_ai_initialized")
+                    except Exception as e:
+                        logger.warning("woe_combat_ai_init_failed: %s", e)
+
+                # ── NEW: Initialize Quest Step Executor ──
+                _qse = getattr(self._runtime, "quest_step_executor", None)
+                if _qse is None:
+                    try:
+                        from ai_sidecar.quest_step_executor import get_quest_step_executor
+                        _qse = get_quest_step_executor()
+                        self._runtime.quest_step_executor = _qse
+                        logger.info("quest_step_executor_initialized")
+                    except Exception as e:
+                        logger.warning("quest_step_executor_init_failed: %s", e)
+
+                # ── NEW: Initialize PK Avoidance ──
+                _pka = getattr(self._runtime, "pk_avoidance", None)
+                if _pka is None:
+                    try:
+                        from ai_sidecar.pk_avoidance import get_pk_avoidance
+                        _pka = get_pk_avoidance()
+                        self._runtime.pk_avoidance = _pka
+                        logger.info("pk_avoidance_initialized")
+                    except Exception as e:
+                        logger.warning("pk_avoidance_init_failed: %s", e)
+
+                # ── NEW: Initialize Server Calibration ──
+                _sc = getattr(self._runtime, "server_calibration", None)
+                if _sc is None:
+                    try:
+                        from ai_sidecar.server_calibration import get_server_calibration
+                        _sc = get_server_calibration()
+                        self._runtime.server_calibration = _sc
+                        logger.info("server_calibration_initialized")
+                    except Exception as e:
+                        logger.warning("server_calibration_init_failed: %s", e)
+
+                # ── NEW: Initialize Gear Progression Planner ──
+                _gpp = getattr(self._runtime, "gear_progression_planner", None)
+                if _gpp is None:
+                    try:
+                        from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                        _gpp = get_gear_progression_planner()
+                        self._runtime.gear_progression_planner = _gpp
+                        logger.info("gear_progression_planner_initialized")
+                    except Exception as e:
+                        logger.warning("gear_progression_planner_init_failed: %s", e)
+
+                # ── NEW: Initialize Exploration Driver ──
+                _ed = getattr(self._runtime, "exploration_driver", None)
+                if _ed is None:
+                    try:
+                        from ai_sidecar.exploration_driver import get_exploration_driver
+                        _ed = get_exploration_driver()
+                        self._runtime.exploration_driver = _ed
+                        logger.info("exploration_driver_initialized")
+                    except Exception as e:
+                        logger.warning("exploration_driver_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -6115,6 +6218,86 @@ class PDCALoop:
                 _summary = _qa.get_quest_summary()
                 if _summary:
                     result["quest_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Multi-Client Coordinator Context ──
+        try:
+            _mcc = getattr(self._runtime, "multi_client_coordinator", None)
+            if _mcc is not None:
+                _summary = _mcc.get_coordination_summary()
+                if _summary:
+                    result["multi_client_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Market Executor Context ──
+        try:
+            _mex = getattr(self._runtime, "market_executor", None)
+            if _mex is not None:
+                _summary = _mex.get_execution_summary()
+                if _summary:
+                    result["market_executor_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject WoE Combat AI Context ──
+        try:
+            _wca = getattr(self._runtime, "woe_combat_ai", None)
+            if _wca is not None:
+                _summary = _wca.get_woe_summary()
+                if _summary:
+                    result["woe_combat_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Quest Step Executor Context ──
+        try:
+            _qse = getattr(self._runtime, "quest_step_executor", None)
+            if _qse is not None:
+                _summary = _qse.get_execution_summary()
+                if _summary:
+                    result["quest_execution_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject PK Avoidance Context ──
+        try:
+            _pka = getattr(self._runtime, "pk_avoidance", None)
+            if _pka is not None:
+                _summary = _pka.get_pk_summary()
+                if _summary:
+                    result["pk_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Server Calibration Context ──
+        try:
+            _sc = getattr(self._runtime, "server_calibration", None)
+            if _sc is not None:
+                _summary = _sc.get_calibration_summary()
+                if _summary:
+                    result["server_calibration_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Gear Progression Planner Context ──
+        try:
+            _gpp = getattr(self._runtime, "gear_progression_planner", None)
+            if _gpp is not None:
+                _summary = _gpp.get_gear_summary()
+                if _summary:
+                    result["gear_progression_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Exploration Driver Context ──
+        try:
+            _ed = getattr(self._runtime, "exploration_driver", None)
+            if _ed is not None:
+                _summary = _ed.get_exploration_summary()
+                if _summary:
+                    result["exploration_status"] = _summary
         except Exception:
             pass
 

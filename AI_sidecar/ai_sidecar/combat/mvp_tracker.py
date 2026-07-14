@@ -47,31 +47,33 @@ class MVPTracker:
     """Tracks MVP respawns and coordinates hunting."""
 
     # Known MVPs with their respawn windows (minutes) and estimated card value
-    KNOWN_MVPS: dict[int, dict] = {
-        1038: {"name": "Osiris", "respawn": 120, "value": 50000000, "difficulty": "hard"},
-        1046: {"name": "Phreeoni", "respawn": 120, "value": 30000000, "difficulty": "hard"},
-        1049: {"name": "Maya", "respawn": 120, "value": 40000000, "difficulty": "hard"},
-        1059: {"name": "Moonlight Flower", "respawn": 60, "value": 20000000, "difficulty": "medium"},
-        1086: {"name": "Dracula", "respawn": 120, "value": 35000000, "difficulty": "hard"},
-        1087: {"name": "Doppelganger", "respawn": 120, "value": 45000000, "difficulty": "hard"},
-        1088: {"name": "Orc Hero", "respawn": 60, "value": 15000000, "difficulty": "medium"},
-        1112: {"name": "Orc Lord", "respawn": 120, "value": 25000000, "difficulty": "hard"},
-        1115: {"name": "Mistress", "respawn": 60, "value": 20000000, "difficulty": "medium"},
-        1147: {"name": "Baphomet", "respawn": 120, "value": 60000000, "difficulty": "hard"},
-        1150: {"name": "Eddga", "respawn": 60, "value": 15000000, "difficulty": "medium"},
-        1159: {"name": "Golden Thief Bug", "respawn": 120, "value": 50000000, "difficulty": "hard"},
-        1205: {"name": "Kraken", "respawn": 120, "value": 30000000, "difficulty": "hard"},
-        1272: {"name": "Turtle General", "respawn": 120, "value": 40000000, "difficulty": "hard"},
-        1312: {"name": "Atroce", "respawn": 120, "value": 35000000, "difficulty": "hard"},
-        1313: {"name": "Gloom Under Night", "respawn": 120, "value": 30000000, "difficulty": "hard"},
-        1511: {"name": "Kiel-D-01", "respawn": 120, "value": 25000000, "difficulty": "hard"},
-        1630: {"name": "Ktullanux", "respawn": 120, "value": 30000000, "difficulty": "hard"},
-        1639: {"name": "Valkyrie Randgris", "respawn": 120, "value": 40000000, "difficulty": "hard"},
-        1719: {"name": "Beelzebub", "respawn": 120, "value": 50000000, "difficulty": "hard"},
-        1751: {"name": "Ifrit", "respawn": 120, "value": 35000000, "difficulty": "hard"},
-        1871: {"name": "Amdarais", "respawn": 120, "value": 30000000, "difficulty": "hard"},
-        1874: {"name": "Bacon Lord", "respawn": 60, "value": 10000000, "difficulty": "medium"},
-    }
+    KNOWN_MVPS: dict[int, dict] = {}
+
+    @classmethod
+    def _load_mvps_from_db(cls) -> dict[int, dict]:
+        """Load MVPs from the knowledge database."""
+        mvps: dict[int, dict] = {}
+        try:
+            from ai_sidecar.knowledge_loader import get_mvps
+            db_mvps = get_mvps()
+            for m in db_mvps:
+                mid = m.get("Id", 0)
+                if mid:
+                    level = m.get("Level", 50)
+                    respawn = 60 if level < 60 else 120
+                    hp = m.get("Hp", 0)
+                    value = max(10000000, hp * 10)
+                    difficulty = "medium" if level < 70 else "hard"
+                    mvps[mid] = {
+                        "name": m.get("Name", f"MVP_{mid}"),
+                        "respawn": respawn,
+                        "value": value,
+                        "difficulty": difficulty,
+                    }
+            logger.info("mvps_loaded_from_db: %d MVPs", len(mvps))
+        except Exception as e:
+            logger.warning("mvps_db_load_failed: %s (no hardcoded fallback — DB is the source of truth)", e)
+        return mvps
 
     def __init__(self) -> None:
         self._lock = RLock()
