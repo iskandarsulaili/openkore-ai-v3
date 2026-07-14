@@ -2820,6 +2820,17 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("skill_chain_executor_init_failed: %s", e)
 
+                # ── NEW: Initialize Aggro Pathfinder ──
+                _ap = getattr(self._runtime, "aggro_pathfinder", None)
+                if _ap is None:
+                    try:
+                        from ai_sidecar.combat.aggro_pathfinder import get_aggro_pathfinder
+                        _ap = get_aggro_pathfinder()
+                        self._runtime.aggro_pathfinder = _ap
+                        logger.info("aggro_pathfinder_initialized")
+                    except Exception as e:
+                        logger.warning("aggro_pathfinder_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -5928,6 +5939,41 @@ class PDCALoop:
                 _summary = _sce.get_chain_summary()
                 if _summary:
                     result["skill_chain_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Aggro Pathfinder Context ──
+        try:
+            _ap = getattr(self._runtime, "aggro_pathfinder", None)
+            if _ap is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _my_x = int(_snap.get("position", {}).get("x", 0))
+                _my_y = int(_snap.get("position", {}).get("y", 0))
+                _actors = _snap.get("actors", [])
+                _map_name = result.get("map", "")
+
+                # Feed threats to pathfinder
+                from ai_sidecar.combat.aggro_pathfinder import AggroThreat
+                _threats = []
+                for _actor in _actors:
+                    _ax = int(_actor.get("x", 0))
+                    _ay = int(_actor.get("y", 0))
+                    _dist = float(_actor.get("distance", 0))
+                    _dmg = int(_actor.get("dmg_to_us", 0) or 0)
+                    _is_boss = bool(_actor.get("is_boss", False))
+                    _is_casting = bool(_actor.get("is_casting", False))
+                    if _dist > 0 and _dist < 20 and (_dmg > 0 or _is_boss):
+                        _threats.append(AggroThreat(
+                            x=_ax, y=_ay,
+                            threat_score=min(10.0, _dmg / 100.0 + (5.0 if _is_boss else 0.0)),
+                            aggro_range=12,
+                            is_boss=_is_boss,
+                            is_casting=_is_casting,
+                        ))
+                if _threats:
+                    _ap.update_threats(_threats)
+                    _stats = _ap.get_stats()
+                    result["pathfinder_status"] = f"Threats: {len(_threats)}, Queries: {_stats['queries']}, Found: {_stats['found']}"
         except Exception:
             pass
 
