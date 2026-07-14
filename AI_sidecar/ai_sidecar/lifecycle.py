@@ -1263,6 +1263,9 @@ class RuntimeState:
                     hp_max=actor.hp_max,
                     level=actor.level,
                     relation=actor.relation,
+                    dmg_to_us=actor.dmg_to_us,
+                    dmg_to_you=actor.dmg_to_you,
+                    dmg_from_us=actor.dmg_from_us,
                     raw={},
                 )
             )

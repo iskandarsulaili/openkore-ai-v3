@@ -1159,6 +1159,9 @@ sub _build_snapshot_payload {
 				$relation = 'neutral' if !defined $relation || $relation eq '';
 			}
 
+			my $dmg_to     = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgTo} || 0) : undef;
+			my $dmg_from   = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgFrom} || 0) : undef;
+			my $dmg_to_you = defined $args{include_damage} && $args{include_damage} ? ($actor->{dmgFromYou} || 0) : undef;
 			push @actors, {
 				actor_id   => $actor_id,
 				actor_type => $actor_type,
@@ -1169,6 +1172,9 @@ sub _build_snapshot_payload {
 				hp         => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp} || undef) : undef,
 				hp_max     => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp_max} || undef) : undef,
 				level      => $actor->{level} || undef,
+				dmg_to_us  => $dmg_from,
+				dmg_to_you => $dmg_to_you,
+				dmg_from_us => $dmg_to,
 			};
 
 			$actor_discovery->{normalize}{kept_total} += 1;
@@ -1206,6 +1212,7 @@ sub _build_snapshot_payload {
 					default_name => 'Monster',
 					relation => 'hostile',
 					include_hp => 1,
+					include_damage => 1,
 				);
 			}
 		};
@@ -1394,6 +1401,9 @@ sub _send_actor_delta_from_snapshot {
 			hp_max => $actor->{hp_max},
 			level => $actor->{level},
 			relation => _trim(_scalarize($actor->{relation}), 64),
+			dmg_to_us => $actor->{dmg_to_us},
+			dmg_to_you => $actor->{dmg_to_you},
+			dmg_from_us => $actor->{dmg_from_us},
 			raw => {},
 		};
 	}

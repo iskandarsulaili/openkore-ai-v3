@@ -177,6 +177,9 @@ class ActorDigest(BaseModel):
     hp_max: int | None = None
     level: int | None = None
     distance: float | None = None
+    dmg_to_us: int | None = None
+    dmg_to_you: int | None = None
+    dmg_from_us: int | None = None
 
 
 class BotStateSnapshot(BaseModel):

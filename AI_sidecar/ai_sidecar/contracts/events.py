@@ -68,6 +68,9 @@ class ActorObservation(BaseModel):
     level: int | None = None
     distance: float | None = None
     relation: str | None = Field(default=None, max_length=64)
+    dmg_to_us: int | None = None
+    dmg_to_you: int | None = None
+    dmg_from_us: int | None = None
     raw: dict[str, object] = Field(default_factory=dict)
 
 

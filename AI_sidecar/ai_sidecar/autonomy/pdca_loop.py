@@ -2875,15 +2875,15 @@ class PDCALoop:
                                                 casting_skill=str(_m.get("casting_skill", "") or ""),
                                             )
                                             # Track damage from this monster
-                                            _dmg = int(_m.get("damage_to_us", 0) or 0)
-                                            if _dmg > 0:
-                                                _tt.record_damage_to_us(_mid, _dmg)
-                                            _dmg_party = int(_m.get("damage_to_party", 0) or 0)
-                                            if _dmg_party > 0:
-                                                _tt.record_damage_to_party(_mid, _dmg_party)
-                                            _dmg_from = int(_m.get("damage_from_us", 0) or 0)
-                                            if _dmg_from > 0:
-                                                _tt.record_damage_from_us(_mid, _dmg_from)
+                                            _dmg_to_us = int(_m.get("dmg_to_us", 0) or 0)
+                                            if _dmg_to_us > 0:
+                                                _tt.record_damage_to_us(_mid, _dmg_to_us)
+                                            _dmg_to_you = int(_m.get("dmg_to_you", 0) or 0)
+                                            if _dmg_to_you > 0:
+                                                _tt.record_damage_to_us(_mid, _dmg_to_you)
+                                            _dmg_from_us = int(_m.get("dmg_from_us", 0) or 0)
+                                            if _dmg_from_us > 0:
+                                                _tt.record_damage_from_us(_mid, _dmg_from_us)
                                     # Clean up monsters not in current snapshot (memory leak prevention)
                                     _current_ids = {int(_m.get("id", _m.get("monster_id", 0)) or 0) for _m in _monsters if int(_m.get("id", _m.get("monster_id", 0)) or 0) > 0}
                                     _tt.cleanup_monsters(_current_ids)
