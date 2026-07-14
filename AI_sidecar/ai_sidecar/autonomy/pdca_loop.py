@@ -2259,6 +2259,11 @@ class PDCALoop:
                     try:
                         from ai_sidecar.social.conversation_engine import ConversationEngine
                         _conv = ConversationEngine()
+                        # Wire LLM call function for generating responses
+                        # Uses model_router's route method wrapped as sync
+                        _mr = getattr(self._runtime, "model_router", None)
+                        if _mr is not None:
+                            _conv._llm_call = lambda prompt: self._sync_llm_call(_mr, prompt)
                         self._runtime.conversation_engine = _conv
                         logger.info("conversation_engine_initialized")
                     except Exception as e:
@@ -2661,8 +2666,14 @@ class PDCALoop:
                         # ── Feed Ambition Engine ──
                         try:
                             _amb = getattr(self._runtime, "ambition_engine", None)
-                            if _amb is not None and _est_zeny > 0:
-                                _amb.update_progress("wealth", _est_zeny, f"farmed on {_map}")
+                            if _amb is not None:
+                                _est_zeny_val = 0
+                                try:
+                                    _est_zeny_val = int(_conscious_snap.get("session_zeny", 0) or 0)
+                                except Exception:
+                                    pass
+                                if _est_zeny_val > 0:
+                                    _amb.update_progress("wealth", _est_zeny_val, f"farmed on {_map}")
                         except Exception:
                             pass
                     
@@ -4601,6 +4612,29 @@ class PDCALoop:
         if not isinstance(weight, int) or not isinstance(weight_max, int) or weight_max <= 0:
             return 0.0
         return max(0.0, min(2.0, float(weight) / float(weight_max)))
+
+    def _sync_llm_call(self, router: Any, prompt: str) -> str | None:
+        """Synchronous wrapper for LLM call. Used by conversation engine."""
+        try:
+            import asyncio as _asyncio
+            _loop = _asyncio.new_event_loop()
+            try:
+                _result = _loop.run_until_complete(
+                    router.route(
+                        bot_id="conversation",
+                        prompt=prompt,
+                        max_tokens=200,
+                        temperature=0.7,
+                    )
+                )
+                if _result and hasattr(_result, "text"):
+                    return _result.text
+                return str(_result) if _result else None
+            finally:
+                _loop.close()
+        except Exception as e:
+            logger.warning("sync_llm_call_failed: %s", e)
+            return None
 
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:
