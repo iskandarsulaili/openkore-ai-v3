@@ -5551,7 +5551,7 @@ class PDCALoop:
             if _to is not None:
                 _to_ctx = _to.get_timing_context()
                 if _to_ctx:
-                    result["timing_context"] = _to_ctx
+                    result["timing_optimizer_context"] = _to_ctx
         except Exception:
             pass
         
