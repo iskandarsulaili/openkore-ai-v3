@@ -2735,6 +2735,91 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("resource_manager_init_failed: %s", e)
 
+                # ── NEW: Initialize Vending Automation ──
+                _va = getattr(self._runtime, "vending_automation", None)
+                if _va is None:
+                    try:
+                        from ai_sidecar.economy.vending_automation import get_vending_automation
+                        _va = get_vending_automation()
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _va.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"va-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"va-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.vending_automation = _va
+                        logger.info("vending_automation_initialized")
+                    except Exception as e:
+                        logger.warning("vending_automation_init_failed: %s", e)
+
+                # ── NEW: Initialize Server Population Tracker ──
+                _st = getattr(self._runtime, "server_tracker", None)
+                if _st is None:
+                    try:
+                        from ai_sidecar.server_tracker import get_server_tracker
+                        _st = get_server_tracker()
+                        self._runtime.server_tracker = _st
+                        logger.info("server_tracker_initialized")
+                    except Exception as e:
+                        logger.warning("server_tracker_init_failed: %s", e)
+
+                # ── NEW: Initialize Shared Learning DB ──
+                _sldb = getattr(self._runtime, "shared_learning_db", None)
+                if _sldb is None:
+                    try:
+                        from ai_sidecar.learning.shared_learning_db import get_shared_learning_db
+                        _sldb = get_shared_learning_db()
+                        self._runtime.shared_learning_db = _sldb
+                        logger.info("shared_learning_db_initialized")
+                    except Exception as e:
+                        logger.warning("shared_learning_db_init_failed: %s", e)
+
+                # ── NEW: Initialize WoE Castle Tactics ──
+                _wct = getattr(self._runtime, "woe_castle_tactics", None)
+                if _wct is None:
+                    try:
+                        from ai_sidecar.combat.woe_castle_tactics import get_woe_castle_tactics
+                        _wct = get_woe_castle_tactics()
+                        self._runtime.woe_castle_tactics = _wct
+                        logger.info("woe_castle_tactics_initialized: %d castles", len(_wct.get_all_castles()))
+                    except Exception as e:
+                        logger.warning("woe_castle_tactics_init_failed: %s", e)
+
+                # ── NEW: Initialize Skill Chain Executor ──
+                _sce = getattr(self._runtime, "skill_chain_executor", None)
+                if _sce is None:
+                    try:
+                        from ai_sidecar.combat.skill_chain_executor import get_skill_chain_executor
+                        _sce = get_skill_chain_executor()
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _sce.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"sce-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"sce-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.skill_chain_executor = _sce
+                        logger.info("skill_chain_executor_initialized: %d chains", len(_sce.get_all_chains()))
+                    except Exception as e:
+                        logger.warning("skill_chain_executor_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -5791,6 +5876,58 @@ class PDCALoop:
                     # Execute directly — bypass LLM entirely
                     _ae.execute(_best.action, self._resolve_cost_gate_bot_id(), _aq)
                     result["reflex_executed"] = f"{_best.name} ({_best.action})"
+        except Exception:
+            pass
+
+        # ── Inject Vending Automation Context ──
+        try:
+            _va = getattr(self._runtime, "vending_automation", None)
+            if _va is not None:
+                _summary = _va.get_vending_summary()
+                if _summary:
+                    result["vending_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Server Tracker Context ──
+        try:
+            _st = getattr(self._runtime, "server_tracker", None)
+            if _st is not None:
+                _summary = _st.get_server_summary()
+                if _summary:
+                    result["server_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Shared Learning DB Context ──
+        try:
+            _sldb = getattr(self._runtime, "shared_learning_db", None)
+            if _sldb is not None:
+                _summary = _sldb.get_shared_summary()
+                if _summary:
+                    result["shared_learning"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject WoE Castle Tactics Context ──
+        try:
+            _wct = getattr(self._runtime, "woe_castle_tactics", None)
+            if _wct is not None:
+                _map_name = result.get("map", "")
+                if _wct.get_castle_tactic(_map_name):
+                    _tactic = _wct.get_recommended_tactic(_map_name, "attacker")
+                    if _tactic:
+                        result["castle_tactic"] = _tactic
+        except Exception:
+            pass
+
+        # ── Inject Skill Chain Executor Context ──
+        try:
+            _sce = getattr(self._runtime, "skill_chain_executor", None)
+            if _sce is not None:
+                _summary = _sce.get_chain_summary()
+                if _summary:
+                    result["skill_chain_status"] = _summary
         except Exception:
             pass
 
