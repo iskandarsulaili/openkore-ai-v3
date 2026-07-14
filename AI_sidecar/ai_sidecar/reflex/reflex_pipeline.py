@@ -85,7 +85,7 @@ class ReflexPipeline:
             },
         )
         
-        accepted, status, action_id, reason = queue_action(proposal, bot_id)
+        accepted, status, action_id, reason = queue_action(bot_id, proposal)
         if accepted:
             self._last_emission[rule_id] = now
             self._stats["direct_emitted"] += 1
@@ -156,7 +156,7 @@ class ReflexPipeline:
             planner_interop=ReflexPlannerInterop.override,
         )
         
-        result = self.emit(bot_id, rule, "ai manual", lambda p, b: (True, None, "test_action_id", "test"))
+        result = self.emit(bot_id, rule, "ai manual", lambda b, p: (True, None, "test_action_id", "test"))
         logger.info("reflex_pipeline_test: bot=%s result=%s", bot_id, result)
         return result
     

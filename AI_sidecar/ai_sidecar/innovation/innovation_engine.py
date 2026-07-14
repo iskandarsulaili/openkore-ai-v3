@@ -35,6 +35,7 @@ class Experiment:
     value_score: float = 0.0
     started_at: float = 0.0
     completed_at: float = 0.0
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass

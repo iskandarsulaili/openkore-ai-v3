@@ -2134,13 +2134,19 @@ class PDCALoop:
                         # Wire enqueue function for issuing orders
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"fleet-{int(time.time())}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "tactical",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"fleet-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"fleet-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.fleet_coordinator = _fleet
                         logger.info("fleet_coordinator_initialized")
                     except Exception as e:
@@ -2166,13 +2172,19 @@ class PDCALoop:
                         # Wire enqueue function for sending chat messages
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"social-{int(time.time())}-{id(cmd)}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "tactical",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"social-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"social-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.social_manipulator = _social
                         logger.info("social_manipulator_initialized")
                     except Exception as e:
@@ -2219,13 +2231,19 @@ class PDCALoop:
                         _edge = EdgeCaseHandler()
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"edge-{int(time.time())}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "reflex",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"edge-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.reflex,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"edge-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.edge_case_handler = _edge
                         logger.info("edge_case_handler_initialized")
                     except Exception as e:
@@ -2289,13 +2307,19 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"spart-{int(time.time())}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "tactical",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"spart-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"spart-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.social_participation = _spart
                         logger.info("social_participation_initialized")
                     except Exception as e:
@@ -2321,13 +2345,19 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _mm._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"mm-{int(time.time())}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "tactical",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _mm._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"mm-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"mm-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.market_manipulator = _mm
                         logger.info("market_manipulator_initialized")
                     except Exception as e:
@@ -2364,13 +2394,19 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
-                                "action_id": f"mas-{int(time.time())}",
-                                "kind": "command",
-                                "command": cmd,
-                                "conflict_key": "",
-                                "priority_tier": "tactical",
-                            })
+                            from datetime import UTC, datetime as _dt
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"mas-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC),
+                                idempotency_key=f"mas-{int(_dt.now(UTC).timestamp())}",
+                            ))
                         self._runtime.multi_account_synergy = _mas
                         logger.info("multi_account_synergy_initialized")
                     except Exception as e:
@@ -2609,14 +2645,20 @@ class PDCALoop:
                                 for _exp in _pending[:1]:  # Run one experiment at a time
                                     _innov.start_experiment(_exp.name)
                                     # Use knowledge-driven target map if available
-                                    _target_map = _exp.metadata.get("map", "prt_fild08") if hasattr(_exp, "metadata") and _exp.metadata else "prt_fild08"
-                                    _aq.enqueue(_reflex_bot_id, {
-                                        "action_id": f"experiment-{_exp.name}-{int(time.time())}",
-                                        "kind": "command",
-                                        "command": f"move {_target_map}",
-                                        "conflict_key": "",
-                                        "priority_tier": "tactical",
-                                    })
+                                    _target_map = str(_exp.metadata.get("map", "prt_fild08") or "prt_fild08")
+                                    from datetime import UTC, datetime as _dt
+                                    from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                    _aq.enqueue(_reflex_bot_id, _AP(
+                                        action_id=f"experiment-{_exp.name}-{int(_dt.now(UTC).timestamp())}",
+                                        kind="command",
+                                        command=f"move {_target_map}",
+                                        conflict_key="",
+                                        priority_tier=_APT.tactical,
+                                        source="manual",
+                                        created_at=_dt.now(UTC),
+                                        expires_at=_dt.now(UTC),
+                                        idempotency_key=f"experiment-{_exp.name}-{int(_dt.now(UTC).timestamp())}",
+                                    ))
                                     _exp.duration_minutes = 10
                                     logger.info("innovation_experiment_started: %s on %s", _exp.name, _target_map)
                         except Exception:
