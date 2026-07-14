@@ -1361,6 +1361,7 @@ class PDCALoop:
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._cycle_count: int = 0
+        self._memory_pool: Any = None  # ThreadPoolExecutor for memory searches
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -1391,6 +1392,12 @@ class PDCALoop:
         except Exception:
             logger.exception("PDCALoop thread crashed")
         finally:
+            # Clean up persistent thread pool
+            if self._memory_pool is not None:
+                try:
+                    self._memory_pool.shutdown(wait=False)
+                except Exception:
+                    pass
             self._loop.close()
             self._running = False
 
@@ -2156,6 +2163,16 @@ class PDCALoop:
                     try:
                         from ai_sidecar.social.social_manipulator import SocialManipulator
                         _social = SocialManipulator()
+                        # Wire enqueue function for sending chat messages
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"social-{int(time.time())}-{id(cmd)}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "tactical",
+                            })
                         self._runtime.social_manipulator = _social
                         logger.info("social_manipulator_initialized")
                     except Exception as e:
@@ -2414,7 +2431,7 @@ class PDCALoop:
                         # ── Feed WoE Predictor ──
                         try:
                             _woe = getattr(self._runtime, "woe_predictor", None)
-                            if _woe is not None and "woe" in _map.lower() or "castle" in _map.lower():
+                            if _woe is not None and ("woe" in _map.lower() or "castle" in _map.lower()):
                                 _woe.observe_guild("unknown", last_seen=time.time())
                         except Exception:
                             pass
@@ -4453,21 +4470,23 @@ class PDCALoop:
                 from datetime import datetime, timezone
                 import concurrent.futures as _cf
                 _map = result.get("map", "")
-                # Timeout memory search to prevent blocking PDCA cycle
-                with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
-                    _future = _pool.submit(
-                        _ltm.get_relevant_context,
-                        current_map=str(_map or ""),
-                        current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
-                        current_activity="farming",
-                        limit=5,
-                    )
-                    try:
-                        _mem_ctx = _future.result(timeout=0.5)  # 500ms max
-                        if _mem_ctx:
-                            result["long_term_memory"] = _mem_ctx
-                    except _cf.TimeoutError:
-                        logger.warning("long_term_memory_search_timeout")
+                # Reuse persistent thread pool for memory searches
+                if self._memory_pool is None:
+                    import concurrent.futures as _cf
+                    self._memory_pool = _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mem_search")
+                _future = self._memory_pool.submit(
+                    _ltm.get_relevant_context,
+                    current_map=str(_map or ""),
+                    current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
+                    current_activity="farming",
+                    limit=5,
+                )
+                try:
+                    _mem_ctx = _future.result(timeout=0.5)  # 500ms max
+                    if _mem_ctx:
+                        result["long_term_memory"] = _mem_ctx
+                except _cf.TimeoutError:
+                    logger.warning("long_term_memory_search_timeout")
         except Exception:
             pass
         

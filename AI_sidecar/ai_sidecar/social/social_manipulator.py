@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +55,13 @@ class SocialManipulator:
     _lock: RLock = field(default_factory=RLock)
     _profiles: dict[str, PlayerProfile] = field(default_factory=dict)
     _scripts: dict[str, SocialScript] = field(default_factory=dict)
-    _reputation: float = 0.0  # Overall server reputation
+    _reputation: float = 0.0
     _stats: dict[str, int] = field(default_factory=lambda: {
-        "interactions": 0, "deceptions": 0, "alliances": 0, "intel_gathered": 0,
+        "interactions": 0, "deceptions": 0, "alliances": 0, "intel_gathered": 0, "chat_sent": 0,
     })
     _last_chat_time: float = 0.0
-    _chat_cooldown: float = 5.0  # Don't spam chat
+    _chat_cooldown: float = 5.0
+    _enqueue_fn: Callable | None = None
     
     def __post_init__(self):
         self._init_scripts()
