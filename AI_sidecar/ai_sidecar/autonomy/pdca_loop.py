@@ -2124,6 +2124,16 @@ class PDCALoop:
                     try:
                         from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
                         _fleet = FleetCoordinator()
+                        # Wire enqueue function for issuing orders
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"fleet-{int(time.time())}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "tactical",
+                            })
                         self._runtime.fleet_coordinator = _fleet
                         logger.info("fleet_coordinator_initialized")
                     except Exception as e:
@@ -2190,6 +2200,16 @@ class PDCALoop:
                     try:
                         from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
                         _edge = EdgeCaseHandler()
+                        # Wire enqueue function for executing contingency plans
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, {
+                                "action_id": f"edge-{int(time.time())}",
+                                "kind": "command",
+                                "command": cmd,
+                                "conflict_key": "",
+                                "priority_tier": "reflex",
+                            })
                         self._runtime.edge_case_handler = _edge
                         logger.info("edge_case_handler_initialized")
                     except Exception as e:
@@ -2341,6 +2361,131 @@ class PDCALoop:
                                             _aq = getattr(self._runtime, "action_queue", None)
                                             if _aq is not None:
                                                 _rp.emit(_reflex_bot_id, _rule, _reflex_action, _aq.enqueue)
+                    
+                    # ── DATA FLOW: Feed snapshot into all modules ──
+                    if isinstance(_conscious_snap, dict) and _conscious_snap:
+                        _vitals = _conscious_snap.get("vitals", {})
+                        _hp = int(_vitals.get("hp", 1) or 1)
+                        _max_hp = int(_vitals.get("max_hp", 1) or 1)
+                        _sp = int(_vitals.get("sp", 0) or 0)
+                        _max_sp = int(_vitals.get("max_sp", 1) or 1)
+                        _map = str(_conscious_snap.get("map", "") or "")
+                        _inv = _conscious_snap.get("inventory", {}) or {}
+                        _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
+                        _level = int(_vitals.get("base_level", _conscious_snap.get("base_level", 1)) or 1)
+                        _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0) or 0)
+                        _is_dead = _hp <= 0
+                        
+                        # ── Feed Fleet Coordinator ──
+                        try:
+                            _fleet = getattr(self._runtime, "fleet_coordinator", None)
+                            if _fleet is not None:
+                                _fleet.update_bot_status(
+                                    _reflex_bot_id,
+                                    map=_map,
+                                    status="dead" if _is_dead else ("fighting" if _aggro > 0 else "farming"),
+                                    level=_level,
+                                )
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Timing Awareness ──
+                        try:
+                            _timing = getattr(self._runtime, "timing_awareness", None)
+                            if _timing is not None and _is_dead:
+                                _timing.record_observation("death", f"Bot died on {_map}", severity=8)
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Edge Case Handler ──
+                        try:
+                            _edge = getattr(self._runtime, "edge_case_handler", None)
+                            if _edge is not None:
+                                # Detect suspicious players nearby
+                                _players = _conscious_snap.get("players", []) or _conscious_snap.get("nearby_players", []) or []
+                                if isinstance(_players, list) and len(_players) > 3:
+                                    _edge.trigger("competition_arrived", f"{len(_players)} players on {_map}")
+                                # Detect death
+                                if _is_dead and _bot_prev_hp > 0:
+                                    _edge.trigger("server_unstable", f"Bot died unexpectedly on {_map}")
+                        except Exception:
+                            pass
+                        
+                        # ── Feed WoE Predictor ──
+                        try:
+                            _woe = getattr(self._runtime, "woe_predictor", None)
+                            if _woe is not None and "woe" in _map.lower() or "castle" in _map.lower():
+                                _woe.observe_guild("unknown", last_seen=time.time())
+                        except Exception:
+                            pass
+                        
+                        # ── Feed Opportunity Cost Engine ──
+                        try:
+                            _opp = getattr(self._runtime, "opportunity_cost", None)
+                            if _opp is not None and _map:
+                                # Estimate zeny/hr from snapshot data
+                                _est_zeny = _conscious_snap.get("session_zeny", 0) or 0
+                                _est_xp = _conscious_snap.get("session_xp", 0) or 0
+                                if _est_zeny > 0 or _est_xp > 0:
+                                    _opp.evaluate_opportunity(
+                                        f"farming_{_map}",
+                                        map_name=_map,
+                                        estimated_zeny_per_hour=float(_est_zeny) * 12,  # Scale to hourly
+                                        estimated_xp_per_hour=float(_est_xp) * 12,
+                                        risk_score=0.3 if _aggro > 3 else 0.1,
+                                        ban_risk=0.2,
+                                    )
+                        except Exception:
+                            pass
+                        
+                        # ── Store significant events in Long-Term Memory ──
+                        try:
+                            _ltm = getattr(self._runtime, "long_term_memory", None)
+                            if _ltm is not None:
+                                # Store death events
+                                if _is_dead and _bot_prev_hp > 0:
+                                    _ltm.store(
+                                        category="personal_history",
+                                        content=f"Bot died on map {_map} at level {_level}",
+                                        tags=["death", _map],
+                                        importance=8,
+                                        metadata={"map": _map, "level": _level, "hp_before": _bot_prev_hp},
+                                    )
+                                # Store map changes
+                                _last_map = getattr(self, "_last_map", {})
+                                _prev_map = _last_map.get(_reflex_bot_id, "")
+                                if _map and _map != _prev_map:
+                                    _ltm.store(
+                                        category="farming_spot",
+                                        content=f"Visited map {_map} at level {_level}",
+                                        tags=["map_visit", _map],
+                                        importance=3,
+                                        metadata={"map": _map, "level": _level},
+                                    )
+                                _last_map[_reflex_bot_id] = _map
+                                object.__setattr__(self, "_last_map", _last_map)
+                        except Exception:
+                            pass
+                        
+                        # ── Record action outcomes in memory ──
+                        try:
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None and hasattr(_aq, "completed_actions"):
+                                _completed = _aq.completed_actions
+                                if isinstance(_completed, list) and len(_completed) > 0:
+                                    for _ca in _completed[-5:]:
+                                        if isinstance(_ca, dict) and _ca.get("bot_id") == _reflex_bot_id:
+                                            _ltm = getattr(self._runtime, "long_term_memory", None)
+                                            if _ltm is not None:
+                                                _ltm.store(
+                                                    category="personal_history",
+                                                    content=f"Action {_ca.get('command','')} completed on {_map}",
+                                                    tags=["action", _ca.get("status", "unknown")],
+                                                    importance=4,
+                                                    metadata=_ca,
+                                                )
+                        except Exception:
+                            pass
                     
                     _should_wake, _trigger_reason, _trigger_ctx = self._evaluate_conscious_triggers(
                         horizon=horizon,
@@ -4306,15 +4451,23 @@ class PDCALoop:
             _ltm = getattr(self._runtime, "long_term_memory", None)
             if _ltm is not None:
                 from datetime import datetime, timezone
+                import concurrent.futures as _cf
                 _map = result.get("map", "")
-                _mem_ctx = _ltm.get_relevant_context(
-                    current_map=str(_map or ""),
-                    current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
-                    current_activity="farming",
-                    limit=5,
-                )
-                if _mem_ctx:
-                    result["long_term_memory"] = _mem_ctx
+                # Timeout memory search to prevent blocking PDCA cycle
+                with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
+                    _future = _pool.submit(
+                        _ltm.get_relevant_context,
+                        current_map=str(_map or ""),
+                        current_time=datetime.now(timezone.utc).strftime("%A %H:%M"),
+                        current_activity="farming",
+                        limit=5,
+                    )
+                    try:
+                        _mem_ctx = _future.result(timeout=0.5)  # 500ms max
+                        if _mem_ctx:
+                            result["long_term_memory"] = _mem_ctx
+                    except _cf.TimeoutError:
+                        logger.warning("long_term_memory_search_timeout")
         except Exception:
             pass
         

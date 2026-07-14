@@ -176,6 +176,21 @@ class HealingOptimizer:
                 ))
                 count += 1
             
+            # Deduplicate by name — keep the cheapest purchasable version
+            seen_names: dict[str, HealingItem] = {}
+            for item in self._healing_items:
+                existing = seen_names.get(item.name)
+                if existing is None:
+                    seen_names[item.name] = item
+                elif item.buy > 0 and (existing.buy <= 0 or item.buy < existing.buy):
+                    # Prefer purchasable items, then cheaper ones
+                    seen_names[item.name] = item
+                elif existing.buy <= 0 and item.buy > 0:
+                    # Replace non-purchasable with purchasable
+                    seen_names[item.name] = item
+            
+            self._healing_items = list(seen_names.values())
+            
             # Sort by healing efficiency (HP per zeny)
             self._healing_items.sort(key=lambda h: (
                 -(h.heal_hp_max / max(h.buy, 1)),

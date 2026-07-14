@@ -2549,6 +2549,13 @@ sub _rewrite_runtime_command {
 		return ('', 'bare_take_delegated');
 	}
 
+	# Handle chat — send a public chat message
+	if ($normalized =~ /^chat\s+(.+)$/i) {
+	    my $msg = $1;
+	    Commands::run("c $msg");
+	    return ('', 'chat_sent');
+	}
+    
 	# Handle teleport — OpenKore doesn't have a teleport command.
 	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
 	# If the bot has the Teleport skill, use it directly.
