@@ -1173,6 +1173,7 @@ sub _build_snapshot_payload {
 				relation   => $relation,
 				x          => defined $actor->{pos_to} && ref $actor->{pos_to} eq 'HASH' ? $actor->{pos_to}{x} : ($actor->{pos} && ref $actor->{pos} eq 'HASH' ? $actor->{pos}{x} : undef),
 				y          => defined $actor->{pos_to} && ref $actor->{pos_to} eq 'HASH' ? $actor->{pos_to}{y} : ($actor->{pos} && ref $actor->{pos} eq 'HASH' ? $actor->{pos}{y} : undef),
+				distance   => _calc_distance($actor, $char),
 				hp         => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp} || undef) : undef,
 				hp_max     => defined $args{include_hp} && $args{include_hp} ? ($actor->{hp_max} || undef) : undef,
 				level      => $actor->{level} || undef,
@@ -2841,6 +2842,24 @@ sub _throttled_warning {
 		warning "$msg\n";
 		$last_warn_at_ms{$key} = $now;
 	}
+}
+
+sub _calc_distance {
+	my ($actor, $char) = @_;
+	return undef unless $actor && $char;
+	my $ax = undef;
+	my $ay = undef;
+	if (defined $actor->{pos_to} && ref $actor->{pos_to} eq 'HASH') {
+		$ax = $actor->{pos_to}{x};
+		$ay = $actor->{pos_to}{y};
+	} elsif (defined $actor->{pos} && ref $actor->{pos} eq 'HASH') {
+		$ax = $actor->{pos}{x};
+		$ay = $actor->{pos}{y};
+	}
+	return undef unless defined $ax && defined $ay;
+	my $cx = $char->{pos_to}{x} || $char->{pos}{x} || 0;
+	my $cy = $char->{pos_to}{y} || $char->{pos}{y} || 0;
+	return int(sqrt(($ax - $cx)**2 + ($ay - $cy)**2) + 0.5);
 }
 
 1;

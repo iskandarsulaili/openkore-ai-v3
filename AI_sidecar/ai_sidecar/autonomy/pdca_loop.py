@@ -2516,8 +2516,8 @@ class PDCALoop:
                 _bm = getattr(self._runtime, "buff_maintenance", None)
                 if _bm is None:
                     try:
-                        from ai_sidecar.combat.buff_maintenance import get_buff_manager
-                        _bm = get_buff_manager()
+                        from ai_sidecar.combat.buff_maintenance import get_buff_maintenance
+                        _bm = get_buff_maintenance()
                         self._runtime.buff_maintenance = _bm
                         logger.info("buff_maintenance_initialized: %d buffs", len(_bm.get_all_buffs()))
                     except Exception as e:
@@ -5304,10 +5304,11 @@ class PDCALoop:
         # ── Inject Elemental Matrix Context ──
         try:
             _em = getattr(self._runtime, "elemental_matrix", None)
-            if _em is not None and _conscious_snap:
-                _target_element = _conscious_snap.get("target_element", "neutral")
-                _target_size = _conscious_snap.get("target_size", "medium")
-                _target_race = _conscious_snap.get("target_race", "formless")
+            if _em is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _target_element = _snap.get("target_element", "neutral")
+                _target_size = _snap.get("target_size", "medium")
+                _target_race = _snap.get("target_race", "formless")
                 _adv = _em.get_elemental_advantage_description(_target_element, _target_size, _target_race)
                 if _adv:
                     result["elemental_advantage"] = _adv
@@ -5317,11 +5318,12 @@ class PDCALoop:
         # ── Inject Skill Rotation Context ──
         try:
             _srs = getattr(self._runtime, "skill_rotation", None)
-            if _srs is not None and _conscious_snap:
-                _job = str(_conscious_snap.get("job_class", "novice"))
-                _target_element = _conscious_snap.get("target_element", "neutral")
-                _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0))
-                _sp = int(_conscious_snap.get("vitals", {}).get("sp", 0))
+            if _srs is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _job = str(_snap.get("job_class", "novice"))
+                _target_element = _snap.get("target_element", "neutral")
+                _aggro = int(_snap.get("combat", {}).get("aggro_count", 0))
+                _sp = int(_snap.get("vitals", {}).get("sp", 0))
                 _rot_name = _srs.get_recommended_rotation(_job, _target_element, has_aoe=_aggro > 2)
                 if _rot_name:
                     result["recommended_rotation"] = _rot_name
@@ -5331,25 +5333,28 @@ class PDCALoop:
         # ── Inject Map Intelligence Context ──
         try:
             _mi = getattr(self._runtime, "map_intelligence", None)
-            if _mi is not None and _map_name:
-                _md = _mi.get_map_data(_map_name)
-                if _md:
-                    result["map_data"] = {
-                        "name": _md.name,
-                        "difficulty": _md.difficulty,
-                        "is_dungeon": _md.is_dungeon,
-                        "is_town": _md.is_town,
-                        "monster_density": _md.monster_density,
-                        "recommended_level_range": list(_md.recommended_level_range),
-                    }
+            if _mi is not None:
+                _map_name = result.get("map", "")
+                if _map_name:
+                    _md = _mi.get_map_data(_map_name)
+                    if _md:
+                        result["map_data"] = {
+                            "name": _md.name,
+                            "difficulty": _md.difficulty,
+                            "is_dungeon": _md.is_dungeon,
+                            "is_town": _md.is_town,
+                            "monster_density": _md.monster_density,
+                            "recommended_level_range": list(_md.recommended_level_range),
+                        }
         except Exception:
             pass
 
         # ── Inject MVP Mechanics Context ──
         try:
             _mvp = getattr(self._runtime, "mvp_mechanics", None)
-            if _mvp is not None and _conscious_snap:
-                _target_id = _conscious_snap.get("target_id", 0)
+            if _mvp is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _target_id = _snap.get("target_id", 0)
                 if _target_id:
                     _mvp_info = _mvp.get_mvp_strategy_summary(int(_target_id))
                     if _mvp_info:
@@ -5360,12 +5365,13 @@ class PDCALoop:
         # ── Inject Gear Swapper Context ──
         try:
             _gs = getattr(self._runtime, "gear_swapper", None)
-            if _gs is not None and _conscious_snap:
-                _target_element = _conscious_snap.get("target_element", "neutral")
-                _target_size = _conscious_snap.get("target_size", "medium")
-                _target_race = _conscious_snap.get("target_race", "formless")
-                _is_boss = _conscious_snap.get("is_boss", False)
-                _job = str(_conscious_snap.get("job_class", "novice"))
+            if _gs is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _target_element = _snap.get("target_element", "neutral")
+                _target_size = _snap.get("target_size", "medium")
+                _target_race = _snap.get("target_race", "formless")
+                _is_boss = _snap.get("is_boss", False)
+                _job = str(_snap.get("job_class", "novice"))
                 _rec = _gs.get_gear_recommendation({
                     "element": _target_element,
                     "size": _target_size,
@@ -5381,7 +5387,8 @@ class PDCALoop:
         try:
             _bm = getattr(self._runtime, "buff_maintenance", None)
             if _bm is not None:
-                _active_buffs = _conscious_snap.get("buffs", []) if _conscious_snap else []
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _active_buffs = _snap.get("buffs", []) if snapshot else []
                 _expiring = _bm.get_expiring_buffs(_active_buffs)
                 if _expiring:
                     result["buffs_expiring"] = [b.name for b in _expiring[:5]]
@@ -5391,16 +5398,18 @@ class PDCALoop:
         # ── Inject Economic Engine Context ──
         try:
             _ee = getattr(self._runtime, "economic_engine", None)
-            if _ee is not None and _map_name:
-                _eco = _ee.get_map_economics(_map_name)
-                if _eco:
-                    result["map_economics"] = {
-                        "zeny_per_hour": _eco.zeny_per_hour,
-                        "exp_per_hour": _eco.exp_per_hour,
-                        "profit_per_hour": _eco.profit_per_hour,
-                        "efficiency_score": _eco.efficiency_score,
-                        "trend": _eco.trend,
-                    }
+            if _ee is not None:
+                _map_name = result.get("map", "")
+                if _map_name:
+                    _eco = _ee.get_map_economics(_map_name)
+                    if _eco:
+                        result["map_economics"] = {
+                            "zeny_per_hour": _eco.zeny_per_hour,
+                            "exp_per_hour": _eco.exp_per_hour,
+                            "profit_per_hour": _eco.profit_per_hour,
+                            "efficiency_score": _eco.efficiency_score,
+                            "trend": _eco.trend,
+                        }
         except Exception:
             pass
 
@@ -5417,9 +5426,10 @@ class PDCALoop:
         # ── Inject Leveling Planner Context ──
         try:
             _lp = getattr(self._runtime, "leveling_planner", None)
-            if _lp is not None and _conscious_snap:
-                _level = int(_conscious_snap.get("vitals", {}).get("base_level", 1))
-                _job = str(_conscious_snap.get("job_class", "novice"))
+            if _lp is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _level = int(_snap.get("vitals", {}).get("base_level", 1))
+                _job = str(_snap.get("job_class", "novice"))
                 _summary = _lp.get_leveling_summary(_level, _job)
                 if _summary:
                     result["leveling_plan"] = _summary
@@ -5429,8 +5439,9 @@ class PDCALoop:
         # ── Inject WoE Manager Context ──
         try:
             _wm = getattr(self._runtime, "woe_manager", None)
-            if _wm is not None and _map_name:
-                if _wm.is_woe_map(_map_name) or _wm.is_woe_time():
+            if _wm is not None:
+                _map_name = result.get("map", "")
+                if _map_name and (_wm.is_woe_map(_map_name) or _wm.is_woe_time()):
                     _instructions = _wm.get_behavior_instructions()
                     if _instructions:
                         result["woe_instructions"] = _instructions
