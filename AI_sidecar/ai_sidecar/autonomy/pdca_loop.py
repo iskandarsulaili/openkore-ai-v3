@@ -2874,6 +2874,9 @@ class PDCALoop:
                                                 is_casting=bool(_m.get("is_casting", False)),
                                                 casting_skill=str(_m.get("casting_skill", "") or ""),
                                             )
+                                    # Clean up monsters not in current snapshot (memory leak prevention)
+                                    _current_ids = {int(_m.get("id", _m.get("monster_id", 0)) or 0) for _m in _monsters if int(_m.get("id", _m.get("monster_id", 0)) or 0) > 0}
+                                    _tt.cleanup_monsters(_current_ids)
                         except Exception:
                             pass
                         

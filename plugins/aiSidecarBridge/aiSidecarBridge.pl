@@ -1718,6 +1718,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'chat_sent') {
 		($success, $result_code, $msg) = (1, 'ok', 'chat message sent');
+	} elsif ($rewrite_kind eq 'go_command_sent') {
+		($success, $result_code, $msg) = (1, 'ok', '@go command sent as chat');
 	} elsif ($rewrite_kind =~ /^use_item_/) {
 		($success, $result_code, $msg) = (1, 'ok', "item use handled: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'attack_skill_delegated') {
@@ -2637,6 +2639,14 @@ sub _rewrite_runtime_command {
 	        return ('', 'ai_auto_already_auto');
 	    }
 	    return ($trimmed, '');
+	}
+
+	# Handle @go command — must be sent as chat, not console command
+	# OpenKore's Commands::run doesn't handle @go natively
+	if ($normalized =~ /^\@go\s+(.+)$/i) {
+	    my $go_target = $1;
+	    Commands::run("c \@go $go_target");
+	    return ('', 'go_command_sent');
 	}
 
 	return ($trimmed, '');

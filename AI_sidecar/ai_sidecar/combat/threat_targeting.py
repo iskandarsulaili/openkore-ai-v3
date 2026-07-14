@@ -89,9 +89,14 @@ class ThreatBasedTargeting:
     def get_best_target(self, player_class: str = "", 
                         party_size: int = 1,
                         has_aoe: bool = False) -> dict[str, Any] | None:
-        """Evaluate all monsters and return the best target."""
+        """Evaluate all monsters and return the optimal target."""
         with self._lock:
             self._stats["evaluations"] += 1
+            
+            # Clean up dead monsters (memory leak prevention)
+            dead_ids = [mid for mid, m in self._monsters.items() if m.hp <= 0]
+            for mid in dead_ids:
+                del self._monsters[mid]
             
             if not self._monsters:
                 return None
@@ -182,6 +187,19 @@ class ThreatBasedTargeting:
                 lines.append("  No active threats.")
                 return "\n".join(lines)
             
+            # Compute scores for context display (scores may not have been computed yet)
+            for m in active:
+                score = 0.0
+                if m.is_boss: score += 50
+                if m.is_casting: score += 40
+                score += m.damage_to_us / 100.0
+                score += m.damage_to_party / 100.0
+                if m.is_low_hp and m.damage_from_us > 0: score += 30
+                score -= m.distance * 0.5
+                if m.is_aggressive: score += 10
+                if m.damage_from_us > 0: score += 15
+                m.threat_score = score
+            
             # Sort by threat score
             sorted_m = sorted(active, key=lambda m: -m.threat_score)
             lines.append(f"  Active threats: {len(sorted_m)}")
@@ -195,6 +213,13 @@ class ThreatBasedTargeting:
                 lines.append(f"    {m.name} (ID:{m.monster_id}) score={m.threat_score:.0f}{flag_str}")
             
             return "\n".join(lines)
+    
+    def cleanup_monsters(self, active_ids: set[int]) -> None:
+        """Remove monsters not in the current snapshot (memory leak prevention)."""
+        with self._lock:
+            stale = [mid for mid in self._monsters if mid not in active_ids]
+            for mid in stale:
+                del self._monsters[mid]
     
     def counters(self) -> dict[str, int]:
         with self._lock:
