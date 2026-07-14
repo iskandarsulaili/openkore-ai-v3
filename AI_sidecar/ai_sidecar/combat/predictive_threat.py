@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import RLock
 from typing import Any
 
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Data Classes ──────────────────────────────────────────────────────────────
+
 
 @dataclass(slots=True)
 class PredictedThreat:
@@ -200,6 +201,7 @@ _ACTION_THRESHOLDS: dict[str, int] = {
 
 
 # ── PredictiveThreatEngine ───────────────────────────────────────────────────
+
 
 class PredictiveThreatEngine:
     """Evaluates monster cast bars and predicts incoming threats.
@@ -388,29 +390,6 @@ class PredictiveThreatEngine:
         if not times:
             return 9999
         return min(times)
-        """Get the time in ms before the first threat lands.
-
-        times: list[int] = []
-        """
-        threats: list[PredictedThreat] = []
-        for monster in monsters:
-            skill_name = monster.get("casting_skill", "")
-            if not skill_name:
-                continue
-            skill_data = self._dangerous_skills.get(skill_name)
-            if skill_data is None:
-                continue
-            cast_time_ms = skill_data["cast_time_ms"]
-            cast_progress = monster.get("cast_progress", 0.0)
-            remaining = max(0, int(cast_time_ms * (1.0 - cast_progress)))
-            distance = monster.get("distance", 10.0)
-            travel_ms = 0
-            if distance > 3 and not skill_data["is_aoe"]:
-                travel_ms = int(distance * 100)
-            threats.append(remaining + travel_ms)
-        if not threats:
-            return 9999
-        return min(threats)
 
     def should_evacuate(self, threats: list[PredictedThreat]) -> bool:
         """Determine if the bot should immediately evacuate (fly wing / teleport)."""
@@ -452,9 +431,6 @@ class PredictiveThreatEngine:
         weight_total = 0.0
 
         for threat in threats:
-            # In a real scenario we'd have monster positions; for now
-            # we assume monsters are at known positions. If the monster
-            # dict doesn't carry x/y, we fall back to a simple heuristic.
             weight = float(threat.danger_level)
             if threat.is_aoe:
                 weight *= 1.5  # AoE threats are more dangerous

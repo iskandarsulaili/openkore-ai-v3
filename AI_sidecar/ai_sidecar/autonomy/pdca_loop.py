@@ -2593,8 +2593,8 @@ class PDCALoop:
                 _pt = getattr(self._runtime, "predictive_threat", None)
                 if _pt is None:
                     try:
-                        from ai_sidecar.combat.predictive_threat import get_predictive_threat
-                        _pt = get_predictive_threat()
+                        from ai_sidecar.combat.predictive_threat import get_predictive_threat_engine
+                        _pt = get_predictive_threat_engine()
                         self._runtime.predictive_threat = _pt
                         logger.info("predictive_threat_initialized")
                     except Exception as e:
