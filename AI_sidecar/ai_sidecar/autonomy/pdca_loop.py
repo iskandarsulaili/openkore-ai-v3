@@ -2831,6 +2831,94 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("aggro_pathfinder_init_failed: %s", e)
 
+                # ── NEW: Initialize Guild Manager ──
+                _gm = getattr(self._runtime, "guild_manager", None)
+                if _gm is None:
+                    try:
+                        from ai_sidecar.guild_manager import get_guild_manager
+                        _gm = get_guild_manager()
+                        self._runtime.guild_manager = _gm
+                        logger.info("guild_manager_initialized")
+                    except Exception as e:
+                        logger.warning("guild_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Market Manipulator ──
+                _mm = getattr(self._runtime, "market_manipulator", None)
+                if _mm is None:
+                    try:
+                        from ai_sidecar.economy.market_manipulator import get_market_manipulator
+                        _mm = get_market_manipulator()
+                        self._runtime.market_manipulator = _mm
+                        logger.info("market_manipulator_initialized")
+                    except Exception as e:
+                        logger.warning("market_manipulator_init_failed: %s", e)
+
+                # ── NEW: Initialize MVP Tracker ──
+                _mt = getattr(self._runtime, "mvp_tracker", None)
+                if _mt is None:
+                    try:
+                        from ai_sidecar.combat.mvp_tracker import get_mvp_tracker
+                        _mt = get_mvp_tracker()
+                        self._runtime.mvp_tracker = _mt
+                        logger.info("mvp_tracker_initialized: %d MVPs", len(_mt.KNOWN_MVPS))
+                    except Exception as e:
+                        logger.warning("mvp_tracker_init_failed: %s", e)
+
+                # ── NEW: Initialize Player Profiler ──
+                _pp = getattr(self._runtime, "player_profiler", None)
+                if _pp is None:
+                    try:
+                        from ai_sidecar.player_profiler import get_player_profiler
+                        _pp = get_player_profiler()
+                        self._runtime.player_profiler = _pp
+                        logger.info("player_profiler_initialized")
+                    except Exception as e:
+                        logger.warning("player_profiler_init_failed: %s", e)
+
+                # ── NEW: Initialize Strategy Optimizer ──
+                _so = getattr(self._runtime, "strategy_optimizer", None)
+                if _so is None:
+                    try:
+                        from ai_sidecar.learning.strategy_optimizer import get_strategy_optimizer
+                        _so = get_strategy_optimizer()
+                        self._runtime.strategy_optimizer = _so
+                        logger.info("strategy_optimizer_initialized")
+                    except Exception as e:
+                        logger.warning("strategy_optimizer_init_failed: %s", e)
+
+                # ── NEW: Initialize Cross-Bot Resource Manager ──
+                _cbr = getattr(self._runtime, "cross_bot_resource_manager", None)
+                if _cbr is None:
+                    try:
+                        from ai_sidecar.fleet.cross_bot_resource_manager import get_cross_bot_resource_manager
+                        _cbr = get_cross_bot_resource_manager()
+                        self._runtime.cross_bot_resource_manager = _cbr
+                        logger.info("cross_bot_resource_manager_initialized")
+                    except Exception as e:
+                        logger.warning("cross_bot_resource_manager_init_failed: %s", e)
+
+                # ── NEW: Initialize Party Formation AI ──
+                _pfa = getattr(self._runtime, "party_formation_ai", None)
+                if _pfa is None:
+                    try:
+                        from ai_sidecar.party.party_formation_ai import get_party_formation_ai
+                        _pfa = get_party_formation_ai()
+                        self._runtime.party_formation_ai = _pfa
+                        logger.info("party_formation_ai_initialized")
+                    except Exception as e:
+                        logger.warning("party_formation_ai_init_failed: %s", e)
+
+                # ── NEW: Initialize Quest Automation ──
+                _qa = getattr(self._runtime, "quest_automation", None)
+                if _qa is None:
+                    try:
+                        from ai_sidecar.quest_automation import get_quest_automation
+                        _qa = get_quest_automation()
+                        self._runtime.quest_automation = _qa
+                        logger.info("quest_automation_initialized")
+                    except Exception as e:
+                        logger.warning("quest_automation_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -5974,6 +6062,86 @@ class PDCALoop:
                     _ap.update_threats(_threats)
                     _stats = _ap.get_stats()
                     result["pathfinder_status"] = f"Threats: {len(_threats)}, Queries: {_stats['queries']}, Found: {_stats['found']}"
+        except Exception:
+            pass
+
+        # ── Inject Guild Manager Context ──
+        try:
+            _gm = getattr(self._runtime, "guild_manager", None)
+            if _gm is not None:
+                _summary = _gm.get_guild_summary()
+                if _summary:
+                    result["guild_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Market Manipulator Context ──
+        try:
+            _mm = getattr(self._runtime, "market_manipulator", None)
+            if _mm is not None:
+                _summary = _mm.get_market_summary()
+                if _summary:
+                    result["market_manipulator_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject MVP Tracker Context ──
+        try:
+            _mt = getattr(self._runtime, "mvp_tracker", None)
+            if _mt is not None:
+                _summary = _mt.get_mvp_summary()
+                if _summary:
+                    result["mvp_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Player Profiler Context ──
+        try:
+            _pp = getattr(self._runtime, "player_profiler", None)
+            if _pp is not None:
+                _summary = _pp.get_player_summary()
+                if _summary:
+                    result["player_profiler_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Strategy Optimizer Context ──
+        try:
+            _so = getattr(self._runtime, "strategy_optimizer", None)
+            if _so is not None:
+                _summary = _so.get_optimizer_summary()
+                if _summary:
+                    result["strategy_optimizer_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Cross-Bot Resource Manager Context ──
+        try:
+            _cbr = getattr(self._runtime, "cross_bot_resource_manager", None)
+            if _cbr is not None:
+                _summary = _cbr.get_resource_summary()
+                if _summary:
+                    result["cross_bot_resource_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Party Formation AI Context ──
+        try:
+            _pfa = getattr(self._runtime, "party_formation_ai", None)
+            if _pfa is not None:
+                _summary = _pfa.get_party_summary()
+                if _summary:
+                    result["party_formation_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Quest Automation Context ──
+        try:
+            _qa = getattr(self._runtime, "quest_automation", None)
+            if _qa is not None:
+                _summary = _qa.get_quest_summary()
+                if _summary:
+                    result["quest_status"] = _summary
         except Exception:
             pass
 
