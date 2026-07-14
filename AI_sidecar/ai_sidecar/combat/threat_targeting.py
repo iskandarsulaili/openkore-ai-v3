@@ -85,6 +85,14 @@ class ThreatBasedTargeting:
             m = self._monsters.get(monster_id)
             if m:
                 m.damage_from_us += damage
+
+    def deprioritize_monster(self, monster_id: int) -> None:
+        """Deprioritize a monster (e.g., because it killed us before)."""
+        with self._lock:
+            m = self._monsters.get(monster_id)
+            if m:
+                m.threat_score = max(-100, m.threat_score - 50)
+                m.is_low_hp = False  # Don't try to finish it
     
     def get_best_target(self, player_class: str = "", 
                         party_size: int = 1,

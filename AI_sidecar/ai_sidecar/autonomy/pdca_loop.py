@@ -2637,7 +2637,104 @@ class PDCALoop:
                         logger.info("social_intelligence_initialized")
                     except Exception as e:
                         logger.warning("social_intelligence_init_failed: %s", e)
-                
+
+                # ── NEW: Initialize Action Executor ──
+                _ae = getattr(self._runtime, "action_executor", None)
+                if _ae is None:
+                    try:
+                        from ai_sidecar.combat.action_executor import get_action_executor
+                        _ae = get_action_executor()
+                        self._runtime.action_executor = _ae
+                        logger.info("action_executor_initialized: %d mappings", len(_ae.get_all_mappings()))
+                    except Exception as e:
+                        logger.warning("action_executor_init_failed: %s", e)
+
+                # ── NEW: Initialize Safe Position Computer ──
+                _spc = getattr(self._runtime, "safe_position", None)
+                if _spc is None:
+                    try:
+                        from ai_sidecar.combat.safe_position import get_safe_position_computer
+                        _spc = get_safe_position_computer()
+                        self._runtime.safe_position = _spc
+                        logger.info("safe_position_initialized")
+                    except Exception as e:
+                        logger.warning("safe_position_init_failed: %s", e)
+
+                # ── NEW: Initialize GM Detector ──
+                _gmd = getattr(self._runtime, "gm_detector", None)
+                if _gmd is None:
+                    try:
+                        from ai_sidecar.combat.gm_detector import get_gm_detector
+                        _gmd = get_gm_detector()
+                        # Wire enqueue function for evasion actions
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _gmd.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"gmd-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.reflex,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"gmd-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.gm_detector = _gmd
+                        logger.info("gm_detector_initialized")
+                    except Exception as e:
+                        logger.warning("gm_detector_init_failed: %s", e)
+
+                # ── NEW: Initialize Market Arbitrage ──
+                _ma = getattr(self._runtime, "market_arbitrage", None)
+                if _ma is None:
+                    try:
+                        from ai_sidecar.economy.market_arbitrage import get_market_arbitrage
+                        _ma = get_market_arbitrage()
+                        self._runtime.market_arbitrage = _ma
+                        logger.info("market_arbitrage_initialized")
+                    except Exception as e:
+                        logger.warning("market_arbitrage_init_failed: %s", e)
+
+                # ── NEW: Initialize Party Skill Protocol ──
+                _psp = getattr(self._runtime, "party_skill_protocol", None)
+                if _psp is None:
+                    try:
+                        from ai_sidecar.party.party_skill_protocol import get_party_skill_protocol
+                        _psp = get_party_skill_protocol()
+                        _aq = getattr(self._runtime, "action_queue", None)
+                        if _aq is not None:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            _psp.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                action_id=f"psp-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=cmd,
+                                conflict_key="",
+                                priority_tier=_APT.tactical,
+                                source="manual",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"psp-{int(_dt.now(UTC).timestamp())}",
+                            )))
+                        self._runtime.party_skill_protocol = _psp
+                        logger.info("party_skill_protocol_initialized")
+                    except Exception as e:
+                        logger.warning("party_skill_protocol_init_failed: %s", e)
+
+                # ── NEW: Initialize Resource Manager ──
+                _rm = getattr(self._runtime, "resource_manager", None)
+                if _rm is None:
+                    try:
+                        from ai_sidecar.combat.resource_manager import get_resource_manager
+                        _rm = get_resource_manager()
+                        self._runtime.resource_manager = _rm
+                        logger.info("resource_manager_initialized")
+                    except Exception as e:
+                        logger.warning("resource_manager_init_failed: %s", e)
+
                 # Get heuristic confidence
                 _hc = 0.0
                 _hs = getattr(self._runtime, "heuristic_service", None)
@@ -5572,6 +5669,128 @@ class PDCALoop:
                 _summary = _si.get_social_summary()
                 if _summary:
                     result["social_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Safe Position Context ──
+        try:
+            _spc = getattr(self._runtime, "safe_position", None)
+            if _spc is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _my_x = int(_snap.get("position", {}).get("x", 0))
+                _my_y = int(_snap.get("position", {}).get("y", 0))
+                _map_name = result.get("map", "")
+                _actors = _snap.get("actors", [])
+                _situation = _spc.assess_position(_my_x, _my_y, _map_name, _actors)
+                if _situation:
+                    result["position_status"] = _spc.get_position_summary(_situation)
+                    if _situation.is_surrounded:
+                        result["position_alert"] = "SURROUNDED: move to safe spot"
+        except Exception:
+            pass
+
+        # ── Inject GM Detection Context ──
+        try:
+            _gmd = getattr(self._runtime, "gm_detector", None)
+            if _gmd is not None:
+                _summary = _gmd.get_gm_summary()
+                if _summary:
+                    result["gm_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Market Arbitrage Context ──
+        try:
+            _ma = getattr(self._runtime, "market_arbitrage", None)
+            if _ma is not None:
+                _summary = _ma.get_market_summary()
+                if _summary:
+                    result["market_status"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Party Skill Protocol Context ──
+        try:
+            _psp = getattr(self._runtime, "party_skill_protocol", None)
+            if _psp is not None:
+                _summary = _psp.get_protocol_summary()
+                if _summary:
+                    result["party_protocol"] = _summary
+        except Exception:
+            pass
+
+        # ── Inject Resource Manager Context ──
+        try:
+            _rm = getattr(self._runtime, "resource_manager", None)
+            if _rm is not None:
+                _summary = _rm.get_resource_summary()
+                if _summary:
+                    result["resource_status"] = _summary
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire death avoidance into threat targeting ──
+        try:
+            _da = getattr(self._runtime, "death_analysis", None)
+            _tt = getattr(self._runtime, "threat_targeting", None)
+            if _da is not None and _tt is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _actors = _snap.get("actors", [])
+                for _actor in _actors:
+                    _mid = int(_actor.get("name_id", 0) or 0)
+                    if _mid > 0 and _da.is_monster_avoided(_mid):
+                        # Deprioritize this monster — it killed us before
+                        _tt.deprioritize_monster(_mid)
+                        result["avoided_monster"] = f"Monster ID {_mid} is permanently avoided"
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire cast interrupt execution ──
+        try:
+            _pt = getattr(self._runtime, "predictive_threat", None)
+            _ae = getattr(self._runtime, "action_executor", None)
+            _aq = getattr(self._runtime, "action_queue", None)
+            if _pt is not None and _ae is not None and _aq is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _actors = _snap.get("actors", [])
+                if _actors:
+                    _threats = _pt.evaluate_threats(_actors)
+                    if _threats and _threats.should_interrupt:
+                        _target_id = _pt.get_priority_interrupt_target(_threats.threats)
+                        if _target_id:
+                            # Execute interrupt directly — bypass LLM
+                            _ae.execute("interrupt_caster", self._resolve_cost_gate_bot_id(), _aq)
+                            result["cast_interrupted"] = f"Interrupted monster {_target_id}"
+        except Exception:
+            pass
+
+        # ── CLOSED-LOOP: Wire reflex combat to bypass LLM ──
+        try:
+            _rc = getattr(self._runtime, "reflex_combat", None)
+            _ae = getattr(self._runtime, "action_executor", None)
+            _aq = getattr(self._runtime, "action_queue", None)
+            if _rc is not None and _ae is not None and _aq is not None and snapshot:
+                _snap = snapshot if isinstance(snapshot, dict) else {}
+                _situation = {
+                    "target_element": _snap.get("target_element", "neutral"),
+                    "target_size": _snap.get("target_size", "medium"),
+                    "target_race": _snap.get("target_race", "formless"),
+                    "target_hp_pct": float(_snap.get("combat", {}).get("target_hp_pct", 1.0)),
+                    "target_distance": float(_snap.get("combat", {}).get("target_distance", 0)),
+                    "target_is_casting": bool(_snap.get("combat", {}).get("target_is_casting", False)),
+                    "target_is_boss": bool(_snap.get("is_boss", False)),
+                    "aggro_count": int(_snap.get("combat", {}).get("aggro_count", 0)),
+                    "my_hp_pct": float(_snap.get("vitals", {}).get("hp_ratio", 1.0)),
+                    "my_sp_pct": float(_snap.get("vitals", {}).get("sp_ratio", 1.0)),
+                    "my_sp": int(_snap.get("vitals", {}).get("sp", 0)),
+                    "my_job_class": str(_snap.get("job_class", "novice")),
+                    "my_buffs": _snap.get("buffs", []),
+                }
+                _best = _rc.get_best_action(_situation)
+                if _best and _best.priority >= 80:
+                    # Execute directly — bypass LLM entirely
+                    _ae.execute(_best.action, self._resolve_cost_gate_bot_id(), _aq)
+                    result["reflex_executed"] = f"{_best.name} ({_best.action})"
         except Exception:
             pass
 

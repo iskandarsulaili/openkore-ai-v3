@@ -207,6 +207,7 @@ sub on_mainLoop_pre {
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
 		$next_snapshot_at_ms = $now + _cfg_int('aiSidecar_snapshotIntervalMs', 500);
 		_send_snapshot();
+		_check_bridge_reflexes();
 	}
 
 	_track_lifecycle_transitions();
@@ -2860,6 +2861,164 @@ sub _calc_distance {
 	my $cx = $char->{pos_to}{x} || $char->{pos}{x} || 0;
 	my $cy = $char->{pos_to}{y} || $char->{pos}{y} || 0;
 	return int(sqrt(($ax - $cx)**2 + ($ay - $cy)**2) + 0.5);
+}
+
+# ── Bridge-level emergency reflexes (sub-5ms, pure Perl, no LLM/network) ──
+# Each reflex has its own cooldown tracked in %_reflex_last_fired.
+# In-game actions use Commands::run(). Sidecar alerts use _http_post_json().
+{
+	my %_reflex_last_fired;
+
+	sub _check_bridge_reflexes {
+		my $now = _now_ms();
+		return if !$char;
+
+		my $hp_ratio = ($char->{hp_max} && $char->{hp_max} > 0) ? $char->{hp} / $char->{hp_max} : 1;
+		my $sp_ratio = ($char->{sp_max} && $char->{sp_max} > 0) ? $char->{sp} / $char->{sp_max} : 1;
+		my $weight_ratio = ($char->{weight_max} && $char->{weight_max} > 0) ? $char->{weight} / $char->{weight_max} : 0;
+
+		# Count aggro: monsters that have dealt damage to us
+		my $aggro_count = 0;
+		if ($monstersList) {
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				$aggro_count++ if $monster->{dmg_to_us} || $monster->{dmg_to_you};
+			}
+		}
+
+		# ── 1. Emergency Heal Reflex ──
+		if ($hp_ratio < 0.35) {
+			my $last = $_reflex_last_fired{heal} || 0;
+			if ($now - $last >= 200) {
+				$_reflex_last_fired{heal} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
+				eval { Commands::run("use White Potion"); 1; };
+			}
+		}
+
+		# ── 2. Emergency Flee Reflex ──
+		if ($hp_ratio < 0.15 && $aggro_count > 3) {
+			my $last = $_reflex_last_fired{flee} || 0;
+			if ($now - $last >= 1000) {
+				$_reflex_last_fired{flee} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$char->{hp}/$char->{hp_max}, aggro=$aggro_count)\n";
+				eval { Commands::run("flee"); 1; };
+			}
+		}
+
+		# ── 3. Emergency Teleport Reflex ──
+		if ($hp_ratio < 0.08) {
+			my $last = $_reflex_last_fired{teleport} || 0;
+			if ($now - $last >= 3000) {
+				$_reflex_last_fired{teleport} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$char->{hp}/$char->{hp_max}, ratio=$hp_ratio)\n";
+				eval { Commands::run("teleport"); 1; };
+			}
+		}
+
+		# ── 4. Aggro Warning Reflex ──
+		if ($aggro_count > 5) {
+			my $last = $_reflex_last_fired{aggro_warning} || 0;
+			if ($now - $last >= 5000) {
+				$_reflex_last_fired{aggro_warning} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'aggro_warning',
+					aggro_count => $aggro_count,
+					hp_ratio => $hp_ratio,
+					ts => $now,
+				});
+			}
+		}
+
+		# ── 5. Low SP Reflex ──
+		if ($sp_ratio < 0.15) {
+			my $last = $_reflex_last_fired{low_sp} || 0;
+			if ($now - $last >= 10000) {
+				$_reflex_last_fired{low_sp} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$char->{sp}/$char->{sp_max}, ratio=$sp_ratio)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'low_sp',
+					sp_ratio => $sp_ratio,
+					ts => $now,
+				});
+			}
+		}
+
+		# ── 6. GM Detection Reflex ──
+		if ($playersList) {
+			my $gm_detected = 0;
+			for my $player (@{$playersList}) {
+				next if !$player;
+				my $pname = $player->{name} || '';
+				next if $pname eq '';
+				if ($pname =~ /GM|GameMaster|Admin|Support/i) {
+					my $dist = _calc_distance($player, $char);
+					if (defined $dist && $dist <= 15) {
+						$gm_detected = 1;
+						last;
+					}
+				}
+			}
+			if ($gm_detected) {
+				my $last = $_reflex_last_fired{gm_detected} || 0;
+				if ($now - $last >= 60000) {
+					$_reflex_last_fired{gm_detected} = $now;
+					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
+					eval { Commands::run("ai manual"); 1; };
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
+						reflex => 'gm_detected',
+						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
+						ts => $now,
+					});
+				}
+			}
+		}
+
+		# ── 7. Weight Warning Reflex ──
+		if ($weight_ratio > 0.85) {
+			my $last = $_reflex_last_fired{weight_warning} || 0;
+			if ($now - $last >= 30000) {
+				$_reflex_last_fired{weight_warning} = $now;
+				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$char->{weight}/$char->{weight_max}, ratio=$weight_ratio)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'weight_warning',
+					weight_ratio => $weight_ratio,
+					ts => $now,
+				});
+			}
+		}
+
+		# ── 8. Equipment Broken Reflex ──
+		if ($char->{equipment}) {
+			my $broken_found = 0;
+			for my $slot (keys %{$char->{equipment}}) {
+				my $item = $char->{equipment}{$slot};
+				next if !$item;
+				if ($item->{broken} || (defined $item->{damage} && $item->{damage} > 0)) {
+					$broken_found = 1;
+					last;
+				}
+			}
+			if ($broken_found) {
+				my $last = $_reflex_last_fired{equipment_broken} || 0;
+				if ($now - $last >= 60000) {
+					$_reflex_last_fired{equipment_broken} = $now;
+					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
+						reflex => 'equipment_broken',
+						message => 'Broken equipment detected',
+						ts => $now,
+					});
+				}
+			}
+		}
+	}
 }
 
 1;
