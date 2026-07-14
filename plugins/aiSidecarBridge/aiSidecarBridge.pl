@@ -1715,6 +1715,8 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
+	} elsif ($rewrite_kind eq 'chat_sent') {
+		($success, $result_code, $msg) = (1, 'ok', 'chat message sent');
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
 	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {

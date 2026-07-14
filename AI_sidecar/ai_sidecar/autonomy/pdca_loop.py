@@ -2134,7 +2134,7 @@ class PDCALoop:
                         # Wire enqueue function for issuing orders
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"fleet-{int(_dt.now(UTC).timestamp())}",
@@ -2144,7 +2144,7 @@ class PDCALoop:
                                 priority_tier=_APT.tactical,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"fleet-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.fleet_coordinator = _fleet
@@ -2172,7 +2172,7 @@ class PDCALoop:
                         # Wire enqueue function for sending chat messages
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"social-{int(_dt.now(UTC).timestamp())}",
@@ -2182,7 +2182,7 @@ class PDCALoop:
                                 priority_tier=_APT.tactical,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"social-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.social_manipulator = _social
@@ -2231,7 +2231,7 @@ class PDCALoop:
                         _edge = EdgeCaseHandler()
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"edge-{int(_dt.now(UTC).timestamp())}",
@@ -2241,7 +2241,7 @@ class PDCALoop:
                                 priority_tier=_APT.reflex,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"edge-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.edge_case_handler = _edge
@@ -2307,7 +2307,7 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"spart-{int(_dt.now(UTC).timestamp())}",
@@ -2317,7 +2317,7 @@ class PDCALoop:
                                 priority_tier=_APT.tactical,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"spart-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.social_participation = _spart
@@ -2345,7 +2345,7 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _mm._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"mm-{int(_dt.now(UTC).timestamp())}",
@@ -2355,7 +2355,7 @@ class PDCALoop:
                                 priority_tier=_APT.tactical,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"mm-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.market_manipulator = _mm
@@ -2394,7 +2394,7 @@ class PDCALoop:
                         # Wire enqueue function
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt
+                            from datetime import UTC, datetime as _dt, timedelta
                             from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                             _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
                                 action_id=f"mas-{int(_dt.now(UTC).timestamp())}",
@@ -2404,7 +2404,7 @@ class PDCALoop:
                                 priority_tier=_APT.tactical,
                                 source="manual",
                                 created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                 idempotency_key=f"mas-{int(_dt.now(UTC).timestamp())}",
                             ))
                         self._runtime.multi_account_synergy = _mas
@@ -2646,7 +2646,7 @@ class PDCALoop:
                                     _innov.start_experiment(_exp.name)
                                     # Use knowledge-driven target map if available
                                     _target_map = str(_exp.metadata.get("map", "prt_fild08") or "prt_fild08")
-                                    from datetime import UTC, datetime as _dt
+                                    from datetime import UTC, datetime as _dt, timedelta
                                     from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                                     _aq.enqueue(_reflex_bot_id, _AP(
                                         action_id=f"experiment-{_exp.name}-{int(_dt.now(UTC).timestamp())}",
@@ -2656,7 +2656,7 @@ class PDCALoop:
                                         priority_tier=_APT.tactical,
                                         source="manual",
                                         created_at=_dt.now(UTC),
-                                        expires_at=_dt.now(UTC),
+                                        expires_at=_dt.now(UTC) + timedelta(seconds=30),
                                         idempotency_key=f"experiment-{_exp.name}-{int(_dt.now(UTC).timestamp())}",
                                     ))
                                     _exp.duration_minutes = 10

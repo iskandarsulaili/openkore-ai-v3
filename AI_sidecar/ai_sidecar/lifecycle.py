@@ -1460,7 +1460,7 @@ class RuntimeState:
                                         priority_tier=ActionPriorityTier.tactical,
                                         source="manual",
                                         created_at=_now,
-                                        expires_at=_now,
+                                        expires_at=_now + timedelta(seconds=30),
                                         idempotency_key=f"conv-{int(time.time())}",
                                     ))
                             except Exception:
