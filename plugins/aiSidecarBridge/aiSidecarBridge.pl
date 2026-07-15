@@ -2984,8 +2984,10 @@ sub _calc_distance {
 			}
 		}
 
-		# ── 1. EMERGENCY HEAL REFLEX (FIRST PRIORITY) ──
-		# Threshold: 50% HP (preemptive) → 35% HP (bridge reflex)
+		# ═══════════════════════════════════════════
+		# REFLEX #1 — EMERGENCY HEAL REFLEX (FIRST PRIORITY)
+		# ═══════════════════════════════════════════
+		# Threshold: 50% HP (preemptive) → bridge reflex fires at <50%
 		# Action: Use best available heal item/skill INSTANTLY
 		# Rules:
 		#   - No random delay on emergency heal (survival critical)
@@ -3004,7 +3006,7 @@ sub _calc_distance {
 				my $item = eval { Actor::Item::get($item_name) };
 				if ($item && $item->{amount} && $item->{amount} > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$hp/$hp_max=$hp_ratio, item=$item_name qty=$item->{amount})\n";
-					eval { Commands::run("is $item_name"); 1; };
+					eval { Commands::run("is $item_name"); 1 };
 					$heal_triggered = 1;
 					last;
 				}
@@ -3018,7 +3020,7 @@ sub _calc_distance {
 					my $skill = eval { Skill::get($skill_name) };
 					if ($skill && $skill->{level} && $skill->{level} > 0 && $sp > 0) {
 						warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
-						eval { Commands::run("skill $skill_name 1"); 1; };
+						eval { Commands::run("skill $skill_name 1"); 1 };
 						$heal_triggered = 1;
 						last;
 					}
@@ -3030,7 +3032,7 @@ sub _calc_distance {
 				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
 				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_heal_fallback (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
-					eval { Commands::run("is $HARDCODED_FALLBACK_ITEM"); 1; };
+					eval { Commands::run("is $HARDCODED_FALLBACK_ITEM"); 1 };
 					$heal_triggered = 1;
 				}
 			}
@@ -3064,11 +3066,11 @@ sub _calc_distance {
 
 					# IMMEDIATE EMERGENCY SURVIVAL: flee if aggro, teleport if no aggro
 					if ($aggro_count > 0) {
-						eval { Commands::run("flee"); 1; };
+						eval { Commands::run("flee"); 1 };
 					} elsif ($hp_ratio < 0.30) {
-						eval { Commands::run("tele"); 1; };
+						eval { Commands::run("tele"); 1 };
 					} elsif ($hp_ratio < 0.15) {
-						eval { Commands::run("sit"); 1; };
+						eval { Commands::run("sit"); 1 };
 					}
 				}
 			}
@@ -3079,55 +3081,223 @@ sub _calc_distance {
 			}
 		}
 
-		# ── 2. Emergency Flee Reflex (INSTANT — no delay) ──
+		# ═══════════════════════════════════════════
+		# REFLEX #2 — EMERGENCY FLEE REFLEX
+		# ═══════════════════════════════════════════
+		# Instant flee when HP <15% and aggroed (no anti-detection delay)
 		if ($hp_ratio < 0.15 && $aggro_count > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
 				$_reflex_last_fired{flee} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				eval { Commands::run("flee"); 1; };
+				eval { Commands::run("flee"); 1 };
 			}
 		}
 
-		# ── 3. Emergency Teleport / Sit Reflex (INSTANT — no delay) ──
+		# ═══════════════════════════════════════════
+		# REFLEX #3 — EMERGENCY TELEPORT / SIT REFLEX
+		# ═══════════════════════════════════════════
+		# Teleport if <12% HP and aggroed, sit+regen otherwise
 		if ($hp_ratio < 0.12) {
 			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { Commands::run("tele"); 1; };
+					eval { Commands::run("tele"); 1 };
 				} else {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_sit_regen (HP=$hp/$hp_max)\n";
-					eval { Commands::run("sit"); 1; };
+					eval { Commands::run("sit"); 1 };
 				}
 			}
 		}
 
-		# ── 2. Emergency Flee Reflex (INSTANT — no delay) ──
-		if ($hp_ratio < 0.15 && $aggro_count > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
-				$_reflex_last_fired{flee} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				eval { Commands::run("flee"); 1; };
+		# ═══════════════════════════════════════════
+		# REFLEX #4 — AGGRO WARNING REFLEX
+		# ═══════════════════════════════════════════
+		# Notify sidecar when heavily aggroed (>5 attackers)
+		if ($aggro_count > 5) {
+			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
+				$_reflex_last_fired{aggro_warning} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'aggro_warning',
+					aggro_count => $aggro_count,
+					hp_ratio => $hp_ratio,
+					map => $map,
+					timestamp => $now,
+				});
 			}
 		}
 
-		# ── 3. Emergency Teleport / Sit Reflex (INSTANT — no delay) ──
-		if ($hp_ratio < 0.12) {
-			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
-				$_reflex_last_fired{teleport} = _now_ms();
-				if ($aggro_count > 0) {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { Commands::run("tele"); 1; };
-				} else {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_sit_regen (HP=$hp/$hp_max)\n";
-					eval { Commands::run("sit"); 1; };
+		# ═══════════════════════════════════════════
+		# REFLEX #5 — LOW SP REFLEX
+		# ═══════════════════════════════════════════
+		# Notify sidecar when SP is critically low
+		if ($sp_ratio < 0.15) {
+			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
+				$_reflex_last_fired{low_sp} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'low_sp',
+					sp_ratio => $sp_ratio,
+					sp => $sp,
+					max_sp => $sp_max,
+					timestamp => $now,
+				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #6 — GM / ADMIN DETECTION REFLEX
+		# ═══════════════════════════════════════════
+		# Detect GM/Admin players within 15 tiles, switch to manual
+		if ($playersList) {
+			my $gm_detected = 0;
+			for my $player (@{$playersList}) {
+				next if !$player;
+				my $pname = $player->{name} || '';
+				next if $pname eq '';
+				if ($pname =~ /GM|GameMaster|Admin|Support/i) {
+					my $dist = _calc_distance($player, $char);
+					if (defined $dist && $dist <= 15) {
+						$gm_detected = 1;
+						last;
+					}
+				}
+			}
+			if ($gm_detected) {
+				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
+					$_reflex_last_fired{gm_detected} = _now_ms();
+					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
+					eval { Commands::run("ai manual"); 1 };
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
+						reflex => 'gm_detected',
+						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
+						timestamp => $now,
+					});
 				}
 			}
 		}
 
-		# ── 4. Bot-to-Bot Cooperation Request ──
-		# If HP is critically low and no heal resources, request help from other bots
-		# The sidecar handles routing this to nearby whitelist bots
+		# ═══════════════════════════════════════════
+		# REFLEX #7 — WEIGHT WARNING REFLEX
+		# ═══════════════════════════════════════════
+		# Notify sidecar when weight exceeds 85%
+		if ($weight_ratio > 0.85) {
+			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
+				$_reflex_last_fired{weight_warning} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'weight_warning',
+					weight_ratio => $weight_ratio,
+					weight => $weight,
+					max_weight => $weight_max,
+					timestamp => $now,
+				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #8 — EQUIPMENT BROKEN REFLEX
+		# ═══════════════════════════════════════════
+		# Notify sidecar when equipped item is damaged/broken
+		if ($char->{equipment}) {
+			my $broken_found = 0;
+			for my $slot (keys %{$char->{equipment}}) {
+				my $item = $char->{equipment}{$slot};
+				next if !$item;
+				if ($item->{broken} || (defined $item->{damage} && $item->{damage} > 0)) {
+					$broken_found = 1;
+					last;
+				}
+			}
+			if ($broken_found) {
+				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
+					$_reflex_last_fired{equipment_broken} = _now_ms();
+					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
+						reflex => 'equipment_broken',
+						message => 'Broken equipment detected',
+						timestamp => $now,
+					});
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #9 — INTERRUPT CAST REFLEX
+		# ═══════════════════════════════════════════
+		# Interrupt enemy casters within 10 tiles using Bash or similar
+		if ($monstersList) {
+			my $interrupted = 0;
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				my $casting = $monster->{casting} || undef;
+				next if !$casting;
+				my $dist = _calc_distance($monster, $char);
+				if (defined $dist && $dist <= 10) {
+					$interrupted = 1;
+					last;
+				}
+			}
+			if ($interrupted) {
+				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, 1500)) {
+					$_reflex_last_fired{interrupt_cast} = _now_ms();
+					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
+					eval { Commands::run("skill Bash 10"); 1 };
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #10 — PRE-POT REFLEX (BOSS WITHIN 15 TILES)
+		# ═══════════════════════════════════════════
+		# Preemptively heal before engaging a boss
+		my @BOSS_IDS = (1038, 1046, 1049, 1059, 1086, 1087, 1088, 1112, 1115, 1147, 1150, 1159, 1205, 1272, 1312, 1313, 1511, 1630, 1639, 1719, 1751, 1871, 1874);
+		my %BOSS_LOOKUP = map { $_ => 1 } @BOSS_IDS;
+		if ($monstersList) {
+			my $boss_nearby = 0;
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				my $name_id = $monster->{nameID} || 0;
+				next if !$name_id;
+				if ($BOSS_LOOKUP{$name_id}) {
+					my $dist = _calc_distance($monster, $char);
+					if (defined $dist && $dist <= 15) {
+						$boss_nearby = 1;
+						last;
+					}
+				}
+			}
+			if ($boss_nearby && $hp_ratio > 0.9) {
+				if (_should_fire_reflex($_reflex_last_fired{pre_pot} || 0, 5000)) {
+					$_reflex_last_fired{pre_pot} = _now_ms();
+					_update_heal_cache();
+					my $healed = 0;
+					for my $item_name (@_heal_items) {
+						my $item = eval { Actor::Item::get($item_name) };
+						if ($item) {
+							warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$hp/$hp_max, item=$item_name)\n";
+							eval { Commands::run("is $item_name"); 1 };
+							$healed = 1;
+							last;
+						}
+					}
+					if (!$healed) {
+						warning "[aiSidecarBridge] bridge_reflex:pre_pot_no_items (boss within 15 tiles, HP=$hp/$hp_max)\n";
+					}
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #11 — BOT-TO-BOT COOPERATION REQUEST
+		# ═══════════════════════════════════════════
+		# If HP critically low with no heal resources and aggro, request help from other bots
 		if (!$heal_triggered && $hp_ratio < 0.50 && $aggro_count > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
 				$_reflex_last_fired{bot_request} = _now_ms();
@@ -3143,6 +3313,109 @@ sub _calc_distance {
 					base_level => $base_level,
 					job_name => $job_name,
 					timestamp => _now_ms(),
+				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #12 — PARTY MEMBER LOW HP ALERT
+		# ═══════════════════════════════════════════
+		# Notify sidecar if any party member has critically low HP
+		if ($playersList) {
+			for my $player (@{$playersList}) {
+				next if !$player;
+				my $pname = $player->{name} || '';
+				next if $pname eq '';
+				# Skip self
+				next if $char && defined $char->{name} && $pname eq $char->{name};
+
+				my $player_hp = $player->{hp} || 0;
+				my $player_hp_max = $player->{hp_max} || 1;
+				my $player_hp_ratio = ($player_hp_max > 0) ? $player_hp / $player_hp_max : 1;
+
+				if ($player_hp_ratio < 0.20) {
+					my $dist = _calc_distance($player, $char);
+					next if !defined $dist || $dist > 20;
+
+					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
+						$_reflex_last_fired{party_low_hp} = _now_ms();
+						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
+						_http_post_json('/v2/ingest/event', {
+							kind => 'bridge_reflex',
+							reflex => 'party_low_hp',
+							player_name => $pname,
+							player_hp => $player_hp,
+							player_hp_max => $player_hp_max,
+							player_hp_ratio => $player_hp_ratio,
+							distance => $dist,
+							timestamp => $now,
+						});
+					}
+					last;  # Only report first low-HP party member per cycle
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #13 — HIGH AGGRO SURROUND REFLEX
+		# ═══════════════════════════════════════════
+		# Immediate emergency when surrounded (>10 aggro)
+		if ($aggro_count > 10) {
+			if (_should_fire_reflex($_reflex_last_fired{high_aggro_surround} || 0, 3000)) {
+				$_reflex_last_fired{high_aggro_surround} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
+
+				# Immediate flee + teleport combo
+				eval { Commands::run("flee"); 1 };
+				if ($hp_ratio < 0.25) {
+					eval { Commands::run("tele"); 1 };
+				}
+
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'high_aggro_surround',
+					aggro_count => $aggro_count,
+					hp_ratio => $hp_ratio,
+					map => $map,
+					timestamp => $now,
+				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #14 — ZONK / DEAD REFLEX (INSTANT)
+		# ═══════════════════════════════════════════
+		# Immediate sit if HP is zero or critically zero (zombie state)
+		if ($hp <= 0 || ($hp > 0 && $hp <= 5)) {
+			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, 2000)) {
+				$_reflex_last_fired{zonk} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
+				eval { Commands::run("sit"); 1 };
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'zonk',
+					hp => $hp,
+					hp_max => $hp_max,
+					map => $map,
+					timestamp => $now,
+				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #15 — DEATH COUNTER (INFORM SIDECAR)
+		# ═══════════════════════════════════════════
+		# Track death count and notify sidecar if deaths spike
+		if ($death_count > 0 && $death_count % 5 == 0) {
+			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
+				$_reflex_last_fired{death_spike} = _now_ms();
+				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
+					reflex => 'death_spike',
+					death_count => $death_count,
+					map => $map,
+					timestamp => $now,
 				});
 			}
 		}
