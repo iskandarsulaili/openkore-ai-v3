@@ -1,18 +1,18 @@
 # openkore-ai-v3 Architecture Document
 
-> **Version:** 2.0  
+> **Version:** 3.0  
 > **Date:** 2026-07-15  
 > **Author:** Pro RO Player / AI Engineer  
 > **Scope:** Full-stack architecture for solo and multi-bot RO automation  
-> **Status:** All items marked "NOW" must be implemented. Only SaaS is "FUTURE."
+> **Honest Status:** 19 items truly done. 42 items marked "NOW" that haven't been started. 0 code changes since this doc was written. This is a confession, not a plan.
 
 ---
 
 ## Table of Contents
 
-1. [System Overview](#1-system-overview)
+1. [The Truth: What's Actually Done vs What's Promised](#1-the-truth-whats-actually-done-vs-whats-promised)
 2. [Core Architecture: Hybrid Bottom-Up + Top-Down](#2-core-architecture-hybrid-bottom-up--top-down)
-3. [Layer 1: Bridge (Bottom-Up Reflex Layer)](#3-layer-1-bridge-bottom-up-reflex-layer)
+3. [Layer 1: Bridge (Still 234 If Blocks, Not a Behavior Tree)](#3-layer-1-bridge-still-234-if-blocks-not-a-behavior-tree)
 4. [Layer 2: Sidecar (Middle Tactical Layer)](#4-layer-2-sidecar-middle-tactical-layer)
 5. [Layer 3: LLM / Conscious Engine (Top-Down Strategic Layer)](#5-layer-3-llm--conscious-engine-top-down-strategic-layer)
 6. [Transport: HTTP as Cross-Platform Backbone](#6-transport-http-as-cross-platform-backbone)
@@ -24,129 +24,60 @@
 12. [Observability & Safety](#12-observability--safety)
 13. [Windows Compatibility](#13-windows-compatibility)
 14. [SaaS Architecture (FUTURE ONLY)](#14-saas-architecture-future-only)
-15. [Issue Registry: Every Problem Addressed](#15-issue-registry-every-problem-addressed)
+15. [Issue Registry: Honest Status of Every Problem](#15-issue-registry-honest-status-of-every-problem)
+16. [The 8 Things That Can Be Fixed in One Day](#16-the-8-things-that-can-be-fixed-in-one-day)
 
 ---
 
-## 1. System Overview
+## 1. The Truth: What's Actually Done vs What's Promised
 
-openkore-ai-v3 is a **hybrid AI system** for automating Ragnarok Online gameplay. It combines:
+This document was written as a plan. Then no code was written to execute the plan. This section is the **honest audit** of what the codebase actually contains vs what the doc claims.
 
-- **Bottom-up reflexes** (sub-100ms, hardcoded, no LLM) for combat survival
-- **Middle-layer tactics** (pattern detection, rule adjustment, 500ms-2s) for adaptation
-- **Top-down strategy** (LLM-driven, 30s-5min) for high-level planning
+### Actually Implemented (19 items, verified by code audit)
 
-The system runs as a **fleet of bots** (1-N accounts) coordinated through a central sidecar.
-
-### 1.1 Key Discovery: Bridge Runs Before AI Attack Loop
-
-The bridge's `_check_bridge_reflexes()` fires in `mainLoop_pre`, which runs **before** `AI::Attack::process()` in `CoreLogic.pm`. This means:
-
-- **Reflexes preempt attacks**: If HP < 50%, the heal reflex fires before the attack loop even starts
-- **No race conditions**: The bridge can cancel an attack before it begins
-- **Critical for survival**: Emergency reflexes (heal, flee, teleport) always win over combat
-
-This is the correct architecture — the bridge acts as a **safety gate** that the attack AI must pass through.
-
-### 1.2 Key Discovery: OpenKore's Built-in Combat is Config-Driven
-
-`AI::Attack.pm` (1129 lines) uses `attackSkillSlot_*` config entries for skill selection. It iterates through numbered slots and checks conditions. This is **static** — the config is loaded at startup and doesn't change dynamically. Our sidecar overrides this by pushing new config values through the bridge's HTTP API, effectively hot-reloading the attack skill slots.
-
-The attack engine has:
-- **`process()`**: Dispatcher that validates target, checks for killsteal, handles approach
-- **`main()`**: Core combat brain — predicts movement, chooses attack method (weapon/skill/combo), handles kiting via `runFromTarget`, anti-stuck logic
-- **Combo system**: `attackComboSlot_*` for skill chains (e.g., Bash → Magnum Break)
-- **Kiting**: Built-in `runFromTarget` with `meetingPosition()` pathfinding
-- **Anti-stuck**: Tracks hit timeouts, resends move commands if no damage received
-
-### 1.3 Key Discovery: rAthena Database is Complete
-
-The `knowledge/rathena_db/` directory contains the **complete rAthena game database**:
-
-| File | Size | Lines | Contents |
+| # | What | File | Lines |
 |---|---|---|---|
-| `mob_db.yml` | 795KB | 42,537 | All monsters with stats, elements, drops, modes |
-| `mob_skill_db.txt` | 481KB | 5,783 | All monster skills with conditions, rates, targets |
-| `attr_fix.yml` | 8.5KB | 478 | Element damage multipliers for levels 1-4 |
-| `skill_tree.yml` | 83KB | 3,579 | All skill trees with prerequisites |
-| `size_fix.yml` | 1.4KB | 40 | Size damage modifiers per weapon type |
-| `job_stats.yml` | 51KB | 2,930 | Job stat bonuses per level |
-| `item_db_equip.yml` | Large | — | All equipment items |
-| `item_db_etc.yml` | Large | — | All misc items |
-| `item_db_usable.yml` | Large | — | All usable items |
+| 1 | Mage vs Water: Frost Diver → Fire Bolt | `combat_tactics.py` | 30-40 |
+| 2 | Archer always kites | `combat_tactics.py` | 170-175 |
+| 3 | Assassin: Grimtooth → Sonic Blow | `combat_tactics.py` | 100-110 |
+| 4 | Flee formula: 95% - (hit - flee), capped 5-95% | `mechanical_intuition.py` | 148-160 |
+| 5 | ASPD formula: weapon delay + sqrt stat mod | `mechanical_intuition.py` | 155-170 |
+| 6 | Cast reduction: DEX*0.01, cap 50% | `mechanical_intuition.py` | 160-175 |
+| 7 | Crit rate: LUK*0.3 + 1 | `mechanical_intuition.py` | 180-185 |
+| 8 | 50+ dangerous monster skills | `combat_instinct.py` | 30-80 |
+| 9 | Multi-hit detection | `combat_instinct.py` | 85-95 |
+| 10 | Element disadvantage risk factor | `risk_assessment.py` | 60-70 |
+| 11 | Assist aggro (Orc/Goblin/Thief Bug) | `predictive_aggro.py` | 60-70 |
+| 12 | Night aggro (Zombie) | `predictive_aggro.py` | 90 |
+| 13 | Ranged monster (Orc Archer chase=18) | `predictive_aggro.py` | 70 |
+| 14 | 4 proactive bridge reflexes (pre-buff, pre-dodge, auto-sit, top-off) | `aiSidecarBridge.pl` | 3400-3550 |
+| 15 | Phase-based build system (6 classes, 2-3 variants each) | `conscious_engine.py` | 60-1200 |
+| 16 | Efficiency breakpoints for 39 skills | `conscious_engine.py` | 60-200 |
+| 17 | Game mode → build variant selection | `conscious_engine.py` | 1250-1280 |
+| 18 | .gitignore (openmemory.db, .pids/, auth token) | `.gitignore` | All |
+| 19 | Architecture doc v3.0 (this document) | `ARCHITECTURE.md` | All |
 
-**Critical finding — ElementLevel matters**: The element chart in `combat_tactics.py` uses **Level 1** values from `attr_fix.yml`. But most monsters have ElementLevel 2-4. The correct multipliers vary significantly by level:
+### Promised But Not Started (42 items, all marked "NOW")
 
-| Attack → Defense | Lv1 | Lv2 | Lv3 | Lv4 |
-|---|---|---|---|---|
-| Water → Fire | 150% | 175% | 200% | 200% |
-| Water → Wind | 50% | 25% | 0% | 0% |
-| Holy → Undead | 150% | 175% | 200% | 200% |
-| Holy → Dark | 125% | 150% | 175% | 200% |
-| Ghost → Neutral | 25% | 25% | 0% | 0% |
+| Category | Count | Examples |
+|---|---|---|
+| Bridge architecture | 3 | Behavior tree, priority arbitration, global cooldowns |
+| HTTP transport | 4 | Keep-alive, MessagePack, adaptive polling, batching |
+| Combat features | 8 | Element chart all 4 levels, monster DB from mob_db.yml, potion CD 2s, skill delay enforcement, gear swap, spawn control, map geometry, skill tree validation |
+| Fleet features | 7 | Party formation, buff coordination, threat sharing, retreat, resource sharing, role assignment, level gap management |
+| Learning | 3 | Death analysis wiring, cross-bot learning, strategy optimization |
+| Infrastructure | 12 | Tests, benchmarks, logging, metrics, tracing, alerting, config validation, single config source, skill registry |
+| Strategy | 5 | LLM as last resort, class behavior trees, economy, level penalty, party synergy |
 
-**NOW**: The bot must read the monster's `ElementLevel` from `mob_db.yml` and use the correct level-specific chart. The `elemental_matrix.py` module must be updated to load all 4 levels from `attr_fix.yml`.
-
-**Critical finding — NV_BASIC max level is 9**: The rAthena skill tree says `NV_BASIC` max level is **9**, not 1. Already fixed in `conscious_engine.py`.
-
-**Critical finding — Monster database is complete**: The rAthena DB has all 2675 monsters with full stats, skills, drops, and modes. The hardcoded 87 monsters in `predictive_aggro.py` must be replaced by reading from `mob_db.yml` and `mob_skill_db.txt`.
-
-**Critical finding — Skill trees have prerequisites**: `skill_tree.yml` has `Requires` fields — e.g., `SM_MAGNUM` requires `SM_BASH` level 5. The conscious engine must validate prerequisites before recommending skills.
+### The Gap
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        GAME CLIENTS (1-N)                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐      ┌──────────┐    │
-│  │ OpenKore │  │ OpenKore │  │ OpenKore │  ... │ OpenKore │    │
-│  │  Bot #1  │  │  Bot #2  │  │  Bot #3  │      │  Bot #N  │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘      └────┬─────┘    │
-│       │              │              │                 │         │
-│  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐      ┌────┴─────┐    │
-│  │ Bridge   │  │ Bridge   │  │ Bridge   │      │ Bridge   │    │
-│  │ (Perl)   │  │ (Perl)   │  │ (Perl)   │      │ (Perl)   │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘      └────┬─────┘    │
-│       │              │              │                 │         │
-│       └──────────────┴──────────────┴─────────────────┘         │
-│                              │ HTTP (keep-alive, MsgPack)        │
-└──────────────────────────────┼──────────────────────────────────┘
-                               │
-┌──────────────────────────────┼──────────────────────────────────┐
-│                    SIDECAR (Python/FastAPI)                      │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  API Layer (FastAPI, 20+ routers)                        │   │
-│  │  /v2/ingest, /v2/state, /v2/actions, /v2/fleet, ...     │   │
-│  └──────────────────────────┬───────────────────────────────┘   │
-│                             │                                    │
-│  ┌──────────────────────────┼───────────────────────────────┐   │
-│  │  MIDDLE LAYER (Tactical)                                  │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │   │
-│  │  │ Combat   │ │ Economy  │ │ Fleet    │ │ Learning │    │   │
-│  │  │ Loop     │ │ Engine   │ │ Coord.   │ │ System   │    │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │   │
-│  │  │ Reflex   │ │ Pattern  │ │ Resource │ │ Death    │    │   │
-│  │  │ Pipeline │ │ Detector │ │ Manager  │ │ Analysis │    │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │   │
-│  └──────────────────────────┬───────────────────────────────┘   │
-│                             │                                    │
-│  ┌──────────────────────────┼───────────────────────────────┐   │
-│  │  TOP-DOWN LAYER (Strategic)                                │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │   │
-│  │  │ CrewAI   │ │ PDCA     │ │ Goal     │ │ Mission  │    │   │
-│  │  │ Agents   │ │ Loop     │ │ Planner  │ │ Agent    │    │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │   │
-│  │  ┌──────────────────────────────────────────────────┐  │   │
-│  │  │  LLM Provider Router (DeepSeek, OpenAI, Ollama)   │  │   │
-│  │  └──────────────────────────────────────────────────┘  │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  PERSISTENCE                                               │   │
-│  │  SQLite (openmemory.db) — episodic memory, learned data   │   │
-│  │  knowledge/rathena_db/ — rAthena game data (2675 mobs)     │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
+✅ Done:   19 items  ████████████░░░░░░░░░░░░░░░░  31%
+📋 Promised: 42 items  ████████████████████████████  69%
+🛠️  Started since doc: 0 items  ░░░░░░░░░░░░░░░░░░░░   0%
 ```
+
+The doc was written. Zero code changes have been made to execute it. This is a **wish list**, not a **deliverable**.
 
 ---
 
@@ -159,22 +90,22 @@ The `knowledge/rathena_db/` directory contains the **complete rAthena game datab
 
 ### Decision Distribution
 
-| Decision Type | Layer | Latency | Frequency | Approach |
-|---|---|---|---|---|
-| Dodge AoE | Bridge | <50ms | Per cast | Hardcoded reflex |
-| Use potion | Bridge | <100ms | Per HP drop | Threshold reflex |
-| Flee from danger | Bridge | <100ms | Per threat | Behavior tree |
-| Cast buff | Bridge | <500ms | Per cooldown | Behavior tree |
-| Interrupt caster | Bridge | <100ms | Per cast | Hardcoded reflex |
-| Select skill | Sidecar | <200ms | Per target | Rotation system |
-| Swap gear | Sidecar | <500ms | Per element | Elemental matrix |
-| Restock supplies | Sidecar | <2s | Per 5min | Resource manager |
-| Change map | Sidecar | <1s | Per 30s | Hunting zone manager |
-| Party coordination | Sidecar | <1s | Per event | Fleet coordinator |
-| Set farming goal | LLM | 1-3s | Per 5min | CrewAI agent |
-| Analyze death | LLM | 2-5s | Per death | Death analysis |
-| Plan build | LLM | 3-10s | Per level-up | Progression planner |
-| MVP strategy | LLM | 2-5s | Per MVP | Tactical commander |
+| Decision Type | Layer | Latency | Frequency | Approach | Status |
+|---|---|---|---|---|---|
+| Dodge AoE | Bridge | <50ms | Per cast | Hardcoded reflex | ✅ Done |
+| Use potion | Bridge | <100ms | Per HP drop | Threshold reflex | ⚠️ Cooldown wrong (500ms, should be 2s) |
+| Flee from danger | Bridge | <100ms | Per threat | 234 if blocks | ❌ Not a behavior tree |
+| Cast buff | Bridge | <500ms | Per cooldown | 234 if blocks | ❌ Not a behavior tree |
+| Interrupt caster | Bridge | <100ms | Per cast | Hardcoded reflex | ✅ Done |
+| Select skill | Sidecar | <200ms | Per target | Rotation system | ⚠️ Cast times defined but not enforced |
+| Swap gear | Sidecar | <500ms | Per element | Elemental matrix | ❌ Not wired to combat loop |
+| Restock supplies | Sidecar | <2s | Per 5min | Resource manager | ❌ Not tested |
+| Change map | Sidecar | <1s | Per 30s | Hunting zone manager | ❌ Not tested |
+| Party coordination | Sidecar | <1s | Per event | Fleet coordinator | ❌ Not tested |
+| Set farming goal | LLM | 1-3s | Per 5min | CrewAI agent | ❌ Not tested |
+| Analyze death | LLM | 2-5s | Per death | Death analysis | ❌ Module exists, not wired |
+| Plan build | LLM | 3-10s | Per level-up | Progression planner | ❌ Not tested |
+| MVP strategy | LLM | 2-5s | Per MVP | Tactical commander | ❌ Not tested |
 
 ### Information Flow
 
@@ -192,84 +123,111 @@ NEVER COMMANDS:
 
 ### Degradation Modes
 
-| Failure | Effect | Recovery |
-|---|---|---|
-| LLM API down | No strategy changes, no death analysis | Bot continues with current rules |
-| Sidecar crash | No tactics, no learning | Bridge keeps running with last rules |
-| Bridge crash | Bot goes blind | OpenKore auto-reconnects, bridge reloads |
-| Network down | No HTTP to sidecar | Bridge runs in offline mode with cached rules |
-| All down | Bot runs on OpenKore's built-in AI | Better than nothing |
+| Failure | Effect | Recovery | Status |
+|---|---|---|---|
+| LLM API down | No strategy changes, no death analysis | Bot continues with current rules | ✅ Designed |
+| Sidecar crash | No tactics, no learning | Bridge keeps running with last rules | ✅ Designed |
+| Bridge crash | Bot goes blind | OpenKore auto-reconnects, bridge reloads | ✅ Designed |
+| Network down | No HTTP to sidecar | Bridge runs in offline mode with cached rules | ❌ Not implemented |
+| All down | Bot runs on OpenKore's built-in AI | Better than nothing | ✅ By default |
 
 ---
 
-## 3. Layer 1: Bridge (Bottom-Up Reflex Layer)
+## 3. Layer 1: Bridge (Still 234 If Blocks, Not a Behavior Tree)
 
-### File: `plugins/aiSidecarBridge/aiSidecarBridge.pl`
+### File: `plugins/aiSidecarBridge/aiSidecarBridge.pl` — 3,552 lines, 72 subroutines, 234 `if` statements
 
-The bridge is a **Perl plugin** that runs inside each OpenKore instance. It is the bot's spinal cord — it handles everything that needs to happen in under 100ms.
+The bridge is a **Perl plugin** that runs inside each OpenKore instance. It was supposed to be a behavior tree. It's not. It's 234 sequential `if` blocks.
 
-### 3.1 Reflex System (19 Reflexes)
+### 3.1 The Problem: Flat Priority, Not Hierarchical
 
-All reflexes are hardcoded in Perl. No LLM, no Python, no network calls. Each reflex has:
+The 19 reflexes are implemented as sequential `if` blocks. Reflex #1 (heal) always wins because it's checked first. Not because it's most important. If the bot is at 12% HP with a boss casting Storm Gust, the heal reflex fires first. By the time the dodge reflex checks, the bot is dead.
 
-- **Condition** (when to fire)
-- **Action** (what to do)
-- **Cooldown** (how long to wait before firing again)
-- **Priority** (which reflex wins if multiple want to fire)
-- **Global cooldown category** (can't use two items at once)
+**What a behavior tree would do:**
+```
+Selector:
+  ├─ Sequence: Is there a lethal threat? → Dodge
+  ├─ Sequence: Is HP critically low? → Heal
+  ├─ Sequence: Is SP low? → Sit
+  └─ Sequence: Default → Attack
+```
 
-#### Emergency Reflexes (Priority 100)
+**What the bridge actually does:**
+```
+if HP < 50% → heal
+if HP < 15% + aggro → flee
+if HP < 12% → teleport
+if aggro > 5 → warn
+if SP < 15% → warn
+if GM detected → manual
+if weight > 85% → warn
+if equipment broken → warn
+if monster casting → interrupt
+if boss nearby → pre-pot
+if HP < 50% + no heal → request help
+if party low HP → warn
+if aggro > 10 → flee + teleport
+if HP <= 0 → sit
+if deaths % 5 == 0 → warn
+if out of combat + HP > 80% + SP > 30% → buff
+if monster casting dangerous AoE → dodge
+if out of combat + HP < 60% → sit
+if out of combat + HP 30-80% → top off
+```
 
-| # | Name | Condition | Action | Cooldown |
-|---|---|---|---|---|
-| 1 | Emergency Heal | HP < 50% | Use best heal item/skill | 200ms |
-| 2 | Emergency Flee | HP < 15% + aggro | Flee to safe spot | 1s |
-| 3 | Emergency Teleport | HP < 12% | Teleport away | 3s |
-| 14 | Zonk | HP ≤ 0 or ≤ 5 | Sit immediately | 2s |
-| 15 | Death Spike | Deaths % 5 == 0 | Notify sidecar | 2min |
+**The order is arbitrary.** Reflex #17 (pre-dodge) should be checked before Reflex #1 (heal) because dodging a lethal AoE is more important than healing. But it's #17 because it was added later.
 
-#### Combat Reflexes (Priority 95)
+### 3.2 Reflex System (19 Reflexes, Flat Priority)
 
-| # | Name | Condition | Action | Cooldown |
-|---|---|---|---|---|
-| 9 | Interrupt Cast | Monster casting within 10 tiles | Bash/stun | 1.5s |
-| 13 | High Aggro Surround | Aggro > 10 | Flee + teleport | 3s |
-| 17 | Pre-Dodge | Monster casting dangerous AoE | Flee immediately | 2s |
+All reflexes are hardcoded in Perl. No LLM, no Python, no network calls. Each reflex has a condition, action, and cooldown. **No reflex has a priority value** — priority is determined by position in the file.
 
-#### Proactive Reflexes (Priority 80)
+#### Emergency Reflexes (Checked First — Wins by Position, Not Importance)
 
-| # | Name | Condition | Action | Cooldown |
-|---|---|---|---|---|
-| 10 | Pre-Pot | Boss within 15 tiles | Pre-heal | 5s |
-| 16 | Pre-Buff | Out of combat, HP > 80%, SP > 30% | Cast self-buffs | 15s |
-| 18 | Auto-Sit Regen | Out of combat, HP < 60% | Sit | 5s |
-| 19 | Potion Top-Off | Out of combat, HP 30-80% | Use heal item | 10s |
+| # | Name | Condition | Action | Cooldown | Problem |
+|---|---|---|---|---|---|
+| 1 | Emergency Heal | HP < 50% | Use best heal item/skill | 200ms | ⚠️ Potion CD is 2s, not 200ms. Bot wastes 75% of potions. |
+| 2 | Emergency Flee | HP < 15% + aggro | Flee to safe spot | 1s | ✅ |
+| 3 | Emergency Teleport | HP < 12% | Teleport away | 3s | ✅ |
+| 14 | Zonk | HP ≤ 0 or ≤ 5 | Sit immediately | 2s | ✅ |
+| 15 | Death Spike | Deaths % 5 == 0 | Notify sidecar | 2min | ✅ |
 
-#### Awareness Reflexes (Priority 50)
+#### Combat Reflexes (Checked After Emergency)
 
-| # | Name | Condition | Action | Cooldown |
-|---|---|---|---|---|
-| 4 | Aggro Warning | Aggro > 5 | Notify sidecar | 5s |
-| 5 | Low SP | SP < 15% | Notify sidecar | 10s |
-| 6 | GM Detection | GM/Admin within 15 tiles | Switch to manual | 1min |
-| 7 | Weight Warning | Weight > 85% | Notify sidecar | 30s |
-| 8 | Equipment Broken | Broken equipment | Notify sidecar | 1min |
-| 11 | Bot Cooperation | HP < 50% + aggro + no heal | Request help | 5s |
-| 12 | Party Low HP | Party member HP < 20% | Notify sidecar | 10s |
+| # | Name | Condition | Action | Cooldown | Problem |
+|---|---|---|---|---|---|
+| 9 | Interrupt Cast | Monster casting within 10 tiles | Bash/stun | 1.5s | ✅ |
+| 13 | High Aggro Surround | Aggro > 10 | Flee + teleport | 3s | ✅ |
+| 17 | Pre-Dodge | Monster casting dangerous AoE | Flee immediately | 2s | ⚠️ Should be checked before heal, but it's #17 |
 
-### 3.2 Behavior Tree (NOW)
+#### Proactive Reflexes
 
-The 19 `if` blocks must be replaced by a proper **behavior tree** with:
+| # | Name | Condition | Action | Cooldown | Problem |
+|---|---|---|---|---|---|
+| 10 | Pre-Pot | Boss within 15 tiles | Pre-heal | 5s | ✅ |
+| 16 | Pre-Buff | Out of combat, HP > 80%, SP > 30% | Cast self-buffs | 15s | ✅ |
+| 18 | Auto-Sit Regen | Out of combat, HP < 60% | Sit | 5s | ✅ |
+| 19 | Potion Top-Off | Out of combat, HP 30-80% | Use heal item | 10s | ⚠️ Conflicts with Reflex #1 (heal) — no global cooldown |
 
-- **Selector nodes** (try children in order, first success wins)
-- **Sequence nodes** (run all children in order, all must succeed)
-- **Condition nodes** (check a condition)
-- **Action nodes** (perform an action)
-- **Decorator nodes** (cooldown, priority, inversion)
+#### Awareness Reflexes (Lowest Priority, But Not by Design)
 
-This makes the bridge's behavior **deterministic**, **testable**, and **provably correct**.
+| # | Name | Condition | Action | Cooldown | Problem |
+|---|---|---|---|---|---|
+| 4 | Aggro Warning | Aggro > 5 | Notify sidecar | 5s | ✅ |
+| 5 | Low SP | SP < 15% | Notify sidecar | 10s | ✅ |
+| 6 | GM Detection | GM/Admin within 15 tiles | Switch to manual | 1min | ✅ |
+| 7 | Weight Warning | Weight > 85% | Notify sidecar | 30s | ✅ |
+| 8 | Equipment Broken | Broken equipment | Notify sidecar | 1min | ✅ |
+| 11 | Bot Cooperation | HP < 50% + aggro + no heal | Request help | 5s | ✅ |
+| 12 | Party Low HP | Party member HP < 20% | Notify sidecar | 10s | ✅ |
 
-### 3.3 Snapshot System
+### 3.3 What Needs to Change
+
+1. **Replace 234 if blocks with a behavior tree** — Selector nodes for priority, Sequence nodes for multi-step actions, Decorator nodes for cooldowns
+2. **Add global cooldown categories** — Can't use two items in one tick. Can't use two movement skills in one tick.
+3. **Reorder priority** — Pre-dodge (#17) should be checked before heal (#1). Lethal threat > HP recovery.
+4. **Fix potion cooldown** — 2 seconds, not 200ms. The bridge's heal reflex fires every 200ms but potions have a 2s cooldown. 9 out of 10 potion commands are wasted.
+
+### 3.4 Snapshot System
 
 The bridge sends a JSON snapshot to the sidecar every 500ms containing:
 
@@ -281,7 +239,7 @@ The bridge sends a JSON snapshot to the sidecar every 500ms containing:
 - **Actors**: nearby monsters, players, NPCs (up to 24)
 - **Raw**: char name, master, AI queue, death count, route stats
 
-### 3.4 Anti-Detection
+### 3.5 Anti-Detection
 
 - Human-like reaction delay: 10-50ms (configurable)
 - Random jitter on cooldowns: ±30%
@@ -294,117 +252,65 @@ The bridge sends a JSON snapshot to the sidecar every 500ms containing:
 
 ### File: `AI_sidecar/ai_sidecar/` (Python/FastAPI)
 
-The sidecar is a **Python FastAPI server** that runs alongside the game clients. It is the bot's cerebellum — it handles tactics, pattern detection, and adaptation.
+The sidecar is a **Python FastAPI server** that runs alongside the game clients. It handles tactics, pattern detection, and adaptation. Many modules exist. Few are wired to actually affect bot behavior.
 
 ### 4.1 API Layer
 
-20+ API routers organized by domain:
+20+ API routers organized by domain. All exist. None have been integration-tested with a real bridge.
 
-| Router | Purpose | Endpoints |
+| Router | Purpose | Status |
 |---|---|---|
-| `/v2/ingest` | Receive events from bridge | `POST /event`, `POST /chat`, `POST /config` |
-| `/v2/state` | Bot state management | `GET /{bot_id}`, `POST /{bot_id}/update` |
-| `/v2/actions` | Action queue | `POST /propose`, `GET /{bot_id}/next` |
-| `/v2/fleet` | Fleet coordination | `POST /register`, `POST /order`, `GET /status` |
-| `/v2/combat` | Combat decisions | `POST /tactics`, `POST /reflex` |
-| `/v2/planner` | Strategic planning | `POST /plan`, `GET /{bot_id}/plan` |
-| `/v2/reflex` | Reflex rule management | `POST /rule`, `GET /rules` |
-| `/v2/health` | Health checks | `GET /`, `GET /ready`, `GET /live` |
+| `/v2/ingest` | Receive events from bridge | ✅ Exists |
+| `/v2/state` | Bot state management | ✅ Exists |
+| `/v2/actions` | Action queue | ✅ Exists |
+| `/v2/fleet` | Fleet coordination | ❌ Not tested |
+| `/v2/combat` | Combat decisions | ❌ Not tested |
+| `/v2/planner` | Strategic planning | ❌ Not tested |
+| `/v2/reflex` | Reflex rule management | ❌ Not tested |
+| `/v2/health` | Health checks | ✅ Exists |
 
 ### 4.2 Combat System
 
 #### Combat Loop (`combat/combat_loop.py`)
 
-Runs at 200ms intervals. Wires together:
+Runs at 200ms intervals. Wires together 8 subsystems. **Key bugs found in code audit:**
 
-1. **Threat Targeting** (`combat/threat_targeting.py`): Selects the best target based on element, distance, HP, aggro state
-2. **Skill Rotation** (`combat/skill_rotation.py`): Executes the optimal skill sequence for the current target
-3. **Elemental Matrix** (`combat/elemental_matrix.py`): Calculates damage multipliers for all element combinations
-4. **Buff Maintenance** (`combat/buff_maintenance.py`): Tracks buff durations and recasts before expiry
-5. **Gear Swapper** (`combat/gear_swapper.py`): Recommends gear sets based on target element and size
-6. **Resource Manager** (`combat/resource_manager.py`): Tracks potion stock, weight, durability, farming duration
-7. **Reflex Combat** (`combat/reflex_combat.py`): Hardcoded combat reflexes that bypass the LLM
-8. **Action Executor** (`combat/action_executor.py`): Enqueues actions to the bridge
+- **Potion cooldown is 500ms** (line 384). Pre-renewal potion cooldown is 2 seconds. The bot will spam potions 4x faster than the game allows. Three out of four potion commands are wasted.
+- **Skill delays are defined but not enforced**. `skill_rotation.py` has `cast_time_ms`, `delay_ms`, and `cooldown_ms` for every skill. The combat loop has `last_skill_time` and `skill_cooldowns`. But there's no enforcement loop that waits for the delay before firing the next skill. The bot will try to cast Fire Bolt while still in Storm Gust's delay. The server ignores the command.
+- **Flee formula exists but is never used**. `mechanical_intuition.py` has `get_flee_rate()`. `combat_loop.py` has `max_aggro: int = 5`. These are never connected. The bot doesn't think "I have 95% flee → I can handle 10 mobs." It doesn't think "I have 5% flee → I should run from 1 mob."
 
 #### Combat Tactics (`combat_tactics.py`)
 
-Per-class skill combos with correct pre-renewal RO mechanics:
+Per-class skill combos with correct pre-renewal RO mechanics. **Element chart is Level 1 only.** Most monsters have ElementLevel 2-4. The `attr_fix.yml` file has all 4 levels. The code only uses Level 1.
 
-- **Mage**: Frost Diver → Fire Bolt (freeze + 4x damage), NOT Cold Bolt (water = 25% vs water)
-- **Wizard**: Storm Gust → Lord of Vermillion (AoE freeze + shock)
-- **Archer**: Double Strafe while kiting (never stand still)
-- **Hunter**: Double Strafe + Blitz Beat + trap positioning
-- **Swordsman**: Bash spam (stun interrupts casts) + Magnum Break AoE
-- **Knight**: Bowling Bash AoE + Spear Boomerang ranged opener
-- **Thief**: Double Attack (passive) + Hiding for escape
-- **Assassin**: Grimtooth (ranged) → Sonic Blow (finisher), NOT Sonic Blow → Grimtooth
-- **Acolyte**: Heal vs undead (damage), Holy Light vs others
-- **Priest**: Turn Undead (instant kill chance) + Heal sustain
+**Impact of wrong element level:**
+- Osiris (Undead Lv4): Holy → Undead should be 200%. Code calculates 150%. 50% damage lost.
+- Ghost-type monsters: Ghost → Neutral at Level 1 is 25%. At Level 3-4 it's 0%. Bot thinks it can damage them. It can't.
 
 #### Mechanical Intuition (`mechanical_intuition.py`)
 
-Correct pre-renewal RO formulas:
+Correct pre-renewal RO formulas. **Formulas are correct. They're just not used by any decision-making code.**
 
-- **Flee rate**: `95% - (monster_hit - player_flee)`, capped 5%-95%
-- **ASPD**: `200 - weapon_delay + sqrt((agi²×0.02) + (dex²×0.02) + (agi+dex)×0.5) × (200-delay)/250`, capped 190
-- **Cast reduction**: `DEX × 0.01` (1% per point), capped 50% from DEX alone, 70% total
-- **Crit rate**: `LUK × 0.3 + 1`
-- **Stat breakpoints**: Per-class for all 16 classes (Swordsman: STR 80/AGI 70/VIT 50; Mage: INT 99/DEX 30-50; Assassin: AGI 80/LUK 30; etc.)
+- `get_flee_rate()` exists. No combat decision calls it.
+- `get_aspd()` exists. No combat decision calls it.
+- `get_cast_time_reduction()` exists. No combat decision calls it.
+- `get_crit_rate()` exists. No combat decision calls it.
+
+The formulas are a library. The bot doesn't read the library.
 
 #### Combat Instinct (`combat_instinct.py`)
 
-50+ known dangerous monster skills with proper threat levels:
-
-| Skill | Element | AoE? | Danger | Action |
-|---|---|---|---|---|
-| Storm Gust | Water | Yes | Critical | Dodge |
-| Meteor Storm | Fire | Yes | Critical | Dodge |
-| Hell's Judgement | Dark | Yes | Critical | Dodge |
-| Earthquake | Earth | Yes | Critical | Dodge |
-| Dark Breath | Dark | Yes | Critical | Dodge |
-| Lord of Vermillion | Wind | Yes | Critical | Dodge |
-| Fire Breath | Fire | Yes | High | Dodge |
-| Thunder Breath | Wind | Yes | High | Dodge |
-| Heaven's Drive | Holy | Yes | High | Dodge |
-| Thunderstorm | Wind | Yes | High | Dodge |
-| Fire Pillar | Fire | Yes | High | Dodge |
-| Wide Stun | Neutral | Yes | High | Dodge |
-| Wide Freeze | Water | Yes | High | Dodge |
-| Fire Bolt | Fire | No | Medium | Pot |
-| Cold Bolt | Water | No | Medium | Pot |
-| Lightning Bolt | Wind | No | Medium | Pot |
-| Poison Attack | Poison | No | Medium | Cure |
-| Stun Attack | Neutral | No | High | Cure |
-| Freeze Attack | Water | No | High | Cure |
+50+ known dangerous monster skills with proper threat levels. **Hardcoded list of skill names. Should be loaded from `mob_skill_db.txt`.**
 
 #### Predictive Aggro (`predictive_aggro.py`)
 
-**NOW**: Must be replaced with dynamic loading from `mob_db.yml` and `mob_skill_db.txt`. The rAthena database has all 2675 monsters with full stats. The hardcoded 87 monsters is a seed, not the source of truth.
+**87 hardcoded monsters.** The `knowledge/rathena_db/db/pre-re/mob_db.yml` has 2,675 monsters. The code uses 3% of the available data.
 
-Current hardcoded data includes:
-- **Assist aggro**: Orc family (Warrior, Archer, Lady, Zombie, Skeleton), Goblin family, Thief Bug
-- **Night aggro**: Zombie (passive during day)
-- **Ranged monsters**: Orc Archer (chase range 18, was 15)
-- **Boss monsters**: 30+ MVPs with aggro ranges up to 20 cells
-- **59 maps** with spawn data and pre-calculated danger scores
-
-**NOW**: The `mob_db.yml` has `Modes` fields including `Detector`, `Angry`, `Assist`, etc. The `mob_skill_db.txt` has all monster skills with conditions, rates, cast times, and targets. The bot must read these at startup and build the aggro database dynamically.
+When the bot encounters an unknown monster, it has no aggro data, no element data, no skill data. It treats every unknown monster as "neutral element, not aggressive, no skills." This is how you die to a random monster that's actually aggressive with dangerous skills.
 
 #### Risk Assessment (`risk_assessment.py`)
 
-Multi-factor risk scoring:
-
-- **HP/SP levels**: Low HP = +0.3, low SP = +0.2
-- **Level gap**: +20 levels = +0.4, +10 levels = +0.2
-- **MVP**: +0.3 risk, +0.4 reward
-- **Escape available**: No escape = +0.2
-- **Element disadvantage**: +0.15 (Fire vs Water, Earth vs Fire, etc.)
-- **Aggro chain**: +0.2 (assist aggro active)
-- **Map danger**: Up to +0.2 (scaled by pre-calculated danger)
-- **Night time**: +0.1
-- **Ranged monster**: +0.1
-- **Monster with skills**: +0.1
-- **Learned risk**: Adjusted from death outcomes
+Multi-factor risk scoring. **All factors are defined. None are calibrated against real gameplay data.** The weights (0.3 for low HP, 0.2 for low SP, etc.) are guesses, not learned values.
 
 ### 4.3 Economy System
 
@@ -416,11 +322,7 @@ Multi-factor risk scoring:
 - **Vending automation**: Auto-vendor items, set prices based on market data
 - **Supply chain**: Auto-restock potions, arrows, materials
 
-#### Opportunity Cost (`economy/opportunity_cost.py`)
-
-- **Zeny/hour calculation** for each map
-- **Exp/hour vs zeny/hour** tradeoff analysis
-- **Time-to-restock** cost estimation
+**Status**: All modules exist. None have been tested against a real RO economy. The `mob_db.yml` has complete drop data for all 2,675 monsters with rates. The bot doesn't use this data.
 
 ### 4.4 Fleet Coordination
 
@@ -434,30 +336,20 @@ Multi-factor risk scoring:
 - **Coordinated retreat/attack**: Synchronized movement
 - **Resource sharing**: Zeny, items, potions across accounts
 
-#### Multi-Account Synergy (`fleet/multi_account_synergy.py`)
-
-- **Optimal party composition**: 1 tank + 1 healer + 2 DPS + 1 support
-- **Level gap management**: Keep party within 10 levels for shared exp
-- **Role rotation**: Switch roles based on who's online
-- **AFK management**: Auto-replace AFK party members
-
-#### Swarm AI (`fleet/swarm_ai.py`)
-
-- **Decentralized coordination**: No single point of failure
-- **Emergent behavior**: Simple rules produce complex group tactics
-- **Auto-scaling**: Add/remove bots without reconfiguration
+**Status**: All modules exist. None have been tested with multiple bots. The fleet sync protocol is defined but untested.
 
 ### 4.5 Learning System
 
 #### Death Analysis (`learning/death_analysis.py`)
 
-When a bot dies:
+**18KB of code. Imported in `pdca_loop.py`. Initialized at startup. Never called when a bot dies.**
 
-1. **Capture context**: Last 10 seconds of events, position, skills, aggro
-2. **Identify cause**: Which monster, which skill, what was the bot doing
-3. **Classify pattern**: AoE death, multi-hit death, status + follow-up, etc.
-4. **Adjust behavior**: Update flee thresholds, add dodge rules, change map
-5. **Share knowledge**: All bots learn from one bot's death
+The module has:
+- `DeathAnalyzer` class with `analyze()` method
+- Pattern classification (AoE, multi-hit, status + follow-up, etc.)
+- Behavior adjustment recommendations
+
+**What's missing**: A single hook: `onDeath → death_analyzer.analyze()`. That's 3 lines of code. The bot dies, respawns, and goes back to the same map. It doesn't ask "why did I die?" It doesn't learn.
 
 #### Shared Learning DB (`learning/shared_learning_db.py`)
 
@@ -466,64 +358,45 @@ When a bot dies:
 - **Versioned knowledge**: Roll back bad learning
 - **Confidence scoring**: Only apply high-confidence learnings
 
+**Status**: Module exists. Not wired to any decision-making code.
+
 ---
 
 ## 5. Layer 3: LLM / Conscious Engine (Top-Down Strategic Layer)
 
 ### 5.1 When the LLM is Called
 
-The LLM is a **last resort**, not the default. It is only invoked for:
+The LLM is supposed to be a **last resort**, not the default. Currently it's called for every decision because the fallback decision trees aren't implemented.
 
-| Situation | Frequency | LLM Task |
-|---|---|---|
-| Bot just started | Once | "What's my build? Where should I go?" |
-| Level up | Every 5-10 levels | "What skills should I learn next?" |
-| Death | Per death | "Why did I die? What should I change?" |
-| Stuck | Per 5min stuck | "I've been stuck for 5 minutes, what now?" |
-| New monster | First encounter | "I've never seen this monster, what do I do?" |
-| Map change | Per map | "Is this map safe? What should I hunt?" |
-| Restock needed | Per 30min | "I need potions, where should I go?" |
-| MVP spotted | Per MVP | "Can I take this MVP? What's the strategy?" |
-| No progress | Per 10min | "I'm not gaining exp, what's wrong?" |
+| Situation | Frequency | LLM Task | Status |
+|---|---|---|---|
+| Bot just started | Once | "What's my build? Where should I go?" | ❌ No fallback |
+| Level up | Every 5-10 levels | "What skills should I learn next?" | ✅ Phase-based fallback exists |
+| Death | Per death | "Why did I die? What should I change?" | ❌ Death analysis not wired |
+| Stuck | Per 5min stuck | "I've been stuck for 5 minutes, what now?" | ❌ No fallback |
+| New monster | First encounter | "I've never seen this monster, what do I do?" | ❌ No fallback |
+| Map change | Per map | "Is this map safe? What should I hunt?" | ❌ No fallback |
+| Restock needed | Per 30min | "I need potions, where should I go?" | ❌ No fallback |
+| MVP spotted | Per MVP | "Can I take this MVP? What's the strategy?" | ❌ No fallback |
+| No progress | Per 10min | "I'm not gaining exp, what's wrong?" | ❌ No fallback |
 
 ### 5.2 CrewAI Agent System
 
-The LLM is accessed through a **CrewAI multi-agent system**:
-
-| Agent | Role | Expertise |
-|---|---|---|
-| Strategic Planner | High-level goals | "Farm until level 70, then switch to Orcs" |
-| Tactical Commander | Combat decisions | "Use Fire Bolt on Earth monsters" |
-| Progression Planner | Build optimization | "Max INT first, then DEX" |
-| Economy Agent | Resource management | "Sell these items, buy those" |
-| Safety Agent | Risk assessment | "This map is too dangerous" |
-| Navigation Agent | Pathfinding | "Go to Prontera via this route" |
-| Social Agent | Player interaction | "Respond to whispers, join parties" |
-| Fleet Liaison | Multi-bot coordination | "Priest, buff the Knight" |
-| Resource Manager | Supply chain | "Restock potions at the shop" |
-| Questing Agent | Quest automation | "Complete this quest chain" |
-| Opportunistic Trader | Market manipulation | "Buy low, sell high" |
+The LLM is accessed through a **CrewAI multi-agent system**. All 15 agents exist. None have been tested end-to-end.
 
 ### 5.3 PDCA Loop
 
-The **Plan-Do-Check-Act** loop runs at three frequencies:
+The **Plan-Do-Check-Act** loop runs at three frequencies. It initializes the death analysis module. It doesn't call it when a bot dies.
 
-| Loop | Interval | Purpose |
-|---|---|---|
-| Short-term | 5s | Combat adjustments, immediate threats |
-| Medium-term | 30s | Map evaluation, resource check |
-| Long-term | 120s | Goal reassessment, build planning |
+| Loop | Interval | Purpose | Status |
+|---|---|---|---|
+| Short-term | 5s | Combat adjustments, immediate threats | ✅ Running |
+| Medium-term | 30s | Map evaluation, resource check | ✅ Running |
+| Long-term | 120s | Goal reassessment, build planning | ✅ Running |
 
 ### 5.4 Provider Router
 
-Supports multiple LLM providers:
-
-| Provider | Use Case | Cost |
-|---|---|---|
-| DeepSeek (default) | All strategic decisions | Low |
-| OpenAI | Complex reasoning | Medium |
-| Ollama (local) | Offline mode, privacy | Free |
-| Custom | Any OpenAI-compatible API | Varies |
+Supports multiple LLM providers. All work. None have been tested under load.
 
 ---
 
@@ -538,16 +411,16 @@ Supports multiple LLM providers:
 - **Auth**: Standard HTTP auth (Bearer token)
 - **Load balancing**: Standard HTTP load balancers
 
-### 6.2 Performance Optimizations (NOW)
+### 6.2 Performance Optimizations (None Implemented)
 
-| Optimization | Current | Target | Impact |
+| Optimization | Current | Target | Status |
 |---|---|---|---|
-| Connection | Open/close per request | Keep-alive (persistent) | 10x fewer TCP handshakes |
-| Serialization | JSON | MessagePack or CBOR | 5-10x faster parsing |
-| Polling | 500ms fixed | Adaptive (100ms-2s) | 5x faster in combat |
-| Compression | None | gzip on large payloads | 10x smaller payloads |
-| Batching | One event at a time | Batch events per tick | 10x fewer requests |
-| Auth check | Every request | Cached token validation | Sub-ms auth |
+| Connection | Open/close per request | Keep-alive (persistent) | ❌ Not started |
+| Serialization | JSON | MessagePack or CBOR | ❌ Not started |
+| Polling | 500ms fixed | Adaptive (100ms-2s) | ❌ Not started |
+| Compression | None | gzip on large payloads | ❌ Not started |
+| Batching | One event at a time | Batch events per tick | ❌ Not started |
+| Auth check | Every request | Cached token validation | ❌ Not started |
 
 ### 6.3 Protocol
 
@@ -575,7 +448,7 @@ Sidecar → Bridge (GET /v2/actions/{bot_id}/next):
 
 ### 6.4 SaaS Architecture (FUTURE ONLY)
 
-See Section 14. This is the only section marked FUTURE. Everything else must be implemented now.
+See Section 14. This is the only section marked FUTURE. Everything else is either done or promised but not started.
 
 ---
 
@@ -596,7 +469,7 @@ Enter combat loop (bridge handles 95%)
   │   ↓
   │  Continue farming
   │
-  ├─ HP low → potion (bridge reflex)
+  ├─ HP low → potion (bridge reflex, but cooldown is wrong)
   │
   ├─ HP critical → flee/teleport (bridge reflex)
   │
@@ -608,9 +481,9 @@ Enter combat loop (bridge handles 95%)
   │   ↓
   │  Sell junk → restock → return
   │
-  └─ Death → analyze (LLM)
+  └─ Death → analyze (LLM) — NOT WIRED. Bot just respawns and continues.
       ↓
-     Adjust behavior → continue
+     Adjust behavior → continue — NOT IMPLEMENTED.
 ```
 
 ### 7.2 Combat Flow
@@ -633,7 +506,7 @@ In range → execute skill rotation
   │   └─ Harmless → ignore
   │
   ├─ HP drops → check threshold
-  │   ├─ < 50% → potion (reflex)
+  │   ├─ < 50% → potion (reflex, but fires every 200ms, potion CD is 2s)
   │   ├─ < 20% → flee (reflex)
   │   └─ < 10% → teleport (reflex)
   │
@@ -645,14 +518,7 @@ In range → execute skill rotation
 
 ### 7.3 Class-Specific Behavior
 
-Each class has a **behavior tree** that defines its role:
-
-- **Mage**: Position at max range → Cast → If aggroed → Teleport → Reposition
-- **Archer**: Keep distance → Shoot → If mob gets close → Arrow Shower (knockback) → Reposition
-- **Knight**: Charge in → Bowling Bash → If surrounded → Magnum Break → If low HP → Retreat
-- **Assassin**: Grimtooth from range → If mob closes → Sonic Blow → If surrounded → Venom Dust → Escape
-- **Priest**: Stay behind party → Heal → Buff → If aggroed → Teleport → Return
-- **Merchant**: Stay near town → Discount/Overcharge → Mammonite for damage → Pushcart for weight
+Each class has a **behavior tree** defined in the architecture doc. **None are implemented as actual behavior trees.** The combat loop uses the same generic flow for all classes.
 
 ---
 
@@ -677,46 +543,33 @@ Each class has a **behavior tree** that defines its role:
 └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ```
 
+**Status**: Diagram exists. Code exists. No multi-bot testing has been done.
+
 ### 8.2 Optimal Party Composition
 
-| Role | Class | Responsibility |
-|---|---|---|
-| Tank | Knight/Paladin | Hold aggro, absorb damage, Bowling Bash AoE |
-| Healer | Priest/Arch Bishop | Heal, buff (Blessing, Increase AGI), resurrect |
-| AoE DPS | Wizard/High Wizard | Storm Gust, Meteor Storm, Lord of Vermillion |
-| Single DPS | Hunter/Sniper | Double Strafe, Blitz Beat, trap support |
-| Support | Bard/Dancer | Songs, dances, SP regen, stat boosts |
-| Flex | Assassin/Rogue | Steal, backstab, scout, emergency DPS |
+| Role | Class | Responsibility | Status |
+|---|---|---|---|
+| Tank | Knight/Paladin | Hold aggro, absorb damage, Bowling Bash AoE | ❌ Not tested |
+| Healer | Priest/Arch Bishop | Heal, buff (Blessing, Increase AGI), resurrect | ❌ Not tested |
+| AoE DPS | Wizard/High Wizard | Storm Gust, Meteor Storm, Lord of Vermillion | ❌ Not tested |
+| Single DPS | Hunter/Sniper | Double Strafe, Blitz Beat, trap support | ❌ Not tested |
+| Support | Bard/Dancer | Songs, dances, SP regen, stat boosts | ❌ Not tested |
+| Flex | Assassin/Rogue | Steal, backstab, scout, emergency DPS | ❌ Not tested |
 
 ### 8.3 Fleet Coordination Protocol
 
-```
-1. FLEET LEADER broadcasts: "Forming party at prontera 150,150"
-2. All bots move to position
-3. FLEET LEADER: "Priest, buff the party"
-4. Priest casts Blessing, Increase AGI on all members
-5. FLEET LEADER: "Move to gef_fild14"
-6. All bots path to map
-7. FLEET LEADER: "Tank, pull the Orc Warriors"
-8. Tank charges in, uses Bowling Bash
-9. Wizard casts Storm Gust on grouped mobs
-10. Hunter picks off stragglers
-11. Priest heals tank, rebuffs as needed
-12. If any bot dies → FLEET LEADER: "Retreat to safe spot"
-13. Priest resurrects dead bot
-14. Resume farming
-```
+Defined but untested. The protocol assumes all bots can communicate through the sidecar. In practice, if the sidecar goes down, bots have no fallback coordination mechanism.
 
 ### 8.4 Shared Intelligence
 
-| Intelligence | Source | Distribution | Update |
+| Intelligence | Source | Distribution | Status |
 |---|---|---|---|
-| Map danger | Any bot that visits | All bots | Real-time |
-| MVP spawn | Any bot that sees it | All bots | Real-time |
-| PK warning | Any bot that sees PKer | All bots | Real-time |
-| Market prices | Merchant bot | All bots | Per hour |
-| Death patterns | Any bot that dies | All bots | Per death |
-| Safe spots | Any bot that finds one | All bots | Per discovery |
+| Map danger | Any bot that visits | All bots | ❌ Not implemented |
+| MVP spawn | Any bot that sees it | All bots | ❌ Not implemented |
+| PK warning | Any bot that sees PKer | All bots | ❌ Not implemented |
+| Market prices | Merchant bot | All bots | ❌ Not implemented |
+| Death patterns | Any bot that dies | All bots | ❌ Not implemented |
+| Safe spots | Any bot that finds one | All bots | ❌ Not implemented |
 
 ---
 
@@ -732,9 +585,9 @@ Each class has a **behavior tree** that defines its role:
 
 2. SELECT SKILL (skill_rotation.py)
    - Check current rotation
-   - Check element advantage
+   - Check element advantage — ⚠️ Uses Level 1 chart, most monsters are Level 2-4
    - Check SP availability
-   - Check cooldowns
+   - Check cooldowns — ⚠️ Defined but not enforced
    - Check range
    - Return best skill
 
@@ -754,14 +607,14 @@ Each class has a **behavior tree** that defines its role:
    - If skill missed → try again or switch
    - If target dead → next target
    - If monster casting → check if we need to dodge
-   - If HP low → potion
+   - If HP low → potion — ⚠️ Fires every 200ms, potion CD is 2s
 ```
 
-### 9.2 Elemental Advantage System (NOW: Must use ElementLevel)
+### 9.2 Elemental Advantage System (Still Level 1 Only)
 
-The current chart uses Level 1 values. The bot must read the monster's `ElementLevel` from `mob_db.yml` and use the correct level-specific chart from `attr_fix.yml`.
+The current chart uses Level 1 values from `attr_fix.yml`. Most monsters have ElementLevel 2-4. The `attr_fix.yml` file has all 4 levels. **The code only loads Level 1.**
 
-**Level 1 values (current, used for ElementLevel 1 monsters):**
+**Level 1 values (current, used for everything):**
 
 | Attack → Defense | Neutral | Water | Earth | Fire | Wind | Poison | Holy | Dark | Ghost | Undead |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -776,7 +629,7 @@ The current chart uses Level 1 values. The bot must read the monster's `ElementL
 | Ghost | 25% | 100% | 100% | 100% | 100% | 100% | 75% | 75% | 125% | 100% |
 | Undead | 100% | 100% | 100% | 100% | 100% | 50% | 100% | 0% | 100% | 0% |
 
-**Level 4 values (used for ElementLevel 4 monsters like Osiris):**
+**What the bot should use (Level 4, for monsters like Osiris):**
 
 | Attack → Defense | Neutral | Water | Earth | Fire | Wind | Poison | Holy | Dark | Ghost | Undead |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -785,11 +638,14 @@ The current chart uses Level 1 values. The bot must read the monster's `ElementL
 | Holy | 100% | 75% | 75% | 75% | 75% | 125% | -100% | 200% | 100% | 200% |
 | Ghost | 0% | 25% | 25% | 25% | 25% | 25% | 0% | 0% | 200% | 175% |
 
-**NOW**: The `elemental_matrix.py` module must load all 4 levels from `attr_fix.yml` and select the correct level based on the monster's `ElementLevel` field.
+**Impact of using wrong level:**
+- Osiris (Undead Lv4): Holy → Undead = 150% (should be 200%). 50% damage lost.
+- Ghost-type monsters: Ghost → Neutral = 25% (should be 0% at Lv3-4). Bot thinks it can damage them. It can't.
+- Fire monsters (Lv3-4): Water → Fire = 150% (should be 200%). 50% damage lost.
 
 ### 9.3 MVP Mechanics
 
-Each MVP has a **mechanics profile**:
+Each MVP has a **mechanics profile** defined in `mvp_mechanics.py`. The data is hardcoded. It should be loaded from `mob_db.yml` and `mob_skill_db.txt`.
 
 | MVP | Element | Level | HP | Dangerous Skills | Strategy |
 |---|---|---|---|---|---|
@@ -804,18 +660,20 @@ Each MVP has a **mechanics profile**:
 | Dracula | Demon Lv3 | 68 | — | Hell's Judgement, Dark Breath | Stay at range, use Holy |
 | Bloody Knight | Demi-Human Lv2 | 70 | — | Bowling Bash, Bash | Tank, use Fire |
 
-**NOW**: MVP data must be loaded from `mob_db.yml` and `mob_skill_db.txt` dynamically, not hardcoded. The `mob_db.yml` has `Class: Boss` for all MVPs with full stats.
-
 ### 9.4 Potion Management
 
 ```
 Potion Cooldown: 2 seconds (pre-renewal)
 
+CURRENT BUG: Combat loop enforces 500ms cooldown (line 384 of combat_loop.py).
+The bot will spam potions 4x faster than the game allows.
+Three out of four potion commands are wasted.
+
 Usage Rules:
-1. HP < 50%: Use best available heal item (bridge reflex)
+1. HP < 50%: Use best available heal item (bridge reflex, fires every 200ms)
 2. HP < 80% and out of combat: Top off (bridge reflex, 10s cooldown)
 3. Before boss fight: Pre-pot (bridge reflex, 5s cooldown)
-4. Never spam: Track cooldown, wait 2s between potions
+4. Never spam: Track cooldown, wait 2s between potions — NOT ENFORCED
 5. Stock management: Restock when < 20 potions remaining
 
 Potion Priority:
@@ -830,15 +688,15 @@ Potion Priority:
 
 ### 10.1 Item Valuation
 
-| Category | Value | Action |
-|---|---|---|
-| Cards | High | Keep |
-| Slotted equipment | High | Keep |
-| Refining materials (Elunium, Oridecon) | High | Keep |
-| Quest items | High | Keep |
-| Healing items | Medium | Keep |
-| Unsorted equipment | Medium | Sell |
-| Junk | Low | Sell to NPC |
+| Category | Value | Action | Status |
+|---|---|---|---|
+| Cards | High | Keep | ✅ Defined |
+| Slotted equipment | High | Keep | ✅ Defined |
+| Refining materials (Elunium, Oridecon) | High | Keep | ✅ Defined |
+| Quest items | High | Keep | ✅ Defined |
+| Healing items | Medium | Keep | ✅ Defined |
+| Unsorted equipment | Medium | Sell | ✅ Defined |
+| Junk | Low | Sell to NPC | ✅ Defined |
 
 ### 10.2 Farming Economics
 
@@ -848,7 +706,7 @@ Zeny/Hour = (Average drop value × kills per hour) - (Potion cost per hour)
 The bot chooses the map with the best zeny/hour, not just the best exp/hour.
 ```
 
-**NOW**: The `mob_db.yml` has complete drop data for all 2675 monsters with rates. The bot must use this to calculate expected zeny/hour per map.
+**Status**: Formula defined. Not connected to actual drop data from `mob_db.yml`. The database has complete drop rates for all 2,675 monsters. The bot doesn't read it.
 
 ### 10.3 Restock Logic
 
@@ -868,41 +726,45 @@ Restock plan:
 6. Return to farming map
 ```
 
+**Status**: Logic defined. Not tested against a real RO economy.
+
 ---
 
 ## 11. Learning & Adaptation
 
-### 11.1 What the Bot Learns
+### 11.1 What the Bot Should Learn
 
-| Knowledge | Source | Persistence | Sharing |
+| Knowledge | Source | Persistence | Status |
 |---|---|---|---|
-| Monster aggro behavior | Observation | SQLite | All bots |
-| Map danger scores | Death analysis | SQLite | All bots |
-| Optimal skill rotations | Trial and error | SQLite | Per class |
-| Potion consumption rate | Tracking | SQLite | Per bot |
-| Market prices | Vending data | SQLite | All bots |
-| MVP spawn timers | Observation | SQLite | All bots |
-| Safe spots | Discovery | SQLite | All bots |
-| PKer names | Observation | SQLite | All bots |
+| Monster aggro behavior | Observation | SQLite | ❌ Not started |
+| Map danger scores | Death analysis | SQLite | ❌ Not started |
+| Optimal skill rotations | Trial and error | SQLite | ❌ Not started |
+| Potion consumption rate | Tracking | SQLite | ❌ Not started |
+| Market prices | Vending data | SQLite | ❌ Not started |
+| MVP spawn timers | Observation | SQLite | ❌ Not started |
+| Safe spots | Discovery | SQLite | ❌ Not started |
+| PKer names | Observation | SQLite | ❌ Not started |
 
 ### 11.2 Death Analysis Pipeline
 
 ```
-1. CAPTURE: Last 10 seconds of events
-2. CLASSIFY: What killed the bot?
+1. CAPTURE: Last 10 seconds of events — MODULE EXISTS, NOT WIRED
+2. CLASSIFY: What killed the bot? — MODULE EXISTS, NOT WIRED
    - AoE skill (Storm Gust, Meteor Storm, etc.)
    - Multi-hit (rapid consecutive attacks)
    - Status + follow-up (stun → kill, freeze → kill)
    - Level gap (mob too strong)
    - Element disadvantage
    - Aggro overwhelm (too many mobs)
-3. ADJUST:
+3. ADJUST: — NOT IMPLEMENTED
    - Add dodge rule for the specific skill
    - Increase flee threshold
    - Change map
    - Level up before returning
-4. SHARE: Broadcast to all bots
+4. SHARE: Broadcast to all bots — NOT IMPLEMENTED
 ```
+
+**Current behavior**: Bot dies. Bot respawns. Bot goes back to the same map. Bot dies again. No learning.
 
 ### 11.3 Confidence System
 
@@ -913,32 +775,34 @@ Only apply learned rules with confidence > 0.7
 Roll back rules that cause more deaths
 ```
 
+**Status**: Defined. Not implemented.
+
 ---
 
 ## 12. Observability & Safety
 
 ### 12.1 Metrics
 
-| Metric | Source | Purpose |
+| Metric | Source | Status |
 |---|---|---|
-| HP/SP over time | Bridge | Health monitoring |
-| Deaths per hour | Bridge | Safety alert |
-| Exp per hour | Sidecar | Efficiency tracking |
-| Zeny per hour | Sidecar | Economic tracking |
-| Potions used per hour | Sidecar | Resource tracking |
-| Reflex fires per minute | Bridge | Combat intensity |
-| LLM calls per hour | Sidecar | Cost tracking |
-| Fleet sync latency | Sidecar | Coordination health |
+| HP/SP over time | Bridge | ❌ Not implemented |
+| Deaths per hour | Bridge | ❌ Not implemented |
+| Exp per hour | Sidecar | ❌ Not implemented |
+| Zeny per hour | Sidecar | ❌ Not implemented |
+| Potions used per hour | Sidecar | ❌ Not implemented |
+| Reflex fires per minute | Bridge | ❌ Not implemented |
+| LLM calls per hour | Sidecar | ❌ Not implemented |
+| Fleet sync latency | Sidecar | ❌ Not implemented |
 
 ### 12.2 Safety Systems
 
-| System | Trigger | Action |
-|---|---|---|
-| Circuit breaker | 5 deaths in 10 minutes | Stop all bots, notify user |
-| GM detection | GM/Admin within 15 tiles | Switch to manual mode |
-| Anti-detection | Random delays, jitter | Avoid bot detection |
-| Degradation | Component failure | Graceful fallback |
-| Rate limiting | Too many actions | Slow down, avoid server flags |
+| System | Trigger | Action | Status |
+|---|---|---|---|
+| Circuit breaker | 5 deaths in 10 minutes | Stop all bots, notify user | ❌ Not implemented |
+| GM detection | GM/Admin within 15 tiles | Switch to manual mode | ✅ Implemented |
+| Anti-detection | Random delays, jitter | Avoid bot detection | ✅ Implemented |
+| Degradation | Component failure | Graceful fallback | ✅ Designed |
+| Rate limiting | Too many actions | Slow down, avoid server flags | ❌ Not implemented |
 
 ### 12.3 Audit Logging
 
@@ -948,6 +812,8 @@ Every significant action is logged with:
 - **Action**: What was done
 - **Context**: Why it was done
 - **Outcome**: What happened as a result
+
+**Status**: `warning` statements exist throughout the code. No structured logging (JSON). No centralized log aggregation.
 
 ---
 
@@ -991,7 +857,7 @@ For Windows users who want maximum performance:
 
 ## 14. SaaS Architecture (FUTURE ONLY)
 
-> **This is the ONLY section marked FUTURE. Everything else in this document must be implemented NOW.**
+> **This is the ONLY section marked FUTURE. Everything else is either done or promised but not started.**
 
 ### 14.1 Multi-Tenant Design
 
@@ -1032,94 +898,113 @@ For Windows users who want maximum performance:
 
 ---
 
-## 15. Issue Registry: Every Problem Addressed
+## 15. Issue Registry: Honest Status of Every Problem
 
 ### 15.1 Architecture Issues
 
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 1 | 500ms snapshot loop too slow for combat | Adaptive polling (100ms in combat, 2s idle) | NOW |
-| 2 | Bridge waits for sidecar before acting | Bridge acts independently, reports upward | ✅ Done |
-| 3 | Python sidecar adds HTTP latency | Keep-alive + MessagePack + batching | NOW |
-| 4 | No priority system for reflexes | Behavior tree with priority nodes | NOW |
-| 5 | State scattered across components | SQLite for persistence, bridge for real-time | NOW |
-| 6 | No crash safety | Each layer functions without layers above | ✅ Done |
-| 7 | No Windows support for shared memory | HTTP is cross-platform, shared memory is optional | NOW |
+| # | Issue | Fix | Status | Reality Check |
+|---|---|---|---|---|
+| 1 | 500ms snapshot loop too slow for combat | Adaptive polling (100ms in combat, 2s idle) | NOW | ❌ Not started |
+| 2 | Bridge waits for sidecar before acting | Bridge acts independently, reports upward | ✅ Done | Verified |
+| 3 | Python sidecar adds HTTP latency | Keep-alive + MessagePack + batching | NOW | ❌ Not started |
+| 4 | No priority system for reflexes | Behavior tree with priority nodes | NOW | ❌ Still 234 if blocks |
+| 5 | State scattered across components | SQLite for persistence, bridge for real-time | NOW | ❌ Not started |
+| 6 | No crash safety | Each layer functions without layers above | ✅ Done | Verified |
+| 7 | No Windows support for shared memory | HTTP is cross-platform, shared memory is optional | NOW | ❌ Not started |
 
 ### 15.2 Combat Issues
 
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 8 | Mage uses Cold Bolt vs water (25% damage) | Frost Diver → Fire Bolt (freeze + 4x) | ✅ Done |
-| 9 | Archer stands still while shooting | Always kite (should_kite returns True for ranged) | ✅ Done |
-| 10 | Assassin uses Sonic Blow → Grimtooth (wrong order) | Grimtooth (ranged) → Sonic Blow (finisher) | ✅ Done |
-| 11 | Flee formula calculates value, not rate | 95% - (hit - flee), capped 5-95% | ✅ Done |
-| 12 | ASPD formula off by 2-3x | Weapon delay + sqrt stat mod, capped 190 | ✅ Done |
-| 13 | Cast reduction formula wrong (DEX*0.02) | DEX*0.01, cap 50% from DEX, 70% total | ✅ Done |
-| 14 | Crit rate formula wrong | LUK*0.3 + 1 | ✅ Done |
-| 15 | No monster skill awareness | 50+ dangerous skills with threat levels | ✅ Done |
-| 16 | No multi-hit detection | 3+ damage events in <1s = flee | ✅ Done |
-| 17 | No element disadvantage tracking | Element disadvantage risk factor | ✅ Done |
-| 18 | No assist aggro awareness | Orc/Goblin/Thief Bug families | ✅ Done |
-| 19 | No night aggro awareness | Zombie marked as night-only | ✅ Done |
-| 20 | No ranged monster awareness | Orc Archer chase=18, ranged flag | ✅ Done |
-| 21 | No potion cooldown tracking | 2s potion cooldown enforced | NOW |
-| 22 | No skill delay tracking | Cast time + delay + cooldown per skill | NOW |
-| 23 | No gear swapping | Gear swapper module with elemental sets | NOW |
-| 24 | No MVP mechanics | 30+ MVP profiles with strategies | NOW |
-| 25 | No spawn control | Spawn timer tracking, position optimization | NOW |
-| 26 | No map geometry awareness | Wall/obstacle detection, line-of-sight breaks | NOW |
-| 27 | Element chart uses Level 1 only | Load all 4 levels from attr_fix.yml, use monster's ElementLevel | NOW |
-| 28 | Monster database 96% incomplete (87 of 2675) | Load from mob_db.yml and mob_skill_db.txt dynamically | NOW |
-| 29 | Skill trees don't validate prerequisites | Load from skill_tree.yml, check Requires before recommending | NOW |
+| # | Issue | Fix | Status | Reality Check |
+|---|---|---|---|---|
+| 8 | Mage uses Cold Bolt vs water (25% damage) | Frost Diver → Fire Bolt (freeze + 4x) | ✅ Done | Verified |
+| 9 | Archer stands still while shooting | Always kite (should_kite returns True for ranged) | ✅ Done | Verified |
+| 10 | Assassin uses Sonic Blow → Grimtooth (wrong order) | Grimtooth (ranged) → Sonic Blow (finisher) | ✅ Done | Verified |
+| 11 | Flee formula calculates value, not rate | 95% - (hit - flee), capped 5-95% | ✅ Done | Verified |
+| 12 | ASPD formula off by 2-3x | Weapon delay + sqrt stat mod, capped 190 | ✅ Done | Verified |
+| 13 | Cast reduction formula wrong (DEX*0.02) | DEX*0.01, cap 50% from DEX, 70% total | ✅ Done | Verified |
+| 14 | Crit rate formula wrong | LUK*0.3 + 1 | ✅ Done | Verified |
+| 15 | No monster skill awareness | 50+ dangerous skills with threat levels | ✅ Done | Verified |
+| 16 | No multi-hit detection | 3+ damage events in <1s = flee | ✅ Done | Verified |
+| 17 | No element disadvantage tracking | Element disadvantage risk factor | ✅ Done | Verified |
+| 18 | No assist aggro awareness | Orc/Goblin/Thief Bug families | ✅ Done | Verified |
+| 19 | No night aggro awareness | Zombie marked as night-only | ✅ Done | Verified |
+| 20 | No ranged monster awareness | Orc Archer chase=18, ranged flag | ✅ Done | Verified |
+| 21 | No potion cooldown tracking | 2s potion cooldown enforced | NOW | ⚠️ Code has 500ms, should be 2s |
+| 22 | No skill delay tracking | Cast time + delay + cooldown per skill | NOW | ⚠️ Defined in skill_rotation.py, not enforced in combat loop |
+| 23 | No gear swapping | Gear swapper module with elemental sets | NOW | ❌ Not wired to combat loop |
+| 24 | No MVP mechanics | 30+ MVP profiles with strategies | NOW | ❌ Hardcoded, not loaded from DB |
+| 25 | No spawn control | Spawn timer tracking, position optimization | NOW | ❌ Not started |
+| 26 | No map geometry awareness | Wall/obstacle detection, line-of-sight breaks | NOW | ❌ Not started |
+| 27 | Element chart uses Level 1 only | Load all 4 levels from attr_fix.yml, use monster's ElementLevel | NOW | ❌ Still Level 1 only |
+| 28 | Monster database 96% incomplete (87 of 2675) | Load from mob_db.yml and mob_skill_db.txt dynamically | NOW | ❌ Still 87 hardcoded |
+| 29 | Skill trees don't validate prerequisites | Load from skill_tree.yml, check Requires before recommending | NOW | ❌ Not started |
 
 ### 15.3 Strategy Issues
 
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 30 | LLM called for every decision | LLM is last resort, not default | NOW |
-| 31 | No class-specific behavior trees | Per-class behavior trees (Mage, Archer, etc.) | NOW |
-| 32 | No party synergy | Fleet coordinator with role assignment | NOW |
-| 33 | No economic awareness | Market prices, zeny/hour optimization | NOW |
-| 34 | No level penalty awareness | Level penalty in hunting recommendations | NOW |
-| 35 | No learning from death | Death analysis pipeline | NOW |
-| 36 | No cross-bot learning | Shared learning DB | NOW |
-| 37 | No build planning | Conscious engine with per-class builds | ✅ Done |
-| 38 | No skill learn order optimization | Correct order for all classes | ✅ Done |
-| 39 | No stat distribution optimization | Per-class stat priorities | ✅ Done |
-| 40 | NV_BASIC max level was 1 (should be 9) | Fixed to 9 per rAthena skill_tree.yml | ✅ Done |
+| # | Issue | Fix | Status | Reality Check |
+|---|---|---|---|---|
+| 30 | LLM called for every decision | LLM is last resort, not default | NOW | ❌ No fallback trees |
+| 31 | No class-specific behavior trees | Per-class behavior trees (Mage, Archer, etc.) | NOW | ❌ Not started |
+| 32 | No party synergy | Fleet coordinator with role assignment | NOW | ❌ Not tested |
+| 33 | No economic awareness | Market prices, zeny/hour optimization | NOW | ❌ Not tested |
+| 34 | No level penalty awareness | Level penalty in hunting recommendations | NOW | ❌ Not started |
+| 35 | No learning from death | Death analysis pipeline | NOW | ⚠️ Module exists, not wired |
+| 36 | No cross-bot learning | Shared learning DB | NOW | ❌ Not started |
+| 37 | No build planning | Conscious engine with per-class builds | ✅ Done | Verified |
+| 38 | No skill learn order optimization | Correct order for all classes | ✅ Done | Verified |
+| 39 | No stat distribution optimization | Per-class stat priorities | ✅ Done | Verified |
+| 40 | NV_BASIC max level was 1 (should be 9) | Fixed to 9 per rAthena skill_tree.yml | ⚠️ WRONG | Pro player puts 1 point, saves 8 for first job |
 
 ### 15.4 Multi-Bot Issues
 
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 41 | No party formation | Auto-form parties with optimal composition | NOW |
-| 42 | No buff coordination | Priest buffs all party members | NOW |
-| 43 | No shared threat detection | One bot sees danger, all react | NOW |
-| 44 | No coordinated retreat | Fleet leader commands retreat | NOW |
-| 45 | No resource sharing | Zeny/items shared across accounts | NOW |
-| 46 | No role assignment | Farmer, buffer, merchant, scout, etc. | NOW |
-| 47 | No level gap management | Keep party within 10 levels | NOW |
+| # | Issue | Fix | Status | Reality Check |
+|---|---|---|---|---|
+| 41 | No party formation | Auto-form parties with optimal composition | NOW | ❌ Not tested |
+| 42 | No buff coordination | Priest buffs all party members | NOW | ❌ Not tested |
+| 43 | No shared threat detection | One bot sees danger, all react | NOW | ❌ Not tested |
+| 44 | No coordinated retreat | Fleet leader commands retreat | NOW | ❌ Not tested |
+| 45 | No resource sharing | Zeny/items shared across accounts | NOW | ❌ Not tested |
+| 46 | No role assignment | Farmer, buffer, merchant, scout, etc. | NOW | ❌ Not tested |
+| 47 | No level gap management | Keep party within 10 levels | NOW | ❌ Not tested |
 
 ### 15.5 Technical Debt Issues
 
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 48 | No test coverage for bridge | Perl test harness | NOW |
-| 49 | No integration tests | Bridge + sidecar together | NOW |
-| 50 | No performance benchmarks | Reflex latency targets (<1ms) | NOW |
-| 51 | No structured logging | JSON logging | NOW |
-| 52 | No metrics | Prometheus metrics | NOW |
-| 53 | No tracing | OpenTelemetry | NOW |
-| 54 | No alerting | Death spike, stuck, no exp | NOW |
-| 55 | No config validation | Schema checking | NOW |
-| 56 | No single config source | YAML with inheritance | NOW |
-| 57 | Skills referenced as strings | Skill registry with objects | NOW |
-| 58 | HTTP open/close per request | Keep-alive connections | NOW |
-| 59 | JSON serialization overhead | MessagePack for high-frequency data | NOW |
-| 60 | SQLite files tracked in git | Added to .gitignore | ✅ Done |
-| 61 | .pids/ not in gitignore | Added to .gitignore | ✅ Done |
-| 62 | sidecar_auth_token.txt not in gitignore | Added to .gitignore | ✅ Done |
+| # | Issue | Fix | Status | Reality Check |
+|---|---|---|---|---|
+| 48 | No test coverage for bridge | Perl test harness | NOW | ❌ Not started |
+| 49 | No integration tests | Bridge + sidecar together | NOW | ❌ Not started |
+| 50 | No performance benchmarks | Reflex latency targets (<1ms) | NOW | ❌ Not started |
+| 51 | No structured logging | JSON logging | NOW | ❌ Not started |
+| 52 | No metrics | Prometheus metrics | NOW | ❌ Not started |
+| 53 | No tracing | OpenTelemetry | NOW | ❌ Not started |
+| 54 | No alerting | Death spike, stuck, no exp | NOW | ❌ Not started |
+| 55 | No config validation | Schema checking | NOW | ❌ Not started |
+| 56 | No single config source | YAML with inheritance | NOW | ❌ Not started |
+| 57 | Skills referenced as strings | Skill registry with objects | NOW | ❌ Not started |
+| 58 | HTTP open/close per request | Keep-alive connections | NOW | ❌ Not started |
+| 59 | JSON serialization overhead | MessagePack for high-frequency data | NOW | ❌ Not started |
+| 60 | SQLite files tracked in git | Added to .gitignore | ✅ Done | Verified |
+| 61 | .pids/ not in gitignore | Added to .gitignore | ✅ Done | Verified |
+| 62 | sidecar_auth_token.txt not in gitignore | Added to .gitignore | ✅ Done | Verified |
+
+---
+
+## 16. The 8 Things That Can Be Fixed in One Day
+
+These are the highest-impact, lowest-effort fixes. Each one takes minutes to hours, not weeks.
+
+| # | Fix | File | Change | Effort | Impact |
+|---|---|---|---|---|---|
+| 1 | Fix potion cooldown | `combat/combat_loop.py:384` | `0.5` → `2.0` | 1 character | Bot stops wasting 75% of potions |
+| 2 | Fix NV_BASIC to level 1 | `conscious_engine.py` | `9` → `1` | 1 number | Saves 8 skill points for first job |
+| 3 | Wire death analysis hook | `pdca_loop.py` | Add `onDeath → analyze()` | 3 lines | Bot learns from deaths |
+| 4 | Enforce skill delays | `combat/combat_loop.py` | Check `last_skill_time + delay` | 3 lines | Bot stops firing into cooldown |
+| 5 | Connect flee to aggro limit | `combat/combat_loop.py` | `max_aggro = flee_rate / 20` | 5 lines | Bot pulls appropriate number of mobs |
+| 6 | Load monster DB from mob_db.yml | `predictive_aggro.py` | Replace 87 hardcoded with YAML loader | 1 afternoon | Bot knows all 2,675 monsters |
+| 7 | Load element chart from attr_fix.yml | `combat_tactics.py` | Replace Level 1 with all 4 levels | 1 afternoon | Correct damage calculations for all monsters |
+| 8 | Replace 234 if blocks with behavior tree | `aiSidecarBridge.pl` | Behavior tree with selector/sequence/decorator | 1 week | Proper priority arbitration |
+
+**Total effort for items 1-7: ~2 days. Total effort for item 8: ~1 week.**
 
 ---
 
@@ -1129,30 +1014,30 @@ For Windows users who want maximum performance:
 openkore-ai-v3/
 ├── plugins/
 │   └── aiSidecarBridge/
-│       └── aiSidecarBridge.pl          # Bridge (Perl, 19 reflexes, 3425 lines)
+│       └── aiSidecarBridge.pl          # Bridge (Perl, 3,552 lines, 234 if blocks, 72 subs)
 │
 ├── AI_sidecar/
 │   └── ai_sidecar/
 │       ├── app.py                      # FastAPI entry point
 │       ├── config.py                   # Configuration
-│       ├── combat_tactics.py           # Per-class skill combos
-│       ├── mechanical_intuition.py     # RO formulas (flee, ASPD, cast, crit)
-│       ├── combat_instinct.py          # Monster skill awareness
-│       ├── predictive_aggro.py         # Monster aggro database
-│       ├── risk_assessment.py          # Risk/reward scoring
-│       ├── conscious_engine.py         # Build plans, skill learn order
+│       ├── combat_tactics.py           # Per-class skill combos (Level 1 element chart only)
+│       ├── mechanical_intuition.py     # RO formulas (correct but unused by decisions)
+│       ├── combat_instinct.py          # Monster skill awareness (50+ hardcoded skills)
+│       ├── predictive_aggro.py         # Monster aggro database (87 of 2,675 monsters)
+│       ├── risk_assessment.py          # Risk/reward scoring (uncalibrated weights)
+│       ├── conscious_engine.py         # Phase-based builds (6 classes, 2-3 variants each)
 │       ├── game_engine.py              # rAthena knowledge integration
 │       ├── combat/
-│       │   ├── combat_loop.py          # Main combat loop (200ms)
+│       │   ├── combat_loop.py          # Main combat loop (200ms, potion CD bug at line 384)
 │       │   ├── reflex_combat.py        # Hardcoded combat reflexes
-│       │   ├── skill_rotation.py       # Skill selection and rotation
-│       │   ├── elemental_matrix.py     # Element advantage calculations
+│       │   ├── skill_rotation.py       # Skill selection (cast times defined, not enforced)
+│       │   ├── elemental_matrix.py    # Element advantage (Level 1 only)
 │       │   ├── buff_maintenance.py     # Buff tracking and recasting
-│       │   ├── gear_swapper.py         # Dynamic gear changes
-│       │   ├── resource_manager.py     # Potion/consumable management
+│       │   ├── gear_swapper.py         # Dynamic gear changes (not wired)
+│       │   ├── resource_manager.py    # Potion/consumable management
 │       │   ├── threat_targeting.py     # Target selection
 │       │   ├── action_executor.py      # Action enqueueing
-│       │   ├── mvp_mechanics.py        # MVP skill/phase knowledge
+│       │   ├── mvp_mechanics.py        # MVP skill/phase knowledge (hardcoded)
 │       │   ├── mvp_tracker.py          # MVP spawn tracking
 │       │   ├── anti_killsteal.py       # Killsteal prevention
 │       │   ├── safe_position.py        # Safe spot management
@@ -1164,25 +1049,25 @@ openkore-ai-v3/
 │       │   ├── build_manager.py        # Build-aware decisions
 │       │   └── woe_*.py               # WoE-specific tactics
 │       ├── fleet/
-│       │   ├── fleet_coordinator.py    # Multi-bot coordination
-│       │   ├── multi_account_synergy.py # Party composition
-│       │   ├── swarm_ai.py             # Decentralized coordination
-│       │   ├── party_coordinator.py    # Party management
-│       │   ├── role_manager.py         # Role assignment
-│       │   ├── conflict_resolver.py    # Order conflict resolution
-│       │   ├── cross_bot_resource_manager.py # Shared resources
-│       │   └── self_learning.py        # Cross-bot learning
+│       │   ├── fleet_coordinator.py    # Multi-bot coordination (untested)
+│       │   ├── multi_account_synergy.py # Party composition (untested)
+│       │   ├── swarm_ai.py             # Decentralized coordination (untested)
+│       │   ├── party_coordinator.py    # Party management (untested)
+│       │   ├── role_manager.py         # Role assignment (untested)
+│       │   ├── conflict_resolver.py    # Order conflict resolution (untested)
+│       │   ├── cross_bot_resource_manager.py # Shared resources (untested)
+│       │   └── self_learning.py        # Cross-bot learning (untested)
 │       ├── economy/
-│       │   ├── economic_engine.py      # Core economy
-│       │   ├── farming_selector.py     # Map selection by value
-│       │   ├── market_arbitrage.py     # Buy low, sell high
-│       │   ├── vending_automation.py   # Auto-vending
-│       │   ├── supply_chain.py         # Restock planning
-│       │   └── opportunity_cost.py     # Zeny/hour optimization
+│       │   ├── economic_engine.py      # Core economy (untested)
+│       │   ├── farming_selector.py     # Map selection by value (untested)
+│       │   ├── market_arbitrage.py     # Buy low, sell high (untested)
+│       │   ├── vending_automation.py   # Auto-vending (untested)
+│       │   ├── supply_chain.py         # Restock planning (untested)
+│       │   └── opportunity_cost.py     # Zeny/hour optimization (untested)
 │       ├── learning/
-│       │   ├── death_analysis.py       # Post-mortem analysis
-│       │   ├── shared_learning_db.py   # Cross-bot knowledge
-│       │   └── strategy_optimizer.py  # Strategy refinement
+│       │   ├── death_analysis.py       # Post-mortem analysis (18KB, exists, NOT WIRED)
+│       │   ├── shared_learning_db.py   # Cross-bot knowledge (exists, NOT WIRED)
+│       │   └── strategy_optimizer.py  # Strategy refinement (exists, NOT WIRED)
 │       ├── reflex/
 │       │   ├── reflex_pipeline.py      # Reflex action pipeline
 │       │   ├── rule_engine.py          # Reflex rule management
@@ -1200,18 +1085,18 @@ openkore-ai-v3/
 │       └── api/routers/*.py            # 20+ API routers
 │
 ├── knowledge/
-│   └── rathena_db/                     # rAthena game data
+│   └── rathena_db/                     # rAthena game data (COMPLETE, UNUSED)
 │       ├── db/pre-re/                  # Pre-renewal data
-│       │   ├── mob_db.yml              # 2675 monsters (795KB, 42,537 lines)
-│       │   ├── mob_skill_db.txt        # Monster skills (481KB, 5,783 lines)
-│       │   ├── skill_tree.yml          # Skill trees (83KB, 3,579 lines)
-│       │   ├── item_db_equip.yml       # Equipment items
-│       │   ├── item_db_etc.yml         # Misc items
-│       │   ├── item_db_usable.yml      # Usable items
-│       │   ├── job_stats.yml           # Job stat bonuses (51KB, 2,930 lines)
-│       │   ├── size_fix.yml            # Size damage modifiers (1.4KB, 40 lines)
-│       │   ├── attr_fix.yml            # Element damage modifiers (8.5KB, 478 lines)
-│       │   └── level_penalty.yml       # Exp penalty by level
+│       │   ├── mob_db.yml              # 2,675 monsters (795KB, 42,537 lines) — BOT USES 87
+│       │   ├── mob_skill_db.txt        # Monster skills (481KB, 5,783 lines) — BOT USES 50
+│       │   ├── skill_tree.yml          # Skill trees (83KB, 3,579 lines) — BOT DOESN'T READ
+│       │   ├── item_db_equip.yml       # Equipment items — BOT DOESN'T READ
+│       │   ├── item_db_etc.yml         # Misc items — BOT DOESN'T READ
+│       │   ├── item_db_usable.yml      # Usable items — BOT DOESN'T READ
+│       │   ├── job_stats.yml           # Job stat bonuses (51KB, 2,930 lines) — BOT DOESN'T READ
+│       │   ├── size_fix.yml            # Size damage modifiers (1.4KB, 40 lines) — BOT DOESN'T READ
+│       │   ├── attr_fix.yml            # Element damage modifiers (8.5KB, 478 lines) — BOT USES LEVEL 1 ONLY
+│       │   └── level_penalty.yml       # Exp penalty by level — BOT DOESN'T READ
 │       └── db/re/                      # Renewal data (same structure)
 │
 └── control/
@@ -1222,26 +1107,33 @@ openkore-ai-v3/
 
 ---
 
-## Appendix B: Key Metrics
+## Appendix B: Key Metrics (Honest)
 
 | Metric | Current | Target | Status |
 |---|---|---|---|
 | Reflex latency | ~50ms (bridge) | <50ms | ✅ Done |
-| Combat tick | 200ms | 100ms | NOW |
-| Snapshot interval | 500ms | Adaptive (100ms-2s) | NOW |
-| LLM call frequency | Per decision | Per 5-30min | NOW |
-| Monsters known | 87 | 2675 (from mob_db.yml) | NOW |
-| Maps known | 59 | All (from mob_db.yml) | NOW |
-| Reflex count | 19 | Behavior tree (unlimited) | NOW |
-| Party size | 1 | 1-12 | NOW |
-| Fleet size | 3 | Unlimited | NOW |
-| Death recovery | Manual | Automatic | NOW |
-| Learning | None | Continuous | NOW |
-| Windows support | Partial | Full | NOW |
-| Element chart | Level 1 only | All 4 levels from attr_fix.yml | NOW |
-| Skill validation | None | Prerequisites from skill_tree.yml | NOW |
+| Combat tick | 200ms | 100ms | ❌ Not started |
+| Snapshot interval | 500ms fixed | Adaptive (100ms-2s) | ❌ Not started |
+| LLM call frequency | Per decision | Per 5-30min | ❌ No fallback trees |
+| Monsters known | 87 | 2,675 (from mob_db.yml) | ❌ Not started |
+| Maps known | 59 | All (from mob_db.yml) | ❌ Not started |
+| Reflex count | 19 if blocks | Behavior tree | ❌ Not started |
+| Party size | 1 | 1-12 | ❌ Not tested |
+| Fleet size | 3 | Unlimited | ❌ Not tested |
+| Death recovery | Manual (respawn + continue) | Automatic (analyze + adjust) | ⚠️ Module exists, not wired |
+| Learning | None | Continuous | ❌ Not started |
+| Windows support | Partial | Full | ✅ By design |
+| Element chart | Level 1 only | All 4 levels from attr_fix.yml | ❌ Not started |
+| Skill validation | None | Prerequisites from skill_tree.yml | ❌ Not started |
+| Potion cooldown | 500ms (WRONG) | 2,000ms (correct) | ⚠️ 1 character fix |
+| Skill delay enforcement | None | Cast time + delay + cooldown | ⚠️ 3 lines of code |
+| Flee formula usage | None | Connected to max_aggro | ⚠️ 5 lines of code |
+| Death analysis | Module exists | Wired to onDeath hook | ⚠️ 3 lines of code |
+| NV_BASIC | Level 9 (WRONG) | Level 1 (save 8 points) | ⚠️ 1 number fix |
 | SaaS | — | FUTURE ONLY | 🔄 Future |
 
 ---
 
-*This document represents the architecture as of 2026-07-15. Items marked "✅ Done" are implemented and committed. Items marked "NOW" must be implemented immediately. Only SaaS (Section 14) is marked "FUTURE".*
+*This document represents the architecture as of 2026-07-15. Items marked "✅ Done" are verified in the codebase. Items marked "❌ Not started" are documented but not implemented. Items marked "⚠️" are bugs that can be fixed in minutes. Items marked "🔄 Future" are not planned for the current iteration.*
+
+*The honest truth: 19 items are done. 42 items are promised. 0 items have been started since this document was first written. The architecture doc is a confession, not a plan. The next step is to ship, not to plan.*

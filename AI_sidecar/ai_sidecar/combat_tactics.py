@@ -203,12 +203,13 @@ class CombatTactics:
 
     def get_element_multiplier(self, attack_element: str, defense_element: str) -> float:
         """Get the damage multiplier for attack element vs defense element.
-        
-        Pre-renewal RO element chart. A pro player knows these by heart.
+
+        Uses parsed rAthena attr_fix.yml (all 4 levels).
+        A pro player knows these by heart — this just keeps them fresh.
+        Default element_level=1 for backwards compatibility.
         """
-        atk = attack_element.lower()
-        def_ = defense_element.lower()
-        return self.ELEMENT_MULT.get(atk, {}).get(def_, 1.0)
+        from ai_sidecar.data.element_db import get_element_multiplier as _get_mult
+        return _get_mult(attack_element, defense_element, element_level=1)
 
     def get_best_element_attack(self, player_class: str, monster_element: str) -> str:
         """Recommend the best element to use against a monster.

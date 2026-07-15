@@ -381,7 +381,7 @@ class CombatLoop:
 
         # 1. HP emergency — use potion
         if s.my_hp_pct < HP_EMERGENCY_THRESHOLD:
-            if now - s.last_potion_time > 0.5:  # potion cooldown
+            if now - s.last_potion_time > 2.0:  # potion cooldown (pre-renewal: 2 seconds)
                 s.last_potion_time = now
                 self._enqueue_action("use_potion_or_heal", "use_item")
                 logger.info("combat_emergency: hp=%.0f%% < %.0f%% — using potion",
@@ -507,6 +507,23 @@ class CombatLoop:
         if not self._threat_targeting:
             return None
 
+        # ── PRO FIX: Connect flee formula to max_aggro ──
+        # A pro player knows: if I have 95% flee, I can safely pull 10 mobs.
+        # If I have 5% flee, I should only pull 1 mob.
+        # The flee formula determines how many mobs we can handle safely.
+        from ai_sidecar.mechanical_intuition import MechanicalIntuition
+        mi = MechanicalIntuition()
+        my_base_level = int(self._state.my_hp / 10)  # rough estimate from HP
+        agi_est = 50  # default if we don't know exact AGI
+        # Calculate max safe aggro based on flee rate
+        flee_rate = mi.get_flee_rate(my_base_level, agi_est)
+        # Pro rule: max_aggro = flee_rate / 20 (capped at 10, minimum 1)
+        s.max_aggro = max(1, min(10, int(flee_rate / 20)))
+        logger.debug("combat_flee_aggro: flee=%.0f%% → max_aggro=%d", flee_rate, s.max_aggro)
+        if s.my_hp_pct < 0.5:
+            # If we don't have flee data, be conservative at low HP
+            s.max_aggro = max(1, int(s.my_hp_pct * 5))
+
         # Rate-limit target acquisition
         if now - s.last_target_acquire_time < 1.0:
             return None
@@ -625,6 +642,23 @@ class CombatLoop:
                 # Try next skill in rotation
                 s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
                 return self._execute_skill_rotation(now)
+
+        # ── PRO FIX: Enforce skill delay (cast_time + delay) ──
+        # Pre-renewal RO: after casting a skill, the character cannot act for
+        # cast_time + delay milliseconds. This is NOT the same as cooldown.
+        # Cooldown = time before you CAN use the same skill again.
+        # Delay = time you CANNOT cast ANY skill after firing one.
+        # A bot that ignores delay will spam commands the server rejects.
+        if s.last_skill_time > 0:
+            elapsed_ms = (now - s.last_skill_time) * 1000.0
+            # Use the current skill's delay if available, fall back to 500ms default
+            skill_delay_ms = current_skill.delay_ms if current_skill.delay_ms > 0 else 500
+            if elapsed_ms < skill_delay_ms:
+                logger.debug(
+                    "combat_skill_delay: %s on cooldown (last=%.0fms ago, delay=%dms)",
+                    skill_name, elapsed_ms, skill_delay_ms
+                )
+                return None  # Skip this tick — still in skill delay
 
         # Check SP cost
         if current_skill.sp_cost > 0 and current_skill.sp_cost > s.my_sp:

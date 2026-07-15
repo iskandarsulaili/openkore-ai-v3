@@ -480,7 +480,7 @@ class PredictiveAggroKnowledge:
         self._load_monsters()
 
     def _load_monsters(self) -> None:
-        """Load monster aggro data from the known database."""
+        """Load monster aggro data from the known database, then augment with mob_db.yml."""
         for name, data in KNOWN_AGGRESSIVE_MONSTERS.items():
             info = MonsterAggroInfo(
                 monster_name=name,
@@ -508,6 +508,50 @@ class PredictiveAggroKnowledge:
                 is_ranged=data.get("is_ranged", False),
             )
             self._monsters[name] = info
+
+        # ── PRO FIX: Augment with full mob_db.yml from rAthena ──
+        # KNOWN_AGGRESSIVE_MONSTERS has ~100 hand-picked entries.
+        # mob_db.yml has 2,675+ monsters. This loads them all for
+        # runtime lookup (element, race, size, level, HP, ATK, DEF, etc.)
+        try:
+            from ai_sidecar.data.monster_db import get_monster_db
+            real_db = get_monster_db()
+            aegis_to_name: dict[str, str] = {}  # AegisName → friendly name
+            for aegis_name, entry in real_db.items():
+                # Map AegisName → friendly name for lookup
+                friendly = entry.name.title()
+                aegis_to_name[aegis_name] = friendly
+                # Also store the raw entry keyed by AegisName for quick lookup
+                if aegis_name not in self._monsters:
+                    # Create a minimal MonsterAggroInfo for real-DB-only monsters
+                    # These have no hardcoded aggro data, so default to passive
+                    info = MonsterAggroInfo(
+                        monster_name=friendly,
+                        monster_id=entry.id,
+                        is_aggressive=False,  # unknown — will be discovered at runtime
+                        is_assist=False,
+                        is_boss=entry.is_boss,
+                        aggro_range=0,
+                        chase_range=0,
+                        max_chase_range=10,
+                        level=entry.level,
+                        race=entry.race,
+                        element=entry.element,
+                        size=entry.size,
+                        hp=entry.hp,
+                        atk=entry.atk_max,
+                        def_=entry.def_,
+                    )
+                    self._monsters[aegis_name] = info
+            logger.info(
+                "predictive_aggro augmented: %d real-db monsters loaded "
+                "(%d total, %d with hardcoded aggro data)",
+                len(real_db), len(self._monsters), len(KNOWN_AGGRESSIVE_MONSTERS),
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to load monster_db.yml — using hardcoded data only: %s", e
+            )
 
         # Build spawn data
         for map_name, spawns in MAP_SPAWN_DATA.items():
