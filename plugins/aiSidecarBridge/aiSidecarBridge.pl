@@ -2971,7 +2971,7 @@ sub _calc_distance {
 		my $weight_max = $char->{weight_max} || 1;
 		my $weight_ratio = ($weight_max > 0) ? $weight / $weight_max : 0;
 		my $map = $char->{map} || '';
-		my $job_name = _safe_char('job_name', '');
+		my $job_name = ($char && $char->{job_name}) ? _trim(_scalarize($char->{job_name}), 64) : '';
 		my $base_level = $char->{base_level} || 1;
 		my $job_level = $char->{job_level} || 1;
 
