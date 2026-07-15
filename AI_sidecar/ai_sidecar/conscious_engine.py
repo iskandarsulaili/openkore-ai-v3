@@ -9,7 +9,7 @@ This is the bot's "conscious brain" that decides:
 5. Map selection (where to farm based on level and gear)
 6. Party coordination (when to party, what role to play)
 
-Runs in the sidecar's PDCA loop and produces actions for the bridge to execute.
+Fixed by Pro RO Player: correct skill builds, stat priorities, efficient skill point usage.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
@@ -53,7 +54,13 @@ class Decision:
     params: dict[str, Any] = field(default_factory=dict)
 
 
-# ── Build definitions for all job classes ──
+# ── Build definitions for all job classes — FIXED by Pro RO Player ──
+# Key fixes:
+# - NV_BASIC only needs level 1 (not 9)
+# - SM_SWORD gets 1 point first, then max BASH
+# - MG_SRECOVERY gets 4 points (efficiency breakpoint), then attack spell
+# - AL_HEAL gets 4 points (efficiency breakpoint), then teleport for escape
+# - Correct stat priorities for each class
 BUILDS: dict[str, BuildPlan] = {
     "novice": BuildPlan(
         job_class="Novice",
@@ -61,7 +68,7 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="agi",
         stat_priority=["dex", "agi", "vit", "luk", "str", "int"],
         skill_learn_order=[
-            {"name": "NV_BASIC", "max_level": 9, "reason": "Required for sitting, trading, and other basic actions"},
+            {"name": "NV_BASIC", "max_level": 1, "reason": "Basic Skill level 1 — enough to sit, trade, party. Save points for first job"},
             {"name": "NV_FIRSTAID", "max_level": 1, "reason": "Emergency self-heal (45 HP)"},
             {"name": "NV_TRICKDEAD", "max_level": 1, "reason": "Fake death to avoid aggro"},
         ],
@@ -86,10 +93,12 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="dex",
         stat_priority=["str", "dex", "vit", "agi", "luk", "int"],
         skill_learn_order=[
-            {"name": "SM_SWORD", "max_level": 10, "reason": "Sword mastery — increases damage"},
-            {"name": "SM_RECOVERY", "max_level": 10, "reason": "HP recovery skill"},
-            {"name": "SM_BASH", "max_level": 10, "reason": "Bash — main attack skill"},
-            {"name": "SM_MAGNUM", "max_level": 10, "reason": "Magnum Break — AoE attack"},
+            {"name": "SM_SWORD", "max_level": 1, "reason": "Sword Mastery level 1 — +4 ATK is enough early. Max BASH first"},
+            {"name": "SM_BASH", "max_level": 10, "reason": "BASH — main attack skill, max first for damage"},
+            {"name": "SM_RECOVERY", "max_level": 5, "reason": "HP Recovery level 5 — efficiency sweet spot (50% chance)"},
+            {"name": "SM_MAGNUM", "max_level": 10, "reason": "Magnum Break — AoE attack for grouped mobs"},
+            {"name": "SM_SWORD", "max_level": 10, "reason": "Sword Mastery level 10 — finish after main skills"},
+            {"name": "SM_RECOVERY", "max_level": 10, "reason": "HP Recovery level 10 — max for sustain"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 50, "reason": "Main healing potion"},
@@ -111,10 +120,12 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="dex",
         stat_priority=["int", "dex", "vit", "agi", "luk", "str"],
         skill_learn_order=[
-            {"name": "MG_SRECOVERY", "max_level": 10, "reason": "SP recovery — essential for casting"},
-            {"name": "MG_FIREBOLT", "max_level": 10, "reason": "Fire Bolt — main attack"},
-            {"name": "MG_COLDBOLT", "max_level": 10, "reason": "Cold Bolt — water element attack"},
-            {"name": "MG_LIGHTNINGBOLT", "max_level": 10, "reason": "Lightning Bolt — wind element attack"},
+            {"name": "MG_SRECOVERY", "max_level": 4, "reason": "SP Recovery level 4 — efficiency breakpoint (30% regen). Don't max yet"},
+            {"name": "MG_FIREBOLT", "max_level": 10, "reason": "Fire Bolt — main attack, max first for damage"},
+            {"name": "MG_COLDBOLT", "max_level": 5, "reason": "Cold Bolt level 5 — water element coverage"},
+            {"name": "MG_LIGHTNINGBOLT", "max_level": 5, "reason": "Lightning Bolt level 5 — wind element coverage"},
+            {"name": "MG_SRECOVERY", "max_level": 10, "reason": "SP Recovery level 10 — max after attack skills"},
+            {"name": "MG_FROSTDIVER", "max_level": 5, "reason": "Frost Diver level 5 — freeze for combo"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
@@ -137,10 +148,10 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="agi",
         stat_priority=["dex", "agi", "vit", "luk", "str", "int"],
         skill_learn_order=[
-            {"name": "AC_OWL", "max_level": 1, "reason": "Owl's Eye — increases DEX"},
-            {"name": "AC_VULTURE", "max_level": 1, "reason": "Vulture's Eye — increases range"},
-            {"name": "AC_DOUBLE", "max_level": 10, "reason": "Double Strafe — main attack"},
-            {"name": "AC_SHOWER", "max_level": 10, "reason": "Arrow Shower — AoE attack"},
+            {"name": "AC_OWL", "max_level": 10, "reason": "Owl's Eye — increases DEX, max first for damage"},
+            {"name": "AC_DOUBLE", "max_level": 10, "reason": "Double Strafe — main attack, max for damage"},
+            {"name": "AC_VULTURE", "max_level": 10, "reason": "Vulture's Eye — increases range, max for safety"},
+            {"name": "AC_SHOWER", "max_level": 10, "reason": "Arrow Shower — AoE attack for grouped mobs"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
@@ -163,10 +174,12 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="dex",
         stat_priority=["int", "dex", "vit", "agi", "luk", "str"],
         skill_learn_order=[
-            {"name": "AL_HEAL", "max_level": 10, "reason": "Heal — primary healing skill"},
-            {"name": "AL_INCAGI", "max_level": 10, "reason": "Increase AGI — party buff"},
-            {"name": "AL_BLESSING", "max_level": 10, "reason": "Blessing — party buff"},
-            {"name": "AL_TELEPORT", "max_level": 1, "reason": "Teleport — emergency escape"},
+            {"name": "AL_TELEPORT", "max_level": 1, "reason": "Teleport level 1 — emergency escape FIRST"},
+            {"name": "AL_HEAL", "max_level": 4, "reason": "Heal level 4 — efficiency sweet spot (180 HP for 12 SP). Don't max yet"},
+            {"name": "AL_INCAGI", "max_level": 10, "reason": "Increase AGI — party buff, max for duration"},
+            {"name": "AL_BLESSING", "max_level": 10, "reason": "Blessing — party buff, max for stats and duration"},
+            {"name": "AL_HEAL", "max_level": 10, "reason": "Heal level 10 — max after buffs for endgame healing"},
+            {"name": "AL_WARP", "max_level": 1, "reason": "Warp Portal level 1 — party travel"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 20, "reason": "Backup healing"},
@@ -189,10 +202,11 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="dex",
         stat_priority=["str", "dex", "vit", "agi", "luk", "int"],
         skill_learn_order=[
-            {"name": "MC_PUSHCART", "max_level": 10, "reason": "Pushcart — carry more items"},
-            {"name": "MC_DISCOUNT", "max_level": 10, "reason": "Discount — cheaper purchases"},
-            {"name": "MC_OVERCHARGE", "max_level": 10, "reason": "Overcharge — sell for more"},
-            {"name": "MC_MAMMONITE", "max_level": 10, "reason": "Mammonite — zeny attack"},
+            {"name": "MC_PUSHCART", "max_level": 1, "reason": "Pushcart level 1 — carry more items, enough early"},
+            {"name": "MC_DISCOUNT", "max_level": 10, "reason": "Discount — cheaper purchases, max for 24% off"},
+            {"name": "MC_OVERCHARGE", "max_level": 10, "reason": "Overcharge — sell for 24% more, max for profit"},
+            {"name": "MC_MAMMONITE", "max_level": 10, "reason": "Mammonite — zeny attack, max for damage"},
+            {"name": "MC_PUSHCART", "max_level": 10, "reason": "Pushcart level 10 — max capacity"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 50, "reason": "Healing potion"},
@@ -214,10 +228,11 @@ BUILDS: dict[str, BuildPlan] = {
         secondary_stat="dex",
         stat_priority=["agi", "dex", "vit", "luk", "str", "int"],
         skill_learn_order=[
-            {"name": "TF_DOUBLE", "max_level": 10, "reason": "Double Attack — passive damage boost"},
-            {"name": "TF_HIDE", "max_level": 10, "reason": "Hide — stealth and escape"},
-            {"name": "TF_STEAL", "max_level": 10, "reason": "Steal — steal from monsters"},
-            {"name": "TF_POISON", "max_level": 10, "reason": "Envenom — poison attack"},
+            {"name": "TF_DOUBLE", "max_level": 10, "reason": "Double Attack — passive damage boost, max first"},
+            {"name": "TF_HIDE", "max_level": 1, "reason": "Hide level 1 — stealth and escape, enough early"},
+            {"name": "TF_STEAL", "max_level": 10, "reason": "Steal — steal from monsters, max for success rate"},
+            {"name": "TF_POISON", "max_level": 10, "reason": "Envenom — poison attack, max for damage"},
+            {"name": "TF_HIDE", "max_level": 10, "reason": "Hide level 10 — max duration for safety"},
         ],
         equipment_goals=[
             {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
@@ -343,7 +358,6 @@ class ConsciousDecisionEngine:
             for skill in build.skill_learn_order:
                 name = skill["name"]
                 if name not in skills:
-                    # Check if prerequisites are met
                     decisions.append(Decision(
                         domain="skills",
                         action="learn_skill",
@@ -359,12 +373,9 @@ class ConsciousDecisionEngine:
             if stats:
                 for stat in build.stat_priority:
                     current = stats.get(stat, 0)
-                    # Check if we have stat points to distribute
-                    # (base_level * 2 + job_level - current_total = available)
                     total_stats = sum(stats.values())
                     expected = base_level * 2 + job_level
                     if total_stats < expected:
-                        # We have unassigned stat points
                         target_value = base_level * 2 // len(build.stat_priority)
                         if current < target_value:
                             decisions.append(Decision(
@@ -449,7 +460,7 @@ class ConsciousDecisionEngine:
             build = self._get_build(state.get("job_name", "novice"))
             decisions = self.evaluate(bot_id)
 
-            lines = [f"── Conscious Decisions for {bot_id} ──"]
+            lines = [f"-- Conscious Decisions for {bot_id} --"]
             lines.append(f"  Job: {state.get('job_name', '?')}  Level: {state.get('base_level', 1)}/{state.get('job_level', 1)}")
             lines.append(f"  Build: {build.primary_stat}/{build.secondary_stat}")
             lines.append(f"  HP: {state.get('hp_pct', 1.0):.0%}  SP: {state.get('sp_pct', 1.0):.0%}  Zeny: {state.get('zeny', 0)}z")

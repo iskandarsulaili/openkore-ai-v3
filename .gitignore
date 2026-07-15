@@ -58,11 +58,17 @@ control/ai_sidecar_macro_manifest.json
 # AI sidecar local runtime persistence + caches
 AI_sidecar/data/
 AI_sidecar/**/*.sqlite
+AI_sidecar/**/*.sqlite-shm
+AI_sidecar/**/*.sqlite-wal
+AI_sidecar/**/openmemory.db
+AI_sidecar/**/openmemory.db-shm
+AI_sidecar/**/openmemory.db-wal
 AI_sidecar/**/__pycache__/
 AI_sidecar/.env
 AI_sidecar/venv/
 AI_sidecar/.venv/
 AI_sidecar/*.egg-info/
+AI_sidecar/.pytest_cache/
 benchmark-results.txt
 
 # Local temporary stubs used for isolated plugin syntax checks
@@ -71,3 +77,13 @@ logs/
 .openkore-pids
 .env
 .bot_profiles/
+
+# Runtime PID files
+.pids/
+
+# Sidecar auth token (auto-generated)
+control/sidecar_auth_token.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db

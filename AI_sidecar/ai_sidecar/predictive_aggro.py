@@ -29,7 +29,7 @@ class MonsterAggroInfo:
     monster_name: str
     monster_id: int = 0
     is_aggressive: bool = False  # attacks on sight
-    is_assist: bool = False      # assists nearby monsters
+    is_assist: bool = False      # assists nearby monsters of same family
     is_boss: bool = False        # MVP/Mini-boss
     aggro_range: int = 10        # cells before they aggro
     chase_range: int = 12        # cells they'll chase
@@ -43,10 +43,17 @@ class MonsterAggroInfo:
     def_: int = 0
     spawn_maps: list[str] = field(default_factory=list)
     spawn_count: int = 0         # how many spawn per map
+    # ── Pro RO additions ──
+    is_night_aggro: bool = False  # only aggressive at night (e.g. Zombies)
+    is_day_aggro: bool = False    # only aggressive during day (rare)
+    assist_family: str = ""       # family name for assist aggro (e.g. "Orc", "Thief Bug")
+    has_skill_aggro: bool = False # uses skills that draw aggro (e.g. Provoke)
+    is_ranged: bool = False       # ranged attacker (aggro from further)
 
 
 # Known monster aggro data (from iRO/rAthena classic)
 # This is the knowledge a pro player has about which monsters to avoid.
+# FIXED by Pro RO Player: added assist aggro, night aggro, correct chase ranges
 KNOWN_AGGRESSIVE_MONSTERS: dict[str, dict[str, Any]] = {
     # ── Prontera Fields ──
     "Poring": {"is_aggressive": False, "aggro_range": 0, "chase_range": 0, "level": 1, "race": "plant"},
@@ -55,16 +62,16 @@ KNOWN_AGGRESSIVE_MONSTERS: dict[str, dict[str, Any]] = {
     "Picky": {"is_aggressive": False, "aggro_range": 0, "chase_range": 0, "level": 3, "race": "brute"},
     "Familiar": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 14, "race": "demon"},
     "Hornet": {"is_aggressive": True, "aggro_range": 7, "chase_range": 9, "level": 12, "race": "insect"},
-    "Thief Bug": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 16, "race": "insect"},
+    "Thief Bug": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 16, "race": "insect", "is_assist": True, "assist_family": "Thief Bug"},
     "Savage": {"is_aggressive": True, "aggro_range": 10, "chase_range": 12, "level": 25, "race": "brute"},
     "Deniro": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 22, "race": "insect"},
     "Peco Peco": {"is_aggressive": True, "aggro_range": 9, "chase_range": 11, "level": 20, "race": "brute"},
     "Elder Willow": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 30, "race": "plant"},
-    "Orc Warrior": {"is_aggressive": True, "aggro_range": 10, "chase_range": 14, "level": 38, "race": "demi-human"},
-    "Orc Archer": {"is_aggressive": True, "aggro_range": 12, "chase_range": 15, "level": 40, "race": "demi-human"},
-    "Orc Lady": {"is_aggressive": True, "aggro_range": 10, "chase_range": 12, "level": 42, "race": "demi-human"},
-    "Orc Zombie": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 45, "race": "undead"},
-    "Orc Skeleton": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 48, "race": "undead"},
+    "Orc Warrior": {"is_aggressive": True, "aggro_range": 10, "chase_range": 14, "level": 38, "race": "demi-human", "is_assist": True, "assist_family": "Orc"},
+    "Orc Archer": {"is_aggressive": True, "aggro_range": 14, "chase_range": 18, "level": 40, "race": "demi-human", "is_assist": True, "assist_family": "Orc", "is_ranged": True},
+    "Orc Lady": {"is_aggressive": True, "aggro_range": 10, "chase_range": 12, "level": 42, "race": "demi-human", "is_assist": True, "assist_family": "Orc"},
+    "Orc Zombie": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 45, "race": "undead", "is_assist": True, "assist_family": "Orc"},
+    "Orc Skeleton": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 48, "race": "undead", "is_assist": True, "assist_family": "Orc"},
     "Orc Lord": {"is_aggressive": True, "aggro_range": 14, "chase_range": 20, "is_boss": True, "level": 75, "race": "demi-human"},
 
     # ── Geffen Fields ──
@@ -81,7 +88,7 @@ KNOWN_AGGRESSIVE_MONSTERS: dict[str, dict[str, Any]] = {
     "Scorpion": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 24, "race": "insect"},
     "Skeleton": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 30, "race": "undead"},
     "Ghoul": {"is_aggressive": True, "aggro_range": 9, "chase_range": 11, "level": 35, "race": "undead"},
-    "Zombie": {"is_aggressive": True, "aggro_range": 7, "chase_range": 9, "level": 18, "race": "undead"},
+    "Zombie": {"is_aggressive": True, "aggro_range": 7, "chase_range": 9, "level": 18, "race": "undead", "is_night_aggro": True},
     "Drainliar": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 28, "race": "brute"},
     "Mistress": {"is_aggressive": True, "aggro_range": 12, "chase_range": 18, "is_boss": True, "level": 63, "race": "demon"},
 
@@ -90,8 +97,8 @@ KNOWN_AGGRESSIVE_MONSTERS: dict[str, dict[str, Any]] = {
     "Poporing": {"is_aggressive": False, "aggro_range": 0, "chase_range": 0, "level": 20, "race": "plant"},
     "Smokie": {"is_aggressive": False, "aggro_range": 0, "chase_range": 0, "level": 22, "race": "brute"},
     "Yoyo": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 24, "race": "brute"},
-    "Steam Goblin": {"is_aggressive": True, "aggro_range": 9, "chase_range": 11, "level": 30, "race": "demi-human"},
-    "Goblin": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 28, "race": "demi-human"},
+    "Steam Goblin": {"is_aggressive": True, "aggro_range": 9, "chase_range": 11, "level": 30, "race": "demi-human", "is_assist": True, "assist_family": "Goblin"},
+    "Goblin": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 28, "race": "demi-human", "is_assist": True, "assist_family": "Goblin"},
     "Nine Tail": {"is_aggressive": True, "aggro_range": 10, "chase_range": 12, "level": 45, "race": "brute"},
     "Sohee": {"is_aggressive": True, "aggro_range": 8, "chase_range": 10, "level": 40, "race": "demon"},
     "Baphomet": {"is_aggressive": True, "aggro_range": 14, "chase_range": 20, "is_boss": True, "level": 81, "race": "demon"},
@@ -493,6 +500,12 @@ class PredictiveAggroKnowledge:
                 def_=data.get("def", 0),
                 spawn_maps=[],
                 spawn_count=0,
+                # Pro RO additions
+                is_night_aggro=data.get("is_night_aggro", False),
+                is_day_aggro=data.get("is_day_aggro", False),
+                assist_family=data.get("assist_family", ""),
+                has_skill_aggro=data.get("has_skill_aggro", False),
+                is_ranged=data.get("is_ranged", False),
             )
             self._monsters[name] = info
 
@@ -528,6 +541,9 @@ class PredictiveAggroKnowledge:
         - Their chase ranges (higher = harder to escape)
         - Boss presence (significantly increases danger)
         - Monster density
+        - Assist aggro (chain aggro = more dangerous)
+        - Night-only aggro (Zombies etc. — only dangerous at night)
+        - Ranged monsters (aggro from further, harder to escape)
         """
         if not aggro_monsters:
             return 0.0
@@ -554,6 +570,22 @@ class PredictiveAggroKnowledge:
         if aggro_monsters:
             avg_level = sum(m.level for m in aggro_monsters) / len(aggro_monsters)
             score += min(0.15, avg_level * 0.002)
+
+        # ── Pro RO additions ──
+        # Assist aggro penalty (chain aggro = more dangerous)
+        assist_count = sum(1 for m in aggro_monsters if m.is_assist)
+        if assist_count > 0:
+            score += min(0.15, assist_count * 0.03)
+
+        # Ranged monster penalty (harder to escape)
+        ranged_count = sum(1 for m in aggro_monsters if m.is_ranged)
+        if ranged_count > 0:
+            score += min(0.1, ranged_count * 0.05)
+
+        # Night-only aggro (Zombies etc.)
+        night_aggro_count = sum(1 for m in aggro_monsters if m.is_night_aggro)
+        if night_aggro_count > 0:
+            score += min(0.1, night_aggro_count * 0.02)
 
         return min(1.0, score)
 

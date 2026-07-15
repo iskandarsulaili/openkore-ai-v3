@@ -2974,6 +2974,7 @@ sub _calc_distance {
 		my $job_name = ($char && $char->{job_name}) ? _trim(_scalarize($char->{job_name}), 64) : '';
 		my $base_level = $char->{base_level} || 1;
 		my $job_level = $char->{job_level} || 1;
+		my $in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
 
 		# Count aggro: monsters that have dealt damage to us
 		my $aggro_count = 0;
@@ -3417,6 +3418,132 @@ sub _calc_distance {
 					map => $map,
 					timestamp => $now,
 				});
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #16 — PROACTIVE PRE-BUFF REFLEX
+		# ═══════════════════════════════════════════
+		# Pre-buff before engaging: cast self-buffs when out of combat
+		# Pro players always buff before engaging, never during combat
+		if (!$in_combat && $hp_ratio > 0.8 && $sp_ratio > 0.3) {
+			if (_should_fire_reflex($_reflex_last_fired{pre_buff} || 0, 15000)) {
+				$_reflex_last_fired{pre_buff} = _now_ms();
+				# Try common self-buffs based on class
+				my @buffs = (
+					"skill Twohand Quicken 1",   # Knight ASPD buff
+					"skill Increase AGI 10",     # Acolyte/Priest
+					"skill Blessing 10",          # Acolyte/Priest
+					"skill Magnificat 5",         # Priest SP regen
+					"skill Kyrie Eleison 10",     # Priest shield
+					"skill Improve Concentration 10", # Swordsman
+					"skill Enchant Poison 5",     # Assassin
+					"skill Owl's Eye 10",         # Archer
+					"skill Vulture's Eye 10",     # Archer
+					"skill Energy Coat 5",        # Mage
+				);
+				for my $buff (@buffs) {
+					my ($cmd, $skill_name) = $buff =~ /^skill\s+(.+?)\s+\d+$/;
+					next if !$skill_name;
+					my $skill = eval { Skill::get($skill_name) };
+					if ($skill && $skill->{level} && $skill->{level} > 0) {
+						# Check if buff is already active
+						my $already_active = 0;
+						if ($char->{buffs} && ref $char->{buffs} eq 'HASH') {
+							$already_active = 1 if exists $char->{buffs}{$skill_name};
+						}
+						if (!$already_active) {
+							_random_action_delay();
+							eval { Commands::run($buff); 1 };
+							last;  # One buff per tick
+						}
+					}
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #17 — PROACTIVE PRE-DODGE REFLEX
+		# ═══════════════════════════════════════════
+		# Pre-dodge when a monster starts casting a dangerous AoE
+		# Pro players don't wait for the hit — they dodge the cast bar
+		if ($monstersList) {
+			for my $monster (@{$monstersList}) {
+				next if !$monster;
+				my $casting = $monster->{casting} || undef;
+				next if !$casting;
+				my $dist = _calc_distance($monster, $char);
+				next if !defined $dist || $dist > 12;
+
+				# Known dangerous AoE skills to dodge
+				my @DODGE_SKILLS = qw(
+					WZ_STORMGUST WZ_METEORSTORM WZ_HEAVENDRIVE MG_THUNDERSTORM
+					WZ_VERMILION NPC_HELLJUDGEMENT NPC_EARTHQUAKE NPC_DARKBREATH
+					NPC_PULSESTRIKE NPC_WIDESTUN NPC_WIDEFREEZE NPC_FIREBREATH
+				);
+				my $should_dodge = 0;
+				for my $dodge_skill (@DODGE_SKILLS) {
+					if ($casting eq $dodge_skill) {
+						$should_dodge = 1;
+						last;
+					}
+				}
+
+				if ($should_dodge) {
+					if (_should_fire_reflex($_reflex_last_fired{pre_dodge} || 0, 2000)) {
+						$_reflex_last_fired{pre_dodge} = _now_ms();
+						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
+						# Move away immediately — no delay
+						eval { Commands::run("flee"); 1 };
+						_http_post_json('/v2/ingest/event', {
+							kind => 'bridge_reflex',
+							reflex => 'pre_dodge',
+							casting_skill => $casting,
+							distance => $dist,
+							hp_ratio => $hp_ratio,
+							timestamp => $now,
+						});
+					}
+					last;
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #18 — AUTO-SIT REGEN REFLEX
+		# ═══════════════════════════════════════════
+		# Auto-sit when out of combat and HP/SP is low
+		# Pro players sit to regen between pulls, never fight at low HP
+		if (!$in_combat && $hp_ratio < 0.6 && $hp > 0) {
+			if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, 5000)) {
+				$_reflex_last_fired{auto_sit} = _now_ms();
+				my $ai_top = @ai_seq ? $ai_seq[0] : '';
+				if ($ai_top ne 'sit') {
+					_random_action_delay();
+					eval { Commands::run("sit"); 1 };
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #19 — PROACTIVE POTION TOP-OFF REFLEX
+		# ═══════════════════════════════════════════
+		# Top off HP when out of combat and HP < 80%
+		# Pro players keep HP topped off between pulls, not just in emergencies
+		if (!$in_combat && $hp_ratio > 0.3 && $hp_ratio < 0.8 && $hp > 0) {
+			if (_should_fire_reflex($_reflex_last_fired{top_off} || 0, 10000)) {
+				$_reflex_last_fired{top_off} = _now_ms();
+				_update_heal_cache();
+				for my $item_name (@_heal_items) {
+					$item_name = _trim($item_name);
+					next if !$item_name;
+					my $item = eval { Actor::Item::get($item_name) };
+					if ($item && $item->{amount} && $item->{amount} > 0) {
+						_random_action_delay();
+						eval { Commands::run("is $item_name"); 1 };
+						last;
+					}
+				}
 			}
 		}
 	}
