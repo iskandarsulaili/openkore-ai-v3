@@ -1921,7 +1921,7 @@ prt_fild07 385 186 prt_fild08 16 187
 prt_fild08 16 187 prt_fild07 385 186
 prt_fild08 16 239 prt_fild07 383 239
 prt_fild08 55 21 moc_fild01 56 384
-prt_fild08 170 378 prontera 156 22
+prt_fild08 170 378 prontera 156 26
 prt_fild08 233 16 moc_fild01 239 382
 prt_fild08 371 212 izlude 30 78
 prt_fild09 14 139 prt_fild10 339 126
