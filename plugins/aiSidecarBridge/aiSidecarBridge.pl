@@ -3040,7 +3040,7 @@ sub _calc_distance {
 			# If NO healing resources at all: trigger emergency survival immediately
 			# Let conscious engine handle the rest (buy potions, retreat to town, request help)
 			if (!$heal_triggered && $hp_ratio < 0.50) {
-				if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 2000)) {
+				if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 10000)) {
 					$_reflex_last_fired{no_heal} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
