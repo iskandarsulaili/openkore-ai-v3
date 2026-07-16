@@ -3289,6 +3289,9 @@ class PDCALoop:
                 # Cost mode decision: should we use LLM?
                 # Replaced by conscious trigger evaluation — LLM fires on demand
                 _use_llm = False
+                # Force LLM on cold start (no active plan yet)
+                if self._active_plan.get(horizon) is None:
+                    _use_llm = True
                 _trigger_reason = "conservative:no_triggers"
                 _trigger_ctx: dict[str, object] = {}
                 
