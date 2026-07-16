@@ -79,10 +79,6 @@ def next_action(
         budget_exceeded = not runtime.latency_router.within_budget(elapsed_ms)
         had_action = action is not None
 
-        if action is not None and budget_exceeded:
-            runtime.rollback_action_dispatch(action.action_id)
-            action = None
-
         if budget_exceeded:
             logger.warning(
                 "actions_next_latency_budget_exceeded",

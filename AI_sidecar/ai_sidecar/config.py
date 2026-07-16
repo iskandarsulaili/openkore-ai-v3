@@ -37,8 +37,8 @@ class SidecarSettings(BaseSettings):
     telemetry_recent_incidents_limit: int = Field(default=100, ge=1, le=1000)
     telemetry_backlog_max_events: int = Field(default=10000, ge=100, le=200000)
 
-    latency_budget_ms: int = Field(default=500, ge=1, le=5000)
-    reflex_latency_budget_ms: int = Field(default=100, ge=10, le=1000)
+    latency_budget_ms: int = Field(default=5000, ge=1, le=30000)
+    reflex_latency_budget_ms: int = Field(default=500, ge=10, le=5000)
     reflex_trigger_history_per_bot: int = Field(default=1000, ge=100, le=20000)
 
     sqlite_path: str = "AI_sidecar/data/sidecar.sqlite"
