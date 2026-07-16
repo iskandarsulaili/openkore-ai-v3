@@ -1971,6 +1971,19 @@ sub _flush_ack_queue {
 	_throttled_warning('ack_failed', '[aiSidecarBridge] action ack failed, will retry while within ack age budget.');
 }
 
+
+# ── Wrapper: POST event to sidecar in proper batch format ──
+sub _post_event {
+	my ($event) = @_;
+	return if !_bridge_enabled();
+	my $payload = {
+		meta => _meta(_bot_id()),
+		events => [$event],
+	};
+	my $resp = _http_post_json('/v2/ingest/event', $payload);
+	return $resp;
+}
+
 sub _emit_telemetry {
 	my ($level, $category, $event, $message_text, $metrics, $tags) = @_;
 	return if !_cfg_bool('aiSidecar_telemetryEnabled', 1);
@@ -3103,6 +3116,19 @@ sub _check_bridge_reflexes {
 						heal_skills_cached => scalar(@_heal_skills),
 						timestamp => _now_ms(),
 					});
+
+					# SIT FALLBACK: if no healing items or zeny, sit to regen HP naturally
+					if (scalar(@_heal_items) == 0 && $char->{zeny} < 50) {
+						my $ai_state = $Ai::Ai->{ai} || '';
+						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
+							Commands::run('sit');
+							warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
+						}
+					} elsif ($hp > $hp_max * 0.8 && ($Ai::Ai->{ai} || '') eq 'sit') {
+						# Stand up if HP is healthy and we were sitting
+						Commands::run('stand');
+						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
+					}
 
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
 					my $_now_ms = _now_ms();
