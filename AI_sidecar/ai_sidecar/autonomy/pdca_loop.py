@@ -1400,6 +1400,8 @@ class PDCALoop:
         self._last_bot_id: str | None = None
         # Respawn cooldown tracking: bot_id -> timestamp when cooldown expires
         self._respawn_cooldown_until: dict[str, float] = {}
+        self._burst_tracker: dict[str, collections.deque] = {}
+        self._last_hp_record: dict[str, int] = {}
         # Last known HP per bot for detecting respawn (HP 0 -> >0 transition)
         self._last_known_hp: dict[str, int] = {}
         # Last known death timestamp per bot to debounce repeated triggers
@@ -3923,6 +3925,42 @@ class PDCALoop:
                             logger.exception("pdca_death_respawn_enqueue_failed bot=%s", _bid)
                     _total_actions = 0
                     for _bid in _all_bot_ids:
+                        # ── Burst protection: track recent HP for each bot ──
+                        try:
+                            _burst_snap = getattr(self._runtime, 'snapshot_cache', {})
+                            if hasattr(_burst_snap, 'get'):
+                                _burst_state = _burst_snap.get(_bid) or {}
+                                _burst_vitals = _burst_state.get('vitals') or {}
+                                _burst_hp = _burst_vitals.get('hp') or 0
+                                if _bid not in self._burst_tracker:
+                                    from collections import deque
+                                    self._burst_tracker[_bid] = deque(maxlen=5)
+                                if _burst_hp > 0:
+                                    self._burst_tracker[_bid].append((datetime.datetime.now(datetime.timezone.utc), _burst_hp))
+                                # Clean old entries
+                                _burst_now = datetime.datetime.now(datetime.timezone.utc)
+                                while self._burst_tracker[_bid] and (_burst_now - self._burst_tracker[_bid][0][0]).total_seconds() > 2:
+                                    self._burst_tracker[_bid].popleft()
+                                # Check for burst: HP dropped >50% in 2s
+                                if len(self._burst_tracker[_bid]) >= 2:
+                                    _burst_oldest_hp = self._burst_tracker[_bid][0][1]
+                                    _burst_newest_hp = self._burst_tracker[_bid][-1][1]
+                                    _burst_loss = _burst_oldest_hp - _burst_newest_hp
+                                    _burst_max = _burst_vitals.get('hp_max') or 1
+                                    if _burst_max > 0 and _burst_loss / _burst_max > 0.5 and _burst_loss > 0:
+                                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                        logger.warning("burst_protection[%s]: bot=%s hp=%d->%d loss=%d/%.0f (%.0f%%)",
+                                            horizon.value, _bid, _burst_oldest_hp, _burst_newest_hp, _burst_loss, _burst_max, _burst_loss/_burst_max*100)
+                                        self._runtime.action_queue.enqueue(ActionProposal(
+                                            bot_id=_bid,
+                                            action_type='auto_teleport',
+                                            priority_tier=ActionPriorityTier.reflex,
+                                            source='burst_protection',
+                                            description=f'Burst {_burst_loss} HP in 2s ({_burst_loss/_burst_max*100:.0f}%)',
+                                            conflict_key='burst_teleport',
+                                        ))
+                        except Exception:
+                            pass
                         _actions_queued_ge = _emit_game_engine_actions(
                             self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
                         )
@@ -4499,7 +4537,8 @@ class PDCALoop:
                     if _aq_death is not None and hasattr(_aq_death, "enqueue"):
                         from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
                         from uuid import uuid4
-                        from datetime import datetime, timedelta, timezone
+                        from datetime import datetime
+import collections, timedelta, timezone
                         _now = datetime.now(timezone.utc)
                         _prop = ActionProposal(
                             action_id=f"death_{uuid4().hex[:16]}",
