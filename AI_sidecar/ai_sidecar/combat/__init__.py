@@ -6,6 +6,7 @@ from ai_sidecar.combat.gear_swapper import GearSwapper, get_gear_swapper, GearSe
 from ai_sidecar.combat.build_manager import BuildManager, get_build_manager, Build, StatAllocation, SkillLearnOrder, EquipmentGoal
 from ai_sidecar.combat.combat_loop import CombatLoop, get_combat_loop, CombatState
 from ai_sidecar.combat.card_db import CardDatabase, get_card_database, Card, CardSlot, CardBonusType
+from ai_sidecar.combat.navigation import Router, MAP_CONNECTIONS
 
 __all__ = [
     "SkillRotationSystem", "get_skill_rotation_system", "Skill", "RotationStep", "SkillRotation",
@@ -15,4 +16,5 @@ __all__ = [
     "BuildManager", "get_build_manager", "Build", "StatAllocation", "SkillLearnOrder", "EquipmentGoal",
     "CombatLoop", "get_combat_loop", "CombatState",
     "CardDatabase", "get_card_database", "Card", "CardSlot", "CardBonusType",
+    "Router", "MAP_CONNECTIONS",
 ]

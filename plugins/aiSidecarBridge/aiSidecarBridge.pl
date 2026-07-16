@@ -1437,6 +1437,7 @@ sub _build_snapshot_payload {
 		progression => $progression,
 		skills      => \@skills_list,
 		equipped_cards => _get_equipped_cards(),
+t	anti_kite_active => $anti_kite_active,
 		actors      => \@actors,
 		raw         => $raw,
 	};
@@ -3584,7 +3585,299 @@ sub _calc_distance {
 				}
 			}
 		}
+
+		# ================================================================
+		# BLIND SPOT #11: CONSUMABLE RESTO CK REFLEX
+		# ================================================================
+		# Check inventory for critical consumables and flag if running low.
+		# Emits bridge_restock_needed / bridge_restock_resolved events.
+		if ($hp > 0) {
+		    _update_heal_cache();
+		    my $restock_needed_now = 0;
+		    my $restock_reason = '';
+
+		    # Check each configured heal item
+		    for my $item_name (@_heal_items) {
+		        $item_name = _trim($item_name);
+		        next if !$item_name;
+		        my $threshold = _cfg_int('aiSidecar_restockThreshold', 10);
+		        $threshold = 1 if $threshold < 1;
+		        my $item = eval { Actor::Item::get($item_name) };
+		        my $qty = ($item && $item->{amount}) ? $item->{amount} : 0;
+		        if ($qty < $threshold) {
+		            $restock_needed_now = 1;
+		            $restock_reason .= "$item_name($qty/$threshold) ";
+		        }
+		    }
+
+		    # Also check hardcoded fallback (White Potion)
+		    my $fallback_threshold = _cfg_int('aiSidecar_restockThreshold', 10);
+		    $fallback_threshold = 1 if $fallback_threshold < 1;
+		    my $fallback_item = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
+		    my $fallback_qty = ($fallback_item && $fallback_item->{amount}) ? $fallback_item->{amount} : 0;
+		    if ($fallback_qty < $fallback_threshold) {
+		        $restock_needed_now = 1;
+		        $restock_reason .= "$HARDCODED_FALLBACK_ITEM($fallback_qty/$fallback_threshold) ";
+		    }
+
+		    # Update global state and emit events on transitions
+		    if ($restock_needed_now && !$needs_restock) {
+		        $needs_restock = 1;
+		        warning "[aiSidecarBridge] blind_spot#11:restock_needed ($restock_reason)\n";
+		        _enqueue_normalized_event(
+		            'action',
+		            'bridge_restock_needed',
+		            'mainLoop_post',
+		            "restock needed: $restock_reason",
+		            { reason => _trim($restock_reason, 240) },
+		            { restock => 'needed' },
+		            { item_count => scalar(@_heal_items) },
+		            'warning',
+		        );
+		    } elsif (!$restock_needed_now && $needs_restock) {
+		        $needs_restock = 0;
+		        warning "[aiSidecarBridge] blind_spot#11:restock_resolved\n";
+		        _enqueue_normalized_event(
+		            'action',
+		            'bridge_restock_resolved',
+		            'mainLoop_post',
+		            'restock resolved - supplies adequate',
+		            { reason => 'supplies_adequate' },
+		            { restock => 'resolved' },
+		            {},
+		            'info',
+		        );
+		    }
+		}
+
+		# ================================================================
+		# BLIND SPOT #16: ANTI-KITE / RANGE MANAGEMENT REFLEX
+		# ================================================================
+		# Detect when a ranged monster is kiting us (melee class).
+		# Emits bridge_kite_alert event and auto-teleports if kited >5s with HP dropping.
+		if ($char && $monstersList && ref($monstersList) eq 'ARRAY' && scalar(@{$monstersList}) > 0) {
+		    my $ai_top = @ai_seq ? $ai_seq[0] : '';
+		    my $in_combat = ($ai_top =~ /^(?:attack|skill_use)/) ? 1 : 0;
+
+		    if ($in_combat) {
+		        # Find our current target monster
+		        my $target_id = $char->{target};
+		        my $target_monster;
+		        if ($target_id) {
+		            for my $monster (@{$monstersList}) {
+		                next if !$monster;
+		                my $monster_id = $monster->{ID} || $monster->{id} || '';
+		                if ($monster_id ne '' && $monster_id eq $target_id) {
+		                    $target_monster = $monster;
+		                    last;
+		                }
+		            }
+		        }
+
+		        if ($target_monster) {
+		            my $dist = _calc_distance($target_monster, $char);
+		            if (defined $dist) {
+		                # Determine effective attack range
+		                my $attack_range = $char->{attack_range} || 3;
+		                $attack_range = 3 if $attack_range < 1;
+		                my $kite_threshold = $attack_range + 2;  # 2 cells buffer
+
+		                if ($dist > $kite_threshold && $dist < 20) {
+		                    # Being kited — activate
+		                    if (!$anti_kite_active) {
+		                        $anti_kite_active = 1;
+		                        $anti_kite_started_at_ms = _now_ms();
+		                        $anti_kite_last_hp = $char->{hp} || 0;
+		                        $anti_kite_last_event_ms = _now_ms();
+		                        my $monster_name = $target_monster->{name} || 'unknown';
+		                        warning "[aiSidecarBridge] blind_spot#16:kite_alert (dist=$dist, target=$monster_name, range=$attack_range)\n";
+		                        _enqueue_normalized_event(
+		                            'action',
+		                            'bridge_kite_alert',
+		                            'mainLoop_post',
+		                            "anti-kite alert: distance $dist from target $monster_name",
+		                            {
+		                                distance => 0 + $dist,
+		                                target_name => _trim($monster_name, 64),
+		                                attack_range => 0 + $attack_range,
+		                            },
+		                            { anti_kite => 'active' },
+		                            { distance => 0 + $dist },
+		                            'warning',
+		                        );
+		                    } else {
+		                        # Already being kited — check escalation conditions
+		                        my $kite_duration_ms = _now_ms() - $anti_kite_started_at_ms;
+		                        my $current_hp = $char->{hp} || 0;
+		                        my $hp_dropping = ($current_hp < $anti_kite_last_hp);
+		                        $anti_kite_last_hp = $current_hp;
+
+		                        # Auto-teleport if kited for >5s and HP dropping below 60%
+		                        if ($kite_duration_ms > 5000 && $hp_dropping && $hp_ratio < 0.60) {
+		                            warning "[aiSidecarBridge] blind_spot#16:kite_teleport (kited=" . int($kite_duration_ms/1000) . "s, HP=$hp_ratio)\n";
+		                            eval { Commands::run("teleport 1"); 1 };
+		                            _enqueue_normalized_event(
+		                                'action',
+		                                'bridge_kite_teleport',
+		                                'mainLoop_post',
+		                                'kite escape teleport',
+		                                {
+		                                    kite_duration_ms => 0 + $kite_duration_ms,
+		                                    hp_ratio => $hp_ratio,
+		                                    reason => 'kited_too_long',
+		                                },
+		                                { anti_kite => 'teleported' },
+		                                { kite_duration_ms => 0 + $kite_duration_ms },
+		                                'critical',
+		                            );
+		                            $anti_kite_active = 0;
+		                            $anti_kite_started_at_ms = 0;
+		                        }
+		                    }
+		                } elsif ($anti_kite_active && $dist <= $kite_threshold) {
+		                    # No longer being kited — opponent in range again
+		                    $anti_kite_active = 0;
+		                    $anti_kite_started_at_ms = 0;
+		                    _enqueue_normalized_event(
+		                        'action',
+		                        'bridge_kite_resolved',
+		                        'mainLoop_post',
+		                        'anti-kite resolved - target in range',
+		                        { reason => 'target_in_range', distance => 0 + $dist },
+		                        { anti_kite => 'resolved' },
+		                        {},
+		                        'info',
+		                    );
+		                }
+		            }
+		        }
+		    } elsif ($anti_kite_active) {
+		        # No longer in combat — clear anti-kite state
+		        $anti_kite_active = 0;
+		        $anti_kite_started_at_ms = 0;
+		    }
+		}
 	}
 }
 
+
+# ================================================================
+# BLIND SPOT #17: SERVER BROADCAST / CONSOLE MESSAGE PARSING
+# ================================================================
+# Parse server broadcast messages from the OpenKore console.
+# Emits normalized events for MVP spawns, treasure chests,
+# WoE results, and player-spawned monsters so the strategic
+# layer can react.
+#
+# Hooked via ['console_message', \&on_console_message, undef]
+# in the main hook registration.
+sub on_console_message {
+	my ($hook, $args) = @_;
+	return if !_bridge_enabled();
+	return if !$args || ref($args) ne 'HASH';
+
+	my $msg = $args->{message} || '';
+	return if $msg eq '';
+
+	# -----------------------------------------------------------------
+	# Pattern: MVP Monster [name] has appeared!
+	# e.g. "MVP Monster [Dracula] has appeared!"
+	# -----------------------------------------------------------------
+	if ($msg =~ /^MVP\s+Monster\s+\[([^\]]+)\]\s+has\s+appeared/i) {
+		my $monster_name = $1;
+		warning "[aiSidecarBridge] blind_spot#17:mvp_spawn ($monster_name)\n";
+		_enqueue_normalized_event(
+			'system',
+			'mvp_spawn',
+			$hook,
+			"MVP Monster $monster_name has appeared",
+			{ monster_name => _trim($monster_name, 64), map => _safe_field_map() },
+			{ event => 'mvp_spawn', monster => lc(_trim($monster_name, 48)) },
+			{},
+			'info',
+		);
+		return;
+	}
+
+	# -----------------------------------------------------------------
+	# Pattern: The treasure chest has been opened!
+	# -----------------------------------------------------------------
+	if ($msg =~ /treasure\s+chest\s+has\s+been\s+opened/i) {
+		warning "[aiSidecarBridge] blind_spot#17:chest_opened\n";
+		_enqueue_normalized_event(
+			'system',
+			'chest_opened',
+			$hook,
+			'Treasure chest opened',
+			{ map => _safe_field_map() },
+			{ event => 'chest_opened' },
+			{},
+			'info',
+		);
+		return;
+	}
+
+	# -----------------------------------------------------------------
+	# Pattern: Guild [name] has conquered the castle!
+	# e.g. "Guild [Ragnarok] has conquered the castle!"
+	# -----------------------------------------------------------------
+	if ($msg =~ /^Guild\s+\[([^\]]+)\]\s+has\s+conquered\s+the\s+castle/i) {
+		my $guild_name = $1;
+		warning "[aiSidecarBridge] blind_spot#17:woe_result ($guild_name)\n";
+		_enqueue_normalized_event(
+			'system',
+			'woe_result',
+			$hook,
+			"Guild $guild_name conquered the castle",
+			{ guild_name => _trim($guild_name, 64), map => _safe_field_map() },
+			{ event => 'woe_result', guild => lc(_trim($guild_name, 48)) },
+			{},
+			'info',
+		);
+		return;
+	}
+
+	# -----------------------------------------------------------------
+	# Pattern: [map] monster [name] has been spawned by [name].
+	# e.g. "prt_fild08 monster [Poring] has been spawned by [PlayerX]."
+	# -----------------------------------------------------------------
+	if ($msg =~ /^(\S+)\s+monster\s+\[([^\]]+)\]\s+has\s+been\s+spawned\s+by\s+\[([^\]]+)\]/i) {
+		my ($spawn_map, $monster_name, $player_name) = ($1, $2, $3);
+		warning "[aiSidecarBridge] blind_spot#17:player_spawn (map=$spawn_map, monster=$monster_name, by=$player_name)\n";
+		_enqueue_normalized_event(
+			'system',
+			'player_spawn',
+			$hook,
+			"Player $player_name spawned $monster_name on $spawn_map",
+			{
+				map => _trim($spawn_map, 48),
+				monster_name => _trim($monster_name, 64),
+				spawner_name => _trim($player_name, 64),
+			},
+			{ event => 'player_spawn', monster => lc(_trim($monster_name, 48)) },
+			{},
+			'info',
+		);
+		return;
+	}
+
+	# -----------------------------------------------------------------
+	# Generic server broadcast catch-all: any broadcast-like message
+	# that contains "[server]" or "**" prefix
+	# -----------------------------------------------------------------
+	if ($msg =~ /^\*\*\s*\[\s*server\s*\]/i || $msg =~ /^\[server\]/i) {
+		warning "[aiSidecarBridge] blind_spot#17:server_broadcast ($msg)\n";
+		_enqueue_normalized_event(
+			'system',
+			'server_broadcast',
+			$hook,
+			_trim($msg, 220),
+			{ message => _trim($msg, 220), map => _safe_field_map() },
+			{ event => 'server_broadcast' },
+			{},
+			'info',
+		);
+		return;
+	}
+}
 1;
