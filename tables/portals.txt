@@ -1827,7 +1827,7 @@ prontera 73 100 prt_in 208 179
 prontera 74 90 prt_in 248 173
 prontera 84 89 prt_in 282 179
 prontera 107 215 prt_in 240 141
-prontera 120 267 prt_in 183 97
+prontera 120 267 prt_in 180 97
 prontera 132 222 prt_in 135 71
 prontera 133 183 prt_in 53 105
 prontera 156 22 prt_fild08 170 375

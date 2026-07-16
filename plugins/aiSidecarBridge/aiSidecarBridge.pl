@@ -2956,7 +2956,10 @@ sub _calc_distance {
 		@_heal_skills = grep { $_ ne '' } @_heal_skills;
 	}
 
-	sub _check_bridge_reflexes {
+	# Last time we initiated town recovery (to prevent re-trigger spam)
+my $_last_prontera_recovery_ms = 0;
+
+sub _check_bridge_reflexes {
 		my $now = _now_ms();
 		return if !$char;
 
@@ -3066,13 +3069,20 @@ sub _calc_distance {
 					});
 
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
+					my $_now_ms = _now_ms();
 					my $_reflex_map = $char->{map} || '';
-					if ($aggro_count > 0) {
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
-					} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
-					} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+					# 60s cooldown on town recovery to let auto-buy/sell complete
+					if ($_now_ms - $_last_prontera_recovery_ms > 60000) {
+						if ($aggro_count > 0) {
+							$_last_prontera_recovery_ms = $_now_ms;
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+						} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
+							$_last_prontera_recovery_ms = $_now_ms;
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+						} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
+							$_last_prontera_recovery_ms = $_now_ms;
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+						}
 					}
 				}
 			}
