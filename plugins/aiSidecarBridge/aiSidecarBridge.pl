@@ -3025,7 +3025,7 @@ sub _check_bridge_reflexes {
 				my $item = eval { Actor::Item::get($item_name) };
 				if ($item && $item->{amount} && $item->{amount} > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$hp/$hp_max=$hp_ratio, item=$item_name qty=$item->{amount})\n";
-					eval { Commands::run("is $item_name"); 1 };
+					eval { $item->use(); 1 };
 					$heal_triggered = 1;
 					last;
 				}
@@ -3046,12 +3046,18 @@ sub _check_bridge_reflexes {
 				}
 			}
 
+			# If in town with low HP and no items found, trigger auto-buy
+			if (!$heal_triggered && $map =~ /^prontera/i && $hp_ratio < 0.50) {
+				warning "[aiSidecarBridge] bridge_reflex:emergency_autobuy (HP=$hp/$hp_max, map=$map)\n";
+				eval { Commands::run("autobuy"); 1 };
+			}
+
 			# HARD CODED FALLBACK: White Potion (absolute safety net)
 			if (!$heal_triggered) {
 				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
 				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_heal_fallback (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
-					eval { Commands::run("is $HARDCODED_FALLBACK_ITEM"); 1 };
+					warning "[aiSidecarBridge] bridge_reflex:emergency_fallback_heal (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
+					eval { $fallback->use(); 1 };
 					$heal_triggered = 1;
 				}
 			}
