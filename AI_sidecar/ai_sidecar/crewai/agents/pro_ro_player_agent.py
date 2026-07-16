@@ -348,7 +348,7 @@ def _level_based_advice(level: int, player_class: str) -> list[dict[str, Any]]:
     return advice
 
 
-class ProROPlayerProfile(BehaviorProfile):
+class ProRoPlayerProfile(BehaviorProfile):
     """Expert Ragnarok Online player with 20 years of experience providing tactical and strategic advice."""
 
     agent_id = "pro_ro_player"
@@ -374,7 +374,7 @@ class ProROPlayerProfile(BehaviorProfile):
 
         # Cold start — brand new or very low level
         if situation == "cold_start":
-            return 0.9
+            return 1.0
 
         # Death analysis — something just killed the bot
         if situation == "death_analysis":
