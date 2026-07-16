@@ -147,17 +147,42 @@ class LLMProvider:
                         # Read the full SSE response and extract the last data event
                         raw_text = await response.aread()
                         text = raw_text.decode("utf-8", errors="replace")
-                        # Parse SSE: find the last non-DONE data line
-                        last_json = None
+                        # Parse SSE: accumulate all content deltas into a complete message
+                        # The upstream streams deltas even for non-streaming requests
+                        accumulated_content = ""
+                        accumulated_reasoning = ""
+                        last_finish_reason = None
+                        first_chunk = None
                         for line in text.split("\n"):
                             line = line.strip()
                             if line.startswith("data: ") and not line.startswith("data: [DONE]"):
                                 try:
-                                    last_json = json.loads(line[6:])
+                                    chunk = json.loads(line[6:])
+                                    if first_chunk is None:
+                                        first_chunk = chunk
+                                    choices = chunk.get("choices", [])
+                                    if choices and isinstance(choices[0], dict):
+                                        delta = choices[0].get("delta", {}) or {}
+                                        if isinstance(delta, dict):
+                                            accumulated_content += delta.get("content") or ""
+                                            accumulated_reasoning += delta.get("reasoning_content") or ""
+                                        fr = choices[0].get("finish_reason")
+                                        if fr:
+                                            last_finish_reason = fr
                                 except json.JSONDecodeError:
                                     pass
-                        if last_json and isinstance(last_json, dict):
-                            data = last_json
+                        if accumulated_content or first_chunk:
+                            # Reconstruct a complete response object
+                            data = first_chunk or {}
+                            data["choices"] = [{
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": accumulated_content,
+                                    "reasoning_content": accumulated_reasoning,
+                                },
+                                "finish_reason": last_finish_reason or "stop",
+                            }]
                         else:
                             error = "sse_parse_failed"
                             self._breaker.record_failure(bot_id=bot_id, key=breaker_key, family="provider", reason=error)

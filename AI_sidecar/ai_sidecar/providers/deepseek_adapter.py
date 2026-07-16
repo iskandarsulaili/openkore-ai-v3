@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 from typing import Any
 
@@ -60,13 +61,18 @@ class DeepseekAdapter(LLMProvider):
                 usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 error=error,
             )
+        _prefix = os.environ.get("OPENKORE_AI_PROVIDER_MODEL_PREFIX", "")
+        _model_name = f"{_prefix}{model}" if _prefix else model
+        # Append JSON instruction to system prompt since gateway doesn't support response_format parameter
+        _json_note = "\n\nYou MUST respond with valid JSON only. No markdown, no explanation, no code blocks. Return ONLY the raw JSON object."
+        _system_prompt = (system_prompt or "") + _json_note
         payload = {
-            "model": model,
+            "model": _model_name,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": _system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "response_format": {"type": "json_object"},
+            # response_format disabled — upstream gateway does not support JSON mode for this model
             "temperature": 0.2,
             "max_tokens": 1800,
         }
