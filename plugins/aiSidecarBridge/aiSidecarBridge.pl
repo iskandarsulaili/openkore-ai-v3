@@ -3068,11 +3068,11 @@ sub _calc_distance {
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
 					my $_reflex_map = $char->{map} || '';
 					if ($aggro_count > 0) {
-						eval { Commands::run("move prontera"); 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 					} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
-						eval { Commands::run("move prontera"); 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 					} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
-						eval { Commands::run("move prontera"); 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 					}
 				}
 			}
@@ -3093,7 +3093,7 @@ sub _calc_distance {
 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
 				if ($_reflex_map2 !~ /^prontera/i) {
-					eval { Commands::run("move prontera"); 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 				}
 			}
 		}
@@ -3107,10 +3107,13 @@ sub _calc_distance {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { Commands::run("move prontera"); 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 				} else {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
-					eval { Commands::run("move prontera"); 1 };
+					my $_reflex_map3 = $char->{map} || '';
+					if ($_reflex_map3 !~ /^prontera/i) {
+						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+					}
 				}
 			}
 		}
@@ -3371,7 +3374,7 @@ sub _calc_distance {
 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
 				# Immediate flee + teleport combo
-				eval { Commands::run("move prontera"); 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 				if ($hp_ratio < 0.25) {
 					eval { Commands::run("tele"); 1 };
 				}
@@ -3395,7 +3398,7 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, 2000)) {
 				$_reflex_last_fired{zonk} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
-				eval { Commands::run("move prontera"); 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 				_http_post_json('/v2/ingest/event', {
 					kind => 'bridge_reflex',
 					reflex => 'zonk',
@@ -3498,7 +3501,7 @@ sub _calc_distance {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
-						eval { Commands::run("move prontera"); 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 						_http_post_json('/v2/ingest/event', {
 							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
@@ -3524,7 +3527,7 @@ sub _calc_distance {
 				my $ai_top = @ai_seq ? $ai_seq[0] : '';
 				if ($ai_top ne 'sit') {
 					_random_action_delay();
-					eval { Commands::run("move prontera"); 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
 				}
 			}
 		}
