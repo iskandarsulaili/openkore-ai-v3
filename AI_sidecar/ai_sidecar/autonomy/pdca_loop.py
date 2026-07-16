@@ -1493,6 +1493,10 @@ class PDCALoop:
             },
         }
 
+    def get_last_death_analysis(self) -> dict | None:
+        """Return the last death analysis result, or None if no death has occurred."""
+        return getattr(self._runtime, "last_death_analysis", None)
+
     # ── Internal loop ───────────────────────────────────────────
 
     async def _run_loop(self) -> None:
@@ -3370,6 +3374,63 @@ class PDCALoop:
                                 _bot_prev_hp = _prev_hp.get(_reflex_bot_id, _current_hp)
                                 if _bot_prev_hp > 0 and _current_hp == 0:
                                     _conscious_deaths = 1
+                                    # -- Call Death Analyzer --
+                                    _death_analyzer_da = getattr(self._runtime, "death_analysis", None)
+                                    if _death_analyzer_da is not None:
+                                        try:
+                                            from ai_sidecar.learning.death_analysis import DeathRecord
+                                            _vitals_da = _conscious_snap.get("vitals", {})
+                                            _combat_da = _conscious_snap.get("combat", {})
+                                            _actors_da = _conscious_snap.get("actors", []) or []
+                                            _killer_name_da = ""
+                                            _killer_id_da = 0
+                                            _max_dmg_da = 0
+                                            for _a_da in _actors_da:
+                                                _dmg_da = int(_a_da.get("dmg_to_you", 0) or 0)
+                                                if _dmg_da > _max_dmg_da:
+                                                    _max_dmg_da = _dmg_da
+                                                    _killer_name_da = str(_a_da.get("name", "") or "")
+                                                    _killer_id_da = int(_a_da.get("id", 0) or _a_da.get("name_id", 0) or 0)
+                                            _death_record_da = DeathRecord(
+                                                timestamp=time.time(),
+                                                map_name=str(_conscious_snap.get("map", "") or ""),
+                                                position=(0.0, 0.0),
+                                                monster_name=_killer_name_da,
+                                                monster_id=_killer_id_da,
+                                                hp_before_death=_bot_prev_hp,
+                                                max_hp=int(_vitals_da.get("max_hp", 1) or 1),
+                                                aggro_count=int(_combat_da.get("aggro_count", 0) or 0),
+                                                had_potions=True,
+                                                was_casting=False,
+                                                buffs_active=[],
+                                                seconds_since_last_heal=999.0,
+                                                cause_of_death="",
+                                                lesson_learned="",
+                                            )
+                                            _death_analyzer_da.record_death(_death_record_da)
+                                            _analysis_result_da = _death_analyzer_da.analyze_death(_death_record_da)
+                                            _adjustments_da = _death_analyzer_da.get_suggested_adjustments()
+                                            self._runtime.last_death_analysis = {
+                                                "timestamp": time.time(),
+                                                "bot_id": _reflex_bot_id,
+                                                "cause": _death_record_da.cause_of_death,
+                                                "map": str(_conscious_snap.get("map", "") or ""),
+                                                "monster": _killer_name_da,
+                                                "monster_id": _killer_id_da,
+                                                "hp_before": _bot_prev_hp,
+                                                "analysis": _analysis_result_da,
+                                                "adjustments": [
+                                                    {"parameter": a.parameter, "old_value": a.old_value,
+                                                     "new_value": a.new_value, "reason": a.reason}
+                                                    for a in _adjustments_da
+                                                ],
+                                                "record": _death_record_da,
+                                            }
+                                            logger.info("death_analysis_recorded: bot=%s cause=%s map=%s monster=%s",
+                                                        _reflex_bot_id, _death_record_da.cause_of_death,
+                                                        _conscious_snap.get("map", ""), _killer_name_da)
+                                        except Exception:
+                                            logger.warning("death_analysis_call_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                 _prev_hp[_reflex_bot_id] = _current_hp
                                 object.__setattr__(self, "_prev_hp", _prev_hp)
                                 # ── HIGH-FREQUENCY REFLEX CHECK ──
@@ -4098,6 +4159,44 @@ class PDCALoop:
                 horizon=horizon,
                 replan_reasons=replan_reasons,
             )
+            
+            # ── Pro RO Player cold start advice ─────────────────
+            if goal_state is not None and horizon == Horizon.SHORT_TERM:
+                _cold_start_active = self._active_plan.get(horizon) is None
+                if _cold_start_active:
+                    try:
+                        from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                        _pro = ProRoPlayerProfile()
+                        _signals = {
+                            "situation": "cold_start",
+                            "class": str(getattr(getattr(latest_snapshot, "progression", None), "job_name", "novice") or "novice"),
+                            "level": int(getattr(getattr(latest_snapshot, "progression", None), "base_level", 1) or 1),
+                            "map": str(getattr(getattr(latest_snapshot, "position", None), "map", "") or ""),
+                            "has_plan": False,
+                            "death_count": 0,
+                        }
+                        _advice = _pro.get_action(_signals)
+                        if _advice is not None:
+                            logger.info(
+                                "pro_ro_player_cold_start_advice[%s]: build=%s map=%s milestone=%s",
+                                decision_meta.bot_id,
+                                _advice.get("build", "?"),
+                                _advice.get("starting_map", "?"),
+                                _advice.get("next_milestone", "?"),
+                            )
+                            # Store advice in runtime for PDCA to consume
+                            if not hasattr(self._runtime, "pro_ro_player_advice"):
+                                self._runtime.pro_ro_player_advice = {}
+                            self._runtime.pro_ro_player_advice[decision_meta.bot_id] = _advice
+                            # Apply starting map recommendation if no active plan
+                            _target_map = str(_advice.get("starting_map", "") or "")
+                            if _target_map and latest_snapshot is not None:
+                                _current_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
+                                if _target_map != _current_map:
+                                    replan_reasons.append(f"cold_start_move_to_{_target_map}")
+                                    force_replan = True
+                    except Exception as _pro_exc:
+                        logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
             
             # ── Push plan actions to queue ──────────────────────
             if goal_state is not None:

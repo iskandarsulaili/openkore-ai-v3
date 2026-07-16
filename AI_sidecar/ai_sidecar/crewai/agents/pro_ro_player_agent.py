@@ -1,0 +1,1040 @@
+"""Pro RO Player — 20-year Ragnarok Online veteran providing expert tactical/strategic advice."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .base_agent import BehaviorProfile
+
+# ── RO knowledge databases ───────────────────────────────────────────────────
+
+# Elemental wheel: attacker_element -> { target_element: multiplier }
+# Standard RO elemental modifiers (100% = 1.0)
+ELEMENTAL_ADVANTAGE: dict[str, dict[str, float]] = {
+    "neutral": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.0, "wind": 1.0, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 0.75, "undead": 1.0},
+    "water": {"neutral": 1.0, "water": 0.25, "earth": 0.75, "fire": 1.5, "wind": 0.75, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 0.75, "undead": 1.0},
+    "earth": {"neutral": 1.0, "water": 1.5, "earth": 0.25, "fire": 0.75, "wind": 1.5, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 0.75, "undead": 1.0},
+    "fire": {"neutral": 1.0, "water": 0.75, "earth": 1.5, "fire": 0.25, "wind": 1.5, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 0.75, "undead": 1.0},
+    "wind": {"neutral": 1.0, "water": 1.5, "earth": 0.75, "fire": 0.75, "wind": 0.25, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 0.75, "undead": 1.0},
+    "poison": {"neutral": 1.0, "water": 1.0, "earth": 0.75, "fire": 1.0, "wind": 1.0, "poison": 0.25, "holy": 0.75, "dark": 0.75, "ghost": 0.75, "undead": 1.0},
+    "holy": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.0, "wind": 1.0, "poison": 1.0, "holy": 0.25, "dark": 1.75, "ghost": 1.0, "undead": 1.75},
+    "dark": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.0, "wind": 1.0, "poison": 1.0, "holy": 0.25, "dark": 0.25, "ghost": 1.0, "undead": 1.0},
+    "ghost": {"neutral": 0.75, "water": 1.0, "earth": 1.0, "fire": 1.0, "wind": 1.0, "poison": 1.0, "holy": 1.0, "dark": 1.0, "ghost": 1.5, "undead": 1.0},
+    "undead": {"neutral": 1.0, "water": 1.0, "earth": 1.0, "fire": 1.25, "wind": 1.0, "poison": 1.0, "holy": 1.5, "dark": 0.5, "ghost": 1.0, "undead": 0.25},
+}
+
+# Monster size penalties by weapon type
+SIZE_PENALTY: dict[str, dict[str, float]] = {
+    "dagger": {"small": 1.0, "medium": 0.75, "large": 0.5},
+    "sword": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "spear": {"small": 0.75, "medium": 0.75, "large": 1.0},
+    "axe": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "mace": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "bow": {"small": 1.0, "medium": 1.0, "large": 0.75},
+    "staff": {"small": 1.0, "medium": 1.0, "large": 1.0},
+    "knuckle": {"small": 1.0, "medium": 0.75, "large": 0.5},
+    "instrument": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "whip": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "book": {"small": 0.75, "medium": 1.0, "large": 0.75},
+    "katar": {"small": 1.0, "medium": 1.0, "large": 0.75},
+    "claw": {"small": 1.0, "medium": 1.0, "large": 0.75},
+    "two_handed_sword": {"small": 0.75, "medium": 0.75, "large": 1.0},
+    "two_handed_spear": {"small": 0.75, "medium": 0.75, "large": 1.0},
+    "two_handed_axe": {"small": 0.75, "medium": 0.75, "large": 1.0},
+}
+
+# Race-based behavioral hints
+RACE_HINTS: dict[str, str] = {
+    "brute": "Brute monsters are melee-oriented with high HP. Kite them. Weak to Fire and Wind.",
+    "demihuman": "Demihumans often drop valuable loot and have balanced stats. Watch for multi-aggro pulls.",
+    "demon": "Demons are typically Dark or Fire element. Holy property skills deal massive bonus damage.",
+    "dragon": "Dragons are large-size, high-HP monsters. Spear users get full damage. Bring elemental converters.",
+    "fish": "Fish monsters are Water element, weak to Wind. Usually slow-moving.",
+    "formless": "Formless monsters resist Neutral. Use elemental converters. Often found in dungeons.",
+    "angel": "Angels are Holy element. Dark property attacks work best. High flee, use magic.",
+    "insect": "Insects are often Poison or Earth element. Fire works well. Check size for weapon penalty.",
+    "plant": "Plants are usually Earth element. Fire skills deal bonus damage. Low HP but high DEF.",
+    "undead": "Undead monsters are Dark or Undead element. Holy Water and Heal skill damage them! Undead element is weak to Fire and Holy.",
+}
+
+# ── Class-specific early game advice ─────────────────────────────────────────
+
+CLASS_EARLY_GAME: dict[str, dict[str, Any]] = {
+    "novice": {
+        "first_map": "izlude",
+        "level_range": (1, 10),
+        "advice": "As a Novice, train on Porings, Lunatics, and Fabres just outside town. Pump DEX to 20 first for hit rate, then STR. Do the novice training ground quest for free gear.",
+        "stats": "STR 20 > DEX 20 > rest STR",
+        "equipment": "Sword[3] + 3x Fabre Card, Cotton Shirt, Sandals",
+    },
+    "swordman": {
+        "first_map": "payon",
+        "level_range": (1, 15),
+        "advice": "Hunt Pecopeco and Hornets on Payon fields. These give great job exp. Pump STR to 40 first, then VIT to 30 before touching DEX.",
+        "stats": "STR 40 > VIT 30 > DEX 20 > rest STR",
+        "equipment": "Blade[3] + 3x Pecopeco Card, Cotton Shirt[1] + Peco Card, Shoes[1] + Matyr Card",
+    },
+    "mage": {
+        "first_map": "gef_fild04",
+        "level_range": (1, 15),
+        "advice": "Train on Rockers and Spores near Geffen. Rockers are Earth 1 — Fire Bolt one-shots them. Pump INT to 40, then DEX to 30. Always carry Blue Potions.",
+        "stats": "INT 40 > DEX 30 > rest INT",
+        "equipment": "Rod[4] + 4x Pecopeco Card, Cotton Shirt, Shoes[1] + Matyr Card",
+    },
+    "archer": {
+        "first_map": "payon",
+        "level_range": (1, 15),
+        "advice": "Go to Payon Cave 1-2 until job level 10. Skeletons and Zombies are slow, easy to kite. DEX is everything — pump it to 50 before touching AGI.",
+        "stats": "DEX 50 > AGI 30 > rest DEX/LUK",
+        "equipment": "Bow[3] + 3x Pecopeco Card (double-straight), Cotton Shirt, Boots[1] + Matyr Card",
+    },
+    "acolyte": {
+        "first_map": "izlude",
+        "level_range": (1, 15),
+        "advice": "Train on Willow and familiar near Izlude. Use Heal offensively against Undead in Payon Cave for instant kills. Pump INT first for Heal power, then DEX for cast time.",
+        "stats": "INT 40 > DEX 30 > rest INT/STR",
+        "equipment": "Mace[3] + 3x Pecopeco Card, Cotton Shirt, Shoes[1] + Matyr Card",
+    },
+    "merchant": {
+        "first_map": "morocc",
+        "level_range": (1, 15),
+        "advice": "Merchants are tanky with high HP. Hunt Pecopeco and Savage on the plains near Morocc. Use Overcharge to maximize zeny from NPC vend. Pump STR first, then VIT.",
+        "stats": "STR 40 > VIT 30 > DEX 20 > rest STR",
+        "equipment": "Axe[3] + 3x Pecopeco Card, Cotton Shirt[1] + Peco Card, Boots[1] + Matyr Card",
+    },
+    "thief": {
+        "first_map": "payon",
+        "level_range": (1, 15),
+        "advice": "Hunt Poison Spores and Wolves near Payon. AGI builds shine early. Max Double Attack ASAP. Pump AGI to 40 first, then DEX to 30 for hit rate.",
+        "stats": "AGI 40 > DEX 30 > rest STR",
+        "equipment": "Dagger[3] + 3x Pecopeco Card (for ASPD), Cotton Shirt, Boots[1] + Matyr Card",
+    },
+    "taekwon": {
+        "first_map": "izlude",
+        "level_range": (1, 15),
+        "advice": "Train on Muka and Yoyo near Izlude. Taekwon kicks scale with STR. Pump STR and AGI evenly. Use your movement speed to position behind monsters for Kick damage bonus.",
+        "stats": "STR 30 > AGI 30 > rest DEX",
+        "equipment": "Shoes, Cotton Shirt, no weapon (kick damage)",
+    },
+    "gunslinger": {
+        "first_map": "einbroch",
+        "level_range": (1, 15),
+        "advice": "Hunt Poring and Poporing near Einbroch fields. Use Single Action for burst. DEX is king. Bullets cost money — track your zeny carefully.",
+        "stats": "DEX 50 > AGI 30 > rest DEX/LUK",
+        "equipment": "Six Shooter + appropriate bullets, Leather Jacket, Shoes",
+    },
+    "ninja": {
+        "first_map": "amatsu",
+        "level_range": (1, 15),
+        "advice": "Train on Muka and Savage in Amatsu fields. Use Kunai to tag mobs at range. Pump INT for magic or STR for physical build.",
+        "stats": "INT 40 > DEX 30 (magic) or STR 40 > AGI 30 (physical)",
+        "equipment": "Ninja Suit, Ninja Scroll, appropriate elemental Kunai",
+    },
+    "soul_linker": {
+        "first_map": "lighthalzen",
+        "level_range": (1, 15),
+        "advice": "Estrun and Luciola Vespa near Lighthalzen. Use Soul Strike and spirit orbs. Pump INT then DEX. Best exp via party play — link allies for shared benefits.",
+        "stats": "INT 50 > DEX 30 > rest INT",
+        "equipment": "Rod[4] + 4x Int/Wis bonuses, Robe, Shoes",
+    },
+}
+
+# ── Hunting ground recommendations by level range ────────────────────────────
+
+HUNTING_GROUNDS: dict[str, dict[str, Any]] = {
+    "payon_cave_1f": {"level": (15, 30), "danger": "low", "description": "Payon Cave 1F — Skeletons, Zombies, Familiar. Slow undead, easy to kite. Bring Holy Water for efficiency."},
+    "payon_cave_2f": {"level": (25, 40), "danger": "low", "description": "Payon Cave 2F — Ghoul, Munak, Bongun. Watch for Munak's multi-hit attack. Dark property, use holy skills."},
+    "payon_cave_3f": {"level": (35, 55), "danger": "medium", "description": "Payon Cave 3F — Mummy, Verit, Arclouze. Mummies have high DEF, Verit has high flee. Arclouze cast Stone Curse."},
+    "gef_fild01": {"level": (10, 25), "danger": "low", "description": "Geffen Field 1 — Spore, Rocker, Peco Peco. Great for mages — Fire Bolt one-shots Spores and Rockers (Earth)."},
+    "gef_fild04": {"level": (15, 30), "danger": "low", "description": "Geffen Field 4 — Hornet, Spore, Lunatic, Poring. Mixed spawn, good variety. Watch for Hornet's poison."},
+    "moc_fild01": {"level": (20, 35), "danger": "low", "description": "Morocc Field 1 — Savage, Pecopeco, Andre. Savages hit hard for their level — keep HP up."},
+    "moc_fild02": {"level": (10, 25), "danger": "low", "description": "Morocc Field 2 — Desert Wolf, Vitata, Poring, Fabre. Good early leveling for melee classes."},
+    "mjolnir_01": {"level": (10, 20), "danger": "low", "description": "Mjolnir 1 — Fabre, Peco Peco, Condor. Safe training for level 10-20."},
+    "mjolnir_02": {"level": (15, 25), "danger": "low", "description": "Mjolnir 2 — Spore, Kukre, Thief Bug. Kukres are Water 1 — use Wind or Earth attacks."},
+    "mjolnir_03": {"level": (20, 30), "danger": "low", "description": "Mjolnir 3 — Kukre, Wolf, Argiope. Watch for Argioe's poison. Good medium-density map."},
+    "anthell01": {"level": (30, 50), "danger": "medium", "description": "Anthell 1 — Andre, Hornet, Vitata, Deniro. Insect dungeon. Fire elemental converters destroy here."},
+    "anthell02": {"level": (40, 60), "danger": "medium", "description": "Anthell 2 — Spider Chitin, Giant Hornet. Dense spawns — be careful of multi-aggro."},
+    "ein_fild01": {"level": (35, 55), "danger": "medium", "description": "Einbroch Field 1 — Baphomet Jr, Rideword, Alarm. Bapho Jr is a common MVP target — good medium-level training."},
+    "ein_fild02": {"level": (45, 65), "danger": "medium", "description": "Einbroch Field 2 — Nightmare, Incubus, Succubus. Dark property, bring Holy Water."},
+    "mag_dun01": {"level": (50, 70), "danger": "medium", "description": "Magma Dungeon 1 — Kaho, Lava Golem, Salamander. Fire element — bring Ice/Fire armor. Watch out for Meteor Storm from Kaho."},
+    "mag_dun02": {"level": (60, 85), "danger": "high", "description": "Magma Dungeon 2 — Nightmare Terror, Sky Petite, Kaho. High density. Extremely dangerous for Water-element armor users."},
+    "cave_gef01": {"level": (40, 60), "danger": "medium", "description": "Geffen Cave 1 — Flora, Marionette, Mineral. Marionettes cast Mind Breaker (reduces INT to 1). Bring Green Potions."},
+    "cave_gef02": {"level": (50, 70), "danger": "high", "description": "Geffen Cave 2 — Arclouze, Wind Ghost, Medusa. Medusa Stone Curses — bring Stone Curse immunity gear."},
+    "glast_heim01": {"level": (55, 75), "danger": "high", "description": "Glast Heim 1 — Raydric, Wraith, Wraith Dead. Undead + Demon mixed. Watch for Raydric's Parrying. Dark property resist gear recommended."},
+    "glast_heim02": {"level": (65, 90), "danger": "high", "description": "Glast Heim 2 — Bloody Murderer, Wraith Dead, Banshee. Heavy aggro area. Multi-aggro is deadly — use teleport escape."},
+    "gon_dun01": {"level": (55, 75), "danger": "medium", "description": "Gonryun Dungeon 1 — Nine Tail, Sohee, Mi Gao. Sohee drops Ice Pick (rare). Nine Tail uses Fire elemental attacks."},
+    "gon_dun02": {"level": (65, 85), "danger": "high", "description": "Gonryun Dungeon 2 — Zipper Bear, Dark Priest. High DEF monsters — bring elemental converters."},
+    "beach_dun01": {"level": (35, 55), "danger": "medium", "description": "Beach Dungeon 1 — Vadon, Mermaid, Marc. Water element enemies — use Wind attacks. Marc drops accessory cards."},
+    "beach_dun02": {"level": (45, 65), "danger": "medium", "description": "Beach Dungeon 2 — Strouf, Merman, Kukre. High HP fish monsters. Good for hit-lock melee builds."},
+    "ice_dun01": {"level": (60, 80), "danger": "high", "description": "Ice Dungeon 1 — Snowier, Gazeti, Ice Titan. Resist Sleep gear needed. Earth attacks recommended."},
+    "ice_dun02": {"level": (70, 95), "danger": "high", "description": "Ice Dungeon 2 — Freezer, Hatii Snowier, Ice Elemental. Bring Fire element armor. Level gap penalty applies heavily here."},
+    "thor_v01": {"level": (75, 99), "danger": "very_high", "description": "Thor Volcano 1 — Obsidian, Injustice, Hellion. Heavy spawn, high damage. Full Meteor Storm field. GTFO positioning required."},
+    "thor_v02": {"level": (85, 99), "danger": "very_high", "description": "Thor Volcano 2 — Ifrit MVP farm route. Only for well-geared 90+. Not recommended for botting without GTFO gear."},
+    "abyss_01": {"level": (80, 99), "danger": "very_high", "description": "Abyss Lake 1 — Hydra, Strouf, Swordfish. MVP: Kraken. High HP fish. Bring Wind arrows/converters."},
+    "abyss_02": {"level": (85, 99), "danger": "very_high", "description": "Abyss Lake 2 — Knight of Abyss, Abyss Chaser, Sea Lord. Endgame farming. Full party recommended."},
+}
+
+# ── Common death causes and mitigations ──────────────────────────────────────
+
+DEATH_CAUSES: dict[str, dict[str, Any]] = {
+    "aoe_spell": {
+        "symptom": "Killed by magic AoE (Storm Gust, Meteor Storm, Lord of Vermilion, etc.)",
+        "counter": "Increase MDEF with accessory cards (Angeling, Peco Peco Egg, Marc). Watch for casters and aggro range. Use Safety Wall or Ground magic as cover.",
+        "gear_solution": "Angeling Card in headgear for Holy armor, Marc Card in armor for Freeze immunity.",
+    },
+    "multi_aggro": {
+        "symptom": "Swarmed by 3+ monsters simultaneously",
+        "counter": "Reduce aggro range settings. Use Teleport or Fly Wing at first sight of second monster. Equip aggro-reducing gear (Hood[1] + Raydric Card).",
+        "gear_solution": "Raydric Card in shield (30% Neutral reduction), Thief Clothes[1] with Whisper Card.",
+    },
+    "elemental_disadvantage": {
+        "symptom": "Took heavily increased damage from an element you're weak to",
+        "counter": "Check monster element vs your armor element. Swap armor element for the area (e.g., Fire armor for Magma, Water armor for Ice, Wind armor for Beach). Use elemental resist potions.",
+        "gear_solution": "Always carry a set of elemental armor (Fire, Water, Wind, Earth). Switch based on hunting ground.",
+    },
+    "level_gap_penalty": {
+        "symptom": "Character is lower level than monsters, suffering damage penalty",
+        "counter": "If monster is 15+ levels higher than you, the damage bonus they receive is extreme. Move to a lower-level hunting ground that's within your level range.",
+        "gear_solution": "No gear solution — purely level-dependent. Move maps until level gap is <= 10.",
+    },
+    "stun_lock": {
+        "symptom": "Killed while stunned, unable to move or act",
+        "counter": "Stack VIT for stun resistance (50 VIT = 100% stun resist). Bring Green Potions set to auto-use. Vitata Card in headgear for stun immunity.",
+        "gear_solution": "Vitata Card, Orc Hero Card (endgame). Green Potions auto-consumption.",
+    },
+    "poison": {
+        "symptom": "Died to poison damage over time",
+        "counter": "Use Poison Resist potions. Equip Poison element armor. Use Green Potions/Saylette for cure. Argiope Card in armor for Poison element.",
+        "gear_solution": "Argiope Card, Green Potions set to 50% HP auto-use.",
+    },
+    "freeze": {
+        "symptom": "Died while frozen, unable to move",
+        "counter": "Marc Card in armor for complete freeze immunity. Otherwise carry Hwergelmir's Tonic. Watch for Storm Gust and Cold Bolt casters.",
+        "gear_solution": "Marc Card (mandatory for Ice Dungeon).",
+    },
+    "stone_curse": {
+        "symptom": "Turned to stone and killed",
+        "counter": "Medusa and Arclouze cast Stone Curse. Use anti-Stone Curse gear (Medusa Card Shield). Carry and auto-use Stone Curse cure items.",
+        "gear_solution": "Medusa Card shield, Hwergelmir's Tonic, or Yggdrasil Leaf (manual).",
+    },
+    "aspd_debuff": {
+        "symptom": "Killed because attack speed was crippled by debuff (slow cast, slow attack)",
+        "counter": "Watch for monsters that cast Decrease Agility (Isis, Drops, Poring MVP). Bring AGI-up potions or Berserk potions for emergency.",
+        "gear_solution": "Status resist gear. Some MVP cards grant immunity to AGI decrease.",
+    },
+    "reflect_damage": {
+        "symptom": "Killed by your own reflected damage",
+        "counter": "Monsters with Reflect Shield (Raydric, certain MVPs). Stop attacking when reflect is up — switch to tank mode. Use ranged attacks or dispel.",
+        "gear_solution": "Use Undead armor (turns damage into healing from Dark attacks). Or just stop attacking briefly.",
+    },
+}
+
+# ── Build databases ──────────────────────────────────────────────────────────
+
+BUILD_ADVICE: dict[str, dict[str, Any]] = {
+    "swordman": {
+        "class_evolves": ["knight", "lord_knight", "rune_knight"],
+        "stat_priority": {"early": "STR > VIT > DEX", "mid": "STR > VIT > DEX > AGI", "late": "STR 120 > VIT 90 > DEX 60 > AGI 50"},
+        "key_skills": ["Bash", "Provoke", "Increase HP Recovery", "Sword Mastery", "Two-Hand Quicken", "Magnum Break"],
+        "playstyle": "Tanky melee. Use Bash for single target burst, Magnum Break for AoE. Keep Provoke on bosses to maintain aggro.",
+    },
+    "knight": {
+        "class_evolves": ["lord_knight", "rune_knight"],
+        "stat_priority": {"early": "STR > VIT > DEX", "mid": "STR 80 > VIT 60 > DEX 40", "late": "STR 120 > VIT 90 > DEX 60"},
+        "key_skills": ["Bowling Bash", "Spear Boomerang", "Brandish Spear", "Cavalry Mastery", "Two-Hand Quicken"],
+        "playstyle": "Bowling Bash for AoE mobbing. Spear Boomerang for ranged pull. Cavalry for speed.",
+    },
+    "mage": {
+        "class_evolves": ["wizard", "high_wizard", "warlock"],
+        "stat_priority": {"early": "INT > DEX", "mid": "INT 80 > DEX 50 > rest INT", "late": "INT 130 > DEX 90 > rest INT"},
+        "key_skills": ["Fire Bolt", "Cold Bolt", "Lightning Bolt", "Fireball", "Sight", "Safety Wall"],
+        "playstyle": "Elemental advantage is everything. Fire Bolt one-shots Earth monsters. Safety Wall blocks melee damage while casting.",
+    },
+    "wizard": {
+        "class_evolves": ["high_wizard", "warlock"],
+        "stat_priority": {"early": "INT > DEX", "mid": "INT 90 > DEX 60", "late": "INT 130 > DEX 90 > rest VIT"},
+        "key_skills": ["Storm Gust", "Heaven's Drive", "Lord of Vermilion", "Meteor Storm", "Frost Diver"],
+        "playstyle": "Storm Gust freezes + AoE. Meteor Storm for fire AoE. Use Frost Diver on dangerous targets to lock them. Watch out for cast interruption.",
+    },
+    "archer": {
+        "class_evolves": ["hunter", "sniper", "ranger"],
+        "stat_priority": {"early": "DEX > AGI", "mid": "DEX 80 > AGI 50 > rest LUK", "late": "DEX 120 > AGI 80 > LUK 50"},
+        "key_skills": ["Double Strafe", "Improve Concentration", "Arrow Shower", "Owl's Eye", "Vulture's Eye"],
+        "playstyle": "Kite everything. Double Strafe is your main DPS. Arrow Shower for knockback. Always keep distance — you're fragile.",
+    },
+    "hunter": {
+        "class_evolves": ["sniper", "ranger"],
+        "stat_priority": {"early": "DEX > AGI", "mid": "DEX 90 > AGI 60 > LUK 30", "late": "DEX 120 > AGI 80 > LUK 60"},
+        "key_skills": ["Double Strafe", "Blitz Beat", "Ankle Snare", "Beast Bane", "Detecting"],
+        "playstyle": "Blitz Beat scales with LUK for auto-proc damage. Ankle Snare for trapping dangerous monsters. Owl's Eye max range let you outrange most enemies.",
+    },
+    "acolyte": {
+        "class_evolves": ["priest", "high_priest", "arch_bishop"],
+        "stat_priority": {"early": "INT > DEX", "mid": "INT 80 > DEX 50", "late": "INT 120 > DEX 80 > rest VIT"},
+        "key_skills": ["Heal", "Increase Spirit", "Angelus", "Blessing", "Magnificat"],
+        "playstyle": "Offensive Heal on Undead = instant kill. Keep Blessing + Agi up permanently. Angelus for group defense. You're the party backbone.",
+    },
+    "merchant": {
+        "class_evolves": ["blacksmith", "whitesmith", "mechanic"],
+        "stat_priority": {"early": "STR > VIT > DEX", "mid": "STR 80 > VIT 50 > DEX 30", "late": "STR 120 > VIT 80 > DEX 50"},
+        "key_skills": ["Mammonite", "Cart Revolution", "Push Cart", "Overcharge", "Discount"],
+        "playstyle": "Mammonite is expensive but deals massive single-target burst. Cart Revolution for AoE. Use Discount/Overcharge for passive zeny gen.",
+    },
+    "thief": {
+        "class_evolves": ["assassin", "assassin_cross", "guillotine_cross"],
+        "stat_priority": {"early": "AGI > DEX > STR", "mid": "AGI 80 > DEX 40 > STR 50", "late": "AGI 120 > STR 80 > DEX 50"},
+        "key_skills": ["Double Attack", "Hide", "Envenom", "Steal", "Detoxify"],
+        "playstyle": "Max AGI for ASPD breakpoints. Double Attack procs on basic attacks. Hide for emergency escape. Envenom adds DoT.",
+    },
+    "assassin": {
+        "class_evolves": ["assassin_cross", "guillotine_cross"],
+        "stat_priority": {"early": "AGI > DEX > STR", "mid": "AGI 90 > STR 50 > DEX 30", "late": "AGI 120 > STR 80 > DEX 50"},
+        "key_skills": ["Sonic Blow", "Katar Mastery", "Grimtooth", "Cloaking", "Soul Destroyer"],
+        "playstyle": "Sonic Blow for burst. Soul Destroyer for ranged finisher. Cloaking for safe navigation past dangerous mobs.",
+    },
+    "taekwon": {
+        "class_evolves": ["taekwon_knight", "soul_linker"],
+        "stat_priority": {"early": "STR > AGI", "mid": "STR 70 > AGI 50 > DEX 30", "late": "STR 100 > AGI 80 > DEX 50"},
+        "key_skills": ["Kick", "Counter Kick", "Running", "Jump Kick", "Wind Step"],
+        "playstyle": "Position behind monsters for max kick damage. Running gives you best-in-class mobility. Wind Step for flee bonus.",
+    },
+    "gunslinger": {
+        "class_evolves": ["rebellion"],
+        "stat_priority": {"early": "DEX > AGI", "mid": "DEX 90 > AGI 50 > LUK 20", "late": "DEX 120 > AGI 80 > LUK 40"},
+        "key_skills": ["Single Action", "Chain Action", "Tracking", "Bull's Eye", "Gatling Fever"],
+        "playstyle": "Single Action for burst, Chain Action for sustained DPS. Tracking for guaranteed hit on high-flee targets. Gatling Fever for ASPD steroid.",
+    },
+    "ninja": {
+        "class_evolves": ["kagerou", "oboro"],
+        "stat_priority": {"early": "INT > DEX (magic) or STR > AGI (phys)", "mid": "INT 80 > DEX 50 or STR 70 > AGI 50", "late": "INT 120 > DEX 70 or STR 100 > AGI 80"},
+        "key_skills": ["Throw Kunai", "Throw Shuriken", "Fire Ninjutsu", "Wind Ninjutsu", "Mijin", "Dokumon"],
+        "playstyle": "Dual build paths. Magic ninja uses elemental ninjutsu (Fire, Water, Wind, Earth). Physical ninja uses Kunai/Shuriken with STR.",
+    },
+}
+
+
+def _resolve_class(signals: dict[str, Any]) -> str:
+    """Resolve RO class from signals, normalizing to lowercase."""
+    klass = str(signals.get("class", signals.get("job", "novice"))).lower()
+    # Map common class names
+    class_map = {
+        "soul linker": "soul_linker",
+        "soul_linker": "soul_linker",
+        "soul link": "soul_linker",
+    }
+    return class_map.get(klass, klass)
+
+
+def _get_monster_attribute(signals: dict[str, Any], attr: str, default: Any = None) -> Any:
+    """Get a monster attribute from signals, checking multiple key patterns."""
+    target = signals.get("target", {})
+    if not target:
+        target = signals.get("monster", {})
+    return target.get(attr, signals.get(f"monster_{attr}", default))
+
+
+def _level_based_advice(level: int, player_class: str) -> list[dict[str, Any]]:
+    """Generate hunting ground suggestions based on current level."""
+    advice = []
+    for map_name, info in HUNTING_GROUNDS.items():
+        lvl_min, lvl_max = info["level"]
+        if lvl_min <= level <= lvl_max:
+            advice.append({
+                "map": map_name,
+                "description": info["description"],
+                "danger": info["danger"],
+                "confidence": 0.5 if info["danger"] in ("high", "very_high") else 0.8,
+            })
+    return advice
+
+
+class ProROPlayerProfile(BehaviorProfile):
+    """Expert Ragnarok Online player with 20 years of experience providing tactical and strategic advice."""
+
+    agent_id = "pro_ro_player"
+    role = "Pro RO Player"
+    goal = "Provide expert Ragnarok Online tactical and strategic advice based on 20 years of gameplay experience"
+
+    backstory = (
+        "With twenty years of Ragnarok Online under my belt — from the early iRO Chaos alpha "
+        "through the pServer renaissance to modern renewal — I've played every class to 99/70 "
+        "across multiple servers and watched the meta evolve through every patch. I've led "
+        "guilds through WoE, hunted MVPs before anyone knew spawn timers, and theorycrafted "
+        "builds that became server standards. I know the elemental wheel in my sleep, can tell "
+        "you the exact flee rate you need for any map, and have an encyclopedic memory of monster "
+        "spawns, item drops, and hidden mechanics that most players never discover. When a bot "
+        "gets stuck, dies mysteriously, or needs to plan its next fifty levels, I can diagnose "
+        "the problem the way a master mechanic hears an engine knock. This isn't book knowledge — "
+        "it's scar tissue and muscle memory from two decades of RO."
+    )
+
+    def can_handle(self, signals: dict[str, Any]) -> float:
+        """Score relevance based on game situation signals."""
+        situation = signals.get("situation", signals.get("kind", ""))
+
+        # Cold start — brand new or very low level
+        if situation == "cold_start":
+            return 0.9
+
+        # Death analysis — something just killed the bot
+        if situation == "death_analysis":
+            return 0.9
+
+        # Map change — evaluating a new hunting map
+        if situation == "map_change":
+            return 0.8
+
+        # Unknown monster — first encounter with a mob
+        if situation == "unknown_monster":
+            return 0.8
+
+        # Stuck — can't find a good place to level
+        if situation == "stuck":
+            return 0.7
+
+        # Build planning — stat and skill allocation advice
+        if situation == "build_planning":
+            return 0.6
+
+        # General advice — catch-all
+        if situation == "general_advice":
+            return 0.5
+
+        # If the signals carry a target monster with unknown properties
+        target = signals.get("target", signals.get("monster", {}))
+        if target and not target.get("known", True):
+            return 0.7
+
+        # Level-based engagement — player needs route advice
+        level = signals.get("level", 1)
+        if level > 0 and situation in ("leveling", "grinding", "farming"):
+            return 0.6
+
+        # If none of the above apply, low baseline
+        return 0.1
+
+    def get_action(self, signals: dict[str, Any]) -> dict[str, Any] | None:
+        """Generate expert advice based on the current game situation."""
+        situation = signals.get("situation", signals.get("kind", ""))
+        player_class = _resolve_class(signals)
+        level = signals.get("level", 1)
+
+        # ── Dispatch by situation ──────────────────────────────────────
+
+        if situation == "cold_start":
+            return self._handle_cold_start(signals, player_class, level)
+        if situation == "death_analysis":
+            return self._handle_death_analysis(signals, player_class, level)
+        if situation == "map_change":
+            return self._handle_map_change(signals, player_class, level)
+        if situation == "unknown_monster":
+            return self._handle_unknown_monster(signals)
+        if situation == "stuck":
+            return self._handle_stuck(signals, player_class, level)
+        if situation == "build_planning":
+            return self._handle_build_planning(signals, player_class, level)
+        if situation in ("general_advice", "leveling", "grinding", "farming"):
+            return self._handle_general_advice(signals, player_class, level)
+
+        return None
+
+    # ── Situation handlers ─────────────────────────────────────────────
+
+    def _handle_cold_start(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Provide early-game guidance for a new character."""
+        early = CLASS_EARLY_GAME.get(player_class, CLASS_EARLY_GAME["novice"])
+        hunting_grounds = _level_based_advice(level, player_class)
+
+        # Build the advice message
+        advice_parts = [
+            f"**{player_class.title()} Early Game Guide (Levels {early['level_range'][0]}-{early['level_range'][1]})**",
+            "",
+            f"🎯 **First Hunting Ground:** {early['first_map']}",
+            f"💡 **Advice:** {early['advice']}",
+            f"📊 **Stat Build:** {early['stats']}",
+            f"🛡️ **Starting Equipment:** {early['equipment']}",
+        ]
+
+        if hunting_grounds:
+            advice_parts.append("")
+            advice_parts.append("**Recommended maps for your level:**")
+            for hg in hunting_grounds[:3]:
+                advice_parts.append(f"  • `{hg['map']}` — {hg['description']}")
+
+        advice_parts.append("")
+        advice_parts.append(
+            "⚡ **Pro Tip:** Buy a full set of Novice potions before leaving town. "
+            "Always keep at least 10 Fly Wings for emergency escape. "
+            "Set your save point at the nearest town before grinding."
+        )
+
+        return {
+            "kind": "cold_start_guide",
+            "command": "advise_cold_start",
+            "confidence": 0.9,
+            "reason": f"Providing early-game guidance for level {level} {player_class}",
+            "advice": "\n".join(advice_parts),
+            "hunting_grounds": hunting_grounds[:3],
+            "stats": early["stats"],
+            "equipment": early["equipment"],
+        }
+
+    def _handle_death_analysis(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Diagnose why the bot died and recommend behavioral changes."""
+        death_report = signals.get("death_report", {})
+        killer = death_report.get("killer", signals.get("killer", {}))
+        killer_name = killer.get("name", signals.get("killer_name", "unknown"))
+        killer_element = _get_monster_attribute(signals, "element", "neutral")
+        killer_attack = _get_monster_attribute(signals, "attack_type", "physical")
+        death_zone = death_report.get("map", signals.get("map", "unknown"))
+
+        # Analyze death cause
+        symptoms = []
+        mitigations = []
+        gear_tips = []
+
+        # Check for AoE magic
+        if killer_attack == "magical" and killer_element in ("fire", "water", "wind", "earth"):
+            symptoms.append(DEATH_CAUSES["aoe_spell"]["symptom"])
+            mitigations.append(DEATH_CAUSES["aoe_spell"]["counter"])
+            gear_tips.append(DEATH_CAUSES["aoe_spell"]["gear_solution"])
+
+        # Check elemental disadvantage
+        player_armor_element = signals.get("armor_element", "neutral")
+        ele_mult = ELEMENTAL_ADVANTAGE.get(killer_element, {}).get(player_armor_element, 1.0)
+        if ele_mult >= 1.5:
+            symptoms.append(DEATH_CAUSES["elemental_disadvantage"]["symptom"])
+            mitigations.append(
+                f"You took {ele_mult:.0%} damage from {killer_element} element attacks "
+                f"while wearing {player_armor_element} armor. "
+                + DEATH_CAUSES["elemental_disadvantage"]["counter"]
+            )
+            gear_tips.append(DEATH_CAUSES["elemental_disadvantage"]["gear_solution"])
+
+        # Check multi-aggro
+        if death_report.get("monsters_around", 0) >= 3 or signals.get("swarmed", False):
+            symptoms.append(DEATH_CAUSES["multi_aggro"]["symptom"])
+            mitigations.append(DEATH_CAUSES["multi_aggro"]["counter"])
+            gear_tips.append(DEATH_CAUSES["multi_aggro"]["gear_solution"])
+
+        # Check level gap
+        killer_level = killer.get("level", death_report.get("killer_level", 0))
+        if killer_level - level >= 15:
+            symptoms.append(DEATH_CAUSES["level_gap_penalty"]["symptom"])
+            mitigations.append(DEATH_CAUSES["level_gap_penalty"]["counter"])
+
+        # Check for stun
+        if death_report.get("status_effects", {}).get("stun", False):
+            symptoms.append(DEATH_CAUSES["stun_lock"]["symptom"])
+            mitigations.append(DEATH_CAUSES["stun_lock"]["counter"])
+            gear_tips.append(DEATH_CAUSES["stun_lock"]["gear_solution"])
+
+        # Check for freeze
+        if death_report.get("status_effects", {}).get("freeze", False):
+            symptoms.append(DEATH_CAUSES["freeze"]["symptom"])
+            mitigations.append(DEATH_CAUSES["freeze"]["counter"])
+            gear_tips.append(DEATH_CAUSES["freeze"]["gear_solution"])
+
+        # Check for poison
+        if death_report.get("status_effects", {}).get("poison", False):
+            symptoms.append(DEATH_CAUSES["poison"]["symptom"])
+            mitigations.append(DEATH_CAUSES["poison"]["counter"])
+            gear_tips.append(DEATH_CAUSES["poison"]["gear_solution"])
+
+        # Default fallback
+        if not symptoms:
+            symptoms.append(
+                f"Killed by {killer_name} on {death_zone}. "
+                "Without detailed death info, here are common failure points: "
+                "insufficient VIT for stun resist, wrong armor element, or too many simultaneous attackers."
+            )
+            mitigations.append(
+                "Check your HP threshold settings — set teleport escape at 30-40% HP. "
+                "Ensure you're not fighting monsters 15+ levels above you. "
+                "Verify armor element is appropriate for the zone."
+            )
+
+        advice_parts = ["**Death Analysis Report**", ""]
+        advice_parts.append(f"💀 **Killed by:** {killer_name} on `{death_zone}`")
+        advice_parts.append("")
+        advice_parts.append("**🔍 Diagnosed Issues:**")
+        for i, symptom in enumerate(symptoms, 1):
+            advice_parts.append(f"  {i}. {symptom}")
+        advice_parts.append("")
+        advice_parts.append("**✅ Recommended Fixes:**")
+        for i, mitigation in enumerate(mitigations, 1):
+            advice_parts.append(f"  {i}. {mitigation}")
+        if gear_tips:
+            advice_parts.append("")
+            advice_parts.append("**🛡️ Gear Recommendations:**")
+            for tip in gear_tips:
+                advice_parts.append(f"  • {tip}")
+
+        return {
+            "kind": "death_analysis",
+            "command": "advise_death_analysis",
+            "confidence": 0.85,
+            "reason": f"Diagnosed death by {killer_name} with {len(symptoms)} contributing factors",
+            "advice": "\n".join(advice_parts),
+            "symptoms": symptoms,
+            "mitigations": mitigations,
+            "gear_tips": gear_tips,
+        }
+
+    def _handle_map_change(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Evaluate a map for safety and suitability."""
+        target_map = signals.get("map", signals.get("target_map", "unknown"))
+        monster_spawns = signals.get("monsters", signals.get("spawns", []))
+        player_armor_element = signals.get("armor_element", "neutral")
+
+        # Find map info
+        map_info = HUNTING_GROUNDS.get(target_map, None)
+        if not map_info:
+            map_info = {"level": (1, 99), "danger": "unknown", "description": f"Unknown map: {target_map}"}
+
+        lvl_min, lvl_max = map_info["level"]
+
+        # Safety evaluation
+        warnings = []
+        suggestions = []
+
+        if level < lvl_min:
+            warnings.append(f"⚠️ You are below the recommended level range ({lvl_min}-{lvl_max}) for this map. Monsters will hit harder and you'll have reduced hit/flee rates.")
+            suggestions.append(f"Consider leveling to at least {lvl_min} before hunting here, or stay near the entrance.")
+
+        if level > lvl_max + 10:
+            warnings.append(f"⚠️ You may be over-leveled for this map ({lvl_max} max). Experience gain will be reduced.")
+            suggestions.append("Consider moving to a higher-level hunting ground for better exp/hour.")
+
+        # Elemental hazard check
+        element_hazards = {
+            "mag_dun01": "fire", "mag_dun02": "fire",
+            "ice_dun01": "water", "ice_dun02": "water",
+            "beach_dun01": "water", "beach_dun02": "water",
+            "gef_fild01": "earth",
+        }
+        hazard_element = element_hazards.get(target_map)
+        if hazard_element:
+            if player_armor_element == hazard_element:
+                ele_mult = ELEMENTAL_ADVANTAGE.get(hazard_element, {}).get(player_armor_element, 1.0)
+                if ele_mult < 0.5:
+                    warnings.append(f"🔥 Your armor element ({player_armor_element}) matches the dominant element on this map. This is good — you're naturally resistant.")
+                else:
+                    warnings.append(f"🔥 Monsters here are mainly {hazard_element} element. Consider wearing {hazard_element} armor or carrying elemental resist potions.")
+            else:
+                warnings.append(f"🔥 Monsters here are mainly {hazard_element} element. Your current armor ({player_armor_element}) does not resist this.")
+
+        # Evaluate monster spawns
+        if monster_spawns:
+            dangerous = [m for m in monster_spawns if m.get("danger_level", 1) >= 3]
+            if dangerous:
+                warnings.append(f"⚠️ Spotted {len(dangerous)} dangerous monster types: {', '.join(m.get('name', '?') for m in dangerous[:3])}.")
+
+        # Density and aggro evaluation
+        map_density = signals.get("density", "unknown")
+        if str(map_density).lower() == "high":
+            warnings.append("⚠️ High spawn density detected — risk of multi-aggro is elevated.")
+            suggestions.append("Use a bow/ranged pull to single-target. Set teleport escape at 40% HP.")
+
+        # Build advice
+        advice_parts = [f"**Map Evaluation: {target_map}**", ""]
+        advice_parts.append(f"📊 **Level Range:** {lvl_min}-{lvl_max} | **Danger:** {map_info['danger']}")
+        advice_parts.append(f"📝 **Description:** {map_info['description']}")
+        advice_parts.append("")
+
+        if warnings:
+            advice_parts.append("**⚠️ Warnings:**")
+            for w in warnings:
+                advice_parts.append(f"  • {w}")
+            advice_parts.append("")
+
+        if suggestions:
+            advice_parts.append("**💡 Suggestions:**")
+            for s in suggestions:
+                advice_parts.append(f"  • {s}")
+            advice_parts.append("")
+
+        # Find alternative maps if this one doesn't fit
+        alternatives = _level_based_advice(level, player_class)
+        if alternatives:
+            advice_parts.append("**🗺️ Alternative maps at your level:**")
+            for alt in alternatives[:3]:
+                if alt["map"] != target_map:
+                    advice_parts.append(f"  • `{alt['map']}` — {alt['description']}")
+
+        return {
+            "kind": "map_evaluation",
+            "command": f"evaluate_map {target_map}",
+            "confidence": 0.8,
+            "reason": f"Evaluated {target_map} for level {level} {player_class} — found {len(warnings)} issues",
+            "advice": "\n".join(advice_parts),
+            "safe": len(warnings) == 0,
+            "warnings": warnings,
+            "alternatives": alternatives[:3] if alternatives else [],
+        }
+
+    def _handle_unknown_monster(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """Infer behavior and give combat advice for an unknown monster."""
+        target = signals.get("target", signals.get("monster", {}))
+        monster_name = target.get("name", signals.get("monster_name", "Unknown"))
+        monster_element = target.get("element", signals.get("element", "neutral"))
+        monster_race = target.get("race", signals.get("race", "formless"))
+        monster_size = target.get("size", signals.get("size", "medium"))
+        monster_level = target.get("level", signals.get("level", 0))
+        player_class = _resolve_class(signals)
+
+        # Build profile from known data
+        race_hint = RACE_HINTS.get(monster_race, "Unknown race. Approach with caution and observe its attack pattern.")
+
+        # Elemental weaknesses
+        weaknesses = []
+        resistances = []
+        for attack_ele, targets in ELEMENTAL_ADVANTAGE.items():
+            if attack_ele in ("neutral", "holy", "dark", "ghost", "poison"):
+                continue
+            mult = targets.get(monster_element, 1.0)
+            if mult >= 1.5:
+                weaknesses.append(attack_ele)
+            elif mult <= 0.5:
+                resistances.append(attack_ele)
+
+        # Size-based weapon advice
+        weapon_warnings = []
+        weapon_type = str(signals.get("weapon_type", "sword")).lower()
+        size_pen = SIZE_PENALTY.get(weapon_type, {}).get(monster_size, 1.0)
+        if size_pen < 1.0:
+            weapon_warnings.append(
+                f"Your {weapon_type} deals only {size_pen:.0%} damage to {monster_size}-size monsters. "
+                f"Consider switching to a weapon with better size efficiency."
+            )
+
+        # Build advice text
+        advice_parts = [f"**Monster Intel: {monster_name}**", ""]
+        advice_parts.append(f"🏷️ **Element:** {monster_element.title()} | **Race:** {monster_race.title()} | **Size:** {monster_size.title()}")
+        if monster_level:
+            advice_parts.append(f"📊 **Level:** ~{monster_level}")
+
+        advice_parts.append("")
+        advice_parts.append(f"📖 **Race Intel:** {race_hint}")
+
+        if weaknesses:
+            advice_parts.append(f"💥 **Weak to:** {', '.join(w.title() for w in weaknesses)} element attacks")
+        else:
+            advice_parts.append("💥 **No standout elemental weakness detected — use Neutral attacks or check with different elements.**")
+
+        if resistances:
+            advice_parts.append(f"🛡️ **Resists:** {', '.join(r.title() for r in resistances)} element attacks")
+
+        # Undead-specific advice
+        if monster_race == "undead":
+            advice_parts.append("")
+            advice_parts.append("⚰️ **Undead Countermeasures:**")
+            advice_parts.append("  • Holy Water deals massive damage (consumable)")
+            advice_parts.append("  • Heal skill damages undead — use it offensively!")
+            advice_parts.append("  • Turn Undead can instantly kill weaker undead")
+            advice_parts.append("  • Holy element weapons deal 75% bonus damage")
+            advice_parts.append("  • Bring Green Potions — undead often inflict status effects")
+            if monster_element == "undead":
+                advice_parts.append("  • Undead element is weak to Fire (125%) and Holy (150%)")
+
+        # Demon-specific advice
+        if monster_race == "demon":
+            advice_parts.append("")
+            advice_parts.append("😈 **Demon Countermeasures:**")
+            advice_parts.append("  • Demons are often Dark element — Holy element demolishes them (175% bonus)")
+            advice_parts.append("  • Devotion and Aspersio skills give you Holy property attacks")
+            advice_parts.append("  • Shadow property resists Dark (50%)")
+
+        if weapon_warnings:
+            advice_parts.append("")
+            advice_parts.append(f"⚔️ **Weapon Note:**")
+            for w in weapon_warnings:
+                advice_parts.append(f"  • {w}")
+
+        # Class-specific advice
+        if player_class in ("mage", "wizard", "high_wizard", "warlock"):
+            if weaknesses:
+                advice_parts.append("")
+                advice_parts.append(f"🔮 **Wizard Tip:** Use {'/'.join(w.title() for w in weaknesses[:2])} Bolt spells for max damage against this monster.")
+
+        if player_class in ("archer", "hunter", "sniper", "ranger"):
+            advice_parts.append("")
+            advice_parts.append(f"🏹 **Archer Tip:** Use elemental arrows ({', '.join(w.title() for w in weaknesses[:2])}) to exploit elemental weakness.")
+
+        return {
+            "kind": "monster_intel",
+            "command": f"identify_monster {monster_name}",
+            "confidence": 0.8,
+            "reason": f"Provided combat intel for {monster_name} ({monster_element} element, {monster_race} race)",
+            "advice": "\n".join(advice_parts),
+            "element": monster_element,
+            "race": monster_race,
+            "size": monster_size,
+            "weaknesses": weaknesses,
+            "resistances": resistances,
+        }
+
+    def _handle_stuck(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Help when the bot is stuck and can't find a good place to level."""
+        current_map = signals.get("map", "unknown")
+        restock_items = signals.get("needed_items", signals.get("restock", []))
+        party_needed = signals.get("need_party", False)
+
+        # Level-appropriate hunting grounds
+        alternatives = _level_based_advice(level, player_class)
+
+        # Generate advice
+        advice_parts = [f"**Stuck? Here's a plan for level {level} {player_class}.**", ""]
+
+        if alternatives:
+            advice_parts.append("**🗺️ Recommended Hunting Grounds:**")
+            for alt in alternatives[:5]:
+                advice_parts.append(f"  • `{alt['map']}` — {alt['description']}")
+            advice_parts.append("")
+        else:
+            advice_parts.append(f"⚠️ No specific hunting grounds found for level {level}. Let me give you general advice:")
+            if level < 30:
+                advice_parts.append("  Low level: Stay on field maps near towns. Payon fields, Geffen fields, Morocc fields.")
+            elif level < 60:
+                advice_parts.append("  Mid level: Try dungeons like Payon Cave, Anthell, Geffen Cave.")
+            elif level < 85:
+                advice_parts.append("  High level: Magma Dungeon, Ice Dungeon, Glast Heim.")
+            else:
+                advice_parts.append("  Endgame: Thor Volcano, Abyss Lake, Biolabs.")
+            advice_parts.append("")
+
+        # Restocking advice
+        if restock_items:
+            advice_parts.append("**📦 Restocking Checklist:**")
+            advice_parts.append(f"  Items needed: {', '.join(str(r) for r in restock_items[:5])}")
+            advice_parts.append("")
+        else:
+            advice_parts.append("**📦 General Restock Checklist:**")
+            advice_parts.append("  • 200+ Fly Wings (mandatory for any dungeon)")
+            advice_parts.append("  • 100+ Blue Potions / SP recovery if caster")
+            advice_parts.append("  • Elemental converters matching your hunting ground")
+            advice_parts.append("  • 50+ Green Potions for status cure")
+            advice_parts.append("  • 20+ Holy Water if hunting undead/demon areas")
+            advice_parts.append("  • Resist potions matching the zone element")
+            advice_parts.append("")
+
+        # Party advice
+        if party_needed:
+            advice_parts.append("**👥 Party Recruitment:**")
+            advice_parts.append("  At your level, consider partying with:")
+            advice_parts.append("  • A Priest for Blessing + Heal support")
+            advice_parts.append("  • A Wizard for AoE clearing")
+            advice_parts.append("  • A Hunter for ranged DPS and trapping")
+            advice_parts.append("  Or join a dedicated leveling party for your level range.")
+            advice_parts.append("")
+
+        # Generic stuck advice
+        advice_parts.append("**💡 General Tips:**")
+        advice_parts.append("  • If dying too much, move to an easier map and ensure your armor element counters the zone.")
+        advice_parts.append("  • Check that your stat build matches your class (DEX for hit rate, AGI for ASPD/flee).")
+        advice_parts.append("  • Make sure you have the correct weapon type for monster size on this map.")
+        advice_parts.append("  • Set teleport escape at 30% HP to avoid dying before you can react.")
+        advice_parts.append(f"  • If all else fails, try a different class or farming zeny for better gear on {current_map}.")
+
+        return {
+            "kind": "stuck_advice",
+            "command": "advise_stuck",
+            "confidence": 0.7,
+            "reason": f"Provided stuck advice for level {level} {player_class} with {len(alternatives)} alternatives",
+            "advice": "\n".join(advice_parts),
+            "alternatives": alternatives[:5],
+        }
+
+    def _handle_build_planning(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Provide stat distribution and skill rotation advice."""
+        build = BUILD_ADVICE.get(player_class)
+
+        if not build:
+            # Try parent class lookup
+            parent_map = {
+                "knight": "swordman", "lord_knight": "swordman", "rune_knight": "swordman",
+                "wizard": "mage", "high_wizard": "mage", "warlock": "mage",
+                "hunter": "archer", "sniper": "archer", "ranger": "archer",
+                "priest": "acolyte", "high_priest": "acolyte", "arch_bishop": "acolyte",
+                "monk": "acolyte", "champion": "acolyte", "sura": "acolyte",
+                "blacksmith": "merchant", "whitesmith": "merchant", "mechanic": "merchant",
+                "alchemist": "merchant", "creator": "merchant", "genetic": "merchant",
+                "assassin": "thief", "assassin_cross": "thief", "guillotine_cross": "thief",
+                "rogue": "thief", "stalker": "thief", "shadow_chaser": "thief",
+                "bard": "archer", "clown": "archer", "minstrel": "archer",
+                "dancer": "archer", "gypsy": "archer", "wanderer": "archer",
+                "sage": "mage", "professor": "mage", "sorcerer": "mage",
+                "crusader": "swordman", "paladin": "swordman", "royal_guard": "swordman",
+                "taekwon_knight": "taekwon", "soul_linker": "taekwon",
+                "kagerou": "ninja", "oboro": "ninja",
+            }
+            parent = parent_map.get(player_class)
+            build = BUILD_ADVICE.get(parent) if parent else None
+
+        if not build:
+            # Fallback generic advice
+            advice = (
+                f"**Build Guide for {player_class.title()} (Level {level})**\n\n"
+                f"No specific build data for {player_class}. Generic RO build rules:\n"
+                f"• DEX = hit rate + attack speed for ranged. You need enough to never miss.\n"
+                f"• STR = damage for melee, VIT = HP + stun resist (50 VIT = 100% stun immunity)\n"
+                f"• AGI = flee + ASPD. Pure AGI builds (99) are very effective for leveling.\n"
+                f"• INT = SP + MATK for casters.\n"
+                f"• LUK = crit + status resist. Good for hunters (Blitz Beat) and crit builds.\n"
+                f"\nGeneral rule: focus ONE primary stat to 80+ before diversifying."
+            )
+            return {
+                "kind": "build_advice",
+                "command": "advise_build",
+                "confidence": 0.4,
+                "reason": f"Generic build advice for {player_class} at level {level} (no specific build data)",
+                "advice": advice,
+            }
+
+        # Determine level bracket
+        if level <= 40:
+            bracket = "early"
+        elif level <= 70:
+            bracket = "mid"
+        else:
+            bracket = "late"
+
+        stat_advice = build["stat_priority"].get(bracket, build["stat_priority"]["early"])
+        evo_path = " -> ".join(build["class_evolves"])
+
+        advice_parts = [
+            f"**Build Guide: {player_class.title()} → {evo_path}**",
+            "",
+            f"📊 **Stat Priority ({bracket}-game, level {level}):**",
+            f"  {stat_advice}",
+            "",
+            f"🎮 **Playstyle:** {build['playstyle']}",
+            "",
+            "**⚡ Key Skills to Max:**",
+        ]
+        for skill in build["key_skills"]:
+            advice_parts.append(f"  • {skill}")
+
+        advice_parts.append("")
+        advice_parts.append("**📈 Stat Breakpoints to Know:**")
+        if "swordman" in player_class or "knight" in player_class:
+            advice_parts.append("  • STR 100: +50% damage bonus (stat scaling)")
+            advice_parts.append("  • VIT 50: 100% stun resistance")
+            advice_parts.append("  • DEX = hit rate — enough to never miss your level range")
+        elif "mage" in player_class or "wizard" in player_class:
+            advice_parts.append("  • INT 120: +120% MATK bonus")
+            advice_parts.append("  • DEX 70: 1-second cast time reduction breakpoint")
+            advice_parts.append("  • INT breakpoints: 40, 80, 120 give big MATK spikes")
+        elif "archer" in player_class or "hunter" in player_class:
+            advice_parts.append("  • DEX 120: max hit rate for endgame bosses")
+            advice_parts.append("  • AGI 75-85: ASPD breakpoint for 2-attacks-per-second")
+            advice_parts.append("  • LUK 30-60: Blitz Beat proc rate + crit")
+        elif "thief" in player_class or "assassin" in player_class:
+            advice_parts.append("  • AGI 99: max flee for leveling")
+            advice_parts.append("  • STR 80+: damage starts scaling well after AGI is capped")
+            advice_parts.append("  • ASPD 175-190: key breakpoints for katar damage")
+
+        advice_parts.append("")
+        advice_parts.append(
+            "⚡ **Pro Tip:** Don't spread stats — focus your primary stat to at least 80 before "
+            "putting points into a secondary stat. Hybrid builds underperform until very high levels."
+        )
+
+        return {
+            "kind": "build_advice",
+            "command": "advise_build",
+            "confidence": 0.8,
+            "reason": f"{bracket}-game build advice for {player_class} at level {level}",
+            "advice": "\n".join(advice_parts),
+            "stat_priority": {bracket: stat_advice},
+            "key_skills": build["key_skills"],
+            "playstyle": build["playstyle"],
+        }
+
+    def _handle_general_advice(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Provide general RO advice for leveling, farming, and gameplay."""
+        current_map = signals.get("map", "unknown")
+        hunting_grounds = _level_based_advice(level, player_class)
+
+        # RO wisdom for your level range
+        tips = []
+        if level < 30:
+            tips = [
+                "Always keep 10+ Fly Wings in inventory for emergency escape.",
+                "Don't hoard money early — gear upgrades double your kill speed.",
+                "Pecopeco Cards in weapons (+ATK) are the best budget DPS upgrade.",
+                "Train in dungeons (Payon Cave, Geffen fields) for faster spawns, not field maps.",
+                "If you're dying, check DEX for hit rate — missing = zero damage.",
+            ]
+        elif level < 60:
+            tips = [
+                "Elemental advantage is the single biggest DPS multiplier in RO. Always exploit it.",
+                "Anthell is excellent exp from 30-50. Fire element destroys the insect monsters there.",
+                "Start thinking about your build's stat breakpoints (every 10 STR = +damage).",
+                "Farm Pecopeco Card weapons and sell them to fund gear upgrades.",
+                "MVP hunting in parties starts being viable around level 50.",
+            ]
+        elif level < 80:
+            tips = [
+                "Glast Heim and Geffen Cave are excellent but dangerous — set escape thresholds.",
+                "Raydric Card shield (-30% Neutral) is one of the best defensive investments.",
+                "Party with a Priest for massive exp/hour gains — Blessing is +hit rate + damage.",
+                "Watch your armor element! Changing armor for each zone can make you nearly invincible.",
+                "Start collecting endgame gear pieces early (Orc Hero, Baphomet cards are server-dependent).",
+            ]
+        else:
+            tips = [
+                "Endgame: optimize stat builds to specific breakpoints (STR 120, INT 130, etc.).",
+                "Elemental armor swapping becomes mandatory for survival in Thor/Ice/Abyss.",
+                "MVP gear transforms builds — plan which MVPs to camp based on your class needs.",
+                "WoE/PvP builds differ from PvE — build separate stat presets if possible.",
+                "Level gap penalty (15+ levels below monster) is the run killer — always stay within range.",
+            ]
+
+        advice_parts = [
+            f"**General RO Advice for Level {level} {player_class.title()}**",
+            "",
+            f"📍 **Current Location:** `{current_map}`",
+            "",
+        ]
+
+        if hunting_grounds:
+            advice_parts.append("**🗺️ Best Maps for Your Level:**")
+            for hg in hunting_grounds[:3]:
+                advice_parts.append(f"  • `{hg['map']}` — {hg['description']}")
+            advice_parts.append("")
+
+        advice_parts.append("**💡 Pro Tips:**")
+        for i, tip in enumerate(tips, 1):
+            advice_parts.append(f"  {i}. {tip}")
+
+        advice_parts.append("")
+        advice_parts.append("**⚔️ Equipment Priorities by Level:**")
+        if level < 30:
+            advice_parts.append("  • Weapon[3] + element/race cards > everything else")
+            advice_parts.append("  • Cotton Shirt[1] + Peco Card for HP")
+            advice_parts.append("  • Boots[1] + Matyr Card for ASPD")
+        elif level < 60:
+            advice_parts.append("  • Slot weapon with 2+ cards matching your hunting ground")
+            advice_parts.append("  • Armor with element that counters the zone")
+            advice_parts.append("  • Accessories with stat bonuses (STR/INT/DEX rings)")
+        elif level < 80:
+            advice_parts.append("  • +7 or better weapon with racial/elemental cards")
+            advice_parts.append("  • Shield[1] with Raydric Card (30% neutral reduction)")
+            advice_parts.append("  • Garment[1] with Whisper Card (20% flee + ghost resist)")
+            advice_parts.append("  • Headgear with Marc Card (freeze immunity) for Ice Dungeon")
+        else:
+            advice_parts.append("  • +10/+12 weapon with MVP cards (or good racial/elemental combos)")
+            advice_parts.append("  • Full elemental armor set (Fire, Water, Wind, Earth)")
+            advice_parts.append("  • Endgame accessories (Vesper Core, Ring of Flame, etc.)")
+            advice_parts.append("  • MVP card gear for your specific build")
+
+        return {
+            "kind": "general_advice",
+            "command": "advise_general",
+            "confidence": 0.6,
+            "reason": f"General RO advice for level {level} {player_class}",
+            "advice": "\n".join(advice_parts),
+            "tips": tips,
+            "hunting_grounds": hunting_grounds[:3] if hunting_grounds else [],
+        }

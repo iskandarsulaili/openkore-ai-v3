@@ -201,17 +201,18 @@ class CombatTactics:
         """Get the best weapon type for a monster's size."""
         return self._size_weapons.get(monster_size.lower())
 
-    def get_element_multiplier(self, attack_element: str, defense_element: str) -> float:
+    def get_element_multiplier(self, attack_element: str, defense_element: str,
+                              element_level: int = 1) -> float:
         """Get the damage multiplier for attack element vs defense element.
 
         Uses parsed rAthena attr_fix.yml (all 4 levels).
         A pro player knows these by heart — this just keeps them fresh.
-        Default element_level=1 for backwards compatibility.
         """
         from ai_sidecar.data.element_db import get_element_multiplier as _get_mult
-        return _get_mult(attack_element, defense_element, element_level=1)
+        return _get_mult(attack_element, defense_element, element_level=element_level)
 
-    def get_best_element_attack(self, player_class: str, monster_element: str) -> str:
+    def get_best_element_attack(self, player_class: str, monster_element: str,
+                              element_level: int = 1) -> str:
         """Recommend the best element to use against a monster.
         
         Pro knowledge: Holy beats Undead (2x), Fire beats Undead (1.25x),
@@ -244,7 +245,7 @@ class CombatTactics:
         best_mult = 1.0
 
         for elem in available:
-            mult = self.get_element_multiplier(elem, monster_elem)
+            mult = self.get_element_multiplier(elem, monster_elem, element_level=element_level)
             # Prefer non-neutral elements when tied (neutral is always 1.0)
             if mult > best_mult or (mult == best_mult and elem != "neutral" and best_elem == "neutral"):
                 best_mult = mult

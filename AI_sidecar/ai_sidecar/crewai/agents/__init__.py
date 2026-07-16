@@ -20,10 +20,12 @@ from ai_sidecar.crewai.agents.opportunistic_trader_agent import OpportunisticTra
 from ai_sidecar.crewai.agents.fleet_liaison_agent import FleetLiaisonProfile
 from ai_sidecar.crewai.agents.state_assessor_agent import StateAssessorProfile
 from ai_sidecar.crewai.agents.social_coordinator_agent import SocialCoordinatorProfile
+from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
 
 # ---- New behavior-profile API (no CrewAI dependency) ----
 
 AGENT_PROFILES: dict[str, type[BehaviorProfile]] = {
+    "pro_ro_player": ProRoPlayerProfile,
     "combat": CombatProfile,
     "navigation": NavigationProfile,
     "economy": EconomyProfile,
@@ -86,6 +88,7 @@ __all__ = [
     # Base
     "BehaviorProfile",
     # Profiles
+    "ProRoPlayerProfile",
     "CombatProfile",
     "NavigationProfile",
     "EconomyProfile",
