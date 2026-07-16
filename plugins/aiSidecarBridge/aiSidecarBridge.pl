@@ -1029,6 +1029,15 @@ sub _build_snapshot_payload {
 	my $ai_top = @ai_seq ? $ai_seq[0] : '';
 	my $in_combat = defined $ai_top && $ai_top =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
 
+	my ($hp, $hp_max, $sp, $sp_max, $weight, $weight_max);
+	if ($char) {
+		$hp = $char->{hp} || 0;
+		$hp_max = $char->{hp_max} || 1;
+		$sp = $char->{sp} || 0;
+		$sp_max = $char->{sp_max} || 1;
+		$weight = $char->{weight} || 0;
+		$weight_max = $char->{weight_max} || 1;
+	}
 	my $item_count;
 	if ($char && $char->{inventory} && ref $char->{inventory} eq 'ARRAY') {
 		$item_count = scalar @{$char->{inventory}};
@@ -1385,6 +1394,12 @@ sub _build_snapshot_payload {
 			ai_sequence  => $ai_top || undef,
 			target_id    => undef,
 			is_in_combat => $in_combat,
+		},
+		vitals => {
+			hp     => $char ? ($char->{hp} || 0) : 0,
+			hp_max => $char ? ($char->{hp_max} || 1) : 1,
+			sp     => $char ? ($char->{sp} || 0) : 0,
+			sp_max => $char ? ($char->{sp_max} || 1) : 1,
 		},
 		inventory => {
 			zeny       => $char ? $char->{zeny} : undef,
