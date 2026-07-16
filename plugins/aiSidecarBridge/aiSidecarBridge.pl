@@ -63,7 +63,6 @@ my $hooks = Plugins::addHooks(
 	['packet_partyMsg', \&on_chat_message, 'partychat'],
 	['packet_guildMsg', \&on_chat_message, 'guildchat'],
 	['packet_sysMsg', \&on_chat_message, 'systemchat'],
-	['console_message', \&on_console_message, undef],
 	['packet_mapChange', \&on_legacy_packet_hook, 'packet_legacy.map_change'],
 	['packet_skilluse', \&on_legacy_packet_hook, 'packet_legacy.skill_use'],
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
@@ -116,12 +115,6 @@ my %actor_add_probe_count;
 my %actor_add_probe_last_log_ms;
 my $consecutive_empty_actor_snapshots = 0;
 
-my $needs_restock = 0;
-# Blind Spot #16: Anti-kite state
-my $anti_kite_active = 0;
-my $anti_kite_started_at_ms = 0;
-my $anti_kite_last_hp = 0;
-my $anti_kite_last_event_ms = 0;
 my $json_available = eval { require JSON::PP; 1; };
 
 sub on_reload {
@@ -228,8 +221,6 @@ sub on_mainLoop_pre {
 }
 
 sub on_mainLoop_post {
-	warning "[aiSidecarBridge] DEBUG on_mainLoop_post called, registered=$registered
-";
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -947,8 +938,6 @@ sub _bridge_enabled {
 
 sub _attempt_register {
 	my ($reason) = @_;
-	warning "[aiSidecarBridge] DEBUG _attempt_register called reason=$reason
-";
 	return if !_bridge_enabled();
 
 	my $payload = {
@@ -1010,81 +999,6 @@ sub _send_snapshot {
     }
 }
 
-
-# ── Helper: extract equipped cards from character inventory ──
-sub _get_equipped_cards {
-	my @cards;
-	if ($char && $char->{inventory} && ref $char->{inventory} eq 'ARRAY') {
-		for my $item (@{$char->{inventory}}) {
-			next if !$item || !ref $item eq 'HASH';
-			next if !$item->{equipped};
-			my $item_name = $item->{name} || '';
-			if ($item->{slots} && ref $item->{cards} eq 'ARRAY') {
-				for my $card (@{$item->{cards}}) {
-					next if !$card;
-					my $card_name = (ref $card eq 'HASH' ? ($card->{name} || '') : $card) || '';
-					push @cards, $card_name if $card_name;
-				}
-			}
-		}
-	}
-	return \@cards;
-}
-
-sub _party_auto_heal {
-    my $self = shift;
-    my $char = $self->{char} or return;
-    my $actorList = $char->{actorList} or return;
-    my $party = $actorList->getParty();
-    return unless $party && scalar(@$party) > 1;
-    my $my_id = $char->{ID} or return;
-    foreach my $member (@$party) {
-        next if $member->{ID} eq $my_id;
-        my $hp = $member->{hp} || 0;
-        my $hp_max = $member->{hp_max} || 1;
-        my $hp_pct = $hp_max > 0 ? $hp / $hp_max : 1.0;
-        if ($hp_pct < 0.6 && $hp > 0) {
-            # Queue heal for party member
-            $self->{_sidecar_events} ||= [];
-            push @{$self->{_sidecar_events}}, {
-                type => 'party_need_heal',
-                target_id => $member->{ID},
-                target_name => $member->{name} || 'unknown',
-                hp_pct => $hp_pct,
-                hp => $hp,
-                hp_max => $hp_max,
-            };
-        }
-    }
-}
-
-sub _navigate_to_map {
-    my ($self, $target_map) = @_;
-    my $char = $self->{char} or return;
-    my $current_map = $char->{map} || '';
-    return 1 if lc($current_map) eq lc($target_map);
-    
-    # Use OpenKore's built-in move command or warp
-    $self->{_pending_navigation} = {
-        target_map => $target_map,
-        started_at => time,
-        attempts => 0,
-    };
-    
-    # If we have a route, execute the first step
-    my $routes = $self->{_nav_routes} ||= {};
-    my $route = $routes->{$current_map . '->' . $target_map};
-    if ($route && @$route) {
-        my $next_map = $route->[0];
-        Commands::run("warp $next_map");
-        return 0;
-    }
-    
-    # Fallback: use OpenKore's built-in auto-move
-    Commands::run("move $target_map");
-    return 0;
-}
-
 sub _build_snapshot_payload {
 	my $bot_id = _bot_id();
 	my $max_raw = _cfg_int('aiSidecar_maxRawChars', 256);
@@ -1111,15 +1025,6 @@ sub _build_snapshot_payload {
 	my $ai_top = @ai_seq ? $ai_seq[0] : '';
 	my $in_combat = defined $ai_top && $ai_top =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
 
-	my ($hp, $hp_max, $sp, $sp_max, $weight, $weight_max);
-	if ($char) {
-		$hp = $char->{hp} || 0;
-		$hp_max = $char->{hp_max} || 1;
-		$sp = $char->{sp} || 0;
-		$sp_max = $char->{sp_max} || 1;
-		$weight = $char->{weight} || 0;
-		$weight_max = $char->{weight_max} || 1;
-	}
 	my $item_count;
 	if ($char && $char->{inventory} && ref $char->{inventory} eq 'ARRAY') {
 		$item_count = scalar @{$char->{inventory}};
@@ -1477,21 +1382,12 @@ sub _build_snapshot_payload {
 			target_id    => undef,
 			is_in_combat => $in_combat,
 		},
-		vitals => {
-			hp     => $char ? ($char->{hp} || 0) : 0,
-			hp_max => $char ? ($char->{hp_max} || 1) : 1,
-			sp     => $char ? ($char->{sp} || 0) : 0,
-			sp_max => $char ? ($char->{sp_max} || 1) : 1,
-		},
 		inventory => {
 			zeny       => $char ? $char->{zeny} : undef,
 			item_count => $item_count,
-			needs_restock => $needs_restock,
 		},
 		progression => $progression,
 		skills      => \@skills_list,
-		equipped_cards => _get_equipped_cards(),
-	anti_kite_active => $anti_kite_active,
 		actors      => \@actors,
 		raw         => $raw,
 	};
@@ -1828,18 +1724,6 @@ sub _poll_next_action {
 
 	_execute_action($poll_id, $json->{action});
 	return 1;
-}
-
-sub _action_execution_result {
-    my ($self, $action_id, $status, $message) = @_;
-    return unless $action_id;
-    $self->{_sidecar_events} ||= [];
-    push @{$self->{_sidecar_events}}, {
-        type => 'action_result',
-        action_id => $action_id,
-        status => $status,
-        message => $message || '',
-    };
 }
 
 sub _execute_action {
@@ -2632,7 +2516,6 @@ sub _http_post_json {
 	$headers ||= '';
 	my ($status) = $headers =~ m{^HTTP/\d+\.\d+\s+(\d+)};
 	$status ||= 0;
-	warning "[aiSidecarBridge] DEBUG _http_post_json path=$path url=$base_url response status=$status body=" . (defined $response_body ? substr($response_body, 0, 120) : "empty") . "\n";
 
 	my $json;
 	if (defined $response_body && $response_body ne '') {
@@ -2870,23 +2753,6 @@ sub _bot_id {
 		my $override_identity = _normalize_identity_part($2, '');
 		if ($override_master ne '' && $override_identity ne '') {
 			return "$override_master:$override_identity";
-		}
-	}
-	# Fallback: check profile-specific control folder for override
-	my $control_folder = _active_control_folder();
-	if ($control_folder) {
-		my $profile_override_file = "$control_folder/ai_sidecar.txt";
-		if (-f $profile_override_file) {
-			my %profile_cfg;
-			parseConfigFile($profile_override_file, \%profile_cfg, 0);
-			my $profile_override = _trim(_scalarize($profile_cfg{aiSidecar_botIdOverride} || ''), 128);
-			if ($profile_override =~ /^([^:]+):(.+)$/) {
-				my $override_master = _normalize_identity_part($1, '');
-				my $override_identity = _normalize_identity_part($2, '');
-				if ($override_master ne '' && $override_identity ne '') {
-					return "$override_master:$override_identity";
-				}
-			}
 		}
 	}
 
@@ -3180,7 +3046,8 @@ sub _calc_distance {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
 					# POST EVENT TO SIDECAR (let conscious handle rest)
-					_enqueue_normalized_event('', {						
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
 						reflex => 'emergency_no_heal',
 						hp_ratio => $hp_ratio,
 						hp => $hp,
@@ -3196,7 +3063,7 @@ sub _calc_distance {
 						heal_items_cached => scalar(@_heal_items),
 						heal_skills_cached => scalar(@_heal_skills),
 						timestamp => _now_ms(),
-			});
+					});
 
 					# IMMEDIATE EMERGENCY SURVIVAL: flee if aggro, teleport if no aggro
 					if ($aggro_count > 0) {
@@ -3252,13 +3119,14 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
 				$_reflex_last_fired{aggro_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'aggro_warning',
 					aggro_count => $aggro_count,
 					hp_ratio => $hp_ratio,
 					map => $map,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3270,13 +3138,14 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
 				$_reflex_last_fired{low_sp} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'low_sp',
 					sp_ratio => $sp_ratio,
 					sp => $sp,
 					max_sp => $sp_max,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3303,11 +3172,12 @@ sub _calc_distance {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					eval { Commands::run("ai manual"); 1 };
-					_enqueue_normalized_event('', {						
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
 						reflex => 'gm_detected',
 						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
 						timestamp => $now,
-			});
+					});
 				}
 			}
 		}
@@ -3320,13 +3190,14 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
 				$_reflex_last_fired{weight_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'weight_warning',
 					weight_ratio => $weight_ratio,
 					weight => $weight,
 					max_weight => $weight_max,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3348,11 +3219,12 @@ sub _calc_distance {
 				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
 					$_reflex_last_fired{equipment_broken} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
-					_enqueue_normalized_event('', {						
+					_http_post_json('/v2/ingest/event', {
+						kind => 'bridge_reflex',
 						reflex => 'equipment_broken',
 						message => 'Broken equipment detected',
 						timestamp => $now,
-			});
+					});
 				}
 			}
 		}
@@ -3431,7 +3303,8 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
 				$_reflex_last_fired{bot_request} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'bot_cooperation_request',
 					hp_ratio => $hp_ratio,
 					hp => $hp,
@@ -3441,7 +3314,7 @@ sub _calc_distance {
 					base_level => $base_level,
 					job_name => $job_name,
 					timestamp => _now_ms(),
-			});
+				});
 			}
 		}
 
@@ -3468,7 +3341,8 @@ sub _calc_distance {
 					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
 						$_reflex_last_fired{party_low_hp} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
-						_enqueue_normalized_event('', {							
+						_http_post_json('/v2/ingest/event', {
+							kind => 'bridge_reflex',
 							reflex => 'party_low_hp',
 							player_name => $pname,
 							player_hp => $player_hp,
@@ -3476,7 +3350,7 @@ sub _calc_distance {
 							player_hp_ratio => $player_hp_ratio,
 							distance => $dist,
 							timestamp => $now,
-			});
+						});
 					}
 					last;  # Only report first low-HP party member per cycle
 				}
@@ -3498,13 +3372,14 @@ sub _calc_distance {
 					eval { Commands::run("tele"); 1 };
 				}
 
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'high_aggro_surround',
 					aggro_count => $aggro_count,
 					hp_ratio => $hp_ratio,
 					map => $map,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3517,13 +3392,14 @@ sub _calc_distance {
 				$_reflex_last_fired{zonk} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
 				eval { Commands::run("sit"); 1 };
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'zonk',
 					hp => $hp,
 					hp_max => $hp_max,
 					map => $map,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3535,12 +3411,13 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
 				$_reflex_last_fired{death_spike} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
-				_enqueue_normalized_event('', {					
+				_http_post_json('/v2/ingest/event', {
+					kind => 'bridge_reflex',
 					reflex => 'death_spike',
 					death_count => $death_count,
 					map => $map,
 					timestamp => $now,
-			});
+				});
 			}
 		}
 
@@ -3618,13 +3495,14 @@ sub _calc_distance {
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
 						eval { Commands::run("flee"); 1 };
-						_enqueue_normalized_event('', {							
+						_http_post_json('/v2/ingest/event', {
+							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
 							casting_skill => $casting,
 							distance => $dist,
 							hp_ratio => $hp_ratio,
 							timestamp => $now,
-			});
+						});
 					}
 					last;
 				}
@@ -3668,299 +3546,7 @@ sub _calc_distance {
 				}
 			}
 		}
-
-		# ================================================================
-		# BLIND SPOT #11: CONSUMABLE RESTO CK REFLEX
-		# ================================================================
-		# Check inventory for critical consumables and flag if running low.
-		# Emits bridge_restock_needed / bridge_restock_resolved events.
-		if ($hp > 0) {
-		    _update_heal_cache();
-		    my $restock_needed_now = 0;
-		    my $restock_reason = '';
-
-		    # Check each configured heal item
-		    for my $item_name (@_heal_items) {
-		        $item_name = _trim($item_name);
-		        next if !$item_name;
-		        my $threshold = _cfg_int('aiSidecar_restockThreshold', 10);
-		        $threshold = 1 if $threshold < 1;
-		        my $item = eval { Actor::Item::get($item_name) };
-		        my $qty = ($item && $item->{amount}) ? $item->{amount} : 0;
-		        if ($qty < $threshold) {
-		            $restock_needed_now = 1;
-		            $restock_reason .= "$item_name($qty/$threshold) ";
-		        }
-		    }
-
-		    # Also check hardcoded fallback (White Potion)
-		    my $fallback_threshold = _cfg_int('aiSidecar_restockThreshold', 10);
-		    $fallback_threshold = 1 if $fallback_threshold < 1;
-		    my $fallback_item = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
-		    my $fallback_qty = ($fallback_item && $fallback_item->{amount}) ? $fallback_item->{amount} : 0;
-		    if ($fallback_qty < $fallback_threshold) {
-		        $restock_needed_now = 1;
-		        $restock_reason .= "$HARDCODED_FALLBACK_ITEM($fallback_qty/$fallback_threshold) ";
-		    }
-
-		    # Update global state and emit events on transitions
-		    if ($restock_needed_now && !$needs_restock) {
-		        $needs_restock = 1;
-		        warning "[aiSidecarBridge] blind_spot#11:restock_needed ($restock_reason)\n";
-		        _enqueue_normalized_event(
-		            'action',
-		            'bridge_restock_needed',
-		            'mainLoop_post',
-		            "restock needed: $restock_reason",
-		            { reason => _trim($restock_reason, 240) },
-		            { restock => 'needed' },
-		            { item_count => scalar(@_heal_items) },
-		            'warning',
-		        );
-		    } elsif (!$restock_needed_now && $needs_restock) {
-		        $needs_restock = 0;
-		        warning "[aiSidecarBridge] blind_spot#11:restock_resolved\n";
-		        _enqueue_normalized_event(
-		            'action',
-		            'bridge_restock_resolved',
-		            'mainLoop_post',
-		            'restock resolved - supplies adequate',
-		            { reason => 'supplies_adequate' },
-		            { restock => 'resolved' },
-		            {},
-		            'info',
-		        );
-		    }
-		}
-
-		# ================================================================
-		# BLIND SPOT #16: ANTI-KITE / RANGE MANAGEMENT REFLEX
-		# ================================================================
-		# Detect when a ranged monster is kiting us (melee class).
-		# Emits bridge_kite_alert event and auto-teleports if kited >5s with HP dropping.
-		if ($char && $monstersList && ref($monstersList) eq 'ARRAY' && scalar(@{$monstersList}) > 0) {
-		    my $ai_top = @ai_seq ? $ai_seq[0] : '';
-		    my $in_combat = ($ai_top =~ /^(?:attack|skill_use)/) ? 1 : 0;
-
-		    if ($in_combat) {
-		        # Find our current target monster
-		        my $target_id = $char->{target};
-		        my $target_monster;
-		        if ($target_id) {
-		            for my $monster (@{$monstersList}) {
-		                next if !$monster;
-		                my $monster_id = $monster->{ID} || $monster->{id} || '';
-		                if ($monster_id ne '' && $monster_id eq $target_id) {
-		                    $target_monster = $monster;
-		                    last;
-		                }
-		            }
-		        }
-
-		        if ($target_monster) {
-		            my $dist = _calc_distance($target_monster, $char);
-		            if (defined $dist) {
-		                # Determine effective attack range
-		                my $attack_range = $char->{attack_range} || 3;
-		                $attack_range = 3 if $attack_range < 1;
-		                my $kite_threshold = $attack_range + 2;  # 2 cells buffer
-
-		                if ($dist > $kite_threshold && $dist < 20) {
-		                    # Being kited — activate
-		                    if (!$anti_kite_active) {
-		                        $anti_kite_active = 1;
-		                        $anti_kite_started_at_ms = _now_ms();
-		                        $anti_kite_last_hp = $char->{hp} || 0;
-		                        $anti_kite_last_event_ms = _now_ms();
-		                        my $monster_name = $target_monster->{name} || 'unknown';
-		                        warning "[aiSidecarBridge] blind_spot#16:kite_alert (dist=$dist, target=$monster_name, range=$attack_range)\n";
-		                        _enqueue_normalized_event(
-		                            'action',
-		                            'bridge_kite_alert',
-		                            'mainLoop_post',
-		                            "anti-kite alert: distance $dist from target $monster_name",
-		                            {
-		                                distance => 0 + $dist,
-		                                target_name => _trim($monster_name, 64),
-		                                attack_range => 0 + $attack_range,
-		                            },
-		                            { anti_kite => 'active' },
-		                            { distance => 0 + $dist },
-		                            'warning',
-		                        );
-		                    } else {
-		                        # Already being kited — check escalation conditions
-		                        my $kite_duration_ms = _now_ms() - $anti_kite_started_at_ms;
-		                        my $current_hp = $char->{hp} || 0;
-		                        my $hp_dropping = ($current_hp < $anti_kite_last_hp);
-		                        $anti_kite_last_hp = $current_hp;
-
-		                        # Auto-teleport if kited for >5s and HP dropping below 60%
-		                        if ($kite_duration_ms > 5000 && $hp_dropping && $hp_ratio < 0.60) {
-		                            warning "[aiSidecarBridge] blind_spot#16:kite_teleport (kited=" . int($kite_duration_ms/1000) . "s, HP=$hp_ratio)\n";
-		                            eval { Commands::run("teleport 1"); 1 };
-		                            _enqueue_normalized_event(
-		                                'action',
-		                                'bridge_kite_teleport',
-		                                'mainLoop_post',
-		                                'kite escape teleport',
-		                                {
-		                                    kite_duration_ms => 0 + $kite_duration_ms,
-		                                    hp_ratio => $hp_ratio,
-		                                    reason => 'kited_too_long',
-		                                },
-		                                { anti_kite => 'teleported' },
-		                                { kite_duration_ms => 0 + $kite_duration_ms },
-		                                'critical',
-		                            );
-		                            $anti_kite_active = 0;
-		                            $anti_kite_started_at_ms = 0;
-		                        }
-		                    }
-		                } elsif ($anti_kite_active && $dist <= $kite_threshold) {
-		                    # No longer being kited — opponent in range again
-		                    $anti_kite_active = 0;
-		                    $anti_kite_started_at_ms = 0;
-		                    _enqueue_normalized_event(
-		                        'action',
-		                        'bridge_kite_resolved',
-		                        'mainLoop_post',
-		                        'anti-kite resolved - target in range',
-		                        { reason => 'target_in_range', distance => 0 + $dist },
-		                        { anti_kite => 'resolved' },
-		                        {},
-		                        'info',
-		                    );
-		                }
-		            }
-		        }
-		    } elsif ($anti_kite_active) {
-		        # No longer in combat — clear anti-kite state
-		        $anti_kite_active = 0;
-		        $anti_kite_started_at_ms = 0;
-		    }
-		}
 	}
 }
 
-
-# ================================================================
-# BLIND SPOT #17: SERVER BROADCAST / CONSOLE MESSAGE PARSING
-# ================================================================
-# Parse server broadcast messages from the OpenKore console.
-# Emits normalized events for MVP spawns, treasure chests,
-# WoE results, and player-spawned monsters so the strategic
-# layer can react.
-#
-# Hooked via ['console_message', \&on_console_message, undef]
-# in the main hook registration.
-sub on_console_message {
-	my ($hook, $args) = @_;
-	return if !_bridge_enabled();
-	return if !$args || ref($args) ne 'HASH';
-
-	my $msg = $args->{message} || '';
-	return if $msg eq '';
-
-	# -----------------------------------------------------------------
-	# Pattern: MVP Monster [name] has appeared!
-	# e.g. "MVP Monster [Dracula] has appeared!"
-	# -----------------------------------------------------------------
-	if ($msg =~ /^MVP\s+Monster\s+\[([^\]]+)\]\s+has\s+appeared/i) {
-		my $monster_name = $1;
-		warning "[aiSidecarBridge] blind_spot#17:mvp_spawn ($monster_name)\n";
-		_enqueue_normalized_event(
-			'system',
-			'mvp_spawn',
-			$hook,
-			"MVP Monster $monster_name has appeared",
-			{ monster_name => _trim($monster_name, 64), map => _safe_field_map() },
-			{ event => 'mvp_spawn', monster => lc(_trim($monster_name, 48)) },
-			{},
-			'info',
-		);
-		return;
-	}
-
-	# -----------------------------------------------------------------
-	# Pattern: The treasure chest has been opened!
-	# -----------------------------------------------------------------
-	if ($msg =~ /treasure\s+chest\s+has\s+been\s+opened/i) {
-		warning "[aiSidecarBridge] blind_spot#17:chest_opened\n";
-		_enqueue_normalized_event(
-			'system',
-			'chest_opened',
-			$hook,
-			'Treasure chest opened',
-			{ map => _safe_field_map() },
-			{ event => 'chest_opened' },
-			{},
-			'info',
-		);
-		return;
-	}
-
-	# -----------------------------------------------------------------
-	# Pattern: Guild [name] has conquered the castle!
-	# e.g. "Guild [Ragnarok] has conquered the castle!"
-	# -----------------------------------------------------------------
-	if ($msg =~ /^Guild\s+\[([^\]]+)\]\s+has\s+conquered\s+the\s+castle/i) {
-		my $guild_name = $1;
-		warning "[aiSidecarBridge] blind_spot#17:woe_result ($guild_name)\n";
-		_enqueue_normalized_event(
-			'system',
-			'woe_result',
-			$hook,
-			"Guild $guild_name conquered the castle",
-			{ guild_name => _trim($guild_name, 64), map => _safe_field_map() },
-			{ event => 'woe_result', guild => lc(_trim($guild_name, 48)) },
-			{},
-			'info',
-		);
-		return;
-	}
-
-	# -----------------------------------------------------------------
-	# Pattern: [map] monster [name] has been spawned by [name].
-	# e.g. "prt_fild08 monster [Poring] has been spawned by [PlayerX]."
-	# -----------------------------------------------------------------
-	if ($msg =~ /^(\S+)\s+monster\s+\[([^\]]+)\]\s+has\s+been\s+spawned\s+by\s+\[([^\]]+)\]/i) {
-		my ($spawn_map, $monster_name, $player_name) = ($1, $2, $3);
-		warning "[aiSidecarBridge] blind_spot#17:player_spawn (map=$spawn_map, monster=$monster_name, by=$player_name)\n";
-		_enqueue_normalized_event(
-			'system',
-			'player_spawn',
-			$hook,
-			"Player $player_name spawned $monster_name on $spawn_map",
-			{
-				map => _trim($spawn_map, 48),
-				monster_name => _trim($monster_name, 64),
-				spawner_name => _trim($player_name, 64),
-			},
-			{ event => 'player_spawn', monster => lc(_trim($monster_name, 48)) },
-			{},
-			'info',
-		);
-		return;
-	}
-
-	# -----------------------------------------------------------------
-	# Generic server broadcast catch-all: any broadcast-like message
-	# that contains "[server]" or "**" prefix
-	# -----------------------------------------------------------------
-	if ($msg =~ /^\*\*\s*\[\s*server\s*\]/i || $msg =~ /^\[server\]/i) {
-		warning "[aiSidecarBridge] blind_spot#17:server_broadcast ($msg)\n";
-		_enqueue_normalized_event(
-			'system',
-			'server_broadcast',
-			$hook,
-			_trim($msg, 220),
-			{ message => _trim($msg, 220), map => _safe_field_map() },
-			{ event => 'server_broadcast' },
-			{},
-			'info',
-		);
-		return;
-	}
-}
 1;

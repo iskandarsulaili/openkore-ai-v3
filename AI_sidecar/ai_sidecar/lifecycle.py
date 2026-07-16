@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time as _lifecycle_time
 import hashlib
 import json
 import logging
@@ -653,6 +654,7 @@ class RuntimeState:
     _background_loop_lock: RLock = field(default_factory=RLock)
     _last_goal_state_by_bot: dict[str, GoalStackState] = field(default_factory=dict)
     _autonomy_startup_gate_by_bot: dict[str, dict[str, object]] = field(default_factory=dict)
+    _startup_gate_wall_start: float = _lifecycle_time.monotonic()
     persistence_degraded: bool = False
 
     # === Agent-added modules (must be declared for dataclass) ===
@@ -1944,7 +1946,12 @@ class RuntimeState:
         now = datetime.now(UTC)
         elapsed_s = max(0.0, (now - started_at.astimezone(UTC)).total_seconds())
 
-        gate_open = bool(state.get("gate_open", False))
+        # Force gate open after 30s wall-clock time regardless of internal state
+        _wall_elapsed = _lifecycle_time.monotonic() - self._startup_gate_wall_start
+        if _wall_elapsed > 30.0:
+            gate_open = True
+        else:
+            gate_open = bool(state.get("gate_open", False))
         mode = str(state.get("mode") or ("conscious" if gate_open else "warmup")).strip().lower()
         if mode == "pending":
             mode = "warmup"

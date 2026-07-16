@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time as _time_module
 import logging
 import time
 from dataclasses import dataclass, field
@@ -1565,6 +1566,7 @@ class PDCALoop:
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._cycle_count: int = 0
+        self._wall_start_ts: float = 0.0  # wall-clock startup time for force-open bypass
         self._memory_pool: Any = None  # ThreadPoolExecutor for memory searches
 
     # ── Public API ──────────────────────────────────────────────
@@ -5351,12 +5353,17 @@ class PDCALoop:
         history_ready = bool(continuity_goal_state_present or status.get("history_ready", False))
         # Also consider gate ready if we've had snapshot activity for > 30s even without position data
         elapsed_s = max(0.0, float(status.get("elapsed_s") or 0.0))
-        if not snapshot_ready and bool(snapshot is not None) and elapsed_s > 30.0:
+        # Use wall-clock time as fallback if internal elapsed_s is unreliable
+        if self._wall_start_ts <= 0:
+            self._wall_start_ts = _time_module.monotonic()
+        wall_elapsed = _time_module.monotonic() - self._wall_start_ts
+        effective_elapsed = max(elapsed_s, wall_elapsed)
+        if not snapshot_ready and bool(snapshot is not None) and effective_elapsed > 30.0:
             snapshot_ready = True
         minimum_readiness = bool(bot_ready and history_ready)
 
         # Force gate open after 30s regardless of snapshot state — bots are running
-        if not minimum_readiness and elapsed_s > 30.0:
+        if not minimum_readiness and effective_elapsed > 30.0:
             minimum_readiness = True
             snapshot_ready = True
             history_ready = True
