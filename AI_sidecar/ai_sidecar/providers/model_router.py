@@ -40,20 +40,20 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
         "models": {},
     },
     "autonomy_mission_decision": {
-        "providers": ["openai"],
-        "models": {},
+        "providers": ["ollama"],
+        "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M"},
     },
     "tactical_short_reasoning": {
-        "providers": ["openai"],
-        "models": {},
+        "providers": ["ollama"],
+        "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M"},
     },
     "strategic_planning": {
-        "providers": ["openai"],
-        "models": {},
+        "providers": ["ollama"],
+        "models": {"ollama": "qwen3.6:35b-a3b-q4_K_M"},
     },
     "long_reflection": {
-        "providers": ["openai"],
-        "models": {},
+        "providers": ["deepseek", "ollama"],
+        "models": {"deepseek": "deepseek-chat", "ollama": "qwen3.6:35b-a3b-q4_K_M"},
     },
     "embeddings": {
         "providers": ["openai"],

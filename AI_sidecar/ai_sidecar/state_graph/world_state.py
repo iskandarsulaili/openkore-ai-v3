@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import time
 
 from dataclasses import dataclass, field
@@ -24,6 +25,8 @@ from ai_sidecar.state_graph.economy_tracker import EconomyTracker
 from ai_sidecar.state_graph.npc_tracker import NpcInteractionTracker
 from ai_sidecar.state_graph.quest_tracker import QuestProgressTracker
 from ai_sidecar.learning.death_analysis import DeathRecord, get_death_analyzer
+
+logger = logging.getLogger(__name__)
 
 
 _ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS = 8.0
@@ -380,17 +383,21 @@ class WorldStateProjector:
             try:
                 _da = get_death_analyzer()
                 _hp = payload.get("hp", 0)
-                _map = _str_or_none(payload.get("map")) or projection.navigation.destination_map or projection.last_map_name or "unknown"
+                _map_name = _str_or_none(payload.get("map")) or getattr(projection.navigation, 'destination_map', None) or getattr(projection, 'last_map_name', None) or "unknown"
+                _pos_x = getattr(projection.navigation, 'position_x', None) or 0.0
+                _pos_y = getattr(projection.navigation, 'position_y', None) or 0.0
+                _aggro = getattr(getattr(projection, 'combat', None), 'aggro_count', None) or 0
+                _max_hp = getattr(getattr(projection, 'vitals', None), 'max_hp', None) or 1
                 _record = DeathRecord(
                     timestamp=time.time(),
-                    map_name=_map,
-                    position=(projection.navigation.position_x or 0.0, projection.navigation.position_y or 0.0) if hasattr(projection.navigation, 'position_x') else (0.0, 0.0),
-                    monster_name="unknown",  # bridge doesn't provide killer data
+                    map_name=_map_name,
+                    position=(float(_pos_x), float(_pos_y)),
+                    monster_name="unknown",
                     monster_id=0,
                     hp_before_death=_hp,
-                    max_hp=projection.vitals.max_hp or 1,
-                    aggro_count=projection.combat.aggro_count or 0,
-                    had_potions=projection.inventory.total_potions > 0 if hasattr(projection, 'inventory') and hasattr(projection.inventory, 'total_potions') else True,
+                    max_hp=_max_hp,
+                    aggro_count=_aggro,
+                    had_potions=True,
                     was_casting=False,
                     buffs_active=[],
                     seconds_since_last_heal=999.0,

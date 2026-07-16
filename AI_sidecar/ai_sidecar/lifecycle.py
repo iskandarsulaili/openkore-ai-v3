@@ -214,7 +214,7 @@ def _should_deny_provider(workload: str, provider_name: str, provider_base_url: 
     # Never deny any provider — the user explicitly configured their chain
     return False
 
-_LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = ()
+_LOCAL_STARTUP_PREFERRED_GRIND_MAPS: tuple[str, ...] = ("prt_fild08", "pay_fild08", "mjolnir_04", "gef_fild06")
 
 
 def _default_macro_plugin_name() -> str:
@@ -3416,8 +3416,7 @@ class RuntimeState:
                 for map_name in _LOCAL_STARTUP_PREFERRED_GRIND_MAPS:
                     if map_name not in preferred:
                         preferred.append(map_name)
-            if preferred:
-                constraints["preferred_grind_maps"] = preferred
+            constraints["preferred_grind_maps"] = preferred
             return constraints
 
         if self.fleet_constraint_state is None:
