@@ -2947,7 +2947,7 @@ sub _calc_distance {
 		$_heal_cache_last_update_ms = $now;
 
 		# Read from sidecar-pushed config (comma-separated lists)
-		my $items_str = _cfg('aiSidecar_healItems', '');
+		my $items_str = _cfg('aiSidecar_healItems', 'Red Potion,Orange Potion,White Potion');
 		@_heal_items = split /,/, $items_str;
 		@_heal_items = grep { $_ ne '' } @_heal_items;
 
