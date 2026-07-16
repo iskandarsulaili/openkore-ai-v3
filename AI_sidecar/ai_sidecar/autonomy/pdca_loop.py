@@ -3971,7 +3971,9 @@ class PDCALoop:
                         snapshot=_conscious_snap,
                         recent_deaths=_conscious_deaths,
                     )
-                    _use_llm = _should_wake
+                    # Preserve cold-start LLM flag — don't override with False from trigger eval
+                    if _should_wake or _use_llm:
+                        _use_llm = True
                     
                     # Two-tier conscious brain:
                     # - Tactical tier: every 30s, lighter evaluation, faster model
