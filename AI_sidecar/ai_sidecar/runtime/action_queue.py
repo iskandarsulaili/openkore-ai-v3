@@ -322,7 +322,13 @@ class ActionQueue:
             return
         kept: deque[QueuedAction] = deque()
         for queued in queue:
-            if self._normalize_datetime(queued.proposal.expires_at) < now and queued.status in {
+            expires = self._normalize_datetime(queued.proposal.expires_at)
+            # Also expire dispatched actions that exceed max execution time (30s default)
+            if queued.status == ActionStatus.dispatched:
+                dispatched_at = self._normalize_datetime(getattr(queued, 'dispatched_at', None))
+                if dispatched_at and (now - dispatched_at).total_seconds() > 30:
+                    expires = now
+            if expires < now and queued.status in {
                 ActionStatus.queued,
                 ActionStatus.dispatched,
             }:

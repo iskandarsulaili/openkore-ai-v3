@@ -430,7 +430,16 @@ class CombatTactics:
         return self._size_weapons.get(monster_size.lower())
 
     
-    def compute_damage_multiplier(
+    
+def can_execute_skill(skill_name: str, sp_cost: int, current_sp: int, current_hp: int, hp_cost: int = 0) -> tuple[bool, str]:
+    """Check if a skill can be executed given current resources.
+    Returns (can_execute, reason)."""
+    if current_sp < sp_cost:
+        return False, f"not enough SP ({current_sp}/{sp_cost})"
+    if hp_cost > 0 and current_hp <= hp_cost:
+        return False, f"not enough HP for skill cost ({current_hp}/{hp_cost})"
+    return True, "ok"
+def compute_damage_multiplier(
         self,
         attack_element: str,
         defense_element: str,

@@ -63,6 +63,7 @@ my $hooks = Plugins::addHooks(
 	['packet_partyMsg', \&on_chat_message, 'partychat'],
 	['packet_guildMsg', \&on_chat_message, 'guildchat'],
 	['packet_sysMsg', \&on_chat_message, 'systemchat'],
+	['console_message', \&on_console_message, undef],
 	['packet_mapChange', \&on_legacy_packet_hook, 'packet_legacy.map_change'],
 	['packet_skilluse', \&on_legacy_packet_hook, 'packet_legacy.skill_use'],
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
@@ -115,6 +116,12 @@ my %actor_add_probe_count;
 my %actor_add_probe_last_log_ms;
 my $consecutive_empty_actor_snapshots = 0;
 
+my $needs_restock = 0;
+# Blind Spot #16: Anti-kite state
+my $anti_kite_active = 0;
+my $anti_kite_started_at_ms = 0;
+my $anti_kite_last_hp = 0;
+my $anti_kite_last_event_ms = 0;
 my $json_available = eval { require JSON::PP; 1; };
 
 sub on_reload {
@@ -1425,6 +1432,7 @@ sub _build_snapshot_payload {
 		inventory => {
 			zeny       => $char ? $char->{zeny} : undef,
 			item_count => $item_count,
+			needs_restock => $needs_restock,
 		},
 		progression => $progression,
 		skills      => \@skills_list,
