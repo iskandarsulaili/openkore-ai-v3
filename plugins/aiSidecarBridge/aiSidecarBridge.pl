@@ -1437,7 +1437,7 @@ sub _build_snapshot_payload {
 		progression => $progression,
 		skills      => \@skills_list,
 		equipped_cards => _get_equipped_cards(),
-t	anti_kite_active => $anti_kite_active,
+	anti_kite_active => $anti_kite_active,
 		actors      => \@actors,
 		raw         => $raw,
 	};
