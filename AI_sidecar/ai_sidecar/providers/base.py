@@ -166,22 +166,22 @@ class LLMProvider:
                                     if choices and isinstance(choices[0], dict):
                                         delta = choices[0].get("delta", {}) or {}
                                         if isinstance(delta, dict):
-                                            accumulated_content += (delta.get("content") or "") + (delta.get("reasoning_content") or "")
+                                            accumulated_content += delta.get("content") or ""
                                             accumulated_reasoning += delta.get("reasoning_content") or ""
                                         fr = choices[0].get("finish_reason")
                                         if fr:
                                             last_finish_reason = fr
                                 except json.JSONDecodeError:
                                     pass
-                        if accumulated_content or first_chunk:
-                            # Reconstruct a complete response object
+                        if accumulated_content or accumulated_reasoning or first_chunk:
+                            # Use content field first (clean JSON output after reasoning stops)
+                            _response_content = accumulated_content if accumulated_content else accumulated_reasoning
                             data = first_chunk or {}
                             data["choices"] = [{
                                 "index": 0,
                                 "message": {
                                     "role": "assistant",
-                                    "content": accumulated_content,
-                                    "reasoning_content": accumulated_reasoning,
+                                    "content": _response_content,
                                 },
                                 "finish_reason": last_finish_reason or "stop",
                             }]
