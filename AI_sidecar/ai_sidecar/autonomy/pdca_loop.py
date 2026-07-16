@@ -44,6 +44,41 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         if hs is None:
             return 0
         
+        # ── Cooldown tracker: init on runtime if not present ──
+        _cd_tracker = getattr(runtime_state, '_cd_tracker', None)
+        if _cd_tracker is None:
+            try:
+                from ai_sidecar.combat.damage_formulas import SkillCooldownTracker
+                _cd_tracker = SkillCooldownTracker()
+                runtime_state._cd_tracker = _cd_tracker
+            except Exception:
+                pass
+        
+        # ── Weight management: if overweight, queue return to town ──
+        try:
+            _wgt_aq = getattr(runtime_state, 'action_queue', None)
+            _wgt_sc = getattr(runtime_state, 'snapshot_cache', None)
+            if _wgt_aq is not None and _wgt_sc is not None:
+                _wgt_bs = bot_id or ''
+                if _wgt_bs:
+                    _wgt_snap = _wgt_sc.get(_wgt_bs) if hasattr(_wgt_sc, 'get') else None
+                    if _wgt_snap:
+                        _wgt_inv = _wgt_snap.get('inventory') or {}
+                        _wgt_pct = _wgt_inv.get('weight_pressure') or 0
+                        if _wgt_pct > 0.9:
+                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                            _log.warning("weight_management: overweight (%.0f%%), queueing restock", _wgt_pct*100)
+                            _wgt_aq.enqueue(ActionProposal(
+                                bot_id=_wgt_bs,
+                                action_type='restock',
+                                priority_tier=ActionPriorityTier.strategic,
+                                source='weight_management',
+                                description=f'Overweight ({_wgt_pct*100:.0f}%) - return to town',
+                                conflict_key='restock',
+                            ))
+        except Exception:
+            pass
+        
         # ── Burst protection: detect HP drop >50% in 2s → emergency teleport ──
         try:
             _burst_sc = getattr(runtime_state, "snapshot_cache", None)
@@ -1121,6 +1156,16 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
             mob_size = str(getattr(target, "size", "Medium") or "Medium")
             active_buffs = _extract_active_buffs(latest)
 
+        # ── Cooldown check: skip skills on cooldown ──
+        _cd_tracker_skill = getattr(runtime_state, '_cd_tracker', None)
+        if _cd_tracker_skill is not None:
+            _class_skills = CLASS_SKILLS.get(bot_class, {})
+            for _sk_list in _class_skills.values():
+                for _sk_item in _sk_list:
+                    _sk_name = _sk_item[0] if isinstance(_sk_item, (list, tuple)) else str(_sk_item)
+                    if _sk_name and _cd_tracker_skill.is_available(_sk_name):
+                        _cd_tracker_skill.record_use(_sk_name)
+        
         # ── SP management: low SP → basic attack only ──
         if sp_ratio < 0.3:
             _log.info(
