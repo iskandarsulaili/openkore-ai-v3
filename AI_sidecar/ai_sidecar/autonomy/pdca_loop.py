@@ -43,6 +43,53 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         hs = getattr(runtime_state, "heuristic_service", None)
         if hs is None:
             return 0
+        
+        # ── Burst protection: detect HP drop >50% in 2s → emergency teleport ──
+        try:
+            _burst_sc = getattr(runtime_state, "snapshot_cache", None)
+            _burst_aq = getattr(runtime_state, "action_queue", None)
+            if _burst_sc is not None and _burst_aq is not None:
+                _burst_bs = bot_id or ''
+                if _burst_bs:
+                    _burst_snap = _burst_sc.get(_burst_bs) if hasattr(_burst_sc, 'get') else None
+                    if _burst_snap:
+                        _burst_v = _burst_snap.get('vitals') or {}
+                        _burst_hp = _burst_v.get('hp') or 0
+                        _burst_hpm = _burst_v.get('hp_max') or 1
+                        # Track burst tracker on the runtime state
+                        _bt = getattr(runtime_state, '_burst_tracker', None)
+                        if _bt is None:
+                            from collections import deque
+                            _bt = {}
+                            runtime_state._burst_tracker = _bt
+                        if _burst_bs not in _bt:
+                            _bt[_burst_bs] = deque(maxlen=5)
+                        from datetime import datetime, timezone
+                        if _burst_hp > 0:
+                            _bt[_burst_bs].append((datetime.now(timezone.utc), _burst_hp))
+                        # Clean old entries > 2s
+                        _now_b = datetime.now(timezone.utc)
+                        while _bt[_burst_bs] and (_now_b - _bt[_burst_bs][0][0]).total_seconds() > 2:
+                            _bt[_burst_bs].popleft()
+                        # Check for burst
+                        if len(_bt[_burst_bs]) >= 2:
+                            _oldest_hp = _bt[_burst_bs][0][1]
+                            _newest_hp = _bt[_burst_bs][-1][1]
+                            _loss = _oldest_hp - _newest_hp
+                            if _loss > 0 and _loss / _burst_hpm > 0.5:
+                                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                _log.warning("burst_detected bot=%s hp=%d->%d loss=%d/%d (%.0f%%)",
+                                    _burst_bs, _oldest_hp, _newest_hp, _loss, _burst_hpm, _loss/_burst_hpm*100)
+                                _burst_aq.enqueue(ActionProposal(
+                                    bot_id=_burst_bs,
+                                    action_type='auto_teleport',
+                                    priority_tier=ActionPriorityTier.reflex,
+                                    source='burst_protection_heuristic',
+                                    description=f'Burst {_loss} HP in 2s ({_loss/_burst_hpm*100:.0f}%)',
+                                    conflict_key='burst_teleport',
+                                ))
+        except Exception:
+            _log.exception("burst_detection_error")
         # Resolve bot_id from runtime if not specified
         if not bot_id:
             br = getattr(runtime_state, "bot_registry", None)
@@ -4538,7 +4585,8 @@ class PDCALoop:
                         from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
                         from uuid import uuid4
                         from datetime import datetime
-import collections, timedelta, timezone
+                        from datetime import timedelta, timezone
+                        import collections
                         _now = datetime.now(timezone.utc)
                         _prop = ActionProposal(
                             action_id=f"death_{uuid4().hex[:16]}",
