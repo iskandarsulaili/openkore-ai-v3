@@ -3184,10 +3184,10 @@ sub _check_bridge_reflexes {
 						}
 					}
 					my $_zeny = $char->{zeny} || 0;
+					my $ai_state = $Ai::Ai->{ai} || '';
 					# Debug: log sit condition values
-					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max\n";
-					if (!$_has_heal_item && $_zeny < 50) {
-						my $ai_state = $Ai::Ai->{ai} || '';
+					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
+					if (!$_has_heal_item) {
 						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
 							Commands::run('sit');
 							warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
