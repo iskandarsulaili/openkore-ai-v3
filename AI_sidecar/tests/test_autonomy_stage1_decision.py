@@ -73,6 +73,9 @@ class _SnapshotCache:
     def get(self, _bot_id: str) -> BotStateSnapshot:
         return self.snapshot
 
+    def bot_ids(self) -> list[str]:
+        return ["bot:pytest"]
+
 
 class _DecisionRuntime:
     def __init__(self, snapshot: BotStateSnapshot, enriched: dict[str, object]) -> None:

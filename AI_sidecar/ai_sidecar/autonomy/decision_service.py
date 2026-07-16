@@ -556,6 +556,8 @@ class DecisionService:
                     "reason": "crewai_refinement_unavailable",
                 },
             )
+            # Fallback: add deterministic execution_hints from assessment data
+            goal_state = self._add_deterministic_execution_hints(goal_state=goal_state)
             return goal_state, ["crewai_refinement_unavailable"]
 
         context = CrewAutonomyDecisionContext(
@@ -599,11 +601,14 @@ class DecisionService:
                     "error": type(exc).__name__,
                 },
             )
+            # Fallback: add deterministic execution_hints from assessment data
+            goal_state = self._add_deterministic_execution_hints(goal_state=goal_state)
             return goal_state, [f"crewai_refine_exception:{type(exc).__name__}"]
 
         if not isinstance(response, CrewAutonomyRefinementResponse):
             logger.warning(
-                "autonomy_crewai_refine_unusable",
+                "autonomy_crewai_refine_unusable: type=%s response=%s",
+                type(response).__name__, str(response)[:200],
                 extra={
                     "event": "autonomy_crewai_refine_unusable",
                     "bot_id": meta.bot_id,
@@ -611,6 +616,8 @@ class DecisionService:
                     "response_type": type(response).__name__,
                 },
             )
+            # Fallback: add deterministic execution_hints from assessment data
+            goal_state = self._add_deterministic_execution_hints(goal_state=goal_state)
             return goal_state, ["crewai_refine_unexpected_response_type"]
 
         if not response.ok or response.decision_output is None:
@@ -623,6 +630,8 @@ class DecisionService:
                     "errors": list(response.errors),
                 },
             )
+            # Fallback: add deterministic execution_hints from assessment data
+            goal_state = self._add_deterministic_execution_hints(goal_state=goal_state)
             return goal_state, [*list(response.errors), "crewai_refine_unusable_output"]
 
         decision_output = response.decision_output
@@ -673,6 +682,20 @@ class DecisionService:
             "annotations": merged_annotations,
         }
 
+        # Build execution_hints from execution_translation
+        execution_hints = []
+        for item in decision_output.execution_translation:
+            # Parse "tool:command" format into structured hints
+            parts = str(item).strip().split(":", 1)
+            if len(parts) == 2:
+                tool, cmd = parts[0].strip(), parts[1].strip()
+                if cmd:
+                    execution_hints.append({
+                        "execution_mode": "direct",
+                        "tool": tool,
+                        "intents": [{"command": cmd}],
+                    })
+
         selected_goal = goal_state.selected_goal.model_copy(
             update={
                 "objective": refined_objective[:512],
@@ -683,6 +706,7 @@ class DecisionService:
                 "metadata": {
                     **existing_metadata,
                     "stage2_refinement": refinement_metadata,
+                    "execution_hints": execution_hints,
                 },
             }
         )
@@ -706,6 +730,60 @@ class DecisionService:
             return left[:1024]
         merged = f"{left}; crewai_refinement:{right}" if left else f"crewai_refinement:{right}"
         return merged[:1024]
+
+    def _add_deterministic_execution_hints(self, *, goal_state: GoalStackState) -> GoalStackState:
+        """Add execution_hints from assessment data when refinement is unavailable."""
+        key = goal_state.selected_goal.goal_key.value
+        metadata = dict(goal_state.selected_goal.metadata)
+        if "execution_hints" in metadata and isinstance(metadata["execution_hints"], list) and metadata["execution_hints"]:
+            logger.debug("deterministic_hints: already_present key=%s", key)
+            return goal_state
+
+        hints: list[dict[str, object]] = []
+        if key == "opportunistic_upgrades":
+            opp = goal_state.assessment.opportunistic_upgrades if isinstance(goal_state.assessment.opportunistic_upgrades, dict) else {}
+            opportunities = opp.get("opportunities", []) if isinstance(opp, dict) else []
+            if opportunities:
+                first = opportunities[0] if isinstance(opportunities, list) else {}
+                if isinstance(first, dict):
+                    mode = str(first.get("execution_mode", "direct") or "direct").strip().lower()
+                    payload = first.get("execution_payload", {}) if isinstance(first.get("execution_payload"), dict) else {}
+                    cmd = str(payload.get("direct_command", "") or "").strip()
+                    if not cmd:
+                        cmd = "ai auto"
+                    if mode in ("direct", "config", "macro"):
+                        tool_map = {"direct": "propose_actions", "config": "plan_control_change", "macro": "publish_macro"}
+                        hint = {
+                            "execution_mode": mode,
+                            "tool": tool_map.get(mode, "propose_actions"),
+                            "intents": [{"command": cmd}],
+                        }
+                        # Include full execution_payload so downstream consumers get the detail
+                        if payload:
+                            if mode == "macro":
+                                hint["macro_bundle"] = payload
+                            elif mode == "config":
+                                hint["request"] = {
+                                    "target_path": payload.get("target_path", ""),
+                                    "desired": payload.get("desired", {}),
+                                    "profile": payload.get("profile"),
+                                }
+                            elif mode == "direct":
+                                hint["intents"] = [{"command": payload.get("direct_command", cmd)}]
+                        hints.append(hint)
+        elif key in ("survival", "job_advancement", "leveling"):
+            hints.append({
+                "execution_mode": "direct",
+                "tool": "propose_actions",
+                "intents": [{"command": "ai auto"}],
+            })
+
+        logger.debug("deterministic_hints: key=%s built=%d", key, len(hints))
+        if hints:
+            metadata["execution_hints"] = hints
+            selected_goal = goal_state.selected_goal.model_copy(update={"metadata": metadata})
+            return goal_state.model_copy(update={"selected_goal": selected_goal})
+        return goal_state
 
     def _resolve_async_value(self, value: Any) -> Any:
         if not inspect.isawaitable(value):
