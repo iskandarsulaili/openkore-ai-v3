@@ -60,10 +60,13 @@ class OpenAIAdapter(LLMProvider):
                 usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 error=error,
             )
+        # Append JSON instruction to system prompt since gateway may not support response_format
+        _json_note = "\n\nYou MUST respond with valid JSON only. No markdown, no explanation, no code blocks. Return ONLY the raw JSON object."
+        _system_prompt = (system_prompt or "") + _json_note
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": _system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.2,

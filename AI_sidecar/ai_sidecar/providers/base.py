@@ -126,6 +126,8 @@ class LLMProvider:
             started = datetime.now(UTC)
             try:
                 async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                    logger.info("_post_json calling: url=%s model=%s headers_count=%d", 
+                               url, payload.get("model", "?"), len(headers))
                     response = await client.post(url, headers=headers, json=payload)
                     elapsed = (datetime.now(UTC) - started).total_seconds() * 1000.0
                     last_latency = elapsed

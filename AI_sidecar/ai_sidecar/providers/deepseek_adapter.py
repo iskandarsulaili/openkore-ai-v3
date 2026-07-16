@@ -62,10 +62,12 @@ class DeepseekAdapter(LLMProvider):
                 error=error,
             )
         _prefix = os.environ.get("OPENKORE_AI_PROVIDER_MODEL_PREFIX", "")
-        _model_name = f"{_prefix}{model}" if _prefix else model
+        # Don't double-prefix if model name already includes provider prefix
+        _model_name = f"{_prefix}{model}" if (_prefix and "/" not in model) else model
         # Append JSON instruction to system prompt since gateway doesn't support response_format parameter
         _json_note = "\n\nYou MUST respond with valid JSON only. No markdown, no explanation, no code blocks. Return ONLY the raw JSON object."
         _system_prompt = (system_prompt or "") + _json_note
+        logger.info("generate_structured: model=%s prefix=%s", _model_name, _prefix)
         payload = {
             "model": _model_name,
             "messages": [
