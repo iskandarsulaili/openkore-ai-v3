@@ -3067,11 +3067,11 @@ sub _calc_distance {
 
 					# IMMEDIATE EMERGENCY SURVIVAL: flee if aggro, teleport if no aggro
 					if ($aggro_count > 0) {
-						eval { Commands::run("flee"); 1 };
+						eval { Commands::run("move prontera"); 1 };
 					} elsif ($hp_ratio < 0.30) {
-						eval { Commands::run("tele"); 1 };
+						eval { Commands::run("move prontera"); 1 };
 					} elsif ($hp_ratio < 0.15) {
-						eval { Commands::run("sit"); 1 };
+						eval { Commands::run("move prontera"); 1 };
 					}
 				}
 			}
@@ -3090,7 +3090,7 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
 				$_reflex_last_fired{flee} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				eval { Commands::run("flee"); 1 };
+				eval { Commands::run("move prontera"); 1 };
 			}
 		}
 
@@ -3103,10 +3103,10 @@ sub _calc_distance {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { Commands::run("tele"); 1 };
+					eval { Commands::run("move prontera"); 1 };
 				} else {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_sit_regen (HP=$hp/$hp_max)\n";
-					eval { Commands::run("sit"); 1 };
+					warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
+					eval { Commands::run("move prontera"); 1 };
 				}
 			}
 		}
@@ -3367,7 +3367,7 @@ sub _calc_distance {
 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
 				# Immediate flee + teleport combo
-				eval { Commands::run("flee"); 1 };
+				eval { Commands::run("move prontera"); 1 };
 				if ($hp_ratio < 0.25) {
 					eval { Commands::run("tele"); 1 };
 				}
@@ -3494,7 +3494,7 @@ sub _calc_distance {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
-						eval { Commands::run("flee"); 1 };
+						eval { Commands::run("move prontera"); 1 };
 						_http_post_json('/v2/ingest/event', {
 							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
