@@ -414,7 +414,7 @@ def test_pdca_startup_gate_warmup_blocks_dispatch_until_minimum_live_state() -> 
     status = runtime.startup_gate_status(bot_id="bot:autonomy")
     assert status["gate_open"] is False
     assert status["mode"] == "warmup"
-    assert str(status["reason"]).startswith("startup_gate_waiting_minimum_live_state")
+    assert str(status["reason"]).startswith("startup_gate_initializing")
 
 
 def test_pdca_startup_gate_opens_in_degraded_mode_when_optional_subsystems_are_unavailable() -> None:
