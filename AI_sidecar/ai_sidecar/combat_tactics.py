@@ -529,8 +529,10 @@ def get_element_multiplier(self, attack_element: str, defense_element: str,
         Uses parsed rAthena attr_fix.yml (all 4 levels).
         A pro player knows these by heart — this just keeps them fresh.
         """
-        from ai_sidecar.data.element_db import get_element_multiplier as _get_mult
-        return _get_mult(attack_element, defense_element, element_level=element_level)
+        from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
+        return get_elemental_matrix().get_elemental_multiplier(
+            attack_element, defense_element, element_level
+        )
 
     def get_best_element_attack(self, player_class: str, monster_element: str,
                               element_level: int = 1) -> str:

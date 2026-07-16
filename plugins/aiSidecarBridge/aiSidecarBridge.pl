@@ -3066,8 +3066,7 @@ sub _calc_distance {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
 					# POST EVENT TO SIDECAR (let conscious handle rest)
-					_http_post_json('/v2/ingest/event', {
-						kind => 'bridge_reflex',
+					_enqueue_normalized_event('', {						
 						reflex => 'emergency_no_heal',
 						hp_ratio => $hp_ratio,
 						hp => $hp,
@@ -3083,7 +3082,7 @@ sub _calc_distance {
 						heal_items_cached => scalar(@_heal_items),
 						heal_skills_cached => scalar(@_heal_skills),
 						timestamp => _now_ms(),
-					});
+			});
 
 					# IMMEDIATE EMERGENCY SURVIVAL: flee if aggro, teleport if no aggro
 					if ($aggro_count > 0) {
@@ -3139,14 +3138,13 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
 				$_reflex_last_fired{aggro_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'aggro_warning',
 					aggro_count => $aggro_count,
 					hp_ratio => $hp_ratio,
 					map => $map,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3158,14 +3156,13 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
 				$_reflex_last_fired{low_sp} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'low_sp',
 					sp_ratio => $sp_ratio,
 					sp => $sp,
 					max_sp => $sp_max,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3192,12 +3189,11 @@ sub _calc_distance {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					eval { Commands::run("ai manual"); 1 };
-					_http_post_json('/v2/ingest/event', {
-						kind => 'bridge_reflex',
+					_enqueue_normalized_event('', {						
 						reflex => 'gm_detected',
 						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
 						timestamp => $now,
-					});
+			});
 				}
 			}
 		}
@@ -3210,14 +3206,13 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
 				$_reflex_last_fired{weight_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'weight_warning',
 					weight_ratio => $weight_ratio,
 					weight => $weight,
 					max_weight => $weight_max,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3239,12 +3234,11 @@ sub _calc_distance {
 				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
 					$_reflex_last_fired{equipment_broken} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
-					_http_post_json('/v2/ingest/event', {
-						kind => 'bridge_reflex',
+					_enqueue_normalized_event('', {						
 						reflex => 'equipment_broken',
 						message => 'Broken equipment detected',
 						timestamp => $now,
-					});
+			});
 				}
 			}
 		}
@@ -3323,8 +3317,7 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
 				$_reflex_last_fired{bot_request} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'bot_cooperation_request',
 					hp_ratio => $hp_ratio,
 					hp => $hp,
@@ -3334,7 +3327,7 @@ sub _calc_distance {
 					base_level => $base_level,
 					job_name => $job_name,
 					timestamp => _now_ms(),
-				});
+			});
 			}
 		}
 
@@ -3361,8 +3354,7 @@ sub _calc_distance {
 					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
 						$_reflex_last_fired{party_low_hp} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
-						_http_post_json('/v2/ingest/event', {
-							kind => 'bridge_reflex',
+						_enqueue_normalized_event('', {							
 							reflex => 'party_low_hp',
 							player_name => $pname,
 							player_hp => $player_hp,
@@ -3370,7 +3362,7 @@ sub _calc_distance {
 							player_hp_ratio => $player_hp_ratio,
 							distance => $dist,
 							timestamp => $now,
-						});
+			});
 					}
 					last;  # Only report first low-HP party member per cycle
 				}
@@ -3392,14 +3384,13 @@ sub _calc_distance {
 					eval { Commands::run("tele"); 1 };
 				}
 
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'high_aggro_surround',
 					aggro_count => $aggro_count,
 					hp_ratio => $hp_ratio,
 					map => $map,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3412,14 +3403,13 @@ sub _calc_distance {
 				$_reflex_last_fired{zonk} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
 				eval { Commands::run("sit"); 1 };
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'zonk',
 					hp => $hp,
 					hp_max => $hp_max,
 					map => $map,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3431,13 +3421,12 @@ sub _calc_distance {
 			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
 				$_reflex_last_fired{death_spike} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
-				_http_post_json('/v2/ingest/event', {
-					kind => 'bridge_reflex',
+				_enqueue_normalized_event('', {					
 					reflex => 'death_spike',
 					death_count => $death_count,
 					map => $map,
 					timestamp => $now,
-				});
+			});
 			}
 		}
 
@@ -3515,14 +3504,13 @@ sub _calc_distance {
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
 						eval { Commands::run("flee"); 1 };
-						_http_post_json('/v2/ingest/event', {
-							kind => 'bridge_reflex',
+						_enqueue_normalized_event('', {							
 							reflex => 'pre_dodge',
 							casting_skill => $casting,
 							distance => $dist,
 							hp_ratio => $hp_ratio,
 							timestamp => $now,
-						});
+			});
 					}
 					last;
 				}

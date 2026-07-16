@@ -353,4 +353,8 @@ class SQLiteDB:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=%d" % max(self._busy_timeout_ms, 5000))
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-8000")
         return conn
