@@ -166,7 +166,7 @@ class LLMProvider:
                                     if choices and isinstance(choices[0], dict):
                                         delta = choices[0].get("delta", {}) or {}
                                         if isinstance(delta, dict):
-                                            accumulated_content += delta.get("content") or ""
+                                            accumulated_content += (delta.get("content") or "") + (delta.get("reasoning_content") or "")
                                             accumulated_reasoning += delta.get("reasoning_content") or ""
                                         fr = choices[0].get("finish_reason")
                                         if fr:

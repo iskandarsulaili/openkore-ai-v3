@@ -76,7 +76,7 @@ class DeepseekAdapter(LLMProvider):
             ],
             # response_format disabled — upstream gateway does not support JSON mode for this model
             "temperature": 0.2,
-            "max_tokens": 1800,
+            "max_tokens": 16000,
         }
         data, latency_ms, error = await self._post_json(
             bot_id=request.bot_id,

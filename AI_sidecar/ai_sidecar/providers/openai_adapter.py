@@ -70,7 +70,7 @@ class OpenAIAdapter(LLMProvider):
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": 1800,
+            "max_tokens": 16000,
             "stream": False,
         }
         # json_object response format is disabled for local Qwen models
