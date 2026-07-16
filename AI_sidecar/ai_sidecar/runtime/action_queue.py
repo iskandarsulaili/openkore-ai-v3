@@ -157,7 +157,7 @@ class ActionQueue:
                     active_conflict_keys.add(queued.proposal.conflict_key)
 
             selected_idx: int | None = None
-            selected_order: tuple[int, datetime, int, str] | None = None
+            selected_order: tuple[int, int, datetime, int, str] | None = None
             for idx, queued in enumerate(bot_queue):
                 if queued.status != ActionStatus.queued:
                     continue
@@ -333,9 +333,15 @@ class ActionQueue:
             kept.append(queued)
         self._by_bot[bot_id] = kept
 
-    def _ordering_key(self, proposal: ActionProposal, enqueue_seq: int) -> tuple[int, datetime, int, str]:
+    def _ordering_key(self, proposal: ActionProposal, enqueue_seq: int) -> tuple[int, int, datetime, int, str]:
+        # Source-based priority boost: actions from "reflex" or "bridge" sources
+        # get a sub-priority boost so they always win within the same priority tier
+        # against actions from "planner" or "pdca" sources.
+        source = (proposal.source or "").strip().lower()
+        source_boost = -1 if source in ("reflex", "bridge") else 0
         return (
             self._PRIORITY_ORDER.get(proposal.priority_tier, 99),
+            source_boost,
             self._normalize_datetime(proposal.created_at),
             enqueue_seq,
             proposal.action_id,
@@ -343,7 +349,7 @@ class ActionQueue:
 
     def _select_capacity_drop_candidate(self, queue: deque[QueuedAction]) -> QueuedAction | None:
         candidate: QueuedAction | None = None
-        candidate_order: tuple[int, datetime, int, str] | None = None
+        candidate_order: tuple[int, int, datetime, int, str] | None = None
         for queued in queue:
             if queued.status != ActionStatus.queued:
                 continue
@@ -360,6 +366,28 @@ class ActionQueue:
         existing_action_id = bucket.get(idempotency_key)
         if existing_action_id == action_id:
             del bucket[idempotency_key]
+
+    def has_pending_reflex_or_bridge(self, bot_id: str) -> bool:
+        """Check if the bot has any pending reflex or bridge-sourced actions.
+
+        Used by the PDCA loop to yield to higher-priority bridge actions
+        instead of flooding the queue with strategic actions.
+        """
+        now = datetime.now(UTC)
+        with self._lock:
+            self._expire_for_bot(bot_id, now)
+            queue = self._by_bot.get(bot_id)
+            if not queue:
+                return False
+            for queued in queue:
+                if queued.status != ActionStatus.queued:
+                    continue
+                source = (queued.proposal.source or "").strip().lower()
+                if source in ("reflex", "bridge"):
+                    return True
+                if queued.proposal.priority_tier == ActionPriorityTier.reflex:
+                    return True
+            return False
 
     def _next_enqueue_seq(self) -> int:
         self._enqueue_seq += 1

@@ -1398,6 +1398,12 @@ class PDCALoop:
         self._breaker_family = "queue"
         self._default_bot_id = "default"
         self._last_bot_id: str | None = None
+        # Respawn cooldown tracking: bot_id -> timestamp when cooldown expires
+        self._respawn_cooldown_until: dict[str, float] = {}
+        # Last known HP per bot for detecting respawn (HP 0 -> >0 transition)
+        self._last_known_hp: dict[str, int] = {}
+        # Last known death timestamp per bot to debounce repeated triggers
+        self._last_death_ts: dict[str, float] = {}
         self._startup_gate_defaults = {
             "grace_s": max(20.0, self._policy_float("reconnect_grace_s", 20.0)),
             "min_events": _STARTUP_GATE_MIN_EVENTS,
@@ -4127,6 +4133,90 @@ class PDCALoop:
         try:
             # ── CHECK phase ──────────────────────────────────────
             latest_snapshot = self._get_latest_snapshot()
+
+            # ── Respawn cooldown check ──────────────────────────
+            # Detect when a bot just respawned (HP 0 -> >0) and enforce
+            # a 5-second cooldown before allowing combat actions.
+            _rc_bot_id = self._resolve_bot_id(latest_snapshot)
+            if latest_snapshot is not None and _rc_bot_id:
+                _rc_hp = 0
+                try:
+                    if isinstance(latest_snapshot, dict):
+                        _rc_hp = int(latest_snapshot.get("vitals", {}).get("hp", 1) or 1)
+                    else:
+                        _rc_hp = int(getattr(getattr(latest_snapshot, "vitals", None), "hp", 1) or 1)
+                except Exception:
+                    pass
+
+                _prev_hp = self._last_known_hp.get(_rc_bot_id, _rc_hp)
+                self._last_known_hp[_rc_bot_id] = _rc_hp
+
+                # Detect respawn: was dead (HP 0), now alive (HP > 0)
+                if _prev_hp == 0 and _rc_hp > 0:
+                    _now = time.time()
+                    last_death = self._last_death_ts.get(_rc_bot_id, 0)
+                    # Debounce: only trigger if we haven't seen a respawn recently
+                    if _now - last_death > 8.0:
+                        self._respawn_cooldown_until[_rc_bot_id] = _now + 5.0
+                        self._last_death_ts[_rc_bot_id] = _now
+                        logger.info(
+                            "respawn_cooldown_started: bot=%s hp=%d->%d cooldown=5s",
+                            _rc_bot_id, _prev_hp, _rc_hp,
+                        )
+                        # Queue a "move to safe zone" action immediately
+                        _rc_aq = getattr(self._runtime, "action_queue", None)
+                        if _rc_aq is not None:
+                            from datetime import UTC, datetime, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                            import hashlib as _rc_hashlib
+                            _rc_id = _rc_hashlib.md5(f"respawn_safe_{_rc_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                            _rc_proposal = ActionProposal(
+                                action_id=f"respawn_safe_{_rc_id}",
+                                kind="command",
+                                command="sit",
+                                priority_tier=ActionPriorityTier.reflex,
+                                source="reflex",
+                                created_at=datetime.now(UTC),
+                                expires_at=datetime.now(UTC) + timedelta(seconds=10),
+                                idempotency_key=f"respawn_safe_{_rc_bot_id}",
+                                metadata={
+                                    "source": "reflex",
+                                    "reason": "post_respawn_cooldown",
+                                    "bot_id": _rc_bot_id,
+                                    "safe_zone": True,
+                                },
+                            )
+                            _rc_aq.enqueue(_rc_bot_id, _rc_proposal)
+                            logger.info("respawn_safe_queued: bot=%s command=sit", _rc_bot_id)
+                elif _rc_hp == 0:
+                    # Still dead, update death timestamp
+                    self._last_death_ts[_rc_bot_id] = time.time()
+
+                # Check if still in cooldown
+                _rc_cooldown_expires = self._respawn_cooldown_until.get(_rc_bot_id, 0)
+                if time.time() < _rc_cooldown_expires:
+                    _rc_remaining = _rc_cooldown_expires - time.time()
+                    logger.info(
+                        "respawn_cooldown_active: bot=%s remaining=%.1fs skipping combat",
+                        _rc_bot_id, _rc_remaining,
+                    )
+                    # Add a replan reason so combat actions are skipped
+                    replan_reasons.append(f"respawn_cooldown_{_rc_remaining:.0f}s")
+                    # Return early with a no-op result to avoid combat
+                    return PDCAResult(
+                        plan_id="respawn_cooldown",
+                        actions_queued=0,
+                        progress_pct=1.0,
+                        stuck=False,
+                        re_planned=False,
+                        force_replan=False,
+                        selected_goal="respawn_cooldown",
+                        objective=f"Waiting {_rc_remaining:.0f}s after respawn",
+                        replan_reasons=[f"respawn_cooldown_{_rc_remaining:.0f}s"],
+                        error=None,
+                        cycle_ms=(time.time() - _cycle_start) * 1000.0,
+                    )
+
             progress = self._progress_tracker.evaluate(
                 horizon=horizon,
                 active_plan=self._active_plan[horizon],
@@ -4188,13 +4278,83 @@ class PDCALoop:
                             if not hasattr(self._runtime, "pro_ro_player_advice"):
                                 self._runtime.pro_ro_player_advice = {}
                             self._runtime.pro_ro_player_advice[decision_meta.bot_id] = _advice
-                            # Apply starting map recommendation if no active plan
-                            _target_map = str(_advice.get("starting_map", "") or "")
-                            if _target_map and latest_snapshot is not None:
-                                _current_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
-                                if _target_map != _current_map:
-                                    replan_reasons.append(f"cold_start_move_to_{_target_map}")
-                                    force_replan = True
+
+                            # ── Wire advice into actionable actions based on confidence ──
+                            _advice_confidence = float(_advice.get("confidence", 0) or 0)
+                            _advice_command = str(_advice.get("command", "") or "").strip()
+                            _advice_kind = str(_advice.get("kind", "command") or "").strip().lower()
+                            _advice_reason = str(_advice.get("reason", "") or "")
+
+                            if _advice_confidence > 0.85 and _advice_command:
+                                # High confidence: queue as an action directly
+                                _advice_aq = getattr(self._runtime, "action_queue", None)
+                                if _advice_aq is not None:
+                                    from datetime import UTC, datetime, timedelta
+                                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                    import hashlib as _adv_hashlib
+                                    _adv_id = _adv_hashlib.md5(
+                                        f"pro_ro_{decision_meta.bot_id}_{time.monotonic_ns()}".encode()
+                                    ).hexdigest()[:16]
+                                    _advice_proposal = ActionProposal(
+                                        action_id=f"pro_ro_{_adv_id}",
+                                        kind=_advice_kind,
+                                        command=_advice_command,
+                                        priority_tier=ActionPriorityTier.tactical,
+                                        source="planner",
+                                        created_at=datetime.now(UTC),
+                                        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                        idempotency_key=f"pro_ro_{_advice_command}_{decision_meta.bot_id}",
+                                        metadata={
+                                            "source": "pro_ro_player",
+                                            "confidence": _advice_confidence,
+                                            "reason": _advice_reason[:200],
+                                            "advice_situation": str(_signals.get("situation", "")),
+                                            "bot_id": decision_meta.bot_id,
+                                        },
+                                    )
+                                    _advice_aq.enqueue(decision_meta.bot_id, _advice_proposal)
+                                    logger.info(
+                                        "pro_ro_player_high_confidence_action: bot=%s cmd=%s conf=%.2f kind=%s",
+                                        decision_meta.bot_id, _advice_command, _advice_confidence, _advice_kind,
+                                    )
+                                # Also apply starting map recommendation
+                                _target_map = str(_advice.get("starting_map", "") or "")
+                                if _target_map and latest_snapshot is not None:
+                                    _current_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
+                                    if _target_map != _current_map:
+                                        replan_reasons.append(f"cold_start_move_to_{_target_map}")
+                                        force_replan = True
+                            elif _advice_confidence >= 0.7 and _advice_command:
+                                # Medium confidence: pass advice as input to the planner
+                                logger.info(
+                                    "pro_ro_player_medium_confidence_advice: bot=%s cmd=%s conf=%.2f reason=%s",
+                                    decision_meta.bot_id, _advice_command, _advice_confidence, _advice_reason[:100],
+                                )
+                                # Store advice for planner to consume in next cycle
+                                if not hasattr(self._runtime, "planner_context_advice"):
+                                    self._runtime.planner_context_advice = {}
+                                self._runtime.planner_context_advice[decision_meta.bot_id] = {
+                                    "advice": _advice.get("advice", ""),
+                                    "confidence": _advice_confidence,
+                                    "command": _advice_command,
+                                    "kind": _advice_kind,
+                                    "reason": _advice_reason,
+                                    "source": "pro_ro_player",
+                                    "timestamp": time.time(),
+                                }
+                                # Still apply map recommendation even at medium confidence
+                                _target_map = str(_advice.get("starting_map", "") or "")
+                                if _target_map and latest_snapshot is not None:
+                                    _current_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
+                                    if _target_map != _current_map:
+                                        replan_reasons.append(f"cold_start_move_to_{_target_map}")
+                                        force_replan = True
+                            else:
+                                # Low confidence: log and ignore, fallback to heuristic
+                                logger.info(
+                                    "pro_ro_player_low_confidence_ignored: bot=%s conf=%.2f cmd=%s",
+                                    decision_meta.bot_id, _advice_confidence, _advice_command or "(none)",
+                                )
                     except Exception as _pro_exc:
                         logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
             
