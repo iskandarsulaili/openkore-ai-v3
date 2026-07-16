@@ -3098,7 +3098,7 @@ sub _check_bridge_reflexes {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
 					# POST EVENT TO SIDECAR (let conscious handle rest)
-					_http_post_json('/v2/ingest/event', {
+					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'emergency_no_heal',
 						hp_ratio => $hp_ratio,
@@ -3117,8 +3117,17 @@ sub _check_bridge_reflexes {
 						timestamp => _now_ms(),
 					});
 
-					# SIT FALLBACK: if no healing items or zeny, sit to regen HP naturally
-					if (scalar(@_heal_items) == 0 && $char->{zeny} < 50) {
+					# SIT FALLBACK: if no healing items in inventory and low zeny, sit to regen HP naturally
+					my $_has_heal_item = 0;
+					for my $_hitem (@_heal_items) {
+						my $_inv = eval { Actor::Item::get($_hitem) };
+						if ($_inv && ref($_inv) eq 'HASH' && ($_inv->{amount} || 0) > 0) {
+							$_has_heal_item = 1;
+							last;
+						}
+					}
+					my $_zeny = $char->{zeny} || 0;
+					if (!$_has_heal_item && $_zeny < 50) {
 						my $ai_state = $Ai::Ai->{ai} || '';
 						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
 							Commands::run('sit');
@@ -3198,7 +3207,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
 				$_reflex_last_fired{aggro_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'aggro_warning',
 					aggro_count => $aggro_count,
@@ -3217,7 +3226,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
 				$_reflex_last_fired{low_sp} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'low_sp',
 					sp_ratio => $sp_ratio,
@@ -3251,7 +3260,7 @@ sub _check_bridge_reflexes {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					eval { _toggle_ai_mode('manual'); 1 };
-					_http_post_json('/v2/ingest/event', {
+					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'gm_detected',
 						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
@@ -3269,7 +3278,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
 				$_reflex_last_fired{weight_warning} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'weight_warning',
 					weight_ratio => $weight_ratio,
@@ -3298,7 +3307,7 @@ sub _check_bridge_reflexes {
 				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
 					$_reflex_last_fired{equipment_broken} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
-					_http_post_json('/v2/ingest/event', {
+					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'equipment_broken',
 						message => 'Broken equipment detected',
@@ -3382,7 +3391,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
 				$_reflex_last_fired{bot_request} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'bot_cooperation_request',
 					hp_ratio => $hp_ratio,
@@ -3420,7 +3429,7 @@ sub _check_bridge_reflexes {
 					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
 						$_reflex_last_fired{party_low_hp} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
-						_http_post_json('/v2/ingest/event', {
+						_post_event({
 							kind => 'bridge_reflex',
 							reflex => 'party_low_hp',
 							player_name => $pname,
@@ -3451,7 +3460,7 @@ sub _check_bridge_reflexes {
 					eval { Commands::run("tele"); 1 };
 				}
 
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'high_aggro_surround',
 					aggro_count => $aggro_count,
@@ -3471,7 +3480,7 @@ sub _check_bridge_reflexes {
 				$_reflex_last_fired{zonk} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
 				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'zonk',
 					hp => $hp,
@@ -3490,7 +3499,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
 				$_reflex_last_fired{death_spike} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
-				_http_post_json('/v2/ingest/event', {
+				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'death_spike',
 					death_count => $death_count,
@@ -3574,7 +3583,7 @@ sub _check_bridge_reflexes {
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
 						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
-						_http_post_json('/v2/ingest/event', {
+						_post_event({
 							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
 							casting_skill => $casting,
