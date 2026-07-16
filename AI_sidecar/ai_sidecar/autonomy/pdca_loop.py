@@ -3815,6 +3815,7 @@ class PDCALoop:
                     if not _allowed and _use_llm:
                         logger.info("conscious_budget_exceeded: %s — skipping LLM, using fallback", _reason)
                         _use_llm = False
+
                 if not _use_llm:
                     # Emit game engine + heuristic + swarm + vendor + skill actions
                     # Emit for ALL registered bots, not just the resolved one
@@ -3827,6 +3828,32 @@ class PDCALoop:
                         pass
                     if not _all_bot_ids:
                         _all_bot_ids = [_cycle_bot_id]
+                    # Death recovery: bypass cost gate for dead bots
+                    _death_actions_queued = 0
+                    for _bid in _all_bot_ids:
+                        try:
+                            _cache = getattr(self._runtime, "snapshot_cache", None)
+                            _snap = _cache.get(_bid) if _cache is not None else None
+                            logger.debug("death_check: bot=%s snap=%s hp=%s", _bid, _snap is not None, 
+                                         getattr(_snap, "hp", None) if _snap is not None else "N/A")
+                            if _snap is not None:
+                                _hp = getattr(_snap, "hp", None)
+                                if _hp is not None and int(_hp) <= 0:
+                                    _aq = getattr(self._runtime, "action_queue", None)
+                                    if _aq is not None and hasattr(_aq, "enqueue"):
+                                        from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+                                        _prop = ActionProposal(
+                                            source="pdca_death_recovery",
+                                            command="respawn",
+                                            conflict_key="recovery.death",
+                                            metadata={"fallback_mode": "death_recovery"},
+                                            priority=ActionPriorityTier.reflex,
+                                        )
+                                        _aq.enqueue(_bid, _prop)
+                                        _death_actions_queued += 1
+                                        logger.info("pdca_death_respawn_queued[%s]: bot=%s", horizon.value, _bid)
+                        except Exception:
+                            logger.exception("pdca_death_respawn_enqueue_failed bot=%s", _bid)
                     _total_actions = 0
                     for _bid in _all_bot_ids:
                         _actions_queued_ge = _emit_game_engine_actions(
@@ -3853,8 +3880,13 @@ class PDCALoop:
                         horizon.value, _cost_mode.mode.value, _hc,
                         _total_actions, len(_all_bot_ids),
                     )
-                    return PDCAResult(horizon=horizon, plan_id="", actions_queued=_total_actions, progress_pct=0.0, stuck=False, re_planned=False,
-                                      force_replan=False, selected_goal="cost_gated", objective=f"Cost mode {_cost_mode.mode.value}",
+                    # If death actions were queued, report re_planned=True for respawn
+                    _death_recovery = _death_actions_queued > 0
+                    return PDCAResult(horizon=horizon, plan_id="death_respawn" if _death_recovery else "", 
+                                      actions_queued=_total_actions + _death_actions_queued, progress_pct=0.0, stuck=False, 
+                                      re_planned=_death_recovery,
+                                      force_replan=_death_recovery, selected_goal="survival" if _death_recovery else "cost_gated", 
+                                      objective="respawning" if _death_recovery else f"Cost mode {_cost_mode.mode.value}",
                                       replan_reasons=[], cycle_ms=0.0, error=None)
                 
                 # Check daily/hourly budget (for LLM path)
@@ -4191,6 +4223,55 @@ class PDCALoop:
                 goal_state=goal_state,
                 replan_reasons=replan_reasons,
             )
+            # ── DEATH BYPASS: if bot is dead, queue respawn immediately ──
+            _death_snap_ref = latest_snapshot
+            if _death_snap_ref is None:
+                try:
+                    _dcache = getattr(self._runtime, "snapshot_cache", None)
+                    if _dcache is not None and hasattr(_dcache, "get"):
+                        _death_snap_ref = _dcache.get(decision_meta.bot_id)
+                except Exception:
+                    pass
+            if _death_snap_ref is not None:
+                _death_vitals = getattr(_death_snap_ref, "vitals", None)
+                _death_hp = getattr(_death_vitals, "hp", None) if _death_vitals is not None else None
+                if _death_hp is not None and int(_death_hp) <= 0:
+                    _aq_death = getattr(self._runtime, "action_queue", None)
+                    if _aq_death is not None and hasattr(_aq_death, "enqueue"):
+                        from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+                        from uuid import uuid4
+                        from datetime import datetime, timedelta, timezone
+                        _now = datetime.now(timezone.utc)
+                        _prop = ActionProposal(
+                            action_id=f"death_{uuid4().hex[:16]}",
+                            source="reflex",
+                            command="respawn",
+                            conflict_key="recovery.death",
+                            priority_tier=ActionPriorityTier.reflex,
+                            created_at=_now,
+                            expires_at=_now + timedelta(seconds=30),
+                            idempotency_key=f"death_{uuid4().hex[:12]}",
+                            metadata={"fallback_mode": "death_recovery", "source_detail": "pdca_startup_gate"},
+                        )
+                        _enq_ok, _enq_status, _enq_id, _enq_reason = _aq_death.enqueue(decision_meta.bot_id, _prop)
+                        logger.info(
+                            "pdca_death_respawn_queued[%s]: bot=%s ok=%s status=%s id=%s reason=%s",
+                            horizon.value, decision_meta.bot_id, _enq_ok, _enq_status, _enq_id, _enq_reason,
+                        )
+                        return PDCAResult(
+                            horizon=horizon,
+                            plan_id="death_respawn",
+                            actions_queued=1,
+                            progress_pct=0.0,
+                            stuck=False,
+                            re_planned=True,
+                            force_replan=True,
+                            replan_reasons=replan_reasons + ["death_recovery"],
+                            objective="respawning",
+                            selected_goal="survival",
+                            cycle_ms=(time.monotonic() - start) * 1000,
+                            error=None,
+                        )
             if not bool(startup_gate.get("gate_open", False)):
                 logger.info(
                     "pdca_startup_gate_blocked",
