@@ -105,12 +105,27 @@ class _FleetState:
         }
 
 
+class _AlwaysAllowCostModeManager:
+    """Bypass cost gating so tests can reach force_replan / startup_gate logic."""
+
+    class _CostMode:
+        value = "max"
+
+    mode = _CostMode()
+
+    def should_use_llm(self, *a, **k):
+        return True
+
+
 @dataclass(slots=True)
 class _SnapshotCache:
     snapshot: BotStateSnapshot
 
     def get(self, _bot_id: str) -> BotStateSnapshot:
         return self.snapshot
+
+    def bot_ids(self) -> list[str]:
+        return [self.snapshot.meta.bot_id]
 
 
 class _PDCAStubRuntime:
@@ -122,6 +137,8 @@ class _PDCAStubRuntime:
         }
         self.snapshot_cache = _SnapshotCache(snapshot=_snapshot(tick_id="pdca-snap"))
         self.fleet_constraint_state = _FleetState(stale=False, central_available=True)
+        self.cost_mode_manager = _AlwaysAllowCostModeManager()
+        self.cost_tracker = None
         self.planner_calls: list[object] = []
         self.crewai_calls: list[object] = []
 
@@ -209,6 +226,9 @@ def test_pdca_force_replan_propagates_to_planner_and_crewai(monkeypatch) -> None
         force_replan_hint=True,
     )
     monkeypatch.setattr(pdca._progress_tracker, "evaluate", lambda **_: forced)
+
+    # Ensure conscious triggers always fire so both SHORT_TERM and LONG_TERM pass the cost gate
+    monkeypatch.setattr(pdca, "_evaluate_conscious_triggers", lambda **_: (True, "test", {}))
 
     short_result = asyncio.run(pdca._run_one_cycle(Horizon.SHORT_TERM))
     long_result = asyncio.run(pdca._run_one_cycle(Horizon.LONG_TERM))
@@ -326,7 +346,7 @@ def test_pdca_startup_gate_warmup_blocks_dispatch_until_minimum_live_state() -> 
     class _Runtime(_PDCAStubRuntime):
         def __init__(self) -> None:
             super().__init__()
-            self.snapshot_cache = type("NullSnapshotCache", (), {"get": staticmethod(lambda _bot_id: None)})()
+            self.snapshot_cache = type("NullSnapshotCache", (), {"get": staticmethod(lambda _bot_id: None), "bot_ids": staticmethod(lambda: [])})()
             self._startup_gate_by_bot: dict[str, dict[str, object]] = {}
 
         def startup_gate_status(self, *, bot_id: str) -> dict[str, object]:

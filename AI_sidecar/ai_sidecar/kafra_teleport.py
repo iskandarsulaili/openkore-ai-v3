@@ -315,3 +315,7 @@ def get_kafra_manager() -> KafraTeleportManager:
         if _kafra_manager is None:
             _kafra_manager = KafraTeleportManager()
         return _kafra_manager
+
+
+# Aliases for backward compatibility and cross-module imports
+get_kafra_teleport = get_kafra_manager

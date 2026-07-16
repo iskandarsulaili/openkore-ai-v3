@@ -172,6 +172,8 @@ class P2PKnowledgeNode:
                 return True  # Already running
             try:
                 from http.server import HTTPServer
+                # Allow reusing the address immediately after server stops
+                HTTPServer.allow_reuse_address = True
                 self._server = HTTPServer(("127.0.0.1", self._listen_port), P2PRequestHandler)
                 self._server._p2p_node = self  # type: ignore
                 self._server_thread = threading.Thread(

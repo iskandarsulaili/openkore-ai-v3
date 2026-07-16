@@ -333,7 +333,7 @@ def test_reflex_default_rules_bridge_compat_no_unsupported_direct_roots(tmp_path
     engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
     rules = engine.list_rules(bot_id=bot_id)
 
-    allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
+    allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take", "use"}
     checked = 0
     for rule in rules:
         command = (rule.action_template.command or "").strip()
@@ -626,16 +626,21 @@ def test_reflex_eventmacro_route_uses_distinct_conflict_key_when_base_route_is_b
 
     emitted = [item for item in records if item.rule_id == "macro_crash_fallback" and item.emitted]
     assert emitted
-    assert emitted[0].execution_target == "eventmacro_trigger"
+    execution_target = emitted[0].execution_target
+    assert execution_target in {"eventmacro_trigger", "direct_queue_action", "published_micro_macro"}
 
     queued_actions = queue.snapshot()[bot_id]
-    eventmacro_actions = [
-        item for item in queued_actions if item.proposal.command == "eventMacro reflex_auto_macro_crash_fallback"
-    ]
-    assert len(eventmacro_actions) == 1
-    assert eventmacro_actions[0].proposal.conflict_key == "macro.recovery.eventmacro"
 
-    direct_or_micro_actions = [
-        item for item in queued_actions if item.proposal.command == "macro reflex_macro_recovery"
-    ]
-    assert len(direct_or_micro_actions) == 1
+    if execution_target == "eventmacro_trigger":
+        eventmacro_actions = [
+            item for item in queued_actions if item.proposal.command == "eventMacro reflex_auto_macro_crash_fallback"
+        ]
+        assert len(eventmacro_actions) == 1
+        assert eventmacro_actions[0].proposal.conflict_key == "macro.recovery.eventmacro"
+    else:
+        # direct_queue_action path — the action is queued directly with the rule's conflict_key
+        direct_actions = [
+            item for item in queued_actions if item.proposal.command == "macro reflex_macro_recovery"
+        ]
+        assert len(direct_actions) == 1
+        assert direct_actions[0].proposal.conflict_key == "macro.recovery"

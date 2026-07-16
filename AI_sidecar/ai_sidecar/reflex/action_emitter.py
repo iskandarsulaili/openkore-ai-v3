@@ -205,6 +205,7 @@ class ActionEmitter:
             execution_target="direct_queue_action",
             kind=kind,
             command=command,
+            conflict_key=rule.action_template.conflict_key or None,
         )
         accepted, status, action_id, reason = queue_action(proposal, bot_id)
         if accepted:
@@ -251,6 +252,7 @@ class ActionEmitter:
             execution_target="published_micro_macro",
             kind="command",
             command=f"{self._macro_plugin_for_rule(rule)} {macro_name}",
+            conflict_key=rule.action_template.conflict_key or None,
         )
         accepted, status, action_id, reason = queue_action(proposal, bot_id)
         if accepted:

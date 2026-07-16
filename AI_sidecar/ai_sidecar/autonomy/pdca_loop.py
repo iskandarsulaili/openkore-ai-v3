@@ -3852,7 +3852,7 @@ class PDCALoop:
                     )
                     return PDCAResult(horizon=horizon, plan_id="", actions_queued=_total_actions, progress_pct=0.0, stuck=False, re_planned=False,
                                       force_replan=False, selected_goal="cost_gated", objective=f"Cost mode {_cost_mode.mode.value}",
-                                      replan_reasons=[], cycle_ms=0.0, error="")
+                                      replan_reasons=[], cycle_ms=0.0, error=None)
                 
                 # Check daily/hourly budget (for LLM path)
                 if _ct is not None:
@@ -3868,7 +3868,7 @@ class PDCALoop:
                         )
                         return PDCAResult(horizon=horizon, plan_id="", actions_queued=_actions_queued_budget, progress_pct=0.0, stuck=False, re_planned=False,
                                           force_replan=False, selected_goal="budget_gated", objective=f"Budget exceeded: {_reason}",
-                                          replan_reasons=[_reason], cycle_ms=0.0, error="")
+                                          replan_reasons=[_reason], cycle_ms=0.0, error=None)
             except Exception:
                 logger.exception("cost_gate_check_failed")
         
@@ -4583,7 +4583,9 @@ class PDCALoop:
             if item and item not in reasons:
                 reasons.append(str(item))
 
-        if bool(getattr(progress, "force_replan_hint", False)) is False and progress.stuck_cycles >= self._config.max_stuck_cycles:
+        if getattr(progress, "force_replan_hint", False):
+            reasons.append("force_replan_hint")
+        if progress.stuck_cycles >= self._config.max_stuck_cycles:
             reasons.append("stuck_cycles")
 
         if snapshot is not None:
@@ -4613,6 +4615,7 @@ class PDCALoop:
                 "fleet_central_stale",
                 "fleet_central_unavailable",
                 "stuck_cycles",
+                "force_replan_hint",
             }
             reasons = [item for item in reasons if item in hard]
 
