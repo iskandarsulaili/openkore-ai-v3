@@ -44,6 +44,30 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         if hs is None:
             return 0
         
+        # ── Party healing: process party_need_heal events ──
+        _party_aq = getattr(runtime_state, 'action_queue', None)
+        if _party_aq is not None:
+            try:
+                _party_snap = getattr(runtime_state, 'snapshot_cache', None)
+                if _party_snap is not None and bot_id:
+                    _party_latest = _party_snap.get(bot_id) if hasattr(_party_snap, 'get') else None
+                    if _party_latest:
+                        _party_events = _party_latest.get('events') or []
+                        for _pe in _party_events:
+                            if isinstance(_pe, dict) and _pe.get('type') == 'party_need_heal':
+                                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                _log.info("party_heal_needed: target=%s hp=%.0f%%", _pe.get('target_name'), (_pe.get('hp_pct',0)*100))
+                                _party_aq.enqueue(ActionProposal(
+                                    bot_id=bot_id,
+                                    action_type='party_heal',
+                                    priority_tier=ActionPriorityTier.reflex,
+                                    source='party_support',
+                                    description=f'Heal party member {_pe.get("target_name","?")} at {_pe.get("hp_pct",0)*100:.0f}% HP',
+                                    conflict_key=f'party_heal_{_pe.get("target_id","")}',
+                                ))
+            except Exception:
+                pass
+        
         # ── Cooldown tracker: init on runtime if not present ──
         _cd_tracker = getattr(runtime_state, '_cd_tracker', None)
         if _cd_tracker is None:
@@ -78,6 +102,32 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             ))
         except Exception:
             pass
+        
+        # ── Navigate to target map if route is available ──
+        _nav_route = getattr(runtime_state, '_nav_target_map', None)
+        if _nav_route and bot_id:
+            _char_map = ''
+            _nav_snap = getattr(runtime_state, 'snapshot_cache', None)
+            if _nav_snap is not None:
+                _nav_latest = _nav_snap.get(bot_id) if hasattr(_nav_snap, 'get') else None
+                if _nav_latest:
+                    _nav_nav = _nav_latest.get('navigation') or {}
+                    _char_map = _nav_nav.get('map') or ''
+            if _char_map and _char_map.lower() == _nav_route.lower():
+                runtime_state._nav_target_map = None
+            else:
+                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                _nav_aq = getattr(runtime_state, 'action_queue', None)
+                if _nav_aq is not None:
+                    _nav_aq.enqueue(ActionProposal(
+                        bot_id=bot_id,
+                        action_type='navigate',
+                        priority_tier=ActionPriorityTier.strategic,
+                        source='navigation_execution',
+                        description=f'Navigate from {_char_map} to {_nav_route}',
+                        conflict_key=f'navigate_{_nav_route}',
+                        metadata={'target_map': _nav_route, 'current_map': _char_map},
+                    ))
         
         # ── Burst protection: detect HP drop >50% in 2s → emergency teleport ──
         try:

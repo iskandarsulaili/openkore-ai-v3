@@ -1031,6 +1031,60 @@ sub _get_equipped_cards {
 	return \@cards;
 }
 
+sub _party_auto_heal {
+    my $self = shift;
+    my $char = $self->{char} or return;
+    my $actorList = $char->{actorList} or return;
+    my $party = $actorList->getParty();
+    return unless $party && scalar(@$party) > 1;
+    my $my_id = $char->{ID} or return;
+    foreach my $member (@$party) {
+        next if $member->{ID} eq $my_id;
+        my $hp = $member->{hp} || 0;
+        my $hp_max = $member->{hp_max} || 1;
+        my $hp_pct = $hp_max > 0 ? $hp / $hp_max : 1.0;
+        if ($hp_pct < 0.6 && $hp > 0) {
+            # Queue heal for party member
+            $self->{_sidecar_events} ||= [];
+            push @{$self->{_sidecar_events}}, {
+                type => 'party_need_heal',
+                target_id => $member->{ID},
+                target_name => $member->{name} || 'unknown',
+                hp_pct => $hp_pct,
+                hp => $hp,
+                hp_max => $hp_max,
+            };
+        }
+    }
+}
+
+sub _navigate_to_map {
+    my ($self, $target_map) = @_;
+    my $char = $self->{char} or return;
+    my $current_map = $char->{map} || '';
+    return 1 if lc($current_map) eq lc($target_map);
+    
+    # Use OpenKore's built-in move command or warp
+    $self->{_pending_navigation} = {
+        target_map => $target_map,
+        started_at => time,
+        attempts => 0,
+    };
+    
+    # If we have a route, execute the first step
+    my $routes = $self->{_nav_routes} ||= {};
+    my $route = $routes->{$current_map . '->' . $target_map};
+    if ($route && @$route) {
+        my $next_map = $route->[0];
+        Commands::run("warp $next_map");
+        return 0;
+    }
+    
+    # Fallback: use OpenKore's built-in auto-move
+    Commands::run("move $target_map");
+    return 0;
+}
+
 sub _build_snapshot_payload {
 	my $bot_id = _bot_id();
 	my $max_raw = _cfg_int('aiSidecar_maxRawChars', 256);
@@ -1774,6 +1828,18 @@ sub _poll_next_action {
 
 	_execute_action($poll_id, $json->{action});
 	return 1;
+}
+
+sub _action_execution_result {
+    my ($self, $action_id, $status, $message) = @_;
+    return unless $action_id;
+    $self->{_sidecar_events} ||= [];
+    push @{$self->{_sidecar_events}}, {
+        type => 'action_result',
+        action_id => $action_id,
+        status => $status,
+        message => $message || '',
+    };
 }
 
 sub _execute_action {
