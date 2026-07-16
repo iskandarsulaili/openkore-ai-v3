@@ -410,6 +410,27 @@ class ProRoPlayerProfile(BehaviorProfile):
         if level > 0 and situation in ("leveling", "grinding", "farming"):
             return 0.6
 
+        # Combat tactics — skill rotation, flee, burst decisions
+        if situation == "combat_tactics":
+            return 0.9
+        # Equipment — gear upgrade recommendations
+        if situation == "equipment":
+            return 0.8
+        # Economy — buy, sell, price check
+        if situation == "economy":
+            return 0.7
+        # Party — composition, roles, recruitment
+        if situation == "party":
+            return 0.8
+        # MvP hunting — strategy for specific MvP
+        if situation == "mvp_hunting":
+            return 0.95
+        # WoE — War of Emperium strategy
+        if situation == "woe":
+            return 0.9
+        # Leveling route — optimal leveling path
+        if situation == "leveling_route":
+            return 0.85
         # If none of the above apply, low baseline
         return 0.1
 
@@ -433,6 +454,20 @@ class ProRoPlayerProfile(BehaviorProfile):
             return self._handle_stuck(signals, player_class, level)
         if situation == "build_planning":
             return self._handle_build_planning(signals, player_class, level)
+        if situation == "combat_tactics":
+            return self._handle_combat_tactics(signals)
+        if situation == "equipment":
+            return self._handle_equipment(signals, player_class, level)
+        if situation == "economy":
+            return self._handle_economy(signals)
+        if situation == "party":
+            return self._handle_party(signals)
+        if situation == "mvp_hunting":
+            return self._handle_mvp_hunting(signals)
+        if situation == "woe":
+            return self._handle_woe(signals)
+        if situation == "leveling_route":
+            return self._handle_leveling_route(signals, player_class, level)
         if situation in ("general_advice", "leveling", "grinding", "farming"):
             return self._handle_general_advice(signals, player_class, level)
 
@@ -1037,4 +1072,165 @@ class ProRoPlayerProfile(BehaviorProfile):
             "advice": "\n".join(advice_parts),
             "tips": tips,
             "hunting_grounds": hunting_grounds[:3] if hunting_grounds else [],
+        }
+    def _handle_combat_tactics(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """Provide combat tactics advice."""
+        target = str(signals.get("target", "")).lower()
+        monster_elem = str(signals.get("monster_element", "")).lower()
+        weapon = str(signals.get("weapon", "dagger")).lower()
+        aggro = int(signals.get("aggro_count", 0))
+        hp_pct = float(signals.get("hp_pct", 1.0))
+        sp_pct = float(signals.get("sp_pct", 1.0))
+        advice_parts = [f"**Combat Tactics for {target or 'current fight'}**"]
+        if target and monster_elem:
+            try:
+                from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
+                em = get_elemental_matrix()
+                best_elem = ""
+                best_mult = 0.0
+                for e in ["water", "earth", "fire", "wind", "poison", "holy", "dark", "ghost", "undead", "neutral"]:
+                    mult = em.get_elemental_multiplier(e, monster_elem, 4) * 100
+                    if mult > best_mult:
+                        best_mult = mult
+                        best_elem = e
+                advice_parts.append(f"  Best element: **{best_elem}** ({best_mult:.0f}% damage)")
+            except Exception:
+                pass
+        if hp_pct < 0.3:
+            advice_parts.append("  CRITICAL HP — flee immediately")
+        elif hp_pct < 0.5:
+            advice_parts.append("  Low HP — heal or kite")
+        if sp_pct < 0.2:
+            advice_parts.append("  Low SP — auto-attack only")
+        if aggro > 3:
+            advice_parts.append(f"  {aggro} enemies — use AoE or flee")
+        return {
+            "kind": "combat_tactics", "command": "advise_combat",
+            "confidence": 0.85, "reason": f"Combat advice for {target}",
+            "advice": "\n".join(advice_parts),
+        }
+
+    def _handle_equipment(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Recommend equipment upgrades."""
+        zeny = int(signals.get("zeny", 0))
+        job_name = str(signals.get("job_name", player_class))
+        advice_parts = [f"**Equipment: {job_name.title()} Lv{level}**", f"Zeny: {zeny}"]
+        if level < 40:
+            advice_parts.extend(["  Weapon[3] + cards", "  Cotton Shirt[1]", "  Focus: cards > refinement"])
+        elif level < 70:
+            advice_parts.extend(["  +4~6 weapon, slotted armor", "  Elemental/racial cards", "  Focus: atk > def > refinement"])
+        elif level < 90:
+            advice_parts.extend(["  +7+ weapon, elemental armor", "  MVP-tier accessories", "  Focus: +7 weapon > card set"])
+        else:
+            advice_parts.extend(["  +10 weapon, full racial cards", "  Endgame armor (Val/Ori/Goib)", "  Focus: refine > enchant > costume"])
+        return {
+            "kind": "equipment_guide", "command": "advise_equipment",
+            "confidence": 0.8, "reason": f"Gear for Lv{level} {job_name}",
+            "advice": "\n".join(advice_parts),
+        }
+
+    def _handle_economy(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """Provide economy advice."""
+        zeny = int(signals.get("zeny", 0))
+        if zeny < 1000:
+            tips = ["Save zeny — buy only pots and arrows"]
+        elif zeny < 10000:
+            tips = ["Invest in a slotted weapon for cards"]
+        elif zeny < 100000:
+            tips = ["Consider gear upgrades or rare cards"]
+        else:
+            tips = ["Look at MVP gear or rare cards"]
+        return {
+            "kind": "economy_advice", "command": "advise_economy",
+            "confidence": 0.7, "reason": f"Economy: {zeny}z",
+            "advice": "\n".join(tips),
+        }
+
+    def _handle_party(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """Recommend party composition."""
+        pc = str(signals.get("class", "unknown")).lower()
+        goal = str(signals.get("goal", "leveling"))
+        synergy = {"mage": "Tank + Priest for safety", "archer": "Tank + Priest for buffs",
+                   "swordman": "Priest for heal", "acolyte": "Any DPS",
+                   "thief": "Priest + Tank", "merchant": "Any — you bring discounts"}
+        advice = f"**Party for {pc} ({goal}):** {synergy.get(pc, 'Balanced party')}"
+        if goal == "mvp":
+            advice += " | 1 Tank + 2 Healers + 2 DPS for burst"
+        elif goal == "woe":
+            advice += " | Tank + Dispeller + 2 DPS + Healer"
+        return {
+            "kind": "party_advice", "command": "advise_party",
+            "confidence": 0.85, "reason": f"Party for {pc}",
+            "advice": advice,
+        }
+
+    def _handle_mvp_hunting(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """Provide MvP hunting strategy."""
+        mvp = str(signals.get("target", signals.get("mvp_name", "unknown"))).lower()
+        strategies = {
+            "baphomet": "Demon/Dark 3 — Holy weapon. Dodge Hell's Judgment. Assumptio before pull.",
+            "osiris": "Undead 4 — Holy (200%). Escape Teleport at 20% HP — burst when low.",
+            "maya": "Insect/Earth 3 — Fire (200%). Bring Fire weapon. Magnum Break — watch AoE.",
+            "eddga": "Brute/Earth 2 — Fire (175%). Charge Attack — maintain distance.",
+            "doppelganger": "Demon/Dark 2 — Holy (175%). Reflect at 10% HP — stop attacking!",
+            "orc lord": "DemiHuman/Dark 2 — Holy (175%). Grand Darkness AoE + curse.",
+            "drake": "Undead/Undead 2 — Holy (175%). Charge Attack — kite.",
+            "mistress": "Insect/Wind 2 — Earth (175%). Runs at low HP — trap or one-shot.",
+            "phreeoni": "Brute/Neutral 3 — Ghost only. Wide Web — stay ranged.",
+            "gloom": "Demon/Dark 3 — Holy (175%). Vampiric Gift — BURST HARD.",
+            "thanatos": "Undead/Undead 4 — Holy (200%). 4 forms. Tank magic with MDEF.",
+            "kiel": "DemiHuman/Neutral 3 — Dark (175%). Full-divest — bring spares.",
+        }
+        strategy = strategies.get(mvp, f"No specific data for {mvp}")
+        return {
+            "kind": "mvp_hunting_guide", "command": "advise_mvp",
+            "confidence": 0.9, "reason": f"MvP: {mvp}", "advice": strategy,
+        }
+
+    def _handle_woe(self, signals: dict[str, Any]) -> dict[str, Any]:
+        """War of Emperium strategy."""
+        role = str(signals.get("role", "unknown")).lower()
+        defense = bool(signals.get("is_defense", False))
+        strat = []
+        if defense:
+            strat.append("Defense: wall casters, dispeller near Emp, Safety Wall chokepoints")
+        else:
+            strat.append("Offense: main gate rush, back entrance squad, Assassin infiltration")
+        role_tips = {"assassin": "Cloak through, ignore fights, rush Emp",
+                     "priest": "Safety Wall breaker + Lex Aeterna before kill",
+                     "wizard": "AoE chokepoints, Dispel enemy buffs",
+                     "knight": "Tank Emp + Pneuma for ranged block",
+                     "stalker": "Strip defenders, Full Divest on Emp breaker"}
+        if role in role_tips:
+            strat.append(f"Your role ({role}): {role_tips[role]}")
+        return {
+            "kind": "woe_strategy", "command": "advise_woe",
+            "confidence": 0.85, "reason": f"WoE ({'D' if defense else 'O'})",
+            "advice": " | ".join(strat),
+        }
+
+    def _handle_leveling_route(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Optimal leveling path."""
+        job = str(signals.get("job_name", player_class)).lower()
+        if level < 15:
+            maps = ["Town fields — Porings/Lunatics/Fabres"]
+        elif level < 40:
+            maps = ["Geffen Dungeon 1F — Drainliar/Familiar",
+                    "Payon Cave 2F-3F — Bongun/Munak/Skel"] if job in ("mage","wizard","sage") else                    ["Orc Dungeon 1F — Orc Warrior",
+                    "Byalan 1F — Vadon/Marina"]
+        elif level < 70:
+            maps = ["Magma 1F — Magmaring (Water)",
+                    "Toy Factory 1F — Marionette (Ghost)"]
+        elif level < 90:
+            maps = ["Magma 2F — high exp, dangerous",
+                    "Abyss Lake 1F-2F — great exp, GTB needed",
+                    "Thanatos Tower 1F-3F — Undead, Holy needed"]
+        else:
+            maps = ["Biolabs 3F-4F — highest exp",
+                    "Thanatos Tower 4F+ — Thanatos MVP",
+                    "Nameless Island — dense undead"]
+        return {
+            "kind": "leveling_route", "command": "advise_leveling",
+            "confidence": 0.85, "reason": f"Route: Lv{level} {job}",
+            "advice": " | ".join(maps),
         }

@@ -221,6 +221,8 @@ sub on_mainLoop_pre {
 }
 
 sub on_mainLoop_post {
+	warning "[aiSidecarBridge] DEBUG on_mainLoop_post called, registered=$registered
+";
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -938,6 +940,8 @@ sub _bridge_enabled {
 
 sub _attempt_register {
 	my ($reason) = @_;
+	warning "[aiSidecarBridge] DEBUG _attempt_register called reason=$reason
+";
 	return if !_bridge_enabled();
 
 	my $payload = {
@@ -2516,6 +2520,7 @@ sub _http_post_json {
 	$headers ||= '';
 	my ($status) = $headers =~ m{^HTTP/\d+\.\d+\s+(\d+)};
 	$status ||= 0;
+	warning "[aiSidecarBridge] DEBUG _http_post_json path=$path url=$base_url response status=$status body=" . (defined $response_body ? substr($response_body, 0, 120) : "empty") . "\n";
 
 	my $json;
 	if (defined $response_body && $response_body ne '') {
