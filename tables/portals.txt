@@ -1958,7 +1958,7 @@ prt_in 135 71 prontera 132 222
 prt_in 168 124 prontera 177 221
 prt_in 172 33 prontera 208 154
 prt_in 181 55 prontera 192 267
-prt_in 183 97 prontera 120 267
+prt_in 183 97 prontera 120 264
 prt_in 208 179 prontera 73 100
 prt_in 217 163 prt_in 234 163
 prt_in 234 163 prt_in 217 163
