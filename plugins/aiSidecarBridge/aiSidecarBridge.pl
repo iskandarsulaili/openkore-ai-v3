@@ -1003,6 +1003,27 @@ sub _send_snapshot {
     }
 }
 
+
+# ── Helper: extract equipped cards from character inventory ──
+sub _get_equipped_cards {
+	my @cards;
+	if ($char && $char->{inventory} && ref $char->{inventory} eq 'ARRAY') {
+		for my $item (@{$char->{inventory}}) {
+			next if !$item || !ref $item eq 'HASH';
+			next if !$item->{equipped};
+			my $item_name = $item->{name} || '';
+			if ($item->{slots} && ref $item->{cards} eq 'ARRAY') {
+				for my $card (@{$item->{cards}}) {
+					next if !$card;
+					my $card_name = (ref $card eq 'HASH' ? ($card->{name} || '') : $card) || '';
+					push @cards, $card_name if $card_name;
+				}
+			}
+		}
+	}
+	return \@cards;
+}
+
 sub _build_snapshot_payload {
 	my $bot_id = _bot_id();
 	my $max_raw = _cfg_int('aiSidecar_maxRawChars', 256);
@@ -1407,6 +1428,7 @@ sub _build_snapshot_payload {
 		},
 		progression => $progression,
 		skills      => \@skills_list,
+		equipped_cards => _get_equipped_cards(),
 		actors      => \@actors,
 		raw         => $raw,
 	};
