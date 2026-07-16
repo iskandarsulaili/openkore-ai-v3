@@ -2806,6 +2806,23 @@ sub _bot_id {
 			return "$override_master:$override_identity";
 		}
 	}
+	# Fallback: check profile-specific control folder for override
+	my $control_folder = _active_control_folder();
+	if ($control_folder) {
+		my $profile_override_file = "$control_folder/ai_sidecar.txt";
+		if (-f $profile_override_file) {
+			my %profile_cfg;
+			parseConfigFile($profile_override_file, \%profile_cfg, 0);
+			my $profile_override = _trim(_scalarize($profile_cfg{aiSidecar_botIdOverride} || ''), 128);
+			if ($profile_override =~ /^([^:]+):(.+)$/) {
+				my $override_master = _normalize_identity_part($1, '');
+				my $override_identity = _normalize_identity_part($2, '');
+				if ($override_master ne '' && $override_identity ne '') {
+					return "$override_master:$override_identity";
+				}
+			}
+		}
+	}
 
 	my $master = _normalize_identity_part($config{master}, 'unknown_master');
 	my $identity_override = _normalize_identity_part(_cfg('aiSidecar_botIdentity', ''), '');
