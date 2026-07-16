@@ -1976,9 +1976,41 @@ sub _flush_ack_queue {
 sub _post_event {
 	my ($event) = @_;
 	return if !_bridge_enabled();
+	
+	# Normalize flat bridge event to NormalizedEvent schema
+	my $event_family = $event->{kind} || 'bridge_reflex';
+	my $event_type = $event->{reflex} || $event->{event_type} || 'unknown';
+	my $severity = $event->{severity} || 'info';
+	
+	# Build tags (string values) and numeric (float values) from event params
+	my %tags = ();
+	my %numeric = ();
+	my $text = $event->{text} || '';
+	my %payload = ();
+	while (my ($k, $v) = each %$event) {
+		next if $k eq 'kind' || $k eq 'reflex' || $k eq 'severity' || $k eq 'text' || $k eq 'event_type' || $k eq 'timestamp';
+		if (!defined $v) { next }
+		if ($v =~ /^-?\d+\.?\d*$/) {
+			$numeric{$k} = $v + 0.0;
+		} else {
+			$tags{$k} = substr($v, 0, 256);
+		}
+	}
+	$text = substr($event_type . ' ' . join(' ', values %tags), 0, 1024) if $text eq '';
+	
+	my $normalized = {
+		event_family => $event_family,
+		event_type => $event_type,
+		severity => $severity,
+		text => $text,
+		tags => \%tags,
+		numeric => \%numeric,
+		payload => \%payload,
+	};
+	
 	my $payload = {
 		meta => _meta(_bot_id()),
-		events => [$event],
+		events => [$normalized],
 	};
 	my $resp = _http_post_json('/v2/ingest/event', $payload);
 	return $resp;
