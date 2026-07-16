@@ -2067,6 +2067,31 @@ sub _flush_event_queue {
 	$batch_size = scalar(@event_queue) if $batch_size > scalar(@event_queue);
 
 	my @batch = splice @event_queue, 0, $batch_size;
+	# Normalize each event in batch
+	my @normalized = map {
+		my $event = $_;
+		my $event_family = $event->{kind} || 'bridge_event';
+		my $event_type = $event->{reflex} || $event->{event_type} || 'unknown';
+		my $severity = $event->{severity} || 'info';
+		my %tags = (); my %numeric = (); my $text = $event->{text} || '';
+		my %payload = ();
+		while (my ($k, $v) = each %$event) {
+			next if $k eq 'kind' || $k eq 'reflex' || $k eq 'severity' || $k eq 'text' || $k eq 'event_type' || $k eq 'timestamp';
+			if (!defined $v) { next }
+			if ($v =~ /^-?\d+\.?\d*$/) { $numeric{$k} = $v + 0.0; }
+			else { $tags{$k} = substr($v, 0, 256); }
+		}
+		$text = substr($event_type . ' ' . join(' ', values %tags), 0, 1024) if $text eq '';
+		+{
+			event_family => $event_family,
+			event_type => $event_type,
+			severity => $severity,
+			text => $text,
+			tags => \%tags,
+			numeric => \%numeric,
+			payload => \%payload,
+		};
+	} @batch;
 	my $payload = {
 		meta => _meta(_bot_id()),
 		events => \@batch,
@@ -3159,6 +3184,8 @@ sub _check_bridge_reflexes {
 						}
 					}
 					my $_zeny = $char->{zeny} || 0;
+					# Debug: log sit condition values
+					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max\n";
 					if (!$_has_heal_item && $_zeny < 50) {
 						my $ai_state = $Ai::Ai->{ai} || '';
 						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
