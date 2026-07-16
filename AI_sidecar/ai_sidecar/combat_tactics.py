@@ -440,7 +440,6 @@ def can_execute_skill(skill_name: str, sp_cost: int, current_sp: int, current_hp
         return False, f"not enough HP for skill cost ({current_hp}/{hp_cost})"
     return True, "ok"
 def compute_damage_multiplier(
-        self,
         attack_element: str,
         defense_element: str,
         element_level: int = 1,
@@ -449,141 +448,92 @@ def compute_damage_multiplier(
         monster_race: str | None = None,
         cards: list[str] | None = None,
     ) -> dict[str, float]:
-        """Compute the full damage multiplier including element + card + size + race.
+    """Compute the full damage multiplier including element + card + size + race."""
+    result: dict[str, float] = {}
 
-        Pro RO Player knows: a +10 Dagger vs Large DemiHuman with 4x Hydra Cards
-        is NOT just element × card bonus. Size penalty applies FIRST,
-        then element, then cards, each multiplicative.
-
-        Args:
-            attack_element: Element of the attack (e.g., "fire", "holy")
-            defense_element: Monster's element
-            element_level: Monster's element level (1-4)
-            weapon_type: Weapon type (e.g., "dagger", "spear")
-            monster_size: Monster size ("small", "medium", "large")
-            monster_race: Monster race
-            cards: List of equipped card names
-
-        Returns:
-            dict with breakdown: {
-                "element_multiplier": float,
-                "size_penalty": float,
-                "card_multiplier": float,
-                "race_multiplier": float,
-                "total": float,
-            }
-        """
-        result: dict[str, float] = {}
-
-        # 1. Element multiplier
+    # 1. Element multiplier
+    try:
         from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
-        em = get_elemental_matrix()
-        elem_mult = em.get_elemental_multiplier(attack_element, defense_element, element_level)
-        result["element_multiplier"] = elem_mult
-
-        # 2. Size penalty
-        size_penalty = 1.0
-        if weapon_type and monster_size:
-            try:
-                from ai_sidecar.combat.elemental_matrix import WeaponType, Size
-                wt_map = {
-                    "dagger": WeaponType.DAGGER, "sword": WeaponType.SWORD,
-                    "spear": WeaponType.SPEAR, "two_handed_sword": WeaponType.TWO_HANDED_SWORD,
-                    "bow": WeaponType.BOW, "staff": WeaponType.STAFF,
-                    "mace": WeaponType.MACE, "axe": WeaponType.AXE,
-                    "knuckle": WeaponType.KNUCKLE, "katar": WeaponType.KATAR,
-                    "instrument": WeaponType.INSTRUMENT, "whip": WeaponType.WHIP,
-                    "book": WeaponType.BOOK, "claw": WeaponType.CLAW,
-                    "two_handed_spear": WeaponType.TWO_HANDED_SPEAR,
-                    "two_handed_axe": WeaponType.TWO_HANDED_AXE,
-                    "two_handed_staff": WeaponType.TWO_HANDED_STAFF,
-                }
-                sz_map = {"small": Size.SMALL, "medium": Size.MEDIUM, "large": Size.LARGE}
-                wt_enum = wt_map.get(weapon_type.lower().replace(" ", "_"))
-                sz_enum = sz_map.get(monster_size.lower())
-                if wt_enum and sz_enum:
-                    size_penalty = em.get_size_penalty(wt_enum, sz_enum)
-            except Exception:
-                size_penalty = 1.0
-        result["size_penalty"] = size_penalty
-
-        # 3. Card multiplier
-        card_mult = 1.0
-        if cards:
-            try:
-                from ai_sidecar.combat.card_db import get_card_database
-                db = get_card_database()
-                if monster_race or monster_size or defense_element:
-                    card_mult = db.get_card_multiplier(
-                        cards,
-                        target_race=monster_race or "",
-                        target_size=monster_size or "",
-                        target_element=defense_element,
-                    )
-            except Exception:
-                card_mult = 1.0
-        result["card_multiplier"] = card_mult
-
-        # 4. Total = element × size × card
-        total = elem_mult * size_penalty * card_mult
-        result["total"] = total
-        result["race_multiplier"] = 1.0
-
-        return result
-
-def get_element_multiplier(self, attack_element: str, defense_element: str,
-                              element_level: int = 1) -> float:
-        """Get the damage multiplier for attack element vs defense element.
-
-        Uses parsed rAthena attr_fix.yml (all 4 levels).
-        A pro player knows these by heart — this just keeps them fresh.
-        """
-        from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
-        return get_elemental_matrix().get_elemental_multiplier(
+        elem_mult = get_elemental_matrix().get_elemental_multiplier(
             attack_element, defense_element, element_level
         )
+    except Exception:
+        elem_mult = 1.0
+    result["element_multiplier"] = elem_mult
 
-    def get_best_element_attack(self, player_class: str, monster_element: str,
+    # 2. Size penalty
+    size_penalty = 1.0
+    if weapon_type and monster_size:
+        from ai_sidecar.combat_tactics import CombatTactics
+        _ct = CombatTactics()
+        size_penalty = _ct.get_weapon_size_multiplier(weapon_type, monster_size)
+        result["size_penalty"] = size_penalty
+
+    # 3. Card multiplier
+    card_mult = 1.0
+    if cards:
+        try:
+            from ai_sidecar.combat.card_db import get_card_database
+            db = get_card_database()
+            if monster_race or monster_size or defense_element:
+                card_mult = db.get_card_multiplier(
+                    cards,
+                    target_race=monster_race or "",
+                    target_size=monster_size or "",
+                    target_element=defense_element,
+                )
+        except Exception:
+            card_mult = 1.0
+    result["card_multiplier"] = card_mult
+
+    total = elem_mult * size_penalty * card_mult
+    result["total"] = total
+    result["race_multiplier"] = 1.0
+
+    return result
+
+def get_element_multiplier(attack_element: str, defense_element: str,
+                              element_level: int = 1) -> float:
+    """Get the damage multiplier for attack element vs defense element.
+    Uses parsed rAthena attr_fix.yml (all 4 levels).
+    """
+    from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
+    return get_elemental_matrix().get_elemental_multiplier(
+        attack_element, defense_element, element_level
+    )
+
+def get_best_element_attack(player_class: str, monster_element: str,
                               element_level: int = 1) -> str:
-        """Recommend the best element to use against a monster.
+    """Recommend the best element to use against a monster."""
+    monster_elem = monster_element.lower()
+    class_elements = {
+        "mage": ["fire", "water", "wind", "earth"],
+        "wizard": ["fire", "water", "wind", "earth"],
+        "high_wizard": ["fire", "water", "wind", "earth"],
+        "sorcerer": ["fire", "water", "wind", "earth"],
+        "warlock": ["fire", "water", "wind", "earth"],
+        "sage": ["fire", "water", "wind", "earth"],
+        "professor": ["fire", "water", "wind", "earth"],
+        "acolyte": ["holy"],
+        "priest": ["holy"],
+        "arch_bishop": ["holy"],
+        "monk": ["holy"],
+        "champion": ["holy"],
+        "assassin": ["poison"],
+        "assassin_cross": ["poison"],
+        "guillotine_cross": ["poison"],
+    }
+    available = class_elements.get(player_class.lower(), ["neutral"])
+    best_elem = "neutral"
+    best_mult = 1.0
+    for elem in available:
+        mult = get_element_multiplier(elem, monster_elem, element_level=element_level)
+        if mult > best_mult or (mult == best_mult and elem != "neutral" and best_elem == "neutral"):
+            best_mult = mult
+            best_elem = elem
+    return best_elem
 
-        Pro knowledge: Holy beats Undead (2x), Fire beats Undead (1.25x),
-        Holy beats Dark (2x), Fire beats Earth (1.75x), etc.
-        """
-        monster_elem = monster_element.lower()
+def counters() -> dict[str, int]:
+    """Return counts of registered combos."""
+    return {"combos": 0}
 
-        # Class-specific element access
-        class_elements = {
-            "mage": ["fire", "water", "wind", "earth"],
-            "wizard": ["fire", "water", "wind", "earth"],
-            "high_wizard": ["fire", "water", "wind", "earth"],
-            "sorcerer": ["fire", "water", "wind", "earth"],
-            "warlock": ["fire", "water", "wind", "earth"],
-            "sage": ["fire", "water", "wind", "earth"],
-            "professor": ["fire", "water", "wind", "earth"],
-            "acolyte": ["holy"],
-            "priest": ["holy"],
-            "arch_bishop": ["holy"],
-            "monk": ["holy"],
-            "champion": ["holy"],
-            "assassin": ["poison"],
-            "assassin_cross": ["poison"],
-            "guillotine_cross": ["poison"],
-        }
-
-        available = class_elements.get(player_class.lower(), ["neutral"])
-
-        best_elem = "neutral"
-        best_mult = 1.0
-
-        for elem in available:
-            mult = self.get_element_multiplier(elem, monster_elem, element_level=element_level)
-            # Prefer non-neutral elements when tied (neutral is always 1.0)
-            if mult > best_mult or (mult == best_mult and elem != "neutral" and best_elem == "neutral"):
-                best_mult = mult
-                best_elem = elem
-
-        return best_elem
-
-    def counters(self) -> dict[str, int]:
-        return {"combos": sum(len(v) for v in self._class_combos.values())}
