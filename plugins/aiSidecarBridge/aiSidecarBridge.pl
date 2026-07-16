@@ -1762,7 +1762,7 @@ sub _execute_action {
 		if ($_ai_hp_max > 0 && ($_ai_hp / $_ai_hp_max) < 0.50) {
 			($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed_low_hp');
 		} else {
-			my $ok = eval { Commands::run("ai manual"); 1; };
+			my $ok = eval { _toggle_ai_mode('manual'); 1; };
 			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
@@ -2851,10 +2851,25 @@ sub _cfg_bool {
 	return ($value && $value =~ /^(?:1|true|yes|on)$/i) ? 1 : 0;
 }
 
+
+# -- AI mode debounce -- prevent rapid auto/manual oscillation --
+my $_last_ai_toggle_ms = 0;
+my $_last_ai_mode = '';
+sub _toggle_ai_mode {
+	my ($mode) = @_;
+	return if !$mode;
+	return if $mode eq $_last_ai_mode;
+	my $now = _now_ms();
+	return if ($now - $_last_ai_toggle_ms) < 10000;
+	$_last_ai_toggle_ms = $now;
+	$_last_ai_mode = $mode;
+	eval { Commands::run("ai $mode"); 1 };
+}
+
 sub _trim {
 	my ($value, $max_len) = @_;
 	$value = '' if !defined $value;
-	$max_len = 0 + $max_len;
+	$max_len = 0 + ($max_len || 0);
 	return $value if $max_len <= 0 || length($value) <= $max_len;
 	return substr($value, 0, $max_len);
 }
@@ -3096,13 +3111,13 @@ sub _check_bridge_reflexes {
 					if ($_now_ms - $_last_prontera_recovery_ms > 60000) {
 						if ($aggro_count > 0) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 						} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 						} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 						}
 					}
 				}
@@ -3124,7 +3139,7 @@ sub _check_bridge_reflexes {
 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
 				if ($_reflex_map2 !~ /^prontera/i) {
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				}
 			}
 		}
@@ -3138,12 +3153,12 @@ sub _check_bridge_reflexes {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				} else {
 					my $_reflex_map3 = $char->{map} || '';
 					if ($_reflex_map3 !~ /^prontera/i) {
 						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 					}
 				}
 			}
@@ -3209,7 +3224,7 @@ sub _check_bridge_reflexes {
 				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
-					eval { Commands::run("ai manual"); 1 };
+					eval { _toggle_ai_mode('manual'); 1 };
 					_http_post_json('/v2/ingest/event', {
 						kind => 'bridge_reflex',
 						reflex => 'gm_detected',
@@ -3405,7 +3420,7 @@ sub _check_bridge_reflexes {
 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
 				# Immediate flee + teleport combo
-				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				if ($hp_ratio < 0.25) {
 					eval { Commands::run("tele"); 1 };
 				}
@@ -3429,7 +3444,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, 2000)) {
 				$_reflex_last_fired{zonk} = _now_ms();
 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
-				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				_http_post_json('/v2/ingest/event', {
 					kind => 'bridge_reflex',
 					reflex => 'zonk',
@@ -3532,7 +3547,7 @@ sub _check_bridge_reflexes {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 						_http_post_json('/v2/ingest/event', {
 							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
@@ -3558,7 +3573,7 @@ sub _check_bridge_reflexes {
 				my $ai_top = @ai_seq ? $ai_seq[0] : '';
 				if ($ai_top ne 'sit') {
 					_random_action_delay();
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; Commands::run("ai auto"); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				}
 			}
 		}

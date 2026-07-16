@@ -228,7 +228,7 @@ class HighFreqReflex:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
-            cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "ai manual"
+            cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level)  # returns None if no heal available — don't toggle AI mode
             logger.info("highfreq_reflex: bot=%s emergency_heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
@@ -240,7 +240,7 @@ class HighFreqReflex:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
-            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "ai manual"
+            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level)  # returns None if no heal available — don't toggle AI mode
             logger.info("highfreq_reflex: bot=%s heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)

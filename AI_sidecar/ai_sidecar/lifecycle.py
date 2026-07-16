@@ -585,6 +585,9 @@ class RuntimeState:
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
     planner_service: PlannerService | None = None
+    leveling_planner: object | None = None
+    gear_progression_planner: object | None = None
+    goal_planner: object | None = None
     crew_manager: CrewManager | None = None
     ml_observer: ObservationCapture | None = None
     ml_labeling: LabelingPipeline | None = None
