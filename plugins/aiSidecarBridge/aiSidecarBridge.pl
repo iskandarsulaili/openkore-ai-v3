@@ -1756,8 +1756,15 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'random_walk_seek_already_auto' || $rewrite_kind eq 'bare_move_already_auto' || $rewrite_kind eq 'map_move_already_auto' || $rewrite_kind eq 'teleport_already_auto') {
 		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
 	} elsif ($rewrite_kind eq 'map_move_toggle_manual') {
-		my $ok = eval { Commands::run("ai manual"); 1; };
-		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
+		# Don't toggle to manual if critically low HP — let auto-AI handle survival
+		my $_ai_hp = $char ? $char->{hp} : 9999;
+		my $_ai_hp_max = $char ? $char->{hp_max} : 1;
+		if ($_ai_hp_max > 0 && ($_ai_hp / $_ai_hp_max) < 0.50) {
+			($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed_low_hp');
+		} else {
+			my $ok = eval { Commands::run("ai manual"); 1; };
+			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
+		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
@@ -1773,6 +1780,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'map_move_already_set') {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind eq 'map_move_low_hp_no_toggle') {
+		($success, $result_code, $msg) = (1, 'ok', 'ai_manual suppressed: critically low HP');
 	} elsif ($rewrite_kind =~ /^use_item_not_found_/) {
 		($success, $result_code, $msg) = (1, 'ok', "item not found in inventory: $rewrite_kind");
 	} elsif ($effective_command eq '') {
@@ -2619,6 +2628,12 @@ sub _rewrite_runtime_command {
 			}
 		}
 		if (_ai_already_auto_mode()) {
+			# Don't toggle manual if critically low HP — survival first
+			my $_rw_hp = $char ? $char->{hp} : 9999;
+			my $_rw_hp_max = $char ? $char->{hp_max} : 1;
+			if ($_rw_hp_max > 0 && ($_rw_hp / $_rw_hp_max) < 0.50) {
+				return ('', 'map_move_low_hp_no_toggle');
+			}
 			# Toggle AI mode to force route recalculation with new lockMap
 			return ('ai manual', 'map_move_toggle_manual');
 		}
