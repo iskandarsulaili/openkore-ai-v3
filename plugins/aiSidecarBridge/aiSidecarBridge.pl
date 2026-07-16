@@ -2046,7 +2046,7 @@ sub _flush_telemetry_queue {
 
 	my $payload = {
 		meta => _meta(_bot_id()),
-		events => \@batch,
+		events => \@normalized,
 	};
 
 	my $resp = _http_post_json('/v1/telemetry/ingest', $payload);
@@ -2094,7 +2094,7 @@ sub _flush_event_queue {
 	} @batch;
 	my $payload = {
 		meta => _meta(_bot_id()),
-		events => \@batch,
+		events => \@normalized,
 	};
 
 	my $resp = _http_post_json('/v2/ingest/event', $payload);
