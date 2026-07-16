@@ -65,7 +65,7 @@ class ReflexCombat:
         """Load all combat reflexes."""
         reflexes = [
             # ── Emergency (priority 100) ──
-            CombatReflex("emergency_heal", 100, "my_hp_pct < 0.4", "use_potion_or_heal", cooldown_ms=200),
+            CombatReflex("emergency_heal", 100, "my_hp_pct < 0.4", "use_potion_or_heal", cooldown_ms=2000),
             CombatReflex("emergency_flee", 100, "my_hp_pct < 0.2 and aggro_count > 3", "flee_to_safe_spot", cooldown_ms=500),
             CombatReflex("emergency_teleport", 100, "my_hp_pct < 0.1", "teleport_away", cooldown_ms=1000),
 

@@ -212,13 +212,13 @@ def test_plan_executor_tactical_sparse_state_escalation_cycles_through_recovery_
         __import__("asyncio").run(executor.execute(plan=bundle, horizon=__import__("types").SimpleNamespace(value="short_term"), max_actions=1))
 
     commands = [entry[1].command for entry in runtime.queued]
-    assert commands == ["move random_walk_seek", "ai clear", "move prt_fild08", "sit"]
+    assert commands == ["move random_walk_seek", "ai clear", "move prt_fild08", "ai auto"]
 
     stages = [entry[1].metadata.get("escalation_stage") for entry in runtime.queued]
     assert stages == [0, 1, 2, 3]
 
     modes = [entry[1].metadata.get("fallback_mode") for entry in runtime.queued]
-    assert modes == ["seek_targets", "ai_queue_reset", "map_refresh", "safe_idle"]
+    assert modes == ["seek_targets", "ai_queue_reset", "map_refresh", "auto_ai"]
 
     reasons = [str(entry[1].metadata.get("escalation_reason") or "") for entry in runtime.queued]
     assert all("sparse_state" in reason for reason in reasons)
@@ -228,7 +228,7 @@ def test_plan_executor_tactical_sparse_state_escalation_cycles_through_recovery_
         "planner.seek.random_walk",
         "planner.recovery.ai_clear",
         "planner.recovery.map_refresh",
-        "planner.safe_idle",
+        "planner.fallback_auto",
     ]
 
 

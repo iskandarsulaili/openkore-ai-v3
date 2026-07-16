@@ -13,6 +13,7 @@ def test_provider_registration_viability_requires_api_key_for_openai_and_deepsee
     monkeypatch.setattr(settings, "provider_openai_base_url", "https://api.openai.com/v1")
     monkeypatch.setattr(settings, "provider_openai_default_model", "gpt-4o-mini")
 
+    monkeypatch.setattr(settings, "provider_deepseek_enabled", True)
     monkeypatch.setattr(settings, "provider_deepseek_api_key", "")
     monkeypatch.setattr(settings, "provider_deepseek_base_url", "https://api.deepseek.com/v1")
     monkeypatch.setattr(settings, "provider_deepseek_default_model", "deepseek-chat")

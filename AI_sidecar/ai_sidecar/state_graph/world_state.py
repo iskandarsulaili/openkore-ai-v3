@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from ai_sidecar.contracts.state_graph import (
 from ai_sidecar.state_graph.economy_tracker import EconomyTracker
 from ai_sidecar.state_graph.npc_tracker import NpcInteractionTracker
 from ai_sidecar.state_graph.quest_tracker import QuestProgressTracker
+from ai_sidecar.learning.death_analysis import DeathRecord, get_death_analyzer
 
 
 _ACTOR_RELATION_SENSOR_MISSING_TTL_SECONDS = 8.0
@@ -374,6 +376,31 @@ class WorldStateProjector:
             projection.operational.respawn_state = "dead"
             projection.risk.death_risk_score = 1.0
             projection.risk.danger_score = max(projection.risk.danger_score, 0.95)
+            # Wire death analysis
+            try:
+                _da = get_death_analyzer()
+                _hp = payload.get("hp", 0)
+                _map = _str_or_none(payload.get("map")) or projection.navigation.destination_map or projection.last_map_name or "unknown"
+                _record = DeathRecord(
+                    timestamp=time.time(),
+                    map_name=_map,
+                    position=(projection.navigation.position_x or 0.0, projection.navigation.position_y or 0.0) if hasattr(projection.navigation, 'position_x') else (0.0, 0.0),
+                    monster_name="unknown",  # bridge doesn't provide killer data
+                    monster_id=0,
+                    hp_before_death=_hp,
+                    max_hp=projection.vitals.max_hp or 1,
+                    aggro_count=projection.combat.aggro_count or 0,
+                    had_potions=projection.inventory.total_potions > 0 if hasattr(projection, 'inventory') and hasattr(projection.inventory, 'total_potions') else True,
+                    was_casting=False,
+                    buffs_active=[],
+                    seconds_since_last_heal=999.0,
+                    cause_of_death="unknown",
+                    lesson_learned="",
+                )
+                _da.record_death(_record)
+                logger.info("death_recorded: map=%s aggro=%d", _record.map_name, _record.aggro_count)
+            except Exception as _exc:
+                logger.warning("death_analysis_failed: %s", _exc)
         elif event_type == "lifecycle.respawn":
             projection.operational.respawn_state = "respawned"
         elif event_type == "lifecycle.map_transfer":
