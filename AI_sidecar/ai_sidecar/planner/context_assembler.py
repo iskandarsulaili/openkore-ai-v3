@@ -424,6 +424,29 @@ class PlannerContextAssembler:
         episodes: list[dict[str, object]],
     ) -> dict[str, object]:
         operational = state.get("operational") if isinstance(state.get("operational"), dict) else {}
+        # Enrich with RO knowledge bundle recommendations
+        _leveling_advice = {}
+        _job_advice = {}
+        if self.ro_knowledge is not None:
+            try:
+                _leveling_advice = self.ro_knowledge.recommend_leveling(
+                    job_name=str(operational.get("job_name") or ""),
+                    base_level=int(operational.get("base_level") or 1),
+                )
+            except Exception:
+                pass
+            try:
+                _job_advice = self.ro_knowledge.assess_job_advancement(
+                    job_name=str(operational.get("job_name") or ""),
+                    base_level=int(operational.get("base_level") or 1),
+                    job_level=int(operational.get("job_level") or 0),
+                )
+            except Exception:
+                pass
+        
+        # Build invariant constraints from RO knowledge
+        _invariants = prompt_invariants(knowledge=self.ro_knowledge) if self.ro_knowledge is not None else {}
+        
         return {
             "bot_id": bot_id,
             "knowledge_version": self.ro_knowledge.version if self.ro_knowledge is not None else "stage3-ro-progression-v1",
@@ -434,8 +457,12 @@ class PlannerContextAssembler:
             "memory_match_count": len(memory_matches),
             "episode_count": len(episodes),
             "known_upgrade_rule_ids": list(
-                (prompt_invariants(knowledge=self.ro_knowledge).get("known_upgrade_rule_ids") or [])[:16]
+                (_invariants.get("known_upgrade_rule_ids") or [])[:16]
             ),
+            "leveling_recommendation": _leveling_advice,
+            "job_advancement": _job_advice,
+            "recommended_target_maps": _leveling_advice.get("target_maps", []) if _leveling_advice else [],
+            "recommended_focus": _leveling_advice.get("recommended_focus", "safe_grind") if _leveling_advice else "safe_grind",
         }
 
     def _compact_state(self, state_payload: dict[str, object]) -> dict[str, object]:

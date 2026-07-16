@@ -31,6 +31,19 @@ _RATHENA_PROMPT_AXIOMS: tuple[str, ...] = (
     "Preserve deterministic priority ordering: survival > job_advancement > opportunistic_upgrades > leveling.",
     "Only map recommendations to runtime-supported surfaces: direct queue actions, config planning, macro publication.",
     "When no safe supported action exists, return unsupported with bounded fallback posture.",
+    "Novice characters need Basic Skill level 3 (NV_BASIC) before they can sit. Use skills_add NV_BASIC 1-3.",
+    "Level 1-10 novices should hunt Porings, Poring, Lunatic, Fabre, PecoPeco in prt_fild01, prt_fild04, or prt_fild08. Avoid aggressive monsters like Spore, Deniro.",
+    "Red Potions cost ~50z from Kafra Shop in Prontera. Buy 30-50 before leaving town. Sell loot to NPC merchants.",
+    "If zeny is close to 0, kill the weakest available monster (Poring in prt_fild01 drops ~1z, Jellopy stacks sell for ~50-100z) until you have ~1500z for potions.",
+    "Set save point using talknpc at Prontera Kafra before grinding. Use command: talknpc prontera 158 201.",
+    "Porings drop Jellopy, Apples, and sometimes Poring Cards. Collect/stacks of Jellopy sell to NPC for early money.",
+    "Avoid high-traffic areas if bot detection is a concern. prt_fild08 is often less populated than prt_fild01.",
+    "Use move commands to travel between maps. From Prontera: move prt_fild01 (north gate) or move prt_fild04 (east gate).",
+    "Always carry at least 10 Fly Wings for emergency escape from dangerous maps.",
+    "Check element wheel: Poring is Water element, weak to Wind. But at low levels, auto-attack is fine for Porings.",
+    "Never fight multiple monsters at once below level 10. Use flee settings to escape when HP < 60%.",
+    "Job advancement at level 10: talknpc to Job Change NPC in Prontera. Swordsman (prontera 53 259), Mage (prontera 166 30), Thief (morocc 115 97), Acolyte (prontera 159 260), Archer (prontera 165 216).",
+    "If you have 0 zeny and 0 items to sell, you cannot buy potions. Kill Porings with auto-attack until you collect enough loot to sell.",
 )
 
 _CAPABILITY_MODE_LABELS: tuple[str, ...] = (
