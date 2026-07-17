@@ -705,10 +705,10 @@ class ProRoPlayerProfile(BehaviorProfile):
             advice_parts.append("  • Set teleport escape at 20% HP for emergencies")
 
         return {
-            "kind": "cold_start_guide",
-            "command": "advise_cold_start",
+            "kind": "command",
+            "command": "ai auto",
             "confidence": 0.9,
-            "reason": f"Providing early-game guidance for level {level} {player_class}",
+            "reason": f"Early-game guidance for level {level} {player_class}: recommended_hunt={hunting_grounds[0] if hunting_grounds else 'prt_fild08'}, buy_potions=Red_Potion, sell_at_50pct_weight",
             "advice": "\n".join(advice_parts),
             "hunting_grounds": hunting_grounds[:3],
             "stats": early["stats"],

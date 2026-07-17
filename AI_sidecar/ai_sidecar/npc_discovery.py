@@ -130,7 +130,7 @@ class NPCDiscoveryEngine:
                 actor_x = int(getattr(actor, "x", 0) or 0)
                 actor_y = int(getattr(actor, "y", 0) or 0)
 
-            if actor_type != "npc":
+            if actor_type.lower() != "npc":
                 continue
 
             # Check if NPC name matches any service pattern

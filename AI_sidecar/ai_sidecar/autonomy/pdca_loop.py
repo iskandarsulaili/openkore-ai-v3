@@ -4070,7 +4070,16 @@ class PDCALoop:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
                         _pro_inline = ProRoPlayerProfile()
                         _pro_inline_snap = self._get_latest_snapshot()
-                        _pro_inline_signals = {
+                        # Only fire cold start when we have valid snapshot data (skip empty/auth states)
+                        _pro_snap_map = ""
+                        _pro_snap_lvl = 0
+                        if _pro_inline_snap is not None:
+                            _pro_snap_map = str(getattr(getattr(_pro_inline_snap, "position", None), "map", "") or "")
+                            _pro_prog = getattr(_pro_inline_snap, "progression", None)
+                            _pro_snap_lvl = int(getattr(_pro_prog, "base_level", 0) or 0) if _pro_prog else 0
+                        _pro_has_valid_data = _pro_snap_map != "" and _pro_snap_lvl > 0
+                        if _pro_has_valid_data:
+                            _pro_inline_signals = {
                             "situation": "cold_start",
                             "class": str(getattr(getattr(_pro_inline_snap, "progression", None), "job_name", "novice") or "novice") if _pro_inline_snap else "novice",
                             "level": int(getattr(getattr(_pro_inline_snap, "progression", None), "base_level", 1) or 1) if _pro_inline_snap else 1,
@@ -4099,6 +4108,19 @@ class PDCALoop:
                                     from datetime import UTC, datetime, timedelta
                                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                     import hashlib as _pro_h
+                                    # If command is "ai auto" and we're stuck in town, first set sell/storage
+                                    if _pro_inline_cmd == "ai auto":
+                                        _pro_inline_aq.enqueue(
+                                            _cycle_bot_id or "default",
+                                            ActionProposal(
+                                                action_id=f"pro_cfg_{_pro_h.md5(f'cfg_{time.monotonic_ns()}'.encode()).hexdigest()[:8]}",
+                                                kind="command", command="set sellAuto 1",
+                                                priority_tier=ActionPriorityTier.tactical, source="planner",
+                                                created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                                                idempotency_key=f"pro_cfg_sell_{_cycle_bot_id or 'def'}",
+                                                metadata={"source": "pro_ro_player", "reason": "Enable auto-sell", "bot_id": _cycle_bot_id or "default"},
+                                            ),
+                                        )
                                     _pro_id = _pro_h.md5(f"pro_ro_{time.monotonic_ns()}".encode()).hexdigest()[:16]
                                     _pro_inline_aq.enqueue(
                                         _cycle_bot_id or "default",
@@ -4138,7 +4160,7 @@ class PDCALoop:
                             _pro_hp_max = int(getattr(_pro_stats, "max_hp", 1) or 1) if _pro_stats else 1
                         
                         _pro_overweight = _pro_weight >= 70
-                        _pro_critical_hp = _pro_hp_max > 0 and (_pro_hp / _pro_hp_max) < 0.3 and _pro_hp < 50
+                        _pro_critical_hp = _pro_hp_max > 1 and (_pro_hp / _pro_hp_max) < 0.3 and _pro_hp < 50
                         
                         if _pro_overweight or _pro_critical_hp:
                             _pro_aq = getattr(self._runtime, "action_queue", None)
@@ -4173,8 +4195,8 @@ class PDCALoop:
                 _pro_ro_aq = getattr(self._runtime, "action_queue", None)
                 if _pro_ro_aq is not None:
                     # Count how many actions we have pending for this bot
-                    _pro_ro_pending = _pro_ro_aq.pending_count(_cycle_bot_id) if hasattr(_pro_ro_aq, "pending_count") else 0
-                    _pro_ro_queued_any = _pro_ro_pending > 2  # at least a few actions
+                    _pro_ro_pending = _pro_ro_aq.count(_cycle_bot_id) if hasattr(_pro_ro_aq, "count") else 0
+                    _pro_ro_queued_any = _pro_ro_pending > 2  # at least a few actions queued
             except Exception:
                 pass
             
@@ -4852,7 +4874,19 @@ class PDCALoop:
                                 from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                 import hashlib as _nh
                                 
-                                # Action 1: Talk to discovered NPC
+                                # Action 1: Move to discovered NPC (must precede talknpc)
+                                if _discovered_cmd and _discovered_npc:
+                                    _mv_id = _nh.md5(f"npc_move_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                                    _npc_x = _discovered_npc.get("x", 0)
+                                    _npc_y = _discovered_npc.get("y", 0)
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(
+                                        action_id=f"npc_move_{_mv_id}", kind="command", command=f"move {_npc_x} {_npc_y}",
+                                        priority_tier=ActionPriorityTier.tactical, source="planner",
+                                        created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                                        idempotency_key=f"npc_move_{_bot_id}",
+                                        metadata={"source": "pro_ro_player", "reason": f"Move to {_discovered_npc.get('name','?')}", "bot_id": _bot_id},
+                                    ))
+                                # Action 1b: Talk to discovered NPC (after moving)
                                 if _discovered_cmd:
                                     _talk_id = _nh.md5(f"npc_talk_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
                                     _npc_aq.enqueue(_bot_id, ActionProposal(
@@ -4892,7 +4926,7 @@ class PDCALoop:
                                     logger.info("npc_sell_action_queued: bot=%s weight=%.0f%%", _bot_id, _sn_weight)
                                 
                                 # Action 3b: Enable sell/storage config via NPC discovery
-                                if _is_overweight and _discovered_npc:
+                                if _is_overweight and _discovered_npc and int(_discovered_npc.get("x", 0)) > 0 and int(_discovered_npc.get("y", 0)) > 0:
                                     _vname = str(_discovered_npc.get("name", ""))
                                     _vx = int(_discovered_npc.get("x", 0))
                                     _vy = int(_discovered_npc.get("y", 0))

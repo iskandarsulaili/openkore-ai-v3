@@ -1150,7 +1150,7 @@ class ReflexRuleEngine:
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="talknpc",
+                    command="macro reflex_npc_dialogue_recover",
                     priority_tier="reflex",
                     conflict_key="npc.dialogue_retry",
                     metadata={"category": "npc_dialogue"},
