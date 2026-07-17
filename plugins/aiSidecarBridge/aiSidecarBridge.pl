@@ -2734,6 +2734,31 @@ sub _rewrite_runtime_command {
 	    return ('ai auto', 'teleport_rewritten');
 	}
 
+		# Handle skills_add — allocate skill points (e.g. skills_add NV_BASIC 3)
+	# This enables the LLM / Pro RO player to learn skills like Basic Skill 3
+	if ($normalized =~ /^skills_add\s+(\w+)\s*(\d*)$/) {
+	    my $skill_id = uc($1);
+	    my $level = $2 || 1;
+	    if (defined $char && defined $char->{skills}) {
+	        my $current = eval { $char->{skills}->{$skill_id}{lv} } || 0;
+	        my $needed = $level - $current;
+	        if ($needed > 0) {
+	            my $ok = eval { $char->{skills}->addPoint($skill_id, $needed); 1 };
+	            return ('', $ok ? "skill_points_added_$skill_id" : "skill_add_failed_$skill_id");
+	        }
+	        return ('', "skill_already_learned_$skill_id");
+	    }
+	    return ('', 'skill_add_no_skills_obj');
+	}
+
+	# Handle stats_add — allocate stat points (e.g. stats_add STR 1)
+	if ($normalized =~ /^stats_add\s+(\w+)\s*(\d*)$/) {
+	    my $stat = uc($1);
+	    my $amount = $2 || 1;
+	    my $ok = eval { Commands::run("stat_add $stat $amount"); 1 };
+	    return ('', $ok ? "stat_points_added_$stat" : "stat_add_failed_$stat");
+	}
+
 	# Handle attack_skill — already handled by auto-AI, no-op
 	if ($normalized =~ /^attack_skill\b/) {
 	    return ('', 'attack_skill_delegated');
@@ -3697,6 +3722,9 @@ sub _check_bridge_reflexes {
 # ── Default survival auto-grind loop (bottom-up fallback) ──
 # Runs every mainLoop_post tick when connected. Learns skills, buys potions,
 # sits to regen, and engages auto-attack. The Pro RO LLM sits on top for strategy.
+# ── Default survival auto-grind loop (bottom-up fallback) ──
+# Runs every mainLoop_post tick when connected. Learns skills, buys potions,
+# sits to regen, and engages auto-attack. The Pro RO LLM sits on top for strategy.
 sub _survival_check {
 	my $now = _now_ms();
 	state $_last_survival_check_ms = 0;
@@ -3705,31 +3733,29 @@ sub _survival_check {
 
 	my $hp = $char->{hp} || 0;
 	my $hp_max = $char->{hp_max} || 1;
-	my $sp = $char->{sp} || 0;
-	my $sp_max = $char->{sp_max} || 1;
 	my $zeny = $char->{zeny} || 0;
 	my $map = $char->{map} || '';
 	my $ai_mode = $Ai::Ai->{ai} || '';
-
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
-	my $sp_pct = $sp_max > 0 ? int($sp * 100 / $sp_max) : 0;
 
 	# Phase 1: Learn Basic Skill if missing (so sitting works)
 	if ($hp_pct < 80 && _cfg_bool('aiSidecar_autoLearnBasic', 1)) {
 	    my $skills = eval { $char->{skills} } || {};
-	    my $basic_skill = 0;
 	    if (ref($skills) eq 'HASH') {
+	        my $basic_skill = 0;
+	        my $skill_id = 'NV_BASIC';
 	        foreach my $s (keys %$skills) {
-	            $basic_skill = $skills->{$s}{lv} || 0 if $s =~ /NV_BASIC|AL_BASIC|SM_BASIC|HT_BASIC|MG_BASIC|PR_BASIC/;
+	            if ($s =~ /NV_BASIC|AL_BASIC|SM_BASIC|HT_BASIC|MG_BASIC|PR_BASIC/) {
+	                $skill_id = $s;
+	                $basic_skill = $skills->{$s}{lv} || 0;
+	                last;
+	            }
 	        }
-	    }
-	    # Try learning Basic Skill up to level 3
-	    for my $level (1..3) {
-	        if ($basic_skill < $level) {
-	            eval { Commands::run("skills_add NV_BASIC $level"); 1 };
-	            if ($@) {
-	                # Alternative skill IDs for different classes
-	                eval { Commands::run("skills_add AL_BASIC $level"); 1 };
+	        if ($basic_skill < 3 && defined $char->{skills}->addPoint) {
+	            my $needed = 3 - $basic_skill;
+	            my $ok = eval { $char->{skills}->addPoint($skill_id, $needed); 1 };
+	            if ($ok) {
+	                warning "[aiSidecarBridge] survival: learned $skill_id level " . ($basic_skill + $needed) . "\n";
 	            }
 	        }
 	    }
@@ -3738,7 +3764,7 @@ sub _survival_check {
 	# Phase 2: Sit to regen HP if low
 	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
 	    eval { Commands::run('sit'); 1 };
-	    return;  # Wait for regen to take effect
+	    return;
 	}
 
 	# Phase 3: Stand up once recovered
@@ -3759,14 +3785,12 @@ sub _survival_check {
 	        }
 	    }
 	    if (!$has_pots) {
-	        # Try buying from NPC tool dealer in Prontera
 	        eval { Commands::run('buy 30 Red Potion'); 1 };
 	    }
 	}
 
-	# Phase 5: If in Prontera and HP/general OK, engage auto mode for grinding
+	# Phase 5: If in Prontera and conditions OK, engage auto mode for grinding
 	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
-	    # Set lockMap to training area if not already set
 	    my $current_lockMap = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if (!$current_lockMap || $current_lockMap eq '') {
 	        $::config{'lockMap'} = 'prt_fild08';
