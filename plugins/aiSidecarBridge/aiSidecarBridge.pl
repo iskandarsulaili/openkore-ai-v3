@@ -3738,29 +3738,39 @@ sub _survival_check {
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-	# Phase 1: Learn Basic Skill if missing (so sitting works)
+# Phase 1: Learn Basic Skill if missing (so sitting works)
 	if ($hp_pct < 80 && _cfg_bool('aiSidecar_autoLearnBasic', 1)) {
-	    my $skills = eval { $char->{skills} } || {};
-	    if (ref($skills) eq 'HASH') {
-	        my $basic_skill = 0;
-	        my $skill_id = 'NV_BASIC';
-	        foreach my $s (keys %$skills) {
+	    # Use OpenKore Skill object to look up numeric ID from handle
+	    my $skill_handle = 'NV_BASIC';
+	    # Detect the correct Basic Skill handle for this class
+	    my $skills_hash = eval { $char->{skills} } || {};
+	    if (ref($skills_hash) eq 'HASH') {
+	        foreach my $s (keys %$skills_hash) {
 	            if ($s =~ /NV_BASIC|AL_BASIC|SM_BASIC|HT_BASIC|MG_BASIC|PR_BASIC/) {
-	                $skill_id = $s;
-	                $basic_skill = $skills->{$s}{lv} || 0;
+	                $skill_handle = $s;
 	                last;
 	            }
 	        }
-	        if ($basic_skill < 3 && defined $char->{skills}->addPoint) {
-	            my $needed = 3 - $basic_skill;
-	            my $ok = eval { $char->{skills}->addPoint($skill_id, $needed); 1 };
-	            if ($ok) {
-	                warning "[aiSidecarBridge] survival: learned $skill_id level " . ($basic_skill + $needed) . "\n";
+	    }
+	    # Get current level from character
+	    my $current_lv = eval { $char->{skills}->{$skill_handle}{lv} } || 0;
+	    if ($current_lv < 3) {
+	        # Get numeric skill ID for the 'skills add' command
+	        my $skill_obj = eval { new Skill(handle => $skill_handle) };
+	        if ($skill_obj) {
+	            my $skill_idn = $skill_obj->getIDN();
+	            if (defined $skill_idn && $skill_idn > 0) {
+	                for my $level ($current_lv + 1 .. 3) {
+	                    my $ok = eval { Commands::run("skills add $skill_idn"); 1 };
+	                    if ($ok) {
+	                        warning "[aiSidecarBridge] survival: learned $skill_handle level $level\n";
+	                    }
+	                    last if !$ok;  # stop if failed
+	                }
 	            }
 	        }
 	    }
 	}
-
 	# Phase 2: Sit to regen HP if low
 	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
 	    eval { Commands::run('sit'); 1 };
