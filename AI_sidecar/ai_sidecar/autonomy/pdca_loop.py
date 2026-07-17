@@ -1665,7 +1665,16 @@ class PDCALoop:
 
                     interval = self._interval_for(horizon)
                     if now - self._last_plan_time[horizon] >= interval:
-                        result = await self._run_one_cycle(horizon)
+                        try:
+                            result = await asyncio.wait_for(
+                                self._run_one_cycle(horizon),
+                                timeout=30.0,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("PDCA cycle timeout [%s] >30s — advancing clock", horizon.value)
+                            self._last_plan_time[horizon] = time.time()
+                            self._cycle_count += 1
+                            continue
                         self._cycle_count += 1
                         # ── Skills curator tick (every ~3600 cycles ≈ hourly) ──
                         if self._cycle_count % 3600 == 0:
