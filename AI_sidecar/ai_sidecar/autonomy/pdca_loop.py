@@ -6077,7 +6077,13 @@ class PDCALoop:
                         for _family in ModelFamily:
                             _state = _promotion.get(family=_family)
                             if _state.get("enabled", False):
-                                # Already promoted — check auto-escalation
+                                # Already promoted — add this bot to scope if needed
+                                if bot_id:
+                                    try:
+                                        _promotion.add_bot_to_scope(family=_family, bot_id=bot_id)
+                                    except Exception:
+                                        pass
+                                # Check auto-escalation
                                 try:
                                     _promotion.check_auto_escalation(family=_family)
                                 except Exception:

@@ -130,6 +130,30 @@ class GuardedPromotionPipeline:
         )
         return self.get(family=family)
 
+    def add_bot_to_scope(self, *, family: ModelFamily, bot_id: str) -> dict[str, object] | None:
+        """Add a bot_id to the scope of an already-promoted model.
+
+        Returns the updated state or None if the family isn't enabled.
+        """
+        with self._lock:
+            row = self._state.get(family.value)
+            if not row or not bool(row.get("enabled")):
+                return None
+            scope = dict(row.get("scope") or {})
+            existing = scope.get("bot_id")
+            if isinstance(existing, list):
+                if bot_id in existing:
+                    return None  # already present
+                scope["bot_id"] = list(existing) + [bot_id]
+            elif existing is not None and existing != bot_id:
+                scope["bot_id"] = [str(existing), bot_id]
+            elif existing is None or existing == bot_id:
+                scope["bot_id"] = bot_id
+                return self.get(family=family)  # unchanged
+            row["scope"] = scope
+        self._persist()
+        return self.get(family=family)
+
     def set_canary(
         self,
         *,

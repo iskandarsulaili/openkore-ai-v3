@@ -4262,11 +4262,10 @@ class RuntimeState:
                         _rec = _entry.get("recommendation", {})
                         if bool(_promo.get("allowed")) and _rec:
                             _override_actions.append({"family": _fam_key, "recommendation": _rec})
-                    if _override_actions and result.strategic_plan is not None:
-                        _existing = list(result.strategic_plan.recommended_actions or [])
+                    if _override_actions:
                         _now = datetime.now(UTC)
-                        for _oa in _override_actions:
-                            _existing.append(ActionProposal(
+                        _ml_actions = [
+                            ActionProposal(
                                 action_id=f"ml-{uuid4().hex[:24]}",
                                 kind="command",
                                 command="auto",
@@ -4276,12 +4275,27 @@ class RuntimeState:
                                 created_at=_now,
                                 expires_at=_now + timedelta(seconds=30),
                                 idempotency_key=f"ml-{_oa['family']}-{uuid4().hex[:12]}",
-                            ))
-                        result = result.model_copy(update={
-                            "strategic_plan": result.strategic_plan.model_copy(
-                                update={"recommended_actions": _existing},
-                            ),
-                        })
+                            )
+                            for _oa in _override_actions
+                        ]
+                        # Inject into strategic_plan (used by LONG_TERM path)
+                        if result.strategic_plan is not None:
+                            _existing = list(result.strategic_plan.recommended_actions or [])
+                            _existing.extend(_ml_actions)
+                            result = result.model_copy(update={
+                                "strategic_plan": result.strategic_plan.model_copy(
+                                    update={"recommended_actions": _existing},
+                                ),
+                            })
+                        # Inject into tactical_bundle (used by MEDIUM/SHORT_TERM path)
+                        if result.tactical_bundle is not None:
+                            _existing_t = list(result.tactical_bundle.actions or [])
+                            _existing_t.extend(_ml_actions)
+                            result = result.model_copy(update={
+                                "tactical_bundle": result.tactical_bundle.model_copy(
+                                    update={"actions": _existing_t},
+                                ),
+                            })
             except Exception:
                 logger.exception(
                     "ml_planner_observation_failed",
