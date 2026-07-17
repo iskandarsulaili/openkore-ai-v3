@@ -19,6 +19,26 @@ _server_tables_lock = threading.RLock()
 
 # ── Table Ingest / Query (OpenKore tables are source of truth) ──
 
+def _maybe_save_heal_skill(req, resp):
+    """Auto-create or update a heal strategy skill after discovery."""
+    if not resp or not resp.strategy or resp.strategy in ("auto_navigate",):
+        return
+    try:
+        name = "server-heal-" + resp.strategy
+        trigger = resp.strategy.replace("_", "_requested")
+        cmd = resp.command or "ai auto"
+        tgt = resp.target_map or "unknown"
+        npc = resp.target_npc or "unknown"
+        cnf = str(resp.confidence)
+        content = "---\nname: " + name + "\ndescription: Server healing strategy\nversion: 1.0.0\ntriggers:\n  - " + trigger + "\n  - low_hp\nwhen_to_use:\n  - hp_ratio < 0.30\n  - strategy == " + resp.strategy + "\nmetadata:\n  domain: healing\n  source: crewai_discovery_agent\n  confidence: " + cnf + "\n  server_map: " + tgt + "\n  target_npc: " + npc + "\n---\n\n# Discovered Heal Strategy: " + resp.strategy + "\n\n- **Command**: " + cmd + "\n- **Target**: " + tgt + "\n- **NPC**: " + npc + "\n- **Confidence**: " + cnf + "\n"
+        result = _skm.create_skill(name=name, content=content, category="healing", provenance="foreground")
+        if result.get("success"):
+            logger.info("Auto-created healing skill: %s", name)
+    except Exception as exc:
+        logger.debug("Failed to auto-create skill: %s", exc)
+
+
+
 class TablesIngestRequest(BaseModel):
     kind: str = "discovery_all_tables"
     tables: dict = {}
@@ -166,9 +186,11 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
         )
 
     # Phase 6: Default — auto mode, stay on current map (AI will have lockMap to hunt)
-    return HealStrategyResponse(
+    resp = HealStrategyResponse(
         strategy="auto_navigate",
         command="ai auto",
         target_map=req.map,
         confidence=0.5,
     )
+    _maybe_save_heal_skill(req, resp)
+    return resp
