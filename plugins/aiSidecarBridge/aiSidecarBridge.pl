@@ -3824,6 +3824,10 @@ sub _survival_check {
 	        # Fallback: stand up, try buying, sit as last resort
 	        if (0) { eval { Commands::run('stand'); 1 }; }
 	        $::config{'lockMap'} = 'prontera';
+    $::config{'lockMap_x'} = 159;
+    $::config{'lockMap_y'} = 193;
+    $::config{'lockMap_randX'} = 2;
+    $::config{'lockMap_randY'} = 2;
 	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
         eval { Commands::run('move 159 193'); 1 };
         eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
@@ -3910,7 +3914,12 @@ sub _survival_check {
 	    }
 	    # Fallback: stand, navigate to healer/prt_in, buy, use
 	    if ($ai_mode eq 'sit') { eval { Commands::run('stand'); 1 }; }
-	    $::config{'lockMap'} = 'prontera';
+	    # Lock to Healer NPC coordinates so OpenKore navigates to exact position
+    $::config{'lockMap'} = 'prontera';
+    $::config{'lockMap_x'} = 159;
+    $::config{'lockMap_y'} = 193;
+    $::config{'lockMap_randX'} = 2;
+    $::config{'lockMap_randY'} = 2;
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
     eval { Commands::run('move 159 193'); 1 };
     eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
