@@ -1767,8 +1767,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'movement runtime command is already satisfied (AI already in auto mode)');
 	} elsif ($rewrite_kind eq 'map_move_toggle_manual') {
 		# Don't toggle to manual if critically low HP — let auto-AI handle survival
-		my $_ai_hp = $char ? $char->{hp} : 9999;
-		my $_ai_hp_max = $char ? $char->{hp_max} : 1;
+		my $_ai_hp = $main::char ? $main::char->{hp} : 9999;
+		my $_ai_hp_max = $main::char ? $main::char->{hp_max} : 1;
 		if ($_ai_hp_max > 0 && ($_ai_hp / $_ai_hp_max) < 0.50) {
 			($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed_low_hp');
 		} else {
@@ -2703,8 +2703,8 @@ sub _rewrite_runtime_command {
 		}
 		if (_ai_already_auto_mode()) {
 			# Don't toggle manual if critically low HP — survival first
-			my $_rw_hp = $char ? $char->{hp} : 9999;
-			my $_rw_hp_max = $char ? $char->{hp_max} : 1;
+			my $_rw_hp = $main::char ? $main::char->{hp} : 9999;
+			my $_rw_hp_max = $main::char ? $main::char->{hp_max} : 1;
 			if ($_rw_hp_max > 0 && ($_rw_hp / $_rw_hp_max) < 0.50) {
 				return ('', 'map_move_low_hp_no_toggle');
 			}
