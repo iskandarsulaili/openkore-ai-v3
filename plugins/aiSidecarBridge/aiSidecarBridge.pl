@@ -264,6 +264,8 @@ sub on_mainLoop_post {
 	# ── Default survival auto-grind loop (bottom-up fallback) ──
 	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
 		_apply_bot_config();
+		_discover_shops();
+		_discover_portals();
 		_survival_check();
 		_teamplay_check();
 	}
@@ -3789,24 +3791,40 @@ sub _survival_check {
 	my $zeny = $cr->{zeny} || 0;
 	my $base_lv = $cr->{lv} || $cr->{level} || 1;
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+	my $map = $cr->{map} || '';
 
-	# ── Emergency: HP critically low (< 20%) → navigate + potion + dealer ──
+# ── Emergency: HP critically low — call Pro RO LLM for healing strategy ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
-	    # Stand up (sitting blocks movement)
-	    if ($Ai::Ai->{ai} eq 'sit') { eval { Commands::run('stand'); 1 }; }
-	    # Navigate to tool dealer so OpenKore can walk there
-	    $::config{'lockMap'} = 'prt_in';
-	    # Enable auto mode for pathfinding
-	    if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
-	    # Try buying potions (works if already at NPC)
-	    eval { Commands::run('buy 501 30'); 1 };
-	    # Try using potion
-	    eval { Commands::run('use Red Potion'); 1 };
-	    # Emergency sit if still critically low
-	    if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
+	    my $_strat = _http_post_json('/v1/discover/heal', {
+	        bot_id => _bot_id(),
+	        hp => $hp,
+	        hp_max => $hp_max,
+	        zeny => $zeny,
+	        map => $map,
+	        inventory => [],
+	        known_shops => [],
+	        known_portals => [],
+	    });
+	    
+	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
+	        my $_cmd = $_strat->{json}{command};
+	        eval { Commands::run($_cmd); 1 };
+	        my $_tgt_map = $_strat->{json}{target_map} || '';
+	        if ($_tgt_map ne '' && $_tgt_map ne $map) {
+	            $::config{'lockMap'} = $_tgt_map;
+	            if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
+	        }
+	    } else {
+	        # Fallback: stand up, try buying, sit as last resort
+	        if ($Ai::Ai->{ai} eq 'sit') { eval { Commands::run('stand'); 1 }; }
+	        $::config{'lockMap'} = 'prt_in';
+	        if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
+	        eval { Commands::run('buy 501 30'); 1 };
+	        eval { Commands::run('use Red Potion'); 1 };
+	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
+	    }
 	    return;
 	}
-
 	# ── Economy: Not enough zeny and not in combat → go grind ──
 	if ($zeny < 100 && $base_lv < 99) {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
