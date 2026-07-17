@@ -1,14 +1,17 @@
-# Debug logs
+# ── Debug / runtime logs ──────────────────────────────────────────────────
 config.log
 errors.txt
 benchmark-results.txt
-logs
+logs/
 DUMP.txt
 
-# Plugin files
+# ── Plugin profiles (contains account credentials) ────────────────────────
 /profiles
 
-# Backup files
+# ── Bot profiles (contains account usernames + passwords) ────────────────
+.bot_profiles/
+
+# ── Backup / editor files ─────────────────────────────────────────────────
 *~
 .#*
 *.old
@@ -17,7 +20,7 @@ DUMP.txt
 *.orig
 *.rej
 
-# Auto generated files
+# ── Auto generated build artifacts ───────────────────────────────────────
 *.pyc
 *.dist
 *.o
@@ -39,10 +42,8 @@ src/auto/XSTools/utils/perl/Rijndael.xs.cpp
 src/auto/XSTools/utils/perl/Whirlpool.c
 src/test/http-reader-test
 
-# Local modifications of official files.
+# ── Local custom tables ──────────────────────────────────────────────────
 tables/iRO/*-custom.txt
-
-# Auto-generated files.
 tables/**/portalsLOS.txt
 tables/pserver/**/portalsLOS.txt
 tables/**/npcs.txt
@@ -50,12 +51,13 @@ tables/**/monsters.txt
 *.xpm
 *.weight
 
-# AI sidecar runtime-generated macro artifacts
+# ── AI sidecar generated macro artifacts (runtime) ───────────────────────
 control/ai_sidecar_generated_macros.txt
 control/ai_sidecar_generated_eventmacros.txt
 control/ai_sidecar_macro_manifest.json
+control/sidecar_auth_token.txt
 
-# AI sidecar local runtime persistence + caches
+# ── AI sidecar runtime persistence + caches ──────────────────────────────
 AI_sidecar/data/
 AI_sidecar/**/*.sqlite
 AI_sidecar/**/*.sqlite-shm
@@ -69,21 +71,28 @@ AI_sidecar/venv/
 AI_sidecar/.venv/
 AI_sidecar/*.egg-info/
 AI_sidecar/.pytest_cache/
-benchmark-results.txt
+AI_sidecar/ai_sidecar/skills/.usage.json
+AI_sidecar/ai_sidecar/skills/.curator_backups/
 
-# Local temporary stubs used for isolated plugin syntax checks
+# ── Root-level openmemory databases (sidecar runtime spillover) ──────────
+openmemory.db
+openmemory.db-shm
+openmemory.db-wal
+
+# ── Local temp / stubs ───────────────────────────────────────────────────
 .tmp_perl_stubs/
-logs/
-.openkore-pids
 .env
-.bot_profiles/
+.venv/
 
-# Runtime PID files
+# ── Runtime PID files (contains account names in filenames) ──────────────
 .pids/
 
-# Sidecar auth token (auto-generated)
-control/sidecar_auth_token.txt
+# ── PID tracking file ────────────────────────────────────────────────────
+.openkore-pids
 
-# OS artifacts
+# ── OS artifacts ─────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Compressed rotated logs ──────────────────────────────────────────────
+*.log.gz
