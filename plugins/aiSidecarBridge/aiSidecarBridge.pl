@@ -3742,7 +3742,7 @@ sub _survival_check {
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
 # Phase 1: Full HP/SP recovery via Kafra NPC (no skill points needed)
-	if ($hp_pct < 60 && $map =~ /prontera/i && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
+	if ($hp_pct < 60 && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
 	    # Direct talknpc to Kafra Employee at known Prontera coordinates
 	    # Uses 'c' (continue) to accept dialogue and 'r0 n' to select menu option
 	    eval { Commands::run('talk 151 29'); 1 };  # approach Kafra
