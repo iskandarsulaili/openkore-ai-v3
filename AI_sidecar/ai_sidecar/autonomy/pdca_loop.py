@@ -5182,6 +5182,25 @@ class PDCALoop:
                         _should_plan = False
                 except Exception:
                     pass
+            # Fast probe: if LLM provider was unreachable in last 60s, skip planning entirely
+            if _should_plan and horizon != Horizon.LONG_TERM:
+                try:
+                    _pl_mr = getattr(self._runtime, "model_router", None)
+                    if _pl_mr is not None and hasattr(_pl_mr, 'decide'):
+                        _pl_dec = _pl_mr.decide(workload="strategic_planning")
+                        _pl_provider = str(getattr(_pl_dec, 'selected_provider', '') or '')
+                        if _pl_provider and _pl_provider != 'none':
+                            _pl_adapter = getattr(_pl_mr, '_providers', {}).get(_pl_provider)
+                            if _pl_adapter is not None and hasattr(_pl_adapter, 'health'):
+                                import asyncio as _asyncio_pl
+                                _pl_healthy = await _asyncio_pl.wait_for(
+                                    _pl_adapter.health(),
+                                    timeout=3.0,
+                                )
+                                if not _pl_healthy:
+                                    _should_plan = False
+                except (asyncio.TimeoutError, Exception):
+                    _should_plan = False
             if _should_plan:
                 objective_override = self._select_objective(
                     horizon=horizon,
