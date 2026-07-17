@@ -271,7 +271,7 @@ sub on_mainLoop_post {
 		_survival_check();
 		_teamplay_check();
 		# Force AI to AUTO mode every cycle — prevents unwanted manual toggles
-		if (defined &AI::state && AI::state() != 2) { AI::state(2); }
+		if (AI::state() != 2) { AI::state(2); }
 	}
 }
 
