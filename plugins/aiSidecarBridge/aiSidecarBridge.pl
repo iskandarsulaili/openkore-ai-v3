@@ -3502,6 +3502,8 @@ sub _check_bridge_reflexes {
 
 				my $player_hp = $player->{hp} || 0;
 				my $player_hp_max = $player->{hp_max} || 1;
+    # Skip ghost entries: real players never have max_hp < 100
+    next if $player_hp_max < 100;
 				my $player_hp_ratio = ($player_hp_max > 0) ? $player_hp / $player_hp_max : 1;
 
 				if ($player_hp_ratio < 0.20) {
@@ -3741,19 +3743,22 @@ sub _survival_check {
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-# Phase 1: Stand up and engage auto mode so OpenKore can move to healer
-	if ($hp_pct < 50 && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
-	    # Stand up first (sitting blocks movement)
-	    if ($ai_mode =~ /sit/i || $Ai::Ai->{ai} eq 'sit') {
-	        eval { Commands::run('stand'); 1 };
+# Phase 1: Buy potions from shop when HP low (Pro RO strategy)
+	if ($hp_pct < 70 && $zeny >= 10) {
+	    my $_has_pot = 0;
+	    if ($char_ref->{inventory}) {
+	        foreach my $_item (@{$char_ref->{inventory}}) {
+	            next unless ref($_item) eq 'HASH';
+	            if ($_item->{name} && $_item->{name} =~ /potion/i && ($_item->{amount} || 0) > 0) { $_has_pot = 1; last; }
+	        }
 	    }
-	    # Engage auto mode for movement, but with HP threshold safety
-	    if ($Ai::Ai->{ai} ne 'auto') {
-	        eval { Commands::run('ai auto'); 1 };
+	    if (!$_has_pot) {
+	        eval { Commands::run('buy 501 30'); 1 };
 	    }
-	    # Walk to Kafra coordinates in Prontera and request heal
-	    eval { Commands::run('talknpc 151 29 c r1 c n'); 1 };
-	    warning "[aiSidecarBridge] survival: Kafra heal with auto-mode at (151,29)\n";
+	}
+# Phase 2: Use potion when HP critically low
+	if ($hp_pct < 40) {
+	    eval { Commands::run('use Red Potion'); 1 };
 	}
 # Phase 2: Sit for regen (may fail if Basic Skill 3 missing)
 # Phase 2: Sit for regen (requires Basic Skill 3 — may fail if missing)

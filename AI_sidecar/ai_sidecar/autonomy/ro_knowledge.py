@@ -44,6 +44,10 @@ _RATHENA_PROMPT_AXIOMS: tuple[str, ...] = (
     "Never fight multiple monsters at once below level 10. Use flee settings to escape when HP < 60%.",
     "Job advancement at level 10: talknpc to Job Change NPC in Prontera. Swordsman (prontera 53 259), Mage (prontera 166 30), Thief (morocc 115 97), Acolyte (prontera 159 260), Archer (prontera 165 216).",
     "If you have 0 zeny and 0 items to sell, you cannot buy potions. Kill Porings with auto-attack until you collect enough loot to sell.",
+    "Prontera Tool Dealer NPC at ma_in01 (22, 23) sells: item 501=Red Potion (10z), 502=Orange Potion (50z), 503=White Potion (180z). Use 'buy <item_id> <amount>' to purchase.",
+    "When HP < 50% and you have potions, use 'use Red Potion' or 'use 501' to heal. One Red Potion recovers ~45-65 HP at low levels.",
+    "Alert: This server's Kafra Employee has NO heal option. Kafra only offers Save (r0) and Storage (r1). Do NOT attempt Kafra healing.",
+    "To recover HP without potions or skills: stand still in Prontera with weight < 50% and wait for natural regen (1 HP per ~4 seconds). Reduce weight by storing items at Kafra Storage (r1).",
 )
 
 _CAPABILITY_MODE_LABELS: tuple[str, ...] = (
