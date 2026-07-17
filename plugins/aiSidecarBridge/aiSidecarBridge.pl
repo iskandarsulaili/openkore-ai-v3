@@ -3760,8 +3760,6 @@ sub _survival_check {
 	if ($hp_pct < 40) {
 	    eval { Commands::run('use Red Potion'); 1 };
 	}
-# Phase 2: Sit for regen (may fail if Basic Skill 3 missing)
-# Phase 2: Sit for regen (requires Basic Skill 3 — may fail if missing)
 	# Phase 2: Sit to regen HP if low
 	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
 	    eval { Commands::run('sit'); 1 };
@@ -3773,23 +3771,6 @@ sub _survival_check {
 	    eval { Commands::run('stand'); 1 };
 	}
 
-	# Phase 4: Buy potions if in Prontera and have zeny but no potions
-	if ($map =~ /prontera/i && $zeny >= 100) {
-	    my $has_pots = 0;
-	    if ($char_ref->{inventory}) {
-	        foreach my $item (@{$char_ref->{inventory}}) {
-	            next unless ref($item) eq 'HASH';
-	            if ($item->{name} && $item->{name} =~ /red.?potion|orange.?potion|white.?potion/i && ($item->{amount} || 0) > 0) {
-	                $has_pots = 1;
-	                last;
-	            }
-	        }
-	    }
-	    if (!$has_pots) {
-	        eval { Commands::run('buy 30 Red Potion'); 1 };
-	    }
-	}
-
 	# Phase 5: If in Prontera and conditions OK, engage auto mode for grinding
 	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
 	    my $current_lockMap = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
@@ -3799,5 +3780,131 @@ sub _survival_check {
 	    eval { Commands::run('ai auto'); 1 };
 	}
 }
+
+# ── Safe character accessor (works from any scope) ──
+sub _safe_char {
+	return $main::char || $char;
+}
+
+# ── Default survival auto-grind loop (bottom-up fallback) ──
+# Runs every mainLoop_post tick when connected. Buys potions, sits to regen,
+# walks to heal NPC, and engages auto-attack. The Pro RO LLM sits on top.
+sub _survival_check {
+	my $now = _now_ms();
+	state $_last_sc_ms = 0;
+	return if $now - $_last_sc_ms < 2000;
+	$_last_sc_ms = $now;
+
+	my $cr = _safe_char();
+	return if !$cr;
+	my $hp = $cr->{hp} || 0;
+	my $hp_max = $cr->{hp_max} || 1;
+	my $zeny = $cr->{zeny} || 0;
+	my $ai_mode = $Ai::Ai->{ai} || '';
+	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+
+	# ── Phase 1: Navigate to tool dealer and buy potions ──
+	if ($hp_pct < 70 && $zeny >= 10) {
+	    my $_has_pot = 0;
+	    if ($cr->{inventory}) {
+	        foreach my $_item (@{$cr->{inventory}}) {
+	            next unless ref($_item) eq 'HASH';
+	            if ($_item->{name} && $_item->{name} =~ /potion/i && ($_item->{amount}||0) > 0) { $_has_pot = 1; last; }
+	        }
+	    }
+	    if (!$_has_pot) {
+	        # Set lockMap to tool dealer map so OpenKore auto-navigates through portals
+	        $::config{'lockMap'} = 'ma_in01';
+	        $::config{'lockMap_x'} = '22';
+	        $::config{'lockMap_y'} = '23';
+	        # Enable auto mode so OpenKore walks to the target
+	        if ($ai_mode !~ /auto/i) {
+	            eval { Commands::run('ai auto'); 1 };
+	        }
+	        # Try buying directly — works if already near NPC, ignored otherwise
+	        eval { Commands::run('buy 501 30'); 1 };
+	    }
+	}
+
+	# ── Phase 2: Use potion when critically low ──
+	if ($hp_pct < 40) {
+	    eval { Commands::run('use Red Potion'); 1 };
+	}
+
+	# ── Phase 3: Sit to regen if low (may need Basic Skill 3) ──
+	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
+	    eval { Commands::run('sit'); 1 };
+	    return;
+	}
+
+	# ── Phase 4: Stand once recovered ──
+	if ($hp_pct >= 80 && $ai_mode eq 'sit') {
+	    eval { Commands::run('stand'); 1 };
+	}
+
+	# ── Phase 5: Auto-attack mode when healthy ──
+	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
+	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
+	    if (!$clm || $clm eq '' || $clm eq 'ma_in01') {
+	        $::config{'lockMap'} = 'prt_fild08';
+	    }
+	    eval { Commands::run('ai auto'); 1 };
+	}
+}
+
+# ── Team Play: Auto-party and coordinate sibling bots ──
+sub _teamplay_check {
+	my $now = _now_ms();
+	state $_last_tp_ms = 0;
+	return if $now - $_last_tp_ms < 30000;  # check every 30s
+	$_last_tp_ms = $now;
+
+	my $cr = _safe_char();
+	return if !$cr;
+	my $name = $cr->{name} || '';
+	return if $name eq '';
+
+	# Get current party info
+	my $party = $main::partiesList;
+	my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
+
+	if (!$in_party) {
+	    # Try to create a party (only the first bot should succeed)
+	    eval { Commands::run('party create "AI Team"'); 1 };
+	    # Accept any pending invites
+	    eval { Commands::run('party accept'); 1 };
+	    eval { Commands::run('party join'); 1 };
+	}
+
+	# If in a party, actively invite sibling bots
+	if ($in_party) {
+	    my @_siblings = ('openkoreai', 'openkoreaiobs', 'openkoreaihuman');
+	    foreach my $_sib (@_siblings) {
+	        next if $_sib eq $name;
+	        my $_already = 0;
+	        if (ref($party) eq 'HASH') {
+	            foreach my $_key (keys %$party) {
+	                my $_pm = ref($party->{$_key}) eq 'HASH' ? ($party->{$_key}{name}||$party->{$_key}{actor}||$party->{$_key}) : $party->{$_key};
+	                $_pm = ref($_pm) eq 'HASH' ? ($_pm->{name}||'') : $_pm;
+	                if ($_pm eq $_sib) { $_already = 1; last; }
+	            }
+	        }
+	        if (!$_already) {
+	            eval { Commands::run("party invite $_sib"); 1 };
+	        }
+	    }
+	}
+}
+
+# ── Hook: Auto-accept party invites from console messages ──
+sub _check_party_invite {
+	my $msg = shift || '';
+	if ($msg =~ /invite.*to.*party/i || $msg =~ /party.*invitation/i || $msg =~ /joined.*party/i) {
+	    eval { Commands::run('party accept'); 1 };
+	    eval { Commands::run('party join'); 1 };
+	}
+}
+
+# ── Wire team play into the main loop ──
 
 1;
