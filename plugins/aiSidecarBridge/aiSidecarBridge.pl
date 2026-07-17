@@ -2485,8 +2485,8 @@ sub _http_post_json {
 		};
 	}
 
-	my $connect_timeout = _cfg_int('aiSidecar_connectTimeoutMs', 40) / 1000;
-	my $io_timeout = _cfg_int('aiSidecar_ioTimeoutMs', 90) / 1000;
+	my $connect_timeout = _cfg_int('aiSidecar_connectTimeoutMs', 2000) / 1000;
+	my $io_timeout = _cfg_int('aiSidecar_ioTimeoutMs', 5000) / 1000;
 	$connect_timeout = 0.001 if $connect_timeout <= 0;
 	$io_timeout = 0.001 if $io_timeout <= 0;
 
