@@ -3822,9 +3822,10 @@ sub _survival_check {
 	    } else {
 	        # Fallback: stand up, try buying, sit as last resort
 	        if (0) { eval { Commands::run('stand'); 1 }; }
-	        $::config{'lockMap'} = 'prt_in';
+	        $::config{'lockMap'} = 'prontera';
 	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
-	        eval { Commands::run('buy 501 30'); 1 };
+        eval { Commands::run('move 159 193'); 1 };
+        eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
 	        eval { Commands::run('use Red Potion'); 1 };
 	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
 	    }
@@ -3908,9 +3909,10 @@ sub _survival_check {
 	    }
 	    # Fallback: stand, navigate to healer/prt_in, buy, use
 	    if ($ai_mode eq 'sit') { eval { Commands::run('stand'); 1 }; }
-	    $::config{'lockMap'} = 'prt_in';
+	    $::config{'lockMap'} = 'prontera';
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
-	    eval { Commands::run('buy 501 30'); 1 };
+    eval { Commands::run('move 159 193'); 1 };
+    eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
 	    eval { Commands::run('use Red Potion'); 1 };
 	    # Fall through to economy check and auto mode
 	}
