@@ -139,9 +139,9 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 if _burst_bs:
                     _burst_snap = _burst_sc.get(_burst_bs) if hasattr(_burst_sc, 'get') else None
                     if _burst_snap:
-                        _burst_v = _burst_snap.get('vitals') or {}
-                        _burst_hp = _burst_v.get('hp') or 0
-                        _burst_hpm = _burst_v.get('hp_max') or 1
+                        _burst_v = getattr(_burst_snap, 'vitals', None) or getattr(_burst_snap, 'stats_vitals', {}) or {}
+                        _burst_hp = _burst_v.get('hp') or 0 if isinstance(_burst_v, dict) else (getattr(_burst_v, 'hp', None) or 0)
+                        _burst_hpm = _burst_v.get('hp_max') or 1 if isinstance(_burst_v, dict) else (getattr(_burst_v, 'hp_max', None) or 1)
                         # Track burst tracker on the runtime state
                         _bt = getattr(runtime_state, '_burst_tracker', None)
                         if _bt is None:

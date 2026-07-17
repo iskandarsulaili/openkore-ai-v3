@@ -536,7 +536,7 @@ class TelemetryStore:
         return self._ingestor.backlog_size()
 
 
-@dataclass(slots=True)
+@dataclass
 class RuntimeState:
     started_at: datetime
     workspace_root: Path

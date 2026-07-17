@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from ai_sidecar.autonomy.goal_stack import summarize_goal_stack
-from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle
+from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle, load_ro_knowledge
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerContext
 from ai_sidecar import skills_loader
