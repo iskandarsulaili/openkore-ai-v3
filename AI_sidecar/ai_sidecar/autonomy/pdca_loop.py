@@ -4297,8 +4297,13 @@ class PDCALoop:
                             _burst_snap = getattr(self._runtime, 'snapshot_cache', {})
                             if hasattr(_burst_snap, 'get'):
                                 _burst_state = _burst_snap.get(_bid) or {}
-                                _burst_vitals = _burst_state.get('vitals') or {}
-                                _burst_hp = _burst_vitals.get('hp') or 0
+                                # Safely extract vitals from dict or Pydantic model
+                                if hasattr(_burst_state, 'vitals'):
+                                    _burst_vitals = getattr(_burst_state, 'vitals', {})
+                                    _burst_vitals = _burst_vitals if isinstance(_burst_vitals, dict) else (getattr(_burst_vitals, 'model_dump', lambda: {})() or {})
+                                else:
+                                    _burst_vitals = _burst_state.get('vitals', {})
+                                _burst_hp = int(_burst_vitals.get('hp', 0) or 0)
                                 if _bid not in self._burst_tracker:
                                     from collections import deque
                                     self._burst_tracker[_bid] = deque(maxlen=5)

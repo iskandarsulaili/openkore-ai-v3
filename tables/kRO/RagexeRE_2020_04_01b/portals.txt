@@ -1,0 +1,8 @@
+# rAthena-standard portal corrections for Asgards Glory
+# Generated to fix Prontera→prt_fild08 routing (iRO had y=22, rAthena uses y=229)
+prontera 156 229 prt_fild08 49 347 0 c r0
+prt_fild08 48 346 prontera 157 227 0 r0
+prontera 22 203 prt_fild05 373 205 0 c r0
+prt_fild05 373 205 prontera 22 203 0 r0
+prontera 289 203 prt_fild06 23 193 0 c r0
+prt_fild06 23 193 prontera 289 203 0 r0

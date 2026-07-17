@@ -706,11 +706,14 @@ class ProRoPlayerProfile(BehaviorProfile):
 
         return {
             "kind": "command",
-            "command": "ai auto",
+            "command": f"move {early['first_map']}",
             "confidence": 0.9,
             "reason": f"Early-game guidance for level {level} {player_class}: recommended_hunt={hunting_grounds[0] if hunting_grounds else 'prt_fild08'}, buy_potions=Red_Potion, sell_at_50pct_weight",
             "advice": "\n".join(advice_parts),
-            "hunting_grounds": hunting_grounds[:3],
+            "build": early.get("stats", "agi_dex"),
+            "starting_map": early["first_map"],
+            "next_milestone": f"Reach level {early['level_range'][1]} on {early['first_map']}",
+            "hunting_grounds": hunting_grounds[:3] if hunting_grounds else [],
             "stats": early["stats"],
             "equipment": early["equipment"],
             "npc_tips": [
