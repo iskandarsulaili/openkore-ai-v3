@@ -4244,11 +4244,8 @@ class RuntimeState:
                                 "mode": str(promotion.get("mode") or "shadow"),
                                 "reason": str(promotion.get("reason") or ""),
                             }
-                            self.ml_promotion.record_outcome(
-                                family=family,
-                                executed=bool(promotion.get("allowed")),
-                                success=bool(result.ok),
-                            )
+                            # Defer outcome recording to execution-time tracking
+                            # from the Perl bridge via POST /v2/ml/outcome
 
                     route = dict(result.route)
                     route["ml_shadow"] = shadow_rows
