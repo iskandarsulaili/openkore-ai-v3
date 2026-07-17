@@ -4001,6 +4001,14 @@ class PDCALoop:
                     # Preserve cold-start LLM flag — don't override with False from trigger eval
                     if _should_wake or _use_llm:
                         _use_llm = True
+                    # Don't force LLM if circuit breaker is tripped (prevents 7-min blocking calls)
+                    if _use_llm:
+                        try:
+                            _cb = getattr(self, "_circuit_breaker", None)
+                            if _cb is not None and hasattr(_cb, 'can_pass') and not _cb.can_pass(key=self._breaker_key, family=self._breaker_family):
+                                _use_llm = False
+                        except Exception:
+                            pass
                     
                     # Two-tier conscious brain:
                     # - Tactical tier: every 30s, lighter evaluation, faster model
