@@ -310,8 +310,9 @@ _tail_all() {
         mkfifo "$fifo"
         
         # Tail the file and prefix each line with color + label
+        # Filter out [aiSidecarBridge] noise from console display
         (
-            tail -n 0 -f "$lf" 2>/dev/null | while IFS= read -r line; do
+            tail -n 0 -f "$lf" 2>/dev/null | grep -v '\[aiSidecarBridge\]' | while IFS= read -r line; do
                 echo -e "${color}[${label}]${NC} ${line}"
             done
         ) > "$fifo" &

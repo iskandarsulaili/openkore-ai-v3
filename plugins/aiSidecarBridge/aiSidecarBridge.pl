@@ -176,7 +176,7 @@ sub _cleanup_runtime {
 
 sub on_start3 {
 	if (!$json_available) {
-		warning "[aiSidecarBridge] JSON::PP is unavailable, bridge is disabled (fail-open).\n";
+# 		warning "[aiSidecarBridge] JSON::PP is unavailable, bridge is disabled (fail-open).\n";
 		return;
 	}
 
@@ -3007,6 +3007,8 @@ sub _now_ms {
 }
 
 sub _throttled_warning {
+	return;
+	# [SIDECAR] suppressed - noise reduction
 	my ($key, $msg) = @_;
 	my $now = _now_ms();
 	my $interval = 10_000;
@@ -3141,7 +3143,7 @@ sub _check_bridge_reflexes {
 				next if !$item_name;
 				my $item = eval { Actor::Item::get($item_name) };
 				if ($item && $item->{amount} && $item->{amount} > 0) {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$hp/$hp_max=$hp_ratio, item=$item_name qty=$item->{amount})\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$hp/$hp_max=$hp_ratio, item=$item_name qty=$item->{amount})\n";
 					eval { $item->use(); 1 };
 					$heal_triggered = 1;
 					last;
@@ -3155,7 +3157,7 @@ sub _check_bridge_reflexes {
 					next if !$skill_name;
 					my $skill = eval { Skill::get($skill_name) };
 					if ($skill && $skill->{level} && $skill->{level} > 0 && $sp > 0) {
-						warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
+# 						warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
 						eval { Commands::run("skill $skill_name 1"); 1 };
 						$heal_triggered = 1;
 						last;
@@ -3165,7 +3167,7 @@ sub _check_bridge_reflexes {
 
 			# If in town with low HP and no items found, trigger auto-buy
 			if (!$heal_triggered && $map =~ /^prontera/i && $hp_ratio < 0.50) {
-				warning "[aiSidecarBridge] bridge_reflex:emergency_autobuy (HP=$hp/$hp_max, map=$map)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:emergency_autobuy (HP=$hp/$hp_max, map=$map)\n";
 				eval { Commands::run("autobuy"); 1 };
 			}
 
@@ -3173,7 +3175,7 @@ sub _check_bridge_reflexes {
 			if (!$heal_triggered) {
 				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
 				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_fallback_heal (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:emergency_fallback_heal (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
 					eval { $fallback->use(); 1 };
 					$heal_triggered = 1;
 				}
@@ -3188,7 +3190,7 @@ sub _check_bridge_reflexes {
 			$_last_hp = $hp;
 				if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 10000)) {
 					$_reflex_last_fired{no_heal} = _now_ms();
-					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
 					# POST EVENT TO SIDECAR (let conscious handle rest)
 					_post_event({
@@ -3222,7 +3224,7 @@ sub _check_bridge_reflexes {
 					my $_zeny = $char->{zeny} || 0;
 					my $ai_state = $AI::AI || '';
 					# Debug: log sit condition values
-					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
+# 					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
 					if (!$_has_heal_item) {
 						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
 							## SIT REMOVED — reflex should never sit. Let survival_check handle it.
@@ -3231,7 +3233,7 @@ sub _check_bridge_reflexes {
 					} elsif ($hp > $hp_max * 0.8 && ($AI::AI == 2)) {
 						# Stand up if HP is healthy and we were sitting
 						Commands::run('stand');
-						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
+# 						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
 					}
 
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
@@ -3266,7 +3268,7 @@ sub _check_bridge_reflexes {
 		if ($hp_ratio < 0.15 && $aggro_count > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
 				$_reflex_last_fired{flee} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
 				if ($_reflex_map2 !~ /^prontera/i) {
 					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
@@ -3282,12 +3284,12 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
-					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				} else {
 					my $_reflex_map3 = $char->{map} || '';
 					if ($_reflex_map3 !~ /^prontera/i) {
-						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
+# 						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
 						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 					}
 				}
@@ -3301,7 +3303,7 @@ sub _check_bridge_reflexes {
 		if ($aggro_count > 5) {
 			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
 				$_reflex_last_fired{aggro_warning} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'aggro_warning',
@@ -3320,7 +3322,7 @@ sub _check_bridge_reflexes {
 		if ($sp_ratio < 0.15) {
 			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
 				$_reflex_last_fired{low_sp} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'low_sp',
@@ -3353,7 +3355,7 @@ sub _check_bridge_reflexes {
 			if ($gm_detected) {
 				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
 					$_reflex_last_fired{gm_detected} = _now_ms();
-					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					# GM manual toggle disabled — let survival check handle mode
 					# eval { _toggle_ai_mode('manual'); 1 };
 					_post_event({
@@ -3373,7 +3375,7 @@ sub _check_bridge_reflexes {
 		if ($weight_ratio > 0.85) {
 			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
 				$_reflex_last_fired{weight_warning} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'weight_warning',
@@ -3402,7 +3404,7 @@ sub _check_bridge_reflexes {
 			if ($broken_found) {
 				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
 					$_reflex_last_fired{equipment_broken} = _now_ms();
-					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
 					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'equipment_broken',
@@ -3432,7 +3434,7 @@ sub _check_bridge_reflexes {
 			if ($interrupted) {
 				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, 1500)) {
 					$_reflex_last_fired{interrupt_cast} = _now_ms();
-					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
+# 					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
 					eval { Commands::run("skill Bash 10"); 1 };
 				}
 			}
@@ -3466,14 +3468,14 @@ sub _check_bridge_reflexes {
 					for my $item_name (@_heal_items) {
 						my $item = eval { Actor::Item::get($item_name) };
 						if ($item) {
-							warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$hp/$hp_max, item=$item_name)\n";
+# 							warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$hp/$hp_max, item=$item_name)\n";
 							eval { Commands::run("is $item_name"); 1 };
 							$healed = 1;
 							last;
 						}
 					}
 					if (!$healed) {
-						warning "[aiSidecarBridge] bridge_reflex:pre_pot_no_items (boss within 15 tiles, HP=$hp/$hp_max)\n";
+# 						warning "[aiSidecarBridge] bridge_reflex:pre_pot_no_items (boss within 15 tiles, HP=$hp/$hp_max)\n";
 					}
 				}
 			}
@@ -3486,7 +3488,7 @@ sub _check_bridge_reflexes {
 		if (!$heal_triggered && $hp_ratio < 0.50 && $aggro_count > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
 				$_reflex_last_fired{bot_request} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'bot_cooperation_request',
@@ -3526,7 +3528,7 @@ sub _check_bridge_reflexes {
 
 					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
 						$_reflex_last_fired{party_low_hp} = _now_ms();
-						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
+# 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
 						_post_event({
 							kind => 'bridge_reflex',
 							reflex => 'party_low_hp',
@@ -3550,7 +3552,7 @@ sub _check_bridge_reflexes {
 		if ($aggro_count > 10) {
 			if (_should_fire_reflex($_reflex_last_fired{high_aggro_surround} || 0, 3000)) {
 				$_reflex_last_fired{high_aggro_surround} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
 				# Immediate flee + teleport combo
 				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
@@ -3576,7 +3578,7 @@ sub _check_bridge_reflexes {
 		if ($hp <= 0 || ($hp > 0 && $hp <= 5)) {
 			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, 2000)) {
 				$_reflex_last_fired{zonk} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
 				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 				_post_event({
 					kind => 'bridge_reflex',
@@ -3596,7 +3598,7 @@ sub _check_bridge_reflexes {
 		if ($death_count > 0 && $death_count % 5 == 0) {
 			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
 				$_reflex_last_fired{death_spike} = _now_ms();
-				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
+# 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'death_spike',
@@ -3678,7 +3680,7 @@ sub _check_bridge_reflexes {
 				if ($should_dodge) {
 					if (_should_fire_reflex($_reflex_last_fired{pre_dodge} || 0, 2000)) {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
-						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
+# 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
 						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^prontera}i) { $::config{"lockMap"}="prontera"; _toggle_ai_mode('auto'); } 1 };
 						_post_event({
