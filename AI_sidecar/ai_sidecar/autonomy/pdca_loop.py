@@ -3475,6 +3475,29 @@ class PDCALoop:
                     pass
                 if not _has_any_snapshot and _use_llm:
                     _use_llm = False
+                # Check provider availability with 3s probe — if unreachable, skip LLM entirely
+                if _use_llm and not hasattr(self._runtime, "_provider_probe_passed"):
+                    try:
+                        _pp_mr = getattr(self._runtime, "model_router", None)
+                        _pp_healthy = False
+                        if _pp_mr is not None and hasattr(_pp_mr, 'decide'):
+                            _pp_dec = _pp_mr.decide(workload="strategic_planning")
+                            _pp_provider = str(getattr(_pp_dec, 'selected_provider', '') or '')
+                            if _pp_provider and _pp_provider != 'none':
+                                _pp_adapters = getattr(_pp_mr, '_providers', {})
+                                _pp_adapter = _pp_adapters.get(_pp_provider) if isinstance(_pp_adapters, dict) else None
+                                if _pp_adapter is not None and hasattr(_pp_adapter, 'health'):
+                                    import asyncio as _pp_asyncio
+                                    _pp_result = await _pp_asyncio.wait_for(
+                                        _pp_adapter.health(bot_id=_cycle_bot_id or "probe"),
+                                        timeout=3.0,
+                                    )
+                                    _pp_healthy = bool(getattr(_pp_result, 'healthy', False))
+                        object.__setattr__(self._runtime, "_provider_probe_passed", _pp_healthy)
+                    except Exception:
+                        object.__setattr__(self._runtime, "_provider_probe_passed", False)
+                if _use_llm and not getattr(self._runtime, "_provider_probe_passed", True):
+                    _use_llm = False
                 _trigger_reason = "conservative:no_triggers"
                 _trigger_ctx: dict[str, object] = {}
                 
