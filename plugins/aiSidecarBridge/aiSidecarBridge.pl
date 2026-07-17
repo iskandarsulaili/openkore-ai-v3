@@ -3351,7 +3351,8 @@ sub _check_bridge_reflexes {
 				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
-					eval { _toggle_ai_mode('manual'); 1 };
+					# GM manual toggle disabled — let survival check handle mode
+					# eval { _toggle_ai_mode('manual'); 1 };
 					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'gm_detected',
