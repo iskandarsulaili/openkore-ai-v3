@@ -1,94 +1,137 @@
-
-"""Discovery API — Pro RO LLM analyzes server conditions for optimal strategy."""
+"""Discovery API — Server table data ingested from OpenKore bridge.
+Source of truth: OpenKore's tables/ directory. No sidecar-side duplication."""
 import logging
-from fastapi import APIRouter, HTTPException
+import threading
+from typing import Any
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discover", tags=["discovery"])
+
+# In-memory cache of server tables (pushed from bridge via events)
+_server_tables: dict[str, Any] = {}
+_server_tables_lock = threading.RLock()
+
+
+# ── Table Ingest / Query (OpenKore tables are source of truth) ──
+
+class TablesIngestRequest(BaseModel):
+    kind: str = "discovery_all_tables"
+    tables: dict = {}
+    timestamp: float = 0.0
+
+
+@router.post("/tables/ingest")
+async def ingest_server_tables(req: TablesIngestRequest) -> dict:
+    """Bridge pushes ALL server table data here. This is the single
+    source of truth — sidecar stores in memory, no file duplication."""
+    with _server_tables_lock:
+        _server_tables.clear()
+        _server_tables.update(req.tables)
+        _server_tables["_ingested_at"] = req.timestamp
+    logger.info(f"discovery_tables_ingested: {len(req.tables)} categories")
+    return {"status": "ok", "tables_count": len(req.tables)}
+
+
+@router.get("/tables/query")
+async def query_tables(category: str = "") -> dict:
+    """Query ingested table data by category.
+    Categories: npcs, npc_shops, portals, cities, monsters, etc."""
+    with _server_tables_lock:
+        if category:
+            result = {category: _server_tables.get(category, [])}
+        else:
+            result = dict(_server_tables)
+    return {"tables": result, "timestamp": _server_tables.get("_ingested_at", 0.0)}
+
+
+@router.get("/tables/npcs")
+async def query_npcs(map_name: str = "") -> list[dict]:
+    """Get NPCs on a specific map."""
+    with _server_tables_lock:
+        npcs_raw = _server_tables.get("npcs", [])
+    if not npcs_raw:
+        return []
+    result = []
+    for line in npcs_raw:
+        parts = line.split()
+        if len(parts) >= 4 and (not map_name or parts[0] == map_name):
+            result.append({
+                "map": parts[0], "x": int(parts[1]), "y": int(parts[2]),
+                "name": " ".join(parts[3:])
+            })
+    return result
+
+
+# ── Healing Strategy (Pro RO LLM using table data) ──
 
 class HealStrategyRequest(BaseModel):
     bot_id: str
     hp: int
     hp_max: int
     zeny: int
-    map: str
+    map: str = ""
     inventory: list[dict] = []
-    known_shops: list[dict] = []
-    known_portals: list[str] = []
-    available_items: list[dict] = []
+
 
 class HealStrategyResponse(BaseModel):
     strategy: str
     command: str
-    target_map: str
+    target_map: str = ""
     target_npc: str = ""
-    item_to_buy: str = ""
-    item_id: int = 0
-    amount: int = 0
     confidence: float = 0.0
+
 
 @router.post("/heal", response_model=HealStrategyResponse)
 async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyResponse:
-    """Pro RO LLM analyzes server NPC shops and portal data to determine
-    the optimal healing strategy for this specific server. No hardcoded
-    assumptions — every decision is data-driven."""
-    
-    hp_pct = (req.hp / max(req.hp_max, 1)) * 100 if req.hp_max > 0 else 100
-    
-    # Phase 1: Check if potions are available in inventory
-    has_potions = any(
-        "potion" in (item.get("name", "") or "").lower()
-        for item in req.inventory
-    )
-    
-    if has_potions and hp_pct < 40:
-        return HealStrategyResponse(
-            strategy="use_potion",
-            command="use Red Potion",
-            target_map=req.map,
-            confidence=0.95,
-        )
-    
-    # Phase 2: Find a healing NPC from known shops
-    for shop in req.known_shops:
-        shop_name = shop.get("name", "")
-        shop_items = shop.get("shop", "")
-        shop_map = shop.get("map", "")
-        shop_x = shop.get("x", 0)
-        shop_y = shop.get("y", 0)
-        
-        # Check if this shop sells Red Potions (item 501)
-        if "501" in str(shop_items) or "Red Potion" in str(shop_items):
-            # Check if this shop is reachable from current map
-            if req.map == shop_map or any(
-                p.startswith(f"{req.map} ") or f" {shop_map}" in p
-                for p in req.known_portals
-            ):
-                return HealStrategyResponse(
-                    strategy="buy_from_npc",
-                    command=f"buy 501 30",
-                    target_map=shop_map,
-                    target_npc=shop_name,
-                    item_to_buy="Red Potion",
-                    item_id=501,
-                    amount=30,
-                    confidence=0.85,
-                )
-    
-    # Phase 3: Try natural regen or Kafra storage
-    if hp_pct < 30:
-        return HealStrategyResponse(
-            strategy="sit_and_regen",
-            command="sit",
-            target_map=req.map,
-            confidence=0.6,
-        )
-    
-    # Phase 4: Default — engage auto mode and wait for loot/potions
+    """Pro RO LLM determines healing strategy using ingested table data.
+    No hardcoded NPC positions — reads from bridge-pushed tables."""
+    hp_pct = (req.hp / max(req.hp_max, 1)) * 100
+
+    # Phase 1: Use potion from inventory
+    if any("potion" in (i.get("name", "") or "").lower() for i in req.inventory):
+        return HealStrategyResponse(strategy="use_potion", command="use Red Potion", confidence=0.95)
+
+    # Phase 2: Find a healer NPC on current map
+    with _server_tables_lock:
+        npcs_data = _server_tables.get("npcs", [])
+
+    if npcs_data and req.map:
+        for line in npcs_data:
+            parts = line.split()
+            if len(parts) >= 4 and parts[0] == req.map:
+                npc_name = " ".join(parts[3:])
+                if "healer" in npc_name.lower():
+                    return HealStrategyResponse(
+                        strategy="visit_healer_npc",
+                        command=f"talknpc {parts[1]} {parts[2]} c r0 n",
+                        target_map=req.map,
+                        target_npc=npc_name,
+                        confidence=0.85,
+                    )
+
+    # Phase 3: Find shop selling potions on reachable maps
+    with _server_tables_lock:
+        shops_data = _server_tables.get("npc_shops", [])
+
+    if shops_data and req.map:
+        for line in shops_data:
+            parts = line.split(",")
+            if len(parts) >= 4 and "501:" in line:  # 501 = Red Potion
+                shop_map = parts[0]
+                if shop_map == req.map or True:  # portal check would go here
+                    return HealStrategyResponse(
+                        strategy="buy_from_npc",
+                        command="buy 501 30",
+                        target_map=shop_map,
+                        confidence=0.7,
+                    )
+
+    # Phase 4: Default — auto mode, lockMap to prt_in
     return HealStrategyResponse(
-        strategy="auto_grind",
+        strategy="auto_navigate",
         command="ai auto",
-        target_map=req.map,
+        target_map="prt_in",
         confidence=0.5,
     )

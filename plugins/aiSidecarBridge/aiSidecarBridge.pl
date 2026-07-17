@@ -266,6 +266,7 @@ sub on_mainLoop_post {
 		_apply_bot_config();
 		_discover_shops();
 		_discover_portals();
+	_send_discovery_data();
 		_survival_check();
 		_teamplay_check();
 	}
@@ -3872,7 +3873,7 @@ sub _sell_junk_items {
 sub _survival_check {
 	my $now = _now_ms();
 	state $_last_sc_ms = 0;
-	return if $now - $_last_sc_ms < 2000;
+	return if $now - $_last_sc_ms < 60000;
 	$_last_sc_ms = $now;
 
 	my $cr = _safe_char();
@@ -3880,52 +3881,44 @@ sub _survival_check {
 	my $hp = $cr->{hp} || 0;
 	my $hp_max = $cr->{hp_max} || 1;
 	my $zeny = $cr->{zeny} || 0;
+	my $base_lv = $cr->{lv} || $cr->{level} || 1;
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+	my $map = $cr->{map} || '';
 
-	# ── Phase 1: Navigate to tool dealer and buy potions ──
-	if ($hp_pct < 70 && $zeny >= 10) {
-	    my $_has_pot = 0;
-	    if ($cr->{inventory}) {
-	        foreach my $_item (@{$cr->{inventory}}) {
-	            next unless ref($_item) eq 'HASH';
-	            if ($_item->{name} && $_item->{name} =~ /potion/i && ($_item->{amount}||0) > 0) { $_has_pot = 1; last; }
-	        }
-	    }
-	    if (!$_has_pot) {
-	        # Stand up first (sitting blocks movement and NPC interaction)
-	        if ($ai_mode =~ /sit/i) { eval { Commands::run('stand'); 1 }; return; }
-	        # Enable auto mode so OpenKore pathfinds to NPC
-	        if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
-	        # Set lockMap to tool dealer map for NPC navigation
-	        $::config{'lockMap'} = 'prt_in';
-	        # Try buying — works if near NPC, ignored until nav completes
-	        eval { Commands::run('buy 501 30'); 1 };
-	    }
-	}
+	_apply_bot_config();
 
-	# ── Phase 2: Use potion when critically low ──
-	if ($hp_pct < 40) {
+	# ── Emergency (HP < 20%): Stand up, navigate, buy, use — NEVER sit ──
+	if ($hp_pct < 20 && $hp_pct > 0) {
+	    my $_strat = _http_post_json('/v1/discover/heal', {
+	        bot_id => _bot_id(),
+	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
+	        inventory => _safe_inventory_list(),
+	        known_shops => _discover_shops_sync(),
+	        known_portals => _discover_portals_sync(),
+	    });
+	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
+	        eval { Commands::run($_strat->{json}{command}); 1 };
+	        my $_tgt = $_strat->{json}{target_map} || '';
+	        if ($_tgt ne '' && $_tgt ne $map) { $::config{'lockMap'} = $_tgt; }
+	    }
+	    # Fallback: stand, navigate to healer/prt_in, buy, use
+	    if ($ai_mode eq 'sit') { eval { Commands::run('stand'); 1 }; }
+	    $::config{'lockMap'} = 'prt_in';
+	    if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
+	    eval { Commands::run('buy 501 30'); 1 };
 	    eval { Commands::run('use Red Potion'); 1 };
-	}
-
-	# ── Phase 3: Sit to regen if low (may need Basic Skill 3) ──
-	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
-	    eval { Commands::run('sit'); 1 };
 	    return;
 	}
 
-	# ── Phase 4: Stand once recovered ──
-	if ($hp_pct >= 80 && $ai_mode eq 'sit') {
-	    eval { Commands::run('stand'); 1 };
+	# ── Economy: If zeny low, go grind ──
+	if ($zeny < 300 && $base_lv < 99) {
+	    $::config{'lockMap'} = 'prt_fild08';
+	    if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
 	}
 
-	# ── Phase 5: Auto-attack mode when healthy ──
-	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
-	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if (!$clm || $clm eq '' || $clm eq 'prt_in') {
-	        $::config{'lockMap'} = 'prt_fild08';
-	    }
+	# ── Stay in auto mode when HP is safe ──
+	if ($hp_pct > 40 && $ai_mode !~ /auto/i) {
 	    eval { Commands::run('ai auto'); 1 };
 	}
 }
@@ -4087,5 +4080,49 @@ sub _safe_inventory_list {
 	return \@items;
 }
 
+
+
+# ── Table file reader (reads OpenKore tables as data source) ──
+sub _read_table_file {
+	my ($pattern) = @_;
+	my $tdir = $::Settings->{tablesPath} || './tables';
+	my $file = "$tdir/$pattern";
+	return [] unless -f $file;
+	open(my $fh, '<', $file) or return [];
+	my @lines;
+	while (my $line = <$fh>) {
+	    chomp $line;
+	    next if $line =~ /^#/ || $line =~ /^\s*$/;
+	    push @lines, $line;
+	}
+	close $fh;
+	return \@lines;
+}
+
+# ── Send ALL table data to sidecar (source of truth) ──
+sub _send_discovery_data {
+	my $data = {
+	    npcs => _read_table_file('npcs.txt'),
+	    npc_shops => _read_table_file('npc_shops.txt'),
+	    portals => _read_table_file('portals.txt'),
+	    portal_commands => _read_table_file('portals_commands.txt'),
+	    portal_los => _read_table_file('portalsLOS.txt'),
+	    portal_spawns => _read_table_file('portals_spawns.txt'),
+	    cities => _read_table_file('cities.txt'),
+	    monsters => _read_table_file('monsters.txt'),
+	    monsters_table => _read_table_file('monsters_table.txt'),
+	    item_weights => _read_table_file('item_weights.txt'),
+	    job_change => _read_table_file('job_change_locations.txt'),
+	    skill_handle => _read_table_file('SKILL_id_handle.txt'),
+	    item_hand_types => _read_table_file('item_hand_type.txt'),
+	    no_teleport => _read_table_file('no_teleport_maps.txt'),
+	    elements => _read_table_file('elements.txt'),
+	};
+	_http_post_json('/v1/discover/tables/ingest', {
+	    kind => 'discovery_all_tables',
+	    tables => $data,
+	    timestamp => _now_ms(),
+	});
+}
 
 1;
