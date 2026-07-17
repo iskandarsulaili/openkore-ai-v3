@@ -3738,45 +3738,26 @@ sub _survival_check {
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-# Phase 1: Learn Basic Skill if missing (so sitting works)
-	if ($hp_pct < 80 && _cfg_bool('aiSidecar_autoLearnBasic', 1)) {
-	    # Find the correct Basic Skill ID from the global skills list
-	    my $skill_handle = undef;
-	    my $skill_idn = 0;
-	    foreach my $handle (@main::skillsID) {
-	        next if !defined $handle;
-	        my $s = new Skill(handle => $handle);
-	        next if !$s;
-	        my ($cat, $name) = $s->getName() =~ /(.+)\s*\-\s*(.+)/;
-	        $name ||= $s->getName();
-	        if ($name =~ /basic skill|basic/i || $handle =~ /_BASIC/) {
-	            $skill_handle = $handle;
-	            $skill_idn = $s->getIDN();
+# Phase 1: Full HP/SP recovery via Kafra NPC if in Prontera (no Basic Skill needed)
+	if ($hp_pct < 80 && $map =~ /prontera/i && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
+	    # Talk to Kafra Employee NPC for full recovery
+	    # Prontera Kafra coordinates: (151, 29) observed in earlier snapshots
+	    # Using talknpc to heal at Kafra — works on all servers, no skill required
+	    my $kafra_nearby = 0;
+	    foreach my $npc (@{$main::npcsList || []}) {
+	        next unless ref($npc) eq 'HASH';
+	        if ($npc->{name} && $npc->{name} =~ /kafra/i) {
+	            $kafra_nearby = 1;
 	            last;
 	        }
 	    }
-	    # If found, check current level and allocate points
-	    if ($skill_handle && $skill_idn > 0) {
-	        my $current_lv = eval { $char->{skills}->{$skill_handle}{lv} } || 0;
-	        if ($current_lv < 3) {
-	            # Use auto-skill config as fallback — set it and let OpenKore auto-learn
-	            $::config{"skills_addAuto_$skill_handle"} = 3;
-	            # Also try direct allocation via messageSender
-	            for (1 .. 3 - $current_lv) {
-	                if ($char->{points_skill} && $char->{points_skill} > 0) {
-	                    eval { $main::messageSender->sendAddSkillPoint($skill_idn); 1 };
-	                }
-	            }
-	            warning "[aiSidecarBridge] survival: enabling auto-learn for $skill_handle (idn=$skill_idn)\n";
-	        }
-	    } else {
-	        # Fallback: just use standard skill ID for common servers
-	        if ($char->{points_skill} && $char->{points_skill} > 0) {
-	            eval { $main::messageSender->sendAddSkillPoint(0); 1 };   # NV_BASIC often IDN=0
-	            $::config{'skills_addAuto_NV_BASIC'} = 3;
-	        }
+	    if ($kafra_nearby) {
+	        eval { Commands::run('talknpc 151 29 c r0 n'); 1 };  # 'heal' option
+	        warning "[aiSidecarBridge] survival: Kafra heal requested in Prontera\n";
 	    }
 	}
+
+# Phase 2: Sit for regen (requires Basic Skill 3 — may fail if missing)
 	# Phase 2: Sit to regen HP if low
 	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
 	    eval { Commands::run('sit'); 1 };
