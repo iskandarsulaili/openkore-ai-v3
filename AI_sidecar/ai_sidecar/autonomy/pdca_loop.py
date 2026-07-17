@@ -5181,13 +5181,19 @@ class PDCALoop:
                     goal_state=goal_state,
                 )
                 objective = objective_override or self._objective_for(horizon=horizon, snapshot=latest_snapshot)
-                plan = await self._generate_plan(
-                    horizon,
-                    latest_snapshot,
-                    force_replan=force_replan and self._active_plan[horizon] is not None,
-                    objective_override=objective_override,
-                    startup_gate=startup_gate,
-                )
+                try:
+                    plan = await asyncio.wait_for(
+                        self._generate_plan(
+                            horizon,
+                            latest_snapshot,
+                            force_replan=force_replan and self._active_plan[horizon] is not None,
+                            objective_override=objective_override,
+                            startup_gate=startup_gate,
+                        ),
+                        timeout=25.0,
+                    )
+                except asyncio.TimeoutError:
+                    plan = None
                 if plan:
                     self._active_plan[horizon] = plan
                     plan_id = self._artifact_id(plan) or f"plan_{int(time.time())}"
