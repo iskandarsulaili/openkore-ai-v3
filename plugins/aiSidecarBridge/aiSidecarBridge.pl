@@ -262,7 +262,7 @@ sub on_mainLoop_post {
 		$next_event_ingest_at_ms = $now + $next_delay_ms;
 	}
 	# ── Default survival auto-grind loop (bottom-up fallback) ──
-	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && $char && $char->{hp}) {
+	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
 		_survival_check();
 	}
 }
