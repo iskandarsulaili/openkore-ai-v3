@@ -4362,6 +4362,8 @@ class PDCALoop:
                     # ── Pro RO Player cold start (also fires in heuristic mode) ──
                     _cr_advice = None
                     try:
+                        from ai_sidecar.game_knowledge import game_knowledge
+                        gk = game_knowledge()
                         _cr_pro = getattr(self._runtime, 'pro_ro_player_agent', None)
                         if _cr_pro is None:
                             from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
@@ -4390,20 +4392,11 @@ class PDCALoop:
                                 )
                                 # Queue the move command if confidence > 0.85
                                 # BUT skip if bot is in an indoor map (would block random walk)
-                                _cr_indoor_maps = {'prt_in', 'morocc_in', 'payon_in', 'geffen_in', 'alberta_in', 'aldebaran_in', 'izlude_in', 'comodo_in', 'rachel_in', 'veins_in', 'yuno_in', 'xmas_in', 'um_in', 'niflheim_in', 'einbroch_in', 'lighthalzen_in'}
                                 _cr_current_map = str(_cr_signals.get('map', '')).lower().strip()
-                                _cr_skip_indoor = any(_cr_current_map.startswith(indoor) for indoor in _cr_indoor_maps)
+                                _cr_skip_indoor = gk.is_indoor_map(_cr_current_map) if gk is not None else False
                                 # Nudge: if indoors >120s, send coordinate move to building exit
                                 if _cr_skip_indoor:
-                                    _cr_exit_coords = {
-                                        'prt_in': (131, 136),
-                                        'morocc_in': (80, 110),
-                                    }
-                                    _cr_exit = None
-                                    for _cr_iname, _cr_xy in _cr_exit_coords.items():
-                                        if _cr_current_map.startswith(_cr_iname):
-                                            _cr_exit = _cr_xy
-                                            break
+                                    _cr_exit = gk.indoor_exit(_cr_current_map) if gk is not None else None
                                     if _cr_exit:
                                         _cr_aq = getattr(self._runtime, 'action_queue', None)
                                         if _cr_aq is not None:

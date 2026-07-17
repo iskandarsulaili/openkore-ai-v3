@@ -639,70 +639,65 @@ class ProRoPlayerProfile(BehaviorProfile):
     # ── Situation handlers ─────────────────────────────────────────────
 
     def _handle_cold_start(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
-        """Provide early-game guidance for a new character."""
+        """Provide early-game guidance — data-driven from knowledge DB."""
+        from ai_sidecar.game_knowledge import game_knowledge
+        gk = game_knowledge()
         early = CLASS_EARLY_GAME.get(player_class, CLASS_EARLY_GAME["novice"])
-        hunting_grounds = _level_based_advice(level, player_class)
-
-        # Build the advice message
+        rec_map, rec_desc = gk.recommended_map(level, player_class)
+        dyn_stats = gk.starting_stats(player_class)
+        dyn_equip = gk.equipment_by_level(level, player_class)
+        hunting_grounds = []
+        safe_maps = gk.safe_hunting_maps(level)
+        seen_maps = set()
+        for sm in safe_maps:
+            if sm not in seen_maps and len(hunting_grounds) < 3:
+                hunting_grounds.append({"map": sm, "description": f"Level {level} hunting zone"})
+                seen_maps.add(sm)
+        current_hp = signals.get("hp", 0) or 0
+        current_max_hp = signals.get("max_hp", 1) or 1
+        hp_ratio = int(current_hp) / max(int(current_max_hp), 1)
+        job_weapons = ", ".join(gk.job_weapon_types(player_class)[:3]) or "Sword/Dagger"
         advice_parts = [
-            f"**{player_class.title()} Early Game Guide (Levels {early['level_range'][0]}-{early['level_range'][1]})**",
+            f"**{player_class.title()} Early Game Guide**",
             "",
-            f"🎯 **First Hunting Ground:** {early['first_map']}",
-            f"💡 **Advice:** {early['advice']}",
-            f"📊 **Stat Build:** {early['stats']}",
-            f"🛡️ **Starting Equipment:** {early['equipment']}",
+            f"🎯 **First Hunting Ground:** {rec_map} ({rec_desc})",
+            f"📊 **Stat Build:** {dyn_stats}",
+            f"🛡️ **Starting Equipment:** {dyn_equip}",
+            f"⚔️ **Recommended Weapons:** {job_weapons}",
+            f"💡 **Advice:** {early.get('advice', 'Kill monsters, level up, gear up.')}",
         ]
-
         if hunting_grounds:
             advice_parts.append("")
-            advice_parts.append("**Recommended maps for your level:**")
+            advice_parts.append("**Also try these maps:**")
             for hg in hunting_grounds[:3]:
                 advice_parts.append(f"  • `{hg['map']}` — {hg['description']}")
-
         advice_parts.append("")
-        advice_parts.append(
-            "⚡ **Pro Tip:** Buy a full set of Novice potions before leaving town. "
-            "Always keep at least 10 Fly Wings for emergency escape. "
-            "Set your save point at the nearest town before grinding."
-        )
+        advice_parts.append("⚡ **Pro Tip:** Buy potions and Fly Wings before leaving town.")
+        return {
+            "kind": "command",
+            "command": f"move {rec_map}",
+            "confidence": 0.9,
+            "reason": f"Data-driven: level {level} {player_class}, map={rec_map}, stats={dyn_stats}",
+            "advice": "\n".join(advice_parts),
+            "build": dyn_stats,
+            "starting_map": rec_map,
+            "next_milestone": f"Reach level {min(level + 30, 99)} on {rec_map}",
+            "hunting_grounds": hunting_grounds[:3],
+            "stats": dyn_stats,
+            "equipment": dyn_equip,
+            "npc_tips": [
+                "tool_dealer: buy potions/flywings (npc_steps: c r1 c r1)",
+                "kafra: storage/save (npc_steps: c r1)",
+                "healer: free healing (npc_steps: c r1)",
+            ],
+            "sustain_advice": {
+                "hp_warning": hp_ratio < 0.5,
+                "buy_potions": "Red Potion, Fly Wing, Green Potion",
+                "auto_use": "Set auto-use Red Potion at 50% HP",
+                "teleport_escape": "Set escape at 20% HP",
+            },
+        }
 
-        # ── Weight management advice ──
-        current_weight = signals.get("weight_pct", signals.get("weight", 0))
-        if current_weight and current_weight >= 70:
-            advice_parts.append("")
-            advice_parts.append("⚠️ **Weight Management:**")
-            advice_parts.append("  • You're over 70% weight capacity — movement is slowed!")
-            advice_parts.append("  • Sell junk items to vendors or deposit in Kafra storage")
-            advice_parts.append("  • Adjust items_control.txt to skip low-value drops")
-            advice_parts.append("  • If you can't move, drop cheap items using `items take` commands")
-        else:
-            advice_parts.append("")
-            advice_parts.append("📦 **Weight Management Tips:**")
-            advice_parts.append("  • Keep weight under 50% for optimal movement speed")
-            advice_parts.append("  • Visit Kafra to deposit loot when inventory fills up")
-            advice_parts.append("  • Set up auto-sell in items_control.txt for junk items")
-
-        # ── NPC buying guidance ──
-        advice_parts.append("")
-        advice_parts.append("🏪 **NPC Vendor Guide (First Town):**")
-        advice_parts.append("  • Tool/Item Dealer — buy potions, arrows, fly wings")
-        advice_parts.append("  • Kafra Employee — save progress, access storage")
-        advice_parts.append("  • Healer NPC (Nun/Priest) — free healing if you're dying")
-        advice_parts.append("  • Weapon/Armor Dealer — basic equipment upgrades")
-        advice_parts.append("  • Use vendor_buy sequence if auto-buy is configured:")
-        advice_parts.append("    `npc_steps c r1 c r1` for basic tool dealers")
-
-        # ── Sustain and survival advice ──
-        current_hp = signals.get("hp", 0)
-        current_max_hp = signals.get("max_hp", 1)
-        hp_ratio = current_hp / current_max_hp if current_max_hp > 0 else 1.0
-        if current_hp and hp_ratio < 0.5:
-            advice_parts.append("")
-            advice_parts.append(f"🩸 **Critical HP ({current_hp}/{current_max_hp}):**")
-            advice_parts.append("  • Sit and regenerate before moving to hunting ground")
-            advice_parts.append("  • Buy Red Potions from the Tool Dealer immediately")
-            advice_parts.append("  • Set auto-use Red Potion at 50% HP in your config")
-            advice_parts.append("  • Set teleport escape at 20% HP for emergencies")
 
         return {
             "kind": "command",
