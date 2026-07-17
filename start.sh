@@ -29,24 +29,26 @@ BOT_NAMES=()
 shopt -s nullglob
 for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
     _name="$(basename "$_profile_dir")"
-shopt -u nullglob
     BOT_NAMES+=("$_name")
     BOT_MASTER["$_name"]="Asgards Glory"
     BOT_USER["$_name"]="$_name"
     BOT_CHAR["$_name"]="0"
 done
+shopt -u nullglob
 # Fallback if no profiles found
 if [ ${#BOT_NAMES[@]} -eq 0 ]; then
-    BOT_NAMES=("kicapmasin2" "kicapmasin" "kicapmasin3")
-    BOT_MASTER["kicapmasin2"]="Asgards Glory"
-    BOT_USER["kicapmasin2"]="kicapmasin2"
-    BOT_CHAR["kicapmasin2"]="0"
-    BOT_MASTER["kicapmasin"]="Asgards Glory"
-    BOT_USER["kicapmasin"]="kicapmasin"
-    BOT_CHAR["kicapmasin"]="0"
-    BOT_MASTER["kicapmasin3"]="Asgards Glory"
-    BOT_USER["kicapmasin3"]="kicapmasin3"
-    BOT_CHAR["kicapmasin3"]="0"
+    echo ""
+    echo "  No bot profiles found in .bot_profiles/"
+    echo ""
+    echo "  To add a bot:"
+    echo "    mkdir -p .bot_profiles/<account_name>/control"
+    echo "    cp -r control/* .bot_profiles/<account_name>/control/"
+    echo "    # Then edit config.txt inside that directory"
+    echo ""
+    echo "  Set the password in .env:"
+    echo '    BOT_<ACCOUNT_NAME>_PASS=your_password'
+    echo ""
+    exit 1
 fi
 
 # ------------------------------------------------------------------
@@ -254,11 +256,14 @@ _tail_all() {
         log_files+=("$SIDECAR_LOG")
     fi
     
-    # Bot logs
+    # Bot logs — build dynamic labels from profile names
+    local colors=("${CYAN}" "${GREEN}" "${YELLOW}" "${MAGENTA}" "${BLUE}" "${RED}")
+    local labels=("SIDECAR")
     for name in "${BOT_NAMES[@]}"; do
         local lf="$BOT_LOGS/$name.log"
         if [ -f "$lf" ]; then
             log_files+=("$lf")
+            labels+=("BOT:$name")
         fi
     done
 
@@ -269,11 +274,6 @@ _tail_all() {
         return
     fi
 
-    # Build a multi-tail command with labeled prefixes
-    # Use different colors per source
-    local colors=("${CYAN}" "${GREEN}" "${YELLOW}" "${MAGENTA}")
-    local labels=("SIDECAR" "BOT:kicapmasin2" "BOT:kicapmasin" "BOT:kicapmasin3")
-    
     local pid_list=""
     local temp_dir
     temp_dir=$(mktemp -d)
