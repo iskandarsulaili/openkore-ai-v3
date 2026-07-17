@@ -396,6 +396,14 @@ class ProRoPlayerProfile(BehaviorProfile):
         if situation == "build_planning":
             return 0.6
 
+        # NPC dialog — talking to an NPC, needs correct sequence
+        if situation == "npc_dialog":
+            return 0.9
+
+        # NPC dialog stuck — failed NPC interaction, wrong NPC, wrong sequence
+        if situation == "npc_dialog_stuck":
+            return 0.85
+
         # General advice — catch-all
         if situation == "general_advice":
             return 0.5
@@ -468,6 +476,10 @@ class ProRoPlayerProfile(BehaviorProfile):
             return self._handle_woe(signals)
         if situation == "leveling_route":
             return self._handle_leveling_route(signals, player_class, level)
+        if situation == "npc_dialog":
+            return self._handle_npc_dialog(signals, player_class, level)
+        if situation == "npc_dialog_stuck":
+            return self._handle_npc_dialog_stuck(signals, player_class, level)
         if situation in ("general_advice", "leveling", "grinding", "farming"):
             return self._handle_general_advice(signals, player_class, level)
 

@@ -5883,6 +5883,48 @@ class PDCALoop:
                             context["ml_trained"] = True
                 except Exception:
                     logger.exception("ml_auto_train_failed")
+                # ── AUTO-PROMOTE ML MODELS when metrics pass quality gates ──
+                try:
+                    _promotion = getattr(self._runtime, "ml_promotion", None)
+                    _registry = getattr(self._runtime, "ml_registry", None)
+                    _harness = getattr(self._runtime, "ml_training", None)
+                    if _promotion is not None and _registry is not None and _harness is not None:
+                        from ai_sidecar.contracts.ml_subconscious import ModelFamily
+                        for _family in ModelFamily:
+                            _state = _promotion.get(family=_family)
+                            if _state.get("enabled", False):
+                                continue
+                            _active = _registry.active_version(family=_family)
+                            if not _active:
+                                continue
+                            _metrics = _harness.metrics().get(_family.value, {})
+                            _conf = _metrics.get("confidence_mean", 0.0)
+                            if _family in {ModelFamily.loot_ranker, ModelFamily.memory_retrieval_ranker}:
+                                _mae = _metrics.get("mae", 1.0)
+                                _pass = _mae <= 0.25 and _conf >= 0.70
+                            else:
+                                _acc = _metrics.get("accuracy", 0.0)
+                                _pass = _acc >= 0.75 and _conf >= 0.70
+                            if _pass:
+                                _promotion.configure(
+                                    family=_family,
+                                    model_version=_active,
+                                    canary_percentage=5.0,
+                                    rollback_threshold=0.25,
+                                    scope={},
+                                )
+                                logger.info(
+                                    "ml_auto_promoted",
+                                    extra={
+                                        "event": "ml_auto_promoted",
+                                        "family": _family.value,
+                                        "version": _active,
+                                        "metrics": _metrics,
+                                        "canary": 5.0,
+                                    },
+                                )
+                except Exception:
+                    logger.exception("ml_auto_promote_failed")
                 # ── CHECK MACRO PATTERNS on kaizen cycle ──
                 try:
                     _macro_ai = getattr(self._runtime, "macro_intelligence", None)
