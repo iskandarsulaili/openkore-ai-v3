@@ -19,6 +19,7 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 
 from ai_sidecar.api.routers import (
+    discovery,
     npc_dialog,
     acknowledgements,
     actions,
@@ -198,6 +199,7 @@ def create_app() -> FastAPI:
     app.include_router(observability_v2.router)
     app.include_router(combat.router)
     app.include_router(party.router)
+    app.include_router(discovery.router)
     app.include_router(fleet_coordinator.router)
     app.include_router(npc_dialog.router)
     # Register autonomy router

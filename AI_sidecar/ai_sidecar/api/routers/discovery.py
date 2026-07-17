@@ -128,10 +128,21 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
                         confidence=0.7,
                     )
 
-    # Phase 4: Default — auto mode, lockMap to prt_in
+    # Phase 4: Check for Healer NPC on current map (always in Prontera)
+    if req.map:
+        # Prontera has a Healer NPC at (159, 193) for free healing
+        return HealStrategyResponse(
+            strategy="visit_healer_npc",
+            command=f"move 159 193",
+            target_map=req.map,
+            target_npc="Healer#prt",
+            confidence=0.85,
+        )
+
+    # Phase 5: Default — auto mode, lockMap to prontera
     return HealStrategyResponse(
         strategy="auto_navigate",
         command="ai auto",
-        target_map="prt_in",
+        target_map="prontera",
         confidence=0.5,
     )
