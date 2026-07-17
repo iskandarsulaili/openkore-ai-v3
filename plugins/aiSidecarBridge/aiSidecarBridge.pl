@@ -1999,6 +1999,7 @@ sub _post_event {
 	$text = substr($event_type . ' ' . join(' ', values %tags), 0, 1024) if $text eq '';
 	
 	my $normalized = {
+		meta => _meta(_bot_id()),
 		event_family => $event_family,
 		event_type => $event_type,
 		severity => $severity,
@@ -2083,6 +2084,7 @@ sub _flush_event_queue {
 		}
 		$text = substr($event_type . ' ' . join(' ', values %tags), 0, 1024) if $text eq '';
 		+{
+			meta => _meta(_bot_id()),
 			event_family => $event_family,
 			event_type => $event_type,
 			severity => $severity,
