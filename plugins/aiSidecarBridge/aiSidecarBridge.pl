@@ -272,8 +272,8 @@ sub on_mainLoop_post {
 		_teamplay_check();
 
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
-AI::state(2);  # Force AUTO unconditionally every cycle
-if (!defined $AI::AI || $AI::AI != 2) { no strict "refs"; ${"AI::AI"} = 2; }
+        if (AI::state() != 2) { AI::state(2); }
+	}
 }
 
 sub on_add_actor_list_probe {
@@ -1775,7 +1775,7 @@ sub _execute_action {
 		if ($_ai_hp_max > 0 && ($_ai_hp / $_ai_hp_max) < 0.50) {
 			($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed_low_hp');
 		} else {
-			my $ok = eval { warning('[aiSidecarBridge] TRACE: toggling to manual from line'); _toggle_ai_mode('manual'); 1; };
+			my $ok = eval { _toggle_ai_mode('manual'); 1; };
 			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
@@ -2811,7 +2811,7 @@ sub _rewrite_runtime_command {
 	    if (!_ai_already_auto_mode()) {
 	        return ('', 'ai_manual_already_manual');
 	    }
-	    return ($trimmed, '');
+	    return ('', 'ai_manual_suppressed_auto_mode');
 	}
 
 	# Handle ai auto — no-op if already in auto mode
@@ -3355,7 +3355,7 @@ sub _check_bridge_reflexes {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					# GM manual toggle disabled — let survival check handle mode
-					# eval { warning('[aiSidecarBridge] TRACE: toggling to manual from line'); _toggle_ai_mode('manual'); 1 };
+					# eval { _toggle_ai_mode('manual'); 1 };
 					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'gm_detected',
