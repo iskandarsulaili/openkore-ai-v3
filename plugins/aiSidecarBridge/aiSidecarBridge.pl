@@ -3908,7 +3908,7 @@ sub _survival_check {
 	    if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
 	    eval { Commands::run('buy 501 30'); 1 };
 	    eval { Commands::run('use Red Potion'); 1 };
-	    return;
+	    # Fall through to economy check and auto mode
 	}
 
 	# ── Economy: If zeny low, go grind ──
