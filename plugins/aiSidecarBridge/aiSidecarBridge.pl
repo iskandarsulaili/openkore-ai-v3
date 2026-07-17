@@ -3216,7 +3216,7 @@ sub _check_bridge_reflexes {
 						}
 					}
 					my $_zeny = $char->{zeny} || 0;
-					my $ai_state = $Ai::Ai->{ai} || '';
+					my $ai_state = $AI::AI || '';
 					# Debug: log sit condition values
 					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
 					if (!$_has_heal_item) {
@@ -3224,7 +3224,7 @@ sub _check_bridge_reflexes {
 							## SIT REMOVED — reflex should never sit. Let survival_check handle it.
 							# warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
 						}
-					} elsif ($hp > $hp_max * 0.8 && ($Ai::Ai->{ai} || '') eq 'sit') {
+					} elsif ($hp > $hp_max * 0.8 && ($AI::AI == 2)) {
 						# Stand up if HP is healthy and we were sitting
 						Commands::run('stand');
 						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
@@ -3813,13 +3813,13 @@ sub _survival_check {
 	        my $_tgt_map = $_strat->{json}{target_map} || '';
 	        if ($_tgt_map ne '' && $_tgt_map ne $map) {
 	            $::config{'lockMap'} = $_tgt_map;
-	            if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
+	            if ($AI::AI != 2) { eval { Commands::run('ai auto'); 1 }; }
 	        }
 	    } else {
 	        # Fallback: stand up, try buying, sit as last resort
-	        if ($Ai::Ai->{ai} eq 'sit') { eval { Commands::run('stand'); 1 }; }
+	        if (0) { eval { Commands::run('stand'); 1 }; }
 	        $::config{'lockMap'} = 'prt_in';
-	        if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
+	        if ($AI::AI != 2) { eval { Commands::run('ai auto'); 1 }; }
 	        eval { Commands::run('buy 501 30'); 1 };
 	        eval { Commands::run('use Red Potion'); 1 };
 	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
@@ -3832,7 +3832,7 @@ sub _survival_check {
 	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq 'prontera') {
 	        $::config{'lockMap'} = 'prt_fild08';
 	    }
-	    if ($Ai::Ai->{ai} ne 'auto') {
+	    if ($AI::AI != 2) {
 	        eval { Commands::run('ai auto'); 1 };
 	    }
 	    return;
@@ -3842,7 +3842,7 @@ sub _survival_check {
 	_apply_bot_config();
 
 	# ── Auto-mode: Enable if disabled and conditions safe ──
-	if ($hp_pct > 50 && $Ai::Ai->{ai} ne 'auto') {
+	if ($hp_pct > 50 && $AI::AI != 2) {
 	    eval { Commands::run('ai auto'); 1 };
 	}
 }
@@ -3882,7 +3882,7 @@ sub _survival_check {
 	my $hp_max = $cr->{hp_max} || 1;
 	my $zeny = $cr->{zeny} || 0;
 	my $base_lv = $cr->{lv} || $cr->{level} || 1;
-	my $ai_mode = $Ai::Ai->{ai} || '';
+	my $ai_mode = $AI::AI || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 	my $map = $cr->{map} || '';
 
