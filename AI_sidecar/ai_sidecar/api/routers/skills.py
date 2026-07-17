@@ -34,6 +34,7 @@ class ManageRequest:
         self.file_content = data.get("file_content", "")
         self.old_string = data.get("old_string", "")
         self.new_string = data.get("new_string", "")
+        self.provenance = data.get("provenance", "foreground")
 
 
 # ── Endpoints ──
@@ -45,7 +46,7 @@ async def manage_skill(data: dict) -> dict:
     req = ManageRequest(data)
 
     if req.action == "create":
-        return skills_manager.create_skill(
+        return skills_manager.create_skill(provenance=req.provenance, 
             name=req.name,
             content=req.content,
             category=req.category,
@@ -56,14 +57,14 @@ async def manage_skill(data: dict) -> dict:
             content=req.content,
         )
     elif req.action == "patch":
-        return skills_manager.patch_skill(
+        return skills_manager.patch_skill(provenance=req.provenance, 
             name=req.name,
             old_string=req.old_string,
             new_string=req.new_string,
             file_path=req.file_path,
         )
     elif req.action == "delete":
-        return skills_manager.delete_skill(name=req.name)
+        return skills_manager.delete_skill(name=req.name, provenance=req.provenance)
     elif req.action == "write_file":
         return skills_manager.write_file(
             name=req.name,
