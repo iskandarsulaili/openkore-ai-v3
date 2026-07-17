@@ -102,7 +102,37 @@ async def lifespan(app: FastAPI):
             "fleet sync loop disabled",
             extra={"event": "fleet_sync_loop_disabled", "fleet_central_enabled": False},
         )
+    # Start skills curator background loop
+    curator_task = None
+    try:
+        from ai_sidecar.skills_curator import run_curator, should_run_now
+        async def _curator_loop():
+            while True:
+                try:
+                    if should_run_now():
+                        result = run_curator()
+                        if result.get("marked_stale"):
+                            logger.info("Curator marked %d skills stale", len(result["marked_stale"]))
+                        if result.get("archived"):
+                            logger.info("Curator archived %d skills", len(result["archived"]))
+                except Exception as exc:
+                    logger.debug("Curator cycle error: %s", exc)
+                await asyncio.sleep(3600)  # run every hour
+        curator_task = asyncio.create_task(_curator_loop())
+        logger.info("Skills curator background loop started")
+    except Exception as exc:
+        logger.debug("Curator not available: %s", exc)
+        curator_task = None
+
     yield
+
+    # Stop curator loop
+    if curator_task is not None:
+        curator_task.cancel()
+        try:
+            await curator_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     # Stop PDCA loop
     if pdca_loop.running:
