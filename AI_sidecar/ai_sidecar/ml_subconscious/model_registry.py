@@ -147,11 +147,11 @@ class ModelRegistry:
                 },
             )
             versions = list(family_entry.get("versions") or [])
-            
+
             # Auto-promotion: compare with champion metrics
             current_active = family_entry.get("active_version")
             should_activate = activate or current_active is None
-            
+
             if not should_activate and current_active is not None:
                 # Find champion metrics
                 champion_row = next((v for v in versions if v.get("version") == current_active), None)
@@ -161,7 +161,7 @@ class ModelRegistry:
                     challenger_acc = float(metrics.get("accuracy", 0.0) or 0.0)
                     champion_f1 = float(champion_metrics.get("f1", 0.0) or 0.0)
                     challenger_f1 = float(metrics.get("f1", 0.0) or 0.0)
-                    
+
                     # Promote if accuracy improves by 5%+ or f1 improves by 5%+
                     acc_gain = challenger_acc - champion_acc
                     f1_gain = challenger_f1 - champion_f1
@@ -178,7 +178,20 @@ class ModelRegistry:
                                 "f1_gain": round(f1_gain, 4),
                             },
                         )
-            
+                else:
+                    # Champion version not found in registry (stale/orphaned).
+                    # Activate new model as the de facto champion.
+                    should_activate = True
+                    logger.info(
+                        "ml_champion_stale_activated",
+                        extra={
+                            "event": "ml_champion_stale_activated",
+                            "family": family.value,
+                            "version": version,
+                            "stale_champion": current_active,
+                        },
+                    )
+
             versions.append(
                 {
                     "version": version,
@@ -187,11 +200,13 @@ class ModelRegistry:
                     "path": str(artifact),
                 }
             )
+            # Write back so index persists the version list
+            family_entry["versions"] = versions
+
             # Prune old versions: keep last 40, DELETE old files
-            old_versions = list(family_entry.get("versions") or [])
-            if len(old_versions) > 40:
-                excess = old_versions[:-40]
-                family_entry["versions"] = old_versions[-40:]
+            if len(versions) > 40:
+                excess = versions[:-40]
+                family_entry["versions"] = versions[-40:]
                 for _old in excess:
                     _old_path = Path(str(_old.get("path") or ""))
                     try:

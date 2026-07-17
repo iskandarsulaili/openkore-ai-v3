@@ -4543,6 +4543,138 @@ class PDCALoop:
                     except Exception as _pro_exc:
                         logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
             
+            # ── Pro RO Player NPC dialog stuck detection ──────────
+            if latest_snapshot is not None:
+                try:
+                    _npc_dialog_engine = getattr(self._runtime, "npc_dialog", None)
+                    if _npc_dialog_engine is not None:
+                        _bot_id = decision_meta.bot_id
+                        _dialog_state = _npc_dialog_engine.get_state(_bot_id)
+                        
+                        # Check for NPC dialog failures
+                        if _dialog_state is not None and _dialog_state.failure_count > 0:
+                            # Build signals from dialog state + snapshot
+                            _npc_signals = {
+                                "situation": "npc_dialog_stuck",
+                                "npc_name": _dialog_state.npc_name,
+                                "npc_type": _dialog_state.npc_type,
+                                "map": str(getattr(getattr(latest_snapshot, "position", None), "map", "") or ""),
+                                "failure_type": "repeated_failure",
+                                "error_message": f"NPC dialog failed {_dialog_state.failure_count} times",
+                                "attempt_count": _dialog_state.failure_count,
+                                "dialog_history": _dialog_state.dialog_history[-3:],
+                            }
+                            
+                            # Add snapshot data if available
+                            _prog = getattr(latest_snapshot, "progression", None)
+                            if _prog is not None:
+                                _npc_signals["level"] = int(getattr(_prog, "base_level", 1) or 1)
+                                _npc_signals["class"] = str(getattr(_prog, "job_name", "novice") or "novice")
+                            
+                            _pos = getattr(latest_snapshot, "position", None)
+                            if _pos is not None:
+                                _npc_signals["map"] = str(getattr(_pos, "map", "") or "")
+                                _npc_signals["x"] = int(getattr(_pos, "x", 0) or 0)
+                                _npc_signals["y"] = int(getattr(_pos, "y", 0) or 0)
+                            
+                            _inv = getattr(latest_snapshot, "inventory", None)
+                            if _inv is not None:
+                                _npc_signals["weight_pct"] = float(getattr(_inv, "weight_ratio", 0) or 0) * 100
+                                _npc_signals["zeny"] = int(getattr(_inv, "zeny", 0) or 0)
+                            
+                            _stats = getattr(latest_snapshot, "stats", None)
+                            if _stats is not None:
+                                _npc_signals["hp"] = int(getattr(_stats, "hp", 0) or 0)
+                                _npc_signals["max_hp"] = int(getattr(_stats, "max_hp", 1) or 1)
+                            
+                            # Create Pro RO Player and get stuck recovery advice
+                            from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                            _npc_pro = ProRoPlayerProfile()
+                            _npc_advice = _npc_pro.get_action(_npc_signals)
+                            
+                            if _npc_advice is not None and float(_npc_advice.get("confidence", 0) or 0) >= 0.7:
+                                _npc_confidence = float(_npc_advice.get("confidence", 0) or 0)
+                                _npc_command = str(_npc_advice.get("command", "") or "").strip()
+                                _npc_kind = str(_npc_advice.get("kind", "command") or "").strip().lower()
+                                _npc_reason = str(_npc_advice.get("reason", "") or "")
+                                _npc_npc_sequence = str(_npc_advice.get("npc_sequence", "") or "")
+                                
+                                logger.info(
+                                    "pro_ro_player_npc_stuck: bot=%s npc=%s conf=%.2f kind=%s seq=%s",
+                                    _bot_id, _dialog_state.npc_name, _npc_confidence, _npc_kind, _npc_npc_sequence,
+                                )
+                                
+                                # Store advice in runtime for planner consumption
+                                if not hasattr(self._runtime, "pro_ro_player_advice"):
+                                    self._runtime.pro_ro_player_advice = {}
+                                self._runtime.pro_ro_player_advice[f"{_bot_id}_npc"] = _npc_advice
+                                
+                                # High confidence: queue as action
+                                if _npc_confidence > 0.85 and _npc_npc_sequence:
+                                    _npc_aq = getattr(self._runtime, "action_queue", None)
+                                    if _npc_aq is not None:
+                                        from datetime import UTC, datetime, timedelta
+                                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                        import hashlib as _npc_hashlib
+                                        _npc_id = _npc_hashlib.md5(
+                                            f"npc_stuck_{_bot_id}_{time.monotonic_ns()}".encode()
+                                        ).hexdigest()[:16]
+                                        
+                                        # Action: update npc_steps config with correct sequence
+                                        _npc_proposal = ActionProposal(
+                                            action_id=f"npc_recover_{_npc_id}",
+                                            kind=_npc_kind,
+                                            command=_npc_command,
+                                            priority_tier=ActionPriorityTier.tactical,
+                                            source="planner",
+                                            created_at=datetime.now(UTC),
+                                            expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                                            idempotency_key=f"npc_recover_{_dialog_state.npc_name}_{_bot_id}",
+                                            metadata={
+                                                "source": "pro_ro_player",
+                                                "confidence": _npc_confidence,
+                                                "reason": _npc_reason[:200],
+                                                "npc_name": _dialog_state.npc_name,
+                                                "npc_type": _dialog_state.npc_type,
+                                                "npc_sequence": _npc_npc_sequence,
+                                                "failure_count": _dialog_state.failure_count,
+                                                "suggested_actions": _npc_advice.get("suggested_actions", []),
+                                                "bot_id": _bot_id,
+                                            },
+                                        )
+                                        _npc_aq.enqueue(_bot_id, _npc_proposal)
+                                        logger.info(
+                                            "pro_ro_player_npc_action_queued: bot=%s cmd=%s seq=%s",
+                                            _bot_id, _npc_command, _npc_npc_sequence,
+                                        )
+                                        
+                                        # Also add route recalculation
+                                        if _npc_advice.get("wrong_npc", False) and _npc_advice.get("suggested_actions", []):
+                                            for _sug in _npc_advice["suggested_actions"]:
+                                                if _sug and _sug not in ("", "sit_and_heal"):
+                                                    replan_reasons.append(f"npc_recover_{_sug}")
+                                                    force_replan = True
+                                
+                                elif _npc_confidence >= 0.7:
+                                    # Store for planner
+                                    if not hasattr(self._runtime, "planner_context_advice"):
+                                        self._runtime.planner_context_advice = {}
+                                    self._runtime.planner_context_advice[f"{_bot_id}_npc"] = {
+                                        "advice": _npc_advice.get("advice", ""),
+                                        "confidence": _npc_confidence,
+                                        "command": _npc_command,
+                                        "kind": _npc_kind,
+                                        "reason": _npc_reason,
+                                        "source": "pro_ro_player_npc",
+                                        "npc_sequence": _npc_npc_sequence,
+                                        "npc_name": _dialog_state.npc_name,
+                                        "timestamp": time.time(),
+                                    }
+                                    replan_reasons.append("npc_dialog_issue")
+                                    force_replan = True
+                except Exception as _npc_exc:
+                    logger.warning("pro_ro_player_npc_stuck_failed: %s", _npc_exc)
+            
             # ── Push plan actions to queue ──────────────────────
             if goal_state is not None:
                 try:

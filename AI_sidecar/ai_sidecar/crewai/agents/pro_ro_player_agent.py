@@ -229,6 +229,157 @@ DEATH_CAUSES: dict[str, dict[str, Any]] = {
     },
 }
 
+
+# ── NPC dialog knowledge — NPC types, dialog patterns, shop sequences ─────────
+
+# NPC type detection from name patterns (used by _handle_npc_dialog)
+NPC_TYPE_PATTERNS: dict[str, list[str]] = {
+    "kafra": ["kafra", "storage", "keeper", "warehouse"],
+    "vendor": ["tool", "dealer", "shop", "item", "mart", "store", "merchant", "trade", "pawn"],
+    "warp": ["warp", "portal", "gate", "kafra"],
+    "healer": ["heal", "nun", "nurse", "priest", "monk", "sister", "recovery"],
+    "quest": ["quest", "mission", "notice", "board", "guide", "eden"],
+    "job_change": ["job", "class", "master", "guild", "association", "change"],
+    "buyer": ["buyer", "purchase", "collect", "recycle"],
+    "refiner": ["refine", "smith", "forge", "upgrade", "enchant"],
+    "skill": ["skill", "trainer", "master"],
+    "identify": ["identify", "appraise", "kara", "judgement"],
+}
+
+# NPC dialog sequences by type — the correct button/response order for common NPCs
+# Key format: "sequence_name": [list of response steps]
+# Steps: c = click/talk, rN = response option N, b = buy menu, s = sell menu, w = wait, e = end
+NPC_DIALOG_SEQUENCES: dict[str, dict[str, list[str]]] = {
+    "vendor_buy": {
+        "description": "Buy items from a tool/weapon/potion dealer",
+        "steps": ["c", "r1", "b", "w", "e"],
+        "notes": "Talk -> Buy menu -> Select items -> Wait for transaction -> End",
+        "alternative_steps": ["c", "w", "r1", "b", "e"],
+    },
+    "vendor_sell": {
+        "description": "Sell items to a shop NPC",
+        "steps": ["c", "r2", "s", "w", "e"],
+        "notes": "Talk -> Sell option -> Auto-sell -> Wait -> End",
+    },
+    "kafra_storage": {
+        "description": "Use Kafra storage service",
+        "steps": ["c", "r1", "w", "e"],
+        "notes": "Talk -> Storage menu -> Wait for operation -> End",
+    },
+    "warp_generic": {
+        "description": "Use a warp NPC",
+        "steps": ["c", "r1", "w", "r1", "w", "e"],
+        "notes": "Talk -> Warp menu -> Select destination -> Confirm -> Wait -> End",
+    },
+    "healer": {
+        "description": "Get healed by a healer NPC",
+        "steps": ["c", "r1", "w", "e"],
+        "notes": "Talk -> Heal -> Wait -> End",
+    },
+    "skill_reset": {
+        "description": "Reset skills at a skill master",
+        "steps": ["c", "r1", "w", "r1", "w", "e"],
+        "notes": "Talk -> Reset menu -> Confirm -> Yes -> Wait -> End",
+    },
+    "identify": {
+        "description": "Identify items at an identifier NPC",
+        "steps": ["c", "r1", "w", "e"],
+        "notes": "Talk -> Identify all -> Wait -> End",
+    },
+    "generic_npc": {
+        "description": "Generic NPC interaction — try response options in order",
+        "steps": ["c", "r1"],
+        "notes": "Talk -> Select first option (fallback)",
+    },
+}
+
+# Common NPC names mapped to their type for fast lookup
+NPC_NAME_TO_TYPE: dict[str, str] = {
+    "tool dealer": "vendor",
+    "tool": "vendor",
+    "weapon dealer": "vendor",
+    "armor dealer": "vendor",
+    "potion dealer": "vendor",
+    "potion": "vendor",
+    "item dealer": "vendor",
+    "item seller": "vendor",
+    "general goods": "vendor",
+    "kafra": "kafra",
+    "kafra employee": "kafra",
+    "warp portal": "warp",
+    "warp": "warp",
+    "warp girl": "warp",
+    "skill master": "skill",
+    "skill trainer": "skill",
+    "job master": "job_change",
+    "guild master": "job_change",
+    "class master": "job_change",
+    "healer": "healer",
+    "nurse": "healer",
+    "monk": "healer",
+    "sister": "healer",
+    "quest npc": "quest",
+    "quest": "quest",
+    "eden guide": "quest",
+    "identifier": "identify",
+    "appraiser": "identify",
+    "refiner": "refiner",
+    "blacksmith": "refiner",
+}
+
+# Shop command sequences for common items (OpenKore buyAuto format)
+# This helps the bot figure out npc_steps for auto-buy configs
+SHOP_COMMAND_TEMPLATES: dict[str, dict[str, str]] = {
+    "tool_dealer": {
+        "buy": "c r1 c r1",
+        "sell": "c r2 c r1",
+        "description": "Old-style tool dealer in Prontera (prt_in 126 76) and other towns",
+        "notes": "Uses c=click r1=response1 style — works for most basic tool dealers.",
+        "fallback": "c r1 c r1",
+    },
+    "kafra": {
+        "storage": "c r1 c w",
+        "save": "c r1 c r2",
+    },
+    "general_shop": {
+        "buy": "c r1 c r1",
+        "sell": "c r1 c r2",
+    },
+}
+
+# Town NPC service locations by map (fallback for discovery)
+TOWN_SERVICE_NPCS: dict[str, dict[str, list[tuple[int, int]]]] = {
+    "prontera": {
+        "tool_dealer": [(126, 76)],
+        "kafra": [(146, 121)],
+        "healer": [(165, 89)],
+        "skill": [(224, 125)],
+        "warp": [(156, 191)],
+    },
+    "morocc": {
+        "tool_dealer": [(130, 108)],
+        "kafra": [(157, 93)],
+        "healer": [(131, 57)],
+    },
+    "payon": {
+        "tool_dealer": [(181, 104)],
+        "kafra": [(187, 152)],
+    },
+    "geffen": {
+        "tool_dealer": [(77, 127)],
+        "kafra": [(57, 166)],
+    },
+    "aldebaran": {
+        "tool_dealer": [(60, 140)],
+        "kafra": [(66, 132)],
+    },
+    "izlude": {
+        "tool_dealer": [(106, 140)],
+        "kafra": [(108, 260)],
+    },
+}
+
+
 # ── Build databases ──────────────────────────────────────────────────────────
 
 BUILD_ADVICE: dict[str, dict[str, Any]] = {
@@ -515,6 +666,44 @@ class ProRoPlayerProfile(BehaviorProfile):
             "Set your save point at the nearest town before grinding."
         )
 
+        # ── Weight management advice ──
+        current_weight = signals.get("weight_pct", signals.get("weight", 0))
+        if current_weight and current_weight >= 70:
+            advice_parts.append("")
+            advice_parts.append("⚠️ **Weight Management:**")
+            advice_parts.append("  • You're over 70% weight capacity — movement is slowed!")
+            advice_parts.append("  • Sell junk items to vendors or deposit in Kafra storage")
+            advice_parts.append("  • Adjust items_control.txt to skip low-value drops")
+            advice_parts.append("  • If you can't move, drop cheap items using `items take` commands")
+        else:
+            advice_parts.append("")
+            advice_parts.append("📦 **Weight Management Tips:**")
+            advice_parts.append("  • Keep weight under 50% for optimal movement speed")
+            advice_parts.append("  • Visit Kafra to deposit loot when inventory fills up")
+            advice_parts.append("  • Set up auto-sell in items_control.txt for junk items")
+
+        # ── NPC buying guidance ──
+        advice_parts.append("")
+        advice_parts.append("🏪 **NPC Vendor Guide (First Town):**")
+        advice_parts.append("  • Tool/Item Dealer — buy potions, arrows, fly wings")
+        advice_parts.append("  • Kafra Employee — save progress, access storage")
+        advice_parts.append("  • Healer NPC (Nun/Priest) — free healing if you're dying")
+        advice_parts.append("  • Weapon/Armor Dealer — basic equipment upgrades")
+        advice_parts.append("  • Use vendor_buy sequence if auto-buy is configured:")
+        advice_parts.append("    `npc_steps c r1 c r1` for basic tool dealers")
+
+        # ── Sustain and survival advice ──
+        current_hp = signals.get("hp", 0)
+        current_max_hp = signals.get("max_hp", 1)
+        hp_ratio = current_hp / current_max_hp if current_max_hp > 0 else 1.0
+        if current_hp and hp_ratio < 0.5:
+            advice_parts.append("")
+            advice_parts.append(f"🩸 **Critical HP ({current_hp}/{current_max_hp}):**")
+            advice_parts.append("  • Sit and regenerate before moving to hunting ground")
+            advice_parts.append("  • Buy Red Potions from the Tool Dealer immediately")
+            advice_parts.append("  • Set auto-use Red Potion at 50% HP in your config")
+            advice_parts.append("  • Set teleport escape at 20% HP for emergencies")
+
         return {
             "kind": "cold_start_guide",
             "command": "advise_cold_start",
@@ -524,6 +713,17 @@ class ProRoPlayerProfile(BehaviorProfile):
             "hunting_grounds": hunting_grounds[:3],
             "stats": early["stats"],
             "equipment": early["equipment"],
+            "npc_tips": [
+                "tool_dealer: buy potions/flywings (npc_steps: c r1 c r1)",
+                "kafra: storage/save (npc_steps: c r1)",
+                "healer: free healing (npc_steps: c r1)",
+            ],
+            "sustain_advice": {
+                "hp_warning": hp_ratio < 0.5,
+                "buy_potions": "Red Potion, Fly Wing, Green Potion",
+                "auto_use": "Set auto-use Red Potion at 50% HP",
+                "teleport_escape": "Set escape at 20% HP",
+            },
         }
 
     def _handle_death_analysis(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
@@ -1246,3 +1446,289 @@ class ProRoPlayerProfile(BehaviorProfile):
             "confidence": 0.85, "reason": f"Route: Lv{level} {job}",
             "advice": " | ".join(maps),
         }
+
+    def _handle_npc_dialog(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Handle NPC dialog — figure out the correct sequence to talk to an NPC.
+
+        Uses RO knowledge to determine the NPC type, then provides the correct
+        dialog sequence as an actionable command. This is the dynamic alternative
+        to hardcoded 'c r1 c r1' sequences.
+        """
+        npc_name = str(signals.get("npc_name", signals.get("target_name", ""))).lower().strip()
+        npc_id = str(signals.get("npc_id", signals.get("target_id", "")))
+        npc_map = str(signals.get("map", signals.get("current_map", "unknown"))).lower()
+        goal = str(signals.get("goal", "buy")).lower()
+        dialog_history = signals.get("dialog_history", [])
+        previous_result = str(signals.get("previous_result", "")).lower()
+        is_retry = signals.get("is_retry", False) or "wrong" in previous_result or "fail" in previous_result
+
+        advice_parts = [f"**NPC Dialog: Resolving interaction with {npc_name or 'unknown NPC'}**", ""]
+
+        # Detect NPC type from name
+        npc_type = self._detect_npc_type(npc_name)
+
+        if npc_type is None:
+            advice_parts.append(f"⚠️ Unknown NPC '{npc_name}'. Trying generic approach.")
+            advice_parts.append("  • Default sequence: 'c r1' — talk then select first option")
+            advice_parts.append("  • If that fails, try 'c r1 c r1' for buy menus")
+            sequence = "c r1"
+            confidence = 0.4
+        else:
+            advice_parts.append(f"🏷️ **Detected NPC Type:** {npc_type.title()}")
+            advice_parts.append(f"📍 **Location:** {npc_map}")
+
+            # Get appropriate dialog sequence
+            sequence_info = self._get_dialog_sequence(npc_type, npc_name, goal, is_retry)
+            sequence = sequence_info["sequence"]
+            advice_parts.append(f"💬 **Dialog Sequence:** {sequence}")
+            advice_parts.append(f"📝 **Note:** {sequence_info['notes']}")
+
+            # Alternative sequences for retry
+            if is_retry and "alternative" in sequence_info:
+                advice_parts.append(f"🔄 **Retry Alternative:** {sequence_info['alternative']}")
+                sequence = sequence_info["alternative"]
+
+            confidence = sequence_info["confidence"]
+
+            # NPC-type specific advice
+            if npc_type == "vendor" and goal in ("buy", "restock"):
+                advice_parts.append("")
+                advice_parts.append("**📦 Vendor Shopping Tips:**")
+                advice_parts.append("  • Make sure you have enough zeny before talking")
+                advice_parts.append("  • If weight > 70%, you may not be able to buy (overburdened)")
+                advice_parts.append("  • Check that the NPC actually sells what you need")
+                advice_parts.append("  • If 'Talking to wrong npc', the NPC ID may differ on this server")
+                if is_retry:
+                    advice_parts.append("  • RETRY: Try talking to a different NPC at the same position")
+                    advice_parts.append("  • RETRY: The vendor might have moved or this is a different NPC now")
+
+            elif npc_type == "kafra":
+                advice_parts.append("")
+                advice_parts.append("**📦 Kafra Storage Tips:**")
+                advice_parts.append("  • Kafra storage is shared across all characters on the same account")
+                advice_parts.append("  • You need at least 1 zeny to open storage")
+                advice_parts.append("  • Some servers charge storage fees per item")
+
+            elif npc_type == "warp" and goal == "travel":
+                advice_parts.append("")
+                advice_parts.append("**🚀 Warp Portal Tips:**")
+                advice_parts.append("  • Warp costs vary by destination (typically 100-2000z)")
+                advice_parts.append("  • You can also use Fly Wings for random teleport")
+                advice_parts.append("  • Some maps require quest completion to warp to")
+
+        # Build npc_steps config recommendation (for buyAuto config)
+        if npc_type == "vendor":
+            advice_parts.append("")
+            advice_parts.append("**⚙️ Config Recommendation for auto-buy:**")
+            advice_parts.append(f"  Set `npc_steps {sequence}` in your buyAuto config")
+            advice_parts.append(f"  Set `npc {npc_map} <x> <y>` (NPC coordinates)")
+
+        return {
+            "kind": "npc_dialog_guide",
+            "command": f"talknpc {npc_id}" if npc_id else "macro npc_dialog_resolve",
+            "confidence": confidence,
+            "reason": f"NPC dialog guide for {npc_name} ({npc_type or 'unknown'}) in {npc_map} — sequence: {sequence}",
+            "advice": "\n".join(advice_parts),
+            "npc_type": npc_type or "unknown",
+            "npc_name": npc_name,
+            "npc_sequence": sequence,
+            "sequence_parts": sequence.split(),
+        }
+
+    def _handle_npc_dialog_stuck(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
+        """Handle stuck NPC interactions — dialog failed, wrong NPC, shop can't complete.
+
+        Diagnoses why an NPC interaction failed and provides a recovery plan.
+        This handles the 'Talking to wrong npc', 'Npc did not respond',
+        and auto-buy loop failure scenarios.
+        """
+        npc_name = str(signals.get("npc_name", signals.get("target_name", ""))).lower().strip()
+        npc_map = str(signals.get("map", signals.get("current_map", "unknown"))).lower()
+        failure_type = str(signals.get("failure_type", "")).lower()
+        error_message = str(signals.get("error_message", signals.get("failure_reason", "")))
+        dialog_history = signals.get("dialog_history", [])
+        weight_pct = float(signals.get("weight_pct", signals.get("weight", 0)))
+        hp = int(signals.get("hp", 0))
+        max_hp = int(signals.get("max_hp", 1))
+        zeny = int(signals.get("zeny", 0))
+        attempts = int(signals.get("attempt_count", signals.get("retry_count", 0)))
+
+        advice_parts = [f"**NPC Dialog Stuck: {npc_name or 'unknown NPC'} — Recovery Plan**", ""]
+
+        # Detect stuck pattern
+        is_wrong_npc = "wrong" in error_message or "wrong npc" in failure_type
+        is_no_response = "not respond" in error_message or "no response" in failure_type
+        is_overweight = weight_pct >= 70 or signals.get("weight_over_70", False)
+        is_low_hp = hp < 50 and max_hp > 0 and (hp / max_hp) < 0.3
+        is_loop = attempts >= 3
+
+        advice_parts.append(f"🔍 **Situation Analysis:**")
+        if is_wrong_npc:
+            advice_parts.append("  ❌ Talking to wrong NPC — the NPC ID at this position has changed or")
+            advice_parts.append("     the coordinates in the config point to a different NPC than expected.")
+            advice_parts.append("")
+            advice_parts.append("  **⚡ Recovery:**")
+            advice_parts.append("    1. Use NPCDiscoveryEngine to find the actual vendor NPC position")
+            advice_parts.append("    2. The Tool Dealer may be at a different coordinate on this server")
+            advice_parts.append("    3. Check if the NPC name matches what the config expects")
+            advice_parts.append("    4. Try using dynamic NPC discovery instead of hardcoded coordinates")
+        elif is_no_response:
+            advice_parts.append("  ❌ NPC did not respond — the dialog sequence may be wrong,")
+            advice_parts.append("     or the NPC is too far away / blocked by other characters.")
+            advice_parts.append("")
+            advice_parts.append("  **⚡ Recovery:**")
+            advice_parts.append("    1. Make sure you're standing close enough to the NPC (within 3 cells)")
+            advice_parts.append("    2. The NPC might be busy with another player — wait and retry")
+            advice_parts.append("    3. Try a different dialog sequence (some servers use different menus)")
+        elif is_overweight:
+            advice_parts.append("  ⚠️ Weight over 70% — you're overburdened and may not be able to")
+            advice_parts.append("     move effectively or complete transactions.")
+            advice_parts.append("")
+            advice_parts.append("  **⚡ Recovery:**")
+            advice_parts.append("    1. Sell junk items to lighten your load")
+            advice_parts.append("    2. Deposit items in Kafra storage")
+            advice_parts.append("    3. Use a Butterfly Wing to return to town if stuck")
+            advice_parts.append("    4. Check your items_control.txt — you may be picking up too much junk")
+        elif is_low_hp:
+            heal_ratio = hp / max(hp, 1)
+            advice_parts.append(f"  ❌ Critical HP ({hp}/{max_hp}) — you need healing before doing anything else.")
+            advice_parts.append("")
+            advice_parts.append("  **⚡ Recovery:**")
+            advice_parts.append("    1. Sit and regenerate HP before attempting NPC interactions")
+            advice_parts.append("    2. Use healing items if available (Red Potions, White Potions)")
+            advice_parts.append("    3. Visit a healer NPC (nun/priest/monk) for free healing")
+            advice_parts.append("    4. Check your auto-buy config — you may need more potions")
+            if zeny < 100:
+                advice_parts.append("    ⚠️ You have very little zeny — consider selling items first")
+        elif is_loop:
+            advice_parts.append(f"  🔁 Loop detected — {attempts} consecutive failed attempts to interact with this NPC.")
+            advice_parts.append("")
+            advice_parts.append("  **⚡ Recovery:**")
+            advice_parts.append("    1. Stop the current action and re-evaluate")
+            advice_parts.append("    2. Use NPCDiscoveryEngine to find a different vendor NPC")
+            advice_parts.append("    3. Consider changing hunting strategy to avoid needing this NPC")
+            advice_parts.append("    4. If this is a buy loop, try buying from a different shop or player vendor")
+
+        # Check for recurring pattern across all bots
+        if is_loop and is_wrong_npc:
+            advice_parts.append("")
+            advice_parts.append("**🔧 Long-term Fix:**")
+            advice_parts.append("  This NPC interaction is repeatedly failing. Consider:")
+            advice_parts.append("  • Use the NPCDiscoveryEngine to dynamically locate the correct vendor")
+            advice_parts.append("  • Update the npc_steps in config.txt to match this server's dialog flow")
+            advice_parts.append("  • Use LLM-powered NPC dialog (Pro RO Player + NPCDialogEngine)")
+            advice_parts.append("  • As a workaround: teleport to a different town with a working vendor")
+
+        # General health/stuck check
+        advice_parts.append("")
+        advice_parts.append("**📊 Bot Health Check:**")
+        advice_parts.append(f"  • HP: {hp}/{max_hp}" + (" ⚠️ CRITICAL" if is_low_hp else ""))
+        advice_parts.append(f"  • Weight: {weight_pct:.0f}%" + (" ⚠️ Overburdened" if is_overweight else ""))
+        advice_parts.append(f"  • Zeny: {zeny}z" + (" ⚠️ Very low" if zeny < 500 else ""))
+        advice_parts.append(f"  • Map: {npc_map}")
+        advice_parts.append(f"  • Failed attempts: {attempts}")
+
+        stuck_kind = "npc_stuck_critical" if (is_low_hp or (is_loop and is_wrong_npc)) else "npc_stuck_minor"
+        confidence = 0.9 if (is_low_hp or is_loop) else 0.7
+
+        return {
+            "kind": stuck_kind,
+            "command": "recover_npc_dialog",
+            "confidence": confidence,
+            "reason": f"NPC dialog stuck: {npc_name} — {error_message or failure_type} ({attempts} attempts)",
+            "advice": "\n".join(advice_parts),
+            "npc_name": npc_name,
+            "npc_map": npc_map,
+            "failure_type": failure_type or error_message or "unknown",
+            "overweight": is_overweight,
+            "critical_hp": is_low_hp,
+            "loop_detected": is_loop,
+            "wrong_npc": is_wrong_npc,
+            "suggested_actions": [
+                "discover_vendor_npc" if is_wrong_npc else "",
+                "sit_and_heal" if is_low_hp else "",
+                "sell_junk_items" if is_overweight else "",
+                "change_hunting_strategy" if is_loop else "",
+            ],
+        }
+
+    # ── NPC dialog helper methods ─────────────────────────────────────────
+
+    @staticmethod
+    def _detect_npc_type(npc_name: str) -> str | None:
+        """Detect NPC type from name using pattern matching."""
+        if not npc_name:
+            # Check if name was passed in signals differently
+            return None
+
+        # Try exact match first
+        if npc_name in NPC_NAME_TO_TYPE:
+            return NPC_NAME_TO_TYPE[npc_name]
+
+        # Try partial match against patterns
+        for npc_type, patterns in NPC_TYPE_PATTERNS.items():
+            for pattern in patterns:
+                if pattern in npc_name:
+                    return npc_type
+
+        return None
+
+    @staticmethod
+    def _get_dialog_sequence(npc_type: str, npc_name: str, goal: str, is_retry: bool = False) -> dict[str, Any]:
+        """Get the appropriate dialog sequence for an NPC."""
+        # Check if we have a specific shop template for this NPC name
+        for template_key, template in SHOP_COMMAND_TEMPLATES.items():
+            if template_key in npc_name or any(k in npc_name for k in template_key.split("_")):
+                if goal in template:
+                    return {
+                        "sequence": template[goal],
+                        "alternative": template.get("fallback", template[goal]),
+                        "notes": template.get("notes", ""),
+                        "confidence": 0.8,
+                    }
+
+        # Check NPC_DIALOG_SEQUENCES
+        if npc_type == "vendor" and goal == "buy":
+            base = NPC_DIALOG_SEQUENCES["vendor_buy"]
+            return {
+                "sequence": " ".join(base["steps"]),
+                "alternative": " ".join(base["alternative_steps"]),
+                "notes": base["notes"],
+                "confidence": 0.75,
+            }
+        elif npc_type == "vendor" and goal == "sell":
+            base = NPC_DIALOG_SEQUENCES["vendor_sell"]
+            return {
+                "sequence": " ".join(base["steps"]),
+                "alternative": " ".join(base["steps"]),
+                "notes": base["notes"],
+                "confidence": 0.7,
+            }
+
+        # Map NPC dialog sequence names to npc_type
+        type_to_seq = {
+            "kafra": "kafra_storage",
+            "warp": "warp_generic",
+            "healer": "healer",
+            "skill": "skill_reset",
+            "identify": "identify",
+        }
+
+        seq_name = type_to_seq.get(npc_type, "generic_npc")
+        if seq_name in NPC_DIALOG_SEQUENCES:
+            base = NPC_DIALOG_SEQUENCES[seq_name]
+            return {
+                "sequence": " ".join(base["steps"]),
+                "alternative": " ".join(base["steps"]),
+                "notes": base.get("notes", ""),
+                "confidence": 0.7,
+            }
+
+        # Fallback
+        return {
+            "sequence": "c r1",
+            "alternative": "c r1 c r1",
+            "notes": "Generic NPC — try talking and selecting first option",
+            "confidence": 0.4,
+        }
+

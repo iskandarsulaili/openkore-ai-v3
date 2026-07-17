@@ -26,6 +26,9 @@ class EventFamily(StrEnum):
     action = "action"
     lifecycle = "lifecycle"
     system = "system"
+    bridge_event = "bridge_event"
+    bridge_reflex = "bridge_reflex"
+    bridge_telemetry = "bridge_telemetry"
 
 
 class EventSeverity(StrEnum):
