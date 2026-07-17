@@ -4167,9 +4167,20 @@ class PDCALoop:
             except Exception:
                 logger.exception("pro_ro_player_gate_error")
             
-            # ── Cost gate: if not_use_llm, emit heuristic actions and return ──
+            # ── Short-circuit: if Pro RO Player already queued vital actions, skip LLM path ──
+            _pro_ro_queued_any = False
             try:
-                if not _use_llm:
+                _pro_ro_aq = getattr(self._runtime, "action_queue", None)
+                if _pro_ro_aq is not None:
+                    # Count how many actions we have pending for this bot
+                    _pro_ro_pending = _pro_ro_aq.pending_count(_cycle_bot_id) if hasattr(_pro_ro_aq, "pending_count") else 0
+                    _pro_ro_queued_any = _pro_ro_pending > 2  # at least a few actions
+            except Exception:
+                pass
+            
+            # ── Cost gate: if not_use_llm OR Pro RO already queued actions, emit heuristic and return early ──
+            try:
+                if not _use_llm or _pro_ro_queued_any:
                     # Emit game engine + heuristic + swarm + vendor + skill actions
                     # Emit for ALL registered bots, not just the resolved one
                     # Emit for ALL registered bots, not just the resolved one

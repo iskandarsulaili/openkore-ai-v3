@@ -458,6 +458,25 @@ sub on_chat_message {
 
 	_enqueue_chat_event($chat_event);
 
+	# ── NPC dialog failure detection from system messages ──
+	if ($channel eq 'systemchat' && defined $message_text && $message_text ne '') {
+		if ($message_text =~ /wrong\s+npc|npc.*fail|talking\s+to\s+wrong/i) {
+			_enqueue_normalized_event(
+				'npc',
+				'npc.dialogue_failed',
+				$hook,
+				"NPC dialog failed: $message_text",
+				{
+					message => $message_text,
+					map => _safe_field_map() || undef,
+				},
+				{},
+				{},
+				'warning',
+			);
+		}
+	}
+
 	_enqueue_normalized_event(
 		'chat',
 		_normalize_event_type('chat.' . ($channel || 'unknown')),

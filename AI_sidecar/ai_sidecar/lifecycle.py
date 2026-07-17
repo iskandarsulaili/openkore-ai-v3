@@ -1302,6 +1302,16 @@ class RuntimeState:
             events=self._accepted_events(events=payload.events, event_ids=result.event_ids),
             source="v2.event",
         )
+        # ── NPC dialog failure recording from bridge events ──
+        npc_engine = getattr(self, "npc_dialog", None)
+        if npc_engine is not None:
+            for ev in payload.events:
+                ev_type = getattr(ev, "event_type", "") or str(getattr(ev, "kind", ""))
+                if ev_type in ("npc.dialogue_failed", "npc.dialogue_stuck"):
+                    npc_engine.record_dialog_failure(
+                        bot_id=payload.meta.bot_id,
+                        npc_name=str(getattr(ev, "npc_name", getattr(ev, "actor_name", "unknown")) or "unknown"),
+                    )
         return result
 
     def ingest_actor_delta(self, payload: ActorDeltaPushRequest) -> IngestAcceptedResponse:
