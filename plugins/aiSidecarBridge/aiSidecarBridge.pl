@@ -3738,25 +3738,16 @@ sub _survival_check {
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-# Phase 1: Full HP/SP recovery via Kafra NPC if in Prontera (no Basic Skill needed)
-	if ($hp_pct < 80 && $map =~ /prontera/i && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
-	    # Talk to Kafra Employee NPC for full recovery
-	    # Prontera Kafra coordinates: (151, 29) observed in earlier snapshots
-	    # Using talknpc to heal at Kafra — works on all servers, no skill required
-	    my $kafra_nearby = 0;
-	    foreach my $npc (@{$main::npcsList || []}) {
-	        next unless ref($npc) eq 'HASH';
-	        if ($npc->{name} && $npc->{name} =~ /kafra/i) {
-	            $kafra_nearby = 1;
-	            last;
-	        }
-	    }
-	    if ($kafra_nearby) {
-	        eval { Commands::run('talknpc 151 29 c r0 n'); 1 };  # 'heal' option
-	        warning "[aiSidecarBridge] survival: Kafra heal requested in Prontera\n";
-	    }
+# Phase 1: Full HP/SP recovery via Kafra NPC (no skill points needed)
+	if ($hp_pct < 60 && $map =~ /prontera/i && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
+	    # Direct talknpc to Kafra Employee at known Prontera coordinates
+	    # Uses 'c' (continue) to accept dialogue and 'r0 n' to select menu option
+	    eval { Commands::run('talk 151 29'); 1 };  # approach Kafra
+	    eval { Commands::run('talknpc 151 29 c r1 c n'); 1 };  # menu: r1=heal  # heal option
+	    warning "[aiSidecarBridge] survival: requested Kafra heal at Prontera (151,29)\n";
 	}
 
+# Phase 2: Sit for regen (may fail if Basic Skill 3 missing)
 # Phase 2: Sit for regen (requires Basic Skill 3 — may fail if missing)
 	# Phase 2: Sit to regen HP if low
 	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
