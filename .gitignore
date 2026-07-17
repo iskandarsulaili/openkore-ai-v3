@@ -96,3 +96,6 @@ Thumbs.db
 
 # ── Compressed rotated logs ──────────────────────────────────────────────
 *.log.gz
+
+# Graphify
+graphify-out/
