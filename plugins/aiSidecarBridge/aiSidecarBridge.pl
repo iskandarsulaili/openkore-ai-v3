@@ -270,8 +270,9 @@ sub on_mainLoop_post {
 	_send_discovery_data();
 		_survival_check();
 		_teamplay_check();
-		# Force AI to AUTO mode every cycle — prevents unwanted manual toggles
-		if (AI::state() != 2) { AI::state(2); }
+
+        # Force AI to AUTO mode every cycle — runs even when bridge is disabled
+        if (AI::state() != 2) { AI::state(2); }
 	}
 }
 
