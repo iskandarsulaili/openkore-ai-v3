@@ -1758,7 +1758,12 @@ sub _execute_action {
 
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
 
-	if ($kind eq 'macro_reload') {
+	# ── Apply ML overrides (source="ml" actions carry learned recommendations) ──
+	my $action_source = lc($action->{source} || '');
+	if ($action_source eq 'ml' && defined $metadata->{ml_override}) {
+		_apply_ml_override($metadata->{ml_override});
+		($success, $result_code, $msg) = (1, 'ok', 'ml override applied');
+	} elsif ($kind eq 'macro_reload') {
 		($success, $result_code, $msg) = _execute_macro_reload_action($metadata);
 	} elsif ($kind eq 'config_reload') {
 		($success, $result_code, $msg) = _execute_config_reload_action($metadata);
@@ -4158,5 +4163,61 @@ sub _send_discovery_data {
 	    timestamp => _now_ms(),
 	});
 }
+
+# ── Apply ML overrides from source="ml" actions ──
+sub _apply_ml_override {
+	my ($override) = @_;
+	return unless defined $override && ref($override) eq 'HASH';
+
+	my $family = $override->{family} || '';
+	my $rec = $override->{recommendation} || {};
+
+	if ($family eq 'encounter_classifier' && defined $rec->{encounter_profile}) {
+		my $profile = lc($rec->{encounter_profile});
+		if ($profile eq 'aggressive') {
+			$::config{attackAuto} = 2;
+			$::config{autoMove} = 2;
+			$::config{attackDistance} = 5;
+			warning("ml_override applied: encounter_classifier=aggressive (attackAuto=2, autoMove=2)");
+		} elsif ($profile eq 'safe') {
+			$::config{attackAuto} = 1;
+			$::config{autoMove} = 0;
+			$::config{attackDistance} = 3;
+			warning("ml_override applied: encounter_classifier=safe (attackAuto=1, autoMove=0)");
+		} else {
+			$::config{attackAuto} = 2;
+			$::config{autoMove} = 1;
+			$::config{attackDistance} = 7;
+			warning("ml_override applied: encounter_classifier=balanced (attackAuto=2, autoMove=1)");
+		}
+	} elsif ($family eq 'route_recovery_classifier' && defined $rec->{stuck_strategy}) {
+		my $strategy = lc($rec->{stuck_strategy});
+		if ($strategy eq 'repath' || $strategy eq 'recalc') {
+			my $ok = eval { _toggle_ai_mode('manual'); 1; };
+			warning("ml_override applied: route_recovery=$strategy (ai toggled to manual for recalc)");
+		} elsif ($strategy eq 'teleport') {
+			my $skill = eval { $char->skills->get('AL_TELEPORT') } || eval { $char->skills->get('TF_TELEPORT') };
+			if ($skill) { eval { Commands::run("use_skill teleport"); 1; }; }
+			warning("ml_override applied: route_recovery=teleport");
+		} else {
+			warning("ml_override applied: route_recovery=$strategy (no specific handler)");
+		}
+	} elsif ($family eq 'loot_ranker' && defined $rec->{loot_item}) {
+		my $item = $rec->{loot_item};
+		warning("ml_override applied: loot_ranker=$item (logging only — item priority not implemented)");
+	} elsif ($family eq 'npc_dialogue_predictor' && defined $rec->{dialogue_branch}) {
+		my $branch = $rec->{dialogue_branch};
+		warning("ml_override applied: npc_dialogue=$branch (logging only)");
+	} elsif ($family eq 'risk_anomaly_detector' && defined $rec->{risk_label}) {
+		my $score = $rec->{risk_label};
+		warning("ml_override applied: risk_anomaly score=$score");
+	} elsif ($family eq 'memory_retrieval_ranker' && defined $rec->{memory_id}) {
+		my $mem_id = $rec->{memory_id};
+		warning("ml_override applied: memory_retrieval=$mem_id (logging only)");
+	} else {
+		warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
+	}
+}
+
 
 1;

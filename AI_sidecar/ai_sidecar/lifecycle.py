@@ -592,6 +592,7 @@ class RuntimeState:
     ml_observer: ObservationCapture | None = None
     ml_labeling: LabelingPipeline | None = None
     ml_registry: ModelRegistry | None = None
+    efficiency_tracker: "EfficiencyTracker | None" = None
     ml_training: TrainingHarness | None = None
     ml_shadow: ShadowModeEvaluator | None = None
     ml_promotion: GuardedPromotionPipeline | None = None
@@ -5533,6 +5534,14 @@ def create_runtime() -> RuntimeState:
         planner_stale_threshold_s=float(settings.autonomy_stale_plan_threshold_s),
         control_domain=control_domain,
     )
+
+    # ── Initialize efficiency tracker (zero-config, works on any server) ──
+    try:
+        from ai_sidecar.efficiency_tracker import EfficiencyTracker
+        runtime.efficiency_tracker = EfficiencyTracker(window_minutes=10)
+        logger.info("efficiency_tracker_initialized")
+    except Exception as e:
+        logger.warning("efficiency_tracker_init_failed: %s", e)
 
     control_executor.runtime = runtime
     runtime._restore_goal_state_cache(limit=max(64, settings.persistence_snapshot_history_per_bot))

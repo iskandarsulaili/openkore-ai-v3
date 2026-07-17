@@ -4437,11 +4437,21 @@ class PDCALoop:
             
             # ── Pro RO Player cold start advice ─────────────────
             if goal_state is not None and horizon == Horizon.SHORT_TERM:
-                _cold_start_active = self._active_plan.get(horizon) is None
+                # Fire cold start if no active plan OR first 3 cycles (to ensure advice gets delivered)
+                if not hasattr(self._runtime, "_pro_ro_player_cold_start_count"):
+                    self._runtime._pro_ro_player_cold_start_count = 0
+                _cold_start_active = self._active_plan.get(horizon) is None or self._runtime._pro_ro_player_cold_start_count < 3
                 if _cold_start_active:
                     try:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
                         _pro = ProRoPlayerProfile()
+                        
+                        # Include efficiency metrics in signals if available
+                        _eff_metrics = {}
+                        _eff_tracker = getattr(self._runtime, "efficiency_tracker", None)
+                        if _eff_tracker is not None:
+                            _eff_metrics = _eff_tracker.get_metrics(decision_meta.bot_id)
+                        
                         _signals = {
                             "situation": "cold_start",
                             "class": str(getattr(getattr(latest_snapshot, "progression", None), "job_name", "novice") or "novice"),
@@ -4449,6 +4459,7 @@ class PDCALoop:
                             "map": str(getattr(getattr(latest_snapshot, "position", None), "map", "") or ""),
                             "has_plan": False,
                             "death_count": 0,
+                            "efficiency": _eff_metrics,
                         }
                         _advice = _pro.get_action(_signals)
                         if _advice is not None:
@@ -4542,6 +4553,17 @@ class PDCALoop:
                                 )
                     except Exception as _pro_exc:
                         logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
+                    finally:
+                        self._runtime._pro_ro_player_cold_start_count += 1
+            
+            # ── Update efficiency tracker with snapshot data ──
+            if latest_snapshot is not None and horizon == Horizon.SHORT_TERM:
+                _eff_tracker = getattr(self._runtime, "efficiency_tracker", None)
+                if _eff_tracker is not None:
+                    try:
+                        _eff_tracker.update(latest_snapshot, decision_meta.bot_id)
+                    except Exception:
+                        pass
             
             # ── Pro RO Player stuck detection (snapshot-based + dialog-based) ──
             if latest_snapshot is not None and horizon == Horizon.SHORT_TERM:
