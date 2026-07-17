@@ -116,7 +116,9 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
 
     # Phase 1: Use potion from inventory
     if any("potion" in (i.get("name", "") or "").lower() for i in req.inventory):
-        return HealStrategyResponse(strategy="use_potion", command="use Red Potion", confidence=0.95)
+        resp_tmp = HealStrategyResponse(strategy="use_potion", command="use Red Potion", confidence=0.95)
+        _maybe_save_heal_skill(req, resp_tmp)
+        return resp_tmp
 
     # Phase 2: Find a healer NPC on current map
     with _server_tables_lock:
@@ -155,12 +157,14 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
 
     # Phase 4: HP is safe (>= 50%) → go hunting instead of seeking healer
     if req.hp_max > 0 and (req.hp / req.hp_max) >= 0.5:
-        return HealStrategyResponse(
+        resp_tmp = HealStrategyResponse(
             strategy="go_hunting",
             command="ai auto",
             target_map="prt_fild08",
             confidence=0.7,
         )
+        _maybe_save_heal_skill(req, resp_tmp)
+        return resp_tmp
 
     # Phase 5: Check for Healer NPC on current map (Prontera) — only when HP < 50%
     if req.map and 'prontera' in req.map.lower():
@@ -169,21 +173,25 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
             dx = abs(req.x - 159)
             dy = abs(req.y - 193)
             if dx < 6 and dy < 6:
-                return HealStrategyResponse(
+                resp_tmp = HealStrategyResponse(
                     strategy="talk_healer_npc",
                     command="talknpc 159 193 c r0 n",
                     target_map=req.map,
                     target_npc="Healer#prt",
                     confidence=0.9,
                 )
+                _maybe_save_heal_skill(req, resp_tmp)
+                return resp_tmp
         # Otherwise walk to Healer
-        return HealStrategyResponse(
+        resp_tmp = HealStrategyResponse(
             strategy="visit_healer_npc",
             command="move 159 193",
             target_map=req.map,
             target_npc="Healer#prt",
             confidence=0.85,
         )
+        _maybe_save_heal_skill(req, resp_tmp)
+        return resp_tmp
 
     # Phase 6: Default — auto mode, stay on current map (AI will have lockMap to hunt)
     resp = HealStrategyResponse(
