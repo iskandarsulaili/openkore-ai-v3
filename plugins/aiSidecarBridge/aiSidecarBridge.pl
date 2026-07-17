@@ -2492,25 +2492,13 @@ sub _http_post_json {
 	$connect_timeout = 0.001 if $connect_timeout <= 0;
 	$io_timeout = 0.001 if $io_timeout <= 0;
 
-	# ── Connection reuse (HTTP Keep-Alive) ──
-	# Cache the socket to avoid TCP handshake overhead on every request
-	# Always create fresh connection (cache disabled)
-	my \$sock;
-	if (\$cached_sock) {
-	    close \$cached_sock;
-	    \$cached_sock = undef;
-	}
-	\$sock = IO::Socket::INET->new(
+	# ── Connection ──
+	my $sock = IO::Socket::INET->new(
 	    PeerHost => $host,
 	    PeerPort => $port,
 	    Proto => 'tcp',
 	    Timeout => $connect_timeout,
 	);
-	if ($sock) {
-	    $cached_sock = $sock;
-	    $cached_host = $host;
-	    $cached_port = $port;
-	}
 	if (!$sock) {
 	    return {
 	        status => 0,
@@ -2574,7 +2562,7 @@ sub _http_post_json {
 	# Only close on error to reset the connection
 	if (!$ok) {
 	    close $sock;
-	    $cached_sock = undef;
+
 	    $io_error = _trim($io_error || 'io_failure', 220);
 	    $io_error =~ s/\s+$//;
 	    return {
