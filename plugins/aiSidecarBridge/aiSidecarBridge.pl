@@ -3790,13 +3790,20 @@ sub _survival_check {
 	my $base_lv = $cr->{lv} || $cr->{level} || 1;
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-	# ── Emergency: HP critically low (< 20%) → use potion or force-regen ──
+	# ── Emergency: HP critically low (< 20%) → navigate + potion + dealer ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
-	    # Try using a potion first
+	    # Stand up (sitting blocks movement)
+	    if ($Ai::Ai->{ai} eq 'sit') { eval { Commands::run('stand'); 1 }; }
+	    # Navigate to tool dealer so OpenKore can walk there
+	    $::config{'lockMap'} = 'ma_in01';
+	    # Enable auto mode for pathfinding
+	    if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
+	    # Try buying potions (works if already at NPC)
+	    eval { Commands::run('buy 501 30'); 1 };
+	    # Try using potion
 	    eval { Commands::run('use Red Potion'); 1 };
-	    eval { Commands::run('use Orange Potion'); 1 };
-	    # If no potions and critically low, emergency sit
-	    eval { Commands::run('sit'); 1 };
+	    # Emergency sit if still critically low
+	    if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
 	    return;
 	}
 
