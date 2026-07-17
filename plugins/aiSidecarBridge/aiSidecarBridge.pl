@@ -3221,8 +3221,8 @@ sub _check_bridge_reflexes {
 					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
 					if (!$_has_heal_item) {
 						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
-							Commands::run('sit');
-							warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
+							## SIT REMOVED — reflex should never sit. Let survival_check handle it.
+							# warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
 						}
 					} elsif ($hp > $hp_max * 0.8 && ($Ai::Ai->{ai} || '') eq 'sit') {
 						# Stand up if HP is healthy and we were sitting
