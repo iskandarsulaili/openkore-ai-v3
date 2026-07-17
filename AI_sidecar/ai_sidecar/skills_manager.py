@@ -141,6 +141,7 @@ def create_skill(
     provenance: str = "foreground",
 ) -> Dict[str, Any]:
     """Create a new skill (SKILL.md + directory). Returns result dict."""
+    name = _sanitize_name(name)
     err = _validate_name(name)
     if err:
         return {"success": False, "error": err}
@@ -153,7 +154,8 @@ def create_skill(
 
     existing = _find_skill(name)
     if existing:
-        existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+        existing = skills_usage.get_skill(name) or {}
+        existing_prov = existing.get("provenance", "foreground")
         if provenance == "background_review" and existing_prov == "foreground":
             return {"success": False, "error": f'background_review cannot overwrite foreground skill \"{name}\"', "name": name}
         return {"success": False, "error": f"Skill '{name}' already exists", "name": name}
@@ -190,7 +192,8 @@ def edit_skill(name: str, content: str) -> Dict[str, Any]:
     existing = _find_skill(name)
     if not existing:
         return {"success": False, "error": f"Skill '{name}' not found"}
-    existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+    existing_rec = skills_usage.get_skill(name) or {}
+    existing_prov = existing_rec.get("provenance", "foreground")
     if provenance == "background_review" and existing_prov == "foreground":
         return {"success": False, "error": f'background_review cannot patch foreground skill \"{name}\"', "name": name}
 
@@ -247,7 +250,7 @@ def delete_skill(name: str, provenance: str = "foreground") -> Dict[str, Any]:
     existing = _find_skill(name)
     if not existing:
         return {"success": False, "error": f"Skill '{name}' not found"}
-    existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+    existing_prov = existing.get("provenance", "foreground")
     if provenance == "background_review" and existing_prov == "foreground":
         return {"success": False, "error": f'background_review cannot delete foreground skill "{name}"'}
 
