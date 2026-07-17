@@ -3465,6 +3465,16 @@ class PDCALoop:
                     object.__setattr__(self._runtime, "_llm_warmup_cycles", 0)
                 if self._runtime._llm_warmup_cycles < 10:
                     _use_llm = True
+                # Don't force LLM if no bots have valid snapshots yet (avoids 35s-per-call waste)
+                _has_any_snapshot = False
+                try:
+                    _sc = getattr(self._runtime, "snapshot_cache", None)
+                    if _sc is not None:
+                        _has_any_snapshot = len(_sc.bot_ids()) > 0
+                except Exception:
+                    pass
+                if not _has_any_snapshot and _use_llm:
+                    _use_llm = False
                 _trigger_reason = "conservative:no_triggers"
                 _trigger_ctx: dict[str, object] = {}
                 
@@ -4078,6 +4088,7 @@ class PDCALoop:
                             _pro_prog = getattr(_pro_inline_snap, "progression", None)
                             _pro_snap_lvl = int(getattr(_pro_prog, "base_level", 0) or 0) if _pro_prog else 0
                         _pro_has_valid_data = _pro_snap_map != "" and _pro_snap_lvl > 0
+                        _pro_inline_signals = {}
                         if _pro_has_valid_data:
                             _pro_inline_signals = {
                             "situation": "cold_start",
