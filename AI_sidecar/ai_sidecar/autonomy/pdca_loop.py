@@ -4891,6 +4891,21 @@ class PDCALoop:
                                     ))
                                     logger.info("npc_sell_action_queued: bot=%s weight=%.0f%%", _bot_id, _sn_weight)
                                 
+                                # Action 3b: Enable sell/storage config via NPC discovery
+                                if _is_overweight and _discovered_npc:
+                                    _vname = str(_discovered_npc.get("name", ""))
+                                    _vx = int(_discovered_npc.get("x", 0))
+                                    _vy = int(_discovered_npc.get("y", 0))
+                                    _vmap = str(_discovered_npc.get("map", "") or _sn_map)
+                                    _vloc = f"{_vmap} {_vx} {_vy}"
+                                    _set_id_sell = _nh.md5(f"npc_cfg_{_bot_id}_sell_{time.monotonic_ns()}".encode()).hexdigest()[:8]
+                                    _set_id_stor = _nh.md5(f"npc_cfg_{_bot_id}_stor_{time.monotonic_ns()}".encode()).hexdigest()[:8]
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_sell_{_set_id_sell}", kind="command", command=f"set sellAuto 1", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_sell_{_bot_id}", metadata={"source": "pro_ro_player", "reason": "Enable auto-sell", "bot_id": _bot_id}))
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_sellnpc_{_set_id_sell}", kind="command", command=f"set sellAuto_npc {_vloc}", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_sellnpc_{_bot_id}", metadata={"source": "pro_ro_player", "reason": f"Set sell NPC to {_vname}", "bot_id": _bot_id}))
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_stor_{_set_id_stor}", kind="command", command=f"set storageAuto 1", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_stor_{_bot_id}", metadata={"source": "pro_ro_player", "reason": "Enable auto-storage", "bot_id": _bot_id}))
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_stornpc_{_set_id_stor}", kind="command", command=f"set storageAuto_npc {_vloc}", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_stornpc_{_bot_id}", metadata={"source": "pro_ro_player", "reason": f"Set storage NPC to {_vname}", "bot_id": _bot_id}))
+                                    logger.info("npc_config_enabled: bot=%s sell+storage at %s", _bot_id, _vloc)
+                                
                                 # Trigger replan
                                 if _stuck_cycles >= 3 or _failure_count > 0:
                                     replan_reasons.append("npc_stuck_override")

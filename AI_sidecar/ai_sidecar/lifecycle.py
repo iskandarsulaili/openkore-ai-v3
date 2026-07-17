@@ -1406,7 +1406,35 @@ class RuntimeState:
             elif event.event_type in {"actor.removed", "actor.disappeared"}:
                 next_presence.discard(actor_id)
         self._actor_presence_by_bot[bot_id] = next_presence
-
+        
+        # ── Sync NPC actors into snapshot cache for NPCDiscoveryEngine ──
+        if payload.actors:
+            try:
+                _snap = self.snapshot_cache.get(bot_id) if self.snapshot_cache else None
+                if _snap is not None:
+                    _npc_list = []
+                    for _item in payload.actors:
+                        _at = str(getattr(_item, "actor_type", "") or "").strip().lower()
+                        if _at == "npc" and getattr(_item, "name", None) and getattr(_item, "x", None) is not None:
+                            from ai_sidecar.contracts.state import ActorDigest as _AD
+                            _npc_list.append(_AD(
+                                actor_id=str(getattr(_item, "actor_id", "") or ""),
+                                name=str(getattr(_item, "name", "") or ""),
+                                x=int(getattr(_item, "x", 0) or 0),
+                                y=int(getattr(_item, "y", 0) or 0),
+                                map=str(getattr(_item, "map", "") or ""),
+                                actor_type="npc",
+                                distance=float(getattr(_item, "distance", 0) or 0),
+                                relation=str(getattr(_item, "relation", "") or ""),
+                            ))
+                    if _npc_list:
+                        _existing = list(getattr(_snap, "actors", []) or [])
+                        _existing = [a for a in _existing if str(getattr(a, "actor_type", "")).strip().lower() != "npc"]
+                        _existing.extend(_npc_list)
+                        object.__setattr__(_snap, "actors", _existing[:64])
+            except Exception:
+                pass
+        
         if revision and accepted_events:
             self._actor_last_revision_fingerprint[bot_id] = revision_fingerprint
 
