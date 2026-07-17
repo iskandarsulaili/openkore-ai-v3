@@ -4366,7 +4366,7 @@ class PDCALoop:
                                 'level': 1,
                                 'class': 'novice',
                                 'bot_id': _cycle_bot_id or 'default',
-                                'map': str(getattr(latest_snapshot, 'map_name', '') or ''),
+                                'map': str(getattr(self._get_latest_snapshot(), 'map_name', '') or ''),
                             }
                             _cr_advice = _cr_pro.get_action(_cr_signals)
                             if _cr_advice is not None:
