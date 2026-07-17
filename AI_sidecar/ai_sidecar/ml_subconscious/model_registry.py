@@ -63,7 +63,7 @@ def _flatten_features(value: object, *, prefix: str = "") -> dict[str, float]:
     return flat
 
 
-def vectorize_state_features(state_features: dict[str, object], *, dims: int = 128) -> tuple[list[float], dict[str, float]]:
+def vectorize_state_features(state_features: dict[str, object], *, dims: int = 512) -> tuple[list[float], dict[str, float]]:
     flat = _flatten_features(state_features)
     vector = [0.0] * max(32, int(dims))
     contributions: dict[str, float] = {}
