@@ -1672,19 +1672,10 @@ class PDCALoop:
                         except asyncio.TimeoutError:
                             logger.warning("PDCA cycle timeout [%s] >30s — advancing clock", horizon.value)
                             self._last_plan_time[horizon] = time.time()
-                            if now - self._last_plan_time[horizon] >= interval:
-                                try:
-                                    result = await asyncio.wait_for(
-                                        self._run_one_cycle(horizon),
-                                        timeout=30.0,
-                                    )
-                                except asyncio.TimeoutError:
-                                    logger.warning("PDCA cycle timeout [%s] >30s — skipping", horizon.value)
-                                    self._last_plan_time[horizon] = time.time()
-                                    self._cycle_count += 1
-                                    continue
-                                self._cycle_count += 1
-                                # ── Skills curator tick (every ~3600 cycles ≈ hourly) ──
+                            self._cycle_count += 1
+                            continue
+                        self._cycle_count += 1
+                        # ── Skills curator tick (every ~3600 cycles ≈ hourly) ──
                         if self._cycle_count % 3600 == 0:
                             try:
                                 from ai_sidecar.skills_curator import should_run_now, run_curator
@@ -4391,39 +4382,9 @@ class PDCALoop:
                                     _cr_conf,
                                 )
                                 # Queue the move command if confidence > 0.85
-                                # BUT skip if bot is in an indoor map (would block random walk)
-                                _cr_current_map = str(_cr_signals.get('map', '')).lower().strip()
-                                _cr_skip_indoor = gk.is_indoor_map(_cr_current_map) if gk is not None else False
-                                # Nudge: if indoors >120s, send coordinate move to building exit
-                                if _cr_skip_indoor:
-                                    _cr_exit = gk.indoor_exit(_cr_current_map) if gk is not None else None
-                                    if _cr_exit:
-                                        _cr_aq = getattr(self._runtime, 'action_queue', None)
-                                        if _cr_aq is not None:
-                                            from datetime import UTC, datetime, timedelta
-                                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                                            _cr_nudge = ActionProposal(
-                                                action_id=f'pro_ro_exit_nudge_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
-                                                kind='command',
-                                                command=f'move {_cr_exit[0]} {_cr_exit[1]}',
-                                                priority_tier=ActionPriorityTier.tactical,
-                                                source='planner',
-                                                created_at=datetime.now(UTC),
-                                                expires_at=datetime.now(UTC) + timedelta(seconds=30),
-                                                idempotency_key=f'pro_ro_exit_nudge_{_cr_current_map}_{_cycle_bot_id}',
-                                                metadata={
-                                                    'source': 'pro_ro_player',
-                                                    'confidence': 0.7,
-                                                    'reason': f'Exit nudge: move to {_cr_exit[0]} {_cr_exit[1]} on {_cr_current_map}',
-                                                    'bot_id': _cycle_bot_id or 'default',
-                                                },
-                                            )
-                                            _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_nudge)
-                                            logger.info(
-                                                "pro_ro_player_exit_nudge: bot=%s map=%s move=%d %d",
-                                                _cycle_bot_id or '?', _cr_current_map, _cr_exit[0], _cr_exit[1],
-                                            )
-                                if not _cr_skip_indoor and _cr_conf > 0.85 and _cr_cmd and _cr_map:
+                                # Note: no indoor skip — the corrected portals.txt now has
+                                # prt_in→prontera→prt_fild00, so route calculation will succeed.
+                                if _cr_conf > 0.85 and _cr_cmd and _cr_map:
                                     _cr_aq = getattr(self._runtime, 'action_queue', None)
                                     if _cr_aq is not None:
                                         from datetime import UTC, datetime, timedelta
@@ -4742,12 +4703,9 @@ class PDCALoop:
             )
             
             # ── Pro RO Player cold start advice ─────────────────
-            if goal_state is not None and horizon == Horizon.SHORT_TERM:
-                # Ensure attributes exist (RuntimeState uses slots=True, use object.__setattr__)
-                if not hasattr(self._runtime, "_pro_ro_player_cold_start_count"):
-                    object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 0)
-                # Fire cold start if no active plan OR first 3 cycles
-                _cold_start_active = self._active_plan.get(horizon) is None or self._runtime._pro_ro_player_cold_start_count < 3
+            if horizon == Horizon.SHORT_TERM:
+                # Fire cold start even without goal_state (bots that can't route)
+                _cold_start_active = goal_state is None or self._active_plan.get(horizon) is None
                 if _cold_start_active:
                     try:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
