@@ -3801,9 +3801,9 @@ sub _survival_check {
 	        hp_max => $hp_max,
 	        zeny => $zeny,
 	        map => $map,
-	        inventory => [],
-	        known_shops => [],
-	        known_portals => [],
+	        inventory => _safe_inventory_list(),
+	        known_shops => _discover_shops_sync(),
+	        known_portals => _discover_portals_sync(),
 	    });
 	    
 	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
