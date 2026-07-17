@@ -5173,7 +5173,16 @@ class PDCALoop:
                 )
 
             # ── PLAN phase ───────────────────────────────────────
-            if self._active_plan[horizon] is None or force_replan:
+            _should_plan = self._active_plan[horizon] is None or force_replan
+            # Skip plan generation if circuit breaker is tripped for this family
+            if _should_plan:
+                try:
+                    _pl_cb = getattr(self, "_circuit_breaker", None)
+                    if _pl_cb is not None and hasattr(_pl_cb, 'can_pass') and not _pl_cb.can_pass(key=self._breaker_key, family=self._breaker_family):
+                        _should_plan = False
+                except Exception:
+                    pass
+            if _should_plan:
                 objective_override = self._select_objective(
                     horizon=horizon,
                     snapshot=latest_snapshot,
