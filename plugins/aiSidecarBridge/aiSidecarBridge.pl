@@ -2106,9 +2106,13 @@ sub _flush_event_queue {
 		while (my ($k, $v) = each %$event) {
 			next if $k eq 'kind' || $k eq 'reflex' || $k eq 'severity' || $k eq 'text' || $k eq 'event_type' || $k eq 'timestamp';
 			if (!defined $v) { next }
-			# Handle array/ref values: JSON-encode them
+			# Handle array/ref values: flatten to comma-separated string
+			if (ref($v) eq 'ARRAY') {
+				$tags{$k} = join(',', map { defined $_ ? _scalarize($_) : '' } @$v);
+				next;
+			}
 			if (ref($v)) {
-				$tags{$k} = _encode_json($v);
+				$tags{$k} = _scalarize($v);
 				next;
 			}
 			if ($v =~ /^-?\d+\.?\d*$/) { $numeric{$k} = $v + 0.0; }

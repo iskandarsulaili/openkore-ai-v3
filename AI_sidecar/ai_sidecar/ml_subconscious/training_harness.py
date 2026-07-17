@@ -373,13 +373,18 @@ class TrainingHarness:
         context: dict[str, object],
         version: str | None = None,
     ) -> tuple[str, dict[str, object], float]:
-        del context
+        # Merge context (objective, horizon) into state features so the model
+        # can condition its predictions on the bot's current goal.
+        merged = dict(state_features)
+        if context:
+            for k, v in context.items():
+                merged[f"_ctx.{k}"] = v
         resolved_version = version or self.registry.active_version(family=family) or ""
         package = self.registry.load_model(family=family, version=resolved_version if resolved_version else None)
         if package is None:
             return resolved_version, {"label": "no_model", "scores": []}, 0.0
 
-        vector, _ = vectorize_state_features(state_features, dims=self.registry.vector_dims)
+        vector, _ = vectorize_state_features(merged, dims=self.registry.vector_dims)
         pred, confidence = self._predict_with_package(family=family, package=package, vector=vector)
 
         if family == ModelFamily.encounter_classifier:

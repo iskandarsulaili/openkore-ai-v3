@@ -65,6 +65,12 @@ class LabelingPipeline:
         payload = dict(episode.decision_payload or {})
         action = dict(episode.executed_action or {})
         state = dict(episode.state_features or {})
+        # Include decision context (objective, horizon) in feature vector so
+        # training and prediction see the same features.
+        for _ctx_key in ("objective", "horizon"):
+            _ctx_val = payload.get(_ctx_key)
+            if _ctx_val is not None:
+                state[f"_ctx.{_ctx_key}"] = _ctx_val
         vector, feature_contrib = vectorize_state_features(state)
 
         rows: list[dict[str, object]] = []

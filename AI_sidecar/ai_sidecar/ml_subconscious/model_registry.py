@@ -37,7 +37,13 @@ def _flatten_features(value: object, *, prefix: str = "") -> dict[str, float]:
 
     if isinstance(value, str):
         key = prefix or "text"
-        flat[f"{key}.len"] = float(len(value))
+        # Encode string value as 4 hash-derived floats in [0, 1) so the model
+        # can distinguish different strings (e.g. map names, monster names)
+        # instead of collapsing them all to len(string).
+        digest = hashlib.sha256(value.encode("utf-8")).digest()
+        for i in range(4):
+            val = int.from_bytes(digest[i * 2 : (i + 1) * 2], "little") / 65535.0
+            flat[f"{key}.h{i}"] = val
         return flat
 
     if isinstance(value, dict):
@@ -47,7 +53,7 @@ def _flatten_features(value: object, *, prefix: str = "") -> dict[str, float]:
         return flat
 
     if isinstance(value, list):
-        for idx, item in enumerate(value[:32]):
+        for idx, item in enumerate(value[:256]):
             child_prefix = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
             flat.update(_flatten_features(item, prefix=child_prefix))
         return flat
@@ -81,7 +87,7 @@ def _json_default(value: object) -> object:
 class ModelRegistry:
     workspace_root: Path
     base_path: Path | None = None
-    vector_dims: int = 128
+    vector_dims: int = 512
     _lock: RLock = field(default_factory=RLock)
     _index: dict[str, dict[str, object]] = field(default_factory=dict)
 
