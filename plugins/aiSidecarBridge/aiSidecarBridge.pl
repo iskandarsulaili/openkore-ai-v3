@@ -2961,7 +2961,7 @@ sub _toggle_ai_mode {
 	return if ($now - $_last_ai_toggle_ms) < 10000;
 	$_last_ai_toggle_ms = $now;
 	$_last_ai_mode = $mode;
-	eval { Commands::run("ai $mode"); 1 };
+	eval { require AI; if ($mode eq 'auto') { AI::state(2) } elsif ($mode eq 'manual') { AI::state(1) } else { AI::state(0) }; 1 };
 }
 
 sub _trim {
@@ -3813,13 +3813,13 @@ sub _survival_check {
 	        my $_tgt_map = $_strat->{json}{target_map} || '';
 	        if ($_tgt_map ne '' && $_tgt_map ne $map) {
 	            $::config{'lockMap'} = $_tgt_map;
-	            if ($AI::AI != 2) { eval { Commands::run('ai auto'); 1 }; }
+	            if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
 	        }
 	    } else {
 	        # Fallback: stand up, try buying, sit as last resort
 	        if (0) { eval { Commands::run('stand'); 1 }; }
 	        $::config{'lockMap'} = 'prt_in';
-	        if ($AI::AI != 2) { eval { Commands::run('ai auto'); 1 }; }
+	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
 	        eval { Commands::run('buy 501 30'); 1 };
 	        eval { Commands::run('use Red Potion'); 1 };
 	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
@@ -3833,7 +3833,7 @@ sub _survival_check {
 	        $::config{'lockMap'} = 'prt_fild08';
 	    }
 	    if ($AI::AI != 2) {
-	        eval { Commands::run('ai auto'); 1 };
+	        eval { require AI; AI::state(2); 1 };
 	    }
 	    return;
 	}
@@ -3843,7 +3843,7 @@ sub _survival_check {
 
 	# ── Auto-mode: Enable if disabled and conditions safe ──
 	if ($hp_pct > 50 && $AI::AI != 2) {
-	    eval { Commands::run('ai auto'); 1 };
+	    eval { require AI; AI::state(2); 1 };
 	}
 }
 
@@ -3905,7 +3905,7 @@ sub _survival_check {
 	    # Fallback: stand, navigate to healer/prt_in, buy, use
 	    if ($ai_mode eq 'sit') { eval { Commands::run('stand'); 1 }; }
 	    $::config{'lockMap'} = 'prt_in';
-	    if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
+	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	    eval { Commands::run('buy 501 30'); 1 };
 	    eval { Commands::run('use Red Potion'); 1 };
 	    # Fall through to economy check and auto mode
@@ -3914,12 +3914,12 @@ sub _survival_check {
 	# ── Economy: If zeny low, go grind ──
 	if ($zeny < 300 && $base_lv < 99) {
 	    $::config{'lockMap'} = 'prt_fild08';
-	    if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
+	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
 
 	# ── Stay in auto mode when HP is safe ──
 	if ($hp_pct > 40 && $ai_mode !~ /auto/i) {
-	    eval { Commands::run('ai auto'); 1 };
+	    eval { require AI; AI::state(2); 1 };
 	}
 }
 
