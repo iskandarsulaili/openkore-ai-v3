@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from ai_sidecar.api.deps import get_runtime
 from ai_sidecar.contracts.ml_subconscious import (
@@ -135,4 +136,42 @@ def distill_macro(
         },
     )
     return result
+
+
+class MLOutcomeRequest(BaseModel):
+    bot_id: str = ""
+    family: str = ""
+    success: str = "yes"
+
+
+@router.post("/outcome")
+def outcome(
+    payload: MLOutcomeRequest,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict[str, object]:
+    """Receive ML execution outcome from the Perl bridge."""
+    success = payload.success == "yes"
+    if runtime.ml_promotion is not None and payload.family:
+        try:
+            from ai_sidecar.contracts.ml_subconscious import ModelFamily
+            family = ModelFamily(payload.family)
+            runtime.ml_promotion.record_outcome(
+                family=family,
+                executed=True,
+                success=success,
+            )
+            logger.info(
+                "ml_execution_outcome",
+                extra={
+                    "event": "ml_execution_outcome",
+                    "bot_id": payload.bot_id,
+                    "family": payload.family,
+                    "success": success,
+                },
+            )
+            return {"ok": True, "message": "outcome recorded"}
+        except Exception:
+            logger.exception("ml_outcome_failed")
+            return {"ok": False, "message": "outcome recording failed"}
+    return {"ok": False, "message": "ml_promotion unavailable"}
 

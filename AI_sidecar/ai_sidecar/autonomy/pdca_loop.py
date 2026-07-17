@@ -3460,6 +3460,11 @@ class PDCALoop:
                 # Force LLM on cold start (no active plan yet)
                 if self._active_plan.get(horizon) is None:
                     _use_llm = True
+                # Also force LLM for first 10 cycles to ensure Pro RO Player advice fires
+                if not hasattr(self._runtime, "_llm_warmup_cycles") or not isinstance(self._runtime._llm_warmup_cycles, int):
+                    self._runtime._llm_warmup_cycles = 0
+                if self._runtime._llm_warmup_cycles < 10:
+                    _use_llm = True
                 _trigger_reason = "conservative:no_triggers"
                 _trigger_ctx: dict[str, object] = {}
                 
@@ -4042,6 +4047,11 @@ class PDCALoop:
                     if not _allowed and _use_llm:
                         logger.info("conscious_budget_exceeded: %s — skipping LLM, using fallback", _reason)
                         _use_llm = False
+
+                # Increment warmup counter (always, not just LLM path)
+                if not hasattr(self._runtime, "_llm_warmup_cycles"):
+                    self._runtime._llm_warmup_cycles = 0
+                self._runtime._llm_warmup_cycles += 1
 
                 if not _use_llm:
                     # Emit game engine + heuristic + swarm + vendor + skill actions

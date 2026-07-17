@@ -79,6 +79,7 @@ my %bridge_cfg;
 my %bridge_policy;
 my @policy_allow;
 my @policy_deny;
+my %ml_pending_outcome;
 
 my $registered = 0;
 my $next_snapshot_at_ms = 0;
@@ -214,6 +215,7 @@ sub on_mainLoop_pre {
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
 		$next_snapshot_at_ms = $now + _cfg_int('aiSidecar_snapshotIntervalMs', 500);
 		_send_snapshot();
+		_check_ml_outcome();
 		_check_bridge_reflexes();
 	}
 
@@ -4165,6 +4167,32 @@ sub _send_discovery_data {
 }
 
 # ── Apply ML overrides from source="ml" actions ──
+# ── Check pending ML execution outcomes (survival check) ──
+sub _check_ml_outcome {
+	my $bot_id = _bot_id();
+	return unless defined $ml_pending_outcome{$bot_id};
+
+	my $pending = $ml_pending_outcome{$bot_id};
+	my $current_hp = $char ? $char->{hp} : 0;
+	my $hp_max = $pending->{hp_max} || 1;
+	my $hp_ratio = $current_hp / $hp_max;
+	my $success = 1;
+
+	if ($current_hp <= 0) {
+		$success = 0;  # bot died
+	} elsif ($hp_ratio < 0.3) {
+		$success = 0;  # critically low HP
+	}
+
+	_http_post_json('/v2/ml/outcome', {
+		bot_id => $bot_id,
+		family => $pending->{family},
+		success => ($success ? "yes" : "no"),
+	});
+	warning("[aiSidecarBridge] ml_outcome reported: family=$pending->{family} success=$success");
+	delete $ml_pending_outcome{$bot_id};
+}
+
 sub _apply_ml_override {
 	my ($override) = @_;
 	return unless defined $override && ref($override) eq 'HASH';
