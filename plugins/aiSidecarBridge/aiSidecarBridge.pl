@@ -3795,7 +3795,7 @@ sub _survival_check {
 	    # Stand up (sitting blocks movement)
 	    if ($Ai::Ai->{ai} eq 'sit') { eval { Commands::run('stand'); 1 }; }
 	    # Navigate to tool dealer so OpenKore can walk there
-	    $::config{'lockMap'} = 'ma_in01';
+	    $::config{'lockMap'} = 'prt_in';
 	    # Enable auto mode for pathfinding
 	    if ($Ai::Ai->{ai} ne 'auto') { eval { Commands::run('ai auto'); 1 }; }
 	    # Try buying potions (works if already at NPC)
@@ -3810,7 +3810,7 @@ sub _survival_check {
 	# ── Economy: Not enough zeny and not in combat → go grind ──
 	if ($zeny < 100 && $base_lv < 99) {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if ($clm eq '' || $clm eq 'ma_in01' || $clm eq 'prontera') {
+	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq 'prontera') {
 	        $::config{'lockMap'} = 'prt_fild08';
 	    }
 	    if ($Ai::Ai->{ai} ne 'auto') {
@@ -3880,7 +3880,7 @@ sub _survival_check {
 	        # Enable auto mode so OpenKore pathfinds to NPC
 	        if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
 	        # Set lockMap to tool dealer map for NPC navigation
-	        $::config{'lockMap'} = 'ma_in01';
+	        $::config{'lockMap'} = 'prt_in';
 	        # Try buying — works if near NPC, ignored until nav completes
 	        eval { Commands::run('buy 501 30'); 1 };
 	    }
@@ -3905,7 +3905,7 @@ sub _survival_check {
 	# ── Phase 5: Auto-attack mode when healthy ──
 	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if (!$clm || $clm eq '' || $clm eq 'ma_in01') {
+	    if (!$clm || $clm eq '' || $clm eq 'prt_in') {
 	        $::config{'lockMap'} = 'prt_fild08';
 	    }
 	    eval { Commands::run('ai auto'); 1 };
