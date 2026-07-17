@@ -3754,15 +3754,13 @@ sub _survival_check {
 	        }
 	    }
 	    if (!$_has_pot) {
-	        # Set lockMap to tool dealer map so OpenKore auto-navigates through portals
+	        # Stand up first (sitting blocks movement and NPC interaction)
+	        if ($ai_mode =~ /sit/i) { eval { Commands::run('stand'); 1 }; return; }
+	        # Enable auto mode so OpenKore pathfinds to NPC
+	        if ($ai_mode !~ /auto/i) { eval { Commands::run('ai auto'); 1 }; }
+	        # Set lockMap to tool dealer map for NPC navigation
 	        $::config{'lockMap'} = 'ma_in01';
-	        $::config{'lockMap_x'} = '22';
-	        $::config{'lockMap_y'} = '23';
-	        # Enable auto mode so OpenKore walks to the target
-	        if ($ai_mode !~ /auto/i) {
-	            eval { Commands::run('ai auto'); 1 };
-	        }
-	        # Try buying directly — works if already near NPC, ignored otherwise
+	        # Try buying — works if near NPC, ignored until nav completes
 	        eval { Commands::run('buy 501 30'); 1 };
 	    }
 	}
@@ -3814,7 +3812,7 @@ sub _teamplay_check {
 	    eval { Commands::run('party create "AI Team"'); 1 };
 	    # Accept any pending invites
 	    eval { Commands::run('party accept'); 1 };
-	    eval { Commands::run('party join'); 1 };
+	    eval { Commands::run('party join 1'); 1 };
 	}
 
 	# If in a party, actively invite sibling bots
@@ -3869,7 +3867,7 @@ sub _check_party_invite {
 	my $msg = shift || '';
 	if ($msg =~ /invite.*to.*party/i || $msg =~ /party.*invitation/i || $msg =~ /joined.*party/i) {
 	    eval { Commands::run('party accept'); 1 };
-	    eval { Commands::run('party join'); 1 };
+	    eval { Commands::run('party join 1'); 1 };
 	}
 }
 
