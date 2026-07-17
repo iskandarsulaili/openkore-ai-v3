@@ -3720,75 +3720,11 @@ sub _check_bridge_reflexes {
 		}
 	}
 }
-
-# ── Default survival auto-grind loop (bottom-up fallback) ──
-# Runs every mainLoop_post tick when connected. Learns skills, buys potions,
-# sits to regen, and engages auto-attack. The Pro RO LLM sits on top for strategy.
-# ── Default survival auto-grind loop (bottom-up fallback) ──
-# Runs every mainLoop_post tick when connected. Learns skills, buys potions,
-# sits to regen, and engages auto-attack. The Pro RO LLM sits on top for strategy.
-sub _survival_check {
-	my $now = _now_ms();
-	state $_last_survival_check_ms = 0;
-	return if $now - $_last_survival_check_ms < 2000;  # rate-limit to 2s
-	$_last_survival_check_ms = $now;
-
-	# Use main::char for reliable access to character state
-	my $char_ref = $main::char || $char;
-	return if !$char_ref;
-	my $hp = $char_ref->{hp} || 0;
-	my $hp_max = $char_ref->{hp_max} || 1;
-	my $zeny = $char_ref->{zeny} || 0;
-	my $map = $char_ref->{map} || '';
-	my $ai_mode = $Ai::Ai->{ai} || '';
-	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
-
-# Phase 1: Buy potions from shop when HP low (Pro RO strategy)
-	if ($hp_pct < 70 && $zeny >= 10) {
-	    my $_has_pot = 0;
-	    if ($char_ref->{inventory}) {
-	        foreach my $_item (@{$char_ref->{inventory}}) {
-	            next unless ref($_item) eq 'HASH';
-	            if ($_item->{name} && $_item->{name} =~ /potion/i && ($_item->{amount} || 0) > 0) { $_has_pot = 1; last; }
-	        }
-	    }
-	    if (!$_has_pot) {
-	        eval { Commands::run('buy 501 30'); 1 };
-	    }
-	}
-# Phase 2: Use potion when HP critically low
-	if ($hp_pct < 40) {
-	    eval { Commands::run('use Red Potion'); 1 };
-	}
-	# Phase 2: Sit to regen HP if low
-	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
-	    eval { Commands::run('sit'); 1 };
-	    return;
-	}
-
-	# Phase 3: Stand up once recovered
-	if ($hp_pct >= 80 && $ai_mode eq 'sit') {
-	    eval { Commands::run('stand'); 1 };
-	}
-
-	# Phase 5: If in Prontera and conditions OK, engage auto mode for grinding
-	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
-	    my $current_lockMap = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if (!$current_lockMap || $current_lockMap eq '') {
-	        $::config{'lockMap'} = 'prt_fild08';
-	    }
-	    eval { Commands::run('ai auto'); 1 };
-	}
-}
-
-# ── Safe character accessor (works from any scope) ──
+# ── Safe character accessor ──
 sub _safe_char {
 	return $main::char || $char;
 }
 
-# ── Default survival auto-grind loop (bottom-up fallback) ──
-# Runs every mainLoop_post tick when connected. Buys potions, sits to regen,
-# walks to heal NPC, and engages auto-attack. The Pro RO LLM sits on top.
 sub _survival_check {
 	my $now = _now_ms();
 	state $_last_sc_ms = 0;
@@ -3891,6 +3827,33 @@ sub _teamplay_check {
 	        }
 	        if (!$_already) {
 	            eval { Commands::run("party invite $_sib"); 1 };
+	        }
+	    }
+	    # Pro RO LLM: evaluate non-sibling nearby players for party
+	    if ($main::playersList) {
+	        foreach my $_pl (@{$main::playersList}) {
+	            next unless ref($_pl) eq 'HASH';
+	            my $_pn = $_pl->{name} || '';
+	            next if $_pn eq '' || $_pn eq $name;
+	            my $_is_sib = 0;
+	            foreach ('openkoreai', 'openkoreaiobs', 'openkoreaihuman') { if ($_pn eq $_) { $_is_sib = 1; last; } }
+	            next if $_is_sib;
+	            my $_already = 0;
+	            if (ref($party) eq 'HASH') {
+	                foreach my $_k (keys %$party) {
+	                    my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : $party->{$_k};
+	                    if (ref($_pm) eq 'HASH') { $_pm = $_pm->{name}||''; }
+	                    if ($_pm eq $_pn) { $_already = 1; last; }
+	                }
+	            }
+	            next if $_already;
+	            _post_event({
+	                kind => 'teamplay_candidate',
+	                player => $_pn,
+	                job => ($_pl->{job_name} || $_pl->{job} || ''),
+	                level => ($_pl->{lv} || $_pl->{level} || 0),
+	            });
+	            last;
 	        }
 	    }
 	}
