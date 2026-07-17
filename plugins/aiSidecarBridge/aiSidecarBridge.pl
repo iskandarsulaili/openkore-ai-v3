@@ -4184,13 +4184,18 @@ sub _check_ml_outcome {
 		$success = 0;  # critically low HP
 	}
 
-	_http_post_json('/v2/ml/outcome', {
+	my $resp = _http_post_json('/v2/ml/outcome', {
 		bot_id => $bot_id,
 		family => $pending->{family},
 		success => ($success ? "yes" : "no"),
 	});
-	warning("[aiSidecarBridge] ml_outcome reported: family=$pending->{family} success=$success");
-	delete $ml_pending_outcome{$bot_id};
+	if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+		delete $ml_pending_outcome{$bot_id};
+		warning("[aiSidecarBridge] ml_outcome reported: family=$pending->{family} success=$success");
+	} else {
+		# Retry on next cycle — don't delete pending outcome
+		warning("[aiSidecarBridge] ml_outcome retry pending: family=$pending->{family}");
+	}
 }
 
 sub _apply_ml_override {
