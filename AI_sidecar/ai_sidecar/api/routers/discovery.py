@@ -73,6 +73,8 @@ class HealStrategyRequest(BaseModel):
     zeny: int
     map: str = ""
     inventory: list[dict] = []
+    x: int = 0
+    y: int = 0
 
 
 class HealStrategyResponse(BaseModel):
@@ -128,7 +130,16 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
                         confidence=0.7,
                     )
 
-    # Phase 4: Check for Healer NPC on current map (Prontera)
+    # Phase 4: HP is safe (>= 50%) → go hunting instead of seeking healer
+    if req.hp_max > 0 and (req.hp / req.hp_max) >= 0.5:
+        return HealStrategyResponse(
+            strategy="go_hunting",
+            command="ai auto",
+            target_map="prt_fild08",
+            confidence=0.7,
+        )
+
+    # Phase 5: Check for Healer NPC on current map (Prontera) — only when HP < 50%
     if req.map and 'prontera' in req.map.lower():
         # If already within 6 tiles of Healer → talk directly
         if req.x and req.y:
@@ -151,10 +162,10 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
             confidence=0.85,
         )
 
-    # Phase 5: Default — auto mode, lockMap to prontera
+    # Phase 6: Default — auto mode, stay on current map (AI will have lockMap to hunt)
     return HealStrategyResponse(
         strategy="auto_navigate",
         command="ai auto",
-        target_map="prontera",
+        target_map=req.map,
         confidence=0.5,
     )
