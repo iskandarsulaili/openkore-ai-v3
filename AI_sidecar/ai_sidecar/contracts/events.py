@@ -29,6 +29,8 @@ class EventFamily(StrEnum):
     bridge_event = "bridge_event"
     bridge_reflex = "bridge_reflex"
     bridge_telemetry = "bridge_telemetry"
+    discovery_shops = "discovery_shops"
+    discovery = "discovery"
 
 
 class EventSeverity(StrEnum):

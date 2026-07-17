@@ -6022,6 +6022,7 @@ class PDCALoop:
                     _harness = getattr(self._runtime, "ml_training", None)
                     if _promotion is not None and _registry is not None and _harness is not None:
                         from ai_sidecar.contracts.ml_subconscious import ModelFamily
+                        _now = __import__("time").time()
                         for _family in ModelFamily:
                             _state = _promotion.get(family=_family)
                             if _state.get("enabled", False):
@@ -6031,10 +6032,24 @@ class PDCALoop:
                                 except Exception:
                                     pass
                                 continue
+
+                            # ── Rollback cooldown: wait 3600s before re-promoting a
+                            #    model that was disabled by auto-rollback.
+                            _stats = _state.get("stats", {})
+                            _rolled_at = _stats.get("rolled_back_at")
+                            if _rolled_at is not None:
+                                if _now - float(_rolled_at) < 3600:
+                                    continue  # still in cooldown
+
+                            # Only promote if the latest trained metrics match the
+                            # registry's active version (avoids promoting a stale
+                            # champion with metrics from a newer un-activated model).
                             _active = _registry.active_version(family=_family)
                             if not _active:
                                 continue
                             _metrics = _harness.metrics().get(_family.value, {})
+                            if _metrics.get("model_version") != _active:
+                                continue
                             _conf = _metrics.get("confidence_mean", 0.0)
                             _samples = _metrics.get("trained_samples", 0)
                             # Quality gates

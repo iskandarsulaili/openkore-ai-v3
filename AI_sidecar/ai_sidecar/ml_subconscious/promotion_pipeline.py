@@ -236,8 +236,11 @@ class GuardedPromotionPipeline:
             threshold = float(row.get("rollback_threshold") or 0.25)
             degrade = (failures / executed_n) if executed_n > 0 else 0.0
             if executed_n >= self.min_canary_evals and degrade > threshold and bool(row.get("enabled")):
+                import time
                 row["enabled"] = False
                 row["stats"]["rolled_back"] += 1
+                row["stats"]["rolled_back_at"] = time.time()
+                row["stats"]["rolled_back_version"] = row.get("model_version", "")
                 self._persist()
                 logger.error(
                     "ml_promotion_auto_rollback",

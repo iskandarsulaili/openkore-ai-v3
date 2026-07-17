@@ -2091,6 +2091,8 @@ sub _flush_event_queue {
 			'bridge_reflex' => 'bridge_reflex',
 			'bridge_event' => 'bridge_event',
 			'bridge_telemetry' => 'bridge_telemetry',
+			'discovery_shops' => 'discovery_shops',
+			'discovery' => 'discovery',
 			'snapshot' => 'bridge_event',
 			'config' => 'bridge_event',
 		);
@@ -2104,6 +2106,11 @@ sub _flush_event_queue {
 		while (my ($k, $v) = each %$event) {
 			next if $k eq 'kind' || $k eq 'reflex' || $k eq 'severity' || $k eq 'text' || $k eq 'event_type' || $k eq 'timestamp';
 			if (!defined $v) { next }
+			# Handle array/ref values: JSON-encode them
+			if (ref($v)) {
+				$tags{$k} = _encode_json($v);
+				next;
+			}
 			if ($v =~ /^-?\d+\.?\d*$/) { $numeric{$k} = $v + 0.0; }
 			else { $tags{$k} = substr($v, 0, 256); }
 		}

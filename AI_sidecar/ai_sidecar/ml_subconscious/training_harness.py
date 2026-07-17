@@ -349,6 +349,7 @@ class TrainingHarness:
         version = self.registry.save_model(family=family, package=package, metrics=metrics, activate=activate)
 
         with self._lock:
+            metrics["model_version"] = version
             self._metrics[family.value] = dict(metrics)
 
         logger.info(

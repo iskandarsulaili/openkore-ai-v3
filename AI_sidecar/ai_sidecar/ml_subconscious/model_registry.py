@@ -316,7 +316,7 @@ class ModelRegistry:
 
         Returns count of files removed.
         """
-        cleaned = 0
+        total_cleaned = 0
         for family in ModelFamily:
             family_dir = self._family_dir(family)
             if not family_dir.exists():
@@ -332,6 +332,7 @@ class ModelRegistry:
                         tracked.add(Path(p).resolve().as_posix())
 
             # Remove any .joblib file not in tracked set
+            family_cleaned = 0
             for fpath in family_dir.iterdir():
                 if fpath.suffix not in (".joblib", ".pkl"):
                     continue
@@ -339,16 +340,17 @@ class ModelRegistry:
                     continue
                 try:
                     fpath.unlink()
-                    cleaned += 1
+                    family_cleaned += 1
                 except Exception:
                     pass
 
-            if cleaned:
+            if family_cleaned:
+                total_cleaned += family_cleaned
                 logger.info(
                     "ml_registry_orphans_cleaned",
-                    extra={"event": "ml_registry_orphans_cleaned", "family": family.value, "removed": cleaned},
+                    extra={"event": "ml_registry_orphans_cleaned", "family": family.value, "removed": family_cleaned},
                 )
-        if cleaned:
-            logger.warning("ml_registry_orphan_cleanup_done", extra={"event": "ml_registry_orphan_cleanup_done", "total_removed": cleaned})
-        return cleaned
+        if total_cleaned:
+            logger.warning("ml_registry_orphan_cleanup_done", extra={"event": "ml_registry_orphan_cleanup_done", "total_removed": total_cleaned})
+        return total_cleaned
 
