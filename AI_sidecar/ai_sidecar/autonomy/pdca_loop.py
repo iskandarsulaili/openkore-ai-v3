@@ -4088,7 +4088,6 @@ class PDCALoop:
                             _pro_prog = getattr(_pro_inline_snap, "progression", None)
                             _pro_snap_lvl = int(getattr(_pro_prog, "base_level", 0) or 0) if _pro_prog else 0
                         _pro_has_valid_data = _pro_snap_map != "" and _pro_snap_lvl > 0
-                        _pro_inline_signals = {}
                         if _pro_has_valid_data:
                             _pro_inline_signals = {
                             "situation": "cold_start",
@@ -4098,7 +4097,9 @@ class PDCALoop:
                             "has_plan": self._active_plan.get(horizon) is None,
                             "death_count": 0,
                         }
-                        _pro_inline_advice = _pro_inline.get_action(_pro_inline_signals)
+                            _pro_inline_advice = _pro_inline.get_action(_pro_inline_signals)
+                        else:
+                            _pro_inline_advice = None
                         if _pro_inline_advice and float(_pro_inline_advice.get("confidence", 0) or 0) >= 0.7:
                             logger.info(
                                 "pro_ro_player_cold_start_inline[%s]: build=%s map=%s milestone=%s conf=%.2f",
