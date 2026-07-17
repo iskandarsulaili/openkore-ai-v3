@@ -1,144 +1,241 @@
 #!/usr/bin/env bash
 # ============================================================================
-# openkore AI — First-run setup for fresh machines
-# Installs all dependencies: Python, Perl, OpenKore, Qwen model,
-# Cloakbrowser, SearXNG, and all Python packages.
+# openkore-ai-v3 — First-Run Setup Wizard
+# ============================================================================
+# Guides a fresh machine from zero to running:
+#   1. System packages (git, curl, build tools, Perl modules)
+#   2. Python virtual environment + sidecar dependencies
+#   3. Environment configuration
+#   4. Cloakbrowser (optional, for anti-detection)
+#   5. Verification
+#
+# Usage:
+#   bash setup.sh
 # ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}[ERR]${NC} $*"; }
+header() { echo -e "\n${BOLD}════════════════════════════════════════════════════════════${NC}"; }
+step()  { echo -e "\n${CYAN}${BOLD}▶ $1${NC}"; }
 
-info "=== openkore AI — Setup ===\n"
+# ────────────────────────────────────────────────────────────────────────────
+# Pre-flight: root check
+# ────────────────────────────────────────────────────────────────────────────
+if [ "$(id -u)" -eq 0 ]; then
+    err "Do not run as root. Run as your normal user (sudo will be prompted where needed)."
+    exit 1
+fi
 
-# ── 1. System dependencies ────────────────────────────────────────────────
-info "Checking system dependencies..."
+header
+echo -e "  ${BOLD}openkore AI v3 — Setup Wizard${NC}"
+echo ""
+echo "  This will install all dependencies needed to run"
+echo "  the openkore multi-bot system with AI sidecar."
+echo ""
+header
+
+# ────────────────────────────────────────────────────────────────────────────
+# 1. System dependencies
+# ────────────────────────────────────────────────────────────────────────────
+step "1/6 — System packages"
+
+SYSTEM_DEPS=(git curl wget python3 python3-venv python3-pip perl make gcc sqlite3 libsqlite3-dev)
+PERL_DEPS=(libcarp-assert-perl libjson-pp-perl)
+
+info "Updating package lists..."
+sudo apt update -qq || warn "apt update failed, continuing..."
+
+info "Installing system packages..."
+sudo apt install -y -qq "${SYSTEM_DEPS[@]}" "${PERL_DEPS[@]}" || {
+    err "Failed to install system packages."
+    err "Try manually: sudo apt install -y ${SYSTEM_DEPS[*]} ${PERL_DEPS[*]}"
+    exit 1
+}
+
 for cmd in git curl wget python3 perl make gcc; do
     if ! command -v $cmd &>/dev/null; then
-        err "$cmd not found. Run: sudo apt install -y git curl wget python3 perl make gcc"
+        err "$cmd still not found after install — check your package manager"
         exit 1
     fi
 done
-info "  System deps: OK"
 
-# ── 2. Python venv + deps ─────────────────────────────────────────────────
-info "Setting up Python virtual environment..."
-cd AI_sidecar
+# Verify Perl modules
+for mod in Carp::Assert JSON::PP; do
+    if perl -e "use $mod; print qq{OK\n}" 2>/dev/null; then
+        info "  Perl module $mod: OK"
+    else
+        warn "  Perl module $mod: missing — install with: sudo cpan $mod"
+    fi
+done
+
+info "System packages: done."
+
+# ────────────────────────────────────────────────────────────────────────────
+# 2. NVIDIA / CUDA check (informational)
+# ────────────────────────────────────────────────────────────────────────────
+step "2/6 — GPU detection"
+
+if command -v nvidia-smi &>/dev/null; then
+    GPU_INFO=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
+    info "NVIDIA GPU detected: $GPU_INFO"
+else
+    warn "nvidia-smi not found — running in CPU-only mode."
+    warn "For GPU acceleration, install NVIDIA drivers + CUDA toolkit:"
+    warn "  https://developer.nvidia.com/cuda-downloads"
+fi
+
+# ────────────────────────────────────────────────────────────────────────────
+# 3. Python virtual environment
+# ────────────────────────────────────────────────────────────────────────────
+step "3/6 — Python virtual environment"
+
+cd "$SCRIPT_DIR/AI_sidecar"
+
 if [ ! -d venv ]; then
+    info "Creating Python virtual environment..."
     python3 -m venv venv
     info "  Virtual env created"
+else
+    info "  Virtual env exists"
 fi
+
+info "Installing Python packages..."
 source venv/bin/activate
 pip install --upgrade pip -q
 pip install -e . -q
-info "  Python deps: OK"
-cd ..
+deactivate
+info "Python dependencies: done."
 
-# ── 3. Environment config ──────────────────────────────────────────────────
-info "Setting up environment..."
+cd "$SCRIPT_DIR"
+
+# ────────────────────────────────────────────────────────────────────────────
+# 4. Environment configuration
+# ────────────────────────────────────────────────────────────────────────────
+step "4/6 — Environment configuration"
+
 if [ ! -f AI_sidecar/.env ]; then
     cp AI_sidecar/.env.example AI_sidecar/.env
-    warn "  Edit AI_sidecar/.env with your settings"
+    info "Created AI_sidecar/.env from example"
+    warn "  → Edit AI_sidecar/.env with your API keys and settings"
+else
+    info "  AI_sidecar/.env exists"
 fi
+
 if [ ! -f .env ]; then
-    echo "# Bot credentials" > .env
-    warn "  Add bot passwords to .env (see README)"
-fi
-info "  Environment: OK"
-
-# ── 4. Qwen model download ─────────────────────────────────────────────────
-MODEL_DIR="${MODEL_DIR:-/home/lot399/models}"
-MODEL_URL="${MODEL_URL:-https://huggingface.co/bartowski/Qwen3.6-27B-UD-Q4_K_XL-GGUF/resolve/main/qwen3.6-27b-ud-q4_k_xl.gguf}"
-MODEL_FILE="$MODEL_DIR/Qwen3.6-27B-UD-Q4_K_XL.gguf"
-
-if [ ! -f "$MODEL_FILE" ]; then
-    info "Downloading Qwen3.6-27B model (~17GB)..."
-    mkdir -p "$MODEL_DIR"
-    wget -O "$MODEL_FILE" "$MODEL_URL"
-    info "  Model downloaded"
+    cat > .env << 'EOF'
+# ============================================================================
+# openkore AI v3 — Bot Credentials
+# ============================================================================
+# Add passwords for each bot profile.
+# Naming convention: BOT_<PROFILE_NAME_UPPERCASE>_PASS
+#
+# Examples:
+#   BOT_MYCHAR_PASS=mysecret
+#   BOT_ALTCHAR_PASS=othersecret
+# ============================================================================
+EOF
+    info "Created root .env (add your bot passwords here)"
+    info "  → Add entries like: BOT_<NAME>_PASS=your_password"
 else
-    info "  Model exists: $MODEL_FILE"
+    info "  Root .env exists"
 fi
 
-# ── 5. Cloakbrowser ────────────────────────────────────────────────────────
-if [ ! -d "$SCRIPT_DIR/cloakbrowser" ]; then
-    info "Installing Cloakbrowser..."
-    git clone https://github.com/nousresearch/cloakbrowser.git
-    cd cloakbrowser && npm install && cd ..
-    info "  Cloakbrowser: OK"
-else
-    info "  Cloakbrowser: OK"
-fi
+# ────────────────────────────────────────────────────────────────────────────
+# 5. Cloakbrowser (optional, for anti-detection)
+# ────────────────────────────────────────────────────────────────────────────
+step "5/6 — Cloakbrowser (optional)"
 
-# ── 6. SearXNG ─────────────────────────────────────────────────────────────
-if ! command -v searxng &>/dev/null && [ ! -d "/usr/local/searxng" ]; then
-    info "Installing SearXNG..."
-    # Install via pip
-    pip install searxng 2>/dev/null || pip install searx 2>/dev/null || true
-    info "  SearXNG: Check docs if install fails (may need Docker)"
-else
-    info "  SearXNG: OK"
-fi
-
-# ── 7. Llama-server (llama.cpp) ────────────────────────────────────────────
-if ! command -v llama-server &>/dev/null; then
-    info "Installing llama.cpp..."
-    if command -v nvidia-smi &>/dev/null; then
-        CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --upgrade --no-cache-dir 2>/dev/null || \
-        warn "  llama-cpp-python install failed. Build from source: https://github.com/ggerganov/llama.cpp"
+if command -v node &>/dev/null; then
+    if [ ! -d "$SCRIPT_DIR/cloakbrowser" ]; then
+        info "Installing Cloakbrowser..."
+        git clone https://github.com/nousresearch/cloakbrowser.git "$SCRIPT_DIR/cloakbrowser" 2>/dev/null || {
+            warn "  git clone failed — skip or install manually"
+        }
+        if [ -d "$SCRIPT_DIR/cloakbrowser" ]; then
+            cd "$SCRIPT_DIR/cloakbrowser" && npm install && cd "$SCRIPT_DIR"
+            info "  Cloakbrowser: installed"
+        fi
     else
-        pip install llama-cpp-python 2>/dev/null || \
-        warn "  llama-cpp-python install failed (CPU mode)"
+        info "  Cloakbrowser: already present"
     fi
 else
-    info "  llama-server: OK"
+    warn "  Node.js not found — skip Cloakbrowser (anti-detection won't work)"
+    warn "  Install Node.js: sudo apt install nodejs npm"
 fi
 
-# ── 8. Start services ──────────────────────────────────────────────────────
-info "\n=== Starting services ==="
+# ────────────────────────────────────────────────────────────────────────────
+# 6. Verification
+# ────────────────────────────────────────────────────────────────────────────
+step "6/6 — Verification"
 
-# Kill any existing
-pkill -f "llama-server.*8012" 2>/dev/null || true
-pkill -f "cdp-server" 2>/dev/null || true
+PASS=0
+FAIL=0
 
-# Start cloakbrowser
-if [ -f "$SCRIPT_DIR/cloakbrowser/cdp-server.mjs" ]; then
-    cd "$SCRIPT_DIR/cloakbrowser"
-    nohup node cdp-server.mjs > /dev/null 2>&1 &
-    cd "$SCRIPT_DIR"
-    info "  Cloakbrowser: started"
+check() {
+    local desc="$1"
+    shift
+    if "$@" &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} $desc"
+        PASS=$((PASS + 1))
+    else
+        echo -e "  ${RED}✗${NC} $desc"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+check "Python 3.11+"          python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)"
+check "Perl 5.32+"            perl -e "exit($] >= 5.032 ? 0 : 1)"
+check "Git"                   command -v git
+check "Perl: Carp::Assert"    perl -e "use Carp::Assert; print qq{}" 2>/dev/null
+check "Perl: JSON::PP"        perl -e "use JSON::PP; print qq{}" 2>/dev/null
+check "Python venv exists"    [ -f "$SCRIPT_DIR/AI_sidecar/venv/bin/python" ]
+check "Sidecar package"       "$SCRIPT_DIR/AI_sidecar/venv/bin/python" -c "import fastapi, uvicorn, httpx, pydantic, yaml" 2>/dev/null
+check "Bot profiles exist"    ls "$SCRIPT_DIR/.bot_profiles/"/*/control/config.txt &>/dev/null
+
+echo ""
+if [ $FAIL -eq 0 ]; then
+    info "All checks passed! ($PASS/$((PASS+FAIL)))"
+else
+    warn "$FAIL check(s) failed — review above"
 fi
 
-# Start SearXNG (if docker available)
-if command -v docker &>/dev/null; then
-    docker run -d --name searxng \
-        --restart unless-stopped \
-        -p 127.0.0.1:8080:8080 \
-        -e SEARXNG_BASE_URL=http://localhost:8080 \
-        searxng/searxng 2>/dev/null && \
-        info "  SearXNG: started via Docker" || true
+# ────────────────────────────────────────────────────────────────────────────
+# Done
+# ────────────────────────────────────────────────────────────────────────────
+header
+echo -e "  ${BOLD}Setup complete!${NC}"
+echo ""
+echo "  Next steps:"
+echo ""
+echo "  1. Edit .env — add bot passwords:"
+echo "     nano .env"
+echo ""
+echo "  2. Edit AI_sidecar/.env — set API keys:"
+echo "     nano AI_sidecar/.env"
+echo ""
+if [ -d "$SCRIPT_DIR/.bot_profiles" ]; then
+    first_profile=$(ls -d "$SCRIPT_DIR/.bot_profiles/"*/ 2>/dev/null | head -1)
+    if [ -n "$first_profile" ]; then
+        echo "  3. Start the system:"
+        echo "     ./start.sh"
+        echo ""
+    fi
+else
+    echo "  3. Create at least one bot profile:"
+    echo "     mkdir -p .bot_profiles/myaccount/control"
+    echo "     cp -r control/* .bot_profiles/myaccount/control/"
+    echo ""
+    echo "  4. Then start:"
+    echo "     ./start.sh"
+    echo ""
 fi
-
-# ── 9. Start sidecar ───────────────────────────────────────────────────────
-info "\nStarting sidecar..."
-cd AI_sidecar
-source venv/bin/activate
-nohup python -m ai_sidecar.app >> ../logs/sidecar.log 2>&1 &
-cd ..
-info "  Sidecar: starting on port 18081"
-
-# ── 10. Done ───────────────────────────────────────────────────────────────
-info "\n=== Setup complete ==="
-info "Next steps:"
-info "  1. Edit .env with bot passwords"
-info "  2. Start Qwen model:"
-info "     CUDA_VISIBLE_DEVICES=1 llama-server --model $MODEL_FILE --host 127.0.0.1 --port 8012 --n-gpu-layers 99 &"
-info "  3. Start bots:"
-info "     perl -I src openkore.pl --control=.bot_profiles/<name>/control"
-info ""
-echo -e "${YELLOW}Run: bash setup.sh${NC}"
+echo "  (Optional) Start Cloakbrowser for anti-detection:"
+echo "    cd cloakbrowser && node cdp-server.mjs &"
+echo ""
+header
