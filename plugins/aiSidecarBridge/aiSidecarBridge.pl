@@ -4015,4 +4015,77 @@ sub _check_party_invite {
 
 # ── Wire team play into the main loop ──
 
+# ── Server Discovery: Scan NPC shops for healing/progression items ──
+sub _discover_shops {
+	my $now = _now_ms();
+	state $_last_ss = 0;
+	return if $now - $_last_ss < 3600000;
+	$_last_ss = $now;
+	# Stub — will be populated with actual NPC data from observed shops
+	_post_event({ kind => 'discovery_shops', shops => [] });
+}
+
+sub _discover_portals {
+	my $now = _now_ms();
+	state $_last_ps = 0;
+	return if $now - $_last_ps < 3600000;
+	$_last_ps = $now;
+	my %conn;
+	my $pf = $::Settings->{tablesPath} . '/portals.txt';
+	if (open(my $fh, '<', $pf)) {
+	    while (my $ln = <$fh>) {
+	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
+	        my @p = split(/\s+/, $ln); next if @p < 6;
+	        $conn{$p[0]}{$p[3]} = 1; $conn{$p[3]}{$p[0]} = 1;
+	    }
+	    close $fh;
+	}
+	if (keys %conn > 0) {
+	    _post_event({ kind => 'discovery_portals', connections => \%conn });
+	}
+}
+
+# ── Sync variants (call within same request cycle, no rate limit) ──
+sub _discover_shops_sync {
+	my @shops;
+	if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	    foreach my $_n (values %{$main::npcsList}) {
+	        next unless ref($_n) eq 'HASH' && $_n->{name} && $_n->{shop};
+	        push @shops, {
+	            name => $_n->{name}, map => $_n->{map} || '',
+	            x => $_n->{x} || 0, y => $_n->{y} || 0,
+	            shop => $_n->{shop},
+	        };
+	    }
+	}
+	return \@shops;
+}
+
+sub _discover_portals_sync {
+	my %conn;
+	my $pf = $::Settings->{tablesPath} . '/portals.txt';
+	if (open(my $fh, '<', $pf)) {
+	    while (my $ln = <$fh>) {
+	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
+	        my @p = split(/\s+/, $ln); next if @p < 6;
+	        $conn{$p[0]}{$p[3]} = 1; $conn{$p[3]}{$p[0]} = 1;
+	    }
+	    close $fh;
+	}
+	return \%conn;
+}
+
+# ── Safe inventory list ──
+sub _safe_inventory_list {
+	my $cr = _safe_char();
+	return [] if !$cr || !$cr->{inventory};
+	my @items;
+	foreach my $_i (@{$cr->{inventory}}) {
+	    next unless ref($_i) eq 'HASH';
+	    push @items, { name => $_i->{name} || '', amount => $_i->{amount} || 0 };
+	}
+	return \@items;
+}
+
+
 1;
