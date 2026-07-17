@@ -1598,7 +1598,6 @@ class PDCALoop:
         except Exception:
             logger.exception("PDCALoop thread crashed")
         finally:
-            # Clean up persistent thread pool
             if self._memory_pool is not None:
                 try:
                     self._memory_pool.shutdown(wait=False)
