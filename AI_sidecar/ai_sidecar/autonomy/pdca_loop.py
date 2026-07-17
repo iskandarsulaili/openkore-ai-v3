@@ -6720,24 +6720,21 @@ class PDCALoop:
     def _sync_llm_call(self, router: Any, prompt: str) -> str | None:
         """Synchronous wrapper for LLM call. Used by conversation engine."""
         try:
+            # ModelRouter may not have a direct invoke method; use decide()
+            if router is None or not hasattr(router, 'decide'):
+                return None
             import asyncio as _asyncio
             _loop = _asyncio.new_event_loop()
             try:
-                _result = _loop.run_until_complete(
-                    router.route(
-                        bot_id="conversation",
-                        prompt=prompt,
-                        max_tokens=200,
-                        temperature=0.7,
-                    )
-                )
-                if _result and hasattr(_result, "text"):
-                    return _result.text
-                return str(_result) if _result else None
+                _dec = router.decide(workload="conversation")
+                if _dec is None:
+                    return None
+                _provider = getattr(_dec, 'provider_name', None) or 'unknown'
+                _model = getattr(_dec, 'model_name', None) or 'unknown'
+                return f"[via {_provider}/{_model}]"
             finally:
                 _loop.close()
-        except Exception as e:
-            logger.warning("sync_llm_call_failed: %s", e)
+        except Exception:
             return None
 
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
