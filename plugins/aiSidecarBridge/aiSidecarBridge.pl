@@ -3741,15 +3741,28 @@ sub _survival_check {
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
-# Phase 1: Full HP/SP recovery via Kafra NPC (no skill points needed)
-	if ($hp_pct < 60 && _cfg_bool('aiSidecar_autoHealKafra', 1)) {
-	    # Direct talknpc to Kafra Employee at known Prontera coordinates
-	    # Uses 'c' (continue) to accept dialogue and 'r0 n' to select menu option
-	    eval { Commands::run('talk 151 29'); 1 };  # approach Kafra
-	    eval { Commands::run('talknpc 151 29 c r1 c n'); 1 };  # menu: r1=heal  # heal option
-	    warning "[aiSidecarBridge] survival: requested Kafra heal at Prontera (151,29)\n";
+# Phase 1: Buy and use potions for HP recovery (works on every server)
+	if ($hp_pct < 70 && $zeny >= 100 && _cfg_bool('aiSidecar_autoBuyPotions', 1)) {
+	    # Check inventory for existing potions first
+	    my $_has_any_pot = 0;
+	    if ($char_ref->{inventory}) {
+	        foreach my $_item (@{$char_ref->{inventory}}) {
+	            next unless ref($_item) eq 'HASH';
+	            if ($_item->{name} && $_item->{name} =~ /red.?potion|orange.?potion|white.?potion/i && ($_item->{amount} || 0) > 0) {
+	                $_has_any_pot = 1;
+	                last;
+	            }
+	        }
+	    }
+	    if (!$_has_any_pot) {
+	        eval { Commands::run('buy 30 Red Potion'); 1 };
+	        warning "[aiSidecarBridge] survival: bought Red Potions\n";
+	    }
+	    # Use a potion if HP is critically low
+	    if ($hp_pct < 40) {
+	        eval { Commands::run('use Red Potion'); 1 };
+	    }
 	}
-
 # Phase 2: Sit for regen (may fail if Basic Skill 3 missing)
 # Phase 2: Sit for regen (requires Basic Skill 3 — may fail if missing)
 	# Phase 2: Sit to regen HP if low
