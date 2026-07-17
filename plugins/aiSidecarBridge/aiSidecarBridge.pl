@@ -2494,37 +2494,22 @@ sub _http_post_json {
 
 	# ── Connection reuse (HTTP Keep-Alive) ──
 	# Cache the socket to avoid TCP handshake overhead on every request
-	state $cached_sock;
-	state $cached_host = '';
-	state $cached_port = 0;
-
-	my $sock;
-	if ($cached_sock && $cached_host eq $host && $cached_port == $port) {
-	    # Verify cached socket is still connected
-	    my $cached_peek = defined(sysread($cached_sock, my $buf, 1)) ? 1 : 0;
-	    if ($cached_peek) {
-	        $sock = $cached_sock;
-	    } else {
-	        close $cached_sock;
-	        $cached_sock = undef;
-	    }
-	} else {
-	    # Close old socket if host/port changed
-	    if ($cached_sock) {
-	        close $cached_sock;
-	        $cached_sock = undef;
-	    }
-	    $sock = IO::Socket::INET->new(
-	        PeerHost => $host,
-	        PeerPort => $port,
-	        Proto => 'tcp',
-	        Timeout => $connect_timeout,
-	    );
-	    if ($sock) {
-	        $cached_sock = $sock;
-	        $cached_host = $host;
-	        $cached_port = $port;
-	    }
+	# Always create fresh connection (cache disabled)
+	my \$sock;
+	if (\$cached_sock) {
+	    close \$cached_sock;
+	    \$cached_sock = undef;
+	}
+	\$sock = IO::Socket::INET->new(
+	    PeerHost => $host,
+	    PeerPort => $port,
+	    Proto => 'tcp',
+	    Timeout => $connect_timeout,
+	);
+	if ($sock) {
+	    $cached_sock = $sock;
+	    $cached_host = $host;
+	    $cached_port = $port;
 	}
 	if (!$sock) {
 	    return {
