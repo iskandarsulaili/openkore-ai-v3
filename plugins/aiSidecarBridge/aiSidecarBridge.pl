@@ -3740,34 +3740,40 @@ sub _survival_check {
 
 # Phase 1: Learn Basic Skill if missing (so sitting works)
 	if ($hp_pct < 80 && _cfg_bool('aiSidecar_autoLearnBasic', 1)) {
-	    # Use OpenKore Skill object to look up numeric ID from handle
-	    my $skill_handle = 'NV_BASIC';
-	    # Detect the correct Basic Skill handle for this class
-	    my $skills_hash = eval { $char->{skills} } || {};
-	    if (ref($skills_hash) eq 'HASH') {
-	        foreach my $s (keys %$skills_hash) {
-	            if ($s =~ /NV_BASIC|AL_BASIC|SM_BASIC|HT_BASIC|MG_BASIC|PR_BASIC/) {
-	                $skill_handle = $s;
-	                last;
-	            }
+	    # Find the correct Basic Skill ID from the global skills list
+	    my $skill_handle = undef;
+	    my $skill_idn = 0;
+	    foreach my $handle (@main::skillsID) {
+	        next if !defined $handle;
+	        my $s = new Skill(handle => $handle);
+	        next if !$s;
+	        my ($cat, $name) = $s->getName() =~ /(.+)\s*\-\s*(.+)/;
+	        $name ||= $s->getName();
+	        if ($name =~ /basic skill|basic/i || $handle =~ /_BASIC/) {
+	            $skill_handle = $handle;
+	            $skill_idn = $s->getIDN();
+	            last;
 	        }
 	    }
-	    # Get current level from character
-	    my $current_lv = eval { $char->{skills}->{$skill_handle}{lv} } || 0;
-	    if ($current_lv < 3) {
-	        # Get numeric skill ID for the 'skills add' command
-	        my $skill_obj = eval { new Skill(handle => $skill_handle) };
-	        if ($skill_obj) {
-	            my $skill_idn = $skill_obj->getIDN();
-	            if (defined $skill_idn && $skill_idn > 0) {
-	                for my $level ($current_lv + 1 .. 3) {
-	                    my $ok = eval { Commands::run("skills add $skill_idn"); 1 };
-	                    if ($ok) {
-	                        warning "[aiSidecarBridge] survival: learned $skill_handle level $level\n";
-	                    }
-	                    last if !$ok;  # stop if failed
+	    # If found, check current level and allocate points
+	    if ($skill_handle && $skill_idn > 0) {
+	        my $current_lv = eval { $char->{skills}->{$skill_handle}{lv} } || 0;
+	        if ($current_lv < 3) {
+	            # Use auto-skill config as fallback — set it and let OpenKore auto-learn
+	            $::config{"skills_addAuto_$skill_handle"} = 3;
+	            # Also try direct allocation via messageSender
+	            for (1 .. 3 - $current_lv) {
+	                if ($char->{points_skill} && $char->{points_skill} > 0) {
+	                    eval { $main::messageSender->sendAddSkillPoint($skill_idn); 1 };
 	                }
 	            }
+	            warning "[aiSidecarBridge] survival: enabling auto-learn for $skill_handle (idn=$skill_idn)\n";
+	        }
+	    } else {
+	        # Fallback: just use standard skill ID for common servers
+	        if ($char->{points_skill} && $char->{points_skill} > 0) {
+	            eval { $main::messageSender->sendAddSkillPoint(0); 1 };   # NV_BASIC often IDN=0
+	            $::config{'skills_addAuto_NV_BASIC'} = 3;
 	        }
 	    }
 	}
