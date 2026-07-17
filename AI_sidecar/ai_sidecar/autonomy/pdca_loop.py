@@ -3462,7 +3462,7 @@ class PDCALoop:
                     _use_llm = True
                 # Also force LLM for first 10 cycles to ensure Pro RO Player advice fires
                 if not hasattr(self._runtime, "_llm_warmup_cycles") or not isinstance(self._runtime._llm_warmup_cycles, int):
-                    self._runtime._llm_warmup_cycles = 0
+                    object.__setattr__(self._runtime, "_llm_warmup_cycles", 0)
                 if self._runtime._llm_warmup_cycles < 10:
                     _use_llm = True
                 _trigger_reason = "conservative:no_triggers"
@@ -4050,11 +4050,128 @@ class PDCALoop:
 
                 # Increment warmup counter (always, not just LLM path)
                 if not hasattr(self._runtime, "_llm_warmup_cycles"):
-                    self._runtime._llm_warmup_cycles = 0
-                self._runtime._llm_warmup_cycles += 1
-
+                    object.__setattr__(self._runtime, "_llm_warmup_cycles", 0)
+                object.__setattr__(self._runtime, "_llm_warmup_cycles", self._runtime._llm_warmup_cycles + 1)
+            
+            except Exception:
+                logger.exception("pro_ro_inline_gate_error")
+            
+            # ═══════════════════════════════════════════════════════
+            # Pro RO Player — runs EVERY cycle regardless of LLM mode
+            # Uses SnapshotCache directly, NO LLM calls required
+            # ═══════════════════════════════════════════════════════
+            try:
+                try:
+                    # 1. Cold start advice (first 3 cycles)
+                    if not hasattr(self._runtime, "_pro_ro_player_cold_start_count"):
+                        object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 0)
+                    _pro_inline_fired = self._runtime._pro_ro_player_cold_start_count < 3
+                    if _pro_inline_fired:
+                        from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                        _pro_inline = ProRoPlayerProfile()
+                        _pro_inline_snap = self._get_latest_snapshot()
+                        _pro_inline_signals = {
+                            "situation": "cold_start",
+                            "class": str(getattr(getattr(_pro_inline_snap, "progression", None), "job_name", "novice") or "novice") if _pro_inline_snap else "novice",
+                            "level": int(getattr(getattr(_pro_inline_snap, "progression", None), "base_level", 1) or 1) if _pro_inline_snap else 1,
+                            "map": str(getattr(getattr(_pro_inline_snap, "position", None), "map", "") or "") if _pro_inline_snap else "",
+                            "has_plan": self._active_plan.get(horizon) is None,
+                            "death_count": 0,
+                        }
+                        _pro_inline_advice = _pro_inline.get_action(_pro_inline_signals)
+                        if _pro_inline_advice and float(_pro_inline_advice.get("confidence", 0) or 0) >= 0.7:
+                            logger.info(
+                                "pro_ro_player_cold_start_inline[%s]: build=%s map=%s milestone=%s conf=%.2f",
+                                _cycle_bot_id if _cycle_bot_id else "?",
+                                _pro_inline_advice.get("build", "?"), _pro_inline_advice.get("starting_map", "?"),
+                                _pro_inline_advice.get("next_milestone", "?"),
+                                float(_pro_inline_advice.get("confidence", 0) or 0),
+                            )
+                            if not hasattr(self._runtime, "pro_ro_player_advice"):
+                                object.__setattr__(self._runtime, "pro_ro_player_advice", {})
+                            self._runtime.pro_ro_player_advice[_cycle_bot_id or "default"] = _pro_inline_advice
+                            # Queue high-confidence commands
+                            _pro_inline_cmd = str(_pro_inline_advice.get("command", "") or "").strip()
+                            _pro_inline_conf = float(_pro_inline_advice.get("confidence", 0) or 0)
+                            if _pro_inline_cmd and _pro_inline_conf > 0.85:
+                                _pro_inline_aq = getattr(self._runtime, "action_queue", None)
+                                if _pro_inline_aq is not None:
+                                    from datetime import UTC, datetime, timedelta
+                                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                    import hashlib as _pro_h
+                                    _pro_id = _pro_h.md5(f"pro_ro_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                                    _pro_inline_aq.enqueue(
+                                        _cycle_bot_id or "default",
+                                        ActionProposal(
+                                            action_id=f"pro_ro_{_pro_id}", kind=_pro_inline_advice.get("kind", "command"),
+                                            command=_pro_inline_cmd,
+                                            priority_tier=ActionPriorityTier.tactical,
+                                            source="planner",
+                                            created_at=datetime.now(UTC),
+                                            expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                            idempotency_key=f"pro_ro_{_pro_inline_cmd}_inline",
+                                            metadata={"source": "pro_ro_player", "confidence": _pro_inline_conf,
+                                                       "reason": str(_pro_inline_advice.get("reason", ""))[:200],
+                                                       "bot_id": _cycle_bot_id or "default"},
+                                        ),
+                                    )
+                                    logger.info("pro_ro_player_inline_action: bot=%s cmd=%s conf=%.2f",
+                                               _cycle_bot_id or "?", _pro_inline_cmd, _pro_inline_conf)
+                    
+                    # 2. Stuck detection (always runs)
+                    _pro_snap = self._get_latest_snapshot()
+                    if _pro_snap is not None:
+                        _pro_snap_d = getattr(_pro_snap, "_data", _pro_snap) if hasattr(_pro_snap, "_data") else _pro_snap
+                        if isinstance(_pro_snap_d, dict):
+                            _pro_map = str(_pro_snap_d.get("map", _pro_snap_d.get("position", {}).get("map", "")))
+                            _pro_inv = _pro_snap_d.get("inventory", {})
+                            _pro_weight = float(_pro_inv.get("weight_ratio", 0) or 0) * 100
+                            _pro_stats = _pro_snap_d.get("stats", {})
+                            _pro_hp = int(_pro_stats.get("hp", 0) or 0)
+                            _pro_hp_max = int(_pro_stats.get("max_hp", 1) or 1)
+                        else:
+                            _pro_map = str(getattr(getattr(_pro_snap, "position", None), "map", ""))
+                            _pro_inv = getattr(_pro_snap, "inventory", None)
+                            _pro_weight = float(getattr(_pro_inv, "weight_ratio", 0) or 0) * 100 if _pro_inv else 0
+                            _pro_stats = getattr(_pro_snap, "stats", None)
+                            _pro_hp = int(getattr(_pro_stats, "hp", 0) or 0) if _pro_stats else 0
+                            _pro_hp_max = int(getattr(_pro_stats, "max_hp", 1) or 1) if _pro_stats else 1
+                        
+                        _pro_overweight = _pro_weight >= 70
+                        _pro_critical_hp = _pro_hp_max > 0 and (_pro_hp / _pro_hp_max) < 0.3 and _pro_hp < 50
+                        
+                        if _pro_overweight or _pro_critical_hp:
+                            _pro_aq = getattr(self._runtime, "action_queue", None)
+                            if _pro_aq is not None:
+                                from datetime import UTC, datetime, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                import hashlib as _pro_h
+                                if _pro_critical_hp:
+                                    _pro_heal_id = _pro_h.md5(f"pro_heal_{time.monotonic_ns()}".encode()).hexdigest()[:8]
+                                    _pro_aq.enqueue(
+                                        _cycle_bot_id or "default",
+                                        ActionProposal(
+                                            action_id=f"pro_heal_{_pro_heal_id}", kind="command", command="sit",
+                                            priority_tier=ActionPriorityTier.reflex, source="reflex",
+                                            created_at=datetime.now(UTC),
+                                            expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                                            idempotency_key=f"pro_heal_{_cycle_bot_id or 'def'}",
+                                            metadata={"source": "pro_ro_player", "reason": f"Critical HP ({_pro_hp}/{_pro_hp_max})",
+                                                       "bot_id": _cycle_bot_id or "default"},
+                                        ),
+                                    )
+                                    logger.info("pro_ro_player_heal_inline: bot=%s hp=%d/%d", 
+                                               _cycle_bot_id or "?", _pro_hp, _pro_hp_max)
+                except Exception as _pro_e:
+                    logger.warning("pro_ro_player_inline_failed: %s", _pro_e)
+            except Exception:
+                logger.exception("pro_ro_player_gate_error")
+            
+            # ── Cost gate: if not_use_llm, emit heuristic actions and return ──
+            try:
                 if not _use_llm:
                     # Emit game engine + heuristic + swarm + vendor + skill actions
+                    # Emit for ALL registered bots, not just the resolved one
                     # Emit for ALL registered bots, not just the resolved one
                     _all_bot_ids: list[str] = []
                     try:
@@ -4447,9 +4564,10 @@ class PDCALoop:
             
             # ── Pro RO Player cold start advice ─────────────────
             if goal_state is not None and horizon == Horizon.SHORT_TERM:
-                # Fire cold start if no active plan OR first 3 cycles (to ensure advice gets delivered)
+                # Ensure attributes exist (RuntimeState uses slots=True, use object.__setattr__)
                 if not hasattr(self._runtime, "_pro_ro_player_cold_start_count"):
-                    self._runtime._pro_ro_player_cold_start_count = 0
+                    object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 0)
+                # Fire cold start if no active plan OR first 3 cycles
                 _cold_start_active = self._active_plan.get(horizon) is None or self._runtime._pro_ro_player_cold_start_count < 3
                 if _cold_start_active:
                     try:
@@ -4564,7 +4682,8 @@ class PDCALoop:
                     except Exception as _pro_exc:
                         logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
                     finally:
-                        self._runtime._pro_ro_player_cold_start_count += 1
+                        object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 
+                            self._runtime._pro_ro_player_cold_start_count + 1)
             
             # ── Update efficiency tracker with snapshot data ──
             if latest_snapshot is not None and horizon == Horizon.SHORT_TERM:

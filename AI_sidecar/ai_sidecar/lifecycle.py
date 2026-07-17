@@ -593,6 +593,9 @@ class RuntimeState:
     ml_labeling: LabelingPipeline | None = None
     ml_registry: ModelRegistry | None = None
     efficiency_tracker: "EfficiencyTracker | None" = None
+    _pro_ro_player_cold_start_count: int = 0
+    _llm_warmup_cycles: int = 0
+    pro_ro_player_advice: dict = field(default_factory=dict)
     ml_training: TrainingHarness | None = None
     ml_shadow: ShadowModeEvaluator | None = None
     ml_promotion: GuardedPromotionPipeline | None = None
