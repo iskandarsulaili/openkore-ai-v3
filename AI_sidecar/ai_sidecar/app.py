@@ -19,6 +19,7 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 
 from ai_sidecar.api.routers import (
+    skills,
     discovery,
     npc_dialog,
     acknowledgements,
@@ -183,6 +184,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/v1/health")
     app.include_router(ingest.router)
     app.include_router(actions.router)
+    app.include_router(skills.router)
     app.include_router(acknowledgements.router)
     app.include_router(macros.router)
     app.include_router(telemetry.router)

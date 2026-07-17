@@ -9,6 +9,7 @@ from ai_sidecar.autonomy.goal_stack import summarize_goal_stack
 from ai_sidecar.autonomy.ro_knowledge import ROKnowledgeBundle
 from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.planner.schemas import PlanHorizon, PlannerContext
+from ai_sidecar import skills_loader
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,14 @@ class PlannerContextAssembler:
             "skill_points": operational.get("skill_points"),
             "stat_points": operational.get("stat_points"),
             "skill_count": operational.get("skill_count"),
-            "skills": operational.get("skills", {}),
+            "skills": skills_loader.load_for_context({
+            "hp_ratio": operational.get("hp_ratio", 0.5),
+            "zeny": operational.get("zeny", 0),
+            "map": operational.get("map", ""),
+            "level": operational.get("level", 1),
+            "action_type": operational.get("action_type", ""),
+        }, max_skills=3),
+
         }
 
         economy_context: dict[str, object] = {
