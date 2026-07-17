@@ -7,6 +7,42 @@ import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+# ── Skill creation helper for agents ──
+
+
+def maybe_create_skill(
+    name: str,
+    content: str,
+    category: str = None,
+    provenance: str = "background_review",
+) -> dict:
+    """Create a skill from an agent's discovery.
+    
+    All CrewAI agents can call this when they discover something
+    worth persisting as a reusable skill.
+    
+    Args:
+        name: Skill name (lowercase, hyphen-separated)
+        content: SKILL.md format content with YAML frontmatter
+        category: Domain category (healing, navigation, economy, etc.)
+        provenance: 'foreground' (user) or 'background_review' (agent)
+    
+    Returns:
+        Dict with success status
+    """
+    from ai_sidecar.skills_manager import create_skill as _create
+    from ai_sidecar.skills_usage import bump as _bump
+    
+    result = _create(name=name, content=content, category=category, provenance=provenance)
+    if result.get("success"):
+        _bump(name, event="use")
+        import logging
+        logging.getLogger(__name__).info(
+            "Agent created skill: %s (category=%s)", name, category or "general"
+        )
+    return result
+
+
 
 # ── RO roles that profiles can fulfill ──────────────────────────────────────
 
