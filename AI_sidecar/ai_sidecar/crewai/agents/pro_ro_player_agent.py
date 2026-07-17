@@ -61,9 +61,9 @@ RACE_HINTS: dict[str, str] = {
 
 CLASS_EARLY_GAME: dict[str, dict[str, Any]] = {
     "novice": {
-        "first_map": "izlude",
-        "level_range": (1, 10),
-        "advice": "As a Novice, train on Porings, Lunatics, and Fabres just outside town. Pump DEX to 20 first for hit rate, then STR. Do the novice training ground quest for free gear.",
+        "first_map": "prt_fild00",
+        "level_range": (1, 15),
+        "advice": "As a Novice, train on Porings, Lunatics, and Fabres in prt_fild00 (south of Prontera). Pump DEX to 20 first for hit rate, then STR. Do the novice training ground quest for free gear.",
         "stats": "STR 20 > DEX 20 > rest STR",
         "equipment": "Sword[3] + 3x Fabre Card, Cotton Shirt, Sandals",
     },
