@@ -2498,7 +2498,14 @@ sub _http_post_json {
 
 	my $sock;
 	if ($cached_sock && $cached_host eq $host && $cached_port == $port) {
-	    $sock = $cached_sock;
+	    # Verify cached socket is still connected
+	    my $cached_peek = defined(sysread($cached_sock, my $buf, 1)) ? 1 : 0;
+	    if ($cached_peek) {
+	        $sock = $cached_sock;
+	    } else {
+	        close $cached_sock;
+	        $cached_sock = undef;
+	    }
 	} else {
 	    # Close old socket if host/port changed
 	    if ($cached_sock) {
