@@ -263,6 +263,7 @@ sub on_mainLoop_post {
 	}
 	# ── Default survival auto-grind loop (bottom-up fallback) ──
 	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
+		_apply_bot_config();
 		_survival_check();
 		_teamplay_check();
 	}
@@ -3725,9 +3726,122 @@ sub _check_bridge_reflexes {
 		}
 	}
 }
+sub _apply_bot_config {
+	# Apply optimal OpenKore configs for autonomous operation
+	# (Overrides user config with AI-optimized values)
+	
+	# Enable continuous auto-attack on monsters
+	if (defined $::config) {
+	    $::config{'attackAuto'} = '2';
+	    $::config{'attackAuto_inLockOnly'} = '1';
+	    $::config{'attackAuto_followTarget'} = '0';
+	    $::config{'attackAuto_onlyWhenSafe'} = '0';
+	    $::config{'attackAuto_noMove'} = '0';
+	    $::config{'sitAuto_hp_lower'} = '0';  # Disable sit auto (bridge handles it)
+	    $::config{'sitAuto_hp_upper'} = '0';
+	    $::config{'sitAuto_maxDmg'} = '99999';
+	    
+	    # Auto-pickup everything (we sell junk)
+	    $::config{'itemsTakeAuto'} = '2';
+	    $::config{'itemsTakeAuto_party'} = '1';
+	    $::config{'itemsGatherAuto'} = '2';
+	    
+	    # Auto-sell junk items (Jellopy, Stems, etc.)
+	    $::config{'sellAuto'} = '1';
+	    $::config{'sellAuto_npc'} = 'prontera 179 187';  # General Store
+	    $::config{'sellAuto_distance'} = '25';
+	    
+	    # Storage (deposit junk, withdraw potions)
+	    $::config{'storageAuto'} = '1';
+	    $::config{'storageAuto_npc'} = 'prontera 151 29';  # Kafra
+	    $::config{'storageAuto_distance'} = '5';
+	    $::config{'storageAuto_npc_type'} = '1';
+	    $::config{'storageAuto_npc_steps'} = 'c r1 c';
+	    $::config{'relogAfterStorage'} = '0';
+	    $::config{'minStorageZeny'} = '0';
+	    
+	    # Party auto-join
+	    $::config{'partyAuto'} = '1';
+	    $::config{'partyAutoShare'} = '1';
+	}
+}
+
 # ── Safe character accessor ──
 sub _safe_char {
 	return $main::char || $char;
+}
+
+# ── Survival / Progression monitor (last-resort fallback) ──
+# Most execution is handled by OpenKore's built-in systems (attackAuto,
+# buyAuto, sellAuto, items_control). This function only fires when the
+# Pro RO LLM's goals detect no progression for >5 minutes, or when
+# HP is critically low (< 20%) as an emergency override.
+sub _survival_check {
+	my $now = _now_ms();
+	state $_last_sc_ms = 0;
+	return if $now - $_last_sc_ms < 60000;  # Check every 1 MINUTE (was 2s)
+	$_last_sc_ms = $now;
+
+	my $cr = _safe_char();
+	return if !$cr;
+	my $hp = $cr->{hp} || 0;
+	my $hp_max = $cr->{hp_max} || 1;
+	my $zeny = $cr->{zeny} || 0;
+	my $base_lv = $cr->{lv} || $cr->{level} || 1;
+	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+
+	# ── Emergency: HP critically low (< 20%) → use potion or force-regen ──
+	if ($hp_pct < 20 && $hp_pct > 0) {
+	    # Try using a potion first
+	    eval { Commands::run('use Red Potion'); 1 };
+	    eval { Commands::run('use Orange Potion'); 1 };
+	    # If no potions and critically low, emergency sit
+	    eval { Commands::run('sit'); 1 };
+	    return;
+	}
+
+	# ── Economy: Not enough zeny and not in combat → go grind ──
+	if ($zeny < 100 && $base_lv < 99) {
+	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
+	    if ($clm eq '' || $clm eq 'ma_in01' || $clm eq 'prontera') {
+	        $::config{'lockMap'} = 'prt_fild08';
+	    }
+	    if ($Ai::Ai->{ai} ne 'auto') {
+	        eval { Commands::run('ai auto'); 1 };
+	    }
+	    return;
+	}
+
+	# ── Progression: Apply optimal configs if not already set ──
+	_apply_bot_config();
+
+	# ── Auto-mode: Enable if disabled and conditions safe ──
+	if ($hp_pct > 50 && $Ai::Ai->{ai} ne 'auto') {
+	    eval { Commands::run('ai auto'); 1 };
+	}
+}
+
+# ── Economy / Sell loop (auto-sell junk items for zeny) ──
+# This is called by the survival_check when zeny is needed.
+sub _sell_junk_items {
+	my $cr = _safe_char();
+	return if !$cr || !$cr->{inventory};
+	
+	# Items worth less than 100z that should be sold automatically
+	my %sell_items = (
+	    'Jellopy' => 1, 'Stem' => 1, 'Empty Bottle' => 1,
+	    'Red Herb' => 1, 'Yellow Herb' => 1, 'White Herb' => 1,
+	    'Feather' => 1, 'Cactus Needle' => 1, 'Shell' => 1,
+	);
+	
+	foreach my $item (@{$cr->{inventory}}) {
+	    next unless ref($item) eq 'HASH';
+	    my $iname = $item->{name} || '';
+	    my $iamount = $item->{amount} || 0;
+	    next if $iname eq '' || $iamount < 1;
+	    next unless $sell_items{$iname};
+	    eval { Commands::run("sell $iname"); 1 };
+	}
 }
 
 sub _survival_check {
@@ -3792,10 +3906,14 @@ sub _survival_check {
 }
 
 # ── Team Play: Auto-party and coordinate sibling bots ──
+
+# ── Team Play: Auto-party with sibling bots ──
+# Sub_teamplay_check runs every 30s. Creates/joins party, invites siblings,
+# and sends non-sibling candidates to Pro RO LLM for evaluation.
 sub _teamplay_check {
 	my $now = _now_ms();
 	state $_last_tp_ms = 0;
-	return if $now - $_last_tp_ms < 30000;  # check every 30s
+	return if $now - $_last_tp_ms < 30000;
 	$_last_tp_ms = $now;
 
 	my $cr = _safe_char();
@@ -3803,20 +3921,16 @@ sub _teamplay_check {
 	my $name = $cr->{name} || '';
 	return if $name eq '';
 
-	# Get current party info
 	my $party = $main::partiesList;
 	my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
 
 	if (!$in_party) {
-	    # Try to create a party (only the first bot should succeed)
 	    eval { Commands::run('party create "AI Team"'); 1 };
-	    # Accept any pending invites
 	    eval { Commands::run('party accept'); 1 };
-	    eval { Commands::run('party join 1'); 1 };
 	}
 
-	# If in a party, actively invite sibling bots
 	if ($in_party) {
+	    # Auto-invite known sibling bots
 	    my @_siblings = ('openkoreai', 'openkoreaiobs', 'openkoreaihuman');
 	    foreach my $_sib (@_siblings) {
 	        next if $_sib eq $name;
@@ -3832,6 +3946,7 @@ sub _teamplay_check {
 	            eval { Commands::run("party invite $_sib"); 1 };
 	        }
 	    }
+
 	    # Pro RO LLM: evaluate non-sibling nearby players for party
 	    if ($main::playersList) {
 	        foreach my $_pl (@{$main::playersList}) {
@@ -3861,6 +3976,8 @@ sub _teamplay_check {
 	    }
 	}
 }
+
+
 
 # ── Hook: Auto-accept party invites from console messages ──
 sub _check_party_invite {
