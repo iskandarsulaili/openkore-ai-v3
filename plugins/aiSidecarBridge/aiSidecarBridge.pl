@@ -261,6 +261,10 @@ sub on_mainLoop_post {
 		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
 		$next_event_ingest_at_ms = $now + $next_delay_ms;
 	}
+	# ── Default survival auto-grind loop (bottom-up fallback) ──
+	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && $char && $char->{hp}) {
+		_survival_check();
+	}
 }
 
 sub on_add_actor_list_probe {
@@ -2102,6 +2106,12 @@ sub _flush_event_queue {
 	my $resp = _http_post_json('/v2/ingest/event', $payload);
 	my $status = _http_status_code($resp);
 	if ($status < 200 || $status >= 300) {
+		if ($status >= 400 && $status < 500) {
+			# Client error (422 etc) — discard batch, won't fix on retry
+			_throttled_warning('v2_event_discarded', "[aiSidecarBridge] v2 event discarded status=$status (client error, discarding batch).");
+			$consecutive_v2_event_failures += 1;
+			return 0;
+		}
 		unshift @event_queue, @batch;
 		my $max_queue = _cfg_int('aiSidecar_maxEventQueue', 300);
 		$max_queue = 50 if $max_queue < 50;
@@ -2204,6 +2214,12 @@ sub _flush_config_updates {
 
 	my $resp = _http_post_json('/v2/ingest/config', $payload);
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+		if ($resp && $resp->{status} >= 400 && $resp->{status} < 500) {
+			# Client error — discard pending keys, won't fix on retry
+			foreach my $key (@keys) { delete $pending_config_keys{$key}; }
+			_throttled_warning('v2_config_discarded', "[aiSidecarBridge] v2 config discarded status=$resp->{status} (client error, cleared pending).");
+			return;
+		}
 		_throttled_warning('v2_config_failed', '[aiSidecarBridge] v2 config push failed, pending keys retained.');
 		return;
 	}
@@ -3675,6 +3691,87 @@ sub _check_bridge_reflexes {
 				}
 			}
 		}
+	}
+}
+
+# ── Default survival auto-grind loop (bottom-up fallback) ──
+# Runs every mainLoop_post tick when connected. Learns skills, buys potions,
+# sits to regen, and engages auto-attack. The Pro RO LLM sits on top for strategy.
+sub _survival_check {
+	my $now = _now_ms();
+	state $_last_survival_check_ms = 0;
+	return if $now - $_last_survival_check_ms < 2000;  # rate-limit to 2s
+	$_last_survival_check_ms = $now;
+
+	my $hp = $char->{hp} || 0;
+	my $hp_max = $char->{hp_max} || 1;
+	my $sp = $char->{sp} || 0;
+	my $sp_max = $char->{sp_max} || 1;
+	my $zeny = $char->{zeny} || 0;
+	my $map = $char->{map} || '';
+	my $ai_mode = $Ai::Ai->{ai} || '';
+
+	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+	my $sp_pct = $sp_max > 0 ? int($sp * 100 / $sp_max) : 0;
+
+	# Phase 1: Learn Basic Skill if missing (so sitting works)
+	if ($hp_pct < 80 && _cfg_bool('aiSidecar_autoLearnBasic', 1)) {
+	    my $skills = eval { $char->{skills} } || {};
+	    my $basic_skill = 0;
+	    if (ref($skills) eq 'HASH') {
+	        foreach my $s (keys %$skills) {
+	            $basic_skill = $skills->{$s}{lv} || 0 if $s =~ /NV_BASIC|AL_BASIC|SM_BASIC|HT_BASIC|MG_BASIC|PR_BASIC/;
+	        }
+	    }
+	    # Try learning Basic Skill up to level 3
+	    for my $level (1..3) {
+	        if ($basic_skill < $level) {
+	            eval { Commands::run("skills_add NV_BASIC $level"); 1 };
+	            if ($@) {
+	                # Alternative skill IDs for different classes
+	                eval { Commands::run("skills_add AL_BASIC $level"); 1 };
+	            }
+	        }
+	    }
+	}
+
+	# Phase 2: Sit to regen HP if low
+	if ($hp_pct < 60 && $hp_pct > 0 && $ai_mode ne 'sit') {
+	    eval { Commands::run('sit'); 1 };
+	    return;  # Wait for regen to take effect
+	}
+
+	# Phase 3: Stand up once recovered
+	if ($hp_pct >= 80 && $ai_mode eq 'sit') {
+	    eval { Commands::run('stand'); 1 };
+	}
+
+	# Phase 4: Buy potions if in Prontera and have zeny but no potions
+	if ($map =~ /prontera/i && $zeny >= 100) {
+	    my $has_pots = 0;
+	    if ($char->{inventory}) {
+	        foreach my $item (@{$char->{inventory}}) {
+	            next unless ref($item) eq 'HASH';
+	            if ($item->{name} && $item->{name} =~ /red.?potion|orange.?potion|white.?potion/i && ($item->{amount} || 0) > 0) {
+	                $has_pots = 1;
+	                last;
+	            }
+	        }
+	    }
+	    if (!$has_pots) {
+	        # Try buying from NPC tool dealer in Prontera
+	        eval { Commands::run('buy 30 Red Potion'); 1 };
+	    }
+	}
+
+	# Phase 5: If in Prontera and HP/general OK, engage auto mode for grinding
+	if ($hp_pct >= 50 && $ai_mode !~ /auto/i) {
+	    # Set lockMap to training area if not already set
+	    my $current_lockMap = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
+	    if (!$current_lockMap || $current_lockMap eq '') {
+	        $::config{'lockMap'} = 'prt_fild08';
+	    }
+	    eval { Commands::run('ai auto'); 1 };
 	}
 }
 
