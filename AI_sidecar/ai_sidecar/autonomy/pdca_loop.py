@@ -4543,12 +4543,61 @@ class PDCALoop:
                     except Exception as _pro_exc:
                         logger.warning("pro_ro_player_cold_start_failed: %s", _pro_exc)
             
-            # ── Pro RO Player NPC dialog stuck detection ──────────
+            # ── Pro RO Player stuck detection (snapshot-based + dialog-based) ──
             if latest_snapshot is not None and horizon == Horizon.SHORT_TERM:
                 try:
+                    # ── Snapshot-based stuck detection (works without dialog state) ──
+                    _sn_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
+                    _sn_prog = getattr(latest_snapshot, "progression", None)
+                    _sn_level = int(getattr(_sn_prog, "base_level", 1) or 1) if _sn_prog is not None else 1
+                    _sn_class = str(getattr(_sn_prog, "job_name", "novice") or "novice") if _sn_prog is not None else "novice"
+                    _sn_inv = getattr(latest_snapshot, "inventory", None)
+                    _sn_weight = float(getattr(_sn_inv, "weight_ratio", 0) or 0) * 100 if _sn_inv is not None else 0
+                    _sn_zeny = int(getattr(_sn_inv, "zeny", 0) or 0) if _sn_inv is not None else 0
+                    _sn_stats = getattr(latest_snapshot, "stats", None)
+                    _sn_hp = int(getattr(_sn_stats, "hp", 0) or 0) if _sn_stats is not None else 0
+                    _sn_hp_max = int(getattr(_sn_stats, "max_hp", 1) or 1) if _sn_stats is not None else 1
+                    
+                    _is_overweight = _sn_weight >= 70
+                    _is_critical_hp = _sn_hp_max > 0 and (_sn_hp / _sn_hp_max) < 0.3 and _sn_hp < 50
+                    
+                    # Track stuck cycles per bot using runtime state
+                    _stuck_tracker = getattr(self._runtime, "_stuck_cycle_tracker", None)
+                    if _stuck_tracker is None:
+                        _stuck_tracker = {}
+                        self._runtime._stuck_cycle_tracker = _stuck_tracker
+                    
+                    _bot_id = decision_meta.bot_id
+                    _prev = _stuck_tracker.get(_bot_id, {})
+                    _prev_map = _prev.get("map", "")
+                    _prev_weight = _prev.get("weight", 0)
+                    _stuck_since = _prev.get("stuck_since", time.time())
+                    _stuck_cycles = _prev.get("stuck_cycles", 0)
+                    
+                    # Detect stuck: same town map for multiple cycles with weight > 70%
+                    _is_stuck_in_town = (
+                        _sn_map in ("prt_in", "prontera", "morocc", "payon", "geffen", "aldebaran", "alberta")
+                        and _sn_map == _prev_map
+                        and _is_overweight
+                        and _prev_weight >= 70
+                    )
+                    
+                    if _is_stuck_in_town:
+                        _stuck_cycles += 1
+                    else:
+                        _stuck_since = time.time()
+                        _stuck_cycles = 0
+                    
+                    _stuck_tracker[_bot_id] = {
+                        "map": _sn_map,
+                        "weight": _sn_weight,
+                        "stuck_since": _stuck_since,
+                        "stuck_cycles": _stuck_cycles,
+                    }
+                    
+                    # Also try to init NPCDialogEngine for dialog-based detection
                     _npc_dialog_engine = getattr(self._runtime, "npc_dialog", None)
                     if _npc_dialog_engine is None:
-                        # Lazy init if not yet created
                         try:
                             from ai_sidecar.npc_dialog import NPCDialogEngine
                             _llm = None
@@ -4559,172 +4608,133 @@ class PDCALoop:
                             self._runtime.npc_dialog = _npc_dialog_engine
                         except Exception as e:
                             logger.warning("npc_dialog_lazy_init_failed: %s", e)
+                    
+                    # Get dialog-based failure count
+                    _failure_count = 0
+                    _npc_name = "unknown"
+                    _npc_type = "generic"
                     if _npc_dialog_engine is not None:
-                        _bot_id = decision_meta.bot_id
                         _dialog_state = _npc_dialog_engine.get_state(_bot_id)
-                        _failure_count = _dialog_state.failure_count if _dialog_state is not None else 0
+                        if _dialog_state is not None:
+                            _failure_count = _dialog_state.failure_count
+                            _npc_name = _dialog_state.npc_name
+                            _npc_type = _dialog_state.npc_type
+                    
+                    # Combine signals: EITHER dialog failures OR snapshot-based stuck detection
+                    _is_stuck = _failure_count > 0 or (_stuck_cycles >= 3 and _is_stuck_in_town)
+                    
+                    if _is_stuck or _is_overweight or _is_critical_hp:
+                        _npc_signals = {
+                            "situation": "npc_dialog_stuck" if _failure_count > 0 else "stuck",
+                            "npc_name": _npc_name,
+                            "npc_type": _npc_type,
+                            "map": _sn_map,
+                            "level": _sn_level,
+                            "class": _sn_class,
+                            "weight_pct": _sn_weight,
+                            "hp": _sn_hp,
+                            "max_hp": _sn_hp_max,
+                            "zeny": _sn_zeny,
+                            "weight_over_70": _is_overweight,
+                            "attempt_count": _failure_count,
+                            "stuck_cycles": _stuck_cycles,
+                            "failure_type": "repeated_failure" if _failure_count > 0 else ("stuck_in_town" if _stuck_cycles >= 3 else ""),
+                        }
                         
-                        # Extract HP/weight from snapshot for full stuck analysis
-                        _sn_hp = 0; _sn_hp_max = 1; _sn_weight = 0; _sn_zeny = 0
-                        _sn_map = str(getattr(getattr(latest_snapshot, "position", None), "map", "") or "")
-                        _sn_prog = getattr(latest_snapshot, "progression", None)
-                        _sn_level = int(getattr(_sn_prog, "base_level", 1) or 1) if _sn_prog is not None else 1
-                        _sn_class = str(getattr(_sn_prog, "job_name", "novice") or "novice") if _sn_prog is not None else "novice"
-                        _sn_inv = getattr(latest_snapshot, "inventory", None)
-                        if _sn_inv is not None:
-                            _sn_weight = float(getattr(_sn_inv, "weight_ratio", 0) or 0) * 100
-                            _sn_zeny = int(getattr(_sn_inv, "zeny", 0) or 0)
-                        _sn_stats = getattr(latest_snapshot, "stats", None)
-                        if _sn_stats is not None:
-                            _sn_hp = int(getattr(_sn_stats, "hp", 0) or 0)
-                            _sn_hp_max = int(getattr(_sn_stats, "max_hp", 1) or 1)
+                        # Use Pro RO Player to analyze
+                        from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                        _npc_pro = ProRoPlayerProfile()
+                        _npc_advice = _npc_pro.get_action(_npc_signals)
                         
-                        # Detect stuck patterns from snapshot (independent of dialog state)
-                        _is_overweight = _sn_weight >= 70
-                        _is_critical_hp = _sn_hp_max > 0 and (_sn_hp / _sn_hp_max) < 0.3 and _sn_hp < 50
-                        _is_stuck_in_town = _is_overweight and _sn_map in ("prt_in", "prontera", "morocc", "payon", "geffen", "aldebaran", "alberta")
-                        
-                        # Build NPC dialog signals
-                        if _failure_count > 0 or _is_overweight or _is_critical_hp:
-                            _npc_signals = {
-                                "situation": "npc_dialog_stuck" if _failure_count > 0 else "stuck",
-                                "npc_name": _dialog_state.npc_name if _dialog_state else "unknown",
-                                "npc_type": _dialog_state.npc_type if _dialog_state else "generic",
-                                "map": _sn_map,
-                                "level": _sn_level,
-                                "class": _sn_class,
-                                "weight_pct": _sn_weight,
-                                "hp": _sn_hp,
-                                "max_hp": _sn_hp_max,
-                                "zeny": _sn_zeny,
-                                "weight_over_70": _is_overweight,
-                                "attempt_count": _failure_count,
-                                "failure_type": "repeated_failure" if _failure_count > 0 else "",
-                            }
+                        if _npc_advice is not None and float(_npc_advice.get("confidence", 0) or 0) >= 0.7:
+                            _npc_conf = float(_npc_advice.get("confidence", 0) or 0)
+                            _npc_seq = str(_npc_advice.get("npc_sequence", "") or "")
+                            _npc_npc_name = str(_npc_advice.get("npc_name", "") or "")
+                            _npc_wrong = bool(_npc_advice.get("wrong_npc", False))
                             
-                            # Use Pro RO Player to analyze the situation
-                            from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
-                            _npc_pro = ProRoPlayerProfile()
-                            _npc_advice = _npc_pro.get_action(_npc_signals)
+                            logger.info(
+                                "pro_ro_player_stuck_analysis: bot=%s map=%s hp=%d/%d weight=%.0f%% cycles=%d dialog_failures=%d seq=%s conf=%.2f",
+                                _bot_id, _sn_map, _sn_hp, _sn_hp_max, _sn_weight,
+                                _stuck_cycles, _failure_count, _npc_seq, _npc_conf,
+                            )
                             
-                            if _npc_advice is not None and float(_npc_advice.get("confidence", 0) or 0) >= 0.7:
-                                _npc_conf = float(_npc_advice.get("confidence", 0) or 0)
-                                _npc_seq = str(_npc_advice.get("npc_sequence", "") or "")
-                                _npc_npc_name = str(_npc_advice.get("npc_name", "") or "")
-                                _npc_wrong = bool(_npc_advice.get("wrong_npc", False))
-                                
-                                logger.info(
-                                    "pro_ro_player_npc_analysis: bot=%s map=%s hp=%d/%d weight=%.0f%% npc=%s seq=%s conf=%.2f",
-                                    _bot_id, _sn_map, _sn_hp, _sn_hp_max, _sn_weight,
-                                    _npc_npc_name, _npc_seq, _npc_conf,
-                                )
-                                
-                                # Store advice for planner
-                                if not hasattr(self._runtime, "pro_ro_player_advice"):
-                                    self._runtime.pro_ro_player_advice = {}
-                                self._runtime.pro_ro_player_advice[f"{_bot_id}_npc"] = _npc_advice
-                                
-                                # Use NPCDiscoveryEngine to find the correct vendor NPC
-                                _npc_disc = getattr(self._runtime, "npc_discovery", None)
-                                _discovered_cmd = None
-                                _discovered_npc = None
-                                if _npc_disc is not None and _is_stuck_in_town:
-                                    try:
-                                        _discovered_npc = _npc_disc.discover_vendor_npc(
-                                            latest_snapshot, _sn_map, "vendor"
+                            # Store advice for planner
+                            if not hasattr(self._runtime, "pro_ro_player_advice"):
+                                self._runtime.pro_ro_player_advice = {}
+                            self._runtime.pro_ro_player_advice[f"{_bot_id}_npc"] = _npc_advice
+                            
+                            # Use NPCDiscoveryEngine to find the correct vendor NPC
+                            _npc_disc = getattr(self._runtime, "npc_discovery", None)
+                            _discovered_cmd = None
+                            _discovered_npc = None
+                            if _npc_disc is not None and _is_stuck_in_town:
+                                try:
+                                    _discovered_npc = _npc_disc.discover_vendor_npc(
+                                        latest_snapshot, _sn_map, "vendor"
+                                    )
+                                    if _discovered_npc:
+                                        _discovered_cmd = f"talknpc {_discovered_npc['x']} {_discovered_npc['y']}"
+                                        logger.info(
+                                            "npc_discovered_via_actor_scan: bot=%s npc=%s at (%d,%d) dist=%.0f",
+                                            _bot_id, _discovered_npc.get("name", "?"),
+                                            _discovered_npc.get("x", 0), _discovered_npc.get("y", 0),
+                                            _discovered_npc.get("distance", 0),
                                         )
-                                        if _discovered_npc:
-                                            _discovered_cmd = f"talknpc {_discovered_npc['x']} {_discovered_npc['y']}"
-                                            logger.info(
-                                                "npc_discovered_via_actor_scan: bot=%s npc=%s at (%d,%d) dist=%.0f",
-                                                _bot_id, _discovered_npc.get("name", "?"),
-                                                _discovered_npc.get("x", 0), _discovered_npc.get("y", 0),
-                                                _discovered_npc.get("distance", 0),
-                                            )
-                                    except Exception as e:
-                                        logger.warning("npc_discovery_scan_failed: %s", e)
+                                except Exception as e:
+                                    logger.warning("npc_discovery_scan_failed: %s", e)
+                            
+                            # Queue actionable commands
+                            _npc_aq = getattr(self._runtime, "action_queue", None)
+                            if _npc_aq is not None and _npc_conf > 0.7:
+                                from datetime import UTC, datetime, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                import hashlib as _nh
                                 
-                                # Queue actionable commands
-                                _npc_aq = getattr(self._runtime, "action_queue", None)
-                                if _npc_aq is not None and _npc_conf > 0.7:
-                                    from datetime import UTC, datetime, timedelta
-                                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                                    import hashlib as _nh
-                                    
-                                    # Action 1: Talk to the discovered NPC (if found dynamically)
-                                    if _discovered_cmd:
-                                        _talk_id = _nh.md5(f"npc_talk_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                                        _npc_aq.enqueue(_bot_id, ActionProposal(
-                                            action_id=f"npc_talk_{_talk_id}",
-                                            kind="command",
-                                            command=_discovered_cmd,
-                                            priority_tier=ActionPriorityTier.tactical,
-                                            source="planner",
-                                            created_at=datetime.now(UTC),
-                                            expires_at=datetime.now(UTC) + timedelta(seconds=60),
-                                            idempotency_key=f"npc_talk_{_discovered_npc.get('name','?')}_{_bot_id}" if _discovered_npc else f"npc_talk_{_bot_id}",
-                                            metadata={
-                                                "source": "pro_ro_player",
-                                                "reason": f"Discovered vendor NPC {_discovered_npc.get('name','?')} via actor scan",
-                                                "npc_sequence": _npc_seq,
-                                                "npc_name": _discovered_npc.get("name", ""),
-                                                "npc_x": _discovered_npc.get("x", 0),
-                                                "npc_y": _discovered_npc.get("y", 0),
-                                                "failure_count": _failure_count,
-                                                "bot_id": _bot_id,
-                                            },
-                                        ))
-                                        logger.info("npc_talk_action_queued: bot=%s cmd=%s", _bot_id, _discovered_cmd)
-                                    
-                                    # Action 2: Survival - sit and heal if critical HP
-                                    if _is_critical_hp:
-                                        _heal_id = _nh.md5(f"npc_heal_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                                        _npc_aq.enqueue(_bot_id, ActionProposal(
-                                            action_id=f"npc_heal_{_heal_id}",
-                                            kind="command",
-                                            command="sit",
-                                            priority_tier=ActionPriorityTier.reflex,
-                                            source="reflex",
-                                            created_at=datetime.now(UTC),
-                                            expires_at=datetime.now(UTC) + timedelta(seconds=30),
-                                            idempotency_key=f"npc_heal_{_bot_id}",
-                                            metadata={
-                                                "source": "pro_ro_player",
-                                                "reason": f"Critical HP ({_sn_hp}/{_sn_hp_max}) - forced sit to regenerate",
-                                                "hp": _sn_hp,
-                                                "max_hp": _sn_hp_max,
-                                                "bot_id": _bot_id,
-                                            },
-                                        ))
-                                        logger.info("npc_sit_action_queued: bot=%s hp=%d/%d", _bot_id, _sn_hp, _sn_hp_max)
-                                    
-                                    # Action 3: Sell junk / manage weight if overweight
-                                    if _is_overweight:
-                                        _sell_id = _nh.md5(f"npc_sell_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                                        _npc_aq.enqueue(_bot_id, ActionProposal(
-                                            action_id=f"npc_sell_{_sell_id}",
-                                            kind="command",
-                                            command="ai auto",
-                                            priority_tier=ActionPriorityTier.tactical,
-                                            source="planner",
-                                            created_at=datetime.now(UTC),
-                                            expires_at=datetime.now(UTC) + timedelta(seconds=120),
-                                            idempotency_key=f"npc_sell_{_bot_id}",
-                                            metadata={
-                                                "source": "pro_ro_player",
-                                                "reason": f"Weight {_sn_weight:.0f}% over 70% - returning to auto mode to sell/deposit",
-                                                "weight_pct": _sn_weight,
-                                                "bot_id": _bot_id,
-                                            },
-                                        ))
-                                        logger.info("npc_sell_action_queued: bot=%s weight=%.0f%%", _bot_id, _sn_weight)
-                                    
-                                    # Trigger replan for stuck situations
-                                    if _failure_count > 0 or (_is_critical_hp and _is_stuck_in_town):
-                                        replan_reasons.append("npc_stuck_override")
-                                        force_replan = True
+                                # Action 1: Talk to discovered NPC
+                                if _discovered_cmd:
+                                    _talk_id = _nh.md5(f"npc_talk_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(
+                                        action_id=f"npc_talk_{_talk_id}", kind="command", command=_discovered_cmd,
+                                        priority_tier=ActionPriorityTier.tactical, source="planner",
+                                        created_at=datetime.now(UTC),
+                                        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                        idempotency_key=f"npc_talk_{_discovered_npc.get('name','?')}_{_bot_id}" if _discovered_npc else f"npc_talk_{_bot_id}",
+                                        metadata={"source": "pro_ro_player", "reason": f"Discovered vendor NPC {_discovered_npc.get('name','?')} via actor scan", "npc_sequence": _npc_seq, "npc_name": _discovered_npc.get("name", ""), "npc_x": _discovered_npc.get("x", 0), "npc_y": _discovered_npc.get("y", 0), "failure_count": _failure_count, "bot_id": _bot_id},
+                                    ))
+                                    logger.info("npc_talk_action_queued: bot=%s cmd=%s", _bot_id, _discovered_cmd)
+                                
+                                # Action 2: Sit if critical HP
+                                if _is_critical_hp:
+                                    _heal_id = _nh.md5(f"npc_heal_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(
+                                        action_id=f"npc_heal_{_heal_id}", kind="command", command="sit",
+                                        priority_tier=ActionPriorityTier.reflex, source="reflex",
+                                        created_at=datetime.now(UTC),
+                                        expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                                        idempotency_key=f"npc_heal_{_bot_id}",
+                                        metadata={"source": "pro_ro_player", "reason": f"Critical HP ({_sn_hp}/{_sn_hp_max}) - forced sit", "hp": _sn_hp, "max_hp": _sn_hp_max, "bot_id": _bot_id},
+                                    ))
+                                    logger.info("npc_sit_action_queued: bot=%s hp=%d/%d", _bot_id, _sn_hp, _sn_hp_max)
+                                
+                                # Action 3: Return to auto if overweight
+                                if _is_overweight:
+                                    _sell_id = _nh.md5(f"npc_sell_{_bot_id}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(
+                                        action_id=f"npc_sell_{_sell_id}", kind="command", command="ai auto",
+                                        priority_tier=ActionPriorityTier.tactical, source="planner",
+                                        created_at=datetime.now(UTC),
+                                        expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                                        idempotency_key=f"npc_sell_{_bot_id}",
+                                        metadata={"source": "pro_ro_player", "reason": f"Weight {_sn_weight:.0f}% over 70%", "weight_pct": _sn_weight, "bot_id": _bot_id},
+                                    ))
+                                    logger.info("npc_sell_action_queued: bot=%s weight=%.0f%%", _bot_id, _sn_weight)
+                                
+                                # Trigger replan
+                                if _stuck_cycles >= 3 or _failure_count > 0:
+                                    replan_reasons.append("npc_stuck_override")
+                                    force_replan = True
                 except Exception as _npc_exc:
-                    logger.warning("pro_ro_player_npc_stuck_failed: %s", _npc_exc)
+                    logger.warning("pro_ro_player_stuck_failed: %s", _npc_exc)
             
             # ── Push plan actions to queue ──────────────────────
             if goal_state is not None:

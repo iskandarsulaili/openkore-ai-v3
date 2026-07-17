@@ -4268,7 +4268,7 @@ class RuntimeState:
                             ActionProposal(
                                 action_id=f"ml-{uuid4().hex[:24]}",
                                 kind="command",
-                                command="auto",
+                                command="ai auto",
                                 priority_tier=ActionPriorityTier.tactical,
                                 source="ml",
                                 metadata={"ml_override": _oa},
