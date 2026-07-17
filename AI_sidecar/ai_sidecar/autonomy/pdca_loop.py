@@ -1667,6 +1667,18 @@ class PDCALoop:
                     if now - self._last_plan_time[horizon] >= interval:
                         result = await self._run_one_cycle(horizon)
                         self._cycle_count += 1
+                        # ── Skills curator tick (every ~3600 cycles ≈ hourly) ──
+                        if self._cycle_count % 3600 == 0:
+                            try:
+                                from ai_sidecar.skills_curator import should_run_now, run_curator
+                                if should_run_now():
+                                    result = run_curator()
+                                    if result.get('marked_stale'):
+                                        logger.info("PDCA curator tick: %d stale, %d archived",
+                                                   len(result.get("marked_stale", [])),
+                                                   len(result.get("archived", [])))
+                            except Exception as exc:
+                                logger.debug("PDCA curator tick error: %s", exc)
                         self._last_plan_time[horizon] = time.time()
 
                         if result.error:

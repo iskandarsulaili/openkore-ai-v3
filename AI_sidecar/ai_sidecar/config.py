@@ -33,6 +33,18 @@ class SidecarSettings(BaseSettings):
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)
     snapshot_cache_ttl_seconds: int = Field(default=120, ge=1, le=3600)
     telemetry_max_per_bot: int = Field(default=500, ge=10, le=10000)
+
+    # ── Skills system ──
+    skills_enabled: bool = True
+    skills_max_context_tokens: int = Field(default=10000, ge=500, le=100000)
+    skills_stale_after_days: int = Field(default=7, ge=1, le=365)
+    skills_archive_after_days: int = Field(default=14, ge=1, le=730)
+    skills_max_matched: int = Field(default=3, ge=1, le=10)
+    skills_curator_interval_hours: int = Field(default=1, ge=1, le=168)
+    skills_confidence_increment: float = Field(default=0.02, ge=0.0, le=1.0)
+    skills_confidence_decrement: float = Field(default=0.05, ge=0.0, le=1.0)
+    skills_confidence_decay: float = Field(default=0.9, ge=0.0, le=1.0)
+
     telemetry_operational_window_minutes: int = Field(default=60, ge=1, le=1440)
     telemetry_recent_incidents_limit: int = Field(default=100, ge=1, le=1000)
     telemetry_backlog_max_events: int = Field(default=10000, ge=100, le=200000)
