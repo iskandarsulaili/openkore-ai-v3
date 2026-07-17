@@ -251,14 +251,10 @@ except: print('parse error')
 _tail_all() {
     local log_files=()
     
-    # Sidecar log
-    if [ -f "$SIDECAR_LOG" ]; then
-        log_files+=("$SIDECAR_LOG")
-    fi
-    
-    # Bot logs — build dynamic labels from profile names
+    # Bot logs only — sidecar log is excluded from console view
+    # to avoid [SIDECAR] noise; sidecar still logs to file.
     local colors=("${CYAN}" "${GREEN}" "${YELLOW}" "${MAGENTA}" "${BLUE}" "${RED}")
-    local labels=("SIDECAR")
+    local labels=()
     for name in "${BOT_NAMES[@]}"; do
         local lf="$BOT_LOGS/$name.log"
         if [ -f "$lf" ]; then

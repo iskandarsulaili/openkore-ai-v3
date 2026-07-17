@@ -4236,6 +4236,13 @@ class RuntimeState:
                                     else None,
                                 },
                             )
+                            # Store promotion result alongside shadow for use
+                            # when injecting ML overrides into the plan below.
+                            shadow_rows[family.value]["promotion"] = {
+                                "allowed": bool(promotion.get("allowed")),
+                                "mode": str(promotion.get("mode") or "shadow"),
+                                "reason": str(promotion.get("reason") or ""),
+                            }
                             self.ml_promotion.record_outcome(
                                 family=family,
                                 executed=bool(promotion.get("allowed")),
@@ -4245,6 +4252,36 @@ class RuntimeState:
                     route = dict(result.route)
                     route["ml_shadow"] = shadow_rows
                     result = result.model_copy(update={"route": route})
+
+                    # ── Inject ML overrides into the plan when canary allows ──
+                    _override_actions: list[dict[str, object]] = []
+                    for _fam_key, _entry in shadow_rows.items():
+                        if not isinstance(_entry, dict):
+                            continue
+                        _promo = _entry.get("promotion", {})
+                        _rec = _entry.get("recommendation", {})
+                        if bool(_promo.get("allowed")) and _rec:
+                            _override_actions.append({"family": _fam_key, "recommendation": _rec})
+                    if _override_actions and result.strategic_plan is not None:
+                        _existing = list(result.strategic_plan.recommended_actions or [])
+                        _now = datetime.now(UTC)
+                        for _oa in _override_actions:
+                            _existing.append(ActionProposal(
+                                action_id=f"ml-{uuid4().hex[:24]}",
+                                kind="command",
+                                command="auto",
+                                priority_tier=ActionPriorityTier.tactical,
+                                source="ml",
+                                metadata={"ml_override": _oa},
+                                created_at=_now,
+                                expires_at=_now + timedelta(seconds=30),
+                                idempotency_key=f"ml-{_oa['family']}-{uuid4().hex[:12]}",
+                            ))
+                        result = result.model_copy(update={
+                            "strategic_plan": result.strategic_plan.model_copy(
+                                update={"recommended_actions": _existing},
+                            ),
+                        })
             except Exception:
                 logger.exception(
                     "ml_planner_observation_failed",
