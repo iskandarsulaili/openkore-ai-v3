@@ -4373,7 +4373,7 @@ class PDCALoop:
                                 'level': 1,
                                 'class': 'novice',
                                 'bot_id': _cycle_bot_id or 'default',
-                                'map': 'prontera',
+                                'map': str(getattr(latest_snapshot, 'map_name', '') or ''),
                             }
                             _cr_advice = _cr_pro.get_action(_cr_signals)
                             if _cr_advice is not None:
@@ -4389,7 +4389,11 @@ class PDCALoop:
                                     _cr_conf,
                                 )
                                 # Queue the move command if confidence > 0.85
-                                if _cr_conf > 0.85 and _cr_cmd and _cr_map:
+                                # BUT skip if bot is in an indoor map (would block random walk)
+                                _cr_indoor_maps = {'prt_in', 'morocc_in', 'payon_in', 'geffen_in', 'alberta_in', 'aldebaran_in', 'izlude_in', 'comodo_in', 'rachel_in', 'veins_in', 'yuno_in', 'xmas_in', 'um_in', 'niflheim_in', 'einbroch_in', 'lighthalzen_in'}
+                                _cr_current_map = str(_cr_signals.get('map', '')).lower().strip()
+                                _cr_skip_indoor = any(_cr_current_map.startswith(indoor) for indoor in _cr_indoor_maps)
+                                if not _cr_skip_indoor and _cr_conf > 0.85 and _cr_cmd and _cr_map:
                                     _cr_aq = getattr(self._runtime, 'action_queue', None)
                                     if _cr_aq is not None:
                                         from datetime import UTC, datetime, timedelta
