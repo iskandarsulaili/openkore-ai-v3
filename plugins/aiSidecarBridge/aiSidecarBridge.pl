@@ -3829,9 +3829,9 @@ sub _survival_check {
     $::config{'lockMap_randX'} = 2;
     $::config{'lockMap_randY'} = 2;
 	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
-        eval { Commands::run('move 159 193'); 1 };
-        eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
-	        eval { Commands::run('use Red Potion'); 1 };
+        # Sidecar decides navigation -- no hardcoded move
+        # No hardcoded NPC interaction -- sidecar decides
+        # No hardcoded item use -- sidecar decides
 	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
 	    }
 	    return;
@@ -3923,10 +3923,10 @@ sub _survival_check {
     $::config{'lockMap_randX'} = 2;
     $::config{'lockMap_randY'} = 2;
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
-    eval { Commands::run('move 159 193'); 1 };
-    eval { Commands::run('talknpc 159 193 c r0 n'); 1 };
-	    eval { Commands::run('use Red Potion'); 1 };
-	    # Fall through to economy check and auto mode
+    # Sidecar decides navigation -- no hardcoded move
+    # Sidecar decides navigation -- no hardcoded move
+    # No hardcoded NPC interaction -- sidecar decides
+    # No hardcoded item use -- sidecar decides
 	}
 
 	# ── Economy: If zeny low, go grind ──
@@ -3961,28 +3961,19 @@ sub _teamplay_check {
 	my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
 
 	if (!$in_party) {
-	    eval { Commands::run('party create "AI Team"'); 1 };
-	    eval { Commands::run('party accept'); 1 };
+	    # Party creation deferred to sidecar — Pro RO LLM evaluates
 	}
 
 	if ($in_party) {
 	    # Auto-invite known sibling bots
-	    my @_siblings = ('openkoreai', 'openkoreaiobs', 'openkoreaihuman');
-	    foreach my $_sib (@_siblings) {
-	        next if $_sib eq $name;
-	        my $_already = 0;
-	        if (ref($party) eq 'HASH') {
-	            foreach my $_key (keys %$party) {
-	                my $_pm = ref($party->{$_key}) eq 'HASH' ? ($party->{$_key}{name}||$party->{$_key}{actor}||$party->{$_key}) : $party->{$_key};
-	                $_pm = ref($_pm) eq 'HASH' ? ($_pm->{name}||'') : $_pm;
-	                if ($_pm eq $_sib) { $_already = 1; last; }
-	            }
-	        }
-	        if (!$_already) {
-	            eval { Commands::run("party invite $_sib"); 1 };
-	        }
-	    }
-
+	    # Party invites delegated to sidecar — no hardcoded sibling list
+	    _post_event({
+	        kind => "bridge_party_state",
+	        bot_id => _bot_id(),
+	        map => $cr->{map} || "",
+	        in_party => $in_party,
+	        party_leader => $party ? $party->{PartyLeader} : "",
+	    });
 	    # Pro RO LLM: evaluate non-sibling nearby players for party
 	    if ($main::playersList) {
 	        foreach my $_pl (@{$main::playersList}) {
