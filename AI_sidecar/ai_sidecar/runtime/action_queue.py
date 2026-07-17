@@ -148,6 +148,14 @@ class ActionQueue:
         with self._lock:
             self._expire_for_bot(bot_id, now)
             bot_queue = self._by_bot.get(bot_id)
+            
+            # If no exact match, try finding by character name suffix
+            if not bot_queue and ':' in bot_id:
+                _suffix = bot_id.split(':', 1)[1]
+                for _bid, _q in self._by_bot.items():
+                    if ':' in _bid and _bid.split(':', 1)[1] == _suffix:
+                        bot_queue = _q
+                        break
             if not bot_queue:
                 return None
 
