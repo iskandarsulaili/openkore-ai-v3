@@ -2709,7 +2709,7 @@ sub _rewrite_runtime_command {
 				return ('', 'map_move_low_hp_no_toggle');
 			}
 			# Toggle AI mode to force route recalculation with new lockMap
-			return ('ai manual', 'map_move_toggle_manual');
+			return ('', 'map_move_toggle_manual_disabled');
 		}
 		return ('ai auto', 'map_move_rewritten');
 	}
