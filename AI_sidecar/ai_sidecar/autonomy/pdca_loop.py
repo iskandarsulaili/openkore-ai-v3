@@ -1689,6 +1689,13 @@ class PDCALoop:
                             except Exception as exc:
                                 logger.debug("PDCA curator tick error: %s", exc)
                         self._last_plan_time[horizon] = time.time()
+                        # Increment LLM safe cycle counter (first 20 cycles skip LLM path)
+                        try:
+                            _slc = getattr(self._runtime, "_llm_safe_cycles", 0)
+                            if isinstance(_slc, int):
+                                object.__setattr__(self._runtime, "_llm_safe_cycles", _slc + 1)
+                        except Exception:
+                            pass
 
                         if result.error:
                             self._circuit_breaker.record_failure(
@@ -3484,28 +3491,10 @@ class PDCALoop:
                     pass
                 if not _has_any_snapshot and _use_llm:
                     _use_llm = False
-                # Check provider availability with 3s probe — if unreachable, skip LLM entirely
-                if _use_llm and not hasattr(self._runtime, "_provider_probe_passed"):
-                    try:
-                        _pp_mr = getattr(self._runtime, "model_router", None)
-                        _pp_healthy = False
-                        if _pp_mr is not None and hasattr(_pp_mr, 'decide'):
-                            _pp_dec = _pp_mr.decide(workload="strategic_planning")
-                            _pp_provider = str(getattr(_pp_dec, 'selected_provider', '') or '')
-                            if _pp_provider and _pp_provider != 'none':
-                                _pp_adapters = getattr(_pp_mr, '_providers', {})
-                                _pp_adapter = _pp_adapters.get(_pp_provider) if isinstance(_pp_adapters, dict) else None
-                                if _pp_adapter is not None and hasattr(_pp_adapter, 'health'):
-                                    import asyncio as _pp_asyncio
-                                    _pp_result = await _pp_asyncio.wait_for(
-                                        _pp_adapter.health(bot_id=_cycle_bot_id or "probe"),
-                                        timeout=3.0,
-                                    )
-                                    _pp_healthy = bool(getattr(_pp_result, 'healthy', False))
-                        object.__setattr__(self._runtime, "_provider_probe_passed", _pp_healthy)
-                    except Exception:
-                        object.__setattr__(self._runtime, "_provider_probe_passed", False)
-                if _use_llm and not getattr(self._runtime, "_provider_probe_passed", True):
+                # Global LLM deadlock safety: force heuristic-only for first 20 cycles
+                # This gives time for the LLM provider health probe to complete without blocking the loop
+                _llm_safe_count = getattr(self._runtime, "_llm_safe_cycles", 0)
+                if isinstance(_llm_safe_count, int) and _llm_safe_count < 20:
                     _use_llm = False
                 _trigger_reason = "conservative:no_triggers"
                 _trigger_ctx: dict[str, object] = {}
