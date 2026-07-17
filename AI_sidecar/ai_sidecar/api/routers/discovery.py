@@ -25,7 +25,7 @@ def _maybe_save_heal_skill(req, resp):
         return
     try:
         name = "server-heal-" + resp.strategy
-        trigger = resp.strategy.replace("_", "_requested")
+        trigger = resp.strategy + "_requested"
         cmd = resp.command or "ai auto"
         tgt = resp.target_map or "unknown"
         npc = resp.target_npc or "unknown"

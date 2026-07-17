@@ -74,6 +74,17 @@ def _validate_file_path(file_path: str) -> Optional[str]:
 # ── Path Resolution ──
 
 
+def _sanitize_name(name: str) -> str:
+    """Sanitize a skill name to lowercase alphanumeric + hyphens only."""
+    import re
+    sanitized = name.lower().strip()
+    sanitized = re.sub(r'[^a-z0-9\-]', '-', sanitized)
+    sanitized = re.sub(r'\-+', '-', sanitized)  # collapse multiple hyphens
+    sanitized = sanitized.strip('-')
+    return sanitized or 'unnamed'
+
+
+
 def _skills_dir() -> Path:
     _SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     return _SKILLS_DIR
@@ -140,8 +151,12 @@ def create_skill(
     if err:
         return {"success": False, "error": err}
 
-    if _find_skill(name):
-        return {"success": False, "error": f"Skill '{name}' already exists"}
+    existing = _find_skill(name)
+    if existing:
+        existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+        if provenance == "background_review" and existing_prov == "foreground":
+            return {"success": False, "error": f'background_review cannot overwrite foreground skill \"{name}\"', "name": name}
+        return {"success": False, "error": f"Skill '{name}' already exists", "name": name}
 
     skill_dir = _resolve_skill_dir(name, category)
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -175,6 +190,9 @@ def edit_skill(name: str, content: str) -> Dict[str, Any]:
     existing = _find_skill(name)
     if not existing:
         return {"success": False, "error": f"Skill '{name}' not found"}
+    existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+    if provenance == "background_review" and existing_prov == "foreground":
+        return {"success": False, "error": f'background_review cannot patch foreground skill \"{name}\"', "name": name}
 
     skill_md = existing["path"] / "SKILL.md"
     try:
@@ -224,11 +242,14 @@ def patch_skill(
     return {"success": True, "name": name, "file": file_path}
 
 
-def delete_skill(name: str) -> Dict[str, Any]:
+def delete_skill(name: str, provenance: str = "foreground") -> Dict[str, Any]:
     """Remove a skill directory entirely."""
     existing = _find_skill(name)
     if not existing:
         return {"success": False, "error": f"Skill '{name}' not found"}
+    existing_prov = _usage.get(name, {}).get("provenance", "foreground")
+    if provenance == "background_review" and existing_prov == "foreground":
+        return {"success": False, "error": f'background_review cannot delete foreground skill "{name}"'}
 
     record = skills_usage.get_skill(name)
     if record and record.get("pinned", False):
