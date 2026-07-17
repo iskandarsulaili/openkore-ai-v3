@@ -83,7 +83,7 @@ _kill_pidfile() {
 
 _verify_dead() {
     local remaining
-    remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|python3.*ai_sidecar|perl.*openkore" 2>/dev/null || true)
+    remaining=$(pgrep -f "openkore\.pl|perl.*openkore" 2>/dev/null || true)
     if [ -n "$remaining" ]; then
         warn "Stubborn processes still alive: $(echo "$remaining" | tr '\n' ' ')"
         return 1
@@ -114,7 +114,7 @@ total=$((total + count))
 sleep 1
 
 # Phase 4: Nuclear — SIGKILL any stragglers by PID
-remaining=$(pgrep -f "openkore\.pl|ai_sidecar\.app|python3.*ai_sidecar|perl.*openkore" 2>/dev/null || true)
+remaining=$(pgrep -f "openkore\.pl|perl.*openkore" 2>/dev/null || true)
 if [ -n "$remaining" ]; then
     for pid in $remaining; do
         kill -9 "$pid" 2>/dev/null || true
