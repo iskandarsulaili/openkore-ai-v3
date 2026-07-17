@@ -3731,10 +3731,13 @@ sub _survival_check {
 	return if $now - $_last_survival_check_ms < 2000;  # rate-limit to 2s
 	$_last_survival_check_ms = $now;
 
-	my $hp = $char->{hp} || 0;
-	my $hp_max = $char->{hp_max} || 1;
-	my $zeny = $char->{zeny} || 0;
-	my $map = $char->{map} || '';
+	# Use main::char for reliable access to character state
+	my $char_ref = $main::char || $char;
+	return if !$char_ref;
+	my $hp = $char_ref->{hp} || 0;
+	my $hp_max = $char_ref->{hp_max} || 1;
+	my $zeny = $char_ref->{zeny} || 0;
+	my $map = $char_ref->{map} || '';
 	my $ai_mode = $Ai::Ai->{ai} || '';
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 
@@ -3763,8 +3766,8 @@ sub _survival_check {
 	# Phase 4: Buy potions if in Prontera and have zeny but no potions
 	if ($map =~ /prontera/i && $zeny >= 100) {
 	    my $has_pots = 0;
-	    if ($char->{inventory}) {
-	        foreach my $item (@{$char->{inventory}}) {
+	    if ($char_ref->{inventory}) {
+	        foreach my $item (@{$char_ref->{inventory}}) {
 	            next unless ref($item) eq 'HASH';
 	            if ($item->{name} && $item->{name} =~ /red.?potion|orange.?potion|white.?potion/i && ($item->{amount} || 0) > 0) {
 	                $has_pots = 1;
