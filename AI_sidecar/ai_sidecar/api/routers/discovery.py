@@ -128,12 +128,24 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
                         confidence=0.7,
                     )
 
-    # Phase 4: Check for Healer NPC on current map (always in Prontera)
-    if req.map:
-        # Prontera has a Healer NPC at (159, 193) for free healing
+    # Phase 4: Check for Healer NPC on current map (Prontera)
+    if req.map and 'prontera' in req.map.lower():
+        # If already within 6 tiles of Healer → talk directly
+        if req.x and req.y:
+            dx = abs(req.x - 159)
+            dy = abs(req.y - 193)
+            if dx < 6 and dy < 6:
+                return HealStrategyResponse(
+                    strategy="talk_healer_npc",
+                    command="talknpc 159 193 c r0 n",
+                    target_map=req.map,
+                    target_npc="Healer#prt",
+                    confidence=0.9,
+                )
+        # Otherwise walk to Healer
         return HealStrategyResponse(
             strategy="visit_healer_npc",
-            command=f"move 159 193",
+            command="move 159 193",
             target_map=req.map,
             target_npc="Healer#prt",
             confidence=0.85,

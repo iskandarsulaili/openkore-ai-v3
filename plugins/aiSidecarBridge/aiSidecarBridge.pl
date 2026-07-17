@@ -273,16 +273,7 @@ sub on_mainLoop_post {
 
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
-        # Talk to Healer NPC if in range — run every cycle
-        my $hc = _safe_char();
-        my ($hx,$hy) = (159,193);
-        if (defined $hc->{pos_to}{x} && abs($hc->{pos_to}{x} - $hx) < 6 && abs($hc->{pos_to}{y} - $hy) < 6) {
-            my $hpos = $field->calcPosition($hc);
-            if (defined $hpos && abs($hpos->{x}-$hx) < 6 && abs($hpos->{y}-$hy) < 6) {
-                eval { Commands::run("talknpc 159 193 c r0 n"); 1 };
-            }
         }
-	}
 }
 
 sub on_add_actor_list_probe {
@@ -3912,6 +3903,8 @@ sub _survival_check {
 	    my $_strat = _http_post_json('/v1/discover/heal', {
 	        bot_id => _bot_id(),
 	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
+	        x => (defined $cr->{pos_to}{x} ? $cr->{pos_to}{x} : 0),
+	        y => (defined $cr->{pos_to}{y} ? $cr->{pos_to}{y} : 0),
 	        inventory => _safe_inventory_list(),
 	        known_shops => _discover_shops_sync(),
 	        known_portals => _discover_portals_sync(),
