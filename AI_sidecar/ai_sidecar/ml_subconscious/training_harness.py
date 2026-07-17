@@ -343,6 +343,7 @@ class TrainingHarness:
         package["family"] = family.value
         package["trained_samples"] = len(train_rows)
         metrics = self._evaluate(family=family, package=package, eval_rows=eval_rows)
+        metrics["trained_samples"] = len(train_rows) + len(eval_rows)
 
         activate = self.registry.active_version(family=family) is None
         version = self.registry.save_model(family=family, package=package, metrics=metrics, activate=activate)

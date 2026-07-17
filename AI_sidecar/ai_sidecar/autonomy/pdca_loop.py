@@ -6025,12 +6025,21 @@ class PDCALoop:
                         for _family in ModelFamily:
                             _state = _promotion.get(family=_family)
                             if _state.get("enabled", False):
+                                # Already promoted — check auto-escalation
+                                try:
+                                    _promotion.check_auto_escalation(family=_family)
+                                except Exception:
+                                    pass
                                 continue
                             _active = _registry.active_version(family=_family)
                             if not _active:
                                 continue
                             _metrics = _harness.metrics().get(_family.value, {})
                             _conf = _metrics.get("confidence_mean", 0.0)
+                            _samples = _metrics.get("trained_samples", 0)
+                            # Quality gates
+                            if _samples < _promotion.min_trained_samples:
+                                continue
                             if _family in {ModelFamily.loot_ranker, ModelFamily.memory_retrieval_ranker}:
                                 _mae = _metrics.get("mae", 1.0)
                                 _pass = _mae <= 0.25 and _conf >= 0.70
@@ -6043,7 +6052,9 @@ class PDCALoop:
                                     model_version=_active,
                                     canary_percentage=5.0,
                                     rollback_threshold=0.25,
-                                    scope={},
+                                    # Scope to this bot's id so models from different
+                                    # bots don't interfere with each other
+                                    scope={"bot_id": bot_id} if bot_id else {},
                                 )
                                 logger.info(
                                     "ml_auto_promoted",
@@ -6053,6 +6064,7 @@ class PDCALoop:
                                         "version": _active,
                                         "metrics": _metrics,
                                         "canary": 5.0,
+                                        "bot_id": bot_id,
                                     },
                                 )
                 except Exception:

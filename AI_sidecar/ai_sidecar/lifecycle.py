@@ -4230,6 +4230,7 @@ class RuntimeState:
                                 confidence=confidence,
                                 safety_flags=safety_flags,
                                 context={
+                                    "bot_id": payload.meta.bot_id,
                                     "map": observed.state_features.get("navigation", {}).get("map")
                                     if isinstance(observed.state_features.get("navigation"), dict)
                                     else None,
@@ -5353,11 +5354,14 @@ def create_runtime() -> RuntimeState:
     )
 
     ml_registry = ModelRegistry(workspace_root=workspace_root)
+    ml_registry.prune_orphaned_artifacts()
     ml_observer = ObservationCapture(workspace_root=workspace_root)
     ml_labeling = LabelingPipeline()
     ml_training = TrainingHarness(labels=ml_labeling, registry=ml_registry)
     ml_shadow = ShadowModeEvaluator()
-    ml_promotion = GuardedPromotionPipeline()
+    ml_promotion = GuardedPromotionPipeline(
+        persist_directory=str(ml_registry.base_path) if ml_registry.base_path is not None else None,
+    )
     ml_macro_distiller = MacroDistillationEngine()
 
     denylist = [item.strip() for item in settings.security_doctrine_denylist.split(",") if item.strip()]

@@ -2085,7 +2085,19 @@ sub _flush_event_queue {
 	my @normalized = map {
 		my $event = $_;
 		my $event_family = $event->{kind} || 'bridge_event';
-		my $event_type = $event->{reflex} || $event->{event_type} || 'unknown';
+		# Normalize event_family to valid values for the sidecar API
+		my %family_map = (
+			'reflex' => 'bridge_reflex',
+			'bridge_reflex' => 'bridge_reflex',
+			'bridge_event' => 'bridge_event',
+			'bridge_telemetry' => 'bridge_telemetry',
+			'snapshot' => 'bridge_event',
+			'config' => 'bridge_event',
+		);
+		$event_family = $family_map{$event_family} if exists $family_map{$event_family};
+		my $event_type = $event->{reflex} || $event->{event_type} || 'bridge.unknown';
+		# Normalize event_type to only contain safe characters
+		$event_type =~ s/[^A-Za-z0-9_.:\/-]/_/g;
 		my $severity = $event->{severity} || 'info';
 		my %tags = (); my %numeric = (); my $text = $event->{text} || '';
 		my %payload = ();

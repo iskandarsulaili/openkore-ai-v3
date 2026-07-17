@@ -311,3 +311,44 @@ class ModelRegistry:
                 "active_version": family_entry.get("active_version"),
             }
 
+    def prune_orphaned_artifacts(self) -> int:
+        """Delete .joblib files not referenced by any version entry.
+
+        Returns count of files removed.
+        """
+        cleaned = 0
+        for family in ModelFamily:
+            family_dir = self._family_dir(family)
+            if not family_dir.exists():
+                continue
+
+            # Collect all tracked artifact paths for this family
+            with self._lock:
+                family_entry = self._index.get(family.value, {})
+                tracked: set[str] = set()
+                for v in list(family_entry.get("versions") or []):
+                    p = str(v.get("path") or "")
+                    if p:
+                        tracked.add(Path(p).resolve().as_posix())
+
+            # Remove any .joblib file not in tracked set
+            for fpath in family_dir.iterdir():
+                if fpath.suffix not in (".joblib", ".pkl"):
+                    continue
+                if fpath.resolve().as_posix() in tracked:
+                    continue
+                try:
+                    fpath.unlink()
+                    cleaned += 1
+                except Exception:
+                    pass
+
+            if cleaned:
+                logger.info(
+                    "ml_registry_orphans_cleaned",
+                    extra={"event": "ml_registry_orphans_cleaned", "family": family.value, "removed": cleaned},
+                )
+        if cleaned:
+            logger.warning("ml_registry_orphan_cleanup_done", extra={"event": "ml_registry_orphan_cleanup_done", "total_removed": cleaned})
+        return cleaned
+
