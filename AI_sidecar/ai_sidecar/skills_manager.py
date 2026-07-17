@@ -283,6 +283,36 @@ def remove_file(name: str, file_path: str) -> Dict[str, Any]:
     return {"success": True, "name": name, "file": file_path}
 
 
+def _recurse_list(
+    directory: Path,
+    usage_data: Dict[str, Any],
+    result: List[Dict[str, Any]],
+    category: str = "",
+) -> None:
+    """Recursively scan a directory for skills (SKILL.md files)."""
+    for item in directory.iterdir():
+        if item.name.startswith("."):
+            continue
+        if not item.is_dir():
+            continue
+        skill_md = item / "SKILL.md"
+        if not skill_md.exists():
+            continue
+        skill_name = item.name
+        content = skill_md.read_text(encoding="utf-8")
+        meta = _parse_frontmatter(content)
+        record = usage_data.get(skill_name, {})
+        result.append({
+            "name": skill_name,
+            "description": meta.get("description", ""),
+            "tags": meta.get("metadata", {}).get("hermes", {}).get("tags", []),
+            "domain": meta.get("metadata", {}).get("domain", category),
+            "state": record.get("state", "active"),
+            "confidence": record.get("confidence", 0.5),
+            "use_count": record.get("use_count", 0),
+            "last_used": record.get("last_activity_at", ""),
+        })
+
 def list_skills(category: str = None) -> List[Dict[str, Any]]:
     """List all skills with metadata. Returns list of {name, description, tags, state}."""
     result: List[Dict[str, Any]] = []
@@ -299,10 +329,10 @@ def list_skills(category: str = None) -> List[Dict[str, Any]]:
         skill_name = item.name
         skill_md = item / "SKILL.md"
         if not skill_md.exists():
-            continue
-
-        # Parse frontmatter for metadata
-        content = skill_md.read_text(encoding="utf-8")
+                # Not a skill — might be a category dir, recurse
+                if not (skill_md.parent / "SKILL.md").exists():
+                    _recurse_list(item, usage_data, result, category=item.name)
+                continue
         meta = _parse_frontmatter(content)
 
         record = usage_data.get(skill_name, {})
