@@ -182,7 +182,7 @@ from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
 from ai_sidecar.npc_dialog import NPCDialogEngine
-from ai_sidecar.web_research import WebResearchEngine
+# from ai_sidecar.web_research import WebResearchEngine  # [disabled] web research requires SearXNG
 from ai_sidecar.experience_db import (
     ExperienceDatabase,
     ExperienceEntry,
@@ -556,7 +556,7 @@ class RuntimeState:
     cost_tracker: CostTracker | None = None
     experience_db: ExperienceDatabase | None = None
     npc_dialog: NPCDialogEngine | None = None
-    web_research: WebResearchEngine | None = None
+    # web_research: removed — requires SearXNG, disabled
     # ── New god-tier AI systems ──
     role_manager: "RoleManager | None" = None
     goal_stack: "GoalStackComputation | None" = None
@@ -5531,7 +5531,7 @@ def create_runtime() -> RuntimeState:
     # Seed initial hunting knowledge for common maps
     _seed_db(runtime.experience_db)
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
-    runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)
+    # runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)  # [disabled] web research requires SearXNG
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
         max_bots=256,

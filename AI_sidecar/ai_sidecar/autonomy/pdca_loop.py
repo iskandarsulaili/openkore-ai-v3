@@ -4420,18 +4420,7 @@ class PDCALoop:
             )
 
             stuck = progress.stuck_cycles >= self._config.max_stuck_cycles
-            # ── Web research trigger: if stuck, research the problem ──
-            if stuck and hasattr(self._runtime, "web_research") and self._runtime.web_research is not None:
-                _wr = self._runtime.web_research
-                _bid = decision_meta.bot_id if "decision_meta" in dir() else _cycle_bot_id
-                _map = str(getattr(getattr(latest_snapshot, "position", None), "map", "")) if latest_snapshot else ""
-                if _wr.needs_research(_bid, f"stuck_{horizon.value}", cooldown_s=600):
-                    _ctx = {"map": _map, "horizon": horizon.value, "bot_id": _bid}
-                    try:
-                        _task = asyncio.create_task(_wr.research("stuck_map", context=_ctx))
-                        logger.info("web_research_triggered: bot=%s map=%s horizon=%s", _bid, _map, horizon.value)
-                    except RuntimeError:
-                        logger.warning("web_research_skipped: event_loop_stopping")
+            # ── Web research trigger: disabled (requires SearXNG) ──
             replan_reasons = self._collect_replan_reasons(
                 horizon=horizon,
                 progress=progress,
