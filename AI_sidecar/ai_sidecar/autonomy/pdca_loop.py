@@ -4359,6 +4359,64 @@ class PDCALoop:
                     )
                     # If death actions were queued, report re_planned=True for respawn
                     _death_recovery = _death_actions_queued > 0
+                    # ── Pro RO Player cold start (also fires in heuristic mode) ──
+                    _cr_advice = None
+                    try:
+                        _cr_pro = getattr(self._runtime, 'pro_ro_player_agent', None)
+                        if _cr_pro is None:
+                            from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                            _cr_pro = ProRoPlayerProfile()
+                            object.__setattr__(self._runtime, 'pro_ro_player_agent', _cr_pro)
+                        if _cr_pro is not None and hasattr(_cr_pro, 'get_action'):
+                            _cr_signals = {
+                                'situation': 'cold_start',
+                                'level': 1,
+                                'class': 'novice',
+                                'bot_id': _cycle_bot_id or 'default',
+                                'map': 'prontera',
+                            }
+                            _cr_advice = _cr_pro.get_action(_cr_signals)
+                            if _cr_advice is not None:
+                                _cr_cmd = str(_cr_advice.get('command', '') or '')
+                                _cr_conf = float(_cr_advice.get('confidence', 0) or 0)
+                                _cr_map = str(_cr_advice.get('starting_map', '') or '')
+                                logger.info(
+                                    "pro_ro_player_cold_start[%s]: build=%s map=%s cmd=%s conf=%.2f",
+                                    _cycle_bot_id or '?',
+                                    _cr_advice.get('build', '?'),
+                                    _cr_map,
+                                    _cr_cmd,
+                                    _cr_conf,
+                                )
+                                # Queue the move command if confidence > 0.85
+                                if _cr_conf > 0.85 and _cr_cmd and _cr_map:
+                                    _cr_aq = getattr(self._runtime, 'action_queue', None)
+                                    if _cr_aq is not None:
+                                        from datetime import UTC, datetime, timedelta
+                                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                        _cr_proposal = ActionProposal(
+                                            action_id=f'pro_ro_cold_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
+                                            kind='command',
+                                            command=_cr_cmd,
+                                            priority_tier=ActionPriorityTier.tactical,
+                                            source='planner',
+                                            created_at=datetime.now(UTC),
+                                            expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}',
+                                            metadata={
+                                                'source': 'pro_ro_player',
+                                                'confidence': _cr_conf,
+                                                'reason': f'Cold start: move to {_cr_map}',
+                                                'bot_id': _cycle_bot_id or 'default',
+                                            },
+                                        )
+                                        _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_proposal)
+                                        logger.info(
+                                            "pro_ro_player_cold_start_queued: bot=%s cmd=%s map=%s",
+                                            _cycle_bot_id or '?', _cr_cmd, _cr_map,
+                                        )
+                    except Exception:
+                        pass
                     return PDCAResult(horizon=horizon, plan_id="death_respawn" if _death_recovery else "", 
                                       actions_queued=_total_actions + _death_actions_queued, progress_pct=0.0, stuck=False, 
                                       re_planned=_death_recovery,
