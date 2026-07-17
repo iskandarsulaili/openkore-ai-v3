@@ -9,6 +9,9 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discover", tags=["discovery"])
 
+# ── Skill auto-creation on discovery ──
+from ai_sidecar import skills_manager as _skm
+
 # In-memory cache of server tables (pushed from bridge via events)
 _server_tables: dict[str, Any] = {}
 _server_tables_lock = threading.RLock()
