@@ -264,6 +264,7 @@ sub on_mainLoop_post {
 	# ── Default survival auto-grind loop (bottom-up fallback) ──
 	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
 		_survival_check();
+		_teamplay_check();
 	}
 }
 
@@ -3173,6 +3174,10 @@ sub _check_bridge_reflexes {
 			# If NO healing resources at all: trigger emergency survival immediately
 			# Let conscious engine handle the rest (buy potions, retreat to town, request help)
 			if (!$heal_triggered && $hp_ratio < 0.50) {
+			# Skip if HP has not dropped (reflex noise filter)
+			state $_last_hp = 0;
+			if ($hp >= $_last_hp && $_last_hp > 0) { next; }
+			$_last_hp = $hp;
 				if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 10000)) {
 					$_reflex_last_fired{no_heal} = _now_ms();
 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
