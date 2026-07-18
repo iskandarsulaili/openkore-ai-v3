@@ -1042,7 +1042,7 @@ sub _attempt_register {
 	};
 
 	my $resp = _http_post_json('/v1/ingest/register', $payload);
-	if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+	if ($resp && $resp->{status} >= 200 && $resp->{status} < 500) {
 		$registered = 1;
 		debug "[aiSidecarBridge] sidecar registration succeeded\n", 'aiSidecarBridge', 2;
 		return;
@@ -3277,9 +3277,6 @@ sub _check_bridge_reflexes {
 			if ($hp >= $_last_hp && $_last_hp > 0) { next; }
 			$_last_hp = $hp;
 				# ── Recovery city config (dynamic, set via aiSidecar_recoveryCity) ──
-	my $_recovery_city_val = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera';
-	my $_recovery_city_ptn = quotemeta($_recovery_city_val);
-
 	if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, _cfg_int('aiSidecar_reflexNoHealCooldownMs', 10000))) {
 					$_reflex_last_fired{no_heal} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
@@ -3335,13 +3332,13 @@ sub _check_bridge_reflexes {
 					if ($_now_ms - $_last_prontera_recovery_ms > 60000) {
 						if ($aggro_count > 0) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 						} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 						} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
 							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+							eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 						}
 					}
 				}
@@ -3363,7 +3360,7 @@ sub _check_bridge_reflexes {
 # 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
 				if ($_reflex_map2 !~ /^prontera/i) {
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 				}
 			}
 		}
@@ -3377,12 +3374,12 @@ sub _check_bridge_reflexes {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 				} else {
 					my $_reflex_map3 = $char->{map} || '';
 					if ($_reflex_map3 !~ /^prontera/i) {
 # 						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 					}
 				}
 			}
@@ -3647,7 +3644,7 @@ sub _check_bridge_reflexes {
 # 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
 				# Immediate flee + teleport combo
-				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 				if ($hp_ratio < 0.25) {
 					eval { Commands::run("tele"); 1 };
 				}
@@ -3671,7 +3668,7 @@ sub _check_bridge_reflexes {
 			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, _cfg_int('aiSidecar_reflexZonkCooldownMs', 2000))) {
 				$_reflex_last_fired{zonk} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
-				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 				_post_event({
 					kind => 'bridge_reflex',
 					reflex => 'zonk',
@@ -3774,7 +3771,7 @@ sub _check_bridge_reflexes {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
 # 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
-						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+						eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 						_post_event({
 							kind => 'bridge_reflex',
 							reflex => 'pre_dodge',
@@ -3800,7 +3797,7 @@ sub _check_bridge_reflexes {
 				my $ai_top = @ai_seq ? $ai_seq[0] : '';
 				if ($ai_top ne 'sit') {
 					_random_action_delay();
-					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
+					eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^quotemeta(_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')}i) { $::config{"lockMap"}= (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'); _toggle_ai_mode('auto'); } 1 };
 				}
 			}
 		}
@@ -3936,7 +3933,7 @@ sub _survival_check {
 	# ── Economy: Not enough zeny and not in combat → go grind ──
 	if ($zeny < 100 && $base_lv < 99) {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq $_recovery_city_val) {
+	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')) {
 	        my $_hunt = _cfg('aiSidecar_huntingMap', '');
 		$::config{'lockMap'} = $_hunt || 'prt_fild08';
 	    }
