@@ -822,7 +822,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             # Fallback if NPC discovery not available
             town_map = game_knowledge().town_for_map(map_name)
             if not town_map:
-                town_map = "prontera"
+                town_map = "prontera"  # TODO: make data-driven via GameKnowledgeService
             if "payon" in map_name.lower() or "pay_" in map_name.lower():
                 town_map = "payon"
             elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
@@ -1510,7 +1510,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
                     return f"move {_maps[0]}"
         # If in Prontera with any common goal, route to nearby field
         if "prontera" in objective.lower() and keyword in ("survival", "job_advancement", "advancement", "idle", "economy"):
-            return "move prt_fild08"
+            return "move prt_fild08"  # TODO: make data-driven via zone_ladder
     
     # If goal is survival with no specific routing, still send ai auto
     if keyword == "survival":
@@ -3768,7 +3768,7 @@ class PDCALoop:
                                 for _exp in _pending[:1]:  # Run one experiment at a time
                                     _innov.start_experiment(_exp.name)
                                     # Use knowledge-driven target map if available
-                                    _target_map = str(_exp.metadata.get("map", "prt_fild08") or "prt_fild08")
+                                    _target_map = str(_exp.metadata.get("map", self._state.get("recommended_hunting_map", "prt_fild08")) or self._state.get("recommended_hunting_map", "prt_fild08"))
                                     from datetime import UTC, datetime as _dt, timedelta
                                     from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
                                     _aq.enqueue(_reflex_bot_id, _AP(

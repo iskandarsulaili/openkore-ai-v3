@@ -692,7 +692,7 @@ class ProRoPlayerProfile(BehaviorProfile):
             ],
             "sustain_advice": {
                 "hp_warning": hp_ratio < 0.5,
-                "buy_potions": "Red Potion, Fly Wing, Green Potion",
+                "buy_potions": "",  # filled dynamically from GameKnowledgeService
                 "auto_use": "Set auto-use Red Potion at 50% HP",
                 "teleport_escape": "Set escape at 20% HP",
             },
@@ -718,7 +718,7 @@ class ProRoPlayerProfile(BehaviorProfile):
             ],
             "sustain_advice": {
                 "hp_warning": hp_ratio < 0.5,
-                "buy_potions": "Red Potion, Fly Wing, Green Potion",
+                "buy_potions": "",  # filled dynamically from GameKnowledgeService
                 "auto_use": "Set auto-use Red Potion at 50% HP",
                 "teleport_escape": "Set escape at 20% HP",
             },
