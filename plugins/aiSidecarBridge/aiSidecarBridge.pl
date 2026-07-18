@@ -3902,7 +3902,7 @@ sub _survival_check {
 
 # ── Emergency: HP critically low — call Pro RO LLM for healing strategy ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
-	    my $_strat = _http_post_json('/v1/discover/heal', {
+	    my $_strat = _http_post_json('/heal', {
 	        bot_id => _bot_id(),
 	        hp => $hp,
 	        hp_max => $hp_max,
@@ -4000,7 +4000,7 @@ sub _survival_check {
 
 	# ── Emergency (HP < 20%): Stand up, navigate, buy, use — NEVER sit ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
-	    my $_strat = _http_post_json('/v1/discover/heal', {
+	    my $_strat = _http_post_json('/heal', {
 	        bot_id => _bot_id(),
 	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
 	        x => (defined $cr->{pos_to}{x} ? $cr->{pos_to}{x} : 0),
@@ -4032,7 +4032,7 @@ sub _survival_check {
 
 	# ── Economy: Ask sidecar for best hunting map (DB zone ladder, no hardcoded maps) ──
 	if ($zeny < _cfg_int('aiSidecar_economyMinZeny', 300) && $base_lv < 99) {
-	    my $_eco_strat = _http_post_json('/v1/discover/economy', {
+	    my $_eco_strat = _http_post_json('/economy', {
 	        bot_id => _bot_id(),
 	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
 	        base_level => $base_lv,
@@ -4266,7 +4266,7 @@ sub _send_discovery_data {
 	    no_teleport => _read_table_file('no_teleport_maps.txt'),
 	    elements => _read_table_file('elements.txt'),
 	};
-	_http_post_json('/v1/discover/tables/ingest', {
+	_http_post_json('/tables/ingest', {
 	    kind => 'discovery_all_tables',
 	    tables => $data,
 	    timestamp => _now_ms(),
