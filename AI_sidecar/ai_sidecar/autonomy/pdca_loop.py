@@ -4380,7 +4380,10 @@ class PDCALoop:
                             if _cr_advice is not None:
                                 _cr_cmd = str(_cr_advice.get('command', '') or '')
                                 _cr_conf = float(_cr_advice.get('confidence', 0) or 0)
-                                _cr_map = str(_cr_advice.get('target_map', '') or '')
+                                _cr_map = str(_cr_advice.get('starting_map', '') or '')
+                                # Extract map from command if target_map is empty
+                                if not _cr_map and _cr_cmd.startswith('move '):
+                                    _cr_map = _cr_cmd[5:].strip()
                                 # Override cold start map with zone ladder (DB-backed, level-appropriate)
                                 if _cr_map and _pro_inline_snap is not None:
                                     try:
