@@ -4380,7 +4380,23 @@ class PDCALoop:
                             if _cr_advice is not None:
                                 _cr_cmd = str(_cr_advice.get('command', '') or '')
                                 _cr_conf = float(_cr_advice.get('confidence', 0) or 0)
-                                _cr_map = str(_cr_advice.get('starting_map', '') or '')
+                                _cr_map = str(_cr_advice.get('target_map', '') or '')
+                                # Override cold start map with zone ladder (DB-backed, level-appropriate)
+                                if _cr_map and _pro_inline_snap is not None:
+                                    try:
+                                        from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+                                        _gk_db = GameKnowledgeDB()
+                                        _cr_level = getattr(_pro_inline_snap.progression, 'base_level', 1) if hasattr(_pro_inline_snap, 'progression') else 1
+                                        _zone = _gk_db.get_hunting_zone(int(_cr_level))
+                                        _better_map = _zone['map_name'] if _zone else None
+                                        if _better_map and _better_map != _cr_map:
+                                            _cr_cmd = f"move {_better_map}"
+                                            _cr_map = _better_map
+                                            _cr_conf = max(_cr_conf, 0.85)
+                                            logger.info("zone_ladder_override: old=%s new=%s level=%s", 
+                                                        _cr_advice.get('target_map','?'), _better_map, _cr_level)
+                                    except Exception:
+                                        pass
                                 logger.info(
                                     "pro_ro_player_cold_start[%s]: build=%s map=%s cmd=%s conf=%.2f",
                                     _cycle_bot_id or '?',
