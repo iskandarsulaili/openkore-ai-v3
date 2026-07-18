@@ -4371,7 +4371,7 @@ class PDCALoop:
                         if _cr_pro is not None and hasattr(_cr_pro, 'get_action'):
                             _cr_signals = {
                                 'situation': 'cold_start',
-                                'level': 1,
+                                'level': int(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'base_level', 1) or 1),
                                 'class': 'novice',
                                 'bot_id': _cycle_bot_id or 'default',
                                 'map': str(getattr(self._get_latest_snapshot(), 'map_name', '') or ''),

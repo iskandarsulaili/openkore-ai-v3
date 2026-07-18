@@ -2769,7 +2769,7 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-	# Handle map-name moves: "move prt_fild08" → set lockMap + ai auto
+	# Handle map-name moves: "move <map>" → set lockMap + ai auto
 	# OpenKore's auto AI uses lockMap to navigate to and stay on a map.
 	# Setting lockMap first, then enabling auto AI, gives the bot a
 	# meaningful destination instead of aimless wandering.
@@ -3943,7 +3943,7 @@ sub _survival_check {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')) {
 	        my $_hunt = _cfg('aiSidecar_huntingMap', '');
-		$::config{'lockMap'} = $_hunt || 'prt_fild08';
+		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_defaultHuntMap', 'prt_fild08');
 	    }
 	    if ($AI::AI != 2) {
 	        eval { require AI; AI::state(2); 1 };
@@ -4038,7 +4038,7 @@ sub _survival_check {
 	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
 	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($_clm eq '') {
-		$::config{'lockMap'} = $_hunt || 'prt_fild08';
+		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_defaultHuntMap', 'prt_fild08');
 	    }
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
@@ -4096,7 +4096,7 @@ sub _teamplay_check {
 	        bot_id => _bot_id(),
 	        map => $cr->{map} || "",
 	        level => $cr->{level} || 1,
-	        siblings => [split(',', _cfg('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman'))],
+	        siblings => [split(',', _cfg('aiSidecar_siblingMasters', ''))],
 	    });
 	}
 
@@ -4117,7 +4117,7 @@ sub _teamplay_check {
 	            my $_pn = $_pl->{name} || '';
 	            next if $_pn eq '' || $_pn eq $name;
 	            my $_is_sib = 0;
-	            foreach (split(',', _cfg('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman'))) { if ($_pn eq $_) { $_is_sib = 1; last; } }
+	            foreach (split(',', _cfg('aiSidecar_siblingMasters', ''))) { if ($_pn eq $_) { $_is_sib = 1; last; } }
 	            next if $_is_sib;
 	            my $_already = 0;
 	            if (ref($party) eq 'HASH') {
