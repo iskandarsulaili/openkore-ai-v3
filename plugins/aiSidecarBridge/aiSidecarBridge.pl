@@ -4069,7 +4069,35 @@ sub _teamplay_check {
 	my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
 
 	if (!$in_party) {
-	    # Party creation deferred to sidecar — Pro RO LLM evaluates
+	    # Auto-invite: look for known sibling bots without party and invite them
+	    if ($main::playersList) {
+	        foreach my $_pl (@{$main::playersList}) {
+	            next unless ref($_pl) eq 'HASH';
+	            my $_pn = $_pl->{name} || '';
+	            next if $_pn eq '' || $_pn eq $name;
+	            next unless $_pn =~ /^openkoreai/i;
+	            # Check if they're already in a party
+	            my $_already_in_party = 0;
+	            if (defined $party && ref($party) eq 'HASH') {
+	                foreach my $_k (keys %$party) {
+	                    my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : '';
+	                    if ($_pm eq $_pn) { $_already_in_party = 1; last; }
+	                }
+	            }
+	            next if $_already_in_party;
+	            # Invite via chat command
+	            eval { Commands::run("c \@invite $_pn"); 1 };
+	            last;  # Only invite one per cycle
+	        }
+	    }
+	    # Also ask the sidecar/LLM for party advice
+	    _post_event({
+	        kind => "bridge_need_party",
+	        bot_id => _bot_id(),
+	        map => $cr->{map} || "",
+	        level => $cr->{level} || 1,
+	        siblings => [_cfg_list('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman')],
+	    });
 	}
 
 	if ($in_party) {
