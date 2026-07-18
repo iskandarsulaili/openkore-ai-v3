@@ -4030,14 +4030,20 @@ sub _survival_check {
     # No hardcoded item use -- sidecar decides
 	}
 
-	# ── Economy: If zeny low, go grind ──
-	if ($zeny < 300 && $base_lv < 99) {
-	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
-	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if ($_clm eq '') {
-		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_huntMap', '');
+	# ── Economy: Ask sidecar for best hunting map (DB zone ladder, no hardcoded maps) ──
+	if ($zeny < _cfg_int('aiSidecar_economyMinZeny', 300) && $base_lv < 99) {
+	    my $_eco_strat = _http_post_json('/v1/discover/economy', {
+	        bot_id => _bot_id(),
+	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
+	        base_level => $base_lv,
+	    });
+	    if ($_eco_strat && $_eco_strat->{status} == 200 && $_eco_strat->{json}{command}) {
+	        eval { Commands::run($_eco_strat->{json}{command}); 1 };
+	        my $_tgt = $_eco_strat->{json}{target_map} || '';
+	        if ($_tgt ne '' && $_tgt ne $map) { $::config{'lockMap'} = $_tgt; }
 	    }
-	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
+	    if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
+	    return;
 	}
 
 	# ── Stay in auto mode when HP is safe ──
