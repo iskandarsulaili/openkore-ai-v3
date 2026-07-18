@@ -3943,7 +3943,7 @@ sub _survival_check {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')) {
 	        my $_hunt = _cfg('aiSidecar_huntingMap', '');
-		$::config{'lockMap'} = $_hunt || 'prt_fild01';
+		$::config{'lockMap'} = $_hunt || 'prt_fild08';
 	    }
 	    if ($AI::AI != 2) {
 	        eval { require AI; AI::state(2); 1 };
@@ -4038,7 +4038,7 @@ sub _survival_check {
 	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
 	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($_clm eq '') {
-		$::config{'lockMap'} = $_hunt || 'prt_fild01';
+		$::config{'lockMap'} = $_hunt || 'prt_fild08';
 	    }
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
