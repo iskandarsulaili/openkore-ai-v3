@@ -4392,7 +4392,7 @@ class PDCALoop:
                                         _cr_level = int(_cr_signals.get('level', 1) or 1)
                                         _zone = _gk_db.get_hunting_zone(int(_cr_level))
                                         _better_map = _zone['map_name'] if _zone else None
-                                        if _better_map and _better_map != _cr_map:
+                                        if _better_map:
                                             _cr_cmd = f"move {_better_map}"
                                             _cr_map = _better_map
                                             _cr_conf = max(_cr_conf, 0.85)
