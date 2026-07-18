@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 _STEPS = [
     "allocate_stats",      # spend all stat points
     "train_skills",        # train Basic Skill and build-essential skills
-    "visit_novice_npc",    # get free potions/gear from Novice NPC
-    "visit_healer",        # full heal before leaving
     "route_to_hunt",       # move to level-appropriate hunting zone
 ]
 
@@ -118,45 +116,7 @@ class OnboardingService:
             if not actions:
                 self.mark_completed(bot_id, "train_skills")
 
-        # ── Step 3: Visit Novice NPC ──
-        if next_step == "visit_novice_npc" and map_name != "prt_in":
-            npc_info = self.db.find_npc_for_task("quest", "prontera")
-            if npc_info:
-                x, y = npc_info.get("x", 243), npc_info.get("y", 124)
-                steps = json.loads(npc_info.get("steps", '["c","r0","c"]'))
-                actions.append({
-                    "action": "talk_npc",
-                    "npc_name": npc_info["npc_name"],
-                    "npc_id": npc_info.get("npc_id"),
-                    "x": x, "y": y,
-                    "map_name": npc_info["map_name"],
-                    "steps": steps,
-                    "reason": "Get free potions and starter gear from Novice NPC",
-                    "priority": 3,
-                })
-            else:
-                # No Novice NPC known — skip
-                self.mark_completed(bot_id, "visit_novice_npc")
-
-        # ── Step 4: Visit Healer ──
-        if next_step == "visit_healer" and hp_pct < 100:
-            healer = self.db.find_npc_for_task("heal", "prontera")
-            if healer:
-                actions.append({
-                    "action": "talk_npc",
-                    "npc_name": healer["npc_name"],
-                    "x": healer.get("x", 157), "y": healer.get("y", 195),
-                    "map_name": healer["map_name"],
-                    "steps": json.loads(healer.get("steps", '["c","r0","c"]')),
-                    "reason": "Full heal before leaving to hunting ground",
-                    "priority": 4,
-                })
-            else:
-                self.mark_completed(bot_id, "visit_healer")
-        elif next_step == "visit_healer" and hp_pct >= 100:
-            self.mark_completed(bot_id, "visit_healer")
-
-        # ── Step 5: Route to Hunting Zone ──
+        # ── Step 3: Route to Hunting Zone ──
         if next_step == "route_to_hunt":
             # Use DB-backed optimization for best map
             target_map = self.db.optimize_hunting_map(bot_id, base_level, {map_name})

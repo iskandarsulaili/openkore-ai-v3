@@ -4356,7 +4356,7 @@ class PDCALoop:
                     # New player onboarding (stat/skill/NPC prep before hunting)
                     try:
                         from ai_sidecar.autonomy.onboarding_integration import try_onboarding
-                        _total_actions += try_onboarding(self._runtime, _cycle_bot_id)
+                        _total_actions += try_onboarding(self._runtime, _cycle_bot_id, self._get_latest_snapshot())
                     except Exception:
                         pass
                     _cr_advice = None

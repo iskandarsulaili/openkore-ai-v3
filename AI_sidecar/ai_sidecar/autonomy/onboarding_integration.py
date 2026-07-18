@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _ONB_SERVICE = None
 
 
-def try_onboarding(runtime: Any, bot_id: str | None) -> int:
+def try_onboarding(runtime: Any, bot_id: str | None, snapshot: Any = None) -> int:
     """Check if bot needs onboarding (new character setup).
     
     If yes, queue stat/skill/NPC/move actions and return count.
@@ -34,8 +34,8 @@ def try_onboarding(runtime: Any, bot_id: str | None) -> int:
     if not bot_id:
         return 0
     
-    # Get latest snapshot
-    _latest = getattr(runtime, "_latest_snapshot", None)
+    # Get latest snapshot (passed directly from pdca loop)
+    _latest = snapshot
     if not _latest:
         return 0
     
@@ -62,11 +62,9 @@ def try_onboarding(runtime: Any, bot_id: str | None) -> int:
     for _oa in _onb_actions:
         _act_type = _oa.get("action", "")
         if _act_type == "stat_add":
-            _cmd = f"stat_add {_oa.get('stat', 'str')} {_oa.get('points', 1)}"
+            _cmd = f"stat_add {_oa.get('stat', 'str').lower()} {_oa.get('points', 1)}"
         elif _act_type == "skill_add":
             _cmd = f"skills add {_oa.get('skill_id', 'NV_BASIC')}"
-        elif _act_type == "talk_npc":
-            _cmd = f"talk_npc {_oa.get('npc_name', 'Novice NPC')} {_oa.get('x', 243)} {_oa.get('y', 124)}"
         elif _act_type == "move":
             _cmd = f"move {_oa.get('target_map', 'prt_fild01')}"
         else:
