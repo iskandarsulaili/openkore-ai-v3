@@ -710,7 +710,7 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
                 _s = _snap.get(bot_id) if hasattr(_snap, 'get') else _snap.latest()
                 if _s is not None:
                     _map = str(getattr(getattr(_s, 'position', None), 'map', '') or '')
-                    if _map and any(t in _map.lower() for t in ['prontera', 'morocc', 'payon', 'geffen', 'aldebaran', 'yuno', 'xmas', 'amatsu']):
+                    if _map and any(t in _map.lower() for t in game_knowledge().town_prefixes()):
                         _in_town = True
         except Exception:
             pass
@@ -820,7 +820,9 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             town_map = npc_disc.get_nearest_town_for_map(map_name)
         else:
             # Fallback if NPC discovery not available
-            town_map = "prontera"
+            town_map = game_knowledge().town_for_map(map_name)
+            if not town_map:
+                town_map = "prontera"
             if "payon" in map_name.lower() or "pay_" in map_name.lower():
                 town_map = "payon"
             elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
@@ -3643,7 +3645,7 @@ class PDCALoop:
                                     _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0) or 0)
                                     _is_dead = _hp <= 0
                                     _map = str(_conscious_snap.get("map", "") or "")
-                                    _is_town = any(t in _map.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
+                                    _is_town = any(t in _map.lower() for t in game_knowledge().town_prefixes()) \
                                               and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
                                     _inv = _conscious_snap.get("inventory", {}) or {}
                                     _items = _inv.get("items", []) or _inv.get("item_list", []) or []
@@ -6261,7 +6263,7 @@ class PDCALoop:
                 max_sp = int(snapshot.get("vitals", {}).get("max_sp", 1) or 1)
                 is_dead = hp <= 0 or snapshot.get("status") == "dead"
                 map_name = str(snapshot.get("map", snapshot.get("position", {}).get("map", "")) or "")
-                is_town = any(t in map_name.lower() for t in ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno"]) \
+                is_town = any(t in map_name.lower() for t in game_knowledge().town_prefixes()) \
                           and not any(f in map_name.lower() for f in ["fild", "dun", "cave", "forest", "field"])
                 zeny = int(snapshot.get("progression", {}).get("zeny", 0) or 0)
                 items_data = snapshot.get("inventory", {}) or {}

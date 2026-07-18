@@ -250,6 +250,28 @@ class GameKnowledgeService:
         m = map_name.lower().strip().replace(".gat", "").replace(".rsw", "").strip()
         return INDOOR_EXITS.get(m)
 
+    def town_prefixes(self) -> list[str]:
+        """Return known town map prefixes for server-agnostic town detection."""
+        return ["prontera", "morocc", "payon", "geffen", "aldebaran", "yuno", "xmas", "amatsu", "alberta", "izlude", "comodo", "umbala", "niflheim", "rachel", "veins", "moscovia", "einbroch", "lighthalzen", "hugel"]
+
+    def town_for_map(self, map_name: str) -> str:
+        """Return town name for a given map by matching known prefixes."""
+        if not map_name:
+            return "prontera"
+        m = map_name.lower().strip().replace(".gat", "").replace(".rsw", "")
+        for prefix in self.town_prefixes():
+            if m.startswith(prefix) or m.startswith(prefix[:3]):
+                return prefix
+        if m.startswith("prt_"):
+            return "prontera"
+        if m.startswith("pay_"):
+            return "payon"
+        if m.startswith("moc_"):
+            return "morocc"
+        if m.startswith("gef_"):
+            return "geffen"
+        return "prontera"
+
     def safe_hunting_maps(self, level: int) -> list[str]:
         """Maps where monsters are within safe level range."""
         mobs = self._data.get("mobs", [])
