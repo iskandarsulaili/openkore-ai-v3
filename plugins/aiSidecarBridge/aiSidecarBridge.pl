@@ -3282,7 +3282,7 @@ sub _check_bridge_reflexes {
 			if (!$heal_triggered && $hp_ratio < 0.50) {
 			# Skip if HP has not dropped (reflex noise filter)
 			state $_last_hp = 0;
-			if ($hp >= $_last_hp && $_last_hp > 0) { next; }
+			if ($hp >= $_last_hp && $_last_hp > 0) { return; }
 			$_last_hp = $hp;
 				# ── Recovery city config (dynamic, set via aiSidecar_recoveryCity) ──
 	if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, _cfg_int('aiSidecar_reflexNoHealCooldownMs', 10000))) {
