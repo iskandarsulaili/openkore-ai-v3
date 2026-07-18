@@ -4031,7 +4031,8 @@ sub _survival_check {
 	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
 	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($_clm eq '' || $_clm eq 'prt_in' || $_clm eq 'prontera') {
-		$::config{'lockMap'} = $_hunt || 'prt_fild08';
+		debug "[survival2] lockMap override '\$_clm' -> '$_hunt'\n", 'aiSidecarBridge', 1;
+		\$::config{'lockMap'} = \$_hunt || 'prt_fild08';
 	    }
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
