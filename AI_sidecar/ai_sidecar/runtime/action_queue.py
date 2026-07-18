@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from threading import RLock
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -177,6 +180,13 @@ class ActionQueue:
                 if selected_order is None or current_order < selected_order:
                     selected_idx = idx
                     selected_order = current_order
+
+            if selected_idx is None:
+                logger.warning(
+                    "fetch_next_no_queued: bot=%s queue_size=%d dispatched=%d",
+                    bot_id, len(bot_queue),
+                    sum(1 for q in bot_queue if q.status == ActionStatus.dispatched),
+                )
 
             if selected_idx is None:
                 return None
