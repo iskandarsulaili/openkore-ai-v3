@@ -3836,31 +3836,31 @@ sub _check_bridge_reflexes {
 sub _apply_bot_config {
 	# Apply optimal OpenKore configs for autonomous operation
 	# (Overrides user config with AI-optimized values)
-	
-	# Enable continuous auto-attack on monsters
-	if (defined $::config) {
-	    $::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2');
-	    $::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1');
-	    $::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0');
-	    $::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0');
-	    $::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0');
-	    $::config{'sitAuto_hp_lower'} = _cfg('aiSidecar_sitAutoHpLower', '0');
-	    $::config{'sitAuto_hp_upper'} = _cfg('aiSidecar_sitAutoHpUpper', '0');
-	    $::config{'sitAuto_maxDmg'} = _cfg('aiSidecar_sitAutoMaxDmg', '99999');
-	    
-	    # Auto-pickup everything (we sell junk)
-	    $::config{'itemsTakeAuto'} = '2';
-	    $::config{'itemsTakeAuto_party'} = '1';
-	    $::config{'itemsGatherAuto'} = '2';
-	    
-	    # Auto-sell junk items (Jellopy, Stems, etc.)
-	    $::config{'sellAuto'} = '1';
+	sub _apply_bot_config {
+		my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
+		my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
+		$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2');
+		$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1');
+		$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0');
+		$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0');
+		$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0');
+		$::config{'sitAuto_hp_lower'} = _cfg('aiSidecar_sitAutoHpLower', '0');
+		$::config{'sitAuto_hp_upper'} = _cfg('aiSidecar_sitAutoHpUpper', '0');
+		$::config{'sitAuto_maxDmg'} = _cfg('aiSidecar_sitAutoMaxDmg', '99999');
+		$::config{'itemsTakeAuto'} = '2';
+		$::config{'itemsTakeAuto_party'} = '1';
+		$::config{'itemsGatherAuto'} = '2';
+		$::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0');
+		$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
+		$::config{'sellAuto_distance'} = '25';
+		$::config{'storageAuto'} = _cfg('aiSidecar_storageAuto', '0');
+	    $::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0');
 	    my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
 		$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
 	    $::config{'sellAuto_distance'} = '25';
 	    
 	    # Storage (deposit junk, withdraw potions)
-	    $::config{'storageAuto'} = '1';
+	    $::config{'storageAuto'} = _cfg('aiSidecar_storageAuto', '0');
 	    my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
 		$::config{'storageAuto_npc'} = $_stor_npc if $_stor_npc;
 	    $::config{'storageAuto_distance'} = '5';
