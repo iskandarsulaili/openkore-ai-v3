@@ -4353,6 +4353,12 @@ class PDCALoop:
                     # If death actions were queued, report re_planned=True for respawn
                     _death_recovery = _death_actions_queued > 0
                     # ── Pro RO Player cold start (also fires in heuristic mode) ──
+                    # New player onboarding (stat/skill/NPC prep before hunting)
+                    try:
+                        from ai_sidecar.autonomy.onboarding_integration import try_onboarding
+                        _total_actions += try_onboarding(self._runtime, _cycle_bot_id)
+                    except Exception:
+                        pass
                     _cr_advice = None
                     try:
                         from ai_sidecar.game_knowledge import game_knowledge
