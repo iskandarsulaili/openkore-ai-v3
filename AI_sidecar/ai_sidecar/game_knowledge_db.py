@@ -79,12 +79,17 @@ class GameKnowledgeDB:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def allocate_stats(self, bot_level: int, current_stats: dict, job_name: str = "novice") -> dict:
-        """Calculate which stats to allocate based on build plan vs current stats."""
+    def allocate_stats(self, bot_level: int, current_stats: dict, job_name: str = "novice",
+                       available_points: int = 36) -> dict:
+        """Distribute available stat points according to build ratios.
+        
+        Uses the DB-backed build plan (ratios + breakpoints) to allocate
+        available_points across stats. Handles any starting values and
+        ensures breakpoints aren't exceeded.
+        """
         build = self.get_stat_build(job_name)
-        if not build:
-            # Default: STR for novice
-            return {"str": min(99, (current_stats.get("str", 1) or 1) + 5)}
+        if not build or available_points <= 0:
+            return {}
 
         stat_order = json.loads(build["stat_order"])
         stat_ratios = json.loads(build["stat_ratios"])
@@ -94,20 +99,43 @@ class GameKnowledgeDB:
         if total_ratio == 0:
             total_ratio = 1
 
-        allocation = {}
+        # Calculate how many of the available points go to each stat
+        raw_allocation = {}
+        remaining = available_points
         for stat in stat_order:
             ratio = stat_ratios.get(stat, 0) / total_ratio
-            target_at_level = int(bot_level * ratio)
+            points = int(available_points * ratio)
             current = current_stats.get(stat, 1) or 1
-            if current < target_at_level:
-                # Check breakpoints
+            
+            # Respect breakpoints
+            stat_bp = breakpoints.get(stat, [])
+            if stat_bp:
+                next_bp = min((bp for bp in stat_bp if bp > current), default=999)
+                max_to_next_bp = max(0, next_bp - current)
+                points = min(points, max_to_next_bp)
+            
+            points = min(points, remaining)
+            if points > 0:
+                raw_allocation[stat] = points
+                remaining -= points
+
+        # Distribute any leftover points (due to rounding) round-robin
+        if remaining > 0:
+            for stat in stat_order:
+                if remaining <= 0:
+                    break
+                current = current_stats.get(stat, 1) or 1
                 stat_bp = breakpoints.get(stat, [])
                 if stat_bp:
-                    # Don't exceed next breakpoint
-                    next_bp = min((bp for bp in stat_bp if bp > current), default=99)
-                    target_at_level = min(target_at_level, next_bp)
-                allocation[stat] = max(0, target_at_level - current)
-        return allocation
+                    next_bp = min((bp for bp in stat_bp if bp > current), default=999)
+                    if current + raw_allocation.get(stat, 0) < next_bp:
+                        raw_allocation[stat] = raw_allocation.get(stat, 0) + 1
+                        remaining -= 1
+                else:
+                    raw_allocation[stat] = raw_allocation.get(stat, 0) + 1
+                    remaining -= 1
+
+        return raw_allocation
 
     # ── Skill Builds ───────────────────────────────────────────────
 

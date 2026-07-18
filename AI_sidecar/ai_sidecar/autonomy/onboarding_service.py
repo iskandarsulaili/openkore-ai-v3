@@ -86,7 +86,7 @@ class OnboardingService:
 
         # ── Step 1: Allocate Stats ──
         if next_step == "allocate_stats" and stat_points > 0:
-            allocation = self.db.allocate_stats(base_level, current_stats, job_name)
+            allocation = self.db.allocate_stats(base_level, current_stats, job_name, stat_points)
             if allocation:
                 for stat, amount in allocation.items():
                     if amount > 0:
