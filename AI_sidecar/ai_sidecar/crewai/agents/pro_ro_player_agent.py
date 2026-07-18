@@ -64,7 +64,7 @@ CLASS_EARLY_GAME: dict[str, dict[str, Any]] = {
         "first_map": "prt_fild00",
         "level_range": (1, 15),
         "advice": "As a Novice, train on Porings, Lunatics, and Fabres in prt_fild00 (south of Prontera). Pump DEX to 20 first for hit rate, then STR. Do the novice training ground quest for free gear.",
-        "stats": "STR 20 > DEX 20 > rest STR",
+        "stats": "DEX 30 > STR 20 > AGI 15 > VIT 10",
         "equipment": "Sword[3] + 3x Fabre Card, Cotton Shirt, Sandals",
     },
     "swordman": {

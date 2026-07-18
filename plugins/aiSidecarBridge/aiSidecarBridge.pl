@@ -4172,7 +4172,7 @@ sub _discover_portals {
 	return if $now - $_last_ps < 3600000;
 	$_last_ps = $now;
 	my %conn;
-	my $pf = $::Settings->{tablesPath} . '/portals.txt';
+	my $pf = ($::Settings->{tablesPath} || 'tables') . '/portals.txt';
 	if (open(my $fh, '<', $pf)) {
 	    while (my $ln = <$fh>) {
 	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
@@ -4204,7 +4204,7 @@ sub _discover_shops_sync {
 
 sub _discover_portals_sync {
 	my %conn;
-	my $pf = $::Settings->{tablesPath} . '/portals.txt';
+	my $pf = ($::Settings->{tablesPath} || 'tables') . '/portals.txt';
 	if (open(my $fh, '<', $pf)) {
 	    while (my $ln = <$fh>) {
 	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
