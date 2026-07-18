@@ -3763,8 +3763,8 @@ class PDCALoop:
                                                 _knowledge = _json.load(_kf)
                                             _innov.propose_knowledge_driven_experiment(_knowledge)
                                             _pending = _innov.get_pending_experiments()
-                                    except Exception:
-                                        pass
+                                    except Exception as _e:
+                                        logger.info("zone_ladder_override_error[inline]: %s", _e)
                                 for _exp in _pending[:1]:  # Run one experiment at a time
                                     _innov.start_experiment(_exp.name)
                                     # Use knowledge-driven target map if available
@@ -4050,8 +4050,8 @@ class PDCALoop:
                                     if _hp_trend < -0.1:  # HP dropping fast
                                         _tactical_trigger = True
                                         _trigger_reason = "tactical:hp_dropping"
-                            except Exception:
-                                pass
+                            except Exception as _e:
+                                logger.info("zone_ladder_override_error[llm]: %s", _e)
                     
                     if _tactical_trigger and not _use_llm:
                         _use_llm = True
@@ -4398,8 +4398,8 @@ class PDCALoop:
                                             _cr_conf = max(_cr_conf, 0.85)
                                             logger.info("zone_ladder_override: old=%s new=%s level=%s", 
                                                         _cr_advice.get('target_map','?'), _better_map, _cr_level)
-                                    except Exception:
-                                        pass
+                                    except Exception as _e:
+                                        logger.info("zone_ladder_override_error[inline]: %s", _e)
                                 logger.info(
                                     "pro_ro_player_cold_start[%s]: build=%s map=%s cmd=%s conf=%.2f",
                                     _cycle_bot_id or '?',
@@ -4790,8 +4790,8 @@ class PDCALoop:
                                         logger.info("zone_ladder_override[%s]: llm_map=%s ladder_map=%s level=%s",
                                                     decision_meta.bot_id, _llm_map, _zone2["map_name"], _cr_lvl)
                                     _advice_command = str(_advice.get("command", "") or "").strip()
-                            except Exception:
-                                pass
+                            except Exception as _e:
+                                logger.info("zone_ladder_override_error[llm]: %s", _e)
 
                             if _advice_confidence > 0.85 and _advice_command:
                                 # High confidence: queue as an action directly
@@ -5159,8 +5159,8 @@ class PDCALoop:
                                     elif _map_name and "prontera" in _map_name.lower() and not "fild" in _map_name.lower():
                                         # Bot in town with no learned path — heuristic/reflex will handle
                                         _cmd = "ai auto"
-                            except Exception:
-                                pass
+                            except Exception as _e:
+                                logger.info("zone_ladder_override_error[llm]: %s", _e)
                             proposal = ActionProposal(
                                 action_id=f"pdca_{horizon.value}_{_short_id}",
                                 kind="command",
@@ -6487,8 +6487,8 @@ class PDCALoop:
                                 if bot_id:
                                     try:
                                         _promotion.add_bot_to_scope(family=_family, bot_id=bot_id)
-                                    except Exception:
-                                        pass
+                                    except Exception as _e:
+                                        logger.info("zone_ladder_override_error[inline]: %s", _e)
                                 # Check auto-escalation
                                 try:
                                     _promotion.check_auto_escalation(family=_family)
