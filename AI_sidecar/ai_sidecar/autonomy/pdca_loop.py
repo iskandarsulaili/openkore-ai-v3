@@ -38,6 +38,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
     """Emit heuristic actions to the action queue.
     Uses the first registered bot if none specified.
     Returns number of actions queued."""
+    from collections import deque
     import logging
     _log = logging.getLogger(__name__)
     try:
@@ -145,7 +146,6 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Track burst tracker on the runtime state
                         _bt = getattr(runtime_state, '_burst_tracker', None)
                         if _bt is None:
-                            from collections import deque
                             _bt = {}
                             runtime_state._burst_tracker = _bt
                         if _burst_bs not in _bt:
@@ -4399,7 +4399,8 @@ class PDCALoop:
                                             source='planner',
                                             created_at=datetime.now(UTC),
                                             expires_at=datetime.now(UTC) + timedelta(seconds=60),
-                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}',
+                                            conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{_cycle_count}',
+                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{_cycle_count}',
                                             metadata={
                                                 'source': 'pro_ro_player',
                                                 'confidence': _cr_conf,
