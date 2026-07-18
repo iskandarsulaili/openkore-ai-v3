@@ -4414,7 +4414,7 @@ class PDCALoop:
                                             _cycle_bot_id or '?', _cr_cmd, _cr_map,
                                         )
                     except Exception:
-                        pass
+                        logger.exception("pro_ro_player_cold_start_exception")
                     return PDCAResult(horizon=horizon, plan_id="death_respawn" if _death_recovery else "", 
                                       actions_queued=_total_actions + _death_actions_queued, progress_pct=0.0, stuck=False, 
                                       re_planned=_death_recovery,
