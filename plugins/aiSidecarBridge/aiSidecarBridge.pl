@@ -4096,7 +4096,7 @@ sub _teamplay_check {
 	        bot_id => _bot_id(),
 	        map => $cr->{map} || "",
 	        level => $cr->{level} || 1,
-	        siblings => [_cfg_list('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman')],
+	        siblings => [split(',', _cfg('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman'))],
 	    });
 	}
 
@@ -4117,7 +4117,7 @@ sub _teamplay_check {
 	            my $_pn = $_pl->{name} || '';
 	            next if $_pn eq '' || $_pn eq $name;
 	            my $_is_sib = 0;
-	            foreach (_cfg_list('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman')) { if ($_pn eq $_) { $_is_sib = 1; last; } }
+	            foreach (split(',', _cfg('aiSidecar_siblingMasters', 'openkoreai,openkoreaiobs,openkoreaihuman'))) { if ($_pn eq $_) { $_is_sib = 1; last; } }
 	            next if $_is_sib;
 	            my $_already = 0;
 	            if (ref($party) eq 'HASH') {
