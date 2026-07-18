@@ -4399,8 +4399,8 @@ class PDCALoop:
                                             source='planner',
                                             created_at=datetime.now(UTC),
                                             expires_at=datetime.now(UTC) + timedelta(seconds=60),
-                                            conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{_cycle_count}',
-                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{_cycle_count}',
+                                            conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
+                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
                                             metadata={
                                                 'source': 'pro_ro_player',
                                                 'confidence': _cr_conf,
