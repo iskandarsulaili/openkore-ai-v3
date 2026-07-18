@@ -258,6 +258,60 @@ class GameKnowledgeDB:
             return [{"map_name": zone["map_name"], "exp_per_hour": 0, "kills": 0, "deaths": 0}]
         return []
 
+    def get_job_path(self, from_job: str, priority: int = 1) -> dict | None:
+        """Get the next job change recommendation from the job path DB."""
+        conn = self._get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM job_paths WHERE LOWER(from_job)=LOWER(?) AND priority=? ORDER BY priority ASC LIMIT 1",
+            (from_job, priority),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_job_tree(self, current_job: str, base_level: int, current_stats: dict) -> list[dict]:
+        """Build a progression tree from current job through all available upgrades."""
+        conn = self._get_conn()
+        cur = conn.cursor()
+        paths = []
+        cur.execute(
+            "SELECT * FROM job_paths WHERE LOWER(from_job)=LOWER(?) ORDER BY priority ASC",
+            (current_job,),
+        )
+        for row in cur.fetchall():
+            jp = dict(row)
+            # Check if stats meet requirements
+            meets_reqs = True
+            if jp.get("requirements"):
+                reqs = jp["requirements"]
+                import re
+                for stat_req in re.findall(r'([A-Z]+)\s+(\d+)\+', reqs):
+                    stat_name, needed = stat_req[0].lower(), int(stat_req[1])
+                    if (current_stats.get(stat_name, 1) or 1) < needed:
+                        meets_reqs = False
+            jp["meets_requirements"] = meets_reqs
+            paths.append(jp)
+        return paths
+
+    def plan_build(self, current_job: str, base_level: int, current_stats: dict) -> dict:
+        """Plan the optimal build path: which job to aim for, what stats to prioritize."""
+        # Get primary job path
+        job_path = self.get_job_path(current_job)
+        target_job = job_path["to_job"] if job_path else "adventurer"
+        
+        # Get stat build for target job
+        stat_build = self.get_stat_build(target_job)
+        if not stat_build:
+            stat_build = self.get_stat_build(current_job)
+        
+        return {
+            "current_job": current_job,
+            "target_job": target_job,
+            "stat_build": stat_build,
+            "job_tree": self.get_job_tree(current_job, base_level, current_stats),
+            "next_job_change": self.get_job_path(current_job),
+        }
+
     def optimize_hunting_map(self, bot_id: str, base_level: int, known_maps: set[str]) -> str | None:
         """Choose the best map to hunt on between DB data and zone ladder."""
         best = self.get_best_zones(bot_id, base_level, 1)

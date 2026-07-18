@@ -213,10 +213,13 @@ sub on_mainLoop_pre {
 	my $now = _now_ms();
 
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
-		$next_snapshot_at_ms = $now + _cfg_int('aiSidecar_snapshotIntervalMs', 500);
-		_send_snapshot();
-		_check_ml_outcome();
-		_check_bridge_reflexes();
+	    my $snap_base = _cfg_int('aiSidecar_snapshotIntervalMs', 500);
+	    my $snap_jitter = int(rand(1 + $snap_base * 0.2));
+	    $snap_jitter = -$snap_jitter if int(rand(2)) == 0;
+	    $next_snapshot_at_ms = $now + $snap_base + $snap_jitter;
+	    _send_snapshot();
+	    _check_ml_outcome();
+	    _check_bridge_reflexes();
 	}
 
 	_track_lifecycle_transitions();
@@ -235,7 +238,11 @@ sub on_mainLoop_post {
 
 	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
 	    my $poll_ok = _poll_next_action();
-	    my $next_delay_ms = $poll_ok ? _cfg_int('aiSidecar_pollIntervalMs', 100) : _poll_failure_delay_ms();
+	    my $base_delay_ms = _cfg_int('aiSidecar_pollIntervalMs', 100);
+	    my $jitter_pct = _cfg_int('aiSidecar_pollJitterPct', 30);
+	    my $jitter = int(rand($base_delay_ms * $jitter_pct / 100));
+	    $jitter = -$jitter if int(rand(2)) == 0;
+	    my $next_delay_ms = $poll_ok ? ($base_delay_ms + $jitter) : _poll_failure_delay_ms();
 	    $next_poll_at_ms = $now + $next_delay_ms;
 	}
 
