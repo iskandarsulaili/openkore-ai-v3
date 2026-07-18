@@ -25,7 +25,7 @@ my $ANTI_DETECTION_MAX_DELAY_MS = 50;
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
-my $HARDCODED_FALLBACK_ITEM = _cfg('aiSidecar_fallbackItem', 'White Potion');
+my $HARDCODED_FALLBACK_ITEM = _cfg('aiSidecar_fallbackItem', _cfg('aiSidecar_fallbackHealItem', 'White Potion'));
 
 Plugins::register(
 	'aiSidecarBridge',
@@ -817,7 +817,7 @@ sub _load_bridge_config {
 		aiSidecar_ackEnabled => 1,
 		# ── Server-agnostic NPC & map config (override per bot profile in ai_sidecar.txt) ──
 		aiSidecar_recoveryCity => '',           # Default city to retreat to (auto-detected from current map)
-		aiSidecar_fallbackItem => 'White Potion', # Fallback healing item when none configured
+		aiSidecar_fallbackItem => _cfg('aiSidecar_fallbackHealItem', 'White Potion'), # Fallback healing item when none configured
 		# ── Bot behavior overrides (overrides OpenKore config.txt) ──
 		aiSidecar_attackAuto => '2',
 		aiSidecar_attackAutoInLockOnly => '1',
@@ -3943,7 +3943,7 @@ sub _survival_check {
 	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')) {
 	        my $_hunt = _cfg('aiSidecar_huntingMap', '');
-		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_defaultHuntMap', 'prt_fild08');
+		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_huntMap', '');
 	    }
 	    if ($AI::AI != 2) {
 	        eval { require AI; AI::state(2); 1 };
@@ -3966,12 +3966,9 @@ sub _sell_junk_items {
 	my $cr = _safe_char();
 	return if !$cr || !$cr->{inventory};
 	
-	# Items worth less than 100z that should be sold automatically
-	my %sell_items = (
-	    'Jellopy' => 1, 'Stem' => 1, 'Empty Bottle' => 1,
-	    'Red Herb' => 1, 'Yellow Herb' => 1, 'White Herb' => 1,
-	    'Feather' => 1, 'Cactus Needle' => 1, 'Shell' => 1,
-	);
+	# # Items to auto-sell (configurable via aiSidecar_sellItems CSV)
+my @sell_list = split(',', _cfg('aiSidecar_sellItems', 'Jellopy,Stem,Empty Bottle,Red Herb,Yellow Herb,White Herb,Feather,Cactus Needle,Shell'));
+my %sell_items = map { $_ => 1 } @sell_list;
 	
 	foreach my $item (@{$cr->{inventory}}) {
 	    next unless ref($item) eq 'HASH';
@@ -4038,7 +4035,7 @@ sub _survival_check {
 	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
 	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
 	    if ($_clm eq '') {
-		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_defaultHuntMap', 'prt_fild08');
+		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_huntMap', '');
 	    }
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
