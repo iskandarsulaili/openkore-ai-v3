@@ -225,3 +225,27 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
     )
     _maybe_save_heal_skill(req, resp)
     return resp
+
+
+@router.post("/economy")
+async def determine_economy_strategy(req: HealStrategyRequest) -> HealStrategyResponse:
+    """Determine economy strategy: where to hunt, based on zone ladder DB.
+    No hardcoded maps — always queries the DB for level-appropriate zones."""
+    from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+    db = GameKnowledgeDB()
+    zone = db.get_hunting_zone(req.base_level or 1)
+    best_map = zone["map_name"] if zone else ""
+    
+    if not best_map:
+        return HealStrategyResponse(
+            strategy="auto_navigate", command="ai auto",
+            confidence=0.5,
+        )
+    
+    return HealStrategyResponse(
+        strategy="go_hunting",
+        command=f"move {best_map}",
+        target_map=best_map,
+        confidence=0.85,
+    )
+
