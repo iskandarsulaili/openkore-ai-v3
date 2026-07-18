@@ -123,7 +123,7 @@ class SidecarSettings(BaseSettings):
 
 
     provider_ollama_enabled: bool = True
-    provider_ollama_base_url: str = "http://127.0.0.1:11434"
+    provider_ollama_base_url: str = "http://127.0.0.1:11434"  # Override via PROVIDER_OLLAMA_BASE_URL env
     provider_ollama_default_model: str = "qwen3.6:35b-a3b-q4_K_M"
     provider_ollama_tactical_model: str = "qwen3.6:35b-a3b-q4_K_M"
     provider_ollama_strategic_model: str = "qwen3.6:35b-a3b-q4_K_M"

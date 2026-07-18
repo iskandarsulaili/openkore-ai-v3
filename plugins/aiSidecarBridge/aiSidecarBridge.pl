@@ -25,7 +25,7 @@ my $ANTI_DETECTION_MAX_DELAY_MS = 50;
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
-my $HARDCODED_FALLBACK_ITEM = 'White Potion';
+my $HARDCODED_FALLBACK_ITEM = _cfg('aiSidecar_fallbackItem', 'White Potion');
 
 Plugins::register(
 	'aiSidecarBridge',
@@ -810,6 +810,37 @@ sub _load_bridge_config {
 		aiSidecar_ackEnabled => 1,
 		# ── Server-agnostic NPC & map config (override per bot profile in ai_sidecar.txt) ──
 		aiSidecar_recoveryCity => '',           # Default city to retreat to (auto-detected from current map)
+		aiSidecar_fallbackItem => 'White Potion', # Fallback healing item when none configured
+		# ── Bot behavior overrides (overrides OpenKore config.txt) ──
+		aiSidecar_attackAuto => '2',
+		aiSidecar_attackAutoInLockOnly => '1',
+		aiSidecar_attackAutoFollowTarget => '0',
+		aiSidecar_attackAutoOnlyWhenSafe => '0',
+		aiSidecar_attackAutoNoMove => '0',
+		aiSidecar_sitAutoHpLower => '0',
+		aiSidecar_sitAutoHpUpper => '0',
+		aiSidecar_sitAutoMaxDmg => '99999',
+		# ── Reflex cooldowns (milliseconds per reflex type) ──
+		aiSidecar_reflexNoHealCooldownMs => 10000,
+		aiSidecar_reflexFleeCooldownMs => 1000,
+		aiSidecar_reflexTeleportCooldownMs => 3000,
+		aiSidecar_reflexAggroWarningCooldownMs => 5000,
+		aiSidecar_reflexLowSpCooldownMs => 10000,
+		aiSidecar_reflexGmDetectedCooldownMs => 60000,
+		aiSidecar_reflexWeightWarningCooldownMs => 30000,
+		aiSidecar_reflexEquipBrokenCooldownMs => 60000,
+		aiSidecar_reflexInterruptCastCooldownMs => 1500,
+		aiSidecar_reflexPrePotCooldownMs => 5000,
+		aiSidecar_reflexBotRequestCooldownMs => 5000,
+		aiSidecar_reflexPartyLowHpCooldownMs => 10000,
+		aiSidecar_reflexHighAggroCooldownMs => 3000,
+		aiSidecar_reflexZonkCooldownMs => 2000,
+		aiSidecar_reflexDeathSpikeCooldownMs => 120000,
+		aiSidecar_reflexPreBuffCooldownMs => 15000,
+		aiSidecar_reflexPreDodgeCooldownMs => 2000,
+		aiSidecar_reflexAutoSitCooldownMs => 5000,
+		aiSidecar_reflexTopOffCooldownMs => 10000,
+		aiSidecar_reflexEmergencyMoveCooldownMs => 60000,
 		aiSidecar_huntingMap => '',              # Default hunting map (auto-detected from knowledge DB)
 		aiSidecar_sellNpc => '',                 # Sell NPC "map x y" or empty for auto-detect
 		aiSidecar_storageNpc => '',              # Storage NPC "map x y" or empty for auto-detect
@@ -3249,7 +3280,7 @@ sub _check_bridge_reflexes {
 	my $_recovery_city_val = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera';
 	my $_recovery_city_ptn = quotemeta($_recovery_city_val);
 
-	if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, 10000)) {
+	if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, _cfg_int('aiSidecar_reflexNoHealCooldownMs', 10000))) {
 					$_reflex_last_fired{no_heal} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
 
@@ -3327,7 +3358,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Instant flee when HP <15% and aggroed (no anti-detection delay)
 		if ($hp_ratio < 0.15 && $aggro_count > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, 1000)) {
+			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, _cfg_int('aiSidecar_reflexFleeCooldownMs', 1000))) {
 				$_reflex_last_fired{flee} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
@@ -3342,7 +3373,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Teleport if <12% HP and aggroed, sit+regen otherwise
 		if ($hp_ratio < 0.12) {
-			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, 3000)) {
+			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, _cfg_int('aiSidecar_reflexTeleportCooldownMs', 3000))) {
 				$_reflex_last_fired{teleport} = _now_ms();
 				if ($aggro_count > 0) {
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
@@ -3362,7 +3393,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Notify sidecar when heavily aggroed (>5 attackers)
 		if ($aggro_count > 5) {
-			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, 5000)) {
+			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, _cfg_int('aiSidecar_reflexAggroWarningCooldownMs', 5000))) {
 				$_reflex_last_fired{aggro_warning} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
 				_post_event({
@@ -3381,7 +3412,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Notify sidecar when SP is critically low
 		if ($sp_ratio < 0.15) {
-			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, 10000)) {
+			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, _cfg_int('aiSidecar_reflexLowSpCooldownMs', 10000))) {
 				$_reflex_last_fired{low_sp} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
 				_post_event({
@@ -3414,7 +3445,7 @@ sub _check_bridge_reflexes {
 				}
 			}
 			if ($gm_detected) {
-				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, 60000)) {
+				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, _cfg_int('aiSidecar_reflexGmDetectedCooldownMs', 60000))) {
 					$_reflex_last_fired{gm_detected} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
 					# GM manual toggle disabled — let survival check handle mode
@@ -3434,7 +3465,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Notify sidecar when weight exceeds 85%
 		if ($weight_ratio > 0.85) {
-			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, 30000)) {
+			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, _cfg_int('aiSidecar_reflexWeightWarningCooldownMs', 30000))) {
 				$_reflex_last_fired{weight_warning} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
 				_post_event({
@@ -3463,7 +3494,7 @@ sub _check_bridge_reflexes {
 				}
 			}
 			if ($broken_found) {
-				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, 60000)) {
+				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, _cfg_int('aiSidecar_reflexEquipmentBrokenCooldownMs', 60000))) {
 					$_reflex_last_fired{equipment_broken} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
 					_post_event({
@@ -3493,7 +3524,7 @@ sub _check_bridge_reflexes {
 				}
 			}
 			if ($interrupted) {
-				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, 1500)) {
+				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, _cfg_int('aiSidecar_reflexInterruptCastCooldownMs', 1500))) {
 					$_reflex_last_fired{interrupt_cast} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
 					eval { Commands::run("skill Bash 10"); 1 };
@@ -3522,7 +3553,7 @@ sub _check_bridge_reflexes {
 				}
 			}
 			if ($boss_nearby && $hp_ratio > 0.9) {
-				if (_should_fire_reflex($_reflex_last_fired{pre_pot} || 0, 5000)) {
+				if (_should_fire_reflex($_reflex_last_fired{pre_pot} || 0, _cfg_int('aiSidecar_reflexPrePotCooldownMs', 5000))) {
 					$_reflex_last_fired{pre_pot} = _now_ms();
 					_update_heal_cache();
 					my $healed = 0;
@@ -3547,7 +3578,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# If HP critically low with no heal resources and aggro, request help from other bots
 		if (!$heal_triggered && $hp_ratio < 0.50 && $aggro_count > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, 5000)) {
+			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, _cfg_int('aiSidecar_reflexBotRequestCooldownMs', 5000))) {
 				$_reflex_last_fired{bot_request} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				_post_event({
@@ -3587,7 +3618,7 @@ sub _check_bridge_reflexes {
 					my $dist = _calc_distance($player, $char);
 					next if !defined $dist || $dist > 20;
 
-					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, 10000)) {
+					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, _cfg_int('aiSidecar_reflexPartyLowHpCooldownMs', 10000))) {
 						$_reflex_last_fired{party_low_hp} = _now_ms();
 # 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
 						_post_event({
@@ -3611,7 +3642,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Immediate emergency when surrounded (>10 aggro)
 		if ($aggro_count > 10) {
-			if (_should_fire_reflex($_reflex_last_fired{high_aggro_surround} || 0, 3000)) {
+			if (_should_fire_reflex($_reflex_last_fired{high_aggro_surround} || 0, _cfg_int('aiSidecar_reflexHighAggroSurroundCooldownMs', 3000))) {
 				$_reflex_last_fired{high_aggro_surround} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:high_aggro_surround (aggro=$aggro_count)\n";
 
@@ -3637,7 +3668,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Immediate sit if HP is zero or critically zero (zombie state)
 		if ($hp <= 0 || ($hp > 0 && $hp <= 5)) {
-			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, 2000)) {
+			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, _cfg_int('aiSidecar_reflexZonkCooldownMs', 2000))) {
 				$_reflex_last_fired{zonk} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
 				eval { my $_emap = $char->{map}||""; if ($_emap !~ m{^$_recovery_city_ptn}i) { $::config{"lockMap"}= "$_recovery_city_val"; _toggle_ai_mode('auto'); } 1 };
@@ -3657,7 +3688,7 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Track death count and notify sidecar if deaths spike
 		if ($death_count > 0 && $death_count % 5 == 0) {
-			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, 120000)) {
+			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, _cfg_int('aiSidecar_reflexDeathSpikeCooldownMs', 120000))) {
 				$_reflex_last_fired{death_spike} = _now_ms();
 # 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
 				_post_event({
@@ -3676,7 +3707,7 @@ sub _check_bridge_reflexes {
 		# Pre-buff before engaging: cast self-buffs when out of combat
 		# Pro players always buff before engaging, never during combat
 		if (!$in_combat && $hp_ratio > 0.8 && $sp_ratio > 0.3) {
-			if (_should_fire_reflex($_reflex_last_fired{pre_buff} || 0, 15000)) {
+			if (_should_fire_reflex($_reflex_last_fired{pre_buff} || 0, _cfg_int('aiSidecar_reflexPreBuffCooldownMs', 15000))) {
 				$_reflex_last_fired{pre_buff} = _now_ms();
 				# Try common self-buffs based on class
 				my @buffs = (
@@ -3739,7 +3770,7 @@ sub _check_bridge_reflexes {
 				}
 
 				if ($should_dodge) {
-					if (_should_fire_reflex($_reflex_last_fired{pre_dodge} || 0, 2000)) {
+					if (_should_fire_reflex($_reflex_last_fired{pre_dodge} || 0, _cfg_int('aiSidecar_reflexPreDodgeCooldownMs', 2000))) {
 						$_reflex_last_fired{pre_dodge} = _now_ms();
 # 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
 						# Move away immediately — no delay
@@ -3764,7 +3795,7 @@ sub _check_bridge_reflexes {
 		# Auto-sit when out of combat and HP/SP is low
 		# Pro players sit to regen between pulls, never fight at low HP
 		if (!$in_combat && $hp_ratio < 0.6 && $hp > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, 5000)) {
+			if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
 				$_reflex_last_fired{auto_sit} = _now_ms();
 				my $ai_top = @ai_seq ? $ai_seq[0] : '';
 				if ($ai_top ne 'sit') {
@@ -3780,7 +3811,7 @@ sub _check_bridge_reflexes {
 		# Top off HP when out of combat and HP < 80%
 		# Pro players keep HP topped off between pulls, not just in emergencies
 		if (!$in_combat && $hp_ratio > 0.3 && $hp_ratio < 0.8 && $hp > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{top_off} || 0, 10000)) {
+			if (_should_fire_reflex($_reflex_last_fired{top_off} || 0, _cfg_int('aiSidecar_reflexTopOffCooldownMs', 10000))) {
 				$_reflex_last_fired{top_off} = _now_ms();
 				_update_heal_cache();
 				for my $item_name (@_heal_items) {
@@ -3803,14 +3834,14 @@ sub _apply_bot_config {
 	
 	# Enable continuous auto-attack on monsters
 	if (defined $::config) {
-	    $::config{'attackAuto'} = '2';
-	    $::config{'attackAuto_inLockOnly'} = '1';
-	    $::config{'attackAuto_followTarget'} = '0';
-	    $::config{'attackAuto_onlyWhenSafe'} = '0';
-	    $::config{'attackAuto_noMove'} = '0';
-	    $::config{'sitAuto_hp_lower'} = '0';  # Disable sit auto (bridge handles it)
-	    $::config{'sitAuto_hp_upper'} = '0';
-	    $::config{'sitAuto_maxDmg'} = '99999';
+	    $::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2');
+	    $::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1');
+	    $::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0');
+	    $::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0');
+	    $::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0');
+	    $::config{'sitAuto_hp_lower'} = _cfg('aiSidecar_sitAutoHpLower', '0');
+	    $::config{'sitAuto_hp_upper'} = _cfg('aiSidecar_sitAutoHpUpper', '0');
+	    $::config{'sitAuto_maxDmg'} = _cfg('aiSidecar_sitAutoMaxDmg', '99999');
 	    
 	    # Auto-pickup everything (we sell junk)
 	    $::config{'itemsTakeAuto'} = '2';

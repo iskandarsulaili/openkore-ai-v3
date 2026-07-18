@@ -167,7 +167,15 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
         return resp_tmp
 
     # Phase 5: Check for Healer NPC on current map (Prontera) — only when HP < 50%
-    if req.map and 'prontera' in req.map.lower():
+    _is_town = False
+    if req.map:
+        try:
+            from ai_sidecar.game_knowledge import game_knowledge
+            _gk = game_knowledge()
+            _is_town = _gk.town_for_map(req.map) == _gk.town_for_map(req.map)
+        except Exception:
+            pass
+    if req.map and (_is_town or 'prontera' in req.map.lower()):
         # If already within 6 tiles of Healer → talk directly
         if req.x and req.y:
             dx = abs(req.x - 159)
