@@ -98,6 +98,7 @@ class HealStrategyRequest(BaseModel):
     inventory: list[dict] = []
     x: int = 0
     y: int = 0
+    base_level: int = 1
 
 
 class HealStrategyResponse(BaseModel):
@@ -106,6 +107,20 @@ class HealStrategyResponse(BaseModel):
     target_map: str = ""
     target_npc: str = ""
     confidence: float = 0.0
+
+
+
+def _get_best_hunting_map(level: int) -> str:
+    """Query DB for best hunting map at given level. Returns map name or empty string."""
+    try:
+        from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+        db = GameKnowledgeDB()
+        zone = db.get_hunting_zone(level)
+        if zone:
+            return zone["map_name"]
+    except Exception:
+        pass
+    return ""
 
 
 @router.post("/heal", response_model=HealStrategyResponse)
@@ -160,7 +175,7 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
         resp_tmp = HealStrategyResponse(
             strategy="go_hunting",
             command="ai auto",
-            target_map="prt_fild08",
+            target_map=_get_best_hunting_map(req.base_level),
             confidence=0.7,
         )
         _maybe_save_heal_skill(req, resp_tmp)

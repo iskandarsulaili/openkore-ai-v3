@@ -4389,7 +4389,7 @@ class PDCALoop:
                                     try:
                                         from ai_sidecar.game_knowledge_db import GameKnowledgeDB
                                         _gk_db = GameKnowledgeDB()
-                                        _cr_level = getattr(_pro_inline_snap.progression, 'base_level', 1) if hasattr(_pro_inline_snap, 'progression') else 1
+                                        _cr_level = int(_cr_signals.get('level', 1) or 1)
                                         _zone = _gk_db.get_hunting_zone(int(_cr_level))
                                         _better_map = _zone['map_name'] if _zone else None
                                         if _better_map and _better_map != _cr_map:
