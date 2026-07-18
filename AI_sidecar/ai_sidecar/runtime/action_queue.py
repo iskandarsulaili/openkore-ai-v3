@@ -158,6 +158,20 @@ class ActionQueue:
                 for _bid, _q in self._by_bot.items():
                     if ':' in _bid and _bid.split(':', 1)[1] == _suffix:
                         bot_queue = _q
+                        # Also expire on the matched queue (skipped above for non-exact match)
+                        _kept = deque()
+                        for _queued in bot_queue:
+                            _exp = self._normalize_datetime(_queued.proposal.expires_at)
+                            if _queued.status == ActionStatus.dispatched:
+                                _da = self._normalize_datetime(getattr(_queued, 'dispatched_at', None))
+                                if _da and (now - _da).total_seconds() > 30:
+                                    continue
+                            if _exp and now > _exp:
+                                _queued.status = ActionStatus.expired
+                                continue
+                            _kept.append(_queued)
+                        bot_queue.clear()
+                        bot_queue.extend(_kept)
                         break
             if not bot_queue:
                 return None
