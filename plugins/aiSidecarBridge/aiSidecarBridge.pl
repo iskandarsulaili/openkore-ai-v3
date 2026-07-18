@@ -2778,6 +2778,7 @@ sub _rewrite_runtime_command {
 		# Only set lockMap for valid map names (not special commands)
 		if ($target !~ /^(savepoint|random_walk_seek)$/) {
 			my $current_lockMap = defined $::config{"lockMap"} ? $::config{"lockMap"} : '';
+			debug "[lockMap] setting lockMap from '$current_lockMap' to '$target'\n", 'aiSidecarBridge', 1;
 			$::config{"lockMap"} = $target;
 			$::config{"lockMap_x"} = "";
 			$::config{"lockMap_y"} = "";
@@ -4028,7 +4029,10 @@ sub _survival_check {
 	# ── Economy: If zeny low, go grind ──
 	if ($zeny < 300 && $base_lv < 99) {
 	    my $_hunt = _cfg('aiSidecar_huntingMap', '');
+	    my $_clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
+	    if ($_clm eq '' || $_clm eq 'prt_in' || $_clm eq 'prontera') {
 		$::config{'lockMap'} = $_hunt || 'prt_fild08';
+	    }
 	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
 	}
 
