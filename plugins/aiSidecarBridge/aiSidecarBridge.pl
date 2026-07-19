@@ -2763,7 +2763,10 @@ sub _rewrite_runtime_command {
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
-
+	
+	# DEBUG: log incoming command
+	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 1;
+	
 	if ($normalized =~ /^move\s+savepoint$/) {
 		return ('respawn', 'move_savepoint_rewritten');
 	}
@@ -2790,7 +2793,7 @@ sub _rewrite_runtime_command {
 		$orig_key = $set_key unless defined $orig_key;
 		my $old_val = $::config{$orig_key};
 		$::config{$orig_key} = $set_val;
-		logger("[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")", 'aiSidecarBridge', 1);
+		debug "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
 		return ('', 'config_set_ok');
 	}
 	
