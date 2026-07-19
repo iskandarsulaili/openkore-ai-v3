@@ -5222,6 +5222,7 @@ class PDCALoop:
                                 source="planner",
                                 created_at=datetime.now(UTC),
                                 expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                conflict_key=f"goal_{_goal}_{_bot}",
                                 idempotency_key=f"pdca_{horizon.value}_{_short_id}",
                                 metadata={"goal": _goal[:100], "objective": _obj[:100], "horizon": horizon.value, "bot_id": _bot},
                             )
