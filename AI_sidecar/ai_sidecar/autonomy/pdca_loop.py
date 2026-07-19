@@ -1566,6 +1566,66 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         _log.warning("combat_monitor_exception: %s", _cme)
         return 0
 
+def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
+    """Emit combat-optimized actions based on target monster analysis.
+    
+    Uses TargetEngine (mob_db.yml) + ElementTable (attr_fix.yml) to:
+    1. Resolve current target monster's element/size/race
+    2. Check if weapon swap would improve damage
+    3. Queue equip/skill commands accordingly
+    
+    Follows RULE.md: all decisions from rAthena DB, zero hardcoded values.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        from ai_sidecar.combat.target_engine import resolve_target
+        from ai_sidecar.combat.element_table import get_element_table
+        from ai_sidecar.combat.server_mode import get_server_mode
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        
+        # Get snapshot for this bot
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        if snapshots is None:
+            return 0
+        _bid = bot_id or "default"
+        if hasattr(snapshots, 'get'):
+            latest = snapshots.get(_bid)
+        else:
+            latest = getattr(snapshots, "latest", lambda: None)()
+        if latest is None:
+            return 0
+        
+        # Resolve current target
+        monster = resolve_target(latest, _bid)
+        if monster is None:
+            return 0
+        
+        _log.debug("combat_actions: bot=%s target=%s element=%s Lv%d",
+                    _bid, monster.name, monster.element, monster.element_level)
+        
+        # Detect server mode for formula selection
+        mode = get_server_mode(runtime_state, latest)
+        
+        # Get elemental advantage info
+        et = get_element_table()
+        best_ele, best_mod = et.best_element_against(monster.element, monster.element_level)
+        
+        # If there's a damage bonus from element matching, consider weapon swap
+        if best_mod > 100 and best_ele != "Neutral":
+            _log.info("combat_actions: bot=%s target=%s -> best element vs %s is %s (%d%% damage)",
+                      _bid, monster.name, monster.element, best_ele, best_mod)
+            # Phase 3 will implement weapon inventory lookup here
+            return 0
+        
+        return 0
+    except Exception as _cae:
+        _log.warning("combat_actions_exception: %s", _cae)
+        return 0
+
+
+
 
 def _extract_command_from_goal(goal: str | None, objective: str | None = None, current_map: str | None = None, current_job: str | None = None, job_change_attempts: int = 0) -> str:
     """Convert a PDCA goal key to a valid OpenKore command."""
@@ -4484,7 +4544,10 @@ class PDCALoop:
                         _actions_queued_skill = _emit_skill_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
-                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
+                        _actions_queued_combat = _emit_combat_actions(
+                            self._runtime, horizon.value, bot_id=_bid
+                        )
+                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill + _actions_queued_combat
                     logger.info(
                         "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
                         horizon.value, _cost_mode.mode.value, _hc,
@@ -4715,6 +4778,7 @@ class PDCALoop:
             _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_bid)
+            _fallback_combat = _emit_combat_actions(self._runtime, horizon.value, bot_id=_bid)
             
             # ── Party coordination: signals for LLM to decide ──
             # The LLM CrewAI agents receive party-role signals through the
