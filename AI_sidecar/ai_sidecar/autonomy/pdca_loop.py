@@ -1605,11 +1605,12 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
         
         mode = get_server_mode(runtime_state, latest)
         
-        # Extract bot state from snapshot
+        # Extract bot state and map from snapshot
         job_name = "Novice"
         hp_ratio = 1.0
         sp_ratio = 1.0
         weapon_element = "Neutral"
+        map_name = ""
         if isinstance(latest, dict):
             prog = latest.get("progression", {}) or {}
             vitals = latest.get("vitals", {}) or {}
@@ -1620,6 +1621,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
             sp_max = int(vitals.get("sp_max", 1) or 1)
             hp_ratio = hp / max(hp_max, 1)
             sp_ratio = sp / max(sp_max, 1)
+            map_name = str(latest.get("map", vitals.get("map", "")))
             for item in (vitals.get("items", []) if isinstance(vitals, dict) else []):
                 if item.get("equipped") and item.get("type", "") in (
                     "Dagger","1hSword","2hSword","1hSpear","2hSpear","1hAxe","2hAxe",
@@ -1638,6 +1640,9 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 sp_max = int(getattr(vitals, "sp_max", 1) or 1)
                 hp_ratio = hp / max(hp_max, 1)
                 sp_ratio = sp / max(sp_max, 1)
+            pos = getattr(latest, "position", None)
+            if pos:
+                map_name = str(getattr(pos, "map", ""))
         
         # Get class-specific combat parameters
         style = get_combat_style(job_name)
@@ -1688,6 +1693,20 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 ))
                 cs.mark_equip(_bid)
                 actions_queued += 1
+        
+        # 1b. Emergency Fly Wing: use Butterfly Wing (return to town) when critically low HP on field
+        if hp_ratio < 0.30 and hp_ratio > 0.0 and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
+            if aq is not None:
+                _log.info("combat_actions: bot=%s emergency_wing (HP=%.0f%%)", _bid, hp_ratio*100)
+                aq.enqueue(_bid, ActionProposal(
+                    action_id=f"ca_wing_{_bid}_{int(__import__('time').time()*1000)}",
+                    kind="command", command="use Butterfly Wing",
+                    priority_tier=ActionPriorityTier.reflex, source="planner",
+                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=10),
+                    conflict_key=f"ca_wing_{_bid}", idempotency_key=f"ca_wing_{_bid}",
+                    metadata={"source":"combat_actions","reason":"emergency_butterfly_wing"},
+                ))
+                return 1
         
         # 2. Skill selection (Phase 4) with class template (Phase 6)
         if sp_ratio >= sp_threshold:
