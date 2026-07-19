@@ -4824,23 +4824,25 @@ class PDCALoop:
                             _advice_reason = str(_advice.get("reason", "") or "")
 
                             # ── Override target map with zone ladder (DB-backed, level-appropriate) ──
-                            try:
-                                from ai_sidecar.game_knowledge_db import GameKnowledgeDB
-                                _gk_db2 = GameKnowledgeDB()
-                                _cr_lvl = int(_signals.get("level", 1) or 1)
-                                _llm_map = str(_advice.get("starting_map", "") or "")
-                                _zone2 = _gk_db2.get_hunting_zone(_cr_lvl)
-                                if _zone2 and _llm_map and _zone2["map_name"] != _llm_map:
-                                    # Override the command to move to zone ladder recommended map
-                                    _advice["starting_map"] = _zone2["map_name"]
-                                    if _advice_command.startswith("move "):
-                                        _advice["command"] = f"move {_zone2['map_name']}"
-                                        _advice["confidence"] = str(max(float(_advice.get("confidence", 0) or 0), 0.85))
-                                        logger.info("zone_ladder_override[%s]: llm_map=%s ladder_map=%s level=%s",
-                                                    decision_meta.bot_id, _llm_map, _zone2["map_name"], _cr_lvl)
-                                    _advice_command = str(_advice.get("command", "") or "").strip()
-                            except Exception as _e:
-                                logger.info("zone_ladder_override_error[llm]: %s", _e)
+                            # BUT skip if build is "job_change" — job change NPCs are not hunting zones
+                            if _advice.get("build", "") != "job_change":
+                                try:
+                                    from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+                                    _gk_db2 = GameKnowledgeDB()
+                                    _cr_lvl = int(_signals.get("level", 1) or 1)
+                                    _llm_map = str(_advice.get("starting_map", "") or "")
+                                    _zone2 = _gk_db2.get_hunting_zone(_cr_lvl)
+                                    if _zone2 and _llm_map and _zone2["map_name"] != _llm_map:
+                                        # Override the command to move to zone ladder recommended map
+                                        _advice["starting_map"] = _zone2["map_name"]
+                                        if _advice_command.startswith("move "):
+                                            _advice["command"] = f"move {_zone2['map_name']}"
+                                            _advice["confidence"] = str(max(float(_advice.get("confidence", 0) or 0), 0.85))
+                                            logger.info("zone_ladder_override[%s]: llm_map=%s ladder_map=%s level=%s",
+                                                        decision_meta.bot_id, _llm_map, _zone2["map_name"], _cr_lvl)
+                                        _advice_command = str(_advice.get("command", "") or "").strip()
+                                except Exception as _e:
+                                    logger.info("zone_ladder_override_error[llm]: %s", _e)
 
                             if _advice_confidence > 0.85 and _advice_command:
                                 # High confidence: queue as an action directly
