@@ -1908,6 +1908,11 @@ class PDCALoop:
                         self._runtime.swarm_tactics = _swarm
                     except Exception:
                         pass
+                # ── Combat monitor: runs EVERY cycle, checks all bots ──
+                try:
+                    _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                except Exception:
+                    pass
                 # Initialize anti-detection if not present
                 _ad = getattr(self._runtime, "anti_detection", None)
                 if _ad is None:
@@ -4463,13 +4468,10 @@ class PDCALoop:
                         _actions_queued_vendor = _emit_vendor_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
-                        _actions_queued_combat = _emit_combat_monitor(
-                            self._runtime, horizon.value, bot_id=_bid
-                        )
                         _actions_queued_skill = _emit_skill_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
-                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_combat + _actions_queued_skill
+                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
                     logger.info(
                         "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
                         horizon.value, _cost_mode.mode.value, _hc,
