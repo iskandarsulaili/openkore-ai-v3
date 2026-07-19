@@ -1518,55 +1518,69 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         
         # Read kill count from snapshot (progression or raw)
         kills = 0
-        deaths = 0
         if isinstance(latest, dict):
             raw = latest.get("raw", {}) or {}
             kills = int(raw.get("kills", 0) or 0)
-            deaths = int(raw.get("deaths", 0) or 0)
         else:
             raw = getattr(latest, "raw", None) or {}
             kills = int(raw.get("kills", 0) if isinstance(raw, dict) else 0)
-            deaths = int(raw.get("deaths", 0) if isinstance(raw, dict) else 0)
         
         # ── Death loop detection ─────────────────────────────────
-        # If deaths increased but kills haven't, bot is dying without progress
-        _new_deaths = deaths - entry.get("last_deaths", 0)
-        _new_kills = kills - entry.get("last_kills", 0)
-        if _new_deaths > 0 and _new_kills == 0 and entry.get("cycle", 0) > 2:
-            aq = getattr(runtime_state, "action_queue", None)
-            if aq is not None:
-                from datetime import UTC, datetime, timedelta
-                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                # Find lowest-level hunting zone via zone ladder
-                _safe_map = "prt_fild01"  # fallback
-                try:
-                    _hzm = getattr(runtime_state, "hunting_zone_manager", None)
-                    if _hzm is not None and hasattr(_hzm, 'recommend_zones_by_level'):
-                        _zones = _hzm.recommend_zones_by_level(1)
-                        if _zones and len(_zones) > 0:
-                            _first = _zones[0]
-                            _safe_map = getattr(_first, 'map', _first) if not isinstance(_first, str) else _first
-                except Exception:
-                    pass
-                _log.warning("combat_monitor: bot=%s map=%s death_loop detected (%d deaths, 0 kills) -> routing to safer map %s", _bid, map_name, _new_deaths, _safe_map)
-                _safe_proposal = ActionProposal(
-                    action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
-                    kind="command",
-                    command=f"move {_safe_map}",
-                    priority_tier=ActionPriorityTier.tactical,
-                    source="planner",
-                    created_at=datetime.now(UTC),
-                    expires_at=datetime.now(UTC) + timedelta(seconds=300),
-                    conflict_key=f"death_loop_{_bid}",
-                    idempotency_key=f"death_loop_{_bid}",
-                    metadata={"source": "combat_monitor", "reason": f"death_loop_{_new_deaths}_deaths_0_kills", "bot_id": _bid},
-                )
-                aq.enqueue(_bid, _safe_proposal)
-                entry["last_deaths"] = deaths
-                entry["cycle"] = 0
-                return 2
-        
-        entry["last_deaths"] = deaths
+        # Detect by checking if bot keeps returning to town (prontera) after being sent to hunt
+        _town_maps = ("prontera", "prt_in")
+        if map_name and any(t in map_name.lower() for t in _town_maps):
+            # Bot is in town — check how many times it's returned recently
+            if not hasattr(runtime_state, '_town_returns'):
+                object.__setattr__(runtime_state, '_town_returns', {})
+            _tr = runtime_state._town_returns
+            if _bid not in _tr:
+                _tr[_bid] = {"count": 0, "last_cycle": entry["cycle"]}
+            else:
+                if entry["cycle"] - _tr[_bid]["last_cycle"] < 5:
+                    # Returned to town within 5 cycles of last check — possible death loop
+                    _tr[_bid]["count"] += 1
+                else:
+                    _tr[_bid]["count"] = 1
+            _tr[_bid]["last_cycle"] = entry["cycle"]
+            
+            # If returned to town 3+ times with few cycles between, route to safer map
+            if _tr[_bid]["count"] >= 3:
+                aq = getattr(runtime_state, "action_queue", None)
+                if aq is not None:
+                    from datetime import UTC, datetime, timedelta
+                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                    _safe_map = "prt_fild01"
+                    try:
+                        _hzm = getattr(runtime_state, "hunting_zone_manager", None)
+                        if _hzm is not None and hasattr(_hzm, 'recommend_zones_by_level'):
+                            _zones = _hzm.recommend_zones_by_level(1)
+                            if _zones and len(_zones) > 0:
+                                _first = _zones[0]
+                                _safe_map = getattr(_first, 'map', _first) if not isinstance(_first, str) else _first
+                    except Exception:
+                        pass
+                    _log.warning("combat_monitor: bot=%s death_loop detected (%d town_returns) -> routing to %s", _bid, _tr[_bid]["count"], _safe_map)
+                    _safe_proposal = ActionProposal(
+                        action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
+                        kind="command",
+                        command=f"move {_safe_map}",
+                        priority_tier=ActionPriorityTier.tactical,
+                        source="planner",
+                        created_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(seconds=300),
+                        conflict_key=f"death_loop_{_bid}",
+                        idempotency_key=f"death_loop_{_bid}",
+                        metadata={"source": "combat_monitor", "reason": f"death_loop_{_tr[_bid]['count']}_town_returns", "bot_id": _bid},
+                    )
+                    aq.enqueue(_bid, _safe_proposal)
+                    _tr[_bid]["count"] = 0  # Reset
+                    return 2
+        else:
+            # Bot is not in town — reset town return counter
+            if hasattr(runtime_state, '_town_returns'):
+                _tr = runtime_state._town_returns
+                if _bid in _tr:
+                    _tr[_bid]["count"] = 0
         
         # If kills haven't increased in 3 cycles, config might be wrong
         if kills <= entry["last_kills"] and entry["cycle"] >= 3:
