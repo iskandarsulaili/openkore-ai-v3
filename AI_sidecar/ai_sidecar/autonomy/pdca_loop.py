@@ -1471,7 +1471,7 @@ class PDCAConfig:
     max_actions_per_cycle: int = 5
 
 
-def _extract_command_from_goal(goal: str | None, objective: str | None = None, current_map: str | None = None) -> str:
+def _extract_command_from_goal(goal: str | None, objective: str | None = None, current_map: str | None = None, current_job: str | None = None, job_change_attempts: int = 0) -> str:
     """Convert a PDCA goal key to a valid OpenKore command."""
     if not goal:
         return "ai auto"
@@ -1516,13 +1516,19 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
     # For job_advancement goal — route to job change NPC from tables file
     # Once at NPC, send talknpc to initiate job change dialog
     if keyword == "job_advancement":
+        # If job already changed, advancement is complete — resume hunting
+        if current_job and current_job.lower() not in ("novice", "super_novice", "baby_novice", ""):
+            return "ai auto"
+        # If too many failed attempts, fall back to hunting (dialog format issue)
+        if job_change_attempts >= 3:
+            return "ai auto"
         _target_job = ""
         if objective and "toward" in objective.lower():
             _job_match = _re_module.search(r"toward\s+(\w+)", objective, _re_module.IGNORECASE)
             if _job_match:
                 _target_job = _job_match.group(1).lower()
         if not _target_job:
-            return "move prontera 156 196"
+            return "move prontera"
         # Read job change locations from tables file (database-driven, not hardcoded)
         from ai_sidecar.autonomy.ro_knowledge import _DEFAULT_TABLES_DIR as _JC_TABLES_DIR
         _jc_path = _JC_TABLES_DIR / "job_change_locations.txt"
@@ -1530,7 +1536,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
         _npc_map = ""
         _npc_x = ""
         _npc_y = ""
-        _move_cmd = "move prontera 156 196"
+        _move_cmd = "move prontera"
         if _jc_path.exists():
             try:
                 _jc_text = _jc_path.read_text()
@@ -1540,7 +1546,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
                     _npc_map = _match.group(1)
                     _npc_x = _match.group(2)
                     _npc_y = _match.group(3)
-                    _move_cmd = f"move {_npc_map} {_npc_x} {_npc_y}"
+                    _move_cmd = f"move {_npc_map}"
             except Exception:
                 pass
         # If bot is already at the NPC map, send talknpc instead of move
@@ -5146,7 +5152,7 @@ class PDCALoop:
                         if _aq is not None:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                            _cmd = _extract_command_from_goal(_goal, _obj, current_map=_sn_map if _sn_map else None)
+                            _cmd = _extract_command_from_goal(_goal, _obj, current_map=_sn_map if _sn_map else None, current_job=str(_sn_class or ""), job_change_attempts=0)
                             
                             # Query goal decomposer for next sub-goal
                             _gd = getattr(self._runtime, "goal_decomposer", None)

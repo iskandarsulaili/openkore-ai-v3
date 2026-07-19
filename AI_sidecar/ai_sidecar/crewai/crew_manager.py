@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from threading import RLock
 from typing import Any
+from pathlib import Path
 
 from ai_sidecar.contracts.crewai import (
     CrewAgentDescriptor,
@@ -37,6 +38,44 @@ _AGENT_ROSTERS: dict[str, list[str]] = {
 
 
 @dataclass(slots=True)
+def _resolve_job_change_npc(current_job: str) -> str:
+    """Resolve job change NPC location from tables file. Returns 'prontera' as fallback."""
+    try:
+        _tables_dir = Path(__file__).parent.parent.parent.parent / "tables"
+        _jc_path = _tables_dir / "job_change_locations.txt"
+        if not _jc_path.exists():
+            return "prontera"
+        _text = _jc_path.read_text()
+        # Normalize job name for matching
+        _job_key = current_job.strip().lower().replace(" ", "_")
+        import re as _re
+        # First: try exact match for target_job
+        for _line in _text.split('\n'):
+            if _line.startswith('#') or not _line.strip():
+                continue
+            _parts = [p.strip() for p in _line.split('|')]
+            if len(_parts) >= 3 and _parts[0].strip().lower().replace(' ', '_') == _job_key:
+                _map = _parts[1].strip()
+                _coords = _parts[2].strip()
+                return f"move {_map}"
+        # If current job is "novice", find first 1st class route as default
+        if _job_key in ("novice", "super_novice"):
+            for _line in _text.split('\n'):
+                if _line.startswith('#') or not _line.strip():
+                    continue
+                _parts = [p.strip() for p in _line.split('|')]
+                if len(_parts) >= 3:
+                    _desc = _parts[3] if len(_parts) > 3 else ''
+                    if 'Class Changes' in _desc or 'Novice' in _parts[0]:
+                        # Skip the header row
+                        if _parts[0].strip().lower() not in ('target_job',):
+                            _target = _parts[0].strip().lower()
+            return "prontera"
+    except Exception:
+        pass
+    return "prontera"
+
+
 class CrewManager:
     """Behavior profile manager — replaces legacy CrewAI SDK dependency.
     Uses the 17 heuristic behavior profiles. No CrewAI SDK required.
@@ -146,7 +185,7 @@ class CrewManager:
                             _job = signals["job_name"]
                             _jl = signals["job_level"]
                             signals["job_change_available"] = (_job == "novice" and _jl >= 10) or (_job in ("swordman","mage","archer","thief","acolyte","merchant") and _jl >= 50)
-                            signals["job_change_npc"] = "prontera 156 196" if signals["job_change_available"] else None
+                            signals["job_change_npc"] = _resolve_job_change_npc(signals.get("job_name", "novice")) if signals["job_change_available"] else None
                         else:
                             # BotStateSnapshot object — use attribute access
                             v = getattr(snap, "vitals", None) or {}
@@ -171,7 +210,7 @@ class CrewManager:
                             signals["job_level"] = _jl
                             signals["job_name"] = _jn
                             signals["job_change_available"] = (_jn == "novice" and _jl >= 10) or (_jn in ("swordman","mage","archer","thief","acolyte","merchant") and _jl >= 50)
-                            signals["job_change_npc"] = "prontera 156 196" if signals["job_change_available"] else None
+                            signals["job_change_npc"] = _resolve_job_change_npc(signals.get("job_name", "novice")) if signals["job_change_available"] else None
                 except Exception as _sig_exc:
                     logger.warning("crewai_signal_enrichment_failed", extra={"event": "crewai_signal_failed", "error": str(_sig_exc)})
                     pass
