@@ -28,6 +28,9 @@ class Vitals(BaseModel):
     hp_ratio: float | None = None
     sp_ratio: float | None = None
     level: int | None = None
+    base_level: int | None = None
+    job_level: int | None = None
+    zeny: int | None = None
 
 
 class CombatState(BaseModel):

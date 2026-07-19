@@ -1452,11 +1452,17 @@ sub _build_snapshot_payload {
 		vitals => {
 			hp         => $char ? $char->{hp}         : undef,
 			hp_max     => $char ? $char->{hp_max}     : undef,
+			hp_ratio   => ($char && $char->{hp_max} > 0) ? ($char->{hp} || 0) / $char->{hp_max} : 0,
 			sp         => $char ? $char->{sp}         : undef,
 			sp_max     => $char ? $char->{sp_max}     : undef,
+			sp_ratio   => ($char && $char->{sp_max} > 0) ? ($char->{sp} || 0) / $char->{sp_max} : 0,
 			weight     => $char ? $char->{weight}     : undef,
 			weight_max => $char ? $char->{weight_max} : undef,
 			weight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
+			level      => $char ? $char->{level}      : undef,
+			base_level => $char ? $char->{level}      : undef,
+			job_level  => $char ? $char->{level_job}  : undef,
+			zeny       => $char ? $char->{zeny}       : undef,
 		},
 		combat => {
 			ai_sequence  => $ai_top || undef,
