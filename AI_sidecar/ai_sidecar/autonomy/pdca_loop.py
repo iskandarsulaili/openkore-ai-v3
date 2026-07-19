@@ -1484,7 +1484,12 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         snapshots = getattr(runtime_state, "snapshot_cache", None)
         if snapshots is None:
             return 0
-        latest = getattr(snapshots, "latest", lambda: None)()
+        # Use bot-specific snapshot, not global latest
+        _bid = bot_id or "default"
+        if hasattr(snapshots, 'get'):
+            latest = snapshots.get(_bid)
+        else:
+            latest = getattr(snapshots, "latest", lambda: None)()
         if latest is None:
             return 0
         
@@ -1506,7 +1511,6 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         if not hasattr(runtime_state, '_combat_monitor'):
             object.__setattr__(runtime_state, '_combat_monitor', {})
         _cm = runtime_state._combat_monitor
-        _bid = bot_id or "default"
         if _bid not in _cm:
             _cm[_bid] = {"cycle": 0, "last_kills": 0}
         entry = _cm[_bid]
