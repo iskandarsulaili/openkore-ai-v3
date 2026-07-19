@@ -1512,33 +1512,34 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
         if "prontera" in objective.lower() and keyword in ("survival", "idle", "economy"):
             return "move prt_fild08"
     
-    # For job_advancement goal — route to Prontera (all 1st class NPCs are there)
+    # For job_advancement goal — route to job change NPC from tables file
     if keyword == "job_advancement":
-        # Extract target job from objective if available: "toward Swordman" -> "swordman"
+        _target_job = ""
         if objective and "toward" in objective.lower():
             import re as _job_re
             _job_match = _job_re.search(r"toward\s+(\w+)", objective, _job_re.IGNORECASE)
             if _job_match:
-                _target = _job_match.group(1).lower()
-                # Job change NPC locations (from RO knowledge)
-                _npc_locs = {
-                    "swordman": "prontera 53 259",
-                    "mage": "prontera 166 30",
-                    "wizard": "prontera 166 30",
-                    "archer": "prontera 165 216",
-                    "hunter": "prontera 165 216",
-                    "acolyte": "prontera 159 260",
-                    "priest": "prontera 159 260",
-                    "monk": "prontera 159 260",
-                    "thief": "morocc 115 97",
-                    "rogue": "morocc 115 97",
-                    "merchant": "prontera 174 125",
-                    "blacksmith": "prontera 174 125",
-                    "alchemist": "prontera 174 125",
-                }
-                if _target in _npc_locs:
-                    return f"move {_npc_locs[_target]}"
-        # Default: go to Prontera central, all job NPCs reachable
+                _target_job = _job_match.group(1).lower()
+        if not _target_job:
+            return "move prontera 156 196"
+        # Read job change locations from tables file (database-driven, not hardcoded)
+        import re as _jc_re
+        from pathlib import Path as _Path
+        _jc_path = _Path(__file__).parent.parent.parent.parent / "tables" / "job_change_locations.txt"
+        _target_key = _target_job.lower().replace(" ", "_")
+        if _jc_path.exists():
+            try:
+                _jc_text = _jc_path.read_text()
+                _regex = _jc_re.compile(rf"^{_target_key}\s*\|\s*(\S+)\s*\|\s*(\d+)\s+(\d+)", _jc_re.IGNORECASE | _jc_re.MULTILINE)
+                _match = _regex.search(_jc_text)
+                if _match:
+                    _map = _match.group(1)
+                    _x = _match.group(2)
+                    _y = _match.group(3)
+                    return f"move {_map} {_x} {_y}"
+            except Exception:
+                pass
+        # Fallback: go to Prontera central
         return "move prontera 156 196"
     
     # If goal is survival with no specific routing, still send ai auto
