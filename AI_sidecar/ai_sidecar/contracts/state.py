@@ -24,6 +24,7 @@ class Vitals(BaseModel):
     sp_max: int | None = None
     weight: int | None = None
     weight_max: int | None = None
+    weight_ratio: float | None = None
     hp_ratio: float | None = None
     sp_ratio: float | None = None
     level: int | None = None
