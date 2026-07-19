@@ -446,35 +446,26 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
         if _pathfinding is not None and map_name:
             _plan = _pathfinding.find_path(map_name, best_zone.map_name)
             if _plan and _plan.complete:
-                _commands = _pathfinding.to_bridge_commands(_plan)
-                # Queue each step as a separate action
-                for _i, _cmd in enumerate(_commands):
-                    _short_id = _hashlib.md5(f"{bot_id}_ge_move_{horizon}_{time.time()}_{_i}".encode()).hexdigest()[:16]
-                    _proposal = ActionProposal(
-                        action_id=f"ge_move_{horizon}_{_short_id}",
-                        kind="command",
-                        command=f"move {_cmd.get('map', best_zone.map_name)}",
-                        priority_tier=ActionPriorityTier.tactical,
-                        source="planner",
-                        created_at=datetime.now(UTC),
-                        expires_at=datetime.now(UTC) + timedelta(seconds=120),
-                        idempotency_key=f"ge_move_{horizon}_{_short_id}",
-                        metadata={
-                            "goal": "travel",
-                            "objective": f"Move to {best_zone.map_name} for {best_zone.primary_monster} (step {_i+1}/{len(_commands)})",
-                            "horizon": horizon, "bot_id": bot_id, "source": "game_engine",
-                            "target_map": best_zone.map_name, "reason": best_zone.reason,
-                            "nav_step": _i, "nav_total": len(_commands),
-                            "nav_map": _cmd.get("map", ""),
-                        },
-                    )
-                    aq.enqueue(bot_id, _proposal)
-                _log.info(
-                    "game_engine_move_pathfinding: bot=%s target=%s monster=%s steps=%d reason=%s",
-                    bot_id, best_zone.map_name, best_zone.primary_monster,
-                    len(_commands), best_zone.reason,
+                # Queue a single move — let bridge's _rewrite_runtime_command set lockMap + auto AI navigate
+                _short_id = _hashlib.md5(f"{bot_id}_ge_move_{horizon}_{time.time()}".encode()).hexdigest()[:16]
+                _proposal = ActionProposal(
+                    action_id=f"ge_move_{horizon}_{_short_id}",
+                    kind="command",
+                    command=f"move {best_zone.map_name}",
+                    priority_tier=ActionPriorityTier.tactical,
+                    source="planner",
+                    created_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                    idempotency_key=f"ge_move_{horizon}_{_short_id}",
+                    metadata={"goal": "move_to_hunt", "objective": f"Route to {best_zone.map_name}",
+                              "horizon": horizon, "bot_id": bot_id, "source": "game_engine",
+                              "target_map": best_zone.map_name},
                 )
-                return len(_commands)
+                aq.enqueue(bot_id, _proposal)
+                _log.info("game_engine_move: bot=%s target=%s monster=%s score=%.2f reason=%s",
+                          bot_id, best_zone.map_name, best_zone.primary_monster,
+                          best_zone.score, best_zone.reason)
+                return 1
 
         # Fallback: direct move command (no pathfinding available)
         _short_id = _hashlib.md5(f"{bot_id}_game_engine_move_{horizon}_{time.time()}".encode()).hexdigest()[:16]
