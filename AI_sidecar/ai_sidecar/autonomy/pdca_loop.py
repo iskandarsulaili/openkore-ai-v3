@@ -1507,8 +1507,11 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
             return 0
         
-        # Read the bot's map from snapshot (used for death loop detection below)
-        kills = 0  # bridge doesn't send kills field, placeholder
+        # Cycle counter per bot (simple counter, not dependent on kill tracking)
+        if not hasattr(runtime_state, '_cm_cycle'):
+            object.__setattr__(runtime_state, '_cm_cycle', {})
+        _cycle = runtime_state._cm_cycle
+        _cycle[_bid] = _cycle.get(_bid, 0) + 1
         
         # ── Town detection ──────────────────────────────────────
         _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
@@ -1518,14 +1521,14 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 object.__setattr__(runtime_state, '_town_returns', {})
             _tr = runtime_state._town_returns
             if _bid not in _tr:
-                _tr[_bid] = {"count": 0, "last_cycle": entry["cycle"]}
+                _tr[_bid] = {"count": 0, "last_cycle": _cycle[_bid]}
             else:
-                if entry["cycle"] - _tr[_bid]["last_cycle"] < 5:
+                if _cycle[_bid] - _tr[_bid]["last_cycle"] < 5:
                     # Returned to town within 5 cycles of last check — possible death loop
                     _tr[_bid]["count"] += 1
                 else:
                     _tr[_bid]["count"] = 1
-            _tr[_bid]["last_cycle"] = entry["cycle"]
+            _tr[_bid]["last_cycle"] = _cycle[_bid]
             
             # If returned to town 3+ times with few cycles between, route to safer map
             if _tr[_bid]["count"] >= 3:
