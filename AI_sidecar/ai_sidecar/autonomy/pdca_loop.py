@@ -1484,7 +1484,6 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         snapshots = getattr(runtime_state, "snapshot_cache", None)
         if snapshots is None:
             return 0
-        # Use bot-specific snapshot, not global latest
         _bid = bot_id or "default"
         if hasattr(snapshots, 'get'):
             latest = snapshots.get(_bid)
@@ -1493,7 +1492,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         if latest is None:
             return 0
         
-        # Get bot map and position
+        # Get bot map
         map_name = ""
         if isinstance(latest, dict):
             map_name = str(latest.get("map", latest.get("position", {}).get("map", "")) or "")
@@ -1501,16 +1500,14 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
-        _log.debug("combat_monitor_check: bot=%s map=%s", bot_id, map_name)
-        
         # ── Town detection (death loop) ─────────────────────────
+        # Count separate town visits (not consecutive cycles)
+        # A bot returning to town 5+ times within 10 cycles = death loop
         _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
         if map_name and any(t in map_name.lower() for t in _town_maps):
-            # Bot is in town — check how many times it's returned recently
             if not hasattr(runtime_state, '_town_returns'):
                 object.__setattr__(runtime_state, '_town_returns', {})
             _tr = runtime_state._town_returns
-            # Get a cycle counter for timing (local to combat_monitor)
             if not hasattr(runtime_state, '_cm_town_cycle'):
                 object.__setattr__(runtime_state, '_cm_town_cycle', {})
             _tc = runtime_state._cm_town_cycle
@@ -1518,28 +1515,34 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             if _bid not in _tr:
                 _tr[_bid] = {"count": 0, "last_cycle": _tc[_bid]}
             else:
-                if _tc[_bid] - _tr[_bid]["last_cycle"] < 5:
+                # If bot returned within 10 cycles of last town visit, count as same death-loop episode
+                if _tc[_bid] - _tr[_bid]["last_cycle"] < 10:
                     _tr[_bid]["count"] += 1
                 else:
                     _tr[_bid]["count"] = 1
             _tr[_bid]["last_cycle"] = _tc[_bid]
             
-            if _tr[_bid]["count"] >= 3:
+            # Require 5+ rapid town returns before triggering
+            if _tr[_bid]["count"] >= 5:
                 aq = getattr(runtime_state, "action_queue", None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                    # Find safer map — ensure it's DIFFERENT from current to avoid loop
                     _safe_map = "prt_fild01"
                     try:
                         _hzm = getattr(runtime_state, "hunting_zone_manager", None)
                         if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
                             _zones = _hzm.recommend_zone(bot_level=1, bot_class="novice")
                             if _zones and len(_zones) > 0:
-                                _safe_map = _zones[0].map if hasattr(_zones[0], 'map') else str(_zones[0])
+                                _z = _zones[0].map if hasattr(_zones[0], 'map') else str(_zones[0])
+                                # Skip if zone ladder recommends the same map (would cause infinite loop)
+                                if map_name and _z and _z != map_name.replace('.gat',''):
+                                    _safe_map = _z
                     except Exception:
                         pass
-                    _log.warning("combat_monitor: bot=%s death_loop detected (%d town_returns) -> routing to %s", _bid, _tr[_bid]["count"], _safe_map)
-                    _safe_proposal = ActionProposal(
+                    _log.warning("combat_monitor: bot=%s death_loop (%d town_returns) -> routing to %s", _bid, _tr[_bid]["count"], _safe_map)
+                    aq.enqueue(_bid, ActionProposal(
                         action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
                         kind="command",
                         command=f"move {_safe_map}",
@@ -1550,15 +1553,17 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         conflict_key=f"death_loop_{_bid}",
                         idempotency_key=f"death_loop_{_bid}",
                         metadata={"source": "combat_monitor", "reason": f"death_loop_{_tr[_bid]['count']}_town_returns", "bot_id": _bid},
-                    )
-                    aq.enqueue(_bid, _safe_proposal)
+                    ))
                     _tr[_bid]["count"] = 0
                     return 2
-            return 0  # Bot is in town, no further checks needed
-        
-        # Only check bots on hunting maps (not prontera town) for the remaining logic
-        if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
             return 0
+        
+        # Only check bots on hunting maps — reset town return counter
+        if map_name:
+            if hasattr(runtime_state, '_town_returns'):
+                _tr = runtime_state._town_returns
+                if _bid in _tr:
+                    _tr[_bid]["count"] = 0
         
         return 0
     except Exception as _cme:
