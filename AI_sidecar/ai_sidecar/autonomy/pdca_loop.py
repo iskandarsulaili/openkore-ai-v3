@@ -4735,7 +4735,7 @@ class PDCALoop:
                                                 _cr_inlock_proposal = ActionProposal(
                                                     action_id=f'pro_ro_inlock_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
                                                     kind='command',
-                                                    command='set attackAuto_inLockOnly 0',
+                                                    command='set attackAuto_inLockOnly 1',
                                                     priority_tier=ActionPriorityTier.tactical,
                                                     source='planner',
                                                     created_at=datetime.now(UTC),
