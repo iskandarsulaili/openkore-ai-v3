@@ -2745,6 +2745,8 @@ sub _command_allowed {
 	return 1;
 }
 
+my $_last_pro_ro_lockmap_ms = 0;
+
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
 	my $trimmed = _trim(_scalarize($command), 256);
@@ -2787,7 +2789,7 @@ sub _rewrite_runtime_command {
 			my $current_lockMap = defined $::config{"lockMap"} ? $::config{"lockMap"} : '';
 			debug "[lockMap] setting lockMap from '$current_lockMap' to '$target'\n", 'aiSidecarBridge', 1;
 			$::config{"lockMap"} = $target;
-			\$_last_pro_ro_lockmap_ms = _now_ms(); # track for survival cooldown
+			$_last_pro_ro_lockmap_ms = _now_ms(); # track for survival cooldown
 			$::config{"lockMap_x"} = "";
 			$::config{"lockMap_y"} = "";
 			$::config{"lockMap_randX"} = 0;
