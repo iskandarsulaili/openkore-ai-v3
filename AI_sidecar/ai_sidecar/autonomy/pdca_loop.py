@@ -1665,14 +1665,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
             # Sidecar triggers teleport escape if HP drops further.
             return 1
         if emergency == "emergency_escape" and aq is not None:
-            _log.info("combat_actions: bot=%s emergency_escape (HP=%.0f%%)", _bid, hp_ratio*100)
-            aq.enqueue(_bid, ActionProposal(
-                action_id=f"ca_escape_{_bid}_{int(__import__('time').time()*1000)}",
-                kind="command", command="ai manual",
-                priority_tier=ActionPriorityTier.reflex, source="planner",
-                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=5),
-                conflict_key=f"ca_emergency_{_bid}",
-            ))
+            _log.info("combat_actions: bot=%s emergency_escape (HP=%.0f%%) — letting bridge survival reflex handle it", _bid, hp_ratio*100)
             return 1
         
         # Resolve target monster
