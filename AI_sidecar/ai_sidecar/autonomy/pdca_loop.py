@@ -1471,6 +1471,89 @@ class PDCAConfig:
     max_actions_per_cycle: int = 5
 
 
+def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None) -> int:
+    """Monitor combat efficiency and auto-fix config issues.
+    
+    Detects bots that are on hunting maps but not getting kills,
+    and generates 'set' config changes to fix common issues.
+    Follows architecture: bridge executes, sidecar decides.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        snapshots = getattr(runtime_state, "snapshot_cache", None)
+        if snapshots is None:
+            return 0
+        latest = getattr(snapshots, "latest", lambda: None)()
+        if latest is None:
+            return 0
+        
+        # Get bot map and position
+        map_name = ""
+        if isinstance(latest, dict):
+            map_name = str(latest.get("map", latest.get("position", {}).get("map", "")) or "")
+        else:
+            pos = getattr(latest, "position", None)
+            map_name = str(getattr(pos, "map", "") if pos else "")
+        
+        # Only check bots on hunting maps (not prontera town)
+        if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
+            return 0
+        
+        # Track kill stats per bot across cycles
+        if not hasattr(runtime_state, '_combat_monitor'):
+            object.__setattr__(runtime_state, '_combat_monitor', {})
+        _cm = runtime_state._combat_monitor
+        _bid = bot_id or "default"
+        if _bid not in _cm:
+            _cm[_bid] = {"cycle": 0, "last_kills": 0}
+        entry = _cm[_bid]
+        entry["cycle"] += 1
+        
+        # Read kill count from snapshot (progression or raw)
+        kills = 0
+        if isinstance(latest, dict):
+            raw = latest.get("raw", {}) or {}
+            kills = int(raw.get("kills", 0) or 0)
+        else:
+            raw = getattr(latest, "raw", None) or {}
+            kills = int(raw.get("kills", 0) if isinstance(raw, dict) else 0)
+        
+        # If kills haven't increased in 3 cycles, config might be wrong
+        if kills <= entry["last_kills"] and entry["cycle"] >= 3:
+            # Bot is on hunting map but not killing — likely inLockOnly or lockMap issue
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is not None:
+                from datetime import UTC, datetime, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                
+                # Queue set attackAuto_inLockOnly 0 (most common fix)
+                proposal = ActionProposal(
+                    action_id=f"combat_fix_inlock_{_bid}_{int(__import__('time').time()*1000)}",
+                    kind="command",
+                    command="set attackAuto_inLockOnly 0",
+                    priority_tier=ActionPriorityTier.tactical,
+                    source="planner",
+                    created_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                    conflict_key=f"combat_inlock_{_bid}",
+                    idempotency_key=f"combat_inlock_{_bid}",
+                    metadata={"source": "combat_monitor", "reason": f"Bot {_bid} on {map_name} with 0 kills for {entry['cycle']} cycles", "bot_id": _bid},
+                )
+                aq.enqueue(_bid, proposal)
+                _log.info("combat_monitor: bot=%s map=%s zero_kills=%d cycles -> queuing set attackAuto_inLockOnly 0", _bid, map_name, entry["cycle"])
+                entry["cycle"] = 0  # Reset to avoid spamming
+                return 1
+        elif kills > entry["last_kills"]:
+            # Kills increasing — reset counter, all is well
+            entry["cycle"] = 0
+            
+        entry["last_kills"] = kills
+        return 0
+    except Exception:
+        return 0
+
+
 def _extract_command_from_goal(goal: str | None, objective: str | None = None, current_map: str | None = None, current_job: str | None = None, job_change_attempts: int = 0) -> str:
     """Convert a PDCA goal key to a valid OpenKore command."""
     if not goal:
@@ -4377,10 +4460,13 @@ class PDCALoop:
                         _actions_queued_vendor = _emit_vendor_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
+                        _actions_queued_combat = _emit_combat_monitor(
+                            self._runtime, horizon.value, bot_id=_bid
+                        )
                         _actions_queued_skill = _emit_skill_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
-                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill
+                        _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_combat + _actions_queued_skill
                     logger.info(
                         "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
                         horizon.value, _cost_mode.mode.value, _hc,
