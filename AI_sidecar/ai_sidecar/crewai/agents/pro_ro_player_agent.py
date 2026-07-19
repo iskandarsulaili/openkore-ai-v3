@@ -602,6 +602,32 @@ class ProRoPlayerProfile(BehaviorProfile):
         # ── Dispatch by situation ──────────────────────────────────────
 
         if situation == "cold_start":
+            # If job change is available, prioritize it over hunting
+            if signals.get("job_change_available"):
+                _jc_class = player_class
+                _jc_level = level
+                _jc_jl = int(signals.get("job_level", 1))
+                from ai_sidecar.autonomy.ro_knowledge import _DEFAULT_TABLES_DIR as _JC_DIR
+                _jc_path = _JC_DIR / "job_change_locations.txt"
+                if _jc_path.exists():
+                    try:
+                        _jc_text = _jc_path.read_text()
+                        _first_map = ""
+                        for _jc_line in _jc_text.split('\n'):
+                            if _jc_line.startswith('#') or not _jc_line.strip():
+                                continue
+                            _jc_parts = [p.strip() for p in _jc_line.split('|')]
+                            if len(_jc_parts) >= 3:
+                                # Skip header, take first class
+                                if _jc_parts[0].strip().lower() in ('target_job',):
+                                    continue
+                                _first_map = _jc_parts[1].strip()
+                                break
+                        if _first_map:
+                            return {"kind": "move", "command": f"move {_first_map}", "confidence": 0.9, "starting_map": _first_map, "build": "job_change", "reason": f"Job change available ({_jc_class} Lv.{_jc_level}/{_jc_jl})"}
+                    except Exception:
+                        pass
+                return {"kind": "move", "command": "move prontera", "confidence": 0.85, "starting_map": "prontera", "build": "job_change", "reason": f"Job change available ({_jc_class} Lv.{_jc_level}/{_jc_jl})"}
             return self._handle_cold_start(signals, player_class, level)
         if situation == "death_analysis":
             return self._handle_death_analysis(signals, player_class, level)

@@ -4416,10 +4416,17 @@ class PDCALoop:
                                 _cr_signals = {
                                     'situation': 'cold_start',
                                     'level': int(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'base_level', 1) or 1),
-                                    'class': 'novice',
+                                    'class': str(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'job_name', 'novice') or 'novice').lower(),
                                     'bot_id': _cycle_bot_id or 'default',
                                     'map': str(getattr(self._get_latest_snapshot(), 'map_name', '') or ''),
+                                    'job_level': int(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'job_level', 1) or 1),
+                                    'job_change_available': False,
                                 }
+                                # Detect job change availability
+                                _cr_job = str(_cr_signals.get('class', 'novice')).lower()
+                                _cr_jl = int(_cr_signals.get('job_level', 1))
+                                if (_cr_job == 'novice' and _cr_jl >= 10) or (_cr_job in ('swordman','mage','archer','thief','acolyte','merchant') and _cr_jl >= 50):
+                                    _cr_signals['job_change_available'] = True
                                 _cr_advice = _cr_pro.get_action(_cr_signals)
                                 if _cr_advice is not None:
                                     _cr_cmd = str(_cr_advice.get('command', '') or '')

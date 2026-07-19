@@ -37,7 +37,6 @@ _AGENT_ROSTERS: dict[str, list[str]] = {
 }
 
 
-@dataclass(slots=True)
 def _resolve_job_change_npc(current_job: str) -> str:
     """Resolve job change NPC location from tables file. Returns 'prontera' as fallback."""
     try:
@@ -76,6 +75,7 @@ def _resolve_job_change_npc(current_job: str) -> str:
     return "prontera"
 
 
+@dataclass(slots=True)
 class CrewManager:
     """Behavior profile manager — replaces legacy CrewAI SDK dependency.
     Uses the 17 heuristic behavior profiles. No CrewAI SDK required.
