@@ -4584,7 +4584,7 @@ class PDCALoop:
                                                     'bot_id': _cycle_bot_id or 'default',
                                                 },
                                             )
-                                            _log.info(
+                                            logger.info(
                                                 "pro_ro_player_cold_start_queued: bot=%s cmd=%s map=%s",
                                                 _cycle_bot_id or '?', _cr_cmd, _cr_map,
                                             )
