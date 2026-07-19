@@ -361,6 +361,16 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
         # Get game engine for advanced scoring
         game_engine = getattr(runtime_state, "game_engine", None)
         
+        # Check if death loop is active for this bot — suppress game engine routing
+        if bot_id and hasattr(runtime_state, '_death_loop_target'):
+            _dlt = runtime_state._death_loop_target
+            if bot_id in _dlt:
+                if _dlt[bot_id]["expires"] > time.time():
+                    _log.info("game_engine_death_loop_suppressed: bot=%s target=%s", bot_id, _dlt[bot_id]["map"])
+                    return 0
+                else:
+                    del _dlt[bot_id]
+        
         # Recommend hunting zone
         zones = hzm.recommend_zone(
             bot_level=bot_level,
@@ -1546,7 +1556,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
                         kind="command",
                         command=f"move {_safe_map}",
-                        priority_tier=ActionPriorityTier.tactical,
+                        priority_tier=ActionPriorityTier.reflex,
                         source="planner",
                         created_at=datetime.now(UTC),
                         expires_at=datetime.now(UTC) + timedelta(seconds=300),
@@ -1554,6 +1564,10 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         idempotency_key=f"death_loop_{_bid}",
                         metadata={"source": "combat_monitor", "reason": f"death_loop_{_dl[_bid]['count']}_cycles", "bot_id": _bid},
                     ))
+                    # Set death_loop_target to suppress game engine routing for this bot
+                    if not hasattr(runtime_state, '_death_loop_target'):
+                        object.__setattr__(runtime_state, '_death_loop_target', {})
+                    runtime_state._death_loop_target[_bid] = {"map": _safe_map, "expires": time.time() + 300}
                     _dl[_bid]["count"] = 0
                     return 2
             return 0
