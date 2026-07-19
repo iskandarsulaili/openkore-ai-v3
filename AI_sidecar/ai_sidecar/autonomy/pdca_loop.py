@@ -4930,6 +4930,8 @@ class PDCALoop:
                         pass
             
             # ── Pro RO Player stuck detection (snapshot-based + dialog-based) ──
+            _sn_map = ""
+            _sn_class = "novice"
             if latest_snapshot is not None and horizon == Horizon.SHORT_TERM:
                 try:
                     # ── Snapshot-based stuck detection (works without dialog state) ──
