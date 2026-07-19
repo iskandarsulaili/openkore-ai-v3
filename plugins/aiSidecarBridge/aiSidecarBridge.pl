@@ -1465,6 +1465,9 @@ sub _build_snapshot_payload {
 		inventory => {
 			zeny       => $char ? $char->{zeny} : undef,
 			item_count => $item_count,
+			weight     => $char ? $char->{weight} : undef,
+			weight_max => $char ? $char->{weight_max} : undef,
+			overweight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 		},
 		progression => $progression,
 		skills      => \@skills_list,
