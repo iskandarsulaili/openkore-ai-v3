@@ -172,7 +172,8 @@ class CrewManager:
                             signals["job_name"] = _jn
                             signals["job_change_available"] = (_jn == "novice" and _jl >= 10) or (_jn in ("swordman","mage","archer","thief","acolyte","merchant") and _jl >= 50)
                             signals["job_change_npc"] = "prontera 156 196" if signals["job_change_available"] else None
-                except Exception:
+                except Exception as _sig_exc:
+                    logger.warning("crewai_signal_enrichment_failed", extra={"event": "crewai_signal_failed", "error": str(_sig_exc)})
                     pass
 
             best_id, best_score = best_profile(signals)

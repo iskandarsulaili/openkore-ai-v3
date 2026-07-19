@@ -3356,8 +3356,8 @@ sub _check_bridge_reflexes {
 					my $_now_ms = _now_ms();
 					my $_reflex_map = $char->{map} || '';
 					# Pro RO survival check: let the bot hunt unless critically threatened
-					# Grace period after Pro RO set lockMap — give bot time to hunt (180s)
-					my $_grace_ms = 180000;
+					# Grace period after Pro RO set lockMap — give bot time to hunt (300s for job change routes)
+					my $_grace_ms = 300000;
 					my $_pro_ro_set = defined $_last_pro_ro_lockmap_ms && $_last_pro_ro_lockmap_ms > 0;
 					my $_since_pro_ro = $_pro_ro_set ? ($_now_ms - $_last_pro_ro_lockmap_ms) : 999999;
 					if ($_since_pro_ro < $_grace_ms) {

@@ -6,8 +6,10 @@ import threading
 import time as _time_module
 import logging
 import time
+import re as _re_module
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path as _PathModule
 from typing import Any, Optional
 
 from ai_sidecar.autonomy.plan_executor import PlanExecutor
@@ -805,7 +807,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
         # Only act when near full (>80% weight)
-        if weight_ratio < 0.80:
+        if weight_ratio < 0.70:
             return 0
         
         # Resolve bot_id
@@ -1469,7 +1471,7 @@ class PDCAConfig:
     max_actions_per_cycle: int = 5
 
 
-def _extract_command_from_goal(goal: str | None, objective: str | None = None) -> str:
+def _extract_command_from_goal(goal: str | None, objective: str | None = None, current_map: str | None = None) -> str:
     """Convert a PDCA goal key to a valid OpenKore command."""
     if not goal:
         return "ai auto"
@@ -1504,8 +1506,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
     if objective and keyword in ("leveling", "grind", "hunt", "advancement", "survival"):
         for map_code in ("prt_fild", "pay_fild", "moc_fild", "gef_fild", "alde_fild", "mjolnir"):
             if map_code in objective.lower():
-                import re as _re
-                _maps = _re.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
+                _maps = _re_module.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
                 if _maps:
                     return f"move {_maps[0]}"
         # If in Prontera with survival/economy goal, route to nearby field
@@ -1513,34 +1514,40 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
             return "move prt_fild08"
     
     # For job_advancement goal — route to job change NPC from tables file
+    # Once at NPC, send talknpc to initiate job change dialog
     if keyword == "job_advancement":
         _target_job = ""
         if objective and "toward" in objective.lower():
-            import re as _job_re
-            _job_match = _job_re.search(r"toward\s+(\w+)", objective, _job_re.IGNORECASE)
+            _job_match = _re_module.search(r"toward\s+(\w+)", objective, _re_module.IGNORECASE)
             if _job_match:
                 _target_job = _job_match.group(1).lower()
         if not _target_job:
             return "move prontera 156 196"
         # Read job change locations from tables file (database-driven, not hardcoded)
-        import re as _jc_re
-        from pathlib import Path as _Path
-        _jc_path = _Path(__file__).parent.parent.parent.parent / "tables" / "job_change_locations.txt"
+        from ai_sidecar.autonomy.ro_knowledge import _DEFAULT_TABLES_DIR as _JC_TABLES_DIR
+        _jc_path = _JC_TABLES_DIR / "job_change_locations.txt"
         _target_key = _target_job.lower().replace(" ", "_")
+        _npc_map = ""
+        _npc_x = ""
+        _npc_y = ""
+        _move_cmd = "move prontera 156 196"
         if _jc_path.exists():
             try:
                 _jc_text = _jc_path.read_text()
-                _regex = _jc_re.compile(rf"^{_target_key}\s*\|\s*(\S+)\s*\|\s*(\d+)\s+(\d+)", _jc_re.IGNORECASE | _jc_re.MULTILINE)
+                _regex = _re_module.compile(rf"^{_target_key}\s*\|\s*(\S+)\s*\|\s*(\d+)\s+(\d+)", _re_module.IGNORECASE | _re_module.MULTILINE)
                 _match = _regex.search(_jc_text)
                 if _match:
-                    _map = _match.group(1)
-                    _x = _match.group(2)
-                    _y = _match.group(3)
-                    return f"move {_map} {_x} {_y}"
+                    _npc_map = _match.group(1)
+                    _npc_x = _match.group(2)
+                    _npc_y = _match.group(3)
+                    _move_cmd = f"move {_npc_map} {_npc_x} {_npc_y}"
             except Exception:
                 pass
-        # Fallback: go to Prontera central
-        return "move prontera 156 196"
+        # If bot is already at the NPC map, send talknpc instead of move
+        if current_map and _npc_map and current_map.lower() == _npc_map.lower():
+            _talk_cmd = f"talknpc {_npc_x} {_npc_y} c r0 n"
+            return _talk_cmd
+        return _move_cmd
     
     # If goal is survival with no specific routing, still send ai auto
     if keyword == "survival":
@@ -1791,8 +1798,7 @@ class PDCALoop:
                     try:
                         _rathena_path = getattr(_settings, "rathena_path", None)
                         if not _rathena_path:
-                            from pathlib import Path
-                            _rathena_path = str(Path(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")
+                            _rathena_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")
                         _ge = GameIntelligenceEngine(
                             getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
                             rathena_path=_rathena_path,
@@ -2012,15 +2018,14 @@ class PDCALoop:
                 if _reflex_engine is None:
                     try:
                         from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
-                        from pathlib import Path
                         _reflex_engine = ReflexRuleEngine(
-                            workspace_root=Path("."),
+                            workspace_root=_PathModule("."),
                             contract_version="v1",
                             action_ttl_seconds=60,
                         )
                         self._runtime.reflex_engine = _reflex_engine
                         # Load reflex rules from YAML — use __file__-relative path for portability
-                        _here = Path(__file__).resolve().parent.parent
+                        _here = _PathModule(__file__).resolve().parent.parent
                         _yaml_path = _here / "reflex" / "reflex_rules.yaml"
                         _rules_loaded = _reflex_engine.load_rules_from_yaml(_yaml_path)
                         logger.info("reflex_engine_initialized: %d rules loaded", _rules_loaded)
@@ -2032,9 +2037,8 @@ class PDCALoop:
                 if _reflex_emitter is None:
                     try:
                         from ai_sidecar.reflex.action_emitter import ActionEmitter
-                        from pathlib import Path
                         _reflex_emitter = ActionEmitter(
-                            workspace_root=Path("."),
+                            workspace_root=_PathModule("."),
                             contract_version="v1",
                             action_ttl_seconds=60,
                         )
@@ -2064,8 +2068,7 @@ class PDCALoop:
                 if _macro_ai is None:
                     try:
                         from ai_sidecar.autonomy.macro_intelligence import MacroIntelligence
-                        from pathlib import Path
-                        _knowledge_path = str(Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json")
+                        _knowledge_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json")
                         _macro_ai = MacroIntelligence(knowledge_path=_knowledge_path)
                         self._runtime.macro_intelligence = _macro_ai
                         _pattern_count = len(_macro_ai.get_all_patterns())
@@ -2078,8 +2081,7 @@ class PDCALoop:
                 if _combat_opt is None:
                     try:
                         from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
-                        from pathlib import Path
-                        _knowledge_path = Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                        _knowledge_path = _PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
                         _combat_opt = CombatOptimizer(knowledge_path=_knowledge_path)
                         self._runtime.combat_optimizer = _combat_opt
                         logger.info("combat_optimizer_initialized")
@@ -2122,9 +2124,8 @@ class PDCALoop:
                 if _map_know is None:
                     try:
                         from ai_sidecar.map_knowledge import MapKnowledge
-                        from pathlib import Path
                         _map_know = MapKnowledge(
-                            knowledge_path=Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                            knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
                         )
                         self._runtime.map_knowledge = _map_know
                         logger.info("map_knowledge_initialized: %d maps", _map_know.counters()["maps"])
@@ -2268,9 +2269,8 @@ class PDCALoop:
                 if _kg is None:
                     try:
                         from ai_sidecar.knowledge_graph import KnowledgeGraph
-                        from pathlib import Path
                         _kg = KnowledgeGraph(
-                            knowledge_path=Path(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                            knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
                         )
                         self._runtime.knowledge_graph = _kg
                         logger.info("knowledge_graph_initialized: %s", _kg.counters())
@@ -3787,7 +3787,7 @@ class PDCALoop:
                                     # No pending experiments — propose one from knowledge
                                     try:
                                         import json as _json
-                                        _kp = Path("knowledge/knowledge.json")
+                                        _kp = _PathModule("knowledge/knowledge.json")
                                         if _kp.exists():
                                             with open(_kp) as _kf:
                                                 _knowledge = _json.load(_kf)
@@ -4389,85 +4389,90 @@ class PDCALoop:
                         _total_actions += try_onboarding(self._runtime, _cycle_bot_id, self._get_latest_snapshot())
                     except Exception:
                         pass
-                    _cr_advice = None
                     try:
-                        from ai_sidecar.game_knowledge import game_knowledge
-                        gk = game_knowledge()
-                        _cr_pro = getattr(self._runtime, 'pro_ro_player_agent', None)
-                        if _cr_pro is None:
-                            from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
-                            _cr_pro = ProRoPlayerProfile()
-                            object.__setattr__(self._runtime, 'pro_ro_player_agent', _cr_pro)
-                        if _cr_pro is not None and hasattr(_cr_pro, 'get_action'):
-                            _cr_signals = {
-                                'situation': 'cold_start',
-                                'level': int(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'base_level', 1) or 1),
-                                'class': 'novice',
-                                'bot_id': _cycle_bot_id or 'default',
-                                'map': str(getattr(self._get_latest_snapshot(), 'map_name', '') or ''),
-                            }
-                            _cr_advice = _cr_pro.get_action(_cr_signals)
-                            if _cr_advice is not None:
-                                _cr_cmd = str(_cr_advice.get('command', '') or '')
-                                _cr_conf = float(_cr_advice.get('confidence', 0) or 0)
-                                _cr_map = str(_cr_advice.get('starting_map', '') or '')
-                                # Extract map from command if target_map is empty
-                                if not _cr_map and _cr_cmd.startswith('move '):
-                                    _cr_map = _cr_cmd[5:].strip()
-                                # Override cold start map with zone ladder (DB-backed, level-appropriate)
-                                if _cr_map and _pro_inline_snap is not None:
-                                    try:
-                                        from ai_sidecar.game_knowledge_db import GameKnowledgeDB
-                                        _gk_db = GameKnowledgeDB()
-                                        _cr_level = int(_cr_signals.get('level', 1) or 1)
-                                        _zone = _gk_db.get_hunting_zone(int(_cr_level))
-                                        _better_map = _zone['map_name'] if _zone else None
-                                        if _better_map:
-                                            _cr_cmd = f"move {_better_map}"
-                                            _cr_map = _better_map
-                                            _cr_conf = max(_cr_conf, 0.85)
-                                            logger.info("zone_ladder_override: old=%s new=%s level=%s", 
-                                                        _cr_advice.get('target_map','?'), _better_map, _cr_level)
-                                    except Exception as _e:
-                                        logger.info("zone_ladder_override_error[inline]: %s", _e)
-                                logger.info(
-                                    "pro_ro_player_cold_start[%s]: build=%s map=%s cmd=%s conf=%.2f",
-                                    _cycle_bot_id or '?',
-                                    _cr_advice.get('build', '?'),
-                                    _cr_map,
-                                    _cr_cmd,
-                                    _cr_conf,
-                                )
-                                # Queue the move command if confidence > 0.85
-                                # Note: no indoor skip — the corrected portals.txt now has
-                                # prt_in→prontera→prt_fild00, so route calculation will succeed.
-                                if _cr_conf > 0.85 and _cr_cmd and _cr_map:
-                                    _cr_aq = getattr(self._runtime, 'action_queue', None)
-                                    if _cr_aq is not None:
-                                        from datetime import UTC, datetime, timedelta
-                                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                                        _cr_proposal = ActionProposal(
-                                            action_id=f'pro_ro_cold_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
-                                            kind='command',
-                                            command=_cr_cmd,
-                                            priority_tier=ActionPriorityTier.tactical,
-                                            source='planner',
-                                            created_at=datetime.now(UTC),
-                                            expires_at=datetime.now(UTC) + timedelta(seconds=60),
-                                            conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
-                                            idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
-                                            metadata={
-                                                'source': 'pro_ro_player',
-                                                'confidence': _cr_conf,
-                                                'reason': f'Cold start: move to {_cr_map}',
-                                                'bot_id': _cycle_bot_id or 'default',
-                                            },
-                                        )
-                                        _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_proposal)
-                                        logger.info(
-                                            "pro_ro_player_cold_start_queued: bot=%s cmd=%s map=%s",
-                                            _cycle_bot_id or '?', _cr_cmd, _cr_map,
-                                        )
+                        # Cold start cooldown: skip if less than 60s since last cold start for this bot
+                        if not hasattr(self._runtime, '_cold_start_cooldowns'):
+                            object.__setattr__(self._runtime, '_cold_start_cooldowns', {})
+                        _cs_cooldowns = self._runtime._cold_start_cooldowns
+                        _cs_now = time.time()
+                        _cs_last = _cs_cooldowns.get(_cycle_bot_id or 'default', 0.0)
+                        if (_cs_now - _cs_last) < 60.0:
+                            pass  # In cooldown — skip cold start this cycle
+                        else:
+                            from ai_sidecar.game_knowledge import game_knowledge
+                            gk = game_knowledge()
+                            _cr_pro = getattr(self._runtime, 'pro_ro_player_agent', None)
+                            if _cr_pro is None:
+                                from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
+                                _cr_pro = ProRoPlayerProfile()
+                                object.__setattr__(self._runtime, 'pro_ro_player_agent', _cr_pro)
+                            if _cr_pro is not None and hasattr(_cr_pro, 'get_action'):
+                                _cr_signals = {
+                                    'situation': 'cold_start',
+                                    'level': int(getattr(getattr(self._get_latest_snapshot(), 'progression', None), 'base_level', 1) or 1),
+                                    'class': 'novice',
+                                    'bot_id': _cycle_bot_id or 'default',
+                                    'map': str(getattr(self._get_latest_snapshot(), 'map_name', '') or ''),
+                                }
+                                _cr_advice = _cr_pro.get_action(_cr_signals)
+                                if _cr_advice is not None:
+                                    _cr_cmd = str(_cr_advice.get('command', '') or '')
+                                    _cr_conf = float(_cr_advice.get('confidence', 0) or 0)
+                                    _cr_map = str(_cr_advice.get('starting_map', '') or '')
+                                    if not _cr_map and _cr_cmd.startswith('move '):
+                                        _cr_map = _cr_cmd[5:].strip()
+                                    if _cr_map and _pro_inline_snap is not None:
+                                        try:
+                                            from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+                                            _gk_db = GameKnowledgeDB()
+                                            _cr_level = int(_cr_signals.get('level', 1) or 1)
+                                            _zone = _gk_db.get_hunting_zone(int(_cr_level))
+                                            _better_map = _zone['map_name'] if _zone else None
+                                            if _better_map:
+                                                _cr_cmd = f"move {_better_map}"
+                                                _cr_map = _better_map
+                                                _cr_conf = max(_cr_conf, 0.85)
+                                                logger.info("zone_ladder_override: old=%s new=%s level=%s",
+                                                            _cr_advice.get('target_map','?'), _better_map, _cr_level)
+                                        except Exception as _e:
+                                            logger.info("zone_ladder_override_error[inline]: %s", _e)
+                                    logger.info(
+                                        "pro_ro_player_cold_start[%s]: build=%s map=%s cmd=%s conf=%.2f",
+                                        _cycle_bot_id or '?',
+                                        _cr_advice.get('build', '?'),
+                                        _cr_map,
+                                        _cr_cmd,
+                                        _cr_conf,
+                                    )
+                                    if _cr_conf > 0.85 and _cr_cmd and _cr_map:
+                                        _cr_aq = getattr(self._runtime, 'action_queue', None)
+                                        if _cr_aq is not None:
+                                            from datetime import UTC, datetime, timedelta
+                                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                            _cr_proposal = ActionProposal(
+                                                action_id=f'pro_ro_cold_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
+                                                kind='command',
+                                                command=_cr_cmd,
+                                                priority_tier=ActionPriorityTier.tactical,
+                                                source='planner',
+                                                created_at=datetime.now(UTC),
+                                                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                                conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
+                                                idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
+                                                metadata={
+                                                    'source': 'pro_ro_player',
+                                                    'confidence': _cr_conf,
+                                                    'reason': f'Cold start: move to {_cr_map}',
+                                                    'bot_id': _cycle_bot_id or 'default',
+                                                },
+                                            )
+                                            _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_proposal)
+                                            logger.info(
+                                                "pro_ro_player_cold_start_queued: bot=%s cmd=%s map=%s",
+                                                _cycle_bot_id or '?', _cr_cmd, _cr_map,
+                                            )
+                                            # Update cooldown timestamp after successful queue
+                                            _cs_cooldowns[_cycle_bot_id or 'default'] = _cs_now
                     except Exception:
                         logger.exception("pro_ro_player_cold_start_exception")
                     return PDCAResult(horizon=horizon, plan_id="death_respawn" if _death_recovery else "", 
@@ -5141,7 +5146,7 @@ class PDCALoop:
                         if _aq is not None:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                            _cmd = _extract_command_from_goal(_goal, _obj)
+                            _cmd = _extract_command_from_goal(_goal, _obj, current_map=_sn_map if _sn_map else None)
                             
                             # Query goal decomposer for next sub-goal
                             _gd = getattr(self._runtime, "goal_decomposer", None)
