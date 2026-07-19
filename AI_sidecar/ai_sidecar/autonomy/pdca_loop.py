@@ -1647,13 +1647,8 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
         
         if emergency == "emergency_heal" and aq is not None:
             _log.info("combat_actions: bot=%s emergency_heal (HP=%.0f%%)", _bid, hp_ratio*100)
-            aq.enqueue(_bid, ActionProposal(
-                action_id=f"ca_emergency_heal_{_bid}_{int(__import__('time').time()*1000)}",
-                kind="command", command="use HP Potion",
-                priority_tier=ActionPriorityTier.reflex, source="planner",
-                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=10),
-                conflict_key=f"ca_emergency_{_bid}", idempotency_key=f"ca_emergency_heal_{_bid}",
-            ))
+            # Note: potion use handled by bridge reflex (emergency_heal_potion).
+            # Sidecar triggers teleport escape if HP drops further.
             return 1
         if emergency == "emergency_escape" and aq is not None:
             _log.info("combat_actions: bot=%s emergency_escape (HP=%.0f%%)", _bid, hp_ratio*100)
