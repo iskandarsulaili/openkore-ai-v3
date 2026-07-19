@@ -1546,7 +1546,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
                             _zones = _hzm.recommend_zone(bot_level=max(1, _bot_level), bot_class="novice")
                             if _zones and len(_zones) > 0:
-                                _z = _zones[0].map if hasattr(_zones[0], 'map') else str(_zones[0])
+                                _z = _zones[0].map_name if hasattr(_zones[0], 'map_name') else str(_zones[0])
                                 if map_name and _z and _z != map_name.replace('.gat',''):
                                     _safe_map = _z
                     except Exception:
