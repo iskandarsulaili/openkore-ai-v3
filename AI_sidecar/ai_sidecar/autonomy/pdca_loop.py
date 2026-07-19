@@ -1540,9 +1540,9 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     try:
                         _hzm = getattr(runtime_state, "hunting_zone_manager", None)
                         if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
-                            _z = _hzm.recommend_zone(level=1, job="novice")
-                            if _z:
-                                _safe_map = getattr(_z, 'map', _z) if not isinstance(_z, str) else _z
+                            _zones = _hzm.recommend_zone(bot_level=1, bot_class="novice")
+                            if _zones and len(_zones) > 0:
+                                _safe_map = _zones[0].map if hasattr(_zones[0], 'map') else str(_zones[0])
                     except Exception:
                         pass
                     _log.warning("combat_monitor: bot=%s death_loop detected (%d town_returns) -> routing to %s", _bid, _tr[_bid]["count"], _safe_map)
