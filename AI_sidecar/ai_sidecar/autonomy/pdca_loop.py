@@ -1496,6 +1496,8 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
+        _log.debug("combat_monitor_check: bot=%s map=%s", bot_id, map_name)
+        
         # Only check bots on hunting maps (not prontera town)
         if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
             return 0
@@ -1550,7 +1552,8 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             
         entry["last_kills"] = kills
         return 0
-    except Exception:
+    except Exception as _cme:
+        _log.warning("combat_monitor_exception: %s", _cme)
         return 0
 
 
