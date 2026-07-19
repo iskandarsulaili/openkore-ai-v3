@@ -1664,6 +1664,20 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
             _log.info("combat_actions: bot=%s emergency_escape (HP=%.0f%%) — letting bridge survival reflex handle it", _bid, hp_ratio*100)
             return 1
         
+        # Emergency Butterfly Wing: use wing when HP<30% on field map (not town)
+        if hp_ratio < 0.30 and hp_ratio > 0.0 and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
+            if aq is not None:
+                _log.info("combat_actions: bot=%s emergency_wing (HP=%.0f%%)", _bid, hp_ratio*100)
+                aq.enqueue(_bid, ActionProposal(
+                    action_id=f"ca_wing_{_bid}_{int(__import__('time').time()*1000)}",
+                    kind="command", command="use Butterfly Wing",
+                    priority_tier=ActionPriorityTier.reflex, source="planner",
+                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=10),
+                    conflict_key=f"ca_wing_{_bid}", idempotency_key=f"ca_wing_{_bid}",
+                    metadata={"source":"combat_actions","reason":"emergency_butterfly_wing"},
+                ))
+                return 1
+        
         # Resolve target monster
         te = get_target_engine()
         monster = te.resolve(latest, _bid)
@@ -1693,20 +1707,6 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 ))
                 cs.mark_equip(_bid)
                 actions_queued += 1
-        
-        # 1b. Emergency Fly Wing: use Butterfly Wing (return to town) when critically low HP on field
-        if hp_ratio < 0.30 and hp_ratio > 0.0 and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
-            if aq is not None:
-                _log.info("combat_actions: bot=%s emergency_wing (HP=%.0f%%)", _bid, hp_ratio*100)
-                aq.enqueue(_bid, ActionProposal(
-                    action_id=f"ca_wing_{_bid}_{int(__import__('time').time()*1000)}",
-                    kind="command", command="use Butterfly Wing",
-                    priority_tier=ActionPriorityTier.reflex, source="planner",
-                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=10),
-                    conflict_key=f"ca_wing_{_bid}", idempotency_key=f"ca_wing_{_bid}",
-                    metadata={"source":"combat_actions","reason":"emergency_butterfly_wing"},
-                ))
-                return 1
         
         # 2. Skill selection (Phase 4) with class template (Phase 6)
         if sp_ratio >= sp_threshold:
