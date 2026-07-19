@@ -3341,6 +3341,28 @@ sub _check_bridge_reflexes {
 						Commands::run('stand');
 					}
 
+					# Auto-sell reflex: in town + overweight > sell threshold + not already selling
+					if ($char->{map} && $char->{map} =~ /^prontera/i) {
+						my $_inv_weight = $char->{inventory} ? $char->{inventory}->{weight} : 0;
+						my $_max_weight = $::config{"weight"} || 2000;
+						my $_w_ratio = $_max_weight > 0 ? $_inv_weight / $_max_weight : 0;
+						if ($_w_ratio > 0.60 && !$::config{"sellAuto"}) {
+							$::config{"sellAuto"} = 1;
+							$::config{"sellAuto_npc"} = "prt_in 126 76";
+							$::config{"sellAuto_npc_steps"} = "c r0 c";
+							$::config{"sellAuto_distance"} = 5;
+							$::config{"sellAuto_standpoint"} = "";
+							$::config{"itemsTakeAuto"} = 2;
+							debug "[autoSell] Enabled sellAuto (weight=$_w_ratio) in town\n", 'aiSidecarBridge', 1;
+						}
+						# If already in town and overweight, walk to the portal to enter prt_in
+						if ($_w_ratio > 0.60 && $::config{"sellAuto"} && $::config{"lockMap"} ne 'prt_in') {
+							$::config{"lockMap"} = "prt_in";
+							_toggle_ai_mode('auto');
+							debug "[autoSell] Setting lockMap to prt_in for selling\n", 'aiSidecarBridge', 1;
+						}
+					}
+
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
 					my $_now_ms = _now_ms();
 					my $_reflex_map = $char->{map} || '';
