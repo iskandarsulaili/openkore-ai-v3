@@ -1559,6 +1559,12 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     if not hasattr(runtime_state, '_death_loop_target'):
                         object.__setattr__(runtime_state, '_death_loop_target', {})
                     runtime_state._death_loop_target[_bid] = {"map": _safe_map, "expires": time.time() + 300}
+                    # Record death outcome for risk management
+                    try:
+                        from ai_sidecar.combat.risk_manager import get_risk_manager as _get_rm
+                        _get_rm().record_death(_bid, map_name or "unknown")
+                    except Exception:
+                        pass
                     _dl[_bid]["count"] = 0
                     return 2
             return 0
@@ -1588,6 +1594,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
         from ai_sidecar.combat.skill_engine import get_skill_engine
         from ai_sidecar.combat.combat_sequencer import get_combat_sequencer
         from ai_sidecar.combat.class_templates import get_combat_style, get_sp_threshold, get_hp_emergency
+        from ai_sidecar.combat.risk_manager import get_risk_manager
         from ai_sidecar.combat.server_mode import get_server_mode
         from datetime import UTC, datetime, timedelta
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
