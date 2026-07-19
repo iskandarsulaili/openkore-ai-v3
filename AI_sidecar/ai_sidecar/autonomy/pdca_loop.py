@@ -1507,27 +1507,11 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
             return 0
         
-        # Track kill stats per bot across cycles
-        if not hasattr(runtime_state, '_combat_monitor'):
-            object.__setattr__(runtime_state, '_combat_monitor', {})
-        _cm = runtime_state._combat_monitor
-        if _bid not in _cm:
-            _cm[_bid] = {"cycle": 0, "last_kills": 0, "last_deaths": 0}
-        entry = _cm[_bid]
-        entry["cycle"] += 1
+        # Read the bot's map from snapshot (used for death loop detection below)
+        kills = 0  # bridge doesn't send kills field, placeholder
         
-        # Read kill count from snapshot (progression or raw)
-        kills = 0
-        if isinstance(latest, dict):
-            raw = latest.get("raw", {}) or {}
-            kills = int(raw.get("kills", 0) or 0)
-        else:
-            raw = getattr(latest, "raw", None) or {}
-            kills = int(raw.get("kills", 0) if isinstance(raw, dict) else 0)
-        
-        # ── Death loop detection ─────────────────────────────────
-        # Detect by checking if bot keeps returning to town (prontera) after being sent to hunt
-        _town_maps = ("prontera", "prt_in")
+        # ── Town detection ──────────────────────────────────────
+        _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
         if map_name and any(t in map_name.lower() for t in _town_maps):
             # Bot is in town — check how many times it's returned recently
             if not hasattr(runtime_state, '_town_returns'):
@@ -1549,14 +1533,13 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                    _safe_map = "prt_fild01"
+                    _safe_map = "prt_fild01"  # fallback
                     try:
                         _hzm = getattr(runtime_state, "hunting_zone_manager", None)
-                        if _hzm is not None and hasattr(_hzm, 'recommend_zones_by_level'):
-                            _zones = _hzm.recommend_zones_by_level(1)
-                            if _zones and len(_zones) > 0:
-                                _first = _zones[0]
-                                _safe_map = getattr(_first, 'map', _first) if not isinstance(_first, str) else _first
+                        if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
+                            _z = _hzm.recommend_zone(level=1, job="novice")
+                            if _z:
+                                _safe_map = getattr(_z, 'map', _z) if not isinstance(_z, str) else _z
                     except Exception:
                         pass
                     _log.warning("combat_monitor: bot=%s death_loop detected (%d town_returns) -> routing to %s", _bid, _tr[_bid]["count"], _safe_map)
@@ -1582,36 +1565,6 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 if _bid in _tr:
                     _tr[_bid]["count"] = 0
         
-        # If kills haven't increased in 3 cycles, config might be wrong
-        if kills <= entry["last_kills"] and entry["cycle"] >= 3:
-            # Bot is on hunting map but not killing — likely inLockOnly or lockMap issue
-            aq = getattr(runtime_state, "action_queue", None)
-            if aq is not None:
-                from datetime import UTC, datetime, timedelta
-                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                
-                # Queue set attackAuto_inLockOnly 0 (most common fix)
-                proposal = ActionProposal(
-                    action_id=f"combat_fix_inlock_{_bid}_{int(__import__('time').time()*1000)}",
-                    kind="command",
-                    command="set attackAuto_inLockOnly 0",
-                    priority_tier=ActionPriorityTier.tactical,
-                    source="planner",
-                    created_at=datetime.now(UTC),
-                    expires_at=datetime.now(UTC) + timedelta(seconds=120),
-                    conflict_key=f"combat_inlock_{_bid}",
-                    idempotency_key=f"combat_inlock_{_bid}",
-                    metadata={"source": "combat_monitor", "reason": f"Bot {_bid} on {map_name} with 0 kills for {entry['cycle']} cycles", "bot_id": _bid},
-                )
-                aq.enqueue(_bid, proposal)
-                _log.info("combat_monitor: bot=%s map=%s zero_kills=%d cycles -> queuing set attackAuto_inLockOnly 0", _bid, map_name, entry["cycle"])
-                entry["cycle"] = 0  # Reset to avoid spamming
-                return 1
-        elif kills > entry["last_kills"]:
-            # Kills increasing — reset counter, all is well
-            entry["cycle"] = 0
-            
-        entry["last_kills"] = kills
         return 0
     except Exception as _cme:
         _log.warning("combat_monitor_exception: %s", _cme)
