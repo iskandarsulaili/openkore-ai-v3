@@ -1512,18 +1512,61 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             object.__setattr__(runtime_state, '_combat_monitor', {})
         _cm = runtime_state._combat_monitor
         if _bid not in _cm:
-            _cm[_bid] = {"cycle": 0, "last_kills": 0}
+            _cm[_bid] = {"cycle": 0, "last_kills": 0, "last_deaths": 0}
         entry = _cm[_bid]
         entry["cycle"] += 1
         
         # Read kill count from snapshot (progression or raw)
         kills = 0
+        deaths = 0
         if isinstance(latest, dict):
             raw = latest.get("raw", {}) or {}
             kills = int(raw.get("kills", 0) or 0)
+            deaths = int(raw.get("deaths", 0) or 0)
         else:
             raw = getattr(latest, "raw", None) or {}
             kills = int(raw.get("kills", 0) if isinstance(raw, dict) else 0)
+            deaths = int(raw.get("deaths", 0) if isinstance(raw, dict) else 0)
+        
+        # ── Death loop detection ─────────────────────────────────
+        # If deaths increased but kills haven't, bot is dying without progress
+        _new_deaths = deaths - entry.get("last_deaths", 0)
+        _new_kills = kills - entry.get("last_kills", 0)
+        if _new_deaths > 0 and _new_kills == 0 and entry.get("cycle", 0) > 2:
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is not None:
+                from datetime import UTC, datetime, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                # Find lowest-level hunting zone via zone ladder
+                _safe_map = "prt_fild01"  # fallback
+                try:
+                    _hzm = getattr(runtime_state, "hunting_zone_manager", None)
+                    if _hzm is not None and hasattr(_hzm, 'recommend_zones_by_level'):
+                        _zones = _hzm.recommend_zones_by_level(1)
+                        if _zones and len(_zones) > 0:
+                            _first = _zones[0]
+                            _safe_map = getattr(_first, 'map', _first) if not isinstance(_first, str) else _first
+                except Exception:
+                    pass
+                _log.warning("combat_monitor: bot=%s map=%s death_loop detected (%d deaths, 0 kills) -> routing to safer map %s", _bid, map_name, _new_deaths, _safe_map)
+                _safe_proposal = ActionProposal(
+                    action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
+                    kind="command",
+                    command=f"move {_safe_map}",
+                    priority_tier=ActionPriorityTier.tactical,
+                    source="planner",
+                    created_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(seconds=300),
+                    conflict_key=f"death_loop_{_bid}",
+                    idempotency_key=f"death_loop_{_bid}",
+                    metadata={"source": "combat_monitor", "reason": f"death_loop_{_new_deaths}_deaths_0_kills", "bot_id": _bid},
+                )
+                aq.enqueue(_bid, _safe_proposal)
+                entry["last_deaths"] = deaths
+                entry["cycle"] = 0
+                return 2
+        
+        entry["last_deaths"] = deaths
         
         # If kills haven't increased in 3 cycles, config might be wrong
         if kills <= entry["last_kills"] and entry["cycle"] >= 3:
