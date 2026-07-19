@@ -1525,13 +1525,20 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
             object.__setattr__(runtime_state, '_death_loop', {})
         _dl = runtime_state._death_loop
         if _bid not in _dl:
-            _dl[_bid] = {"count": 0, "last_cycle": 0, "was_on_hunt": False}
+            _dl[_bid] = {"count": 0, "last_cycle": 0, "was_on_hunt": False, "last_hunt_map": ""}
         
         if _in_town:
             # Only count as a return if bot was on a hunting map since last town visit
             if _dl[_bid]["was_on_hunt"]:
                 _dl[_bid]["count"] += 1
                 _dl[_bid]["was_on_hunt"] = False
+                # Record death on the actual hunting map, not the town map
+                try:
+                    from ai_sidecar.combat.risk_manager import get_risk_manager as _get_rm
+                    _death_map = _dl[_bid].get("last_hunt_map", "") or map_name or "unknown"
+                    _get_rm().record_death(_bid, _death_map)
+                except Exception:
+                    pass
             
             if _dl[_bid]["count"] >= 5:
                 aq = getattr(runtime_state, "action_queue", None)
@@ -1583,8 +1590,10 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     return 2
             return 0
         else:
-            # Bot is on a hunting map — mark as was_on_hunt
+            # Bot is on a hunting map — mark as was_on_hunt and track map name
             _dl[_bid]["was_on_hunt"] = True
+            if map_name:
+                _dl[_bid]["last_hunt_map"] = map_name
         
         return 0
     except Exception as _cme:
