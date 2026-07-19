@@ -4567,28 +4567,7 @@ class PDCALoop:
                                         if _cr_aq is not None:
                                             from datetime import UTC, datetime, timedelta
                                             from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                                            _cr_proposal = ActionProposal(
-                                                action_id=f'pro_ro_cold_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
-                                                kind='command',
-                                                command=_cr_cmd,
-                                                priority_tier=ActionPriorityTier.tactical,
-                                                source='planner',
-                                                created_at=datetime.now(UTC),
-                                                expires_at=datetime.now(UTC) + timedelta(seconds=60),
-                                                conflict_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
-                                                idempotency_key=f'pro_ro_cold_{_cr_map}_{_cycle_bot_id}_{self._cycle_count}',
-                                                metadata={
-                                                    'source': 'pro_ro_player',
-                                                    'confidence': _cr_conf,
-                                                    'reason': f'Cold start: move to {_cr_map}',
-                                                    'bot_id': _cycle_bot_id or 'default',
-                                                },
-                                            )
-                                            logger.info(
-                                                "pro_ro_player_cold_start_queued: bot=%s cmd=%s map=%s",
-                                                _cycle_bot_id or '?', _cr_cmd, _cr_map,
-                                            )
-                                            # Also queue set attackAuto_inLockOnly 0 to ensure bot attacks on arrival
+                                            # Queue set attackAuto_inLockOnly 0 to ensure bot attacks on arrival
                                             try:
                                                 _cr_inlock_proposal = ActionProposal(
                                                     action_id=f'pro_ro_inlock_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',

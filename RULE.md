@@ -64,11 +64,11 @@ If a field is `None`/`0` when it shouldn't be, trace the gap in: bridge → Pyda
 
 | Agent | Role | Reads | Writes | Must not conflict with |
 |-------|------|-------|--------|----------------------|
-| **Survival reflex (bridge)** | Emergency flee when dying | HP, aggro_count (from @actors), map | lockMap, AI mode toggle | Pro RO lockMap (has 300s grace window) |
-| **Pro RO Player (PDCA)** | Recommends hunting maps | Level, job, location | lockMap, move commands | Survival reflex (grace period protects this) |
+| **Survival reflex (bridge)** | Emergency flee when dying | HP, aggro_count (from @actors), map | lockMap, AI mode toggle | Game engine routing (has 300s grace window) |
+| **Game Engine (PDCA)** | Recommends hunting maps, sole router | Level, job, location | lockMap, move commands | Survival reflex (grace period protects this) |
 | **Progression Planner (CrewAI)** | Job change, equipment | `job_change_available` signal | move commands to NPC | Survival (should not flee from job NPC) |
 | **Goal Stack** | Priority-ordered goal selection | Assessment results | GoalDirective entries | Must not create redundant goals |
-| **Cold Start (PDCA)** | Initial routing on connect | Latest snapshot | lockMap, move | Pro RO high-confidence (cold start backs off after confident action) |
+| **Cold Start (PDCA)** | Initial config on connect | Latest snapshot | `set attackAuto_inLockOnly 0` only | Game engine handles all map routing |
 
 **Goal priority order** (deterministic):
 1. **Survival** — HP < 35% or dead/disconnected
