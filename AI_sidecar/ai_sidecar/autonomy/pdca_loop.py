@@ -1914,7 +1914,10 @@ class PDCALoop:
                         pass
                 # ── Combat monitor: runs EVERY cycle, checks all bots ──
                 try:
-                    _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cycle_bot_id)
+                    _all_bot_ids = getattr(self._runtime, 'snapshot_cache', None)
+                    if _all_bot_ids is not None and hasattr(_all_bot_ids, 'bot_ids'):
+                        for _cm_bot_id in _all_bot_ids.bot_ids():
+                            _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cm_bot_id)
                 except Exception:
                     pass
                 # Initialize anti-detection if not present
