@@ -1518,24 +1518,30 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 _dl[_bid]["count"] += 1
                 _dl[_bid]["was_on_hunt"] = False
             
-            # Trigger if 5+ rapid death-loop cycles
             if _dl[_bid]["count"] >= 5:
                 aq = getattr(runtime_state, "action_queue", None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                     _safe_map = "prt_fild01"
+                    # Read actual bot level from snapshot for appropriate safe map
+                    _bot_level = 1
+                    if isinstance(latest, dict):
+                        _progress = latest.get("progression", {}) or {}
+                        _bot_level = int(_progress.get("base_level", _progress.get("level", 1)) or 1)
+                    else:
+                        _bot_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
                     try:
                         _hzm = getattr(runtime_state, "hunting_zone_manager", None)
                         if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
-                            _zones = _hzm.recommend_zone(bot_level=1, bot_class="novice")
+                            _zones = _hzm.recommend_zone(bot_level=max(1, _bot_level), bot_class="novice")
                             if _zones and len(_zones) > 0:
                                 _z = _zones[0].map if hasattr(_zones[0], 'map') else str(_zones[0])
                                 if map_name and _z and _z != map_name.replace('.gat',''):
                                     _safe_map = _z
                     except Exception:
                         pass
-                    _log.warning("combat_monitor: bot=%s death_loop (%d cycles) -> routing to %s", _bid, _dl[_bid]["count"], _safe_map)
+                    _log.warning("combat_monitor: bot=%s death_loop (%d cycles, lv%d) -> routing to %s", _bid, _dl[_bid]["count"], _bot_level, _safe_map)
                     aq.enqueue(_bid, ActionProposal(
                         action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
                         kind="command",
