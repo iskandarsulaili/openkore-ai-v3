@@ -2787,6 +2787,7 @@ sub _rewrite_runtime_command {
 			my $current_lockMap = defined $::config{"lockMap"} ? $::config{"lockMap"} : '';
 			debug "[lockMap] setting lockMap from '$current_lockMap' to '$target'\n", 'aiSidecarBridge', 1;
 			$::config{"lockMap"} = $target;
+			\$_last_pro_ro_lockmap_ms = _now_ms(); # track for survival cooldown
 			$::config{"lockMap_x"} = "";
 			$::config{"lockMap_y"} = "";
 			$::config{"lockMap_randX"} = 0;
@@ -3333,20 +3334,34 @@ sub _check_bridge_reflexes {
 # 						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
 					}
 
+					# Force stand if sitting too long on a non-town map with lockMap set
+					if (($AI::AI == 2) && $char->{map} && $char->{map} !~ /^prontera|prt_in/i && defined $::config{"lockMap"} && $::config{"lockMap"} ne '') {
+						Commands::run('stand');
+					}
+
 					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
 					my $_now_ms = _now_ms();
 					my $_reflex_map = $char->{map} || '';
-					# 60s cooldown on town recovery to let auto-buy/sell complete
-					if ($_now_ms - $_last_prontera_recovery_ms > 60000) {
-						if ($aggro_count > 0) {
+					# Pro RO survival check: let the bot hunt unless critically threatened
+					# Grace period after Pro RO set lockMap — give bot time to hunt (180s)
+					my $_grace_ms = 180000;
+					my $_pro_ro_set = defined $_last_pro_ro_lockmap_ms && $_last_pro_ro_lockmap_ms > 0;
+					my $_since_pro_ro = $_pro_ro_set ? ($_now_ms - $_last_pro_ro_lockmap_ms) : 999999;
+					if ($_since_pro_ro < $_grace_ms) {
+						# Pro RO recently set lockMap — only override in CRITICAL danger
+						if ($hp_ratio < 0.15 && $aggro_count > 2) {
 							$_last_prontera_recovery_ms = $_now_ms;
 							eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; if ($_emap !~ /^\Q$_rc\E/i) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
-						} elsif ($hp_ratio < 0.30 && $_reflex_map !~ /^prontera/i) {
-							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; if ($_emap !~ /^\Q$_rc\E/i) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
-						} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
-							$_last_prontera_recovery_ms = $_now_ms;
-							eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; if ($_emap !~ /^\Q$_rc\E/i) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
+						}
+					} else {
+						# No recent Pro RO command — broader survival check with 120s cooldown
+						if ($_now_ms - $_last_prontera_recovery_ms > 120000) {
+							if ($aggro_count > 3 || ($hp_ratio < 0.10 && $aggro_count > 0)) {
+								$_last_prontera_recovery_ms = $_now_ms;
+								eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; if ($_emap !~ /^\Q$_rc\E/i) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
+							} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
+								# Acceptable threshold — low HP, retreat
+							}
 						}
 					}
 				}
