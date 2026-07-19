@@ -1578,7 +1578,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
     """
     import logging
     _log = logging.getLogger(__name__)
-    _log.debug("combat_actions_tick: bot=%s horizon=%s", bot_id, horizon)
+    _log.info("combat_actions_tick: bot=%s horizon=%s", bot_id, horizon)
     try:
         from ai_sidecar.combat.target_engine import resolve_target, get_target_engine
         from ai_sidecar.combat.equipment_manager import get_equipment_manager, infer_weapon_element
@@ -3921,8 +3921,12 @@ class PDCALoop:
                                     _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0) or 0)
                                     _is_dead = _hp <= 0
                                     _map = str(_conscious_snap.get("map", "") or "")
-                                    _is_town = any(t in _map.lower() for t in game_knowledge().town_prefixes()) \
-                                              and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
+                                    _is_town = False
+                                    try:
+                                        from ai_sidecar.game_knowledge import game_knowledge as _gk_fn
+                                        _is_town = any(t in _map.lower() for t in _gk_fn().town_prefixes()) and not any(f in _map.lower() for f in ["fild", "dun", "cave", "forest", "field"])
+                                    except Exception:
+                                        pass
                                     _inv = _conscious_snap.get("inventory", {}) or {}
                                     _items = _inv.get("items", []) or _inv.get("item_list", []) or []
                                     _has_pots = True
