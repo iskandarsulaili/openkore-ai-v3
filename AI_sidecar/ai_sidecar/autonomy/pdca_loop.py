@@ -1578,9 +1578,11 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
     """
     import logging
     _log = logging.getLogger(__name__)
+    _log.debug("combat_actions_tick: bot=%s horizon=%s", bot_id, horizon)
     try:
         from ai_sidecar.combat.target_engine import resolve_target, get_target_engine
-        from ai_sidecar.combat.equipment_manager import get_equipment_manager
+        from ai_sidecar.combat.equipment_manager import get_equipment_manager, infer_weapon_element
+        from ai_sidecar.combat.skill_engine import get_skill_engine
         from ai_sidecar.combat.server_mode import get_server_mode
         from datetime import UTC, datetime, timedelta
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
@@ -1597,7 +1599,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
         if latest is None:
             return 0
         
-        # Detect server mode for formula selection
+        # Detect server mode
         mode = get_server_mode(runtime_state, latest)
         
         # Resolve current target monster
@@ -1610,51 +1612,92 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
                     _bid, monster.name, monster.element, monster.element_level,
                     monster.size, monster.race)
         
-        # Check if weapon swap would improve damage
+        # Get bot's job name and SP ratio from snapshot
+        job_name = "Novice"
+        sp_ratio = 1.0
+        weapon_element = "Neutral"
+        if isinstance(latest, dict):
+            prog = latest.get("progression", {}) or {}
+            vitals = latest.get("vitals", {}) or {}
+            job_name = str(prog.get("job_name", "Novice") or "Novice")
+            sp = int(vitals.get("sp", 0) or 0)
+            sp_max = int(vitals.get("sp_max", 1) or 1)
+            sp_ratio = sp / max(sp_max, 1)
+        else:
+            prog = getattr(latest, "progression", None)
+            vitals = getattr(latest, "vitals", None)
+            if prog:
+                job_name = str(getattr(prog, "job_name", "Novice") or "Novice")
+            if vitals:
+                sp = int(getattr(vitals, "sp", 0) or 0)
+                sp_max = int(getattr(vitals, "sp_max", 1) or 1)
+                sp_ratio = sp / max(sp_max, 1)
+        
+        # Determine current weapon element
+        if isinstance(latest, dict):
+            inv = latest.get("inventory", {}) or {}
+            for item in inv.get("items", inv.get("list", [])):
+                if item.get("equipped") and item.get("type", "") in (
+                    "Dagger","1hSword","2hSword","1hSpear","2hSpear","1hAxe","2hAxe",
+                    "1hMace","2hMace","Staff","Bow","Knuckle","Book","Pistol","Rifle"):
+                    weapon_element = infer_weapon_element(str(item.get("name", "")))
+                    break
+        
+        actions_queued = 0
+        aq = getattr(runtime_state, "action_queue", None)
+        
+        # 1. Check weapon swap
         em = get_equipment_manager()
-        if not em.can_equip(_bid):
-            return 0  # Cooldown active
-        
-        best = em.get_best_weapon(
-            latest, _bid,
-            monster_element=monster.element,
-            monster_element_level=monster.element_level,
-            monster_size=monster.size,
-        )
-        
-        if best is not None:
-            _log.info("combat_actions: bot=%s weapon_swap -> slot=%s name=%s score=%.1f (%s)",
-                      _bid, best.slot, best.name, best.score, best.reason)
-            
-            aq = getattr(runtime_state, "action_queue", None)
-            if aq is not None:
+        if em.can_equip(_bid):
+            best = em.get_best_weapon(
+                latest, _bid,
+                monster_element=monster.element,
+                monster_element_level=monster.element_level,
+                monster_size=monster.size,
+            )
+            if best is not None and aq is not None:
+                _log.info("combat_actions: bot=%s weapon_swap -> slot=%s name=%s score=%.1f (%s)",
+                          _bid, best.slot, best.name, best.score, best.reason)
                 proposal = ActionProposal(
                     action_id=f"ca_equip_{_bid}_{int(__import__('time').time()*1000)}",
-                    kind="command",
-                    command=f"equip {best.slot}",
-                    priority_tier=ActionPriorityTier.reflex,
-                    source="planner",
-                    created_at=datetime.now(UTC),
-                    expires_at=datetime.now(UTC) + timedelta(seconds=30),
-                    conflict_key=f"ca_equip_{_bid}",
-                    idempotency_key=f"ca_equip_{_bid}_{best.slot}",
-                    metadata={
-                        "source": "combat_actions",
-                        "reason": f"weapon_swap: {best.name} ({best.reason}) score={best.score:.0f}",
-                        "bot_id": _bid,
-                        "weapon": best.name,
-                        "slot": best.slot,
-                        "element": best.element,
-                        "score": best.score,
-                    },
+                    kind="command", command=f"equip {best.slot}",
+                    priority_tier=ActionPriorityTier.reflex, source="planner",
+                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                    conflict_key=f"ca_equip_{_bid}", idempotency_key=f"ca_equip_{_bid}_{best.slot}",
+                    metadata={"source": "combat_actions", "reason": f"weapon_swap: {best.name}", "bot_id": _bid},
                 )
                 aq.enqueue(_bid, proposal)
                 em.mark_equipped(_bid)
-                return 1
+                actions_queued += 1
         
-        return 0
+        # 2. Check skill selection
+        se = get_skill_engine()
+        best_skill = se.select_best_skill(
+            bot_id=_bid, job_name=job_name,
+            sp_ratio=sp_ratio,
+            monster_element=monster.element,
+            monster_element_level=monster.element_level,
+            weapon_element=weapon_element,
+        )
+        if best_skill is not None and aq is not None:
+            _log.info("combat_actions: bot=%s skill -> %s Lv%d score=%.1f SP=%d (%s)",
+                      _bid, best_skill.name, best_skill.level, best_skill.score,
+                      best_skill.sp_cost, best_skill.reason)
+            proposal = ActionProposal(
+                action_id=f"ca_skill_{_bid}_{int(__import__('time').time()*1000)}",
+                kind="command", command=f"skills_add {best_skill.name} {best_skill.level}",
+                priority_tier=ActionPriorityTier.reflex, source="planner",
+                created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=10),
+                conflict_key=f"ca_skill_{_bid}", idempotency_key=f"ca_skill_{_bid}_{best_skill.name}",
+                metadata={"source": "combat_actions", "reason": f"skill: {best_skill.name} vs {monster.element}", "bot_id": _bid},
+            )
+            aq.enqueue(_bid, proposal)
+            se.mark_cast(_bid, best_skill.name, best_skill.level, best_skill.cooldown)
+            actions_queued += 1
+        
+        return actions_queued
     except Exception as _cae:
-        _log.warning("combat_actions_exception: %s", _cae)
+        _log.debug("combat_actions_exception: %s", _cae)
         return 0
 
 
