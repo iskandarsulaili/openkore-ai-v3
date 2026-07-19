@@ -52,7 +52,7 @@ The sidecar (`AI_sidecar/`) handles ALL decisions:
 Every field in every Pydantic model MUST be populated:
 - **Vitals**: `hp`, `hp_max`, `hp_ratio`, `sp`, `sp_max`, `sp_ratio`, `weight`, `weight_max`, `weight_ratio`, `level`, `base_level`, `job_level`, `zeny`
 - **Position**: `map`, `x`, `y`
-- **Combat**: `ai_sequence`, `target_id`, `is_in_combat`, `aggro_count`
+- **Combat**: `ai_sequence`, `target_id`, `is_in_combat` (aggro_count derived from actors data)
 - **Inventory**: `zeny`, `item_count`, `weight`, `weight_max`, `weight_ratio`, `overweight_ratio`
 - **Progression**: `job_id`, `base_level`, `job_level`, `base_exp`, `base_exp_max`, `job_exp`, `job_exp_max`, `skill_points`, `stat_points`, `job_name`
 - **Skills**: name + level for each known skill
@@ -64,7 +64,7 @@ If a field is `None`/`0` when it shouldn't be, trace the gap in: bridge → Pyda
 
 | Agent | Role | Reads | Writes | Must not conflict with |
 |-------|------|-------|--------|----------------------|
-| **Survival reflex (bridge)** | Emergency flee when dying | HP, aggro_count, map | lockMap, AI mode toggle | Pro RO lockMap (has 180s grace window) |
+| **Survival reflex (bridge)** | Emergency flee when dying | HP, aggro_count (from @actors), map | lockMap, AI mode toggle | Pro RO lockMap (has 300s grace window) |
 | **Pro RO Player (PDCA)** | Recommends hunting maps | Level, job, location | lockMap, move commands | Survival reflex (grace period protects this) |
 | **Progression Planner (CrewAI)** | Job change, equipment | `job_change_available` signal | move commands to NPC | Survival (should not flee from job NPC) |
 | **Goal Stack** | Priority-ordered goal selection | Assessment results | GoalDirective entries | Must not create redundant goals |
