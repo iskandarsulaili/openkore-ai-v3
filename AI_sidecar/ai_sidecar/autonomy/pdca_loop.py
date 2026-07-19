@@ -1508,9 +1508,38 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None) -
                 _maps = _re.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
                 if _maps:
                     return f"move {_maps[0]}"
-        # If in Prontera with any common goal, route to nearby field
-        if "prontera" in objective.lower() and keyword in ("survival", "job_advancement", "advancement", "idle", "economy"):
-            return "move prt_fild08"  # TODO: make data-driven via zone_ladder
+        # If in Prontera with survival/economy goal, route to nearby field
+        if "prontera" in objective.lower() and keyword in ("survival", "idle", "economy"):
+            return "move prt_fild08"
+    
+    # For job_advancement goal — route to Prontera (all 1st class NPCs are there)
+    if keyword == "job_advancement":
+        # Extract target job from objective if available: "toward Swordman" -> "swordman"
+        if objective and "toward" in objective.lower():
+            import re as _job_re
+            _job_match = _job_re.search(r"toward\s+(\w+)", objective, _job_re.IGNORECASE)
+            if _job_match:
+                _target = _job_match.group(1).lower()
+                # Job change NPC locations (from RO knowledge)
+                _npc_locs = {
+                    "swordman": "prontera 53 259",
+                    "mage": "prontera 166 30",
+                    "wizard": "prontera 166 30",
+                    "archer": "prontera 165 216",
+                    "hunter": "prontera 165 216",
+                    "acolyte": "prontera 159 260",
+                    "priest": "prontera 159 260",
+                    "monk": "prontera 159 260",
+                    "thief": "morocc 115 97",
+                    "rogue": "morocc 115 97",
+                    "merchant": "prontera 174 125",
+                    "blacksmith": "prontera 174 125",
+                    "alchemist": "prontera 174 125",
+                }
+                if _target in _npc_locs:
+                    return f"move {_npc_locs[_target]}"
+        # Default: go to Prontera central, all job NPCs reachable
+        return "move prontera 156 196"
     
     # If goal is survival with no specific routing, still send ai auto
     if keyword == "survival":

@@ -138,6 +138,15 @@ class CrewManager:
                             signals["map_known"] = bool(snap.get("map_known", False))
                             inv = snap.get("inventory") or {}
                             signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
+                            # Level and job change signals
+                            prog = snap.get("progression") or {}
+                            signals["level"] = int(prog.get("base_level", v.get("base_level", 1)) or 1)
+                            signals["job_level"] = int(prog.get("job_level", v.get("job_level", 1)) or 1)
+                            signals["job_name"] = str(prog.get("job_name", v.get("job_name", "novice")) or "novice").lower()
+                            _job = signals["job_name"]
+                            _jl = signals["job_level"]
+                            signals["job_change_available"] = (_job == "novice" and _jl >= 10) or (_job in ("swordman","mage","archer","thief","acolyte","merchant") and _jl >= 50)
+                            signals["job_change_npc"] = "prontera 156 196" if signals["job_change_available"] else None
                         else:
                             # BotStateSnapshot object — use attribute access
                             v = getattr(snap, "vitals", None) or {}
@@ -148,6 +157,21 @@ class CrewManager:
                             signals["map_known"] = bool(getattr(snap, "map_known", False))
                             inv = getattr(snap, "inventory", None) or {}
                             signals["weight_ratio"] = float(getattr(inv, "weight_ratio", 0.0) if not isinstance(inv, dict) else inv.get("weight_ratio", 0.0))
+                            # Level and job change signals
+                            prog = getattr(snap, "progression", None) or {}
+                            if isinstance(prog, dict):
+                                _bl = int(prog.get("base_level", 1) or 1)
+                                _jl = int(prog.get("job_level", 1) or 1)
+                                _jn = str(prog.get("job_name", "novice") or "novice").lower()
+                            else:
+                                _bl = int(getattr(prog, "base_level", 1) or 1)
+                                _jl = int(getattr(prog, "job_level", 1) or 1)
+                                _jn = str(getattr(prog, "job_name", "novice") or "novice").lower()
+                            signals["level"] = _bl
+                            signals["job_level"] = _jl
+                            signals["job_name"] = _jn
+                            signals["job_change_available"] = (_jn == "novice" and _jl >= 10) or (_jn in ("swordman","mage","archer","thief","acolyte","merchant") and _jl >= 50)
+                            signals["job_change_npc"] = "prontera 156 196" if signals["job_change_available"] else None
                 except Exception:
                     pass
 
