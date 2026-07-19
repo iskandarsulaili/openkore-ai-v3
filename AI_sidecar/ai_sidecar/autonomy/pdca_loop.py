@@ -379,6 +379,20 @@ def _emit_game_engine_actions(runtime_state, horizon: str, bot_id: str | None = 
             game_engine=game_engine,
         )
         
+        # Apply risk management: prefer maps with good reward/risk history
+        if zones and len(zones) > 1:
+            try:
+                from ai_sidecar.combat.risk_manager import get_risk_manager as _rk_rm
+                _rk = _rk_rm()
+                _candidates = [z.map_name for z in zones if hasattr(z, 'map_name')]
+                _best_map = _rk.best_map(_candidates)
+                if _best_map:
+                    # Re-order zones to put the safest one first
+                    zones.sort(key=lambda z: (z.map_name != _best_map if hasattr(z, 'map_name') else True))
+                    _log.info("risk_manager: preferring map=%s (risk/reward optimized)", _best_map)
+            except Exception:
+                pass
+        
         if not zones:
             _log.info("game_engine_no_zones: bot=%s level=%d - trying fallback", bot_id, bot_level)
             # Fallback zones: dynamically computed from knowledge data + level range
