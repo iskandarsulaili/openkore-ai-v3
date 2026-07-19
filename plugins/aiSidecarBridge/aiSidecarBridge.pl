@@ -2782,7 +2782,19 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-	# Handle map-name moves: "move <map>" → set lockMap + ai auto
+	# Handle set commands: "set <config_key> <value>" → modify config directly
+	if ($normalized =~ /^set\s+([a-z_][a-z0-9_]*)\s+(.+)$/) {
+		my $set_key = $1;
+		my $set_val = $2;
+		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
+		$orig_key = $set_key unless defined $orig_key;
+		my $old_val = $::config{$orig_key};
+		$::config{$orig_key} = $set_val;
+		logger("[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")", 'aiSidecarBridge', 1);
+		return ('', 'config_set_ok');
+	}
+	
+	# ── Handle map-name moves: "move <map>" → set lockMap + ai auto ──
 	# OpenKore's auto AI uses lockMap to navigate to and stay on a map.
 	# Setting lockMap first, then enabling auto AI, gives the bot a
 	# meaningful destination instead of aimless wandering.
