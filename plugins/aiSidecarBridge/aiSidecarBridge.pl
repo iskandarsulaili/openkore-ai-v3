@@ -1467,6 +1467,7 @@ sub _build_snapshot_payload {
 			item_count => $item_count,
 			weight     => $char ? $char->{weight} : undef,
 			weight_max => $char ? $char->{weight_max} : undef,
+			weight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 			overweight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 		},
 		progression => $progression,
