@@ -4434,7 +4434,9 @@ class PDCALoop:
                                     _cr_map = str(_cr_advice.get('starting_map', '') or '')
                                     if not _cr_map and _cr_cmd.startswith('move '):
                                         _cr_map = _cr_cmd[5:].strip()
-                                    if _cr_map and _pro_inline_snap is not None:
+                                    # Override cold start map with zone ladder (DB-backed, level-appropriate)
+                                    # BUT skip if build is "job_change" — job change NPCs are not hunting zones
+                                    if _cr_map and _pro_inline_snap is not None and _cr_advice.get('build', '') != 'job_change':
                                         try:
                                             from ai_sidecar.game_knowledge_db import GameKnowledgeDB
                                             _gk_db = GameKnowledgeDB()
@@ -4445,8 +4447,7 @@ class PDCALoop:
                                                 _cr_cmd = f"move {_better_map}"
                                                 _cr_map = _better_map
                                                 _cr_conf = max(_cr_conf, 0.85)
-                                                logger.info("zone_ladder_override: old=%s new=%s level=%s",
-                                                            _cr_advice.get('target_map','?'), _better_map, _cr_level)
+                                                logger.info("zone_ladder_override: old=%s new=%s level=%s", _cr_advice.get('target_map','?'), _better_map, _cr_level)
                                         except Exception as _e:
                                             logger.info("zone_ladder_override_error[inline]: %s", _e)
                                     logger.info(
