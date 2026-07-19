@@ -1571,16 +1571,16 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
     
     Uses TargetEngine (mob_db.yml) + ElementTable (attr_fix.yml) to:
     1. Resolve current target monster's element/size/race
-    2. Check if weapon swap would improve damage
-    3. Queue equip/skill commands accordingly
+    2. Check if weapon swap would improve damage (EquipmentManager)
+    3. Queue equip commands accordingly
     
     Follows RULE.md: all decisions from rAthena DB, zero hardcoded values.
     """
     import logging
     _log = logging.getLogger(__name__)
     try:
-        from ai_sidecar.combat.target_engine import resolve_target
-        from ai_sidecar.combat.element_table import get_element_table
+        from ai_sidecar.combat.target_engine import resolve_target, get_target_engine
+        from ai_sidecar.combat.equipment_manager import get_equipment_manager
         from ai_sidecar.combat.server_mode import get_server_mode
         from datetime import UTC, datetime, timedelta
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
@@ -1597,27 +1597,60 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
         if latest is None:
             return 0
         
-        # Resolve current target
-        monster = resolve_target(latest, _bid)
-        if monster is None:
-            return 0
-        
-        _log.debug("combat_actions: bot=%s target=%s element=%s Lv%d",
-                    _bid, monster.name, monster.element, monster.element_level)
-        
         # Detect server mode for formula selection
         mode = get_server_mode(runtime_state, latest)
         
-        # Get elemental advantage info
-        et = get_element_table()
-        best_ele, best_mod = et.best_element_against(monster.element, monster.element_level)
-        
-        # If there's a damage bonus from element matching, consider weapon swap
-        if best_mod > 100 and best_ele != "Neutral":
-            _log.info("combat_actions: bot=%s target=%s -> best element vs %s is %s (%d%% damage)",
-                      _bid, monster.name, monster.element, best_ele, best_mod)
-            # Phase 3 will implement weapon inventory lookup here
+        # Resolve current target monster
+        te = get_target_engine()
+        monster = te.resolve(latest, _bid)
+        if monster is None:
             return 0
+        
+        _log.debug("combat_actions: bot=%s target=%s element=%s Lv%d size=%s race=%s",
+                    _bid, monster.name, monster.element, monster.element_level,
+                    monster.size, monster.race)
+        
+        # Check if weapon swap would improve damage
+        em = get_equipment_manager()
+        if not em.can_equip(_bid):
+            return 0  # Cooldown active
+        
+        best = em.get_best_weapon(
+            latest, _bid,
+            monster_element=monster.element,
+            monster_element_level=monster.element_level,
+            monster_size=monster.size,
+        )
+        
+        if best is not None:
+            _log.info("combat_actions: bot=%s weapon_swap -> slot=%s name=%s score=%.1f (%s)",
+                      _bid, best.slot, best.name, best.score, best.reason)
+            
+            aq = getattr(runtime_state, "action_queue", None)
+            if aq is not None:
+                proposal = ActionProposal(
+                    action_id=f"ca_equip_{_bid}_{int(__import__('time').time()*1000)}",
+                    kind="command",
+                    command=f"equip {best.slot}",
+                    priority_tier=ActionPriorityTier.reflex,
+                    source="planner",
+                    created_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                    conflict_key=f"ca_equip_{_bid}",
+                    idempotency_key=f"ca_equip_{_bid}_{best.slot}",
+                    metadata={
+                        "source": "combat_actions",
+                        "reason": f"weapon_swap: {best.name} ({best.reason}) score={best.score:.0f}",
+                        "bot_id": _bid,
+                        "weapon": best.name,
+                        "slot": best.slot,
+                        "element": best.element,
+                        "score": best.score,
+                    },
+                )
+                aq.enqueue(_bid, proposal)
+                em.mark_equipped(_bid)
+                return 1
         
         return 0
     except Exception as _cae:
