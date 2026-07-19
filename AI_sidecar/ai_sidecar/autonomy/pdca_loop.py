@@ -5158,13 +5158,18 @@ class PDCALoop:
                     _goal = str(getattr(goal_state, "selected_goal", "") or "")
                     _obj = str(getattr(getattr(goal_state, "selected_goal", None), "objective", "") or "")
                     if _goal and _obj:
+                        # Track job change attempts per bot
+                        if not hasattr(self._runtime, '_job_change_attempts'):
+                            object.__setattr__(self._runtime, '_job_change_attempts', {})
+                        _jc_attempts = self._runtime._job_change_attempts
+                        _bot_attempts = _jc_attempts.get(_bot, 0)
                         from datetime import UTC, datetime, timedelta
                         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
                             import hashlib as _hashlib
                             _short_id = _hashlib.md5(f"{_bot}_{horizon.value}_{_goal}_{time.monotonic_ns()}".encode()).hexdigest()[:16]
-                            _cmd = _extract_command_from_goal(_goal, _obj, current_map=_sn_map if _sn_map else None, current_job=str(_sn_class or ""), job_change_attempts=0)
+                            _cmd = _extract_command_from_goal(_goal, _obj, current_map=_sn_map if _sn_map else None, current_job=str(_sn_class or ""), job_change_attempts=_bot_attempts)
                             
                             # Query goal decomposer for next sub-goal
                             _gd = getattr(self._runtime, "goal_decomposer", None)
@@ -5226,8 +5231,16 @@ class PDCALoop:
                                 idempotency_key=f"pdca_{horizon.value}_{_short_id}",
                                 metadata={"goal": _goal[:100], "objective": _obj[:100], "horizon": horizon.value, "bot_id": _bot},
                             )
-                            _aq.enqueue(_bot, proposal)
-                            logger.info("pdca_action_queued: bot=%s goal=%s horizon=%s", _bot, _goal, horizon.value)
+                            _result = _aq.enqueue(_bot, proposal)
+                            _queued_ok = _result[0] if isinstance(_result, (list, tuple)) else False
+                            if _queued_ok:
+                                # Increment job change attempt counter if talknpc was queued
+                                if _cmd.startswith("talknpc"):
+                                    _jc_attempts[_bot] = _bot_attempts + 1
+                                # Reset counter if job changed or exhausted
+                                elif _cmd == "ai auto" and _bot_attempts > 0:
+                                    _jc_attempts.pop(_bot, None)
+                            logger.info("pdca_action_queued: bot=%s goal=%s horizon=%s ok=%s", _bot, _goal, horizon.value, _queued_ok)
                 except Exception:
                     logger.exception("pdca_action_enqueue_failed")
             
