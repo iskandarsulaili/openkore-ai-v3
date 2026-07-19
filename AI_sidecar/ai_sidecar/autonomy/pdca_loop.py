@@ -1503,40 +1503,33 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         
         _log.debug("combat_monitor_check: bot=%s map=%s", bot_id, map_name)
         
-        # Only check bots on hunting maps (not prontera town)
-        if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
-            return 0
-        
-        # Cycle counter per bot (simple counter, not dependent on kill tracking)
-        if not hasattr(runtime_state, '_cm_cycle'):
-            object.__setattr__(runtime_state, '_cm_cycle', {})
-        _cycle = runtime_state._cm_cycle
-        _cycle[_bid] = _cycle.get(_bid, 0) + 1
-        
-        # ── Town detection ──────────────────────────────────────
+        # ── Town detection (death loop) ─────────────────────────
         _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
         if map_name and any(t in map_name.lower() for t in _town_maps):
             # Bot is in town — check how many times it's returned recently
             if not hasattr(runtime_state, '_town_returns'):
                 object.__setattr__(runtime_state, '_town_returns', {})
             _tr = runtime_state._town_returns
+            # Get a cycle counter for timing (local to combat_monitor)
+            if not hasattr(runtime_state, '_cm_town_cycle'):
+                object.__setattr__(runtime_state, '_cm_town_cycle', {})
+            _tc = runtime_state._cm_town_cycle
+            _tc[_bid] = _tc.get(_bid, 0) + 1
             if _bid not in _tr:
-                _tr[_bid] = {"count": 0, "last_cycle": _cycle[_bid]}
+                _tr[_bid] = {"count": 0, "last_cycle": _tc[_bid]}
             else:
-                if _cycle[_bid] - _tr[_bid]["last_cycle"] < 5:
-                    # Returned to town within 5 cycles of last check — possible death loop
+                if _tc[_bid] - _tr[_bid]["last_cycle"] < 5:
                     _tr[_bid]["count"] += 1
                 else:
                     _tr[_bid]["count"] = 1
-            _tr[_bid]["last_cycle"] = _cycle[_bid]
+            _tr[_bid]["last_cycle"] = _tc[_bid]
             
-            # If returned to town 3+ times with few cycles between, route to safer map
             if _tr[_bid]["count"] >= 3:
                 aq = getattr(runtime_state, "action_queue", None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                    _safe_map = "prt_fild01"  # fallback
+                    _safe_map = "prt_fild01"
                     try:
                         _hzm = getattr(runtime_state, "hunting_zone_manager", None)
                         if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
@@ -1559,14 +1552,13 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         metadata={"source": "combat_monitor", "reason": f"death_loop_{_tr[_bid]['count']}_town_returns", "bot_id": _bid},
                     )
                     aq.enqueue(_bid, _safe_proposal)
-                    _tr[_bid]["count"] = 0  # Reset
-                    return 2
-        else:
-            # Bot is not in town — reset town return counter
-            if hasattr(runtime_state, '_town_returns'):
-                _tr = runtime_state._town_returns
-                if _bid in _tr:
                     _tr[_bid]["count"] = 0
+                    return 2
+            return 0  # Bot is in town, no further checks needed
+        
+        # Only check bots on hunting maps (not prontera town) for the remaining logic
+        if not map_name or "prontera" in map_name.lower() or "prt_in" in map_name.lower():
+            return 0
         
         return 0
     except Exception as _cme:
