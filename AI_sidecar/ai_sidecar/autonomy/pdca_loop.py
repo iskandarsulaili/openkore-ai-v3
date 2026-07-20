@@ -4867,6 +4867,10 @@ class PDCALoop:
                                                     _cr_zones = _cr_hzm.recommend_zone(bot_level=1, bot_class="novice")
                                                     if _cr_zones and len(_cr_zones) > 0 and hasattr(_cr_zones[0], 'map_name'):
                                                         _cr_best_map = _cr_zones[0].map_name
+                                                    elif hasattr(_cr_hzm, '_fallback_zones'):
+                                                        _cr_zones = _cr_hzm._fallback_zones(1)
+                                                        if _cr_zones and len(_cr_zones) > 0 and hasattr(_cr_zones[0], 'map_name'):
+                                                            _cr_best_map = _cr_zones[0].map_name
                                                 _cr_route_proposal = ActionProposal(
                                                     action_id=f'pro_ro_route_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
                                                     kind='command', command=f'move {_cr_best_map}',
