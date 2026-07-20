@@ -1657,7 +1657,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     # Queue survival config fixes in response to death loop detection
                     try:
                         _dl_logger = logging.getLogger(__name__)
-                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 0)]:
+                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 2)]:
                             _dl_prop = ActionProposal(
                                 action_id=f"dl_surv_{_bid}_{_dl_key}_{int(__import__('time').time()*1000)}",
                                 kind="command", command=f"set {_dl_key} {_dl_val}",
@@ -4882,7 +4882,7 @@ class PDCALoop:
                                             except Exception:
                                                 pass
                                             # Queue default survival config (death loop will adjust if deaths detected)
-                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 0)]:
+                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 2)]:
                                                 try:
                                                     _cr_s_proposal = ActionProposal(
                                                         action_id=f'pro_ro_surv_{_cycle_bot_id or "default"}_{_cr_s_key}_{int(time.monotonic()*1000)}',
