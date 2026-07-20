@@ -4859,6 +4859,20 @@ class PDCALoop:
                                                     _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_s_proposal)
                                                 except Exception:
                                                     pass
+                                            # Route to prt_fild08 (Poring map) — easiest hunting zone for Level 1
+                                            try:
+                                                _cr_route_proposal = ActionProposal(
+                                                    action_id=f'pro_ro_route_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
+                                                    kind='command', command='move prt_fild08',
+                                                    priority_tier=ActionPriorityTier.tactical, source='planner',
+                                                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
+                                                    conflict_key=f'route_to_prt_fild08_{_cycle_bot_id or "default"}',
+                                                    idempotency_key=f'route_to_prt_fild08_{_cycle_bot_id or "default"}',
+                                                    metadata={'source': 'pro_ro_player', 'reason': 'Route to Poring map', 'bot_id': _cycle_bot_id or 'default'},
+                                                )
+                                                _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_route_proposal)
+                                            except Exception:
+                                                pass
                                             # Update cooldown timestamp after successful queue
                                             _cs_cooldowns[_cycle_bot_id or 'default'] = _cs_now
                     except Exception:
