@@ -2175,6 +2175,7 @@ class PDCALoop:
                     _all_bot_ids = getattr(self._runtime, 'snapshot_cache', None)
                     if _all_bot_ids is not None and hasattr(_all_bot_ids, 'bot_ids'):
                         for _cm_bot_id in _all_bot_ids.bot_ids():
+                            logger.info("combat_monitor_enter: calling _emit_combat_monitor for bots=%s", list(_all_bot_ids.bot_ids()) if _all_bot_ids is not None and hasattr(_all_bot_ids, "bot_ids") else "none")
                             _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cm_bot_id)
                 except Exception:
                     pass
