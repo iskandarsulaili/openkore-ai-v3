@@ -171,3 +171,28 @@ The system MUST be fully autonomous — no human editing configs, no manual API 
 - ❌ Hardcoding static values that never change based on conditions
 - ✅ System detecting high death rate and queueing config adjustment
 - ✅ System detecting low kill rate and queueing attack config changes
+
+## 8. Preemptive AI — Anticipate Before React
+
+The system MUST be preemptive, not just reactive. Every decision should anticipate the next state:
+
+**Before level X, do Y:**
+- Before bot reaches Level 10: queue job change route, equip weapon upgrade, stock potions
+- Before bot enters a map with element-strong monsters: queue element-matching weapon
+- Before bot's HP drops below 40%: queue potion use (reactive + preemptive combined)
+- Before bot hits 70% weight: queue return-to-town for selling
+- Before bot reaches hunting zone: queue attack config + route_randomWalk + survival config
+
+**Before A, do B:**
+- Before moving to a new map: queue survival config for that map's danger level
+- Before engaging a monster: queue optimal weapon + skill rotation
+- Before night time: queue escape-to-town if no night-safe gear
+- Before SP drops below 20%: queue skill usage stop, switch to auto-attack
+- Before bot dies (HP < 30% on field): queue Butterfly Wing use
+
+**Implementation:**
+- The cold start queues DEFAULT config that anticipates Level 1 needs
+- The combat system pre-queues weapon swaps before engaging different monster elements
+- The death loop pre-queues config changes BEFORE the next TOWN→HUNT cycle
+- The game engine pre-queues the correct route BEFORE the bot finishes its current navigation
+- All preemptive actions flow through the action queue at reflex priority
