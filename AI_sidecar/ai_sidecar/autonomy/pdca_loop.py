@@ -4859,16 +4859,22 @@ class PDCALoop:
                                                     _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_s_proposal)
                                                 except Exception:
                                                     pass
-                                            # Route to prt_fild08 (Poring map) — easiest hunting zone for Level 1
+                                            # Route to best hunting zone for this bot's level (zone ladder, not hardcoded)
                                             try:
+                                                _cr_best_map = "prt_fild05"
+                                                _cr_hzm = getattr(self._runtime, "hunting_zone_manager", None)
+                                                if _cr_hzm is not None and hasattr(_cr_hzm, 'recommend_zone'):
+                                                    _cr_zones = _cr_hzm.recommend_zone(bot_level=1, bot_class="novice")
+                                                    if _cr_zones and len(_cr_zones) > 0 and hasattr(_cr_zones[0], 'map_name'):
+                                                        _cr_best_map = _cr_zones[0].map_name
                                                 _cr_route_proposal = ActionProposal(
                                                     action_id=f'pro_ro_route_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
-                                                    kind='command', command='move prt_fild08',
+                                                    kind='command', command=f'move {_cr_best_map}',
                                                     priority_tier=ActionPriorityTier.tactical, source='planner',
                                                     created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
-                                                    conflict_key=f'route_to_prt_fild08_{_cycle_bot_id or "default"}',
-                                                    idempotency_key=f'route_to_prt_fild08_{_cycle_bot_id or "default"}',
-                                                    metadata={'source': 'pro_ro_player', 'reason': 'Route to Poring map', 'bot_id': _cycle_bot_id or 'default'},
+                                                    conflict_key=f'route_to_zone_{_cycle_bot_id or "default"}',
+                                                    idempotency_key=f'route_to_zone_{_cycle_bot_id or "default"}',
+                                                    metadata={'source': 'pro_ro_player', 'reason': f'Zone ladder: {_cr_best_map}', 'bot_id': _cycle_bot_id or 'default'},
                                                 )
                                                 _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_route_proposal)
                                             except Exception:
