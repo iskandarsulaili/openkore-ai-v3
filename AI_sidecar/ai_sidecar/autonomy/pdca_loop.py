@@ -1521,6 +1521,42 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
         _in_town = map_name and any(t in map_name.lower() for t in _town_maps)
         
+        # ── Stuck detection: reset AI if bot hasn't moved maps in N cycles ──
+        if not hasattr(runtime_state, '_stuck_tracker'):
+            object.__setattr__(runtime_state, '_stuck_tracker', {})
+        _st = runtime_state._stuck_tracker
+        if _bid not in _st:
+            _st[_bid] = {"map": map_name or "", "cycle": 0}
+        else:
+            if _st[_bid]["map"] == map_name and map_name:
+                _st[_bid]["cycle"] += 1
+                # If stuck on same map for 60+ PDCA cycles (~5min), reset AI
+                if _st[_bid]["cycle"] >= 60:
+                    _st[_bid]["cycle"] = 0
+                    try:
+                        aq = getattr(runtime_state, "action_queue", None)
+                        if aq is not None:
+                            from datetime import UTC, datetime, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                            _log.warning("combat_monitor: bot=%s stuck on %s for %d cycles -> resetting AI", _bid, map_name, _st[_bid].get("cycle", 0))
+                            # Queue ai auto to reset navigation state
+                            aq.enqueue(_bid, ActionProposal(
+                                action_id=f"stuck_reset_{_bid}_{int(__import__('time').time()*1000)}",
+                                kind="command", command="ai auto",
+                                priority_tier=ActionPriorityTier.reflex, source="planner",
+                                created_at=datetime.now(UTC),
+                                expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                                conflict_key=f"stuck_reset_{_bid}",
+                                idempotency_key=f"stuck_reset_{_bid}",
+                                metadata={"source": "combat_monitor", "reason": "ai_stuck_reset", "bot_id": _bid},
+                            ))
+                            return 1
+                    except Exception:
+                        pass
+            else:
+                _st[_bid]["map"] = map_name or ""
+                _st[_bid]["cycle"] = 0
+        
         if not hasattr(runtime_state, '_death_loop'):
             object.__setattr__(runtime_state, '_death_loop', {})
         _dl = runtime_state._death_loop
