@@ -4784,7 +4784,7 @@ class PDCALoop:
                                                 _cr_inlock_proposal = ActionProposal(
                                                     action_id=f'pro_ro_inlock_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
                                                     kind='command',
-                                                    command='set attackAuto_inLockOnly 1',
+                                                    command='set attackAuto_inLockOnly 0',
                                                     priority_tier=ActionPriorityTier.tactical,
                                                     source='planner',
                                                     created_at=datetime.now(UTC),
@@ -4794,6 +4794,24 @@ class PDCALoop:
                                                     metadata={'source': 'pro_ro_player', 'reason': 'Enable attack outside lockMap', 'bot_id': _cycle_bot_id or 'default'},
                                                 )
                                                 _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_inlock_proposal)
+                                            except Exception:
+                                                pass
+                                            # Queue survival config: higher aggro threshold, lower HP teleport
+                                            try:
+                                                for _cr_surv_key, _cr_surv_val in [("teleportAuto_minAggressives", 3), ("teleportAuto_hp", 10)]:
+                                                    _cr_surv_proposal = ActionProposal(
+                                                        action_id=f'pro_ro_surv_{_cycle_bot_id or "default"}_{_cr_surv_key}_{int(time.monotonic()*1000)}',
+                                                        kind='command',
+                                                        command=f'set {_cr_surv_key} {_cr_surv_val}',
+                                                        priority_tier=ActionPriorityTier.tactical,
+                                                        source='planner',
+                                                        created_at=datetime.now(UTC),
+                                                        expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                                                        conflict_key=f'combat_surv_{_cr_surv_key}_{_cycle_bot_id or "default"}',
+                                                        idempotency_key=f'combat_surv_{_cr_surv_key}_{_cycle_bot_id or "default"}',
+                                                        metadata={'source': 'pro_ro_player', 'reason': f'Survival tuning: {_cr_surv_key}={_cr_surv_val}', 'bot_id': _cycle_bot_id or 'default'},
+                                                    )
+                                                    _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_surv_proposal)
                                             except Exception:
                                                 pass
                                             # Update cooldown timestamp after successful queue
