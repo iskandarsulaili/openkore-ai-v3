@@ -4807,6 +4807,21 @@ class PDCALoop:
                                                 _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_inlock_proposal)
                                             except Exception:
                                                 pass
+                                            # Queue default survival config (death loop will adjust if deaths detected)
+                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 3), ("teleportAuto_hp", 10)]:
+                                                try:
+                                                    _cr_s_proposal = ActionProposal(
+                                                        action_id=f'pro_ro_surv_{_cycle_bot_id or "default"}_{_cr_s_key}_{int(time.monotonic()*1000)}',
+                                                        kind='command', command=f'set {_cr_s_key} {_cr_s_val}',
+                                                        priority_tier=ActionPriorityTier.tactical, source='planner',
+                                                        created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
+                                                        conflict_key=f'def_surv_{_cr_s_key}_{_cycle_bot_id or "default"}',
+                                                        idempotency_key=f'def_surv_{_cr_s_key}_{_cycle_bot_id or "default"}',
+                                                        metadata={'source': 'startup_default', 'reason': f'Default: {_cr_s_key}={_cr_s_val}', 'bot_id': _cycle_bot_id or 'default'},
+                                                    )
+                                                    _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_s_proposal)
+                                                except Exception:
+                                                    pass
                                             # Update cooldown timestamp after successful queue
                                             _cs_cooldowns[_cycle_bot_id or 'default'] = _cs_now
                     except Exception:
