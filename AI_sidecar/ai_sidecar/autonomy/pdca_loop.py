@@ -1578,6 +1578,41 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     pass
             
             if _dl[_bid]["count"] >= 5:
+                # Adaptive risk: Level 5 or below with 5+ death cycles = extreme conservative
+                _bot_level = 1
+                if isinstance(latest, dict):
+                    _progress = latest.get("progression", {}) or {}
+                    _bot_level = int(_progress.get("base_level", _progress.get("level", 1)) or 1)
+                else:
+                    _bot_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
+                
+                if _bot_level <= 5:
+                    # EXTREME CONSERVATIVE: portal-hug prt_fild05, shortest attack range, don't chase
+                    _log.warning("combat_monitor: bot=%s Lv%d extreme conservative -> portal-hugging prt_fild05", _bid, _bot_level)
+                    aq = getattr(runtime_state, "action_queue", None)
+                    if aq is not None:
+                        from datetime import UTC, datetime, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                        # Set minimal engagement range — only attack monsters within 0.5 cells
+                        aq.enqueue(_bid, ActionProposal(
+                            action_id=f"dl_minimal_{_bid}_{int(__import__('time').time()*1000)}",
+                            kind="command", command="set attackDistance 0.5",
+                            priority_tier=ActionPriorityTier.reflex, source="planner",
+                            created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                            conflict_key=f"dl_minimal_{_bid}", idempotency_key=f"dl_minimal_{_bid}",
+                            metadata={"source":"death_loop","reason":"extreme_conservative_range","bot_id":_bid},
+                        ))
+                        # Move to prt_fild05 portal — hug the prontera entrance
+                        aq.enqueue(_bid, ActionProposal(
+                            action_id=f"dl_hug_{_bid}_{int(__import__('time').time()*1000)}",
+                            kind="command", command="move prt_fild05",
+                            priority_tier=ActionPriorityTier.reflex, source="planner",
+                            created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
+                            conflict_key=f"dl_hug_{_bid}", idempotency_key=f"dl_hug_{_bid}",
+                            metadata={"source":"death_loop","reason":"portal_hug_prt_fild05","bot_id":_bid},
+                        ))
+                        return 2
+                
                 aq = getattr(runtime_state, "action_queue", None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
@@ -1615,7 +1650,6 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         idempotency_key=f"death_loop_{_bid}",
                         metadata={"source": "combat_monitor", "reason": f"death_loop_{_dl[_bid]['count']}_cycles", "bot_id": _bid},
                     ))
-                    # Set death_loop_target to suppress game engine routing for this bot
                     if not hasattr(runtime_state, '_death_loop_target'):
                         object.__setattr__(runtime_state, '_death_loop_target', {})
                     runtime_state._death_loop_target[_bid] = {"map": _safe_map, "expires": time.time() + 300}
