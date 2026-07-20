@@ -1620,13 +1620,13 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     # Queue survival config fixes in response to death loop detection
                     try:
                         _dl_logger = logging.getLogger(__name__)
-                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 1)]:
+                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 0)]:
                             _dl_prop = ActionProposal(
                                 action_id=f"dl_surv_{_bid}_{_dl_key}_{int(__import__('time').time()*1000)}",
                                 kind="command", command=f"set {_dl_key} {_dl_val}",
                                 priority_tier=ActionPriorityTier.reflex, source="planner",
                                 created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
-                                conflict_key=f"dl_surv_{_dl_key}_{_bid}", idempotency_key=f"dl_surv_{_dl_key}_{_bid}",
+                                conflict_key=f"dl_surv_{_dl_key}_{_bid}", idempotency_key=f"dl_surv_{_dl_key}_{_dl_val}_{_bid}",
                                 metadata={"source":"death_loop","reason":f"config_fix:{_dl_key}={_dl_val}","bot_id":_bid},
                             )
                             aq.enqueue(_bid, _dl_prop)
@@ -4845,7 +4845,7 @@ class PDCALoop:
                                             except Exception:
                                                 pass
                                             # Queue default survival config (death loop will adjust if deaths detected)
-                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 1)]:
+                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 0)]:
                                                 try:
                                                     _cr_s_proposal = ActionProposal(
                                                         action_id=f'pro_ro_surv_{_cycle_bot_id or "default"}_{_cr_s_key}_{int(time.monotonic()*1000)}',
@@ -4853,7 +4853,7 @@ class PDCALoop:
                                                         priority_tier=ActionPriorityTier.tactical, source='planner',
                                                         created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
                                                         conflict_key=f'def_surv_{_cr_s_key}_{_cycle_bot_id or "default"}',
-                                                        idempotency_key=f'def_surv_{_cr_s_key}_{_cycle_bot_id or "default"}',
+                                                        idempotency_key=f'def_surv_{_cr_s_key}_{_cr_s_val}_{_cycle_bot_id or "default"}',
                                                         metadata={'source': 'startup_default', 'reason': f'Default: {_cr_s_key}={_cr_s_val}', 'bot_id': _cycle_bot_id or 'default'},
                                                     )
                                                     _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_s_proposal)
