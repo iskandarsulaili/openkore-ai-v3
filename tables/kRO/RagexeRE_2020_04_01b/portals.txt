@@ -3620,7 +3620,7 @@ un_bunker 164 51 un_bunker 233 164
 un_bunker 366 164 un_bunker 31 51
 un_bunker 27 52 un_bunker 361 163
 # ── Prontera corrections (rAthena standard — iRO had wrong Y coords) ──
-prontera 156 229 prt_fild08 49 347 0 c r0
+prontera 156 229 prt_fild08 49 347 0 c r1 c c r0 n
 prt_fild08 48 346 prontera 157 227 0 r0
 # Prontera south gate → prt_fild00 (missing from iRO-based default)
 prontera 157 36 prt_fild00 17 381 0 c r0
