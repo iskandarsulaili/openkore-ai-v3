@@ -1756,7 +1756,34 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 sp_ratio = sp / max(sp_max, 1)
             pos = getattr(latest, "position", None)
             if pos:
-                map_name = str(getattr(pos, "map", ""))
+                map_name = str(getattr(pos, "map", "") if pos else "")
+        
+        # ── Self-healing: if bot is sitting on a field map, stand up ──
+        _is_sitting = False
+        if isinstance(latest, dict):
+            _combat = latest.get("combat", {}) or {}
+            _is_sitting = bool(_combat.get("is_sitting", False))
+        else:
+            _combat = getattr(latest, "combat", None)
+            if _combat:
+                _is_sitting = bool(getattr(_combat, "is_sitting", False))
+        if _is_sitting and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
+            _log.warning("combat_monitor: bot=%s FOUND SITTING on field map %s -> queuing stand", _bid, map_name)
+            try:
+                aq = getattr(runtime_state, "action_queue", None)
+                if aq is not None:
+                    from datetime import UTC, datetime, timedelta
+                    from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                    aq.enqueue(_bid, ActionProposal(
+                        action_id=f"stand_{_bid}_{int(__import__('time').time()*1000)}",
+                        kind="command", command="stand",
+                        priority_tier=ActionPriorityTier.reflex, source="planner",
+                        created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=10),
+                        conflict_key=f"stand_{_bid}", idempotency_key=f"stand_{_bid}",
+                        metadata={"source":"combat_monitor","reason":"self_heal_stand","bot_id":_bid},
+                    ))
+            except Exception:
+                pass
         
         # Get class-specific combat parameters
         style = get_combat_style(job_name)

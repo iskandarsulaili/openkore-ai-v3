@@ -1466,8 +1466,11 @@ sub _build_snapshot_payload {
 		},
 		combat => {
 			ai_sequence  => $ai_top || undef,
+			ai_state_str => _safe_ai_seq_top(),
+			is_sitting   => ($char && $char->{sitting}) ? 1 : 0,
 			target_id    => undef,
 			is_in_combat => $in_combat,
+			monster_count => scalar(keys %monsters) + 0,
 		},
 		inventory => {
 			zeny       => $char ? $char->{zeny} : undef,
