@@ -2828,6 +2828,7 @@ sub _rewrite_runtime_command {
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
 	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
 	# This stops the PDCA loop from sending move izlude, move prt_fild00, move prt_fild05 in the same cycle
+	# Uses a per-cycle dedup approach: track the last action type and block if same type within 30s
 	my $_action_type = q{};
 	my $_action_target = q{};
 	if ($normalized =~ /^move\s+(.+)$/) {
@@ -2842,24 +2843,19 @@ sub _rewrite_runtime_command {
 	}
 	if ($_action_type ne q{}) {
 		my $_now = _now_ms();
-		my $_is_conflict = 0;
-		while (my ($ckey, $cts) = each %_committed_actions) {
-			if ($ckey =~ /^$_action_type:/) {
-				if ($_now - $cts < $COMMITTED_ACTION_COOLDOWN_MS) {
-					$_is_conflict = 1;
-					last;
-				}
-			}
-		}
-		if ($_is_conflict) {
-			debug q{[committed_action] blocking '$command' - conflicting action within cooldown\n}, q{aiSidecarBridge}, 1;
+		my $_last_same_type = $_committed_actions{$_action_type} || 0;
+		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
+			debug "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
 		}
-		$_committed_actions{"$_action_type:$_action_target"} = $_now;
+		$_committed_actions{$_action_type} = $_now;
+		# Clean old entries
 		while (my ($ckey, $cts) = each %_committed_actions) {
 			delete $_committed_actions{$ckey} if $_now - $cts > $COMMITTED_ACTION_COOLDOWN_MS * 2;
 		}
 	}
+
+	# NPC DIALOG AUTO-COMPLETION}
 
 	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
 	if ($normalized eq 'talknpc 29 207') {
