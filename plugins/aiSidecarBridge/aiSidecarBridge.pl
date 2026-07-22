@@ -25,6 +25,10 @@ my $ANTI_DETECTION_MAX_DELAY_MS = 600;
 # Reflex cooldown tracking - prevent survival reflexes from firing every cycle
 our %_last_reflex_fire_ms = ();
 
+# Committed action guard - prevents conflicting commands within 30s window
+our %_committed_actions = ();
+our $COMMITTED_ACTION_COOLDOWN_MS = 30000;
+
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
@@ -1882,6 +1886,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'map_move_already_set') {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind eq 'committed_action_blocked') {
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: conflicting action within cooldown');
 	} elsif ($rewrite_kind eq 'kafra_teleport_auto') {
 		($success, $result_code, $msg) = (1, 'ok', 'kafra teleport sequence auto-completed');
 	} elsif ($rewrite_kind eq 'tool_dealer_auto') {
@@ -2820,6 +2826,40 @@ sub _rewrite_runtime_command {
 	$metadata = {} if ref($metadata) ne 'HASH';
 
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
+	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
+	# This stops the PDCA loop from sending move izlude, move prt_fild00, move prt_fild05 in the same cycle
+	my $_action_type = q{};
+	my $_action_target = q{};
+	if ($normalized =~ /^move\s+(.+)$/) {
+		$_action_type = q{move};
+		$_action_target = $1;
+	} elsif ($normalized =~ /^set\s+lockmap\s+(.+)$/) {
+		$_action_type = q{set_lockmap};
+		$_action_target = $1;
+	} elsif ($normalized eq q{sit}) {
+		$_action_type = q{sit};
+		$_action_target = q{sit};
+	}
+	if ($_action_type ne q{}) {
+		my $_now = _now_ms();
+		my $_is_conflict = 0;
+		while (my ($ckey, $cts) = each %_committed_actions) {
+			if ($ckey =~ /^$_action_type:/) {
+				if ($_now - $cts < $COMMITTED_ACTION_COOLDOWN_MS) {
+					$_is_conflict = 1;
+					last;
+				}
+			}
+		}
+		if ($_is_conflict) {
+			debug q{[committed_action] blocking '$command' - conflicting action within cooldown\n}, q{aiSidecarBridge}, 1;
+			return (q{}, q{committed_action_blocked});
+		}
+		$_committed_actions{"$_action_type:$_action_target"} = $_now;
+		while (my ($ckey, $cts) = each %_committed_actions) {
+			delete $_committed_actions{$ckey} if $_now - $cts > $COMMITTED_ACTION_COOLDOWN_MS * 2;
+		}
+	}
 
 	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
 	if ($normalized eq 'talknpc 29 207') {
@@ -2931,12 +2971,23 @@ sub _rewrite_runtime_command {
 	}
 
 	# Handle 'use <item>' -> 'is <item>' with 30s cooldown
+	# Extended to 5-minute cooldown when bot has 0 potions total
 	if ($normalized =~ /^use\s+(.+)$/) {
 		my $item_name = $1;
 		my $now_ms = _now_ms();
 		my $cooldown_key = "use_$item_name";
 		my $last_attempt = $_last_reflex_fire_ms{$cooldown_key} || 0;
-		if ($last_attempt > 0 && ($now_ms - $last_attempt) < 30000) {
+		# Check if bot has ANY potions in inventory
+		my $total_potions = 0;
+		if ($char && $char->{inventory}) {
+			for my $_pi (@{$char->{inventory}}) {
+				if ($_pi && $_pi->{name} =~ /potion|herb|fruit|berry/i) {
+					$total_potions += $_pi->{amount} || 1;
+				}
+			}
+		}
+		my $cooldown_ms = ($total_potions == 0) ? 300000 : 30000;
+		if ($last_attempt > 0 && ($now_ms - $last_attempt) < $cooldown_ms) {
 			debug "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_cooldown_$item_name");
 		}
@@ -2951,7 +3002,7 @@ sub _rewrite_runtime_command {
 		}
 		if (!$found) {
 			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
-			debug "[use] item '$item_name' not in inventory, skipping (cooldown 30s)\n", 'aiSidecarBridge', 1;
+			debug "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
 		my $ok = eval { Commands::run("is $item_name"); 1 };
