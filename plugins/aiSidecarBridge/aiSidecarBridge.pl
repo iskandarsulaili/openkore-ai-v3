@@ -1886,6 +1886,10 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'map_move_already_set') {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
+	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: macro potion cooldown');
 	} elsif ($rewrite_kind eq 'committed_action_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: conflicting action within cooldown');
 	} elsif ($rewrite_kind eq 'kafra_teleport_auto') {
@@ -2843,19 +2847,44 @@ sub _rewrite_runtime_command {
 	}
 	if ($_action_type ne q{}) {
 		my $_now = _now_ms();
-		my $_last_same_type = $_committed_actions{$_action_type} || 0;
+		my $_last_same_type = %_committed_actions{$_action_type} || 0;
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			debug "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
 		}
-		$_committed_actions{$_action_type} = $_now;
+		%_committed_actions{$_action_type} = $_now;
 		# Clean old entries
 		while (my ($ckey, $cts) = each %_committed_actions) {
-			delete $_committed_actions{$ckey} if $_now - $cts > $COMMITTED_ACTION_COOLDOWN_MS * 2;
+			delete %_committed_actions{$ckey} if $_now - $cts > $COMMITTED_ACTION_COOLDOWN_MS * 2;
 		}
 	}
 
 	# NPC DIALOG AUTO-COMPLETION}
+
+	# MACRO POTION SPAM FIX: add 5-minute cooldown to emergency potion macros
+	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)_potion$/) {
+		my $_potion_type = $1;
+		my $_now = _now_ms();
+		my $_last_macro = $_last_reflex_fire_ms{"macro_$_potion_type"} || 0;
+		if ($_last_macro > 0 && ($_now - $_last_macro) < 300000) {
+			debug "[macro] emergency_${_potion_type}_potion on 5min cooldown, skipping\n", 'aiSidecarBridge', 1;
+			return ('', 'macro_potion_cooldown');
+		}
+		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
+	}
+
+	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
+	# OpenKore regenerates portalsLOS.txt at runtime, so stale entries keep reappearing
+	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)/) {
+		my $_npc_x = $1;
+		my $_npc_y = $2;
+		# Known stale NPC coordinates in Prontera (no NPC exists at these locations)
+		if (($_npc_x == 156 && $_npc_y == 229) ||
+		    ($_npc_x == 157 && ($_npc_y == 40 || $_npc_y == 38 || $_npc_y == 36))) {
+			debug "[stale_npc] blocking talknpc to ($_npc_x,$_npc_y) - known stale portal\n", 'aiSidecarBridge', 1;
+			return ('', 'stale_npc_blocked');
+		}
+	}
 
 	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
 	if ($normalized eq 'talknpc 29 207') {
