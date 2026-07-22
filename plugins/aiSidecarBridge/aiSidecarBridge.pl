@@ -19,8 +19,8 @@ use Time::HiRes qw(alarm time usleep);
 # Anti-detection: random delay to simulate human reaction time
 # Reduced for pro-level reaction speed: 10-50ms instead of 100-500ms
 my $ANTI_DETECTION_ENABLED = 1;
-my $ANTI_DETECTION_MIN_DELAY_MS = 10;
-my $ANTI_DETECTION_MAX_DELAY_MS = 50;
+my $ANTI_DETECTION_MIN_DELAY_MS = 200;
+my $ANTI_DETECTION_MAX_DELAY_MS = 600;
 
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
@@ -1879,6 +1879,10 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'map_move_already_set') {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind eq 'combat_guard_blocked') {
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: bot is in combat');
+	} elsif ($rewrite_kind eq 'sit_blocked_hunting') {
+		($success, $result_code, $msg) = (1, 'ok', 'sit blocked: on hunting map');
 	} elsif ($rewrite_kind eq 'map_move_low_hp_no_toggle') {
 		($success, $result_code, $msg) = (1, 'ok', 'ai_manual suppressed: critically low HP');
 	} elsif ($rewrite_kind =~ /^use_item_not_found_/) {
@@ -2763,11 +2767,32 @@ my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
+	
+	# COMBAT GUARD: if bot is attacking a monster, block non-combat commands
+	# This prevents the PDCA loop from interrupting combat with skills_add, sit, move, etc.
+	my $_is_attacking = 0;
+	if ($char) {
+		for my $seq (@::AI::ai_seq) {
+			if ($seq =~ /^(attack|skill|auto_attack)/i) {
+				$_is_attacking = 1;
+				last;
+			}
+		}
+	}
+	if ($_is_attacking) {
+		my $normalized_lc = lc($command);
+		# Allow only combat-essential commands during combat
+		if ($normalized_lc !~ /^(use_skill|is |stand|ai auto|ai manual|attack|stop_attack|use_item)/) {
+			debug "[combat_guard] bot is attacking, blocking non-combat command: '$command'\n", 'aiSidecarBridge', 1;
+			return ('', 'combat_guard_blocked');
+		}
+	}
+
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 	
-	warning "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
+	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
 	
 	if ($normalized =~ /^move\s+savepoint$/) {
 		return ('respawn', 'move_savepoint_rewritten');
@@ -2793,171 +2818,225 @@ sub _rewrite_runtime_command {
 		my $set_val = $2;
 		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
 		$orig_key = $set_key unless defined $orig_key;
+	# HUNTING MAP STICKINESS: if setting lockMap to a TOWN while on a hunting map, skip
+	# Allow lockMap changes to other hunting maps (e.g. prt_fild00 -> prt_fild05).
+	if (lc($orig_key) eq 'lockmap') {
+		my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+		if ($_target_is_town) {
+			my $_actual_map = $field ? $field->name() : '';
+			$_actual_map = lc($_actual_map || '');
+			$_actual_map =~ s/\.gat$//;
+			if ($_actual_map =~ /^[a-z]+_fild/) {
+				my $_hp_ratio = _safe_hp_ratio();
+				if ($_hp_ratio >= 0.20) {
+					warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
+					$::config{"lockMap"} = $_actual_map;
+					$::config{"attackAuto_inLockOnly"} = 0;
+					$::config{"attackAuto"} = 3;
+					$::config{"sitAuto_hp_lower"} = 0;
+					$::config{"sitAuto_hp_upper"} = 0;
+					Commands::run("stand");
+					if (!_ai_already_auto_mode()) {
+						Commands::run("ai auto");
+					}
+					return ('', 'hunting_map_priority');
+				}
+			}
+		}
+	}
 		my $old_val = $::config{$orig_key};
 		$::config{$orig_key} = $set_val;
+		$::config{"_sidecar_set_$orig_key"} = 1;
 		warning "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
 		return ('', 'config_set_ok');
 	}
 	
 	# ── Handle map-name moves: "move <map>" → set lockMap + ai auto ──
-	# OpenKore's auto AI uses lockMap to navigate to and stay on a map.
-	# Setting lockMap first, then enabling auto AI, gives the bot a
-	# meaningful destination instead of aimless wandering.
-	# Also handle coordinate moves: "move 181 186" → direct movement
 	if ($normalized =~ /^move\s+(.+)$/) {
 		my $target = $1;
-		# Check if target is numeric coordinates (x y) — not a map name
 		if ($target =~ /^\d+\s+\d+$/) {
-			# Coordinate-based move — pass through directly, do NOT set lockMap
-			# OpenKore's move command accepts x y coordinates for pixel movement
 			return ($trimmed, 'coordinate_move_raw');
 		}
-		# Only set lockMap for valid map names (not special commands)
 		if ($target !~ /^(savepoint|random_walk_seek)$/) {
+			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
+			my $_actual_map = $field ? $field->name() : '';
+			$_actual_map = lc($_actual_map || '');
+			$_actual_map =~ s/\.gat$//;
+			my $_is_on_hunting_map = $_actual_map =~ /^[a-z]+_fild/;
+			my $_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			if ($_is_on_hunting_map && $_target_is_town) {
+				my $_hp_ratio = _safe_hp_ratio();
+				if ($_hp_ratio >= 0.20) {
+					warning "[lockMap] on hunting map '$_actual_map', ignoring move to town '$target' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
+					# CRITICAL: update lockMap to current map so bot attacks where it is
+					$::config{"lockMap"} = $_actual_map;
+					# Set attackAuto_inLockOnly 0 so bot attacks anywhere on the map
+					$::config{"attackAuto_inLockOnly"} = 0;
+				$::config{"attackAuto"} = 3;
+					# Disable sitAuto to prevent bot from sitting
+					$::config{"sitAuto_hp_lower"} = 0;
+					$::config{"sitAuto_hp_upper"} = 0;
+					# Force stand
+					Commands::run("stand");
+					# Ensure AI is in auto mode
+					if (!_ai_already_auto_mode()) {
+						Commands::run("ai auto");
+					}
+					# Clear AI sequence to force immediate transition to attack mode
+					@::AI::ai_seq = ();
+					return ('ai auto', 'hunting_map_priority');
+				}
+			}
 			my $current_lockMap = defined $::config{"lockMap"} ? $::config{"lockMap"} : '';
 			debug "[lockMap] setting lockMap from '$current_lockMap' to '$target'\n", 'aiSidecarBridge', 1;
 			$::config{"lockMap"} = $target;
-			$_last_pro_ro_lockmap_ms = _now_ms(); # track for survival cooldown
+			$_last_pro_ro_lockmap_ms = _now_ms();
 			$::config{"lockMap_x"} = "";
 			$::config{"lockMap_y"} = "";
 			$::config{"lockMap_randX"} = 0;
 			$::config{"lockMap_randY"} = 0;
-			# Only toggle AI if lockMap actually changed — prevents rapid cycling
+			# Allow walking to new lockMap even if not currently in it
+			$::config{"route_randomWalk_inLockOnly"} = 0;
 			if ($current_lockMap ne '' && $current_lockMap eq $target) {
-				# lockMap already set to this target, no need to toggle
 				if (_ai_already_auto_mode()) {
-					return ('', 'map_move_already_set');
+					return ('', 'lockMap_already_set');
 				}
-				return ('ai auto', 'map_move_rewritten');
+				return ('ai auto', 'lockMap_already_set_ai_auto');
 			}
+			if (_ai_already_auto_mode()) {
+				return ('ai auto', 'lockMap_set_ai_auto');
+			}
+			return ('ai auto', 'lockMap_set_ai_auto');
 		}
+		return ($trimmed, 'move_raw');
+	}
+	
+	# Handle teleport
+	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
 		if (_ai_already_auto_mode()) {
-			# Don't toggle manual if critically low HP — survival first
-			my $_rw_hp = $main::char ? $main::char->{hp} : 9999;
-			my $_rw_hp_max = $main::char ? $main::char->{hp_max} : 1;
-			if ($_rw_hp_max > 0 && ($_rw_hp / $_rw_hp_max) < 0.50) {
-				return ('', 'map_move_low_hp_no_toggle');
-			}
-			# Toggle AI mode to force route recalculation with new lockMap
-			return ('', 'map_move_toggle_manual_disabled');
+			return ('', 'teleport_already_auto');
 		}
-		return ('ai auto', 'map_move_rewritten');
+		my $teleport_skill = eval { $char->skills->get('AL_TELEPORT') } || eval { $char->skills->get('TF_TELEPORT') };
+		if ($teleport_skill) {
+			return ('use_skill teleport', 'teleport_skill_used');
+		}
+		return ('ai auto', 'teleport_rewritten');
 	}
 
-	if ($normalized eq 'take') {
-		return ('', 'bare_take_delegated');
+	# Handle skills_add — allocate skill points
+	# COOLDOWN: only attempt once per 30s to avoid spamming "no skill points" errors
+	state $_last_skills_add_ts = 0;
+	if ($normalized =~ /^skills[\s_]+add\s+(\w+)\s*(\d*)$/) {
+		# SKIP if no skill points available — prevents spamming "no skill points" errors
+		my $_skill_pts = defined $char ? (eval { $char->{skills}->{skill_points} } || 0) : 0;
+		if ($_skill_pts <= 0) {
+			return ('', 'no_skill_points_available');
+		}
+		my $_now_ms = _now_ms();
+		if (($_now_ms - $_last_skills_add_ts) < 30000) {
+			return ('', 'skills_add_cooldown');
+		}
+		$_last_skills_add_ts = $_now_ms;
+		my $skill_id = uc($1);
+		my $level = $2 || 1;
+		if (defined $char && defined $char->{skills}) {
+			my $current = eval { $char->{skills}->{$skill_id}{lv} } || 0;
+			my $needed = $level - $current;
+			if ($needed > 0) {
+				my $ok = eval { $char->{skills}->addPoint($skill_id, $needed); 1 };
+				return ('', $ok ? "skill_points_added_$skill_id" : "skill_add_failed_$skill_id");
+			}
+			return ('', "skill_already_learned_$skill_id");
+		}
+		return ('', 'skill_add_no_skills_obj');
 	}
 
-	# Handle chat — send a public chat message
-	if ($normalized =~ /^chat\s+(.+)$/i) {
-	    my $msg = $1;
-	    Commands::run("c $msg");
-	    return ('', 'chat_sent');
-	}
-    
-	# Handle teleport — OpenKore doesn't have a teleport command.
-	# Setting AI to auto mode lets OpenKore's auto-logic handle movement.
-	# If the bot has the Teleport skill, use it directly.
-	if ($normalized eq 'teleport') {
-	    if (_ai_already_auto_mode()) {
-	        return ('', 'teleport_already_auto');
-	    }
-	    # Try using the teleport skill first
-	    my $teleport_skill = eval { $char->skills->get('AL_TELEPORT') } || eval { $char->skills->get('TF_TELEPORT') };
-	    if ($teleport_skill) {
-	        return ('use_skill teleport', 'teleport_skill_used');
-	    }
-	    return ('ai auto', 'teleport_rewritten');
-	}
-
-		# Handle skills_add — allocate skill points (e.g. skills_add NV_BASIC 3)
-	# This enables the LLM / Pro RO player to learn skills like Basic Skill 3
-	if ($normalized =~ /^skills_add\s+(\w+)\s*(\d*)$/) {
-	    my $skill_id = uc($1);
-	    my $level = $2 || 1;
-	    if (defined $char && defined $char->{skills}) {
-	        my $current = eval { $char->{skills}->{$skill_id}{lv} } || 0;
-	        my $needed = $level - $current;
-	        if ($needed > 0) {
-	            my $ok = eval { $char->{skills}->addPoint($skill_id, $needed); 1 };
-	            return ('', $ok ? "skill_points_added_$skill_id" : "skill_add_failed_$skill_id");
-	        }
-	        return ('', "skill_already_learned_$skill_id");
-	    }
-	    return ('', 'skill_add_no_skills_obj');
-	}
-
-	# Handle stats_add — allocate stat points (e.g. stats_add STR 1)
+	# Handle stats_add
 	if ($normalized =~ /^stats_add\s+(\w+)\s*(\d*)$/) {
-	    my $stat = uc($1);
-	    my $amount = $2 || 1;
-	    my $ok = eval { Commands::run("stat_add $stat $amount"); 1 };
-	    return ('', $ok ? "stat_points_added_$stat" : "stat_add_failed_$stat");
+		my $stat = uc($1);
+		my $points = $2 || 1;
+		if (defined $char && defined $char->{status_points}) {
+			my $ok = eval { $char->{status_points}->add($stat, $points); 1 };
+			return ('', $ok ? "stat_points_added_$stat" : "stat_add_failed_$stat");
+		}
+		return ('', 'stat_add_no_status_points');
 	}
 
-	# Handle attack_skill — already handled by auto-AI, no-op
-	if ($normalized =~ /^attack_skill\b/) {
-	    return ('', 'attack_skill_delegated');
+	# Handle use_skill
+	if ($normalized =~ /^use_skill\s+(\w+)\s*(\d*)$/) {
+		my $skill_id = uc($1);
+		my $lv = $2 || 1;
+		my $target = $metadata->{target} || '';
+		if ($target) {
+			my $ok = eval { Commands::run("use_skill $skill_id $lv $target"); 1 };
+			return ('', $ok ? "skill_used_$skill_id" : "skill_use_failed_$skill_id");
+		}
+		my $ok = eval { Commands::run("use_skill $skill_id $lv"); 1 };
+		return ('', $ok ? "skill_used_$skill_id" : "skill_use_failed_$skill_id");
 	}
 
-	# Handle use <item> — find item in inventory and use it
-	# We must look up the item by name in the character's inventory
-	# and call $item->use() directly.
+	# Handle 'use <item>' -> 'is <item>' (OpenKore's Use Item on Self command)
+	# First check if the item exists in inventory to avoid error messages
 	if ($normalized =~ /^use\s+(.+)$/) {
-	    my $item_name = $1;
-	    # Normalize: replace underscores with spaces for matching
-	    $item_name =~ s/_/ /g;
-	    # Guard: $char must be defined and have inventory
-	    if (defined $char && defined $char->{inventory}) {
-	        # Try exact match first
-	        my $item = eval { $char->inventory->getByName($item_name) };
-	        if ($item) {
-	            $item->use();
-	            return ('', "use_item_$item_name");
-	        }
-	        # Try case-insensitive partial match
-	        my @all_items = eval { @{$char->{inventory}} };
-	        if (@all_items) {
-	            my $lc_name = lc($item_name);
-	            my @matches = grep { defined $_ && defined $_->{name} && lc($_->{name}) eq $lc_name } @all_items;
-	            if (!@matches) {
-	                @matches = grep { defined $_ && defined $_->{name} && lc($_->{name}) =~ /\Q$lc_name\E/ } @all_items;
-	            }
-	            if (@matches) {
-	                $matches[0]->use();
-	                return ('', "use_item_$item_name");
-	            }
-	        }
-	    }
-	    # Item not found or char not ready — return empty to suppress error
-	    return ('', "use_item_not_found_$item_name");
+		my $item_name = $1;
+		# Check inventory via $char->{inventory} (Main::findItem doesn't exist)
+		my $found = 0;
+		if ($char && $char->{inventory}) {
+			for my $item (@{$char->{inventory}}) {
+				if ($item && lc($item->{name}) eq lc($item_name)) {
+					$found = 1;
+					last;
+				}
+			}
+		}
+		if (!$found) {
+			debug "[use] item '$item_name' not in inventory, skipping\n", 'aiSidecarBridge', 1;
+			return ('', "use_item_not_found_$item_name");
+		}
+		my $ok = eval { Commands::run("is $item_name"); 1 };
+		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
 	}
 
-	# Handle ai manual — no-op if already in manual mode
-	if ($normalized eq 'ai manual') {
-	    if (!_ai_already_auto_mode()) {
-	        return ('', 'ai_manual_already_manual');
-	    }
-	    return ('', 'ai_manual_suppressed_auto_mode');
+	# Handle sit/stand
+	if ($normalized eq 'sit') {
+		# HUNTING MAP GUARD: if on a hunting map with HP >= 50%, ignore sit
+		# The bot should be attacking, not sitting.
+		my $_actual_map = $field ? $field->name() : '';
+		$_actual_map = lc($_actual_map || '');
+		$_actual_map =~ s/\.gat$//;
+		if ($_actual_map =~ /^[a-z]+_fild/) {
+			my $_hp_ratio = _safe_hp_ratio();
+			if ($_hp_ratio >= 0.15) {
+				warning "[sit] on hunting map '$_actual_map' with HP=$_hp_ratio, ignoring sit\n", 'aiSidecarBridge', 1;
+				return ('', 'sit_blocked_hunting');
+			}
+		}
+		my $ok = eval { Commands::run("sit"); 1 };
+		return ('', $ok ? 'sit_ok' : 'sit_failed');
+	}
+	if ($normalized eq 'stand') {
+		my $ok = eval { Commands::run("stand"); 1 };
+		return ('', $ok ? 'stand_ok' : 'stand_failed');
 	}
 
-	# Handle ai auto — no-op if already in auto mode
+	# Handle ai mode
 	if ($normalized eq 'ai auto') {
-	    if (_ai_already_auto_mode()) {
-	        return ('', 'ai_auto_already_auto');
-	    }
-	    return ($trimmed, '');
+		if (_ai_already_auto_mode()) {
+			return ('', 'ai_already_auto');
+		}
+		my $ok = eval { Commands::run("ai auto"); 1 };
+		return ('', $ok ? 'ai_auto_ok' : 'ai_auto_failed');
+	}
+	if ($normalized eq 'ai manual') {
+		if (!_ai_already_auto_mode()) {
+			return ('', 'ai_already_manual');
+		}
+		my $ok = eval { Commands::run("ai manual"); 1 };
+		return ('', $ok ? 'ai_manual_ok' : 'ai_manual_failed');
 	}
 
-	# Handle @go command — must be sent as chat, not console command
-	# OpenKore's Commands::run doesn't handle @go natively
-	if ($normalized =~ /^\@go\s+(.+)$/i) {
-	    my $go_target = $1;
-	    Commands::run("c \@go $go_target");
-	    return ('', 'go_command_sent');
-	}
-
-	return ($trimmed, '');
+	# Fallthrough
+	return ($trimmed, 'fallthrough');
 }
 
 sub _ai_already_auto_mode {
@@ -3881,48 +3960,64 @@ sub _check_bridge_reflexes {
 sub _apply_bot_config {
 	# Apply optimal OpenKore configs for autonomous operation
 	# (Overrides user config with AI-optimized values)
-	sub _apply_bot_config {
-		my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
-		my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
-		$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2');
-		$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1');
-		$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0');
-		$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0');
-		$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0');
-		$::config{'sitAuto_hp_lower'} = _cfg('aiSidecar_sitAutoHpLower', '0');
-		$::config{'sitAuto_hp_upper'} = _cfg('aiSidecar_sitAutoHpUpper', '0');
-		$::config{'sitAuto_maxDmg'} = _cfg('aiSidecar_sitAutoMaxDmg', '99999');
-		$::config{'itemsTakeAuto'} = '2';
-		$::config{'itemsTakeAuto_party'} = '1';
-		$::config{'itemsGatherAuto'} = '2';
-		$::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0');
-		$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
-		$::config{'sellAuto_distance'} = '25';
-		$::config{'storageAuto'} = _cfg('aiSidecar_storageAuto', '0');
-	    $::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0');
-	    my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
-		$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
-	    $::config{'sellAuto_distance'} = '25';
-	    
-	    # Storage (deposit junk, withdraw potions)
-	    $::config{'storageAuto'} = _cfg('aiSidecar_storageAuto', '0');
-	    my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
-		$::config{'storageAuto_npc'} = $_stor_npc if $_stor_npc;
-	    $::config{'storageAuto_distance'} = '5';
-	    $::config{'storageAuto_npc_type'} = '1';
-	    $::config{'storageAuto_npc_steps'} = 'c r1 c';
-	    $::config{'relogAfterStorage'} = '0';
-	    $::config{'minStorageZeny'} = '0';
-	    
-	    # Party auto-join
-	    $::config{'partyAuto'} = '1';
-	    $::config{'partyAutoShare'} = '1';
-	}
+	# SKIP if sidecar has explicitly set these values via "set" command
+	my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
+	my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
+	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2') unless $::config{'_sidecar_set_attackAuto'};
+	$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1') unless $::config{'_sidecar_set_attackAuto_inLockOnly'};
+	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0') unless $::config{'_sidecar_set_attackAuto_followTarget'};
+	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
+	$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0') unless $::config{'_sidecar_set_attackAuto_noMove'};
+	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7') unless $::config{'_sidecar_set_attackAuto_maxDistance'};
+	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
+	$::config{'teleportAuto_minAggressives'} = _cfg('aiSidecar_teleportAutoMinAggressives', '5') unless $::config{'_sidecar_set_teleportAuto_minAggressives'};
+	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '30') unless $::config{'_sidecar_set_teleportAuto_hp'};
+	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
+	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
+	$::config{'route_randomWalk_inLockOnly'} = _cfg('aiSidecar_routeRandomWalkInLockOnly', '1') unless $::config{'_sidecar_set_route_randomWalk_inLockOnly'};
+	$::config{'itemsTakeAuto'} = _cfg('aiSidecar_itemsTakeAuto', '2') unless $::config{'_sidecar_set_itemsTakeAuto'};
+	$::config{'itemsGatherAuto'} = _cfg('aiSidecar_itemsGatherAuto', '2') unless $::config{'_sidecar_set_itemsGatherAuto'};
+	$::config{'itemsMaxWeight'} = _cfg('aiSidecar_itemsMaxWeight', '89') unless $::config{'_sidecar_set_itemsMaxWeight'};
+	$::config{'sitAuto_hp'} = _cfg('aiSidecar_sitAutoHp', '30') unless $::config{'_sidecar_set_sitAuto_hp'};
+	$::config{'sitAuto_hp_max'} = _cfg('aiSidecar_sitAutoHpMax', '60') unless $::config{'_sidecar_set_sitAuto_hp_max'};
+	$::config{'sitAuto_sp'} = _cfg('aiSidecar_sitAutoSp', '0') unless $::config{'_sidecar_set_sitAuto_sp'};
+	$::config{'sitAuto_sp_max'} = _cfg('aiSidecar_sitAutoSpMax', '0') unless $::config{'_sidecar_set_sitAuto_sp_max'};
+	$::config{'sitAuto_idle'} = _cfg('aiSidecar_sitAutoIdle', '0') unless $::config{'_sidecar_set_sitAuto_idle'};
+	$::config{'sitAuto_look'} = _cfg('aiSidecar_sitAutoLook', '0') unless $::config{'_sidecar_set_sitAuto_look'};
+	$::config{'followAuto'} = _cfg('aiSidecar_followAuto', '0') unless $::config{'_sidecar_set_followAuto'};
+	$::config{'partyAuto'} = _cfg('aiSidecar_partyAuto', '1') unless $::config{'_sidecar_set_partyAuto'};
+	$::config{'partyAutoShare'} = _cfg('aiSidecar_partyAutoShare', '1') unless $::config{'_sidecar_set_partyAutoShare'};
+	$::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0') unless $::config{'_sidecar_set_sellAuto'};
+	$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
+	$::config{'sellAuto_distance'} = '25';
+	$::config{'storageAuto'} = _cfg('aiSidecar_storageAuto', '0') unless $::config{'_sidecar_set_storageAuto'};
+	$::config{'storageAuto_npc'} = $_stor_npc if $_stor_npc;
+	$::config{'storageAuto_distance'} = '5';
+	$::config{'storageAuto_npc_type'} = '1';
+	$::config{'storageAuto_npc_steps'} = 'c r1 c';
+	$::config{'relogAfterStorage'} = '0';
+	$::config{'minStorageZeny'} = '0';
+	$::config{'dcOnDeath'} = '0';
+	$::config{'dcOnDualLogin'} = '0';
+	$::config{'dcOnDisconnect'} = '0';
+	$::config{'dcOnEmptyArrow'} = '0';
+	$::config{'dcOnMaxWeight'} = '0';
+	$::config{'dcOnPlayer'} = '0';
+	$::config{'dcOnTeleport'} = '0';
+	$::config{'dcOnChangeMap'} = '0';
 }
 
 # ── Safe character accessor ──
 sub _safe_char {
 	return $main::char || $char;
+}
+
+sub _safe_hp_ratio {
+	my $cr = _safe_char();
+	return 1.0 if !$cr;
+	my $hp = $cr->{hp} || 0;
+	my $hp_max = $cr->{hp_max} || 1;
+	return $hp / $hp_max;
 }
 
 # ── Survival / Progression monitor (last-resort fallback) ──
@@ -4025,83 +4120,7 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	}
 }
 
-sub _survival_check {
-	my $now = _now_ms();
-	state $_last_sc_ms = 0;
-	return if $now - $_last_sc_ms < 60000;
-	$_last_sc_ms = $now;
 
-	my $cr = _safe_char();
-	return if !$cr;
-	my $hp = $cr->{hp} || 0;
-	my $hp_max = $cr->{hp_max} || 1;
-	my $zeny = $cr->{zeny} || 0;
-	my $base_lv = $cr->{lv} || $cr->{level} || 1;
-	my $ai_mode = $AI::AI || '';
-	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
-	my $map = $cr->{map} || '';
-
-	_apply_bot_config();
-
-	# ── Emergency (HP < 20%): Stand up, navigate, buy, use — NEVER sit ──
-	if ($hp_pct < 20 && $hp_pct > 0) {
-	    my $_strat = _http_post_json('/discover/heal', {
-	        bot_id => _bot_id(),
-	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
-	        x => (defined $cr->{pos_to}{x} ? $cr->{pos_to}{x} : 0),
-	        y => (defined $cr->{pos_to}{y} ? $cr->{pos_to}{y} : 0),
-	        inventory => _safe_inventory_list(),
-	        known_shops => _discover_shops_sync(),
-	        known_portals => _discover_portals_sync(),
-	    });
-	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
-	        eval { Commands::run($_strat->{json}{command}); 1 };
-	        my $_tgt = $_strat->{json}{target_map} || '';
-	        if ($_tgt ne '' && $_tgt ne $map) { $::config{'lockMap'} = $_tgt; }
-	    }
-	    # Fallback: stand, navigate to healer/prt_in, buy, use
-	    if ($ai_mode eq 'sit') { eval { Commands::run('stand'); 1 }; }
-	    # Lock to Healer NPC coordinates so OpenKore navigates to exact position
-    my $_rec_city = _cfg('aiSidecar_recoveryCity', '');
-		$::config{'lockMap'} = $_rec_city || (_safe_char() && _safe_char()->{map} ? _safe_char()->{map} : 'prontera');
-    $::config{'lockMap_x'} = 159;
-    $::config{'lockMap_y'} = 193;
-    $::config{'lockMap_randX'} = 2;
-    $::config{'lockMap_randY'} = 2;
-	    if ($ai_mode !~ /auto/i) { eval { require AI; AI::state(2); 1 }; }
-    # Sidecar decides navigation -- no hardcoded move
-    # Sidecar decides navigation -- no hardcoded move
-    # No hardcoded NPC interaction -- sidecar decides
-    # No hardcoded item use -- sidecar decides
-	}
-
-	# ── Economy: Ask sidecar for best hunting map (DB zone ladder, no hardcoded maps) ──
-	if ($zeny < _cfg_int('aiSidecar_economyMinZeny', 300) && $base_lv < 99) {
-	    my $_eco_strat = _http_post_json('/discover/economy', {
-	        bot_id => _bot_id(),
-	        hp => $hp, hp_max => $hp_max, zeny => $zeny, map => $map,
-	        base_level => $base_lv,
-	    });
-	    if ($_eco_strat && $_eco_strat->{status} == 200 && $_eco_strat->{json}{command}) {
-	        eval { Commands::run($_eco_strat->{json}{command}); 1 };
-	        my $_tgt = $_eco_strat->{json}{target_map} || '';
-	        if ($_tgt ne '' && $_tgt ne $map) { $::config{'lockMap'} = $_tgt; }
-	    }
-	    if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
-	    return;
-	}
-
-	# ── Stay in auto mode when HP is safe ──
-	if ($hp_pct > 40 && $ai_mode !~ /auto/i) {
-	    eval { require AI; AI::state(2); 1 };
-	}
-}
-
-# ── Team Play: Auto-party and coordinate sibling bots ──
-
-# ── Team Play: Auto-party with sibling bots ──
-# Sub_teamplay_check runs every 30s. Creates/joins party, invites siblings,
-# and sends non-sibling candidates to Pro RO LLM for evaluation.
 sub _teamplay_check {
 	my $now = _now_ms();
 	state $_last_tp_ms = 0;
