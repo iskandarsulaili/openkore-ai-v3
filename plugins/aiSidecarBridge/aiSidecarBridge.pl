@@ -22,6 +22,9 @@ my $ANTI_DETECTION_ENABLED = 1;
 my $ANTI_DETECTION_MIN_DELAY_MS = 200;
 my $ANTI_DETECTION_MAX_DELAY_MS = 600;
 
+# Reflex cooldown tracking - prevent survival reflexes from firing every cycle
+my %_last_reflex_fire_ms = ();
+
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
@@ -1879,6 +1882,12 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', "AI mode already satisfied: $rewrite_kind");
 	} elsif ($rewrite_kind eq 'map_move_already_set') {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
+	} elsif ($rewrite_kind eq 'kafra_teleport_auto') {
+		($success, $result_code, $msg) = (1, 'ok', 'kafra teleport sequence auto-completed');
+	} elsif ($rewrite_kind eq 'tool_dealer_auto') {
+		($success, $result_code, $msg) = (1, 'ok', 'tool dealer sequence auto-completed');
+	} elsif ($rewrite_kind eq 'dialog_guard_blocked') {
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: bot is in NPC dialog');
 	} elsif ($rewrite_kind eq 'combat_guard_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: bot is in combat');
 	} elsif ($rewrite_kind eq 'sit_blocked_hunting') {
@@ -2768,6 +2777,51 @@ my $_last_pro_ro_lockmap_ms = 0;
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
 	
+	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
+	# talknpc <x> <y> <sequence> - the sequence is NPC talk codes
+	# For Kafra Employee (29,207): c r2 c r0 c r0 n (teleport to prt_fild00)
+	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)$/) {
+		my $nx = $1;
+		my $ny = $2;
+		# Kafra Employee at (29,207) - auto-complete teleport sequence
+		if ($nx == 29 && $ny == 207) {
+			my $full_cmd = "talknpc $nx $ny c r2 c r0 c r0 n";
+			debug "[talknpc] Kafra Employee at ($nx,$ny): auto-completing teleport sequence\n", 'aiSidecarBridge', 1;
+			return ($full_cmd, 'kafra_teleport_auto');
+		}
+		# Tool Dealer at (156,212) - auto-complete buy sequence
+		if ($nx == 156 && $ny == 212) {
+			my $full_cmd = "talknpc $nx $ny c r0 n";
+			debug "[talknpc] Tool Dealer at ($nx,$ny): auto-completing buy sequence\n", 'aiSidecarBridge', 1;
+			return ($full_cmd, 'tool_dealer_auto');
+		}
+	}
+	
+	# NPC DIALOG STATE: track whether bot is in an NPC dialog
+	# When talknpc opens a dialog, we need to complete it with proper responses
+	my $_in_dialog = 0;
+	if ($::AI::ai_seq) {
+		for my $seq (@::AI::ai_seq) {
+			if ($seq =~ /^talknpc|talknpc_/) {
+				$_in_dialog = 1;
+				last;
+			}
+		}
+	}
+	
+	# If in dialog, block non-dialog commands and auto-complete the interaction
+	if ($_in_dialog) {
+		my $normalized_lc = lc($command);
+		# Allow only dialog-related commands during NPC interaction
+		if ($normalized_lc !~ /^(talk |talknpc|talk cont|talk resp)/) {
+			debug "[dialog_guard] bot is in NPC dialog, blocking non-dialog command: '$command'\n", 'aiSidecarBridge', 1;
+			return ('', 'dialog_guard_blocked');
+		}
+	}
+	
+
+
+	
 	# COMBAT GUARD: if bot is attacking a monster, block non-combat commands
 	# This prevents the PDCA loop from interrupting combat with skills_add, sit, move, etc.
 	my $_is_attacking = 0;
@@ -2882,6 +2936,10 @@ sub _rewrite_runtime_command {
 					if (!_ai_already_auto_mode()) {
 						Commands::run("ai auto");
 					}
+					# Disable monster avoidance so bot walks toward monsters, not away
+					$::config{"route_randomWalk_avoidInLock"} = 0;
+					# Prevent route AI from pathing into town when hunting
+					$::config{"route_randomWalk_inTown"} = 0;
 					# Clear AI sequence to force immediate transition to attack mode
 					@::AI::ai_seq = ();
 					return ('ai auto', 'hunting_map_priority');
@@ -2977,9 +3035,18 @@ sub _rewrite_runtime_command {
 
 	# Handle 'use <item>' -> 'is <item>' (OpenKore's Use Item on Self command)
 	# First check if the item exists in inventory to avoid error messages
+	# Also has a 30-second cooldown to prevent spamming when item is not in inventory
 	if ($normalized =~ /^use\s+(.+)$/) {
 		my $item_name = $1;
-		# Check inventory via $char->{inventory} (Main::findItem doesn't exist)
+		my $now_ms = _now_ms();
+		my $cooldown_key = "use_$item_name";
+		my $last_attempt = $_last_reflex_fire_ms{$cooldown_key} || 0;
+		# 30-second cooldown for items not found in inventory
+		if ($last_attempt > 0 && ($now_ms - $last_attempt) < 30000) {
+			debug "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
+			return ('', "use_item_cooldown_$item_name");
+		}
+		# Check inventory via $char->{inventory}
 		my $found = 0;
 		if ($char && $char->{inventory}) {
 			for my $item (@{$char->{inventory}}) {
@@ -2990,7 +3057,8 @@ sub _rewrite_runtime_command {
 			}
 		}
 		if (!$found) {
-			debug "[use] item '$item_name' not in inventory, skipping\n", 'aiSidecarBridge', 1;
+			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
+			debug "[use] item '$item_name' not in inventory, skipping (cooldown 30s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
 		my $ok = eval { Commands::run("is $item_name"); 1 };
