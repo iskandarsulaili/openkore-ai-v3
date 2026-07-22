@@ -23,7 +23,7 @@ my $ANTI_DETECTION_MIN_DELAY_MS = 200;
 my $ANTI_DETECTION_MAX_DELAY_MS = 600;
 
 # Reflex cooldown tracking - prevent survival reflexes from firing every cycle
-my %_last_reflex_fire_ms = ();
+our %_last_reflex_fire_ms = ();
 
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
@@ -2776,29 +2776,8 @@ my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
-	
-	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
-	# talknpc <x> <y> <sequence> - the sequence is NPC talk codes
-	# For Kafra Employee (29,207): c r2 c r0 c r0 n (teleport to prt_fild00)
-	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)$/) {
-		my $nx = $1;
-		my $ny = $2;
-		# Kafra Employee at (29,207) - auto-complete teleport sequence
-		if ($nx == 29 && $ny == 207) {
-			my $full_cmd = "talknpc $nx $ny c r2 c r0 c r0 n";
-			debug "[talknpc] Kafra Employee at ($nx,$ny): auto-completing teleport sequence\n", 'aiSidecarBridge', 1;
-			return ($full_cmd, 'kafra_teleport_auto');
-		}
-		# Tool Dealer at (156,212) - auto-complete buy sequence
-		if ($nx == 156 && $ny == 212) {
-			my $full_cmd = "talknpc $nx $ny c r0 n";
-			debug "[talknpc] Tool Dealer at ($nx,$ny): auto-completing buy sequence\n", 'aiSidecarBridge', 1;
-			return ($full_cmd, 'tool_dealer_auto');
-		}
-	}
-	
+
 	# NPC DIALOG STATE: track whether bot is in an NPC dialog
-	# When talknpc opens a dialog, we need to complete it with proper responses
 	my $_in_dialog = 0;
 	if ($::AI::ai_seq) {
 		for my $seq (@::AI::ai_seq) {
@@ -2808,22 +2787,17 @@ sub _rewrite_runtime_command {
 			}
 		}
 	}
-	
-	# If in dialog, block non-dialog commands and auto-complete the interaction
+
+	# If in dialog, block non-dialog commands
 	if ($_in_dialog) {
 		my $normalized_lc = lc($command);
-		# Allow only dialog-related commands during NPC interaction
 		if ($normalized_lc !~ /^(talk |talknpc|talk cont|talk resp)/) {
 			debug "[dialog_guard] bot is in NPC dialog, blocking non-dialog command: '$command'\n", 'aiSidecarBridge', 1;
 			return ('', 'dialog_guard_blocked');
 		}
 	}
-	
 
-
-	
 	# COMBAT GUARD: if bot is attacking a monster, block non-combat commands
-	# This prevents the PDCA loop from interrupting combat with skills_add, sit, move, etc.
 	my $_is_attacking = 0;
 	if ($char) {
 		for my $seq (@::AI::ai_seq) {
@@ -2835,7 +2809,6 @@ sub _rewrite_runtime_command {
 	}
 	if ($_is_attacking) {
 		my $normalized_lc = lc($command);
-		# Allow only combat-essential commands during combat
 		if ($normalized_lc !~ /^(use_skill|is |stand|ai auto|ai manual|attack|stop_attack|use_item)/) {
 			debug "[combat_guard] bot is attacking, blocking non-combat command: '$command'\n", 'aiSidecarBridge', 1;
 			return ('', 'combat_guard_blocked');
@@ -2845,12 +2818,221 @@ sub _rewrite_runtime_command {
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
-	
+
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
-	
+
+	# NPC DIALOG AUTO-COMPLETION: rewrite talknpc to include full interaction sequence
+	if ($normalized eq 'talknpc 29 207') {
+		debug "[talknpc] Kafra Employee at (29,207): auto-completing teleport sequence\n", 'aiSidecarBridge', 1;
+		return ("talknpc 29 207 c r2 c r0 c r0 n", 'kafra_teleport_auto');
+	}
+	if ($normalized eq 'talknpc 156 212') {
+		debug "[talknpc] Tool Dealer at (156,212): auto-completing buy sequence\n", 'aiSidecarBridge', 1;
+		return ("talknpc 156 212 c r0 n", 'tool_dealer_auto');
+	}
+
 	if ($normalized =~ /^move\s+savepoint$/) {
 		return ('respawn', 'move_savepoint_rewritten');
 	}
+
+	if ($normalized eq 'move random_walk_seek') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'random_walk_seek_already_auto');
+		}
+		return ('ai auto', 'random_walk_seek_rewritten');
+	}
+
+	if ($normalized eq 'move') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'bare_move_already_auto');
+		}
+		return ('ai auto', 'bare_move_rewritten');
+	}
+
+	# Handle set commands: "set <config_key> <value>" -> modify config directly
+	if ($normalized =~ /^set\s+([a-z_][a-z0-9_]*)\s+(.+)$/) {
+		my $set_key = $1;
+		my $set_val = $2;
+		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
+		$orig_key = $set_key unless defined $orig_key;
+
+		# HUNTING MAP STICKINESS: if setting lockMap to a TOWN while on a hunting map, skip
+		if (lc($orig_key) eq 'lockmap') {
+			my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			if ($_target_is_town) {
+				my $_actual_map = $field ? $field->name() : '';
+				$_actual_map = lc($_actual_map || '');
+				$_actual_map =~ s/\.gat$//;
+				if ($_actual_map =~ /^[a-z]+_fild/) {
+					my $_hp_ratio = _safe_hp_ratio();
+					if ($_hp_ratio >= 0.20) {
+						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
+						$::config{"lockMap"} = $_actual_map;
+						$::config{"attackAuto_inLockOnly"} = 0;
+						$::config{"attackAuto"} = 3;
+						$::config{"sitAuto_hp_lower"} = 0;
+						$::config{"sitAuto_hp_upper"} = 0;
+						Commands::run("stand");
+						if (!_ai_already_auto_mode()) {
+							Commands::run("ai auto");
+						}
+						return ('', 'hunting_map_priority');
+					}
+				}
+			}
+		}
+
+		my $old_val = $::config{$orig_key};
+		$::config{$orig_key} = $set_val;
+		$::config{"_sidecar_set_$orig_key"} = 1;
+		warning "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
+		return ('', 'config_set_ok');
+	}
+
+	# Handle map-name moves: "move <map>" -> set lockMap + ai auto
+	if ($normalized =~ /^move\s+(.+)$/) {
+		my $target = $1;
+		if ($target =~ /^\d+\s+\d+$/) {
+			return ($trimmed, 'coordinate_move_raw');
+		}
+		if ($target !~ /^(savepoint|random_walk_seek)$/) {
+			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
+			my $_actual_map = $field ? $field->name() : '';
+			$_actual_map = lc($_actual_map || '');
+			$_actual_map =~ s/\.gat$//;
+			my $_is_on_hunting_map = $_actual_map =~ /^[a-z]+_fild/;
+			my $_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			if ($_is_on_hunting_map && $_target_is_town) {
+				my $_hp_ratio = _safe_hp_ratio();
+				if ($_hp_ratio >= 0.20) {
+					warning "[lockMap] on hunting map '$_actual_map', ignoring move to town '$target' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
+					$::config{"lockMap"} = $_actual_map;
+					$::config{"attackAuto_inLockOnly"} = 0;
+					$::config{"attackAuto"} = 3;
+					$::config{"sitAuto_hp_lower"} = 0;
+					$::config{"sitAuto_hp_upper"} = 0;
+					$::config{"route_randomWalk_avoidInLock"} = 0;
+					$::config{"route_randomWalk_inTown"} = 0;
+					Commands::run("stand");
+					if (!_ai_already_auto_mode()) {
+						Commands::run("ai auto");
+					}
+					@::AI::ai_seq = ();
+					return ('ai auto', 'hunting_map_priority');
+				}
+			}
+		}
+		# Set lockMap to target and switch to auto mode
+		$::config{'lockMap'} = $target;
+		if (!_ai_already_auto_mode()) {
+			return ('ai auto', 'move_rewritten');
+		}
+		return ('', 'move_already_auto');
+	}
+
+	# Handle 'use <item>' -> 'is <item>' with 30s cooldown
+	if ($normalized =~ /^use\s+(.+)$/) {
+		my $item_name = $1;
+		my $now_ms = _now_ms();
+		my $cooldown_key = "use_$item_name";
+		my $last_attempt = $_last_reflex_fire_ms{$cooldown_key} || 0;
+		if ($last_attempt > 0 && ($now_ms - $last_attempt) < 30000) {
+			debug "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
+			return ('', "use_item_cooldown_$item_name");
+		}
+		my $found = 0;
+		if ($char && $char->{inventory}) {
+			for my $item (@{$char->{inventory}}) {
+				if ($item && lc($item->{name}) eq lc($item_name)) {
+					$found = 1;
+					last;
+				}
+			}
+		}
+		if (!$found) {
+			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
+			debug "[use] item '$item_name' not in inventory, skipping (cooldown 30s)\n", 'aiSidecarBridge', 1;
+			return ('', "use_item_not_found_$item_name");
+		}
+		my $ok = eval { Commands::run("is $item_name"); 1 };
+		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
+	}
+
+	# Handle sit/stand
+	if ($normalized eq 'sit') {
+		my $_actual_map = $field ? $field->name() : '';
+		$_actual_map = lc($_actual_map || '');
+		$_actual_map =~ s/\.gat$//;
+		if ($_actual_map =~ /^[a-z]+_fild/) {
+			my $_hp_ratio = _safe_hp_ratio();
+			if ($_hp_ratio >= 0.15) {
+				debug "[sit_guard] on hunting map '$_actual_map', blocking sit (HP=$_hp_ratio >= 0.15)\n", 'aiSidecarBridge', 1;
+				return ('', 'sit_blocked_hunting');
+			}
+		}
+		return ($trimmed, 'sit_allowed');
+	}
+
+	# Handle 'teleport auto' -> rewrite to skill or ai auto
+	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
+		my $has_teleport = 0;
+		if ($char && $char->{skills}) {
+			for my $skill (@{$char->{skills}}) {
+				if ($skill && lc($skill->{name}) eq 'al_teleport') {
+					$has_teleport = 1;
+					last;
+				}
+			}
+		}
+		if ($has_teleport) {
+			return ('ss AL_TELEPORT', 'teleport_rewritten');
+		}
+		return ('ai auto', 'teleport_fallback_auto');
+	}
+
+	# Handle 'skills add' / 'skills_add'
+	if ($normalized =~ /^skills?\s*add\s+(\d+)$/) {
+		my $skill_points = $1;
+		my $now_ms = _now_ms();
+		my $last_skills_add = $_last_reflex_fire_ms{'skills_add'} || 0;
+		if ($last_skills_add > 0 && ($now_ms - $last_skills_add) < 30000) {
+			debug "[skills_add] on cooldown, skipping\n", 'aiSidecarBridge', 1;
+			return ('', 'skills_add_cooldown');
+		}
+		$_last_reflex_fire_ms{'skills_add'} = $now_ms;
+		return ($trimmed, 'skills_add_allowed');
+	}
+
+	# Handle 'ai auto'
+	if ($normalized eq 'ai auto') {
+		if (_ai_already_auto_mode()) {
+			return ('', 'ai_auto_already');
+		}
+		return ($trimmed, 'ai_auto_ok');
+	}
+
+	# Handle 'stand'
+	if ($normalized eq 'stand') {
+		return ($trimmed, 'stand_ok');
+	}
+
+	# Handle 'talknpc' (without auto-completion)
+	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)/) {
+		return ($trimmed, 'talknpc_ok');
+	}
+
+	# Handle 'talk' commands
+	if ($normalized =~ /^talk\s+(cont|resp|no|\d+)/) {
+		return ($trimmed, 'talk_ok');
+	}
+
+	# Default: pass through
+	return ($trimmed, 'passthrough');
+}
+
+
+
+
 
 	if ($normalized eq 'move random_walk_seek') {
 		if (_ai_already_auto_mode()) {
