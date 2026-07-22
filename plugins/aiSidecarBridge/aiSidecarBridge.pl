@@ -2881,16 +2881,16 @@ sub _rewrite_runtime_command {
 	}
 	if ($_action_type ne q{}) {
 		my $_now = _now_ms();
-		my $_last_same_type = $_committed_actions{$_action_type} || 0;
+		my $_last_same_type = $committed_actions{$_action_type} || 0;
 		debug "[committed_action] type='$_action_type' target='$_action_target' last=$_last_same_type now=$_now diff=" . ($_now - $_last_same_type) . " cooldown=$COMMITTED_ACTION_COOLDOWN_MS\n", 'aiSidecarBridge', 1;
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			debug "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
 		}
-		$_committed_actions{$_action_type} = $_now;
+		$committed_actions{$_action_type} = $_now;
 		# Clean old entries (use keys() not each() to avoid iterator issues)
 		for my $_ckey (keys %_committed_actions) {
-			delete $_committed_actions{$_ckey} if $_now - $_committed_actions{$_ckey} > $COMMITTED_ACTION_COOLDOWN_MS * 2;
+			delete $committed_actions{$_ckey} if $_now - $committed_actions{$_ckey} > $COMMITTED_ACTION_COOLDOWN_MS * 2;
 		}
 	}
 	# NPC DIALOG AUTO-COMPLETION}
