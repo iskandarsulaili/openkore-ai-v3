@@ -76,6 +76,7 @@ my $hooks = Plugins::addHooks(
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
 	['post_configModify', \&on_post_config_modify, undef],
 	['post_bulkConfigModify', \&on_post_bulk_config_modify, undef],
+	['Commands::run/pre', \&on_command_run_pre, undef],
 	['Commands::run/post', \&on_command_run_post, undef],
 );
 
@@ -569,6 +570,25 @@ sub on_post_bulk_config_modify {
 		{ changed_count => scalar(@changed) + 0 },
 		'info',
 	);
+}
+
+sub on_command_run_pre {
+	my ($hook, $args) = @_;
+	return if !_bridge_enabled();
+	return if ref($args) ne 'HASH';
+	my $switch = lc(_scalarize($args->{switch}));
+	my $arg_text = _scalarize($args->{args});
+	my $input = $switch;
+	$input .= ' ' . $arg_text if defined $arg_text && $arg_text ne '';
+	# Block stale NPC teleport attempts
+	if ($input =~ /^talknpc\s+(\d+)\s+(\d+)/) {
+		my ($_x, $_y) = ($1, $2);
+		if (($_x == 156 && $_y == 229) ||
+		    ($_x == 157 && ($_y == 40 || $_y == 38 || $_y == 36))) {
+			debug "[stale_npc] blocking talknpc to ($_x,$_y) - known stale portal\n", 'aiSidecarBridge', 1;
+			$args->{return} = 1;
+		}
+	}
 }
 
 sub on_command_run_post {
