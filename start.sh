@@ -9,6 +9,7 @@
 #   ./start.sh stop            Kill all processes
 #   ./start.sh status          Show status of all processes
 #   ./start.sh tail            Tail logs of running processes
+#   ./start.sh tail --llm      Tail logs + LLM activity (sidecar model calls)
 #
 # P2P knowledge network starts automatically when PDCA loop initializes.
 # Each bot gets its own P2P node on port 18090+hash(bot_id)%100.
@@ -228,13 +229,14 @@ except: print('parse error')
 
     for name in "${BOT_NAMES[@]}"; do
         local log="$BOT_LOGS/$name.log"
-        if ps aux | grep -v grep | grep -q "openkore.pl.*$name"; then
+        local bot_pid
+        bot_pid=$(pgrep -f "openkore\.pl.*\.bot_profiles/$name/" 2>/dev/null || true)
+        if [ -n "$bot_pid" ]; then
             local status="${YELLOW}[STARTING]${NC}"
-            if [ -f "$log" ] && tail -20 "$log" 2>/dev/null | grep -q "Connected to Map Server"; then
+            if [ -f "$log" ] && grep -q "You are now in the game" "$log" 2>/dev/null; then
                 status="${GREEN}[IN-GAME]${NC}"
             fi
-            local pid=$(ps aux | grep "openkore.pl.*$name" | grep -v grep | awk '{print $2}')
-            echo -e "  ${GREEN}RUNNING${NC}  Bot $name  PID=$pid  $status"
+            echo -e "  ${GREEN}RUNNING${NC}  Bot $name  PID=$bot_pid  $status"
         else
             echo -e "  ${RED}STOPPED${NC}  Bot $name"
         fi
@@ -249,12 +251,14 @@ except: print('parse error')
 # ------------------------------------------------------------------
 
 _tail_all() {
+    local show_llm=false
+    [[ "${1:-}" == "--llm" ]] && show_llm=true
+
     local log_files=()
-    
-    # Bot logs only — sidecar log is excluded from console view
-    # to avoid [SIDECAR] noise; sidecar still logs to file.
     local colors=("${CYAN}" "${GREEN}" "${YELLOW}" "${MAGENTA}" "${BLUE}" "${RED}")
     local labels=()
+    
+    # Bot logs
     for name in "${BOT_NAMES[@]}"; do
         local lf="$BOT_LOGS/$name.log"
         if [ -f "$lf" ]; then
@@ -263,10 +267,16 @@ _tail_all() {
         fi
     done
 
+    # Sidecar LLM log if --llm flag
+    if $show_llm; then
+        log_files+=("$SIDECAR_LOG")
+        labels+=("LLM")
+    fi
+
     if [ ${#log_files[@]} -eq 0 ]; then
         warn "No log files found yet — waiting for output..."
         sleep 3
-        _tail_all
+        _tail_all "$@"
         return
     fi
 
@@ -274,7 +284,11 @@ _tail_all() {
     local temp_dir
     temp_dir=$(mktemp -d)
     
-    info "Tailing all logs (Ctrl+C to stop)..."
+    if $show_llm; then
+        info "Tailing all logs + LLM activity (Ctrl+C to stop)..."
+    else
+        info "Tailing all logs (Ctrl+C to stop)..."
+    fi
     echo ""
     
     # Trap Ctrl+C to kill tails and clean up
@@ -283,14 +297,12 @@ _tail_all() {
         [ "$tail_cleanup_called" = "1" ] && return
         tail_cleanup_called=1
         echo ""
-        info "Shutting down..."
+        info "Exiting log viewer..."
         # Kill the tail processes
         for tp in $pid_list; do
             kill "$tp" 2>/dev/null || true
         done
         rm -rf "$temp_dir"
-        # Stop all processes
-        stop_all
         exit 0
     }
     trap _tail_cleanup SIGINT SIGTERM
@@ -305,13 +317,22 @@ _tail_all() {
         local fifo="$temp_dir/tail_$i"
         mkfifo "$fifo"
         
-        # Tail the file and prefix each line with color + label
-        # Filter out [aiSidecarBridge] noise from console display
-        (
-            tail -n 0 -f "$lf" 2>/dev/null | grep -v '\[aiSidecarBridge\]' | while IFS= read -r line; do
-                echo -e "${color}[${label}]${NC} ${line}"
-            done
-        ) > "$fifo" &
+        if [[ "$label" == "LLM" ]]; then
+            # LLM view: filter sidecar log for LLM-related activity
+            (
+                tail -n 10 -f "$lf" 2>/dev/null | grep --line-buffered -iE "llm|model_router|chat/completions|provider_route|token|prompt|completion|conscious|degraded|pdca_loop|zone_ladder|pro_ro_player" | while IFS= read -r line; do
+                    echo -e "${color}[${label}]${NC} ${line}"
+                done
+            ) > "$fifo" &
+        else
+            # Bot log: filter out [aiSidecarBridge] noise
+            (
+                tail -n 10 -f "$lf" 2>/dev/null | while IFS= read -r line; do
+                    [[ "$line" == *'[aiSidecarBridge]'* ]] && continue
+                    echo -e "${color}[${label}]${NC} ${line}"
+                done
+            ) > "$fifo" &
+        fi
         pid_list="$pid_list $!"
         
         # Read from the fifo and display
@@ -359,7 +380,7 @@ case "${1:-all}" in
         show_status
         ;;
     tail)
-        _tail_all
+        _tail_all "$2"
         ;;
     all|start)
         _load_env
@@ -378,12 +399,31 @@ case "${1:-all}" in
             sleep 3
         done
 
-        show_status
-        echo -e "${GREEN}All systems started. Streaming console output below...${NC}"
-        echo -e "${YELLOW}Press Ctrl+C to stop everything.${NC}"
+        # Wait for bots to connect before showing status
         echo ""
-        sleep 2
-        _tail_all
+        info "Waiting for bots to connect..."
+        for i in $(seq 1 10); do
+            all_connected=true
+            for name in "${BOT_NAMES[@]}"; do
+                log="$BOT_LOGS/$name.log"
+                if ! grep -q "You are now in the game" "$log" 2>/dev/null; then
+                    all_connected=false
+                    break
+                fi
+            done
+            if $all_connected; then
+                break
+            fi
+            sleep 2
+        done
+
+        show_status
+        echo ""
+        echo -e "${GREEN}All systems started.${NC}"
+        echo -e "  ${CYAN}./start.sh status${NC}  — Check status"
+        echo -e "  ${CYAN}./start.sh tail${NC}    — View live logs"
+        echo -e "  ${CYAN}./start.sh stop${NC}    — Stop everything"
+        echo ""
         ;;
     *)
         echo "Usage: $0 {all|sidecar|bot <name>|stop|status|tail}"
