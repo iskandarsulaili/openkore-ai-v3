@@ -2993,6 +2993,21 @@ sub _rewrite_runtime_command {
 	# Handle 'skills add' / 'skills_add'
 	if ($normalized =~ /^skills?\s*add\s+(\d+)$/) {
 		my $skill_points = $1;
+		# Check if bot has any skill points available
+		# $char->{skills} may be a hash or array depending on OpenKore version
+		my $has_skill_points = 0;
+		if ($char && $char->{skills} && ref($char->{skills}) eq 'ARRAY') {
+			for my $skill (@{$char->{skills}}) {
+				if ($skill && ref($skill) eq 'HASH' && $skill->{level} < $skill->{max} && $skill_points > 0) {
+					$has_skill_points = 1;
+					last;
+				}
+			}
+		}
+		if (!$has_skill_points) {
+			debug "[skills_add] no skill points available, skipping\n", 'aiSidecarBridge', 1;
+			return ('', 'skills_add_no_points');
+		}
 		my $now_ms = _now_ms();
 		my $last_skills_add = $_last_reflex_fire_ms{'skills_add'} || 0;
 		if ($last_skills_add > 0 && ($now_ms - $last_skills_add) < 30000) {

@@ -92,6 +92,15 @@ async def lifespan(app: FastAPI):
     # Auto-start the PDCA loop
     pdca_loop.start()
     logger.info("PDCA autonomy loop started (auto)")
+
+    # Initialize Failure Reasoning Pipeline
+    try:
+        from ai_sidecar.learning.failure_wiring import wire_failure_pipeline
+        _fre = wire_failure_pipeline(runtime)
+        runtime.failure_reasoning = _fre
+        logger.info("failure_reasoning_pipeline_wired")
+    except Exception as e:
+        logger.warning("failure_reasoning_wire_failed: %s", e)
     fleet_sync_task: asyncio.Task[None] | None = None
     fleet_sync_enabled = bool(getattr(runtime.fleet_sync_client, "enabled", False))
     if fleet_sync_enabled:
@@ -123,6 +132,22 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.debug("Curator not available: %s", exc)
         curator_task = None
+    # Start keep-alive loop if enabled
+    runtime.keep_alive_enabled = settings.keep_alive_enabled
+    runtime.keep_alive_timeout_minutes = settings.keep_alive_timeout_minutes
+    runtime.keep_alive_poll_interval_s = settings.keep_alive_poll_interval_s
+    if runtime.keep_alive_enabled:
+        runtime.start_keep_alive()
+        logger.info(
+            "keep_alive_mode_enabled",
+            extra={
+                "event": "keep_alive_mode_enabled",
+                "timeout_minutes": runtime.keep_alive_timeout_minutes,
+                "poll_interval_s": runtime.keep_alive_poll_interval_s,
+                "server": f"{settings.game_server_host}:{settings.game_server_port}",
+            },
+        )
+
 
     yield
 
@@ -165,10 +190,10 @@ def install_request_validation_logging(app: FastAPI) -> None:
             body_preview = f"<unavailable:{type(body_error).__name__}>"
 
         details = exc.errors()
-        logger.warning(
+        logger.debug(
             "http_request_validation_failed",
             extra={
-                "event": "http_request_validation_failed",
+                "event": "http_request_validation_failed_ignored",
                 "trace_id": trace_id,
                 "method": request.method,
                 "path": request.url.path,
@@ -248,6 +273,29 @@ app = create_app()
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="openkore-ai-sidecar")
+    parser.add_argument("--keep-alive", action="store_true", default=False,
+                        help="Enable keep-alive mode: stay alive when no bots connected, poll game server, auto-restart bots")
+    parser.add_argument("--keep-alive-timeout", type=int, default=30,
+                        help="Keep-alive timeout in minutes (default: 30)")
+    parser.add_argument("--keep-alive-poll", type=float, default=30.0,
+                        help="Keep-alive poll interval in seconds (default: 30)")
+    args = parser.parse_args()
+
+    if args.keep_alive:
+        settings.keep_alive_enabled = True
+        settings.keep_alive_timeout_minutes = args.keep_alive_timeout
+        settings.keep_alive_poll_interval_s = args.keep_alive_poll
+        logger.info(
+            "keep_alive_enabled_via_cli",
+            extra={
+                "event": "keep_alive_enabled_via_cli",
+                "timeout_minutes": args.keep_alive_timeout,
+                "poll_interval_s": args.keep_alive_poll,
+            },
+        )
+
     uvicorn.run(
         "ai_sidecar.app:app",
         host=settings.host,

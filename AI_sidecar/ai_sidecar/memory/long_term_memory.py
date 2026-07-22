@@ -114,7 +114,7 @@ class LongTermMemory:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "metadata": metadata or {},
                 }
-                import asyncio; asyncio.run(self._memory.add(json.dumps(payload)))
+                import asyncio; _loop = asyncio.new_event_loop(); asyncio.set_event_loop(_loop); _loop.run_until_complete(self._memory.add(json.dumps(payload))); _loop.close()
                 return True
             except Exception as e:
                 logger.warning("long_term_memory_store_failed: %s", e)
