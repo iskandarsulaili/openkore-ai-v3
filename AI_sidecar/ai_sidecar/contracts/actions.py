@@ -28,20 +28,20 @@ class ActionPriorityTier(StrEnum):
 class ActionProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action_id: str = Field(min_length=1, max_length=128)
+    action_id: str = Field(min_length=1, max_length=1024)
     kind: str = Field(default="command", min_length=1, max_length=64)
     command: str = Field(min_length=0, max_length=256)
     priority_tier: ActionPriorityTier = ActionPriorityTier.strategic
-    conflict_key: str | None = Field(default=None, max_length=128)
+    conflict_key: str | None = Field(default=None, max_length=1024)
     source: str = Field(default="manual", max_length=32)
-    lease_id: str | None = Field(default=None, max_length=128)
+    lease_id: str | None = Field(default=None, max_length=1024)
     preconditions: list[str] = Field(default_factory=list)
     rollback_action: str | None = Field(default=None, max_length=256)
     latency_budget_ms: int | None = Field(default=None, ge=0, le=600000)
     ttl_seconds: int | None = Field(default=None, ge=1, le=86400)
     created_at: datetime
     expires_at: datetime
-    idempotency_key: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=1024)
     metadata: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("source")

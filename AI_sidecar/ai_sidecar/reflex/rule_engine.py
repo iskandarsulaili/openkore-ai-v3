@@ -1199,7 +1199,7 @@ class ReflexRuleEngine:
             ),
             ReflexRule(
                 rule_id="pvp_escape_extended",
-                enabled=True,
+                enabled=False,
                 priority=2,
                 trigger=ReflexTriggerClause(
                     all=[

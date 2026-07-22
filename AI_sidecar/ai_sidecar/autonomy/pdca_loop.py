@@ -2023,6 +2023,10 @@ class PDCALoop:
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._cycle_count: int = 0
+        # Config set cache: bot_id -> {config_key: last_set_value}
+        self._config_set_cache: dict[str, dict[str, str]] = {}
+        # Hunting config applied flag: bot_id -> bool
+        self._hunting_config_applied: dict[str, bool] = {}
         self._wall_start_ts: float = 0.0  # wall-clock startup time for force-open bypass
         self._memory_pool: Any = None  # ThreadPoolExecutor for memory searches
 
@@ -3322,8 +3326,8 @@ class PDCALoop:
                 _ae = getattr(self._runtime, "action_executor", None)
                 if _ae is None:
                     try:
-                        from ai_sidecar.combat.action_executor import get_action_executor
-                        _ae = get_action_executor()
+                        from ai_sidecar.combat.action_executor import ActionExecutor
+                        _ae = ActionExecutor()
                         self._runtime.action_executor = _ae
                         logger.info("action_executor_initialized: %d mappings", len(_ae.get_all_mappings()))
                     except Exception as e:
@@ -4892,22 +4896,11 @@ class PDCALoop:
                                             from datetime import UTC, datetime, timedelta
                                             from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                             # Queue set attackAuto_inLockOnly 0 to ensure bot attacks on arrival
-                                            try:
-                                                _cr_inlock_proposal = ActionProposal(
-                                                    action_id=f'pro_ro_inlock_{_cycle_bot_id or "default"}_{int(time.monotonic()*1000)}',
-                                                    kind='command',
-                                                    command='set attackAuto_inLockOnly 0',
-                                                    priority_tier=ActionPriorityTier.tactical,
-                                                    source='planner',
-                                                    created_at=datetime.now(UTC),
-                                                    expires_at=datetime.now(UTC) + timedelta(seconds=120),
-                                                    conflict_key=f'combat_inlock_{_cycle_bot_id or "default"}',
-                                                    idempotency_key=f'combat_inlock_{_cycle_bot_id or "default"}',
-                                                    metadata={'source': 'pro_ro_player', 'reason': 'Enable attack outside lockMap', 'bot_id': _cycle_bot_id or 'default'},
-                                                )
-                                                _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_inlock_proposal)
-                                            except Exception:
-                                                pass
+                                            # DEBOUNCED: only queue if not already set to this value
+                                            # REMOVED: This conflicts with the hunting config block below
+                                            # which sets attackAuto_inLockOnly 1. The hunting config is the
+                                            # authoritative source for attack behavior.
+                                            pass
                                             # Queue default survival config (death loop will adjust if deaths detected)
                                             for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 2)]:
                                                 try:
@@ -4945,6 +4938,36 @@ class PDCALoop:
                                                     metadata={'source': 'pro_ro_player', 'reason': f'Zone ladder: {_cr_best_map}', 'bot_id': _cycle_bot_id or 'default'},
                                                 )
                                                 _cr_aq.enqueue(_cycle_bot_id or 'default', _cr_route_proposal)
+                                                # Apply hunting config ONCE per bot (not every cycle)
+                                                _hc_bot = _cycle_bot_id or "default"
+                                                _hc_applied = getattr(self, "_hunting_config_applied", {})
+                                                if not _hc_applied.get(_hc_bot):
+                                                    try:
+                                                        _hc_configs = [
+                                                            ("lockMap", _cr_map if _cr_map else "prt_fild08"),
+                                                            ("attackAuto", "2"),
+                                                            ("attackAuto_inLockOnly", "0"),
+                                                            ("route_randomWalk", "2"),
+                                                            ("teleportAuto_minAggressives", "5"),
+                                                            ("teleportAuto_hp", "30"),
+                                                            ("teleportAuto_minAggressivesInLock", "8"),
+                                                        ]
+                                                        for _hc_key, _hc_val in _hc_configs:
+                                                            _hc_prop = ActionProposal(
+                                                                action_id="hunt_cfg_%s_%s_%d" % (_hc_bot, _hc_key, int(time.monotonic()*1000)),
+                                                                kind="command", command="set %s %s" % (_hc_key, _hc_val),
+                                                                priority_tier=ActionPriorityTier.tactical, source="planner",
+                                                                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                                                                conflict_key="hunt_cfg_%s_%s" % (_hc_key, _hc_bot),
+                                                                idempotency_key="hunt_cfg_%s_%s_%s" % (_hc_key, _hc_val, _hc_bot),
+                                                                metadata={"source": "hunting_config", "reason": "Hunting: %s=%s" % (_hc_key, _hc_val), "bot_id": _hc_bot},
+                                                            )
+                                                            _cr_aq.enqueue(_hc_bot, _hc_prop)
+                                                        # Mark as applied
+                                                        if _hc_bot not in _hc_applied:
+                                                            _hc_applied[_hc_bot] = True
+                                                    except Exception:
+                                                        pass
                                             except Exception:
                                                 pass
                                             # Update cooldown timestamp after successful queue
@@ -5618,7 +5641,7 @@ class PDCALoop:
             if goal_state is not None:
                 try:
                     _bot = decision_meta.bot_id
-                    _goal = str(getattr(goal_state, "selected_goal", "") or "")
+                    _goal = str(getattr(getattr(goal_state, "selected_goal", None), "goal_key", "") or "")
                     _obj = str(getattr(getattr(goal_state, "selected_goal", None), "objective", "") or "")
                     if _goal and _obj:
                         # Track job change attempts per bot
@@ -8438,6 +8461,34 @@ class PDCALoop:
                     _mod = getattr(self._runtime, _mod_name, None)
                     if _mod is not None:
                         _dm.report_success(_mod_name)
+        except Exception:
+            pass
+
+        # ── First Kill Tracker ──
+        try:
+            _fkt = getattr(self._runtime, "_first_kill_tracker", None)
+            if _fkt is None:
+                _fkt = {}
+                self._runtime._first_kill_tracker = _fkt
+            if _bot_id and _bot_id not in _fkt:
+                _fkt[_bot_id] = {"started_at": time.time(), "kills": 0, "last_kill_time": 0.0}
+            if _bot_id and _bot_id in _fkt:
+                _entry = _fkt[_bot_id]
+                _elapsed = time.time() - _entry["started_at"]
+                if _elapsed > 300 and _entry["kills"] == 0:
+                    result["no_kills_alert"] = True
+                    result["no_kills_seconds"] = int(_elapsed)
+        except Exception:
+            pass
+
+        # ── Inject Failure Reasoning Context ──
+        try:
+            _fre = getattr(self._runtime, "failure_reasoning", None)
+            if _fre is not None:
+                _server_id = _fre._get_server_id()
+                _failure_ctx = _fre.get_llm_context(server_id=_server_id)
+                if _failure_ctx:
+                    result["failure_context"] = _failure_ctx
         except Exception:
             pass
 

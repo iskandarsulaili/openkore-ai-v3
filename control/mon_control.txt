@@ -62,7 +62,7 @@
 Ant's Egg 0 0 0
 PecoPeco's Egg 0 0 0
 Pupa 0 0 0
-Thief Bug's Egg 0 0 0
+Thief Bug's Egg 1 1 0
 
 ##### Alchemist Summons ####
 # Summoned Parasite

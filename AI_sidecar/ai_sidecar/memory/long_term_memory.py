@@ -114,7 +114,7 @@ class LongTermMemory:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "metadata": metadata or {},
                 }
-                self._memory.add(json.dumps(payload))
+                import asyncio; asyncio.run(self._memory.add(json.dumps(payload)))
                 return True
             except Exception as e:
                 logger.warning("long_term_memory_store_failed: %s", e)
@@ -147,6 +147,10 @@ class LongTermMemory:
         if self._memory is not None:
             try:
                 results = self._memory.search(query)
+                # Handle both sync and async (coroutine) returns
+                import asyncio
+                if asyncio.iscoroutine(results):
+                    results = asyncio.run(results)
                 memories = []
                 for r in results:
                     try:
