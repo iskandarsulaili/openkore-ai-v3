@@ -340,7 +340,7 @@ sub on_mainLoop_post {
             if ($_tp_name eq 'kicapmasin3' && $_tp_now - ($_last_reflex_fire_ms{'party_heal'} || 0) > 3000) {
                 $_last_reflex_fire_ms{'party_heal'} = $_tp_now;
                 # Check party members' HP from global party object
-                if (%::party) {
+                if (defined %::party) {
                     for my $_pm_id (keys %::party) {
                         my $_pm = $::party{$_pm_id};
                         next unless ref($_pm) eq 'HASH';
@@ -357,7 +357,7 @@ sub on_mainLoop_post {
             # Follow coordination: if follower is on different map than leader, move to leader
             if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
                 my $_tp_leader_map = '';
-                if (%::party) {
+                if (defined %::party) {
                     for my $_pm_id (keys %::party) {
                         my $_pm = $::party{$_pm_id};
                         next unless ref($_pm) eq 'HASH';
