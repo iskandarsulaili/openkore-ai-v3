@@ -467,9 +467,9 @@ class HeuristicService:
     def set_domain_weights(self, weights: dict) -> None:
         pass
 
-    def assess(self, signals: dict[str, Any]) -> HeuristicAssessment:
+    def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
-        bot_id = signals.get("bot_id", "default")
+        bot_id = bot_id_override or signals.get("bot_id", "default")
         state = self._get_state(signals)
         prev_state = self._bot_state.get(bot_id, "UNKNOWN")
 
@@ -640,6 +640,19 @@ class HeuristicService:
 
         # ── STATE: STATS ──
         if state == "STATS":
+            # Double-check stat_points from both current and last known values
+            _current_stat_points = signals.get("stat_points", 0) or 0
+            _last_stat_points = signals.get("_last_stat_points", 0) or 0
+            if _current_stat_points <= 0 and _last_stat_points <= 0:
+                # No stat points available - skip to next state
+                total_confidence = 0.50
+                top_domain = "progression"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=[], confidence=total_confidence,
+                    actionable=False, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
             stat_builds = {
                 "novice": ["dex", "str", "agi", "vit"],
                 "archer": ["dex", "agi", "str", "vit"],
