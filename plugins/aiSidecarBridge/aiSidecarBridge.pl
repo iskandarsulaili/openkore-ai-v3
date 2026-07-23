@@ -2914,6 +2914,7 @@ sub _rewrite_runtime_command {
 	# The LLM planner sends 'ai manual' as a proxy for 'sit' (bridge compat layer rewrites 'sit' to 'ai manual')
 	# We convert to 'stand' in town (so auto-buy/route can work) or 'sit' on hunting map (to rest)
 	# Throttled to once per 30s to prevent tight loop
+	# When in town with no potions, also trigger autobuy
 	if ($normalized eq 'ai manual') {
 		my $_now_ms = _now_ms();
 		my $_last_sit = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
@@ -2927,6 +2928,20 @@ sub _rewrite_runtime_command {
 				return ('sit', 'ai_manual_to_sit');
 			}
 			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
+			# Emergency autobuy: if in town with no potions and has zeny, trigger Commands::run("autobuy")
+			if ($char && $char->{inventory}) {
+				my $_has_pots = 0;
+				for my $_i (@{$char->{inventory}}) {
+					if ($_i && ref $_i && $_i->{name} =~ /potion|herb|fruit|berry/i) {
+						$_has_pots += $_i->{amount} || 1;
+					}
+				}
+				my $_has_zeny = defined $char->{zeny} ? $char->{zeny} : 0;
+				if ($_has_pots < 5 && $_has_zeny >= 500) {
+					warning "[ai_manual] emergency autobuy: only $_has_pots potions, zeny=$_has_zeny\n", 'aiSidecarBridge', 1;
+					eval { Commands::run("autobuy"); 1; };
+				}
+			}
 			return ('stand', 'ai_manual_to_sit');
 		}
 		# Within cooldown: silently ignore duplicate ai manual
