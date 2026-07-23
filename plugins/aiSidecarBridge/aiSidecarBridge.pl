@@ -401,6 +401,39 @@ sub on_mainLoop_post {
             }
         }
         
+        # ── TOWN ECONOMY: sell junk and buy potions when in Prontera ──
+        if ($char) {
+            my $_te_map = lc($char->{map} || '');
+            $_te_map =~ s/\.gat$//;
+            if ($_te_map eq 'prontera') {
+                my $_te_now = _now_ms();
+                my $_te_last = $_last_reflex_fire_ms{'town_economy'} || 0;
+                if ($_te_now - $_te_last > 15000) {  # Every 15s
+                    $_last_reflex_fire_ms{'town_economy'} = $_te_now;
+                    my $_te_weight = $char->{weight} || 0;
+                    my $_te_weight_max = $char->{weight_max} || 10000;
+                    my $_te_weight_ratio = $_te_weight_max > 0 ? ($_te_weight / $_te_weight_max * 100) : 0;
+                    my $_te_zeny = $char->{zeny} || 0;
+                    
+                    # SELL: if weight > 5%, sell junk
+                    if ($_te_weight_ratio > 5) {
+                        warning "[economy] weight=$_te_weight_ratio% > 5%, selling junk\n", 'aiSidecarBridge', 1;
+                        # Use OpenKore's built-in sell command
+                        eval { Commands::run('sell auto'); 1; };
+                    }
+                    
+                    # BUY: if zeny > 0, buy potions
+                    if ($_te_zeny > 0) {
+                        warning "[economy] zeny=$_te_zeny, buying potions\n", 'aiSidecarBridge', 1;
+                        # Walk to Potion Shop
+                        eval { Commands::run('move 126 76'); 1; };
+                        # Buy red potions
+                        eval { Commands::run('buy 1 10'); 1; };  # Buy 10 red potions
+                    }
+                }
+            }
+        }
+        
         # ── FORCE HUNTING: if bot is in town and not in stay_in_town window, force move to portal ──
         if ($char && $_pro_ro_stay_in_town_ms == 0) {
             my $_fh_map = lc($char->{map} || '');
@@ -420,7 +453,33 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── FORCE PARTY JOIN: if kicapmasin3 not in party after 30s, force it ──
+        # ── FORCE PARTY INVITE: leader invites kicapmasin3 every 30s ──
+        if ($char && $::config{username} eq 'kicapmasin') {
+            my $_pi_now = _now_ms();
+            my $_pi_last = $_last_reflex_fire_ms{'force_party_invite'} || 0;
+            if ($_pi_now - $_pi_last > 30000) {
+                $_last_reflex_fire_ms{'force_party_invite'} = $_pi_now;
+                # Check if kicapmasin3 is in party
+                my $_pi_k3_in_party = 0;
+                if (%::party) {
+                    for my $_pi_id (keys %::party) {
+                        my $_pi_member = $::party{$_pi_id};
+                        next unless ref($_pi_member) eq 'HASH';
+                        my $_pi_name = lc($_pi_member->{name} || '');
+                        if ($_pi_name eq 'kicapmasin3') {
+                            $_pi_k3_in_party = 1;
+                            last;
+                        }
+                    }
+                }
+                if (!$_pi_k3_in_party) {
+                    warning "[force_party] kicapmasin3 not in party, leader inviting\n", 'aiSidecarBridge', 1;
+                    eval { Commands::run('party invite kicapmasin3'); 1; };
+                }
+            }
+        }
+        
+        # ── FORCE PARTY JOIN: if kicapmasin3 not in party after 30s, force join ──
         if ($char && $::config{username} eq 'kicapmasin3') {
             my $_pj3_now = _now_ms();
             my $_pj3_last = $_last_reflex_fire_ms{'force_party_join'} || 0;
@@ -3275,16 +3334,28 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
-	# VENDOR BLOCK: block talknpc commands when hunting is forced
+	# VENDOR BLOCK: only block talknpc when bot is on a hunting map (not in town)
 	if ($normalized =~ /^talknpc\s+/ && $_last_reflex_fire_ms{'block_vendor_until'} && _now_ms() < $_last_reflex_fire_ms{'block_vendor_until'}) {
-	    debug "[vendor_block] blocking talknpc - hunting forced\n", 'aiSidecarBridge', 1;
-	    return ('', 'vendor_blocked_hunting_forced');
+	    my $_vb_map = lc($char->{map} || '');
+	    $_vb_map =~ s/\.gat$//;
+	    my @_vb_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
+	    my $_vb_in_town = grep { $_vb_map eq $_ } @_vb_towns;
+	    if (!$_vb_in_town) {
+	        debug "[vendor_block] blocking talknpc - not in town\n", 'aiSidecarBridge', 1;
+	        return ('', 'vendor_blocked_hunting_forced');
+	    }
 	}
 	
 	# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
 	if ($normalized eq 'ai manual') {
 	    debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
 	    return ('', 'ai_manual_blocked');
+	}
+	
+	# SIT BLOCK: block sit command from sidecar (we want bots standing)
+	if ($normalized eq 'sit') {
+	    debug "[sit_block] blocking sit command\n", 'aiSidecarBridge', 1;
+	    return ('', 'sit_blocked');
 	}
 	
 	# MACRO GUARD: block broken macros that cause syntax errors

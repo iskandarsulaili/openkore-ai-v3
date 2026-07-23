@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword surafrak
+adminPassword prahatwo
 callSign
 commandPrefix ;
 callSignGM 0
@@ -287,15 +287,15 @@ skillsAddAuto_list
 tankMode 0
 tankModeTarget
 
-teleportAuto_hp 20
+teleportAuto_hp 10
 teleportAuto_sp 0
 teleportAuto_idle 0
 teleportAuto_portal 0
 teleportAuto_search 0
-teleportAuto_minAggressives 5
+teleportAuto_minAggressives 8
 teleportAuto_minAggressivesInLock 8
 teleportAuto_onlyWhenSafe 1
-teleportAuto_maxDmg 1000
+teleportAuto_maxDmg 2000
 teleportAuto_maxDmgInLock 0
 teleportAuto_deadly 0
 teleportAuto_useSkill 0
@@ -476,7 +476,7 @@ mercenary_tankMode 0
 mercenary_tankModeTarget
 
 mercenary_teleportAuto_hp 5
-mercenary_teleportAuto_maxDmg 1000
+mercenary_teleportAuto_maxDmg 2000
 mercenary_teleportAuto_maxDmgInLock 0
 mercenary_teleportAuto_deadly 0
 mercenary_teleportAuto_unstuck 0
@@ -548,7 +548,7 @@ homunculus_tankModeTarget
 
 homunculus_StandByAuto 0
 homunculus_teleportAuto_hp 5
-homunculus_teleportAuto_maxDmg 1000
+homunculus_teleportAuto_maxDmg 2000
 homunculus_teleportAuto_maxDmgInLock 0
 homunculus_teleportAuto_deadly 0
 homunculus_teleportAuto_unstuck 0
