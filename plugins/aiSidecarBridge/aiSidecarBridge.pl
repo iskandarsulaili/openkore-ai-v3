@@ -2880,7 +2880,7 @@ sub _rewrite_runtime_command {
 		my $_last_same_type = $_committed_actions{$_action_type} || 0;
 		warning "[guard] type=$_action_type target=$_action_target last=$_last_same_type\n", 'aiSidecarBridge', 1;
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
-			debug "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
+			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
 		}
 		$_committed_actions{$_action_type} = $_now;
@@ -2897,7 +2897,7 @@ sub _rewrite_runtime_command {
 		my $_now = _now_ms();
 		my $_last_macro = $_last_reflex_fire_ms{"macro_$_potion_type"} || 0;
 		if ($_last_macro > 0 && ($_now - $_last_macro) < 300000) {
-			debug "[macro] emergency_${_potion_type}_potion on 5min cooldown, skipping\n", 'aiSidecarBridge', 1;
+			warning "[macro] emergency_${_potion_type}_potion on 5min cooldown, skipping\n", 'aiSidecarBridge', 1;
 			return ('', 'macro_potion_cooldown');
 		}
 		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
@@ -3045,7 +3045,7 @@ sub _rewrite_runtime_command {
 		}
 		my $cooldown_ms = ($total_potions == 0) ? 300000 : 30000;
 		if ($last_attempt > 0 && ($now_ms - $last_attempt) < $cooldown_ms) {
-			debug "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
+			warning "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_cooldown_$item_name");
 		}
 		my $found = 0;
@@ -3059,7 +3059,7 @@ sub _rewrite_runtime_command {
 		}
 		if (!$found) {
 			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
-			debug "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
+			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
 		my $ok = eval { Commands::run("is $item_name"); 1 };
