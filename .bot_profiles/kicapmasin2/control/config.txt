@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword buwuprea
+adminPassword sauwituc
 callSign
 commandPrefix ;
 callSignGM 0
@@ -78,7 +78,7 @@ attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
 attackDistance 7
 attackDistanceAuto 1
-attackMaxDistance 5
+attackMaxDistance 12
 attackMaxRouteTime 4
 attackMinPlayerDistance 2
 attackMinPortalDistance 4
@@ -209,8 +209,8 @@ itemsCheckWeight 1
 route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
-route_randomWalk 1
-route_randomWalk_inLockOnly 1
+route_randomWalk 2
+route_randomWalk_inLockOnly 0
 route_randomWalk_inTown 0
 route_randomWalk_maxRouteTime 75
 route_maxWarpFee
@@ -271,7 +271,7 @@ buyerShop_random 0
 sitAuto_follow 0
 sitAuto_over_50 0
 sitAuto_idle 0
-sitAuto_look
+sitAuto_look 0
 sitAuto_look_from_wall
 sitAuto_look_delay
 sitTensionRelax 0
@@ -287,13 +287,13 @@ skillsAddAuto_list
 tankMode 0
 tankModeTarget
 
-teleportAuto_hp 15
+teleportAuto_hp 30
 teleportAuto_sp 0
 teleportAuto_idle 0
 teleportAuto_portal 0
 teleportAuto_search 0
-teleportAuto_minAggressives 1
-teleportAuto_minAggressivesInLock 3
+teleportAuto_minAggressives 5
+teleportAuto_minAggressivesInLock 8
 teleportAuto_onlyWhenSafe 1
 teleportAuto_maxDmg 9999
 teleportAuto_maxDmgInLock 0
@@ -884,11 +884,11 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto = 1
+sellAuto 0
 sellAuto_npc = prontera 126 76
 sellAuto_npc_steps = c r0 n
 sellAuto_standpoint
-sellAuto_distance = 5
+sellAuto_distance 25
 sellAuto_maxDistance 15
 sellAuto_npc = prontera 126 76
 
@@ -909,7 +909,7 @@ storageAuto_useItem 0
 storageAuto_useItem_item
 storageAuto_notAfterDeath
 relogAfterStorage 0
-minStorageZeny 50
+minStorageZeny 0
 
 npcTimeResponse
 npcWrongStepsMethod 0
@@ -1195,7 +1195,7 @@ itemsTakeAuto 2
 itemsTakeAuto_party 0
 itemsGatherAuto 2
 itemsGatherAuto_bag 4
-itemsMaxWeight 70
+itemsMaxWeight 89
 itemsMaxWeight_buyOrSell 49
 itemsMaxWeight_sellOrStore 49
 
@@ -1209,8 +1209,8 @@ sitAuto_hp_thread_maxDmg 99999
 sitAuto_maxDmg 99999
 
 # ── Attack config ──
-attackAuto 3
-attackAuto_inLockOnly 1
+attackAuto 2
+attackAuto_inLockOnly 0
 attackAuto_followTarget 0
 attackAuto_onlyWhenSafe 0
 attackAuto_noMove 0
@@ -1259,7 +1259,7 @@ buyAuto_Bow {
 }
 
 # Pro RO: Auto-sell junk items
-sellAuto = 1
+sellAuto 0
 sellAuto_npc = prontera 126 76
 sellAuto_npc_steps = c r0 n
-sellAuto_distance = 5
+sellAuto_distance 25
