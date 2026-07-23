@@ -640,10 +640,9 @@ class HeuristicService:
 
         # ── STATE: STATS ──
         if state == "STATS":
-            # Double-check stat_points from both current and last known values
+            # Check stat_points from signals
             _current_stat_points = signals.get("stat_points", 0) or 0
-            _last_stat_points = signals.get("_last_stat_points", 0) or 0
-            if _current_stat_points <= 0 and _last_stat_points <= 0:
+            if _current_stat_points <= 0:
                 # No stat points available - skip to next state
                 total_confidence = 0.50
                 top_domain = "progression"

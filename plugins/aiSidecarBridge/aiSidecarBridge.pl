@@ -389,9 +389,6 @@ sub on_mainLoop_post {
                         for (1..$_town_stat_points) {
                             eval { Commands::run('stat_add dex'); 1; };
                         }
-                    } else {
-                        # No stat points - log for debugging
-                        debug "[town_routine] no stat points available (status_points=$_town_stat_points)\n", 'aiSidecarBridge', 1;
                     }
                 }
             }
@@ -3536,6 +3533,12 @@ sub _rewrite_runtime_command {
 
 	# Handle 'stat_add' commands
 	if ($normalized =~ /^stat_add\s+(.+)$/) {
+		# Bridge-level guard: block stat_add if bot has 0 stat points
+		my $_stat_pts = $char ? ($char->{status_points} || 0) : 0;
+		if ($_stat_pts <= 0) {
+		    debug "[stat_guard] blocking stat_add - no stat points available\n", 'aiSidecarBridge', 1;
+		    return ('', 'stat_add_blocked_no_points');
+		}
 		$rewrite_kind = 'stat_add_rewritten';
 		return ($normalized, $rewrite_kind);
 	}
