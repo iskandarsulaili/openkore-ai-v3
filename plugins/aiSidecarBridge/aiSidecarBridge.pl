@@ -2955,8 +2955,8 @@ sub _rewrite_runtime_command {
 			$::config{attackAuto_inLockOnly} = 0;
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
-			# Force route recalc: toggle AI manual->auto
-			eval { require AI; AI::state(1); AI::state(2); 1; };
+			# Force route recalc: send move command to trigger route calculation
+			eval { Commands::run('move prt_fild00'); 1; };
 		}
 		return ('stand', 'ai_manual_to_sit');
 	}
