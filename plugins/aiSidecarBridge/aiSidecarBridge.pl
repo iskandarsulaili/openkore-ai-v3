@@ -320,7 +320,7 @@ sub on_mainLoop_post {
                     }
                     if (!$_tp_in_party) {
                         warning "[teamplay] leader creating party\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('party create'); 1; };
+                        eval { Commands::run('party create AI Team'); 1; };
                         eval { Commands::run('party share exp'); 1; };
                     }
                     # Always invite followers (no-op if already in party)
