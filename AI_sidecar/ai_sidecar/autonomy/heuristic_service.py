@@ -460,10 +460,12 @@ class HeuristicService:
             for stat_name, points in allocations:
                 # OpenKore's cmdStatAdd passes full args to cmdStats("st", "add <args>")
                 # cmdStats checks arg against "str|agi|int|vit|dex|luk" - amount breaks the match
-                # Send stat_add without amount (adds 1 point), call multiple times for more
-                for _ in range(min(points, 5)):  # Max 5 per cycle to avoid flooding
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"stat_add {stat_name}",
+                # Only generate stat_add if we have stat points to spend
+                if points > 0:
+                    # Send stat_add without amount (adds 1 point), call multiple times for more
+                    for _ in range(min(points, 5)):  # Max 5 per cycle to avoid flooding
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"stat_add {stat_name}",
                     confidence=0.95, domain="progression",
                     reason=f"Allocate 1 {stat_name.upper()} ({job_name} build: {_build_summary(job_name)})",
                 ))

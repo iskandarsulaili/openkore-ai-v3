@@ -283,6 +283,9 @@ sub on_mainLoop_post {
 			    $_pro_ro_respawn_ms = _now_ms();
 		}
 	}
+        # Override attack distances AFTER AI::CoreLogic auto-detection
+        $::config{'attackDistance'} = 7;
+        $::config{'attackMaxDistance'} = 12;
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -3125,6 +3128,12 @@ if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
     warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
     last;
 }
+					                    # Portal block: if bot is near a town portal, force it away
+					                    my $_pos = $char->{pos_to} || $char->{pos};
+					                    if ($_pos && $_pos->{x} >= 20 && $_pos->{x} <= 30 && $_pos->{y} >= 198 && $_pos->{y} <= 210) {
+					                        warning "[lockMap] near Prontera portal, moving away\n", 'aiSidecarBridge', 1;
+					                        Commands::run("move 50 200");
+					                    }
 					return ('ai auto', 'hunting_map_priority');
 				}
 			}
