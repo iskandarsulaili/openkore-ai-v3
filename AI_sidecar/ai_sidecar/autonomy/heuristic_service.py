@@ -379,542 +379,342 @@ class AdaptiveDataStore:
             entry["count"] += 1
             entry["last_price"] = price
 
-class HeuristicService:
-    """Produces heuristic actions from game state signals without calling LLM.
 
-    Uses AdaptiveDataStore to learn from outcomes and improve over time.
-    The confidence score determines whether the PDCA loop skips the LLM entirely.
-    Low confidence (< 0.7) means the LLM should make the decision instead.
+class HeuristicService:
+    """State-machine-based heuristic service.
+
+    Bot states:
+      TOWN: In town → sell junk, buy potions, buy weapon, job change
+      HUNTING: On hunting map → kill monsters, loot, level up
+      DEAD: Just respawned → sell junk, buy supplies, go back
+      SHOPPING: In town with supplies → buy potions, arrows, weapon
+      JOB_CHANGE: Ready to job change → walk to NPC, complete dialog
+      STUCK: No progress in 5min → lower confidence, let LLM handle
+
+    Each state generates specific actions. Confidence drops when stuck.
     """
 
     def __init__(self):
-        self._last_assessment: dict[str, HeuristicAssessment] = {}
         self._adaptive = AdaptiveDataStore()
-        self._domain_weights: dict[str, float] = {
-            "recovery": 0.15,
-            "grind": 0.30,
-            "economy": 0.25,
-            "quest": 0.10,
-            "exploration": 0.20,
-        }
-        # Track signals from previous cycle for feedback
-        self._prev_signals: dict[str, dict[str, Any]] = {}
+        self._last_assessment: dict[str, HeuristicAssessment] = {}
+        self._bot_state: dict[str, str] = {}  # bot_id -> state
+        self._state_since: dict[str, float] = {}  # bot_id -> timestamp
+        self._last_progress: dict[str, dict] = {}  # bot_id -> {exp, zeny, level, kills}
 
-    def set_domain_weights(self, weights: dict[str, float]) -> None:
-        self._domain_weights.update(weights)
-
-    def assess(self, signals: dict[str, Any]) -> HeuristicAssessment:
-        """Produce heuristic actions from game state signals.
-
-        Only emits commands that are valid OpenKore commands AND pass the bridge
-        policy allowlist (ai, move, macro, eventMacro, talknpc, take). For
-        complex scenarios (vendor routing, respawn logic, etc.), emits metadata
-        signals so the LLM conscious layer can generate proper action plans.
-        """
-        actions: list[HeuristicAction] = []
-        total_confidence = 0.0
-        weighted_domains: dict[str, float] = {}
-
-        # Enriched state signals (emergent discovery)
-        _enriched = signals.get("_enriched", None)
-
-        # ── Survival: Stay in town if critically low HP ──
-        hp_ratio = signals.get("hp_ratio", 1.0)
-        map_name = signals.get("map", "")
-        # Adaptive town check: use nearest town from NPC discovery
-        _nearest_town = "prontera"  # Default fallback
-        try:
-            from ai_sidecar.npc_discovery import get_nearest_town_for_map
-            _nearest_town = get_nearest_town_for_map(map_name) or "prontera"
-        except Exception:
-            pass
-        if hp_ratio < 0.3 and _nearest_town not in map_name:
-            actions.append(HeuristicAction(
-                kind="command", command="move prontera",
-                confidence=0.95, domain="survival",
-                reason=f"Critically low HP ({hp_ratio:.0%}) — retreat to Prontera to regen safely",
-            ))
-            weighted_domains["survival"] = 0.95
-            total_confidence = max(total_confidence, 0.95)
-
-        # ── Progression: Learn skills ──
-        skills = signals.get("skills", [])
-        base_level = signals.get("base_level", 1)
-        job_name = signals.get("job_name", "novice").lower()
+    def _get_state(self, signals: dict) -> str:
+        """Determine bot state from signals."""
+        bot_id = signals.get("bot_id", "default")
+        hp = signals.get("hp_ratio", 1.0)
+        sp = signals.get("sp_ratio", 1.0)
+        map_name = signals.get("map", "").lower()
         zeny = signals.get("zeny", 0)
-        inventory = signals.get("inventory_items", {})
+        weight = signals.get("weight_ratio", 0)
+        base_level = signals.get("base_level", 1)
+        job_level = signals.get("job_level", 1)
+        job_name = signals.get("job_name", "novice").lower()
         stat_points = signals.get("stat_points", 0)
         skill_points = signals.get("skill_points", 0)
-
-        # ── Class-aware cold start: Stat allocation ──
-        if stat_points > 0:
-            current_stats = {
-                "str": signals.get("str", 1),
-                "agi": signals.get("agi", 1),
-                "vit": signals.get("vit", 1),
-                "int": signals.get("int", 1),
-                "dex": signals.get("dex", 1),
-                "luk": signals.get("luk", 1),
-            }
-            allocations = _class_stat_allocation(job_name, current_stats, stat_points, self._adaptive)
-            for stat_name, points in allocations:
-                # OpenKore's cmdStatAdd passes full args to cmdStats("st", "add <args>")
-                # cmdStats checks arg against "str|agi|int|vit|dex|luk" - amount breaks the match
-                # Only generate stat_add if we have stat points to spend
-                if points > 0:
-                    # Send stat_add without amount (adds 1 point), call multiple times for more
-                    for _ in range(min(points, 5)):  # Max 5 per cycle to avoid flooding
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"stat_add {stat_name}",
-                    confidence=0.95, domain="progression",
-                    reason=f"Allocate 1 {stat_name.upper()} ({job_name} build: {_build_summary(job_name)})",
-                ))
-                weighted_domains["progression"] = 0.95
-                total_confidence = max(total_confidence, 0.95)
-
-        # ── Class-aware cold start: Skill training ──
-        if skill_points > 0:
-            skill_training = _class_skill_training(job_name, skills, skill_points, self._adaptive)
-            for skill_id, target_lv, desc in skill_training:
-                actions.append(HeuristicAction(
-                    kind="command", command=f"skills add {skill_id}",
-                    confidence=0.90, domain="progression",
-                    reason=f"Train {skill_id} ({desc}) for {job_name}",
-                ))
-                weighted_domains["progression"] = 0.90
-                total_confidence = max(total_confidence, 0.90)
-
-        # ── Class-aware cold start: Hunting ground routing ──
-        hunting_ground = _class_hunting_ground(job_name, base_level, map_name, self._adaptive)
-        if hunting_ground is not None:
-            target_map, map_desc = hunting_ground
-            actions.append(HeuristicAction(
-                kind="command", command=f"move {target_map}",
-                confidence=0.90, domain="exploration",
-                reason=f"Level {base_level} {job_name} → {target_map} ({map_desc})",
-            ))
-            weighted_domains["exploration"] = 0.90
-            total_confidence = max(total_confidence, 0.90)
-
-        # Learn Basic Skill if not known (fallback for non-class skills)
-        if "NV_BASIC" not in skills:
-            actions.append(HeuristicAction(
-                kind="command", command="skills add 1",
-                confidence=0.95, domain="progression",
-                reason="Learn Basic Skill to sit and regen",
-            ))
-            weighted_domains["progression"] = 0.95
-            total_confidence = max(total_confidence, 0.95)
-
-        # Learn First Aid if not known and Basic Skill is known
-        elif "NV_FIRSTAID" not in skills:
-            actions.append(HeuristicAction(
-                kind="command", command="skills add 2",
-                confidence=0.90, domain="progression",
-                reason="Learn First Aid for self-healing",
-            ))
-            weighted_domains["progression"] = 0.90
-            total_confidence = max(total_confidence, 0.90)
-
-        # ── Economy: Restock potions ──
-        has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
-        if not has_potion and zeny and zeny > 500 and signals.get("hp_ratio", 1.0) < 0.5:
-            actions.append(HeuristicAction(
-                kind="command", command="buy White Potion 30",
-                confidence=0.85, domain="economy",
-                reason="Restock healing potions (HP low, have zeny)",
-            ))
-            weighted_domains["economy"] = 0.85
-            total_confidence = max(total_confidence, 0.85)
-
-        # ── Economy: Sell junk when overweight ──
-        weight_ratio = signals.get("weight_ratio", 0.0)
-        if weight_ratio > 0.75:
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.70, domain="economy",
-                reason=f"Near encumbered ({weight_ratio:.0%}) — LLM should plan vendor sell route",
-                metadata={"needs_llm_vendor_route": True, "weight_ratio": weight_ratio},
-            ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.70)
-            total_confidence = max(total_confidence, 0.70)
-
-        # ── Map progression ──
-        if base_level >= 10 and "prt_fild08" in map_name:
-            actions.append(HeuristicAction(
-                kind="command", command="move prt_fild04",
-                confidence=0.60, domain="exploration",
-                reason=f"Level {base_level} — move to better farming map",
-            ))
-            weighted_domains["exploration"] = 0.60
-            total_confidence = max(total_confidence, 0.60)
-
-        # Check recovery signal
-        if signals.get("hp_ratio", 1.0) < 0.5:
-            hp = signals["hp_ratio"]
-            if hp < 0.2:
-                # Critical HP — switch to manual so reflex rules can handle healing
-                actions.append(HeuristicAction(
-                    kind="reflex_override", command="ai manual",
-                    confidence=0.95, domain="recovery",
-                    reason=f"Critical HP ({hp:.0%}) — reflex healing should trigger",
-                ))
-                weighted_domains["recovery"] = 0.95
-                total_confidence = max(total_confidence, 0.95)
-            elif hp < 0.5:
-                # Low HP — sit to recover
-                actions.append(HeuristicAction(
-                    kind="command", command="sit",
-                    confidence=0.75, domain="recovery",
-                    reason=f"Low HP ({hp:.0%})",
-                ))
-                weighted_domains["recovery"] = 0.75
-                total_confidence = max(total_confidence, 0.75)
-
-        # Check combat/aggro signal
-        hostiles = signals.get("nearby_hostiles", 0)
-        if hostiles > 0:
-            if hostiles <= 3:
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.65, domain="grind",
-                    reason=f"{hostiles} nearby hostiles (manageable)",
-                ))
-                weighted_domains["grind"] = 0.65
-                total_confidence = max(total_confidence, 0.65)
-            else:
-                # Overwhelming — manual + flee handled by reflex
-                actions.append(HeuristicAction(
-                    kind="command", command="ai manual",
-                    confidence=0.85, domain="recovery",
-                    reason=f"{hostiles} nearby hostiles (overwhelming) — reflex flee should trigger",
-                ))
-                weighted_domains["recovery"] = max(weighted_domains.get("recovery", 0), 0.85)
-                total_confidence = max(total_confidence, 0.85)
-
-        # Check known map signal
-        if signals.get("map_known", False):
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.55, domain="grind",
-                reason="Known map, resuming auto mode",
-            ))
-            weighted_domains["grind"] = max(weighted_domains.get("grind", 0), 0.55)
-            total_confidence = max(total_confidence, 0.55)
-
-        # Check weight/encumbrance — let LLM plan vendor routing
-        weight_ratio = signals.get("weight_ratio", 0)
-        if weight_ratio and weight_ratio > 0.8:
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.70, domain="economy",
-                reason=f"Near encumbered ({weight_ratio:.0%}) — LLM should plan vendor sell route",
-                metadata={"needs_llm_vendor_route": True, "weight_ratio": weight_ratio},
-            ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.70)
-            total_confidence = max(total_confidence, 0.70)
-
-        # Check recent death — let LLM handle respawn logic
-        if signals.get("recent_death", False):
-            actions.append(HeuristicAction(
-                kind="command", command="ai manual",
-                confidence=0.90, domain="recovery",
-                reason="Recent death detected — LLM should plan recovery",
-                metadata={"needs_llm_recovery": True},
-            ))
-            weighted_domains["recovery"] = max(weighted_domains.get("recovery", 0), 0.90)
-            total_confidence = max(total_confidence, 0.90)
-
-        # ── JOB CHANGE: if base_lv >= 10 and job_lv >= 10 and still Novice ──
-        job_level = signals.get("job_level", 0)
-        if base_level >= 10 and job_level >= 10 and "novice" in job_name:
-            # Route to job change NPC
-            npc_info = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
-            npc_map, npc_x, npc_y = npc_info
-            if _nearest_town not in map_name:
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move {_nearest_town}",
-                    confidence=0.98, domain="progression",
-                    reason=f"Level {base_level}/{job_level} Novice — walk to {_nearest_town} for job change",
-                ))
-                weighted_domains["progression"] = 0.98
-                total_confidence = max(total_confidence, 0.98)
-            else:
-                # Start job change dialog
-                actions.append(HeuristicAction(
-                    kind="command", command=f"talknpc {npc_x} {npc_y}",
-                    confidence=0.98, domain="progression",
-                    reason=f"Level {base_level}/{job_level} Novice — start job change at ({npc_x},{npc_y})",
-                ))
-                # Dialog responses: continue through intro, select job, confirm
-                actions.append(HeuristicAction(
-                    kind="command", command="talk continue",
-                    confidence=0.95, domain="progression",
-                    reason="Continue through job change NPC dialog",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talk resp 0",
-                    confidence=0.95, domain="progression",
-                    reason="Select first job option (Archer/Thief/Acolyte)",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talk resp 1",
-                    confidence=0.90, domain="progression",
-                    reason="Try second dialog option if first fails",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talk any",
-                    confidence=0.85, domain="progression",
-                    reason="Accept any dialog to complete job change",
-                ))
-                weighted_domains["progression"] = 0.98
-                total_confidence = max(total_confidence, 0.98)
-
-        # ── PARTY FORMATION (leader only): create party, invite siblings ──
-        bot_name = signals.get("bot_name", "")
-        is_leader = BOT_ROLES.get(bot_name, "") == "leader"
         in_party = signals.get("in_party", False)
-        if is_leader and not in_party:
-            actions.append(HeuristicAction(
-                kind="command", command="party create",
-                confidence=0.95, domain="social",
-                reason=f"Leader {bot_name} — create party for team play",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="party share exp",
-                confidence=0.95, domain="social",
-                reason="Share experience in party",
-            ))
-            weighted_domains["social"] = 0.95
-            total_confidence = max(total_confidence, 0.95)
+        inventory = signals.get("inventory_items", [])
+        skills = signals.get("skills", [])
 
-        # ── PARTY INVITE: leader invites known sibling bots ──
-        if is_leader and in_party:
-            siblings = signals.get("nearby_players", [])
-            party_members = signals.get("party_members", [])
-            for sib_name in ["kicapmasin2", "kicapmasin3"]:
-                if sib_name in siblings and sib_name not in party_members:
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"party invite {sib_name}",
-                        confidence=0.90, domain="social",
-                        reason=f"Invite {sib_name} to party",
-                    ))
-                    weighted_domains["social"] = 0.90
-                    total_confidence = max(total_confidence, 0.90)
+        # DEAD: HP == 0
+        if hp <= 0:
+            return "DEAD"
 
-        # ── FOLLOWER: follow leader's map ──
-        if not is_leader:
-            leader_map = signals.get("leader_map", "")
-            if leader_map and leader_map != map_name and _nearest_town not in map_name:
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move {leader_map}",
-                    confidence=0.85, domain="social",
-                    reason=f"Follower — move to leader's map ({leader_map})",
-                ))
-                weighted_domains["social"] = 0.85
-                total_confidence = max(total_confidence, 0.85)
+        # TOWN: In a town map
+        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
+                               "aldebaran", "comodo", "umbala", "niflheim",
+                               "rachel", "veins", "einbroch", "lighthalzen",
+                               "juno", "hugel", "yuno", "amatsu", "gonryun",
+                               "louyang", "ayothaya")
 
-        # ── ECONOMY: Walk to Prontera to sell/buy ──
-        if weight_ratio > 0.70 and _nearest_town not in map_name:
-            actions.append(HeuristicAction(
-                kind="command", command="move prontera",
-                confidence=0.90, domain="economy",
-                reason=f"Weight {weight_ratio:.0%} — return to Prontera to sell junk",
-            ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.90)
-            total_confidence = max(total_confidence, 0.90)
+        if is_town:
+            # JOB_CHANGE: Ready to change job
+            if base_level >= 10 and job_level >= 10 and job_name == "novice":
+                return "JOB_CHANGE"
+            # SHOPPING: Need to buy supplies
+            if zeny > 0 and weight < 50:
+                return "SHOPPING"
+            # TOWN: Default town state
+            return "TOWN"
 
-        # ── ECONOMY: Sell junk when in Prontera ──
-        if weight_ratio > 0.50 and _nearest_town in map_name:
+        # HUNTING: On a hunting map
+        is_hunting = "_fild" in map_name or "_field" in map_name or "_01" in map_name or "_02" in map_name
+        if is_hunting or not is_town:
+            return "HUNTING"
+
+        return "TOWN"
+
+    def _check_progress(self, signals: dict) -> bool:
+        """Check if bot made progress since last cycle."""
+        bot_id = signals.get("bot_id", "default")
+        last = self._last_progress.get(bot_id, {})
+        now = {
+            "exp": signals.get("exp", 0) or signals.get("base_exp", 0) or 0,
+            "zeny": signals.get("zeny", 0) or 0,
+            "level": signals.get("base_level", 1) or 1,
+            "kills": signals.get("kills", 0) or 0,
+        }
+        self._last_progress[bot_id] = now
+
+        if not last:
+            return True  # First cycle, assume progress
+
+        # Check if any metric improved
+        for key in ("exp", "zeny", "level", "kills"):
+            if now.get(key, 0) > last.get(key, 0):
+                return True
+        return False
+
+    def set_domain_weights(self, weights: dict) -> None:
+        """Set domain weights (kept for compatibility)."""
+        pass
+
+    def assess(self, signals: dict[str, Any]) -> HeuristicAssessment:
+        """Produce heuristic actions based on bot state."""
+        actions: list[HeuristicAction] = []
+        bot_id = signals.get("bot_id", "default")
+        state = self._get_state(signals)
+        prev_state = self._bot_state.get(bot_id, "UNKNOWN")
+
+        # Track state transitions
+        if state != prev_state:
+            self._bot_state[bot_id] = state
+            self._state_since[bot_id] = __import__("time").time()
+            logger.info(f"[heuristic] {bot_id} state: {prev_state} -> {state}")
+
+        # Check for stuck condition
+        made_progress = self._check_progress(signals)
+        state_duration = __import__("time").time() - self._state_since.get(bot_id, 0)
+        is_stuck = not made_progress and state_duration > 120  # 2min without progress
+
+        # Extract signals
+        hp = signals.get("hp_ratio", 1.0)
+        map_name = signals.get("map", "").lower()
+        zeny = signals.get("zeny", 0) or 0
+        weight = signals.get("weight_ratio", 0) or 0
+        base_level = signals.get("base_level", 1) or 1
+        job_level = signals.get("job_level", 1) or 1
+        job_name = signals.get("job_name", "novice").lower()
+        stat_points = signals.get("stat_points", 0) or 0
+        skill_points = signals.get("skill_points", 0) or 0
+        in_party = signals.get("in_party", False)
+        inventory = signals.get("inventory_items", [])
+        skills = signals.get("skills", [])
+        bot_name = signals.get("bot_name", bot_id)
+        horizon = signals.get("horizon", "short_term")
+
+        # ── STATE: DEAD ──
+        if state == "DEAD":
+            # Just respawn - let the bridge's death handler handle it
+            # The bridge will set respawn_ms and allow 15s economy window
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
-                confidence=0.90, domain="economy",
-                reason=f"Weight {weight_ratio:.0%} — in Prontera, LLM should plan sell route",
-                metadata={"needs_llm_vendor_route": True, "weight_ratio": weight_ratio},
+                confidence=0.95, domain="survival",
+                reason="Just respawned - re-enable AI",
             ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.90)
-            total_confidence = max(total_confidence, 0.90)
+            total_confidence = 0.95
+            top_domain = "survival"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
 
-        # ── ECONOMY: Buy potions when in Prontera ──
-        has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
-        if not has_potion and zeny and zeny > 50 and _nearest_town in map_name:
+        # ── STATE: JOB_CHANGE ──
+        if state == "JOB_CHANGE":
+            # Walk to job change NPC and complete dialog
+            # Archer Guild: (160, 191) in Prontera
+            # Thief Guild: (270, 220) in Prontera
+            # Acolyte Guild: (270, 220) in Prontera
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 126 76",
-                confidence=0.85, domain="economy",
-                reason=f"Restock potions at Prontera Potion Shop (126,76) (zeny={zeny})",
+                kind="command", command="move 160 191",
+                confidence=0.95, domain="progression",
+                reason=f"Level {base_level}/{job_level} Novice - walk to Archer Guild",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talk resp 0",
-                confidence=0.80, domain="economy",
-                reason="Select buy option at potion shop",
+                kind="command", command="talknpc 160 191",
+                confidence=0.90, domain="progression",
+                reason="Start job change dialog with Archer Guild NPC",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="talk continue",
-                confidence=0.80, domain="economy",
-                reason="Continue through potion shop dialog",
+                confidence=0.85, domain="progression",
+                reason="Continue through job change dialog",
             ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
-            total_confidence = max(total_confidence, 0.85)
-
-        # ── ECONOMY: Buy arrows for Archer when in Prontera ──
-        if "archer" in job_name and zeny > 10 and _nearest_town in map_name:
-            has_arrows = any("Arrow" in str(k) for k in inventory) if isinstance(inventory, list) else False
-            if not has_arrows:
-                # Use adaptive NPC discovery for weapon shop
-                _arrow_npc = self._adaptive.get_npc("weapon_shop", "prontera")
-                if _arrow_npc:
-                    _npc_cmd = f"talknpc {_arrow_npc[0]} {_arrow_npc[1]}"
-                else:
-                    _npc_cmd = "talknpc 160 133"  # Fallback
-                actions.append(HeuristicAction(
-                    kind="command", command=_npc_cmd,
-                    confidence=0.85, domain="economy",
-                    reason=f"Buy arrows at Prontera (zeny={zeny})",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talk resp 0",
-                    confidence=0.80, domain="economy",
-                    reason="Select buy option at weapon shop",
-                ))
-                weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
-                total_confidence = max(total_confidence, 0.85)
-
-        # ── ECONOMY: Buy weapon if none equipped ──
-        if zeny > 100 and _nearest_town in map_name:
-            has_weapon = any("Bow" in str(k) or "Knife" in str(k) or "Mace" in str(k) or "Sword" in str(k) or "Staff" in str(k) for k in inventory) if isinstance(inventory, list) else False
-            if not has_weapon:
-                # Use adaptive NPC discovery for weapon shop
-                _weapon_npc = self._adaptive.get_npc("weapon_shop", "prontera")
-                if _weapon_npc:
-                    _npc_cmd = f"talknpc {_weapon_npc[0]} {_weapon_npc[1]}"
-                else:
-                    _npc_cmd = "talknpc 160 133"  # Fallback
-                actions.append(HeuristicAction(
-                    kind="command", command=_npc_cmd,
-                    confidence=0.80, domain="economy",
-                    reason=f"Buy weapon at Prontera (zeny={zeny})",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talk resp 0",
-                    confidence=0.75, domain="economy",
-                    reason="Select buy option at weapon shop",
-                ))
-                weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
-                total_confidence = max(total_confidence, 0.80)
-
-        # ── FEEDBACK: Check if previous commands succeeded ──
-        # If stat_points > 0 and we already sent stat_add, something failed
-        if stat_points > 0 and signals.get("_last_stat_points", 0) == stat_points:
-            # stat_add didn't work - try with different syntax
             actions.append(HeuristicAction(
-                kind="command", command="stat_add dex",
-                confidence=0.70, domain="progression",
-                reason=f"stat_add failed, trying alternative syntax (st add)",
+                kind="command", command="talk resp 0",
+                confidence=0.80, domain="progression",
+                reason="Select first job option (Archer)",
             ))
-            weighted_domains["progression"] = max(weighted_domains.get("progression", 0), 0.70)
-            total_confidence = max(total_confidence, 0.70)
+            total_confidence = 0.90
+            top_domain = "progression"
 
-        # ── MAP PROGRESSION: move to better hunting grounds ──
-        hunting_ground = _class_hunting_ground(job_name, base_level, map_name)
-        if hunting_ground is not None:
-            target_map, map_desc = hunting_ground
-            # Only queue if not already on this map
-            if target_map not in map_name:
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: TOWN ──
+        if state == "TOWN":
+            # Sell junk items
+            if weight > 50:
                 actions.append(HeuristicAction(
-                    kind="command", command=f"move {target_map}",
-                    confidence=0.90, domain="exploration",
-                    reason=f"Level {base_level} {job_name} → {target_map} ({map_desc})",
+                    kind="command", command="ai auto",
+                    confidence=0.90, domain="economy",
+                    reason=f"Weight {weight:.0f}% - in Prontera, LLM should plan sell route",
                 ))
-                weighted_domains["exploration"] = 0.90
-                total_confidence = max(total_confidence, 0.90)
+            # Allocate stat points
+            if stat_points > 0:
+                # Determine which stat to raise based on class
+                stat_builds = {
+                    "novice": ["dex", "str", "agi", "vit"],
+                    "archer": ["dex", "agi", "str", "vit"],
+                    "thief": ["agi", "dex", "str", "vit"],
+                    "acolyte": ["int", "dex", "vit", "str"],
+                    "swordman": ["str", "vit", "dex", "agi"],
+                    "mage": ["int", "dex", "vit", "str"],
+                }
+                build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
+                for stat_name in build:
+                    if stat_points > 0:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"stat_add {stat_name}",
+                            confidence=0.95, domain="progression",
+                            reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
+                        ))
+                        stat_points -= 1
+            # Learn skills
+            if skill_points > 0:
+                if "NV_BASIC" not in skills:
+                    actions.append(HeuristicAction(
+                        kind="command", command="skills add 1",
+                        confidence=0.90, domain="progression",
+                        reason="Learn Basic Skill to sit and regen",
+                    ))
+                elif "NV_FIRSTAID" not in skills:
+                    actions.append(HeuristicAction(
+                        kind="command", command="skills add 2",
+                        confidence=0.85, domain="progression",
+                        reason="Learn First Aid for emergency healing",
+                    ))
+            # Party
+            if not in_party and bot_name == "kicapmasin":
+                actions.append(HeuristicAction(
+                    kind="command", command="party create",
+                    confidence=0.90, domain="social",
+                    reason="Leader - create party for team play",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="party share exp",
+                    confidence=0.85, domain="social",
+                    reason="Share experience in party",
+                ))
+            # Move to hunting map
+            actions.append(HeuristicAction(
+                kind="command", command="move prt_fild05",
+                confidence=0.80, domain="exploration",
+                reason=f"Level {base_level} - move to prt_fild05 for grinding",
+            ))
+            total_confidence = 0.90
+            top_domain = "progression"
 
-        # ── ADAPTIVE FEEDBACK: Record outcomes from previous cycle ──
-        bot_id = signals.get("bot_id", "default")
-        prev = self._prev_signals.get(bot_id, {})
-        if prev:
-            prev_map = prev.get("map", "")
-            prev_hp = prev.get("hp_ratio", 1.0)
-            curr_hp = signals.get("hp_ratio", 1.0)
-            curr_map = signals.get("map", "")
-            # Death detected: HP dropped to 0
-            if prev_hp > 0.3 and curr_hp == 0:
-                self._adaptive.record_death(prev_map, prev_hp)
-            # Map change: record visit
-            if prev_map and curr_map and prev_map != curr_map:
-                self._adaptive.record_visit(curr_map)
-            # Kill detected: exp gained
-            prev_exp = prev.get("_last_exp", 0)
-            curr_exp = signals.get("_last_exp", 0)
-            if curr_exp > prev_exp:
-                self._adaptive.record_kill(curr_map, curr_exp - prev_exp)
-        # Store current signals for next cycle
-        self._prev_signals[bot_id] = dict(signals)
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
 
-        # ── ADAPTIVE CONFIDENCE: Lower confidence for decisions that should be LLM-driven ──
-        # Map choice: low confidence if we have no data on this map
-        if hunting_ground is not None:
-            target_map = hunting_ground[0]
-            map_score = self._adaptive.get_map_score(target_map)
-            if map_score == 0:
-                # Unknown map - let LLM decide
-                for action in actions:
-                    if action.domain == "exploration":
-                        action.confidence = min(action.confidence, 0.5)
-                        total_confidence = max(total_confidence, 0.5)
+        # ── STATE: HUNTING ──
+        if state == "HUNTING":
+            # Ensure AI is in auto mode
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.95, domain="combat",
+                reason="Ensure AI is in auto mode for hunting",
+            ))
+            # Allocate stat points if available
+            if stat_points > 0:
+                stat_builds = {
+                    "novice": ["dex", "str", "agi", "vit"],
+                    "archer": ["dex", "agi", "str", "vit"],
+                    "thief": ["agi", "dex", "str", "vit"],
+                    "acolyte": ["int", "dex", "vit", "str"],
+                }
+                build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
+                for stat_name in build:
+                    if stat_points > 0:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"stat_add {stat_name}",
+                            confidence=0.95, domain="progression",
+                            reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
+                        ))
+                        stat_points -= 1
+            # Learn skills if available
+            if skill_points > 0:
+                if "NV_BASIC" not in skills:
+                    actions.append(HeuristicAction(
+                        kind="command", command="skills add 1",
+                        confidence=0.90, domain="progression",
+                        reason="Learn Basic Skill to sit and regen",
+                    ))
+            # If stuck, suggest moving to a different map
+            if is_stuck:
+                actions.append(HeuristicAction(
+                    kind="command", command="move prt_fild08",
+                    confidence=0.50, domain="exploration",
+                    reason=f"Stuck on {map_name} for {state_duration:.0f}s - try different map",
+                ))
+            total_confidence = 0.90
+            top_domain = "combat"
 
-        # Stat allocation: lower confidence if previous attempt failed
-        if stat_points > 0 and prev.get("stat_points", 0) == stat_points:
-            for action in actions:
-                if action.domain == "progression" and "stat_add" in action.command:
-                    action.confidence = min(action.confidence, 0.6)
-                    total_confidence = max(total_confidence, 0.6)
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
 
-        # Determine top domain
-        top_domain = "none"
-        if weighted_domains:
-            top_domain = str(max(weighted_domains, key=lambda k: float(weighted_domains.get(k, 0.0))))
+        # ── FALLBACK: Unknown state ──
+        actions.append(HeuristicAction(
+            kind="command", command="ai auto",
+            confidence=0.50, domain="survival",
+            reason=f"Unknown state '{state}' - fallback to auto",
+        ))
+        total_confidence = 0.50
+        top_domain = "survival"
 
         assessment = HeuristicAssessment(
-            horizon=signals.get("horizon", "short_term"),
-            actions=actions,
-            confidence=total_confidence,
-            actionable=len(actions) > 0,
-            top_domain=top_domain,
-            signals=dict(signals),
+            horizon=horizon, actions=actions, confidence=total_confidence,
+            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
         )
-        bot_id = signals.get("bot_id", "default")
         self._last_assessment[bot_id] = assessment
         return assessment
 
-    def confidence_for(self, horizon: str, signals: dict | None = None, bot_id: str = "default") -> float:
-        """Called by PDCA loop to check if heuristic can replace LLM for this horizon.
+    def confidence_for(self, horizon: str, signals: dict = None, bot_id: str = None) -> float:
+        """Return confidence for a given horizon."""
+        if signals:
+            state = self._get_state(signals)
+            # Lower confidence for stuck states (let LLM handle)
+            if state == "JOB_CHANGE":
+                return 0.90  # High confidence - job change is mechanical
+            if state == "DEAD":
+                return 0.50  # Low confidence - let LLM handle respawn strategy
+            if state == "TOWN":
+                return 0.85  # Medium-high - town actions are routine
+            if state == "HUNTING":
+                return 0.85  # Medium-high - hunting is routine
+            return 0.70
+        return 0.70
 
-        Returns the confidence from the last assessment for this bot_id.
-        """
-        if signals is not None:
-            sigs = dict(signals)
-            sigs.setdefault("bot_id", bot_id)
-            result = self.assess(sigs)
-            return result.confidence
-        last = self._last_assessment.get(bot_id) if hasattr(self, '_last_assessment') else None
-        if last is not None:
-            return last.confidence
-        return 0.0
-
-
-def _build_summary(job_name: str) -> str:
-    """Return a short stat build summary for a class."""
-    builds = {
-        "novice":    "DEX>STR>AGI>VIT",
-        "swordman":  "STR>VIT>DEX",
-        "mage":      "INT>DEX",
-        "archer":    "DEX>AGI",
-        "acolyte":   "INT>DEX",
-        "merchant":  "STR>VIT>DEX",
-        "thief":     "AGI>DEX",
-        "taekwon":   "STR>AGI",
-        "gunslinger":"DEX>AGI",
-        "ninja":     "INT>DEX",
-        "soul_linker":"INT>DEX",
-    }
-    return builds.get(job_name, "DEX>STR")
+    def _build_summary(self, assessment: HeuristicAssessment) -> str:
+        """Build a summary string from an assessment."""
+        if not assessment or not assessment.actions:
+            return "no heuristic actions"
+        parts = [f"{a.domain}:{a.command}" for a in assessment.actions[:5]]
+        return f"conf={assessment.confidence:.2f} " + " | ".join(parts)

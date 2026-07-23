@@ -3058,6 +3058,7 @@ sub _rewrite_runtime_command {
 					if ($_hp_ratio >= 0.20) {
 						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
 						$::config{"lockMap"} = $_actual_map;
+					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
 						$::config{"attackAuto_inLockOnly"} = 0;
 						$::config{"attackAuto"} = 3;
 						$::config{"sitAuto_hp_lower"} = 0;
@@ -3123,7 +3124,8 @@ sub _rewrite_runtime_command {
 # Starvation timer: if no exp gained in 5min, allow town move
 my $_starvation_ms = 300000;  # 5 minutes
 my $_last_exp_gain = $_last_reflex_fire_ms{'exp_gain'} || 0;
-if ($_last_exp_gain > 0 && _now_ms() - $_last_exp_gain > $_starvation_ms) {
+my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
+if ((_now_ms() - $_hunting_start > $_starvation_ms) && ($_last_exp_gain == 0 || _now_ms() - $_last_exp_gain > $_starvation_ms)) {
     warning "[lockMap] starvation detected - allowing town move for resupply\n", 'aiSidecarBridge', 1;
     last;  # Break out of the if block, allow the move
 }
@@ -3234,12 +3236,11 @@ if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
 		my $_skill_id = $2;
 		warning "[skills_add] rewriting skills_add $1 $2 -> skills add $_skill_id\n", 'aiSidecarBridge', 1;
 		$normalized = "skills add $_skill_id";
-		$rewrite_kind = 'skills_add_rewritten';
 		# $char->{skills} may be a hash or array depending on OpenKore version
 		my $has_skill_points = 0;
 		if ($char && $char->{skills} && ref($char->{skills}) eq 'ARRAY') {
 			for my $skill (@{$char->{skills}}) {
-				if ($skill && ref($skill) eq 'HASH' && $skill->{level} < $skill->{max} && $skill_points > 0) {
+				if ($skill && ref($skill) eq 'HASH' && $skill->{level} < $skill->{max} && $2 > 0) {
 					$has_skill_points = 1;
 					last;
 				}
