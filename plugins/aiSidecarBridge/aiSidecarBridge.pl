@@ -3263,6 +3263,8 @@ if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
 	}
 
 	
+	my $rewrite_kind = '';
+
 	# Handle 'attack_skill' -> rewrite to use_skill or ignore basic_attack
 	if ($normalized =~ /^attack_skill\s+(.+)$/) {
 		my $_skill_name = $1;
