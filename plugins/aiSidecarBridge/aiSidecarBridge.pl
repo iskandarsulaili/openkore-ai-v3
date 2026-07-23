@@ -342,18 +342,18 @@ sub on_mainLoop_post {
                     my $_town_weight_pct = $_town_weight_max > 0 ? $_town_weight / $_town_weight_max : 0;
                     if ($_town_weight_pct > 0.05) {
                         warning "[town_routine] weight=$_town_weight_pct, forcing sell\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('move 126 76'); 1; };
-                        eval { Commands::run('talknpc 126 76'); 1; };
-                        eval { Commands::run('talk resp 0'); 1; };
+                        eval { Commands::run('move 147 175'); 1; };
+                        eval { Commands::run('talknpc 147 175'); 1; };
+                        eval { Commands::run('sell'); 1; };
                         eval { Commands::run('talk any'); 1; };
                     }
                     # Force buy if zeny > 0
                     my $_town_zeny = $char->{zeny} || 0;
                     if ($_town_zeny > 0) {
                         warning "[town_routine] zeny=$_town_zeny, forcing buy\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('move 126 76'); 1; };
-                        eval { Commands::run('talknpc 126 76'); 1; };
-                        eval { Commands::run('talk resp 1'); 1; };
+                        eval { Commands::run('move 147 175'); 1; };
+                        eval { Commands::run('talknpc 147 175'); 1; };
+                        eval { Commands::run('store'); 1; };
                         my $_max_buy = int($_town_zeny / 50);
                         $_max_buy = 30 if $_max_buy > 30;
                         if ($_max_buy > 0) {
