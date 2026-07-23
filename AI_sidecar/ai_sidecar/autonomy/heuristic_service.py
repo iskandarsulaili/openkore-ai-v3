@@ -345,13 +345,21 @@ class AdaptiveDataStore:
                 score *= min(2.0, 1.0 + kill_rate * 0.5)
             return score
 
-    def get_best_map(self, candidates: list[str]) -> str | None:
+    def get_best_map(self, bot_id: str, base_level: int) -> str | None:
+        """Get the best hunting map for this bot's level from adaptive data."""
         with self._lock:
+            maps = self._data.get("map_performance", {})
+            if not maps:
+                return None
+            candidates = []
+            for map_name, perf in maps.items():
+                avg_level = perf.get("avg_level", base_level)
+                if abs(avg_level - base_level) <= 5:
+                    candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))
             if not candidates:
                 return None
-            scored = [(self.get_map_score(m), m) for m in candidates]
-            scored.sort(key=lambda x: x[0], reverse=True)
-            return scored[0][1]
+            candidates.sort(key=lambda x: x[1] / max(x[2], 1), reverse=True)
+            return candidates[0][0] if candidates else None
 
     def record_npc(self, service: str, map_name: str, x: int, y: int, name: str = "") -> None:
         with self._lock:
@@ -463,24 +471,6 @@ class HeuristicService:
             if now.get(key, 0) > last.get(key, 0):
                 return True
         return False
-
-    def get_best_map(self, bot_id: str, base_level: int) -> str | None:
-        """Get the best hunting map for this bot's level from adaptive data."""
-        with self._lock:
-            maps = self._data.get("map_performance", {})
-            if not maps:
-                return None
-            # Filter maps by level range
-            candidates = []
-            for map_name, perf in maps.items():
-                avg_level = perf.get("avg_level", base_level)
-                if abs(avg_level - base_level) <= 5:
-                    candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))
-            if not candidates:
-                return None
-            # Sort by kill/death ratio
-            candidates.sort(key=lambda x: x[1] / max(x[2], 1), reverse=True)
-            return candidates[0][0] if candidates else None
 
     def set_domain_weights(self, weights: dict) -> None:
         pass
