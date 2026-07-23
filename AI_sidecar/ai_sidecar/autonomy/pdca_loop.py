@@ -30,6 +30,7 @@ from ai_sidecar.fleet.swarm_ai import (
     FormationType, SkillCombo,
 )
 from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon, CrossHorizonSynergy
+from ai_sidecar.autonomy.committed_action_tracker import CommittedActionTracker
 from ai_sidecar.npc_discovery import NPCDiscoveryEngine
 from ai_sidecar.server_adaptation import ServerAdaptationEngine
 from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
@@ -2207,6 +2208,12 @@ class PDCALoop:
         if self._runtime is not None:
             try:
                 from ai_sidecar.config import settings as _settings
+                # Initialize committed action tracker if not present
+                _cat = getattr(self._runtime, "committed_action_tracker", None)
+                if _cat is None:
+                    _cat = CommittedActionTracker()
+                    self._runtime.committed_action_tracker = _cat
+                    logger.info("committed_action_tracker_initialized")
                 # Initialize hunting zone manager if not present
                 _hzm = getattr(self._runtime, "hunting_zone_manager", None)
                 if _hzm is None:
@@ -4791,9 +4798,15 @@ class PDCALoop:
                                         ))
                         except Exception:
                             pass
-                        _actions_queued_ge = _emit_game_engine_actions(
-                            self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
-                        )
+                        # COMMITTED ACTION GUARD: check if bot already has a committed move action
+                        _cat = getattr(self._runtime, "committed_action_tracker", None)
+                        if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
+                            _actions_queued_ge = 0
+                            logger.info("committed_action_guard: bot=%s has committed move, skipping game_engine_actions", _bid)
+                        else:
+                            _actions_queued_ge = _emit_game_engine_actions(
+                                self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
+                            )
                         _actions_queued_hs = 0
                         try:
                             if _hs is not None:
@@ -4803,9 +4816,15 @@ class PDCALoop:
                         _actions_queued_swarm = _emit_swarm_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
-                        _actions_queued_vendor = _emit_vendor_actions(
-                            self._runtime, horizon.value, bot_id=_bid
-                        )
+                        # COMMITTED ACTION GUARD: check if bot already has a committed move action
+                        _cat = getattr(self._runtime, "committed_action_tracker", None)
+                        if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
+                            _actions_queued_vendor = 0
+                            logger.info("committed_action_guard: bot=%s has committed move, skipping vendor_actions", _bid)
+                        else:
+                            _actions_queued_vendor = _emit_vendor_actions(
+                                self._runtime, horizon.value, bot_id=_bid
+                            )
                         _actions_queued_skill = _emit_skill_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
@@ -5094,12 +5113,23 @@ class PDCALoop:
                             pass
             except Exception:
                 pass
-            _fallback_ge = _emit_game_engine_actions(
-                self._runtime, horizon.value, bot_id=_bid, map_name=_fb_map_name
-            )
+            # COMMITTED ACTION GUARD: check if bot already has a committed move action
+            _cat = getattr(self._runtime, "committed_action_tracker", None)
+            if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
+                _fallback_ge = 0
+                logger.info("committed_action_guard_fallback: bot=%s has committed move, skipping game_engine_actions", _bid)
+            else:
+                _fallback_ge = _emit_game_engine_actions(
+                    self._runtime, horizon.value, bot_id=_bid, map_name=_fb_map_name
+                )
             _fallback_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_swarm = _emit_swarm_actions(self._runtime, horizon.value, bot_id=_bid)
-            _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_bid)
+            _cat = getattr(self._runtime, "committed_action_tracker", None)
+            if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
+                _fallback_vendor = 0
+                logger.info("committed_action_guard_fallback: bot=%s has committed move, skipping vendor_actions", _bid)
+            else:
+                _fallback_vendor = _emit_vendor_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_skill = _emit_skill_actions(self._runtime, horizon.value, bot_id=_bid)
             _fallback_combat = _emit_combat_actions(self._runtime, horizon.value, bot_id=_bid)
             
