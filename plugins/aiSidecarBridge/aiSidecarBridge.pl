@@ -308,6 +308,25 @@ sub on_mainLoop_post {
             eval { Commands::run('stand'); 1; };
         }
         
+        # ── FORCE HUNTING: if bot is in town and not in stay_in_town window, force move to portal ──
+        if ($char && $_pro_ro_stay_in_town_ms == 0) {
+            my $_fh_map = lc($char->{map} || '');
+            $_fh_map =~ s/\.gat$//;
+            if ($_fh_map eq 'prontera') {
+                my $_fh_now = _now_ms();
+                my $_fh_last = $_last_reflex_fire_ms{'force_hunting'} || 0;
+                if ($_fh_now - $_fh_last > 5000) {  # Every 5s
+                    $_last_reflex_fire_ms{'force_hunting'} = $_fh_now;
+                    warning "[force_hunting] bot in town, forcing move to portal\n", 'aiSidecarBridge', 1;
+                    $::config{lockMap} = 'prt_fild05';
+                    $_pro_ro_last_lock_set = 'prt_fild05';
+                    $_pro_ro_last_lock_ms = _now_ms();
+                    @::AI::ai_seq = ();
+                    eval { Commands::run('move 22 203'); 1; };
+                }
+            }
+        }
+        
         # ── FORCE PARTY JOIN: if kicapmasin3 not in party after 30s, force it ──
         if ($char && $::config{username} eq 'kicapmasin3') {
             my $_pj3_now = _now_ms();
@@ -420,7 +439,12 @@ sub on_mainLoop_post {
             @::AI::ai_seq = ();
             # Block vendor commands for 10s to prevent sidecar from sending bot back to NPC
             $_last_reflex_fire_ms{'block_vendor_until'} = _now_ms() + 10000;
-            eval { Commands::run('move 22 203'); 1; };  # Walk to Prontera portal
+            # Force move to portal - repeat every cycle until bot is on hunting map
+            my $_expired_map = lc($char->{map} || '');
+            $_expired_map =~ s/\.gat$//;
+            if ($_expired_map !~ /_fild/ && $_expired_map ne 'prt_fild05') {
+                eval { Commands::run('move 22 203'); 1; };  # Walk to Prontera portal
+            }
         }
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
