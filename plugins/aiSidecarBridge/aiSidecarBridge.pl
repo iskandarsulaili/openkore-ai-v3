@@ -1919,11 +1919,7 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
-		($success, $result_code, $msg) = (1, 'ok', 'blocked: macro potion cooldown');
-	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
-		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
-	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
-		($success, $result_code, $msg) = (1, 'ok', 'blocked: macro potion cooldown');
+		($success, $result_code, $msg) = (1, 'ok', 'blocked: potion cooldown');
 	} elsif ($rewrite_kind eq 'committed_action_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: conflicting action within cooldown');
 	} elsif ($rewrite_kind eq 'kafra_teleport_auto') {
@@ -2907,17 +2903,7 @@ sub _rewrite_runtime_command {
 		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
 	}
 
-	# MACRO POTION SPAM FIX: add 5-minute cooldown to emergency potion macros
-	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)_potion$/) {
-		my $_potion_type = $1;
-		my $_now = _now_ms();
-		my $_last_macro = $_last_reflex_fire_ms{"macro_$_potion_type"} || 0;
-		if ($_last_macro > 0 && ($_now - $_last_macro) < 300000) {
-			debug "[macro] emergency_${_potion_type}_potion on 5min cooldown, skipping\n", 'aiSidecarBridge', 1;
-			return ('', 'macro_potion_cooldown');
-		}
-		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
-	}
+
 
 	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
 	# OpenKore regenerates portalsLOS.txt at runtime, so stale entries keep reappearing
@@ -2925,29 +2911,6 @@ sub _rewrite_runtime_command {
 		my $_npc_x = $1;
 		my $_npc_y = $2;
 		# Known stale NPC coordinates in Prontera (no NPC exists at these locations)
-		if (($_npc_x == 156 && $_npc_y == 229) ||
-		    ($_npc_x == 157 && ($_npc_y == 40 || $_npc_y == 38 || $_npc_y == 36))) {
-			debug "[stale_npc] blocking talknpc to ($_npc_x,$_npc_y) - known stale portal\n", 'aiSidecarBridge', 1;
-			return ('', 'stale_npc_blocked');
-		}
-	}
-
-	# MACRO POTION SPAM FIX: add 5-minute cooldown to emergency potion macros
-	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)_potion$/) {
-		my $_potion_type = $1;
-		my $_now = _now_ms();
-		my $_last_macro = $_last_reflex_fire_ms{"macro_$_potion_type"} || 0;
-		if ($_last_macro > 0 && ($_now - $_last_macro) < 300000) {
-			debug "[macro] emergency_${_potion_type}_potion on 5min cooldown, skipping\n", 'aiSidecarBridge', 1;
-			return ('', 'macro_potion_cooldown');
-		}
-		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
-	}
-
-	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
-	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)/) {
-		my $_npc_x = $1;
-		my $_npc_y = $2;
 		if (($_npc_x == 156 && $_npc_y == 229) ||
 		    ($_npc_x == 157 && ($_npc_y == 40 || $_npc_y == 38 || $_npc_y == 36))) {
 			debug "[stale_npc] blocking talknpc to ($_npc_x,$_npc_y) - known stale portal\n", 'aiSidecarBridge', 1;
