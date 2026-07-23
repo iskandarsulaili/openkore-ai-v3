@@ -3113,12 +3113,18 @@ sub _rewrite_runtime_command {
 					}
 					@::AI::ai_seq = ();
 					                    # Starvation timer: if no exp gained in 5min, allow town move
-					                    my $_starvation_ms = 300000;  # 5 minutes
-					                    my $_last_exp_gain = $_last_reflex_fire_ms{'exp_gain'} || 0;
-					                    if ($_last_exp_gain > 0 && _now_ms() - $_last_exp_gain > $_starvation_ms) {
-					                        warning "[lockMap] starvation detected - allowing town move for resupply\n", 'aiSidecarBridge', 1;
-					                        last;  # Break out of the if block, allow the move
-					                    }
+# Starvation timer: if no exp gained in 5min, allow town move
+my $_starvation_ms = 300000;  # 5 minutes
+my $_last_exp_gain = $_last_reflex_fire_ms{'exp_gain'} || 0;
+if ($_last_exp_gain > 0 && _now_ms() - $_last_exp_gain > $_starvation_ms) {
+    warning "[lockMap] starvation detected - allowing town move for resupply\n", 'aiSidecarBridge', 1;
+    last;  # Break out of the if block, allow the move
+}
+# Recently respawned: allow town move for 15s (economy window)
+if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
+    warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
+    last;
+}
 					return ('ai auto', 'hunting_map_priority');
 				}
 			}
@@ -3185,15 +3191,6 @@ sub _rewrite_runtime_command {
 		return ($trimmed, 'sit_allowed');
 	}
 
-	# Block teleport attempts to known-stale NPCs
-	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)/) {
-	    my $_tn_x = $1;
-	    my $_tn_y = $2;
-	    if (defined %stale_npcs && $stale_npcs{"$_tn_x,$_tn_y"}) {
-	        warning "[stale_npc] blocked teleport to ($_tn_x, $_tn_y)\n", 'aiSidecarBridge', 1;
-	        return ('', 'stale_npc_blocked');
-	    }
-	}
 	
 	# Handle 'teleport auto' -> rewrite to skill or ai auto
 	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
