@@ -326,7 +326,11 @@ sub on_mainLoop_post {
 	# ── Default survival auto-grind loop (bottom-up fallback) ──
 	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
 		_apply_bot_config();
+		_discover_shops();
+		_discover_portals();
+	_send_discovery_data();
 		_survival_check();
+		_teamplay_check();
 
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
@@ -4316,17 +4320,208 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	}
 }
 
+1;
+sub _discover_shops {
+	my $now = _now_ms();
+	state $_last_ss = 0;
+	return if $now - $_last_ss < 3600000;
+	$_last_ss = $now;
+	# Stub — will be populated with actual NPC data from observed shops
+	_post_event({ kind => 'discovery_shops', shops => [] });
+}
+
+sub _discover_portals {
+	my $now = _now_ms();
+	state $_last_ps = 0;
+	return if $now - $_last_ps < 3600000;
+	$_last_ps = $now;
+	my %conn;
+	my $pf = ($::Settings->{tablesPath} || 'tables') . '/portals.txt';
+	if (open(my $fh, '<', $pf)) {
+	    while (my $ln = <$fh>) {
+	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
+	        my @p = split(/\s+/, $ln); next if @p < 6;
+	        $conn{$p[0]}{$p[3]} = 1; $conn{$p[3]}{$p[0]} = 1;
+	    }
+	    close $fh;
+	}
+	if (keys %conn > 0) {
+	    _post_event({ kind => 'discovery_portals', connections => \%conn });
+	}
+}
+
+# ── Sync variants (call within same request cycle, no rate limit) ──
+sub _discover_shops_sync {
+	my @shops;
+	if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	    foreach my $_n (values %{$main::npcsList}) {
+	        next unless ref($_n) eq 'HASH' && $_n->{name} && $_n->{shop};
+	        push @shops, {
+	            name => $_n->{name}, map => $_n->{map} || '',
+	            x => $_n->{x} || 0, y => $_n->{y} || 0,
+	            shop => $_n->{shop},
+	        };
+	    }
+	}
+	return \@shops;
+}
+
+sub _discover_portals_sync {
+	my %conn;
+	my $pf = ($::Settings->{tablesPath} || 'tables') . '/portals.txt';
+	if (open(my $fh, '<', $pf)) {
+	    while (my $ln = <$fh>) {
+	        chomp $ln; next if $ln =~ /^#/ || $ln =~ /^\s*$/;
+	        my @p = split(/\s+/, $ln); next if @p < 6;
+	        $conn{$p[0]}{$p[3]} = 1; $conn{$p[3]}{$p[0]} = 1;
+	    }
+	    close $fh;
+	}
+	return \%conn;
+}
+
+# ── Safe inventory list ──
+sub _safe_inventory_list {
+	my $cr = _safe_char();
+	return [] if !$cr || !$cr->{inventory};
+	my @items;
+	foreach my $_i (@{$cr->{inventory}}) {
+	    next unless ref($_i) eq 'HASH';
+	    push @items, { name => $_i->{name} || '', amount => $_i->{amount} || 0 };
+	}
+	return \@items;
+}
 
 
 
-# ═══════════════════════════════════════════════════════════════
-# PRO RO PLAYER AUTOMATION MODULE
-# Handles job change, stat allocation, economy, map progression
-# Runs in the bridge main loop, no LLM required
-# ═══════════════════════════════════════════════════════════════
+# ── Table file reader (reads OpenKore tables as data source) ──
+sub _read_table_file {
+	my ($pattern) = @_;
+	my $tdir = $::Settings->{tablesPath} || './tables';
+	my $file = "$tdir/$pattern";
+	return [] unless -f $file;
+	open(my $fh, '<', $file) or return [];
+	my @lines;
+	while (my $line = <$fh>) {
+	    chomp $line;
+	    next if $line =~ /^#/ || $line =~ /^\s*$/;
+	    push @lines, $line;
+	}
+	close $fh;
+	return \@lines;
+}
 
-# ── State tracking ──
+# ── Send ALL table data to sidecar (source of truth) ──
+sub _send_discovery_data {
+	my $data = {
+	    npcs => _read_table_file('npcs.txt'),
+	    npc_shops => _read_table_file('npc_shops.txt'),
+	    portals => _read_table_file('portals.txt'),
+	    portal_commands => _read_table_file('portals_commands.txt'),
+	    portal_los => _read_table_file('portalsLOS.txt'),
+	    portal_spawns => _read_table_file('portals_spawns.txt'),
+	    cities => _read_table_file('cities.txt'),
+	    monsters => _read_table_file('monsters.txt'),
+	    monsters_table => _read_table_file('monsters_table.txt'),
+	    item_weights => _read_table_file('item_weights.txt'),
+	    job_change => _read_table_file('job_change_locations.txt'),
+	    skill_handle => _read_table_file('SKILL_id_handle.txt'),
+	    item_hand_types => _read_table_file('item_hand_type.txt'),
+	    no_teleport => _read_table_file('no_teleport_maps.txt'),
+	    elements => _read_table_file('elements.txt'),
+	};
+	_http_post_json('/discover/tables/ingest', {
+	    kind => 'discovery_all_tables',
+	    tables => $data,
+	    timestamp => _now_ms(),
+	});
+}
 
+# ── Apply ML overrides from source="ml" actions ──
+# ── Check pending ML execution outcomes (survival check) ──
+sub _check_ml_outcome {
+	my $bot_id = _bot_id();
+	return unless defined $ml_pending_outcome{$bot_id};
+
+	my $pending = $ml_pending_outcome{$bot_id};
+	my $current_hp = $char ? $char->{hp} : 0;
+	my $hp_max = $pending->{hp_max} || 1;
+	my $hp_ratio = $current_hp / $hp_max;
+	my $success = 1;
+
+	if ($current_hp <= 0) {
+		$success = 0;  # bot died
+	} elsif ($hp_ratio < 0.3) {
+		$success = 0;  # critically low HP
+	}
+
+	my $resp = _http_post_json('/v2/ml/outcome', {
+		bot_id => $bot_id,
+		family => $pending->{family},
+		success => ($success ? "yes" : "no"),
+	});
+	if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+		delete $ml_pending_outcome{$bot_id};
+		warning("[aiSidecarBridge] ml_outcome reported: family=$pending->{family} success=$success");
+	} else {
+		# Retry on next cycle — don't delete pending outcome
+		warning("[aiSidecarBridge] ml_outcome retry pending: family=$pending->{family}");
+	}
+}
+
+sub _apply_ml_override {
+	my ($override) = @_;
+	return unless defined $override && ref($override) eq 'HASH';
+
+	my $family = $override->{family} || '';
+	my $rec = $override->{recommendation} || {};
+
+	if ($family eq 'encounter_classifier' && defined $rec->{encounter_profile}) {
+		my $profile = lc($rec->{encounter_profile});
+		if ($profile eq 'aggressive') {
+			$::config{attackAuto} = 2;
+			$::config{autoMove} = 2;
+			$::config{attackDistance} = 5;
+			warning("ml_override applied: encounter_classifier=aggressive (attackAuto=2, autoMove=2)");
+		} elsif ($profile eq 'safe') {
+			$::config{attackAuto} = 1;
+			$::config{autoMove} = 0;
+			$::config{attackDistance} = 3;
+			warning("ml_override applied: encounter_classifier=safe (attackAuto=1, autoMove=0)");
+		} else {
+			$::config{attackAuto} = 2;
+			$::config{autoMove} = 1;
+			$::config{attackDistance} = 7;
+			warning("ml_override applied: encounter_classifier=balanced (attackAuto=2, autoMove=1)");
+		}
+	} elsif ($family eq 'route_recovery_classifier' && defined $rec->{stuck_strategy}) {
+		my $strategy = lc($rec->{stuck_strategy});
+		if ($strategy eq 'repath' || $strategy eq 'recalc') {
+			my $ok = eval { _toggle_ai_mode('manual'); 1; };
+			warning("ml_override applied: route_recovery=$strategy (ai toggled to manual for recalc)");
+		} elsif ($strategy eq 'teleport') {
+			my $skill = eval { $char->skills->get('AL_TELEPORT') } || eval { $char->skills->get('TF_TELEPORT') };
+			if ($skill) { eval { Commands::run("use_skill teleport"); 1; }; }
+			warning("ml_override applied: route_recovery=teleport");
+		} else {
+			warning("ml_override applied: route_recovery=$strategy (no specific handler)");
+		}
+	} elsif ($family eq 'loot_ranker' && defined $rec->{loot_item}) {
+		my $item = $rec->{loot_item};
+		warning("ml_override applied: loot_ranker=$item (logging only — item priority not implemented)");
+	} elsif ($family eq 'npc_dialogue_predictor' && defined $rec->{dialogue_branch}) {
+		my $branch = $rec->{dialogue_branch};
+		warning("ml_override applied: npc_dialogue=$branch (logging only)");
+	} elsif ($family eq 'risk_anomaly_detector' && defined $rec->{risk_label}) {
+		my $score = $rec->{risk_label};
+		warning("ml_override applied: risk_anomaly score=$score");
+	} elsif ($family eq 'memory_retrieval_ranker' && defined $rec->{memory_id}) {
+		my $mem_id = $rec->{memory_id};
+		warning("ml_override applied: memory_retrieval=$mem_id (logging only)");
+	} else {
+		warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
+	}
+}
 
 
 1;
