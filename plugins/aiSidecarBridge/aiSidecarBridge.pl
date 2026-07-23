@@ -4606,8 +4606,11 @@ sub _pro_ro_check_map_progression {
     }
     
     # Only change if different from current
-    # Don't re-set if already on this map
+    # Don't re-set if already on a hunting map (any _fild map is fine)
     my $_pro_ro_current_map = $cr->{map} || '';
+    if ($_pro_ro_current_map =~ /_fild/i) {
+        return;  # Already on a hunting map, no need to change
+    }
     if ($target_map ne '' && ($target_map ne $current_lock || $_pro_ro_current_map !~ /^$target_map/i)) {
         warning "[pro_ro] level $base_lv -> moving to $target_map\n", 'aiSidecarBridge', 1;
         $_pro_ro_last_lock_set = $target_map;
