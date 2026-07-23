@@ -2910,6 +2910,15 @@ sub _rewrite_runtime_command {
 	my $_action_type = q{};
 	my $_action_target = q{};
 	if ($normalized =~ /^move\s+(.+)$/) {
+		# If bot is in Prontera and target is prt_fild05, force portal walk
+		my $_move_target = $1;
+		my $_move_map = lc($char->{map} || '');
+		$_move_map =~ s/\.gat$//;
+		if ($_move_map eq 'prontera' && $_move_target eq 'prt_fild05') {
+		    $normalized = 'move 22 203';  # Portal to prt_fild05
+		    $rewrite_kind = 'coordinate_move_raw';
+		    return ($normalized, $rewrite_kind);
+		}
 		$_action_type = q{move};
 		$_action_target = $1;
 	} elsif ($normalized =~ /^set\s+lockmap\s+(.+)$/) {
@@ -2923,6 +2932,21 @@ sub _rewrite_runtime_command {
 		my $_now = _now_ms();
 		my $_last_same_type = $_committed_actions{"$_action_type:$_action_target"} || 0;
 		warning "[guard] type=$_action_type target=$_action_target last=$_last_same_type\n", 'aiSidecarBridge', 1;
+		# Block sit in town and on hunting maps (bot should never sit)
+		if ($_action_type eq 'sit') {
+		    my $_sit_map = lc($char->{map} || '');
+		    $_sit_map =~ s/\.gat$//;
+		    my @_blocked_maps = qw(prontera izlude morocc payon geffen aldebaran comodo);
+		    if (grep { $_sit_map eq $_ } @_blocked_maps) {
+		        warning "[sit_guard] blocking sit in town '$_sit_map'\n", 'aiSidecarBridge', 1;
+		        return ('', 'sit_blocked_town');
+		    }
+		    if ($_sit_map =~ /^[a-z]+_fild/ && _safe_hp_ratio() >= 0.01) {
+		        warning "[sit_guard] blocking sit on hunting map '$_sit_map'\n", 'aiSidecarBridge', 1;
+		        return ('', 'sit_blocked_hunting');
+		    }
+		}
+		
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
