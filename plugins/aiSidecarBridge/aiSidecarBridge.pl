@@ -1904,6 +1904,7 @@ sub _execute_action {
 			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
+		warning "[move] execute: $effective_command\n", 'aiSidecarBridge', 1;
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'chat_sent') {
