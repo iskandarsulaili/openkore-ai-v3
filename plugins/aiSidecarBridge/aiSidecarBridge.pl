@@ -3227,17 +3227,25 @@ sub _rewrite_runtime_command {
 					}
 					# RESPAWN ECONOMY WINDOW: recently respawned, allow town move
 					if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
-					    warning "[lockMap] recently respawned - allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
-					    $::config{lockMap} = $set_val;
-					    $_pro_ro_last_lock_set = $set_val;
-					    return ('', 'config_set_ok');
+					    # Only allow moves to TOWN, not to hunting maps
+					    my $_respawn_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+					    if ($_respawn_target_is_town) {
+					        warning "[lockMap] recently respawned - allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
+					        $::config{lockMap} = $set_val;
+					        $_pro_ro_last_lock_set = $set_val;
+					        return ('', 'config_set_ok');
+					    }
 					}
 					# STAY IN TOWN: if recently respawned, allow town move
 					if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
-					    warning "[lockMap] stay in town active, allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
-					    $::config{lockMap} = $set_val;
-					    $_pro_ro_last_lock_set = $set_val;
-					    return ('', 'config_set_ok');
+					    # Only allow moves to TOWN, not to hunting maps
+					    my $_stay_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+					    if ($_stay_target_is_town) {
+					        warning "[lockMap] stay in town active, allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
+					        $::config{lockMap} = $set_val;
+					        $_pro_ro_last_lock_set = $set_val;
+					        return ('', 'config_set_ok');
+					    }
 					}
 					# Allow retreat when HP < 60%
 					my $_hp_ratio = _safe_hp_ratio();
@@ -3314,8 +3322,12 @@ sub _rewrite_runtime_command {
 			}
 			# STAY IN TOWN: if recently respawned, allow town move
 			if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
-			    warning "[lockMap] stay in town active, allowing move to town '$target'\n", 'aiSidecarBridge', 1;
-			    return ($trimmed, 'coordinate_move_raw');
+			    # Only allow moves to TOWN, not to hunting maps
+			    my $_stay_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			    if ($_stay_target_is_town) {
+			        warning "[lockMap] stay in town active, allowing move to town '$target'\n", 'aiSidecarBridge', 1;
+			        return ($trimmed, 'coordinate_move_raw');
+			    }
 			}
 			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
 			my $_actual_map = $field ? $field->name() : '';
