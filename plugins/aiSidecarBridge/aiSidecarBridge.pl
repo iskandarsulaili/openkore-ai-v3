@@ -281,8 +281,41 @@ sub on_mainLoop_pre {
 
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
+	
+	# ── PREVENT SIT IN AI SEQUENCE: remove sit from AI sequence every cycle ──
+	if ($char) {
+	    # Remove sit from AI sequence before it executes
+	    @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
+	    # Override sitAuto config every cycle
+	    $::config{sitAuto_hp} = 0;
+	    $::config{sitAuto_hp_upper} = 0;
+	    $::config{sitAuto_sp} = 0;
+	    $::config{sitAuto_sp_upper} = 0;
+	    $::config{sitAuto_idle} = 0;
+	    $::config{sitAuto_over_50} = 0;
+	    # Force stand if sitting
+	    if ($char->{sitting}) {
+	        eval { Commands::run('stand'); 1; };
+	        eval { Commands::run('ai auto'); 1; };
+	    }
+	}
 }
 
+
+	# ── PREVENT SIT: remove sit from AI sequence every cycle ──
+	if ($char) {
+	    @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
+	    $::config{sitAuto_hp} = 0;
+	    $::config{sitAuto_hp_upper} = 0;
+	    $::config{sitAuto_sp} = 0;
+	    $::config{sitAuto_sp_upper} = 0;
+	    $::config{sitAuto_idle} = 0;
+	    $::config{sitAuto_over_50} = 0;
+	    if ($char->{sitting}) {
+	        eval { Commands::run('stand'); 1; };
+	        eval { Commands::run('ai auto'); 1; };
+	    }
+	}
 sub on_mainLoop_post {
 	# Death handler: re-apply Pro RO lockMap after respawn
 	if ($char && defined $char->{hp} && $char->{hp} == 0 && $_pro_ro_last_lock_set ne '') {
@@ -317,6 +350,20 @@ sub on_mainLoop_post {
             $::config{sitAuto_sp_upper} = 0;
             $::config{sitAuto_idle} = 0;
             $::config{sitAuto_over_50} = 0;
+            # Also clear sit from AI sequence if present
+            @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
+        }
+        
+        # ── PARTY FOLLOW OVERRIDE: ensure followers follow leader ──
+        if ($char && %::party && scalar(keys %::party) > 1) {
+            my $_fo_name = $::config{username} || '';
+            if ($_fo_name ne 'kicapmasin') {
+                # Follower: ensure follow is enabled
+                $::config{follow} = 1;
+                $::config{followTarget} = 'kicapmasin';
+                $::config{followDistanceMin} = 2;
+                $::config{followDistanceMax} = 4;
+            }
         }
         
         # ── FORCE STAND: counter any sit commands that slip through ──
@@ -382,6 +429,74 @@ sub on_mainLoop_post {
                         eval { Commands::run('stand'); 1; };
                     }
                     eval { Commands::run('party join 1'); 1; };
+                }
+            }
+        }
+        
+        # ── TEAM COORDINATION: regroup, personal errands, party synergy ──
+        if ($char) {
+            my $_tc_now = _now_ms();
+            my $_tc_name = $::config{username} || '';
+            
+            # ── REGROUP CHECK: if any bot is on a different map, regroup ──
+            # Leader checks if all party members are on the same map
+            if ($_tc_name eq 'kicapmasin' && $_tc_now - ($_last_reflex_fire_ms{'regroup_check'} || 0) > 15000) {
+                $_last_reflex_fire_ms{'regroup_check'} = $_tc_now;
+                my $_tc_my_map = lc($char->{map} || '');
+                $_tc_my_map =~ s/\.gat$//;
+                my @_tc_party_maps;
+                if (%::party) {
+                    for my $_pm_id (keys %::party) {
+                        my $_pm = $::party{$_pm_id};
+                        next unless ref($_pm) eq 'HASH';
+                        my $_pm_map = lc($_pm->{map} || '');
+                        $_pm_map =~ s/\.gat$//;
+                        push @_tc_party_maps, $_pm_map if $_pm_map;
+                    }
+                }
+                # If party members are on different maps, regroup
+                my $_tc_unique_maps = scalar(keys { map { $_ => 1 } @_tc_party_maps });
+                if ($_tc_unique_maps > 1) {
+                    warning "[team] party members on different maps, regrouping\n", 'aiSidecarBridge', 1;
+                    # Leader stays put, followers will come to leader via follow config
+                }
+            }
+            
+            # ── PERSONAL ERRANDS: when one bot needs to do something, all bots take a break ──
+            # Check if any bot is in town (doing errands)
+            if ($_tc_now - ($_last_reflex_fire_ms{'errand_check'} || 0) > 30000) {
+                $_last_reflex_fire_ms{'errand_check'} = $_tc_now;
+                my $_tc_my_map = lc($char->{map} || '');
+                $_tc_my_map =~ s/\.gat$//;
+                my @_tc_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
+                my $_tc_in_town = grep { $_tc_my_map eq $_ } @_tc_towns;
+                
+                if ($_tc_in_town) {
+                    # This bot is in town doing errands
+                    warning "[team] $_tc_name in town for errands\n", 'aiSidecarBridge', 1;
+                }
+            }
+            
+            # ── PARTY SYNERGY FARMING: bots spread out on the map ──
+            # Each bot targets different monster types for better party exp
+            if ($_tc_now - ($_last_reflex_fire_ms{'synergy_farm'} || 0) > 60000) {
+                $_last_reflex_fire_ms{'synergy_farm'} = $_tc_now;
+                my $_tc_my_map = lc($char->{map} || '');
+                $_tc_my_map =~ s/\.gat$//;
+                
+                # Only on hunting maps
+                if ($_tc_my_map =~ /_fild/) {
+                    # Each bot spreads out to different coordinates on the same map
+                    # This prevents them from clustering on the same monsters
+                    my %_tc_spawn_points = (
+                        'kicapmasin'  => 'move 22 203',  # Near portal (leader stays central)
+                        'kicapmasin2' => 'move 100 200', # East side
+                        'kicapmasin3' => 'move 300 100', # West side
+                    );
+                    if (exists $_tc_spawn_points{$_tc_name}) {
+                        warning "[team] $_tc_name spreading out for party synergy\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run($_tc_spawn_points{$_tc_name}); 1; };
+                    }
                 }
             }
         }
