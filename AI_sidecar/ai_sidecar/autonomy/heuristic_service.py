@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -148,15 +149,28 @@ def _class_stat_allocation(
     job_name: str,
     current_stats: dict[str, int],
     stat_points: int,
+    adaptive: AdaptiveDataStore | None = None,
 ) -> list[tuple[str, int]]:
     """Determine which stats to allocate for a given class.
 
+    Uses adaptive data if available, falls back to hardcoded defaults.
     Returns a list of (stat_name, points_to_add) tuples.
     """
     if stat_points <= 0:
         return []
 
-    build = CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"])
+    # Try adaptive build first
+    if adaptive:
+        adaptive_build = adaptive.stat_effectiveness.get(job_name, {})
+        if adaptive_build:
+            # Sort by effectiveness score
+            sorted_stats = sorted(adaptive_build.items(), key=lambda x: x[1], reverse=True)
+            build = [(stat, 99) for stat, _ in sorted_stats]  # Push to 99
+        else:
+            build = CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"])
+    else:
+        build = CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"])
+
     allocations: list[tuple[str, int]] = []
     remaining = stat_points
 
@@ -183,26 +197,40 @@ def _class_hunting_ground(
     job_name: str,
     base_level: int,
     current_map: str,
+    adaptive: AdaptiveDataStore | None = None,
 ) -> tuple[str, str] | None:
     """Find the best hunting ground for a class at a given level.
 
+    Uses adaptive data (kills, deaths, exp per visit) to rank maps.
+    Falls back to hardcoded defaults for unknown maps.
     Returns (map_name, description) or None if already on the best map.
     """
     grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
-    best: tuple[int, int, str, str] | None = None
 
+    # Score each candidate map using adaptive data
+    candidates = []
     for entry in grounds:
         min_lv, max_lv, map_name, desc = entry
         if min_lv <= base_level <= max_lv:
-            if best is None or min_lv > best[0]:
-                best = entry
+            if adaptive:
+                map_score = adaptive.get_map_score(map_name)
+                # Boost maps with good performance, penalize bad ones
+                if map_score > 0:
+                    candidates.append((map_score, entry))
+                else:
+                    candidates.append((0.5, entry))  # Default score for unknown maps
+            else:
+                candidates.append((0.5, entry))
 
-    if best is None:
+    if not candidates:
         # Fallback: pick the last entry (highest level range)
         if grounds:
-            best = grounds[-1]
+            candidates = [(0.5, grounds[-1])]
 
-    if best is not None:
+    if candidates:
+        # Sort by score descending
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        _, best = candidates[0]
         _, _, map_name, desc = best
         # Don't re-route if already on the correct map
         if current_map and map_name in current_map:
@@ -216,17 +244,40 @@ def _class_skill_training(
     job_name: str,
     known_skills: list[str],
     skill_points: int,
+    adaptive: AdaptiveDataStore | None = None,
 ) -> list[tuple[str, int, str]]:
     """Determine which skills to train next for a given class.
 
+    Uses adaptive data (usage frequency, effectiveness) to prioritize.
+    Falls back to hardcoded defaults.
     Returns a list of (skill_id, target_level, description) tuples.
     """
     if skill_points <= 0:
         return []
 
     priorities = CLASS_SKILL_PRIORITIES.get(job_name, CLASS_SKILL_PRIORITIES["novice"])
-    result: list[tuple[str, int, str]] = []
 
+    # Re-prioritize based on adaptive data
+    if adaptive and job_name in adaptive.skill_priority:
+        skill_usage = adaptive.skill_priority[job_name]
+        # Sort by usage frequency (most used = most important)
+        sorted_skills = sorted(skill_usage.items(), key=lambda x: x[1], reverse=True)
+        # Merge with hardcoded priorities: known used skills first, then hardcoded
+        used_skills = {s[0] for s in sorted_skills}
+        result: list[tuple[str, int, str]] = []
+        for skill_id, _ in sorted_skills:
+            if skill_id not in known_skills:
+                result.append((skill_id, 1, f"Adaptive: used {skill_usage[skill_id]:.0f}x"))
+                return result
+        # If all used skills are known, fall through to hardcoded
+        for skill_id, max_lv, desc in priorities:
+            if skill_id not in known_skills:
+                result.append((skill_id, 1, desc))
+                return result
+        return result
+
+    # Hardcoded fallback
+    result: list[tuple[str, int, str]] = []
     for skill_id, max_lv, desc in priorities:
         if skill_id not in known_skills:
             result.append((skill_id, 1, desc))
@@ -235,15 +286,112 @@ def _class_skill_training(
     return result
 
 
+class AdaptiveDataStore:
+    """Learns from outcomes and replaces hardcoded constants with adaptive data.
+
+    Tracks: map performance, stat build effectiveness, skill priority,
+    NPC locations, economy patterns. Improves over time based on actual results.
+    """
+
+    def __init__(self):
+        # Map performance: {map_name: {kills, deaths, exp_gained, visits, last_visit}}
+        self.map_performance: dict[str, dict[str, float]] = {}
+        # Stat build effectiveness: {job_name: {stat: avg_level_at_success}}
+        self.stat_effectiveness: dict[str, dict[str, float]] = {}
+        # Skill priority: {job_name: {skill_id: times_used, avg_damage}}
+        self.skill_priority: dict[str, dict[str, float]] = {}
+        # NPC discovery: {service_type: {map: [(x, y, name)]}}
+        self.npc_locations: dict[str, dict[str, list[tuple[int, int, str]]]] = {}
+        # Economy: {item_name: {avg_sell_price, times_sold, last_sold}}
+        self.economy_data: dict[str, dict[str, float]] = {}
+        # Death analysis: {map_name: {deaths, causes, avg_hp_at_death}}
+        self.death_analysis: dict[str, dict[str, Any]] = {}
+
+    def record_kill(self, map_name: str, exp_gained: float) -> None:
+        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+        self.map_performance[map_name]["kills"] += 1
+        self.map_performance[map_name]["exp"] += exp_gained
+        self.map_performance[map_name]["last_visit"] = __import__('time').time()
+
+    def record_death(self, map_name: str, hp_at_death: float = 0) -> None:
+        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+        self.map_performance[map_name]["deaths"] += 1
+        self.death_analysis.setdefault(map_name, {"deaths": 0, "causes": {}, "avg_hp": 0})
+        self.death_analysis[map_name]["deaths"] += 1
+        old_avg = self.death_analysis[map_name]["avg_hp"]
+        old_count = self.death_analysis[map_name]["deaths"] - 1
+        self.death_analysis[map_name]["avg_hp"] = (old_avg * old_count + hp_at_death) / self.death_analysis[map_name]["deaths"]
+
+    def record_visit(self, map_name: str) -> None:
+        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+        self.map_performance[map_name]["visits"] += 1
+        self.map_performance[map_name]["last_visit"] = __import__('time').time()
+
+    def get_map_score(self, map_name: str) -> float:
+        """Score a map based on actual performance. Higher = better."""
+        perf = self.map_performance.get(map_name, {})
+        kills = perf.get("kills", 0)
+        deaths = perf.get("deaths", 0)
+        exp = perf.get("exp", 0)
+        visits = perf.get("visits", 1)
+        if visits == 0:
+            return 0.0
+        kill_rate = kills / visits
+        death_rate = deaths / max(visits, 1)
+        exp_per_visit = exp / visits
+        # Score: exp per visit, penalized by deaths
+        score = exp_per_visit * 0.01
+        if death_rate > 0:
+            score *= max(0.1, 1.0 - death_rate * 2)
+        if kill_rate > 0:
+            score *= min(2.0, 1.0 + kill_rate * 0.5)
+        return score
+
+    def get_best_map(self, candidates: list[str]) -> str | None:
+        """Return the best map from candidates based on learned performance."""
+        if not candidates:
+            return None
+        scored = [(self.get_map_score(m), m) for m in candidates]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1]
+
+    def record_npc(self, service: str, map_name: str, x: int, y: int, name: str = "") -> None:
+        self.npc_locations.setdefault(service, {})
+        self.npc_locations[service].setdefault(map_name, [])
+        # Avoid duplicates
+        for existing in self.npc_locations[service][map_name]:
+            if existing[0] == x and existing[1] == y:
+                return
+        self.npc_locations[service][map_name].append((x, y, name))
+
+    def get_npc(self, service: str, map_name: str) -> tuple[int, int, str] | None:
+        """Get NPC coordinates for a service on a map."""
+        npcs = self.npc_locations.get(service, {}).get(map_name, [])
+        if npcs:
+            return npcs[0]
+        return None
+
+    def record_sale(self, item_name: str, price: float) -> None:
+        self.economy_data.setdefault(item_name, {"avg_price": 0, "count": 0, "last_price": 0})
+        entry = self.economy_data[item_name]
+        old_avg = entry["avg_price"]
+        old_count = entry["count"]
+        entry["avg_price"] = (old_avg * old_count + price) / (old_count + 1)
+        entry["count"] += 1
+        entry["last_price"] = price
+
+
 class HeuristicService:
     """Produces heuristic actions from game state signals without calling LLM.
 
-    Maps the existing decision_service opportunistic signals to executable actions.
+    Uses AdaptiveDataStore to learn from outcomes and improve over time.
     The confidence score determines whether the PDCA loop skips the LLM entirely.
+    Low confidence (< 0.7) means the LLM should make the decision instead.
     """
 
     def __init__(self):
         self._last_assessment: dict[str, HeuristicAssessment] = {}
+        self._adaptive = AdaptiveDataStore()
         self._domain_weights: dict[str, float] = {
             "recovery": 0.15,
             "grind": 0.30,
@@ -251,6 +399,8 @@ class HeuristicService:
             "quest": 0.10,
             "exploration": 0.20,
         }
+        # Track signals from previous cycle for feedback
+        self._prev_signals: dict[str, dict[str, Any]] = {}
 
     def set_domain_weights(self, weights: dict[str, float]) -> None:
         self._domain_weights.update(weights)
@@ -301,20 +451,20 @@ class HeuristicService:
                 "dex": signals.get("dex", 1),
                 "luk": signals.get("luk", 1),
             }
-            allocations = _class_stat_allocation(job_name, current_stats, stat_points)
+            allocations = _class_stat_allocation(job_name, current_stats, stat_points, self._adaptive)
             for stat_name, points in allocations:
                 # OpenKore expects lowercase stat names (str, agi, dex, etc.)
                 actions.append(HeuristicAction(
                     kind="command", command=f"stat_add {stat_name} {points}",
                     confidence=0.95, domain="progression",
-                    reason=f"Allocate {points} {stat_upper} ({job_name} build: {_build_summary(job_name)})",
+                    reason=f"Allocate {points} {stat_name.upper()} ({job_name} build: {_build_summary(job_name)})",
                 ))
                 weighted_domains["progression"] = 0.95
                 total_confidence = max(total_confidence, 0.95)
 
         # ── Class-aware cold start: Skill training ──
         if skill_points > 0:
-            skill_training = _class_skill_training(job_name, skills, skill_points)
+            skill_training = _class_skill_training(job_name, skills, skill_points, self._adaptive)
             for skill_id, target_lv, desc in skill_training:
                 actions.append(HeuristicAction(
                     kind="command", command=f"skills add {skill_id}",
@@ -325,7 +475,7 @@ class HeuristicService:
                 total_confidence = max(total_confidence, 0.90)
 
         # ── Class-aware cold start: Hunting ground routing ──
-        hunting_ground = _class_hunting_ground(job_name, base_level, map_name)
+        hunting_ground = _class_hunting_ground(job_name, base_level, map_name, self._adaptive)
         if hunting_ground is not None:
             target_map, map_desc = hunting_ground
             actions.append(HeuristicAction(
@@ -655,6 +805,47 @@ class HeuristicService:
                 ))
                 weighted_domains["exploration"] = 0.90
                 total_confidence = max(total_confidence, 0.90)
+
+        # ── ADAPTIVE FEEDBACK: Record outcomes from previous cycle ──
+        bot_id = signals.get("bot_id", "default")
+        prev = self._prev_signals.get(bot_id, {})
+        if prev:
+            prev_map = prev.get("map", "")
+            prev_hp = prev.get("hp_ratio", 1.0)
+            curr_hp = signals.get("hp_ratio", 1.0)
+            curr_map = signals.get("map", "")
+            # Death detected: HP dropped to 0
+            if prev_hp > 0.3 and curr_hp == 0:
+                self._adaptive.record_death(prev_map, prev_hp)
+            # Map change: record visit
+            if prev_map and curr_map and prev_map != curr_map:
+                self._adaptive.record_visit(curr_map)
+            # Kill detected: exp gained
+            prev_exp = prev.get("_last_exp", 0)
+            curr_exp = signals.get("_last_exp", 0)
+            if curr_exp > prev_exp:
+                self._adaptive.record_kill(curr_map, curr_exp - prev_exp)
+        # Store current signals for next cycle
+        self._prev_signals[bot_id] = dict(signals)
+
+        # ── ADAPTIVE CONFIDENCE: Lower confidence for decisions that should be LLM-driven ──
+        # Map choice: low confidence if we have no data on this map
+        if hunting_ground is not None:
+            target_map = hunting_ground[0]
+            map_score = self._adaptive.get_map_score(target_map)
+            if map_score == 0:
+                # Unknown map - let LLM decide
+                for action in actions:
+                    if action.domain == "exploration":
+                        action.confidence = min(action.confidence, 0.5)
+                        total_confidence = max(total_confidence, 0.5)
+
+        # Stat allocation: lower confidence if previous attempt failed
+        if stat_points > 0 and prev.get("stat_points", 0) == stat_points:
+            for action in actions:
+                if action.domain == "progression" and "stat_add" in action.command:
+                    action.confidence = min(action.confidence, 0.6)
+                    total_confidence = max(total_confidence, 0.6)
 
         # Determine top domain
         top_domain = "none"
