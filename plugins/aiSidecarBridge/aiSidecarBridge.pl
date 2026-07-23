@@ -2910,14 +2910,27 @@ sub _rewrite_runtime_command {
 	my $_action_type = q{};
 	my $_action_target = q{};
 	if ($normalized =~ /^move\s+(.+)$/) {
-		# If bot is in Prontera and target is prt_fild05, force portal walk
+		# If bot is in Prontera, use coordinate_move_raw for ALL moves
+		# (bypasses route calculation which times out in town)
 		my $_move_target = $1;
 		my $_move_map = lc($char->{map} || '');
 		$_move_map =~ s/\.gat$//;
-		if ($_move_map eq 'prontera' && $_move_target eq 'prt_fild05') {
-		    $normalized = 'move 22 203';  # Portal to prt_fild05
-		    $rewrite_kind = 'coordinate_move_raw';
-		    return ($normalized, $rewrite_kind);
+		if ($_move_map eq 'prontera') {
+		    # Convert map-name moves to direct coordinate moves
+		    # (bypasses route calculation which times out in town)
+		    my %_portal_coords = (
+		        'prt_fild05' => '22 203',
+		        'prt_fild08' => '22 203',
+		        'prt_fild00' => '22 203',
+		        'prt_fild01' => '22 203',
+		        'prt_fild04' => '22 203',
+		        'prontera'   => '156 196',
+		    );
+		    if (exists $_portal_coords{$_move_target}) {
+		        return ("move $_portal_coords{$_move_target}", 'coordinate_move_raw');
+		    }
+		    # For other targets, try direct coordinate move
+		    return ("move $_move_target", 'coordinate_move_raw');
 		}
 		$_action_type = q{move};
 		$_action_target = $1;
