@@ -147,11 +147,14 @@ class ProgressionDriver:
 
     def add_stat(self, bot_id: str, stat: str, points: int = 1) -> bool:
         """Queue a stat addition action."""
-        return self._queue(
-            bot_id=bot_id,
-            command=f"stat_add {stat} {points}",
-            conflict_key=f"stat_{bot_id}",
-        )
+        # Only queue stat_add if bot has stat points
+        if signals.get("stat_points", 0) > 0:
+            return self._queue(
+                bot_id=bot_id,
+                command=f"stat_add {stat}",
+                conflict_key=f"stat_{bot_id}",
+            )
+        return False
 
     def buy_item(self, bot_id: str, item: str, qty: int) -> bool:
         """Queue a buy action."""

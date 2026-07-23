@@ -62,7 +62,9 @@ def try_onboarding(runtime: Any, bot_id: str | None, snapshot: Any = None) -> in
     for _oa in _onb_actions:
         _act_type = _oa.get("action", "")
         if _act_type == "stat_add":
-            _cmd = f"stat_add {_oa.get('stat', 'str').lower()} {_oa.get('points', 1)}"
+            if _oa.get("stat_points", 0) <= 0:
+                return
+            _cmd = f"stat_add {_oa.get('stat', 'str').lower()}"
         elif _act_type == "skill_add":
             _cmd = f"skills add {_oa.get('skill_id', 'NV_BASIC')}"
         elif _act_type == "move":

@@ -184,7 +184,7 @@ MACRO_PATTERNS: dict[str, MacroPattern] = {
         pattern_id="auto_stat_alloc", category="quest",
         description="Allocate stat points when leveling up. Follows class archetype priorities.",
         triggers=[{"type": "progression.stat_points_available", "op": "gt", "value": 0}],
-        action_sequence=[MacroAction(command="stat_add str 1", description="Allocate stat point", timeout_seconds=1.0)],
+        action_sequence=[MacroAction(command="stat_add str", description="Allocate stat point", timeout_seconds=1.0)],
         cooldown_seconds=1.0,
     ),
 
