@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword sauwituc
+adminPassword lotebros
 callSign
 commandPrefix ;
 callSignGM 0
@@ -76,9 +76,9 @@ attackAuto_notWhile_sellAuto 1
 attackAuto_considerDamagedAggressive 0
 attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
-attackDistance 7
+attackDistance 1
 attackDistanceAuto 1
-attackMaxDistance 12
+attackMaxDistance 1
 attackMaxRouteTime 4
 attackMinPlayerDistance 2
 attackMinPortalDistance 4
@@ -210,7 +210,7 @@ route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
 route_randomWalk 2
-route_randomWalk_inLockOnly 0
+route_randomWalk_inLockOnly 1
 route_randomWalk_inTown 0
 route_randomWalk_maxRouteTime 75
 route_maxWarpFee
@@ -1185,7 +1185,7 @@ useSelf_item White Potion {
 
 # ── Auto-buy Healing Items ──
 
-lockMap
+lockMap prontera
 route_reAddMissingPortals 1
 
 

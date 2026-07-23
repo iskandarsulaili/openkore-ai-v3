@@ -4899,6 +4899,7 @@ class PDCALoop:
                                 if (_cr_job == 'novice' and _cr_jl >= 10) or (_cr_job in ('swordman','mage','archer','thief','acolyte','merchant') and _cr_jl >= 50):
                                     _cr_signals['job_change_available'] = True
                                 _cr_advice = _cr_pro.get_action(_cr_signals)
+                                _pro_inline_snap = None  # Initialize for scope safety
                                 if _cr_advice is not None:
                                     _cr_cmd = str(_cr_advice.get('command', '') or '')
                                     _cr_conf = float(_cr_advice.get('confidence', 0) or 0)

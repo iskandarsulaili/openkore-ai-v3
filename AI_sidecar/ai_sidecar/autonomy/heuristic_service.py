@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from pathlib import Path
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -287,99 +288,96 @@ def _class_skill_training(
 
 
 class AdaptiveDataStore:
-    """Learns from outcomes and replaces hardcoded constants with adaptive data.
+    """Thread-safe data store that learns from outcomes.
 
-    Tracks: map performance, stat build effectiveness, skill priority,
-    NPC locations, economy patterns. Improves over time based on actual results.
+    Tracks map performance, NPC locations, economy patterns.
+    All public methods use RLock for concurrent bot access.
     """
 
     def __init__(self):
-        # Map performance: {map_name: {kills, deaths, exp_gained, visits, last_visit}}
+        self._lock = threading.RLock()
         self.map_performance: dict[str, dict[str, float]] = {}
-        # Stat build effectiveness: {job_name: {stat: avg_level_at_success}}
         self.stat_effectiveness: dict[str, dict[str, float]] = {}
-        # Skill priority: {job_name: {skill_id: times_used, avg_damage}}
         self.skill_priority: dict[str, dict[str, float]] = {}
-        # NPC discovery: {service_type: {map: [(x, y, name)]}}
         self.npc_locations: dict[str, dict[str, list[tuple[int, int, str]]]] = {}
-        # Economy: {item_name: {avg_sell_price, times_sold, last_sold}}
         self.economy_data: dict[str, dict[str, float]] = {}
-        # Death analysis: {map_name: {deaths, causes, avg_hp_at_death}}
         self.death_analysis: dict[str, dict[str, Any]] = {}
 
     def record_kill(self, map_name: str, exp_gained: float) -> None:
-        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
-        self.map_performance[map_name]["kills"] += 1
-        self.map_performance[map_name]["exp"] += exp_gained
-        self.map_performance[map_name]["last_visit"] = __import__('time').time()
+        with self._lock:
+            self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+            self.map_performance[map_name]["kills"] += 1
+            self.map_performance[map_name]["exp"] += exp_gained
+            self.map_performance[map_name]["last_visit"] = __import__("time").time()
 
     def record_death(self, map_name: str, hp_at_death: float = 0) -> None:
-        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
-        self.map_performance[map_name]["deaths"] += 1
-        self.death_analysis.setdefault(map_name, {"deaths": 0, "causes": {}, "avg_hp": 0})
-        self.death_analysis[map_name]["deaths"] += 1
-        old_avg = self.death_analysis[map_name]["avg_hp"]
-        old_count = self.death_analysis[map_name]["deaths"] - 1
-        self.death_analysis[map_name]["avg_hp"] = (old_avg * old_count + hp_at_death) / self.death_analysis[map_name]["deaths"]
+        with self._lock:
+            self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+            self.map_performance[map_name]["deaths"] += 1
+            self.death_analysis.setdefault(map_name, {"deaths": 0, "causes": {}, "avg_hp": 0})
+            self.death_analysis[map_name]["deaths"] += 1
+            old_avg = self.death_analysis[map_name]["avg_hp"]
+            old_count = self.death_analysis[map_name]["deaths"] - 1
+            self.death_analysis[map_name]["avg_hp"] = (old_avg * old_count + hp_at_death) / max(self.death_analysis[map_name]["deaths"], 1)
 
     def record_visit(self, map_name: str) -> None:
-        self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
-        self.map_performance[map_name]["visits"] += 1
-        self.map_performance[map_name]["last_visit"] = __import__('time').time()
+        with self._lock:
+            self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
+            self.map_performance[map_name]["visits"] += 1
+            self.map_performance[map_name]["last_visit"] = __import__("time").time()
 
     def get_map_score(self, map_name: str) -> float:
-        """Score a map based on actual performance. Higher = better."""
-        perf = self.map_performance.get(map_name, {})
-        kills = perf.get("kills", 0)
-        deaths = perf.get("deaths", 0)
-        exp = perf.get("exp", 0)
-        visits = perf.get("visits", 1)
-        if visits == 0:
-            return 0.0
-        kill_rate = kills / visits
-        death_rate = deaths / max(visits, 1)
-        exp_per_visit = exp / visits
-        # Score: exp per visit, penalized by deaths
-        score = exp_per_visit * 0.01
-        if death_rate > 0:
-            score *= max(0.1, 1.0 - death_rate * 2)
-        if kill_rate > 0:
-            score *= min(2.0, 1.0 + kill_rate * 0.5)
-        return score
+        with self._lock:
+            perf = self.map_performance.get(map_name, {})
+            kills = perf.get("kills", 0)
+            deaths = perf.get("deaths", 0)
+            exp = perf.get("exp", 0)
+            visits = perf.get("visits", 1)
+            if visits == 0:
+                return 0.0
+            kill_rate = kills / visits
+            death_rate = deaths / max(visits, 1)
+            exp_per_visit = exp / visits
+            score = exp_per_visit * 0.01
+            if death_rate > 0:
+                score *= max(0.1, 1.0 - death_rate * 2)
+            if kill_rate > 0:
+                score *= min(2.0, 1.0 + kill_rate * 0.5)
+            return score
 
     def get_best_map(self, candidates: list[str]) -> str | None:
-        """Return the best map from candidates based on learned performance."""
-        if not candidates:
-            return None
-        scored = [(self.get_map_score(m), m) for m in candidates]
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return scored[0][1]
+        with self._lock:
+            if not candidates:
+                return None
+            scored = [(self.get_map_score(m), m) for m in candidates]
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return scored[0][1]
 
     def record_npc(self, service: str, map_name: str, x: int, y: int, name: str = "") -> None:
-        self.npc_locations.setdefault(service, {})
-        self.npc_locations[service].setdefault(map_name, [])
-        # Avoid duplicates
-        for existing in self.npc_locations[service][map_name]:
-            if existing[0] == x and existing[1] == y:
-                return
-        self.npc_locations[service][map_name].append((x, y, name))
+        with self._lock:
+            self.npc_locations.setdefault(service, {})
+            self.npc_locations[service].setdefault(map_name, [])
+            for existing in self.npc_locations[service][map_name]:
+                if existing[0] == x and existing[1] == y:
+                    return
+            self.npc_locations[service][map_name].append((x, y, name))
 
     def get_npc(self, service: str, map_name: str) -> tuple[int, int, str] | None:
-        """Get NPC coordinates for a service on a map."""
-        npcs = self.npc_locations.get(service, {}).get(map_name, [])
-        if npcs:
-            return npcs[0]
-        return None
+        with self._lock:
+            npcs = self.npc_locations.get(service, {}).get(map_name, [])
+            if npcs:
+                return npcs[0]
+            return None
 
     def record_sale(self, item_name: str, price: float) -> None:
-        self.economy_data.setdefault(item_name, {"avg_price": 0, "count": 0, "last_price": 0})
-        entry = self.economy_data[item_name]
-        old_avg = entry["avg_price"]
-        old_count = entry["count"]
-        entry["avg_price"] = (old_avg * old_count + price) / (old_count + 1)
-        entry["count"] += 1
-        entry["last_price"] = price
-
+        with self._lock:
+            self.economy_data.setdefault(item_name, {"avg_price": 0, "count": 0, "last_price": 0})
+            entry = self.economy_data[item_name]
+            old_avg = entry["avg_price"]
+            old_count = entry["count"]
+            entry["avg_price"] = (old_avg * old_count + price) / (old_count + 1)
+            entry["count"] += 1
+            entry["last_price"] = price
 
 class HeuristicService:
     """Produces heuristic actions from game state signals without calling LLM.
@@ -423,7 +421,14 @@ class HeuristicService:
         # ── Survival: Stay in town if critically low HP ──
         hp_ratio = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "")
-        if hp_ratio < 0.3 and "prontera" not in map_name:
+        # Adaptive town check: use nearest town from NPC discovery
+        _nearest_town = "prontera"  # Default fallback
+        try:
+            from ai_sidecar.npc_discovery import get_nearest_town_for_map
+            _nearest_town = get_nearest_town_for_map(map_name) or "prontera"
+        except Exception:
+            pass
+        if hp_ratio < 0.3 and _nearest_town not in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="move prontera",
                 confidence=0.95, domain="survival",
@@ -453,11 +458,14 @@ class HeuristicService:
             }
             allocations = _class_stat_allocation(job_name, current_stats, stat_points, self._adaptive)
             for stat_name, points in allocations:
-                # OpenKore expects lowercase stat names (str, agi, dex, etc.)
-                actions.append(HeuristicAction(
-                    kind="command", command=f"stat_add {stat_name} {points}",
+                # OpenKore's cmdStatAdd passes full args to cmdStats("st", "add <args>")
+                # cmdStats checks arg against "str|agi|int|vit|dex|luk" - amount breaks the match
+                # Send stat_add without amount (adds 1 point), call multiple times for more
+                for _ in range(min(points, 5)):  # Max 5 per cycle to avoid flooding
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"stat_add {stat_name}",
                     confidence=0.95, domain="progression",
-                    reason=f"Allocate {points} {stat_name.upper()} ({job_name} build: {_build_summary(job_name)})",
+                    reason=f"Allocate 1 {stat_name.upper()} ({job_name} build: {_build_summary(job_name)})",
                 ))
                 weighted_domains["progression"] = 0.95
                 total_confidence = max(total_confidence, 0.95)
@@ -621,11 +629,11 @@ class HeuristicService:
             # Route to job change NPC
             npc_info = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
             npc_map, npc_x, npc_y = npc_info
-            if "prontera" not in map_name:
+            if _nearest_town not in map_name:
                 actions.append(HeuristicAction(
-                    kind="command", command=f"move prontera",
+                    kind="command", command=f"move {_nearest_town}",
                     confidence=0.98, domain="progression",
-                    reason=f"Level {base_level}/{job_level} Novice — walk to Prontera for job change",
+                    reason=f"Level {base_level}/{job_level} Novice — walk to {_nearest_town} for job change",
                 ))
                 weighted_domains["progression"] = 0.98
                 total_confidence = max(total_confidence, 0.98)
@@ -695,7 +703,7 @@ class HeuristicService:
         # ── FOLLOWER: follow leader's map ──
         if not is_leader:
             leader_map = signals.get("leader_map", "")
-            if leader_map and leader_map != map_name and "prontera" not in map_name:
+            if leader_map and leader_map != map_name and _nearest_town not in map_name:
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {leader_map}",
                     confidence=0.85, domain="social",
@@ -705,7 +713,7 @@ class HeuristicService:
                 total_confidence = max(total_confidence, 0.85)
 
         # ── ECONOMY: Walk to Prontera to sell/buy ──
-        if weight_ratio > 0.70 and "prontera" not in map_name:
+        if weight_ratio > 0.70 and _nearest_town not in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="move prontera",
                 confidence=0.90, domain="economy",
@@ -715,7 +723,7 @@ class HeuristicService:
             total_confidence = max(total_confidence, 0.90)
 
         # ── ECONOMY: Sell junk when in Prontera ──
-        if weight_ratio > 0.50 and "prontera" in map_name:
+        if weight_ratio > 0.50 and _nearest_town in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.90, domain="economy",
@@ -727,7 +735,7 @@ class HeuristicService:
 
         # ── ECONOMY: Buy potions when in Prontera ──
         has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
-        if not has_potion and zeny and zeny > 50 and "prontera" in map_name:
+        if not has_potion and zeny and zeny > 50 and _nearest_town in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="talknpc 126 76",
                 confidence=0.85, domain="economy",
@@ -747,13 +755,19 @@ class HeuristicService:
             total_confidence = max(total_confidence, 0.85)
 
         # ── ECONOMY: Buy arrows for Archer when in Prontera ──
-        if "archer" in job_name and zeny > 10 and "prontera" in map_name:
+        if "archer" in job_name and zeny > 10 and _nearest_town in map_name:
             has_arrows = any("Arrow" in str(k) for k in inventory) if isinstance(inventory, list) else False
             if not has_arrows:
+                # Use adaptive NPC discovery for weapon shop
+                _arrow_npc = self._adaptive.get_npc("weapon_shop", "prontera")
+                if _arrow_npc:
+                    _npc_cmd = f"talknpc {_arrow_npc[0]} {_arrow_npc[1]}"
+                else:
+                    _npc_cmd = "talknpc 160 133"  # Fallback
                 actions.append(HeuristicAction(
-                    kind="command", command="talknpc 160 133",
+                    kind="command", command=_npc_cmd,
                     confidence=0.85, domain="economy",
-                    reason=f"Buy arrows at Prontera Weapon Shop (160,133) (zeny={zeny})",
+                    reason=f"Buy arrows at Prontera (zeny={zeny})",
                 ))
                 actions.append(HeuristicAction(
                     kind="command", command="talk resp 0",
@@ -764,13 +778,19 @@ class HeuristicService:
                 total_confidence = max(total_confidence, 0.85)
 
         # ── ECONOMY: Buy weapon if none equipped ──
-        if zeny > 100 and "prontera" in map_name:
+        if zeny > 100 and _nearest_town in map_name:
             has_weapon = any("Bow" in str(k) or "Knife" in str(k) or "Mace" in str(k) or "Sword" in str(k) or "Staff" in str(k) for k in inventory) if isinstance(inventory, list) else False
             if not has_weapon:
+                # Use adaptive NPC discovery for weapon shop
+                _weapon_npc = self._adaptive.get_npc("weapon_shop", "prontera")
+                if _weapon_npc:
+                    _npc_cmd = f"talknpc {_weapon_npc[0]} {_weapon_npc[1]}"
+                else:
+                    _npc_cmd = "talknpc 160 133"  # Fallback
                 actions.append(HeuristicAction(
-                    kind="command", command="talknpc 160 133",
+                    kind="command", command=_npc_cmd,
                     confidence=0.80, domain="economy",
-                    reason=f"Buy weapon at Prontera Weapon Shop (160,133) (zeny={zeny})",
+                    reason=f"Buy weapon at Prontera (zeny={zeny})",
                 ))
                 actions.append(HeuristicAction(
                     kind="command", command="talk resp 0",
@@ -785,7 +805,7 @@ class HeuristicService:
         if stat_points > 0 and signals.get("_last_stat_points", 0) == stat_points:
             # stat_add didn't work - try with different syntax
             actions.append(HeuristicAction(
-                kind="command", command="st add DEX 1",
+                kind="command", command="stat_add dex",
                 confidence=0.70, domain="progression",
                 reason=f"stat_add failed, trying alternative syntax (st add)",
             ))
