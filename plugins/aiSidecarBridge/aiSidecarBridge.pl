@@ -1934,6 +1934,9 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'ai_manual_to_sit') {
+	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
+	    # Suppressed - do nothing, bot stays in auto mode
+	    ($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'ai_manual_throttled') {
@@ -2877,6 +2880,14 @@ sub _rewrite_runtime_command {
 
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
+	# Fix stat_add: OpenKore expects uppercase stat names (DEX, AGI, STR, etc.)
+	if ($normalized =~ /^stat_add\s+/) {
+	    my @parts = split(/\s+/, $normalized, 3);
+	    if ($parts[1]) {
+	        $parts[1] = uc($parts[1]);
+	        $normalized = join(' ', @parts);
+	    }
+	}
 	$metadata = {} if ref($metadata) ne 'HASH';
 
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
@@ -2952,7 +2963,7 @@ sub _rewrite_runtime_command {
 		}
 		if ($_am_map =~ /^[a-z]+_fild/) {
 			warning "[ai_manual] on $_am_map -> sit\n", 'aiSidecarBridge', 1;
-			return ('sit', 'ai_manual_to_sit');
+			return ('', 'ai_manual_suppressed');
 		}
 		warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
 		my $_ab_last = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;

@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword swubajit
+adminPassword brigrouy
 callSign
 commandPrefix ;
 callSignGM 0
@@ -887,13 +887,13 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 1
-sellAuto_npc prontera 126 76_steps c r0 c
-sellAuto_npc_steps c r0 c
+sellAuto = 1
+sellAuto_npc = prontera 126 76
+sellAuto_npc_steps = c r0 n
 sellAuto_standpoint
-sellAuto_distance 5
+sellAuto_distance = 5
 sellAuto_maxDistance 15
-sellAuto_npc prontera 126 76_steps c r0 c
+sellAuto_npc = prontera 126 76
 
 storageAuto 0
 storageAuto_onStart 0
@@ -1233,32 +1233,32 @@ runFromTarget_dist 3
 
 # Pro RO: Auto-buy Red Potions
 buyAuto_Red_Potion {
-    npc = prontera 126 76
-    npc_steps = c r0 n
-    distance = 5
-    minAmount = 3
-    maxAmount = 10
-    price = 50
+	npc = prontera 126 76
+	npc_steps = c r0 n
+	distance = 5
+	minAmount = 3
+	maxAmount = 10
+	price = 50
 }
 
 # Pro RO: Auto-buy Arrows (for Archer)
 buyAuto_Arrow {
-    npc = prontera 160 133
-    npc_steps = c r0 n
-    distance = 5
-    minAmount = 50
-    maxAmount = 500
-    price = 2
+	npc = prontera 160 133
+	npc_steps = c r0 n
+	distance = 5
+	minAmount = 50
+	maxAmount = 500
+	price = 2
 }
 
 # Pro RO: Auto-buy Bow (for Archer)
 buyAuto_Bow {
-    npc = prontera 160 133
-    npc_steps = c r0 n
-    distance = 5
-    minAmount = 0
-    maxAmount = 1
-    price = 100
+	npc = prontera 160 133
+	npc_steps = c r0 n
+	distance = 5
+	minAmount = 0
+	maxAmount = 1
+	price = 100
 }
 
 # Pro RO: Auto-sell junk items

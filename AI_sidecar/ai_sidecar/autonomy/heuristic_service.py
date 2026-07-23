@@ -480,10 +480,32 @@ class HeuristicService:
                 weighted_domains["progression"] = 0.98
                 total_confidence = max(total_confidence, 0.98)
             else:
+                # Start job change dialog
                 actions.append(HeuristicAction(
                     kind="command", command=f"talknpc {npc_x} {npc_y}",
                     confidence=0.98, domain="progression",
                     reason=f"Level {base_level}/{job_level} Novice — start job change at ({npc_x},{npc_y})",
+                ))
+                # Dialog responses: continue through intro, select job, confirm
+                actions.append(HeuristicAction(
+                    kind="command", command="talk continue",
+                    confidence=0.95, domain="progression",
+                    reason="Continue through job change NPC dialog",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk resp 0",
+                    confidence=0.95, domain="progression",
+                    reason="Select first job option (Archer/Thief/Acolyte)",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk resp 1",
+                    confidence=0.90, domain="progression",
+                    reason="Try second dialog option if first fails",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk any",
+                    confidence=0.85, domain="progression",
+                    reason="Accept any dialog to complete job change",
                 ))
                 weighted_domains["progression"] = 0.98
                 total_confidence = max(total_confidence, 0.98)
@@ -532,38 +554,72 @@ class HeuristicService:
                 weighted_domains["social"] = 0.85
                 total_confidence = max(total_confidence, 0.85)
 
-        # ── ECONOMY: Sell junk when overweight ──
-        if weight_ratio > 0.70 and "prontera" in map_name:
+        # ── ECONOMY: Walk to Prontera to sell/buy ──
+        if weight_ratio > 0.70 and "prontera" not in map_name:
+            actions.append(HeuristicAction(
+                kind="command", command="move prontera",
+                confidence=0.90, domain="economy",
+                reason=f"Weight {weight_ratio:.0%} — return to Prontera to sell junk",
+            ))
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.90)
+            total_confidence = max(total_confidence, 0.90)
+
+        # ── ECONOMY: Sell junk when in Prontera ──
+        if weight_ratio > 0.50 and "prontera" in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="sell auto",
-                confidence=0.85, domain="economy",
-                reason=f"Weight {weight_ratio:.0%} — selling junk items",
+                confidence=0.90, domain="economy",
+                reason=f"Weight {weight_ratio:.0%} — selling junk items in Prontera",
             ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
-            total_confidence = max(total_confidence, 0.85)
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.90)
+            total_confidence = max(total_confidence, 0.90)
 
-        # ── ECONOMY: Buy potions when low ──
+        # ── ECONOMY: Buy potions when in Prontera ──
         has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
         if not has_potion and zeny and zeny > 50 and "prontera" in map_name:
             actions.append(HeuristicAction(
                 kind="command", command="autobuy",
-                confidence=0.80, domain="economy",
-                reason=f"Restock potions (zeny={zeny})",
+                confidence=0.85, domain="economy",
+                reason=f"Restock potions at Prontera shop (zeny={zeny})",
             ))
-            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
-            total_confidence = max(total_confidence, 0.80)
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
+            total_confidence = max(total_confidence, 0.85)
 
-        # ── ECONOMY: Buy arrows for Archer ──
+        # ── ECONOMY: Buy arrows for Archer when in Prontera ──
         if "archer" in job_name and zeny > 10 and "prontera" in map_name:
             has_arrows = any("Arrow" in str(k) for k in inventory) if isinstance(inventory, list) else False
             if not has_arrows:
                 actions.append(HeuristicAction(
                     kind="command", command="autobuy",
+                    confidence=0.85, domain="economy",
+                    reason=f"Buy arrows for Archer at Prontera (zeny={zeny})",
+                ))
+                weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
+                total_confidence = max(total_confidence, 0.85)
+
+        # ── ECONOMY: Buy weapon if none equipped ──
+        if zeny > 100 and "prontera" in map_name:
+            has_weapon = any("Bow" in str(k) or "Knife" in str(k) or "Mace" in str(k) or "Sword" in str(k) or "Staff" in str(k) for k in inventory) if isinstance(inventory, list) else False
+            if not has_weapon:
+                actions.append(HeuristicAction(
+                    kind="command", command="autobuy",
                     confidence=0.80, domain="economy",
-                    reason=f"Buy arrows for Archer (zeny={zeny})",
+                    reason=f"Buy weapon (zeny={zeny})",
                 ))
                 weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
                 total_confidence = max(total_confidence, 0.80)
+
+        # ── FEEDBACK: Check if previous commands succeeded ──
+        # If stat_points > 0 and we already sent stat_add, something failed
+        if stat_points > 0 and signals.get("_last_stat_points", 0) == stat_points:
+            # stat_add didn't work - try with different syntax
+            actions.append(HeuristicAction(
+                kind="command", command="st add DEX 1",
+                confidence=0.70, domain="progression",
+                reason=f"stat_add failed, trying alternative syntax (st add)",
+            ))
+            weighted_domains["progression"] = max(weighted_domains.get("progression", 0), 0.70)
+            total_confidence = max(total_confidence, 0.70)
 
         # ── MAP PROGRESSION: move to better hunting grounds ──
         hunting_ground = _class_hunting_ground(job_name, base_level, map_name)

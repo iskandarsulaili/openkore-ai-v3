@@ -238,6 +238,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = latest.get("party_members", []) or []
                         signals["nearby_players"] = latest.get("nearby_players", []) or []
                         signals["leader_map"] = str(latest.get("leader_map", "") or "")
+                        signals["_last_stat_points"] = int(prog.get("stat_points", 0) or 0)
                     else:
                         v = getattr(latest, "vitals", None) or {}
                         signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) or 1.0)
@@ -264,6 +265,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = getattr(latest, "party_members", []) or []
                         signals["nearby_players"] = getattr(latest, "nearby_players", []) or []
                         signals["leader_map"] = str(getattr(latest, "leader_map", "") or "")
+                        signals["_last_stat_points"] = int(getattr(prog, "stat_points", 0) or 0)
             except Exception:
                 pass
         assessment = hs.assess(signals)
