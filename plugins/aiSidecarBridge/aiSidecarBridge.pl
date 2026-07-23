@@ -3164,10 +3164,18 @@ sub _rewrite_runtime_command {
 					}
 					@::AI::ai_seq = ();
 					                    # Starvation timer: if no exp gained in 5min, allow town move
-# Resupply timer: if on hunting map for 5min, allow town move to sell/buy
+# Resupply timer: if on hunting map for 5min, force return to town
 my $_resupply_ms = 300000;  # 5 minutes
 my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
 if (_now_ms() - $_hunting_start > $_resupply_ms) {
+    # Force return to town - override lockMap stickiness
+    warning "[resupply] forcing return to Prontera to sell/buy\n", 'aiSidecarBridge', 1;
+    $::config{lockMap} = 'prontera';
+    $_pro_ro_last_lock_set = 'prontera';
+    $_pro_ro_respawn_ms = _now_ms();  # Reuse economy window
+    $_hunting_start = _now_ms();  # Reset timer
+    eval { Commands::run('move 156 196'); 1; };  # Force move to Prontera center
+    last;
     warning "[lockMap] resupply timer - allowing town move to sell/buy\n", 'aiSidecarBridge', 1;
     # Set lockMap to town so bot stays there to sell/buy
     $::config{lockMap} = 'prontera';
@@ -3255,6 +3263,122 @@ if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
 	}
 
 	
+	# Handle 'attack_skill' -> rewrite to use_skill or ignore basic_attack
+	if ($normalized =~ /^attack_skill\s+(.+)$/) {
+		my $_skill_name = $1;
+		if ($_skill_name eq 'basic_attack') {
+			# Basic attack is handled by auto-attack, no need to send command
+			return ('', 'attack_skill_basic_attack_ignored');
+		}
+		# Rewrite attack_skill <name> to use_skill <name>
+		$normalized = "use_skill $_skill_name";
+		$rewrite_kind = 'attack_skill_delegated';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle raw 'skill <name>' -> rewrite to 'use_skill <name>'
+	if ($normalized =~ /^skill\s+(.+)$/) {
+		my $_skill_name = $1;
+		$normalized = "use_skill $_skill_name";
+		$rewrite_kind = 'skill_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'party join <name>' -> rewrite to 'party join 1' (accept invite)
+	if ($normalized =~ /^party\s+join\s+(.+)$/) {
+		$normalized = 'party join 1';
+		$rewrite_kind = 'party_join_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'party invite <name>' -> rewrite to 'party invite <name>'
+	if ($normalized =~ /^party\s+invite\s+(.+)$/) {
+		$rewrite_kind = 'party_invite_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'party create' -> rewrite
+	if ($normalized eq 'party create') {
+		$rewrite_kind = 'party_create_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'party share exp' -> rewrite
+	if ($normalized eq 'party share exp' || $normalized eq 'party share') {
+		$normalized = 'party share exp';
+		$rewrite_kind = 'party_share_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'stand' -> always allow (prevents sitting)
+	if ($normalized eq 'stand') {
+		$rewrite_kind = 'stand_allowed';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'ai auto' -> rewrite
+	if ($normalized eq 'ai auto') {
+		$rewrite_kind = 'ai_auto_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'ai manual' -> rewrite
+	if ($normalized eq 'ai manual') {
+		$rewrite_kind = 'ai_manual_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'talknpc' commands
+	if ($normalized =~ /^talknpc\s+(.+)$/) {
+		$rewrite_kind = 'talknpc_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'talk' commands
+	if ($normalized =~ /^talk\s+(.+)$/) {
+		$rewrite_kind = 'talk_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'buy' commands
+	if ($normalized =~ /^buy\s+(.+)$/) {
+		$rewrite_kind = 'buy_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'sell' commands
+	if ($normalized =~ /^sell\s+(.+)$/) {
+		$rewrite_kind = 'sell_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'use_item' commands
+	if ($normalized =~ /^use_item\s+(.+)$/) {
+		$rewrite_kind = 'use_item_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'use_skill' commands
+	if ($normalized =~ /^use_skill\s+(.+)$/) {
+		$rewrite_kind = 'use_skill_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'skills add' commands
+	if ($normalized =~ /^skills?\s+add\s+(\d+)$/) {
+		$rewrite_kind = 'skills_add_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'stat_add' commands
+	if ($normalized =~ /^stat_add\s+(.+)$/) {
+		$rewrite_kind = 'stat_add_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
+
+	# Handle 'move' commands (already handled above in guard section)
+	# This is a fallthrough for commands that don't need special handling
+
 	# Handle 'teleport auto' -> rewrite to skill or ai auto
 	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
 		my $has_teleport = 0;

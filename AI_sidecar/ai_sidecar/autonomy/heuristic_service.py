@@ -431,9 +431,9 @@ class HeuristicService:
 
         if is_town:
             # Priority: SELL > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
-            if weight > 30 and zeny < 1000:
+            if weight > 5:
                 return "SELL"
-            if zeny > 100:
+            if zeny > 0:
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
                 return "JOB_CHANGE"
@@ -762,6 +762,26 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
+            # Check if it's time to return to town (every 10 minutes)
+            _hunt_start = self._state_since.get(bot_id, 0)
+            _hunt_duration = __import__("time").time() - _hunt_start
+            if _hunt_duration > 600:  # 10 minutes
+                # Force return to town to sell/buy/check job change
+                actions.append(HeuristicAction(
+                    kind="command", command="move prontera",
+                    confidence=0.95, domain="exploration",
+                    reason=f"Hunted for {_hunt_duration:.0f}s - return to town to sell/buy",
+                ))
+                self._state_since[bot_id] = __import__("time").time()  # Reset timer
+                total_confidence = 0.95
+                top_domain = "exploration"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
+            
             # Ensure AI is in auto mode and standing
             actions.append(HeuristicAction(
                 kind="command", command="stand",
