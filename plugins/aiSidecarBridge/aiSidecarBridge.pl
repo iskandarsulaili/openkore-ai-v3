@@ -337,10 +337,7 @@ sub on_mainLoop_post {
 			if ($char->{sitting}) {
 			    eval { Commands::run('stand'); 1; };
 			}
-			# Force party join for kicapmasin3
-			if ($::config{username} eq 'kicapmasin3') {
-			    eval { Commands::run('party join 1'); 1; };
-			}
+
 			# Trigger economy: walk to Tool Dealer
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
@@ -362,17 +359,7 @@ sub on_mainLoop_post {
             @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
         }
         
-        # ── PARTY FOLLOW OVERRIDE: ensure followers follow leader ──
-        if ($char && %::party && scalar(keys %::party) > 1) {
-            my $_fo_name = $::config{username} || '';
-            if ($_fo_name ne 'kicapmasin') {
-                # Follower: ensure follow is enabled
-                $::config{follow} = 1;
-                $::config{followTarget} = 'kicapmasin';
-                $::config{followDistanceMin} = 2;
-                $::config{followDistanceMax} = 4;
-            }
-        }
+
         
         # ── FORCE STAND: counter any sit commands that slip through ──
         if ($char && $char->{sitting}) {
@@ -390,241 +377,18 @@ sub on_mainLoop_post {
             $::config{sitAuto_idle} = 0;
             eval { Commands::run('stand'); 1; };
             eval { Commands::run('ai auto'); 1; };
-            # Force move to hunting map if in town
-            my $_fs_map = lc($char->{map} || '');
-            $_fs_map =~ s/\.gat$//;
-            if ($_fs_map eq 'prontera') {
-                $::config{lockMap} = 'prt_fild05';
-                $_pro_ro_last_lock_set = 'prt_fild05';
-                $_pro_ro_last_lock_ms = _now_ms();
-                eval { Commands::run('move 22 203'); 1; };
-            }
-        }
-        
-        # ── TOWN ECONOMY: sell junk and buy potions when in Prontera ──
-        if ($char) {
-            my $_te_map = lc($char->{map} || '');
-            $_te_map =~ s/\.gat$//;
-            if ($_te_map eq 'prontera') {
-                my $_te_now = _now_ms();
-                my $_te_last = $_last_reflex_fire_ms{'town_economy'} || 0;
-                if ($_te_now - $_te_last > 15000) {  # Every 15s
-                    $_last_reflex_fire_ms{'town_economy'} = $_te_now;
-                    my $_te_weight = $char->{weight} || 0;
-                    my $_te_weight_max = $char->{weight_max} || 10000;
-                    my $_te_weight_ratio = $_te_weight_max > 0 ? ($_te_weight / $_te_weight_max * 100) : 0;
-                    my $_te_zeny = $char->{zeny} || 0;
-                    
-                    # SELL: if weight > 5%, sell junk
-                    if ($_te_weight_ratio > 5) {
-                        warning "[economy] weight=$_te_weight_ratio% > 5%, selling junk\n", 'aiSidecarBridge', 1;
-                        # Use OpenKore's built-in sell command
-                        eval { Commands::run('sell auto'); 1; };
-                    }
-                    
-                    # BUY: if zeny > 0, buy potions
-                    if ($_te_zeny > 0) {
-                        warning "[economy] zeny=$_te_zeny, buying potions\n", 'aiSidecarBridge', 1;
-                        # Walk to Potion Shop
-                        eval { Commands::run('move 126 76'); 1; };
-                        # Buy red potions
-                        eval { Commands::run('buy 1 10'); 1; };  # Buy 10 red potions
-                    }
-                }
-            }
-        }
-        
-        # ── FORCE HUNTING: if bot is in town and not in stay_in_town window, force move to portal ──
-        if ($char && $_pro_ro_stay_in_town_ms == 0) {
-            my $_fh_map = lc($char->{map} || '');
-            $_fh_map =~ s/\.gat$//;
-            if ($_fh_map eq 'prontera') {
-                my $_fh_now = _now_ms();
-                my $_fh_last = $_last_reflex_fire_ms{'force_hunting'} || 0;
-                if ($_fh_now - $_fh_last > 5000) {  # Every 5s
-                    $_last_reflex_fire_ms{'force_hunting'} = $_fh_now;
-                    warning "[force_hunting] bot in town, forcing move to portal\n", 'aiSidecarBridge', 1;
-                    $::config{lockMap} = 'prt_fild05';
-                    $_pro_ro_last_lock_set = 'prt_fild05';
-                    $_pro_ro_last_lock_ms = _now_ms();
-                    @::AI::ai_seq = ();
-                    eval { Commands::run('move 22 203'); 1; };
-                }
-            }
-        }
-        
-        # ── FORCE PARTY INVITE: leader recreates party if needed, then invites kicapmasin3 ──
-        if ($char && $::config{username} eq 'kicapmasin') {
-            my $_pi_now = _now_ms();
-            my $_pi_last = $_last_reflex_fire_ms{'force_party_invite'} || 0;
-            if ($_pi_now - $_pi_last > 30000) {
-                $_last_reflex_fire_ms{'force_party_invite'} = $_pi_now;
-                # Check if kicapmasin3 is in party
-                my $_pi_k3_in_party = 0;
-                if (%::party) {
-                    for my $_pi_id (keys %::party) {
-                        my $_pi_member = $::party{$_pi_id};
-                        next unless ref($_pi_member) eq 'HASH';
-                        my $_pi_name = lc($_pi_member->{name} || '');
-                        if ($_pi_name eq 'kicapmasin3') {
-                            $_pi_k3_in_party = 1;
-                            last;
-                        }
-                    }
-                }
-                if (!$_pi_k3_in_party) {
-                    warning "[force_party] kicapmasin3 not in party, leader recreating party\n", 'aiSidecarBridge', 1;
-                    # First check if leader is in a party
-                    my $_pi_leader_in_party = 0;
-                    if (%::party && scalar(keys %::party) > 0) {
-                        $_pi_leader_in_party = 1;
-                    }
-                    if (!$_pi_leader_in_party) {
-                        # Leader not in party - create one
-                        eval { Commands::run('party create AI Team'); 1; };
-                        sleep(1);
-                    }
-                    # Now invite kicapmasin3
-                    eval { Commands::run('party invite kicapmasin3'); 1; };
-                }
-            }
-        }
-        
-        # ── FORCE PARTY JOIN: if kicapmasin3 not in party after 30s, force join ──
-        if ($char && $::config{username} eq 'kicapmasin3') {
-            my $_pj3_now = _now_ms();
-            my $_pj3_last = $_last_reflex_fire_ms{'force_party_join'} || 0;
-            if ($_pj3_now - $_pj3_last > 30000) {
-                $_last_reflex_fire_ms{'force_party_join'} = $_pj3_now;
-                my $_pj3_in_party = 0;
-                if ($char->{party} && ref($char->{party}) eq 'HASH' && scalar(keys %{$char->{party}}) > 0) {
-                    $_pj3_in_party = 1;
-                }
-                if (!$_pj3_in_party) {
-                    warning "[force_party] kicapmasin3 not in party, forcing join\n", 'aiSidecarBridge', 1;
-                    # Force stand first
-                    if ($char->{sitting}) {
-                        eval { Commands::run('stand'); 1; };
-                    }
-                    eval { Commands::run('party join 1'); 1; };
-                }
-            }
-        }
-        
-        # ── TEAM COORDINATION: regroup, personal errands, party synergy ──
-        if ($char) {
-            my $_tc_now = _now_ms();
-            my $_tc_name = $::config{username} || '';
-            
-            # ── REGROUP CHECK: if any bot is on a different map, regroup ──
-            # Leader checks if all party members are on the same map
-            if ($_tc_name eq 'kicapmasin' && $_tc_now - ($_last_reflex_fire_ms{'regroup_check'} || 0) > 15000) {
-                $_last_reflex_fire_ms{'regroup_check'} = $_tc_now;
-                my $_tc_my_map = lc($char->{map} || '');
-                $_tc_my_map =~ s/\.gat$//;
-                my @_tc_party_maps;
-                if (%::party) {
-                    for my $_pm_id (keys %::party) {
-                        my $_pm = $::party{$_pm_id};
-                        next unless ref($_pm) eq 'HASH';
-                        my $_pm_map = lc($_pm->{map} || '');
-                        $_pm_map =~ s/\.gat$//;
-                        push @_tc_party_maps, $_pm_map if $_pm_map;
-                    }
-                }
-                # If party members are on different maps, regroup
-                my $_tc_unique_maps = 0; my %_tc_map_count; for (@_tc_party_maps) { $_tc_map_count{$_}++ }; $_tc_unique_maps = scalar(keys %_tc_map_count);
-                if ($_tc_unique_maps > 1) {
-                    warning "[team] party members on different maps, regrouping\n", 'aiSidecarBridge', 1;
-                    # Leader stays put, followers will come to leader via follow config
-                }
-            }
-            
-            # ── PERSONAL ERRANDS: when one bot needs to do something, all bots take a break ──
-            # Check if any bot is in town (doing errands)
-            if ($_tc_now - ($_last_reflex_fire_ms{'errand_check'} || 0) > 30000) {
-                $_last_reflex_fire_ms{'errand_check'} = $_tc_now;
-                my $_tc_my_map = lc($char->{map} || '');
-                $_tc_my_map =~ s/\.gat$//;
-                my @_tc_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
-                my $_tc_in_town = grep { $_tc_my_map eq $_ } @_tc_towns;
-                
-                if ($_tc_in_town) {
-                    # This bot is in town doing errands
-                    warning "[team] $_tc_name in town for errands\n", 'aiSidecarBridge', 1;
-                }
-            }
-            
-            # ── PARTY SYNERGY FARMING: bots spread out on the map ──
-            # Each bot targets different monster types for better party exp
-            if ($_tc_now - ($_last_reflex_fire_ms{'synergy_farm'} || 0) > 60000) {
-                $_last_reflex_fire_ms{'synergy_farm'} = $_tc_now;
-                my $_tc_my_map = lc($char->{map} || '');
-                $_tc_my_map =~ s/\.gat$//;
-                
-                # Only on hunting maps
-                if ($_tc_my_map =~ /_fild/) {
-                    # Each bot spreads out to different coordinates on the same map
-                    # This prevents them from clustering on the same monsters
-                    my %_tc_spawn_points = (
-                        'kicapmasin'  => 'move 22 203',  # Near portal (leader stays central)
-                        'kicapmasin2' => 'move 100 200', # East side
-                        'kicapmasin3' => 'move 300 100', # West side
-                    );
-                    if (exists $_tc_spawn_points{$_tc_name}) {
-                        warning "[team] $_tc_name spreading out for party synergy\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run($_tc_spawn_points{$_tc_name}); 1; };
-                    }
-                }
-            }
-        }
-        
-        # ── TEAMPLAY ROUTINE: party formation, follow, healing ──
-        if ($char) {
-            my $_tp_now = _now_ms();
-            my $_tp_last = $_last_reflex_fire_ms{'teamplay'} || 0;
-            my $_tp_name = $::config{username} || '';
 
-            # Party healing (every 3s, support bot only)
-            if ($_tp_name eq 'kicapmasin3' && $_tp_now - ($_last_reflex_fire_ms{'party_heal'} || 0) > 3000) {
-                $_last_reflex_fire_ms{'party_heal'} = $_tp_now;
-                # Check party members' HP from global party object
-                if (%::party) {
-                    for my $_pm_id (keys %::party) {
-                        my $_pm = $::party{$_pm_id};
-                        next unless ref($_pm) eq 'HASH';
-                        my $_pm_hp = $_pm->{hp} || 0;
-                        my $_pm_hp_max = $_pm->{hp_max} || 1;
-                        my $_pm_ratio = $_pm_hp_max > 0 ? $_pm_hp / $_pm_hp_max : 0;
-                        if ($_pm_ratio > 0 && $_pm_ratio < 0.50) {
-                            warning "[teamplay] healing party member $_pm->{name} (HP=$_pm_ratio)\n", 'aiSidecarBridge', 1;
-                            eval { Commands::run("use_skill AL_HEAL"); 1; };
-                        }
-                    }
-                }
-            }
-            # Follow coordination: if follower is on different map than leader, move to leader
-            if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
-                my $_tp_leader_map = '';
-                if (%::party) {
-                    for my $_pm_id (keys %::party) {
-                        my $_pm = $::party{$_pm_id};
-                        next unless ref($_pm) eq 'HASH';
-                        if ($_pm->{name} && lc($_pm->{name}) eq 'kicapmasin') {
-                            $_tp_leader_map = $_pm->{map} || '';
-                            last;
-                        }
-                    }
-                }
-                my $_tp_my_map = $char->{map} || '';
-                if ($_tp_leader_map && $_tp_my_map && lc($_tp_leader_map) ne lc($_tp_my_map)) {
-                    warning "[teamplay] follower on $_tp_my_map, leader on $_tp_leader_map, moving to leader\n", 'aiSidecarBridge', 1;
-                    $::config{lockMap} = $_tp_leader_map;
-                    @::AI::ai_seq = ();
-                    eval { Commands::run("move $_tp_leader_map"); 1; };
-                }
-            }
         }
+        
+
+        
+
+        
+
+        
+
+        
+                }
         # ── MAP CHANGE DETECTION: detect when bot enters town ──
         if ($char) {
             my $_cur_map = lc($char->{map} || '');
@@ -655,27 +419,16 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── STAY IN TOWN EXPIRED: force bot to go hunting ──
+        # ── STAY IN TOWN EXPIRED: allow bot to go hunting ──
         if ($char && $_pro_ro_stay_in_town_ms > 0 && _now_ms() > $_pro_ro_stay_in_town_ms) {
-            warning "[stay_in_town] expired, forcing hunting map\n", 'aiSidecarBridge', 1;
+            warning "[stay_in_town] expired, allowing hunting\n", 'aiSidecarBridge', 1;
             $_pro_ro_stay_in_town_ms = 0;  # Clear the flag
             # Force stand first (bot might be sitting)
             if ($char->{sitting}) {
                 eval { Commands::run('stand'); 1; };
             }
-            # Force lockMap to a hunting map
-            $::config{lockMap} = 'prt_fild05';
-            $_pro_ro_last_lock_set = 'prt_fild05';
-            $_pro_ro_last_lock_ms = _now_ms();
+            # Clear stay_in_town - let sidecar decide where to go
             @::AI::ai_seq = ();
-            # Block vendor commands for 10s to prevent sidecar from sending bot back to NPC
-            $_last_reflex_fire_ms{'block_vendor_until'} = _now_ms() + 10000;
-            # Force move to portal - repeat every cycle until bot is on hunting map
-            my $_expired_map = lc($char->{map} || '');
-            $_expired_map =~ s/\.gat$//;
-            if ($_expired_map !~ /_fild/ && $_expired_map ne 'prt_fild05') {
-                eval { Commands::run('move 22 203'); 1; };  # Walk to Prontera portal
-            }
         }
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
@@ -790,7 +543,6 @@ sub on_mainLoop_post {
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
         }
-}
 
 sub on_add_actor_list_probe {
 	my ($hook, $actor, $actor_type) = @_;
