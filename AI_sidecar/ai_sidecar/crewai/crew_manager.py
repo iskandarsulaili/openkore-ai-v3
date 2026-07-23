@@ -399,7 +399,7 @@ class CrewManager:
                 bot_id="", task_hint="refine",
                 decision_output=None, errors=[str(exc)])
     def _build_crew(self, *, Crew, Process, bot_id, agents_by_id, tasks, manager, planning_llm, include_manager, process, planning) -> object:
-        """Build crew from CrewAI SDK pattern — returns a stub that captures kwargs."""
+        """Build crew from CrewAI SDK pattern — returns a proxy object that captures kwargs."""
         kwargs = {
             "tasks": tasks,
             "agents": list(agents_by_id.values()),

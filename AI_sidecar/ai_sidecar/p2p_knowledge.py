@@ -40,7 +40,7 @@ class KnowledgeMessage:
     sender_bot_id: str
     msg_type: str  # "experience" | "hunting_zone" | "npc_location" | "server_rate" | "alert"
                    # | "item_drop" | "item_valuation" | "item_price" | "card_drop"
-                   # | "market_price" | "trade_offer" | "supply_demand"
+                   # | "market_price" | "trade_offer" | "supply_demand" | "failure"
     payload: dict[str, Any]
     timestamp: float
     ttl: int = 300  # seconds before this message is stale
@@ -148,6 +148,7 @@ class P2PKnowledgeNode:
         self._shared_card_drops: dict[str, dict[str, Any]] = {}
         self._shared_market_prices: dict[str, dict[str, Any]] = {}
         self._shared_supply_demand: dict[str, dict[str, Any]] = {}
+        self._shared_failures: dict[str, dict[str, Any]] = {}  # failure_id -> record
         self._gossip_cooldown: dict[str, float] = {}  # peer -> last gossip time
         self._gossip_rate_limit_s: float = 0.1  # 100ms min between messages to same peer
 
@@ -476,6 +477,46 @@ class P2PKnowledgeNode:
         self._gossip(msg)
         return msg_id
 
+    def broadcast_failure(self, failure_record: dict) -> str:
+        """Share a failure record with all peers.
+
+        When one bot encounters a recurring failure, all bots learn
+        from it. This prevents the same mistake across the fleet.
+
+        Args:
+            failure_record: Dict with keys: id, server_id, bot_id, category,
+                          subcategory, reasoning, lesson_learned, context,
+                          recurrence_count, timestamp
+        """
+        msg_id = f"{self._bot_id}_fail_{int(time.time() * 1000)}_{random.randint(0, 9999)}"
+        msg = KnowledgeMessage(
+            msg_id=msg_id,
+            sender_bot_id=self._bot_id,
+            msg_type="failure",
+            payload={
+                "failure_id": failure_record.get("id", ""),
+                "server_id": failure_record.get("server_id", "default"),
+                "bot_id": failure_record.get("bot_id", ""),
+                "category": failure_record.get("category", "unknown"),
+                "subcategory": failure_record.get("subcategory"),
+                "reasoning": failure_record.get("reasoning", ""),
+                "lesson_learned": failure_record.get("lesson_learned", ""),
+                "context": failure_record.get("context", {}),
+                "recurrence_count": failure_record.get("recurrence_count", 1),
+            },
+            timestamp=time.time(),
+            ttl=86400,  # Failures are long-lived knowledge, 24h TTL
+        )
+        self._gossip(msg)
+        logger.info(
+            "p2p_failure_broadcast: bot=%s category=%s subcategory=%s count=%d",
+            self._bot_id,
+            failure_record.get("category", "unknown"),
+            failure_record.get("subcategory"),
+            failure_record.get("recurrence_count", 1),
+        )
+        return msg_id
+
     def _gossip(self, msg: KnowledgeMessage) -> None:
         """Send a message to all peers (gossip protocol)."""
         with self._lock:
@@ -607,8 +648,37 @@ class P2PKnowledgeNode:
                 self._process_market_price(msg)
             elif msg.msg_type == "supply_demand":
                 self._process_supply_demand(msg)
+            elif msg.msg_type == "failure":
+                self._handle_failure_message(msg)
         except Exception:
             logger.exception("p2p_process_message_failed: type=%s", msg.msg_type)
+
+    def _handle_failure_message(self, msg: KnowledgeMessage) -> None:
+        """Process a failure message received from a peer."""
+        p = msg.payload
+        failure_id = p.get("failure_id", msg.msg_id)
+        with self._lock:
+            if failure_id not in self._shared_failures:
+                self._shared_failures[failure_id] = {
+                    "failure_id": failure_id,
+                    "server_id": p.get("server_id", "default"),
+                    "bot_id": p.get("bot_id", ""),
+                    "category": p.get("category", "unknown"),
+                    "subcategory": p.get("subcategory"),
+                    "reasoning": p.get("reasoning", ""),
+                    "lesson_learned": p.get("lesson_learned", ""),
+                    "context": p.get("context", {}),
+                    "recurrence_count": p.get("recurrence_count", 1),
+                    "received_from": msg.sender_bot_id,
+                    "received_at": time.time(),
+                }
+                logger.info(
+                    "p2p_failure_received: from=%s category=%s subcategory=%s count=%d",
+                    msg.sender_bot_id,
+                    p.get("category", "unknown"),
+                    p.get("subcategory"),
+                    p.get("recurrence_count", 1),
+                )
 
     def _process_experience(self, msg: KnowledgeMessage) -> None:
         p = msg.payload
@@ -1057,6 +1127,15 @@ class P2PKnowledgeNode:
         with self._lock:
             return dict(self._shared_supply_demand.get(item_name, {}))
 
+    def get_shared_failures(self, server_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        """Get failures received from peers, optionally filtered by server_id."""
+        with self._lock:
+            failures = list(self._shared_failures.values())
+            if server_id:
+                failures = [f for f in failures if f.get("server_id") == server_id]
+            failures.sort(key=lambda f: f.get("received_at", 0), reverse=True)
+            return failures[:limit]
+
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -1079,6 +1158,7 @@ class P2PKnowledgeNode:
                 "reported_items": len(self._shared_item_drops),
                 "shared_market_prices": len(self._shared_market_prices),
                 "shared_supply_demand": len(self._shared_supply_demand),
+                "shared_failures": len(self._shared_failures),
                 "farming_opportunities": sum(1 for v in self._shared_supply_demand.values() if v.get("farming_recommendation") == "farm"),
             }
 

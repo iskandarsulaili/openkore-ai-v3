@@ -663,6 +663,13 @@ class RuntimeState:
     _autonomy_startup_gate_by_bot: dict[str, dict[str, object]] = field(default_factory=dict)
     _startup_gate_wall_start: float = _lifecycle_time.monotonic()
     persistence_degraded: bool = False
+    # ── Keep Alive Mode ──
+    keep_alive_enabled: bool = False
+    keep_alive_timeout_minutes: int = 30
+    keep_alive_poll_interval_s: float = 30.0
+    keep_alive_task: asyncio.Task[None] | None = None
+    keep_alive_server_was_up: bool = False
+    keep_alive_bots_restarted: bool = False
 
     # === Agent-added modules (must be declared for dataclass) ===
     cost_mode_manager: object | None = None
@@ -843,7 +850,169 @@ class RuntimeState:
 
         loop.call_soon_threadsafe(_schedule)
 
+
+    async def _keep_alive_loop(self) -> None:
+        """Keep-alive loop: poll game server, log status, auto-restart bots when server responds."""
+        if not self.keep_alive_enabled:
+            return
+        ka_logger = logging.getLogger("ai_sidecar.lifecycle.keep_alive")
+        timeout_s = self.keep_alive_timeout_minutes * 60
+        poll_s = self.keep_alive_poll_interval_s
+        host = settings.game_server_host
+        port = settings.game_server_port
+        start_time = _lifecycle_time.monotonic()
+        ka_logger.info(
+            "keep_alive_started",
+            extra={
+                "event": "keep_alive_started",
+                "timeout_minutes": self.keep_alive_timeout_minutes,
+                "poll_interval_s": poll_s,
+                "server": f"{host}:{port}",
+            },
+        )
+        while True:
+            try:
+                elapsed = _lifecycle_time.monotonic() - start_time
+                bot_count = self.bot_registry.count()
+                if bot_count > 0:
+                    ka_logger.debug("keep_alive_bots_connected", extra={"event": "keep_alive_bots_connected", "bot_count": bot_count})
+                    self.keep_alive_server_was_up = False
+                    self.keep_alive_bots_restarted = False
+                    await asyncio.sleep(poll_s)
+                    continue
+                if elapsed >= timeout_s:
+                    ka_logger.info(
+                        "keep_alive_timeout_reached",
+                        extra={"event": "keep_alive_timeout_reached", "elapsed_s": elapsed, "timeout_s": timeout_s},
+                    )
+                    break
+                # Poll the game server
+                server_up = await self._check_game_server(host, port)
+                if server_up:
+                    ka_logger.info(
+                        "keep_alive_server_responded",
+                        extra={"event": "keep_alive_server_responded", "server": f"{host}:{port}"},
+                    )
+                    if not self.keep_alive_server_was_up:
+                        self.keep_alive_server_was_up = True
+                        ka_logger.info(
+                            "keep_alive_server_back_online",
+                            extra={"event": "keep_alive_server_back_online"},
+                        )
+                    # Auto-restart bots if server just came back and we haven't restarted yet
+                    if not self.keep_alive_bots_restarted:
+                        self.keep_alive_bots_restarted = True
+                        ka_logger.info(
+                            "keep_alive_restarting_bots",
+                            extra={"event": "keep_alive_restarting_bots"},
+                        )
+                        await self._restart_bots()
+                else:
+                    if self.keep_alive_server_was_up:
+                        self.keep_alive_server_was_up = False
+                        ka_logger.info(
+                            "keep_alive_server_went_down",
+                            extra={"event": "keep_alive_server_went_down"},
+                        )
+                    ka_logger.info(
+                        "keep_alive_waiting_for_server",
+                        extra={
+                            "event": "keep_alive_waiting_for_server",
+                            "elapsed_s": round(elapsed, 1),
+                            "timeout_s": timeout_s,
+                            "remaining_s": round(timeout_s - elapsed, 1),
+                        },
+                    )
+            except asyncio.CancelledError:
+                ka_logger.info("keep_alive_loop_cancelled", extra={"event": "keep_alive_loop_cancelled"})
+                break
+            except Exception as exc:
+                ka_logger.warning(
+                    "keep_alive_loop_error",
+                    extra={"event": "keep_alive_loop_error", "error": str(exc)},
+                )
+            await asyncio.sleep(poll_s)
+
+    async def _check_game_server(self, host: str, port: int) -> bool:
+        """Check if the game server is reachable via TCP connect."""
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=10.0,
+            )
+            writer.close()
+            await writer.wait_closed()
+            return True
+        except (OSError, asyncio.TimeoutError, ConnectionRefusedError, ConnectionError):
+            return False
+
+    async def _restart_bots(self) -> None:
+        """Restart all bots via start.sh script."""
+        import subprocess
+        workspace = self.workspace_root
+        start_sh = workspace / "start.sh"
+        if not start_sh.exists():
+            ka_logger = logging.getLogger("ai_sidecar.lifecycle.keep_alive")
+            ka_logger.warning(
+                "keep_alive_start_sh_not_found",
+                extra={"event": "keep_alive_start_sh_not_found", "path": str(start_sh)},
+            )
+            return
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash", str(start_sh), "stop",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            ka_logger = logging.getLogger("ai_sidecar.lifecycle.keep_alive")
+            ka_logger.info(
+                "keep_alive_stopped_bots",
+                extra={"event": "keep_alive_stopped_bots", "returncode": proc.returncode},
+            )
+            # Wait a moment then start bots
+            await asyncio.sleep(5)
+            proc = await asyncio.create_subprocess_exec(
+                "bash", str(start_sh), "all",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            ka_logger.info(
+                "keep_alive_started_bots",
+                extra={"event": "keep_alive_started_bots", "returncode": proc.returncode},
+            )
+        except Exception as exc:
+            ka_logger = logging.getLogger("ai_sidecar.lifecycle.keep_alive")
+            ka_logger.error(
+                "keep_alive_restart_bots_failed",
+                extra={"event": "keep_alive_restart_bots_failed", "error": str(exc)},
+            )
+
+    def start_keep_alive(self) -> None:
+        """Start the keep-alive background loop if enabled."""
+        if not self.keep_alive_enabled:
+            return
+        if self.keep_alive_task is not None:
+            return
+        self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
+        logger.info("keep_alive_loop_started", extra={"event": "keep_alive_loop_started"})
+
+
     async def shutdown(self) -> None:
+        # Cancel keep-alive loop if running
+        if self.keep_alive_task is not None:
+            self.keep_alive_task.cancel()
+            try:
+                await self.keep_alive_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self.keep_alive_task = None
+            logger.info("keep_alive_loop_stopped", extra={"event": "keep_alive_loop_stopped"})
+
+
+
+
         if not self._background_tasks:
             loop = self._background_loop
             if loop is not None and not loop.is_closed():
@@ -1312,6 +1481,40 @@ class RuntimeState:
                         bot_id=payload.meta.bot_id,
                         npc_name=str(getattr(ev, "npc_name", getattr(ev, "actor_name", "unknown")) or "unknown"),
                     )
+
+        # ── Failure report recording from bridge events ──
+        _fre = getattr(self, "failure_reasoning", None)
+        if _fre is not None:
+            for ev in payload.events:
+                ev_type = str(getattr(ev, "event_type", "") or str(getattr(ev, "kind", "")))
+                if ev_type == "failure_report":
+                    _reflex = str(getattr(ev, "reflex", "") or "")
+                    _context = {
+                        "hp": getattr(ev, "hp", 0),
+                        "max_hp": getattr(ev, "max_hp", 1),
+                        "hp_ratio": getattr(ev, "hp_ratio", 0.0),
+                        "zeny": getattr(ev, "zeny", 0),
+                        "map": str(getattr(ev, "map", "") or ""),
+                        "aggro_count": getattr(ev, "aggro_count", 0),
+                        "sp": getattr(ev, "sp", 0),
+                        "weight_ratio": getattr(ev, "weight_ratio", 0.0),
+                    }
+                    _category = "unknown"
+                    _subcategory = None
+                    if _reflex == "autobuy_no_zeny":
+                        _category = "autobuy_loop"
+                        _subcategory = "no_zeny"
+                    elif _reflex == "emergency_no_heal":
+                        _category = "no_heal_items"
+                    elif _reflex == "party_low_hp":
+                        _category = "party_ghost"
+                    if _category != "unknown":
+                        _fre.capture_failure(
+                            category=_category,
+                            subcategory=_subcategory,
+                            context=_context,
+                            bot_id=payload.meta.bot_id,
+                        )
         return result
 
     def ingest_actor_delta(self, payload: ActorDeltaPushRequest) -> IngestAcceptedResponse:
@@ -3116,7 +3319,7 @@ class RuntimeState:
                 conflict_key=request.reload_conflict_key,
                 created_at=now,
                 expires_at=now + timedelta(seconds=settings.action_default_ttl_seconds),
-                idempotency_key=f"macro-reload:{target_bot_id}:{manifest_relpath}:{desired_checksum}",
+                idempotency_key=f"macro-reload:{target_bot_id}:{manifest_relpath[:40]}:{desired_checksum[:20]}",
                 metadata=reload_metadata,
             )
 

@@ -116,6 +116,20 @@ class CombatLoop:
         self._action_executor: Any = None
         self._action_queue: Any = None
         self._gather_and_kill: Any = None
+        self._positioning_system: Any = None
+
+        # Failure capture callback (set externally by failure_wiring)
+        self._failure_callback: Callable | None = None
+        # Runtime reference for accessing singletons
+        self._runtime: Any = None
+
+    def set_failure_callback(self, callback: Callable | None) -> None:
+        """Set a failure capture callback.
+
+        The callback should accept (category, subcategory, context, bot_id).
+        Set by failure_wiring at startup.
+        """
+        self._failure_callback = callback
 
     # ── Public API ──
 
@@ -275,6 +289,9 @@ class CombatLoop:
                 if potions:
                     self._resource_manager.update_potion_stock(potions)
 
+            # ── Capture overweight failure ──
+            self._capture_overweight_failure(inventory)
+
             # ── Track economic data ──
             try:
                 _ee = getattr(self._runtime, "economic_engine", None) if hasattr(self, '_runtime') else None
@@ -323,6 +340,8 @@ class CombatLoop:
                         cause_of_death="unknown",
                         lesson_learned="",
                     ))
+                    # Also capture death failure
+                    self._capture_death_failure()
                 elif not status.get("dead", False):
                     self._state.was_dead = False
             except Exception:
@@ -372,6 +391,93 @@ class CombatLoop:
                             casting_skill=actor.get("casting_skill", ""),
                         )
                 self._threat_targeting.cleanup_monsters(active_ids)
+
+            # ── Update positioning system ──
+            if self._positioning_system:
+                self._positioning_system.update_snapshot(snapshot)
+
+    # ── Failure Capture Hooks ──
+
+    def _capture_overweight_failure(self, inventory: dict) -> None:
+        """Capture an overweight failure if weight > 90%."""
+        if self._failure_callback is None:
+            return
+        weight_pct = 0.0
+        if isinstance(inventory, dict):
+            weight_pct = float(inventory.get("weight_ratio", 0) or 0) * 100
+            if "weight" in inventory:
+                weight_pct = float(inventory.get("weight", 0) or 0)
+        # Check from state as fallback
+        if weight_pct <= 0 and hasattr(self._state, 'weight_pct'):
+            weight_pct = getattr(self._state, 'weight_pct', 0.0)
+        if weight_pct > 90:
+            try:
+                self._failure_callback(
+                    category="overweight",
+                    context={
+                        "weight_pct": weight_pct,
+                        "map": self._state.map_name,
+                    },
+                    bot_id="default",
+                )
+            except Exception:
+                pass
+
+    def _capture_death_failure(self) -> None:
+        """Capture a death failure."""
+        if self._failure_callback is None:
+            return
+        try:
+            self._failure_callback(
+                category="death",
+                subcategory="unknown",
+                context={
+                    "map": self._state.map_name,
+                    "hp": self._state.my_hp,
+                    "max_hp": self._state.my_max_hp,
+                    "aggro": self._state.aggro_count,
+                    "monster_name": self._state.current_target_name,
+                    "monster_id": self._state.current_target_id,
+                    "buffs": list(self._state.my_buffs),
+                },
+                bot_id="default",
+            )
+        except Exception:
+            pass
+
+    def _capture_reflex_failure(self, reflex_name: str) -> None:
+        """Capture a reflex failure."""
+        if self._failure_callback is None:
+            return
+        try:
+            self._failure_callback(
+                category="reflex_failure",
+                context={
+                    "reflex_name": reflex_name,
+                },
+                bot_id="default",
+            )
+        except Exception:
+            pass
+
+    def _capture_no_heal_items(self) -> None:
+        """Capture a no-heal-items failure."""
+        if self._failure_callback is None:
+            return
+        try:
+            self._failure_callback(
+                category="no_heal_items",
+                context={
+                    "hp": self._state.my_hp,
+                    "max_hp": self._state.my_max_hp,
+                    "aggro": self._state.aggro_count,
+                    "map": self._state.map_name,
+                    "zeny": 0,
+                },
+                bot_id="default",
+            )
+        except Exception:
+            pass
 
     # ── Internal Phases ──
 
@@ -462,6 +568,8 @@ class CombatLoop:
             resource_state = self._resource_manager.get_resource_state()
             if resource_state.needs_restock and resource_state.potion_count == 0:
                 logger.warning("combat_out_of_potions: restocking needed")
+                # Capture no_heal_items failure
+                self._capture_no_heal_items()
                 return "restock_potions"
 
         return None
@@ -493,172 +601,101 @@ class CombatLoop:
 
             commands = self._gear_swapper.get_gear_swap_commands(None, best_gear)
             for cmd in commands:
-                self._enqueue_action_raw(cmd, "use_item")
-            logger.info("combat_gear_swap: %s → %s (element=%s, weapon=%s)",
-                        s.current_gear_set, best_gear.name,
-                        best_gear.weapon_element, best_gear.weapon_type)
-            return f"swap_gear_{best_gear.name}"
+                self._enqueue_action(cmd, "gear_swap")
+            logger.info("combat_gear_swap: %s -> %s (element=%s)", s.current_gear_set, best_gear.name, best_gear.weapon_element)
+            return f"gear_swap_{best_gear.name}"
 
         return None
 
     def _acquire_target(self, now: float) -> str | None:
-        """Phase 4: Acquire a new target using threat targeting."""
+        """Phase 4: Acquire a target to attack."""
         s = self._state
-        if not self._threat_targeting:
-            return None
 
-        # ── PRO FIX: Connect flee formula to max_aggro ──
-        # A pro player knows: if I have 95% flee, I can safely pull 10 mobs.
-        # If I have 5% flee, I should only pull 1 mob.
-        # The flee formula determines how many mobs we can handle safely.
-        from ai_sidecar.mechanical_intuition import MechanicalIntuition
-        mi = MechanicalIntuition()
-        my_base_level = int(self._state.my_hp / 10)  # rough estimate from HP
-        agi_est = 50  # default if we don't know exact AGI
-        # Calculate max safe aggro based on flee rate
-        flee_rate = mi.get_flee_rate(my_base_level, agi_est)
-        # Pro rule: max_aggro = flee_rate / 20 (capped at 10, minimum 1)
-        s.max_aggro = max(1, min(10, int(flee_rate / 20)))
-        logger.debug("combat_flee_aggro: flee=%.0f%% → max_aggro=%d", flee_rate, s.max_aggro)
-        if s.my_hp_pct < 0.5:
-            # If we don't have flee data, be conservative at low HP
-            s.max_aggro = max(1, int(s.my_hp_pct * 5))
-
-        # Rate-limit target acquisition
+        # Rate limit target acquisition
         if now - s.last_target_acquire_time < 1.0:
             return None
         s.last_target_acquire_time = now
 
+        if not self._threat_targeting:
+            return None
+
         # Get best target from threat targeting
-        has_aoe = any("aoe" in sk.lower() for sk in s.my_available_skills)
-        best_target = self._threat_targeting.get_best_target(
-            player_class=s.my_job_class,
-            party_size=1,
-            has_aoe=has_aoe,
+        target = self._threat_targeting.get_best_target(
+            current_hp_pct=s.my_hp_pct,
+            aggro_count=s.aggro_count,
+            max_aggro=s.max_aggro,
+            is_sitting=s.is_sitting,
         )
 
-        if best_target:
-            target_id = best_target.get("monster_id", 0)
-            if target_id > 0:
-                s.current_target_id = target_id
-                s.current_target_name = best_target.get("name", "")
-                s.current_target_hp_pct = 1.0
-                s.current_target_distance = best_target.get("distance", 0)
-                s.is_in_combat = True
-                s.combat_started_at = now
-                s.current_skill_index = 0
-
-                # Select rotation based on build and target
-                self._select_rotation(best_target)
-
-                # Enqueue attack command
-                self._enqueue_action_raw(f"attack {target_id}", "attack_skill")
-                logger.info("combat_acquire_target: %s (id=%d, dist=%d, score=%.1f)",
-                            s.current_target_name, target_id,
-                            best_target.get("distance", 0),
-                            best_target.get("threat_score", 0))
-                return f"attack_{s.current_target_name}"
+        if target:
+            s.current_target_id = target.actor_id
+            s.current_target_name = target.name
+            s.current_target_hp_pct = target.hp_pct
+            s.current_target_distance = target.distance
+            s.current_target_element = target.element
+            s.current_target_size = target.size
+            s.current_target_race = target.race
+            s.current_target_is_boss = target.is_boss
+            s.is_in_combat = True
+            s.combat_started_at = time.time()
+            self._enqueue_action(f"attack {target.actor_id}", "attack_skill")
+            logger.info("combat_acquire_target: id=%d name=%s dist=%d",
+                        target.actor_id, target.name, target.distance)
+            return f"acquire_{target.name}"
 
         return None
-
-    def _select_rotation(self, target_info: dict) -> None:
-        """Select the best skill rotation based on build and target."""
-        s = self._state
-        if not self._skill_rotation:
-            return
-
-        # Get build info
-        build_name = s.my_build_name
-        if self._build_manager:
-            build = self._build_manager._active_builds.get("default", {})
-            build_name = build.get("name", "")
-
-        # Get recommended rotation
-        target_data = {
-            "element": s.current_target_element,
-            "race": s.current_target_race,
-            "size": s.current_target_size,
-            "aggro": s.aggro_count,
-            "is_boss": s.current_target_is_boss,
-            "hp_pct": s.current_target_hp_pct,
-        }
-
-        rotation_skills = self._skill_rotation.get_rotation_for_target(
-            target_info=target_data,
-            available_skills=s.my_available_skills,
-            current_sp=s.my_sp,
-        )
-
-        if rotation_skills:
-            s.current_skill = rotation_skills[0].name if rotation_skills else ""
-            s.current_skill_index = 0
-            # Store rotation for subsequent ticks
-            s._cached_rotation = rotation_skills  # type: ignore
-            logger.info("combat_rotation_selected: %s → %s (build=%s)",
-                        s.current_target_name, s.current_skill, build_name)
-        else:
-            s.current_skill = ""
-            s.current_skill_index = 0
-            s._cached_rotation = []  # type: ignore
 
     def _handle_combat_movement(self, now: float) -> str | None:
         """Phase 5: Handle movement during combat."""
         s = self._state
-
-        # Approach target if too far
-        if s.current_target_distance > 9 and s.my_job_class in ("archer", "hunter", "sniper", "ranger"):
-            # Ranged class — maintain distance
+        if not self._positioning_system:
             return None
-        elif s.current_target_distance > 3:
-            # Melee or close-range — approach
-            self._enqueue_action_raw(f"move {s.current_target_id}", "map_move")
-            return "approach_target"
 
-        # Kite for ranged classes
-        if s.current_target_distance < 3 and s.my_job_class in ("mage", "wizard", "high_wizard", "warlock", "archer", "hunter", "sniper", "ranger"):
-            self._enqueue_action("maintain_distance", "map_move")
-            return "maintain_distance"
+        move_cmd = self._positioning_system.get_combat_movement(
+            target_id=s.current_target_id,
+            target_distance=s.current_target_distance,
+            my_hp_pct=s.my_hp_pct,
+            aggro_count=s.aggro_count,
+        )
+
+        if move_cmd:
+            self._enqueue_action(move_cmd, "movement")
+            return f"move_{move_cmd[:30]}"
 
         return None
 
     def _execute_skill_rotation(self, now: float) -> str | None:
-        """Phase 6: Execute the current skill rotation."""
+        """Phase 6: Execute skill rotation based on current build."""
         s = self._state
         if not self._skill_rotation:
             return None
 
-        # Get cached rotation
-        rotation = getattr(s, "_cached_rotation", [])
+        # Get the rotation for current build
+        rotation = self._skill_rotation.get_rotation(
+            build_name=s.my_build_name,
+            target_element=s.current_target_element,
+            target_size=s.current_target_size,
+            target_race=s.current_target_race,
+            is_boss=s.current_target_is_boss,
+        )
+
         if not rotation:
             return None
 
-        # Check cooldowns
-        current_skill = rotation[s.current_skill_index % len(rotation)]
-        skill_name = current_skill.name
+        # Execute next skill in rotation
+        if s.current_skill_index >= len(rotation):
+            s.current_skill_index = 0
 
-        # Check if skill is on cooldown
-        if skill_name in s.skill_cooldowns:
-            if now - s.skill_cooldowns[skill_name] < (current_skill.cooldown_ms / 1000.0 if current_skill.cooldown_ms > 0 else 1.0):
-                # Try next skill in rotation
-                s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
-                return self._execute_skill_rotation(now)
+        current_skill = rotation[s.current_skill_index]
 
-        # ── PRO FIX: Enforce skill delay (cast_time + delay) ──
-        # Pre-renewal RO: after casting a skill, the character cannot act for
-        # cast_time + delay milliseconds. This is NOT the same as cooldown.
-        # Cooldown = time before you CAN use the same skill again.
-        # Delay = time you CANNOT cast ANY skill after firing one.
-        # A bot that ignores delay will spam commands the server rejects.
-        if s.last_skill_time > 0:
-            elapsed_ms = (now - s.last_skill_time) * 1000.0
-            # Use the current skill's delay if available, fall back to 500ms default
-            skill_delay_ms = current_skill.delay_ms if current_skill.delay_ms > 0 else 500
-            if elapsed_ms < skill_delay_ms:
-                logger.debug(
-                    "combat_skill_delay: %s on cooldown (last=%.0fms ago, delay=%dms)",
-                    skill_name, elapsed_ms, skill_delay_ms
-                )
-                return None  # Skip this tick — still in skill delay
+        # Check cooldown
+        skill_name = current_skill.skill_name if hasattr(current_skill, 'skill_name') else str(current_skill)
+        last_used = s.skill_cooldowns.get(skill_name, 0)
+        skill_delay_ms = current_skill.get('delay_ms', 1000) if isinstance(current_skill, dict) else 1000
+        elapsed_ms = (now - last_used) * 1000
+
+        if elapsed_ms < skill_delay_ms:
+            return None  # Skip this tick — still in skill delay
 
         # Check SP cost
         if current_skill.sp_cost > 0 and current_skill.sp_cost > s.my_sp:
@@ -685,13 +722,8 @@ class CombatLoop:
         s.skill_cooldowns[skill_name] = now
         s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
 
-        # Enqueue the skill action
-        target_id = s.current_target_id
-        self._enqueue_action_raw(f"skill {skill_name} {target_id}", "attack_skill")
-        logger.debug("combat_skill: %s → %s (idx=%d/%d, sp=%d, mult=%.1f)",
-                     skill_name, s.current_target_name,
-                     s.current_skill_index, len(rotation),
-                     current_skill.sp_cost,
+        self._enqueue_action(f"use_skill_{skill_name.lower().replace(' ', '_')}", "attack_skill")
+        logger.debug("combat_skill: %s (sp=%d/%d)", skill_name, s.my_sp,
                      self._elemental_matrix.get_elemental_multiplier(
                          current_skill.element, s.current_target_element
                      ) if self._elemental_matrix else 1.0)
@@ -741,98 +773,69 @@ class CombatLoop:
             self._state.is_in_combat = True
             self._state.combat_started_at = time.time()
 
-    def set_skill(self, skill_name: str, cooldown_ms: int = 0) -> None:
-        with self._lock:
-            self._state.current_skill = skill_name
-            self._state.skill_cooldowns[skill_name] = time.time()
-
     def get_state(self) -> CombatState:
         with self._lock:
             return self._state
 
-    def get_combat_summary(self) -> str:
-        with self._lock:
-            s = self._state
-            rotation_name = getattr(s, "_cached_rotation", [])
-            rot_str = rotation_name[0].name if rotation_name else "none"
-            return (
-                f"── Combat Loop ──\n"
-                f"Active: {s.is_active}\n"
-                f"Target: {s.current_target_name} (ID={s.current_target_id}, "
-                f"HP={s.current_target_hp_pct:.0%}, elem={s.current_target_element})\n"
-                f"Distance: {s.current_target_distance:.1f}\n"
-                f"Aggro: {s.aggro_count} | HP: {s.my_hp_pct:.0%} | SP: {s.my_sp_pct:.0%}\n"
-                f"Build: {s.my_build_name} | Class: {s.my_job_class}\n"
-                f"Rotation: {rot_str} | Skill: {s.current_skill}\n"
-                f"Gear: {s.current_gear_set} | Weapon: {s.my_weapon_element}/{s.my_weapon_type}\n"
-                f"Buffs: {len(s.my_buffs)} active\n"
-                f"Kills: {s.kills_this_session} | Ticks: {s.ticks_this_session}\n"
-                f"Map: {s.map_name}"
-            )
+    def set_enqueue_fn(self, fn: Callable) -> None:
+        self._enqueue_fn = fn
+
+    def set_get_snapshot_fn(self, fn: Callable) -> None:
+        self._get_snapshot_fn = fn
+
+    def set_threat_targeting(self, tt) -> None:
+        self._threat_targeting = tt
+
+    def set_elemental_matrix(self, em) -> None:
+        self._elemental_matrix = em
+
+    def set_buff_maintenance(self, bm) -> None:
+        self._buff_maintenance = bm
+
+    def set_gear_swapper(self, gs) -> None:
+        self._gear_swapper = gs
+
+    def set_resource_manager(self, rm) -> None:
+        self._resource_manager = rm
+
+    def set_build_manager(self, bm) -> None:
+        self._build_manager = bm
+
+    def set_reflex_combat(self, rc) -> None:
+        self._reflex_combat = rc
+
+    def set_action_executor(self, ae) -> None:
+        self._action_executor = ae
+
+    def set_action_queue(self, aq) -> None:
+        self._action_queue = aq
+
+    def set_gather_and_kill(self, gk) -> None:
+        self._gather_and_kill = gk
+
+    def set_positioning_system(self, ps) -> None:
+        self._positioning_system = ps
 
     def reset(self) -> None:
         with self._lock:
             self._state = CombatState()
 
-    # ── Subsystem Wiring ──
-
-    def set_threat_targeting(self, obj: Any) -> None:
+    def get_combat_summary(self) -> dict[str, Any]:
         with self._lock:
-            self._threat_targeting = obj
-
-    def set_skill_rotation(self, obj: Any) -> None:
-        with self._lock:
-            self._skill_rotation = obj
-
-    def set_elemental_matrix(self, obj: Any) -> None:
-        with self._lock:
-            self._elemental_matrix = obj
-
-    def set_buff_maintenance(self, obj: Any) -> None:
-        with self._lock:
-            self._buff_maintenance = obj
-
-    def set_gear_swapper(self, obj: Any) -> None:
-        with self._lock:
-            self._gear_swapper = obj
-
-    def set_resource_manager(self, obj: Any) -> None:
-        with self._lock:
-            self._resource_manager = obj
-
-    def set_build_manager(self, obj: Any) -> None:
-        with self._lock:
-            self._build_manager = obj
-
-    def set_reflex_combat(self, obj: Any) -> None:
-        with self._lock:
-            self._reflex_combat = obj
-
-    def set_action_executor(self, obj: Any) -> None:
-        with self._lock:
-            self._action_executor = obj
-
-    def set_action_queue(self, obj: Any) -> None:
-        with self._lock:
-            self._action_queue = obj
-
-    def set_gather_and_kill(self, obj: Any) -> None:
-        with self._lock:
-            self._gather_and_kill = obj
-
-    def set_enqueue_fn(self, fn: Callable) -> None:
-        with self._lock:
-            self._enqueue_fn = fn
-
-    def set_get_snapshot_fn(self, fn: Callable) -> None:
-        with self._lock:
-            self._get_snapshot_fn = fn
-
-    def set_build(self, build_name: str) -> None:
-        """Set the bot's build for build-aware combat decisions."""
-        with self._lock:
-            self._state.my_build_name = build_name
-            logger.info("combat_build_set: %s", build_name)
+            s = self._state
+            return {
+                "active": s.is_active,
+                "in_combat": s.is_in_combat,
+                "target": s.current_target_name,
+                "target_hp_pct": s.current_target_hp_pct,
+                "aggro": s.aggro_count,
+                "hp_pct": s.my_hp_pct,
+                "sp_pct": s.my_sp_pct,
+                "kills": s.kills_this_session,
+                "ticks": s.ticks_this_session,
+                "map": s.map_name,
+                "is_sitting": s.is_sitting,
+            }
 
 
 # ── Global Singleton ──

@@ -120,6 +120,27 @@ class SharedLearningDB:
                     )
                 """)
                 conn.execute("""
+                    CREATE TABLE IF NOT EXISTS failures (
+                        id TEXT PRIMARY KEY,
+                        server_id TEXT NOT NULL DEFAULT 'default',
+                        bot_id TEXT NOT NULL DEFAULT '',
+                        category TEXT NOT NULL,
+                        subcategory TEXT,
+                        timestamp REAL NOT NULL,
+                        context TEXT NOT NULL DEFAULT '{}',
+                        reasoning TEXT NOT NULL DEFAULT '',
+                        lesson_learned TEXT NOT NULL DEFAULT '',
+                        action_taken TEXT NOT NULL DEFAULT '',
+                        action_effective INTEGER,
+                        resolved INTEGER NOT NULL DEFAULT 0,
+                        resolved_at REAL,
+                        recurrence_count INTEGER NOT NULL DEFAULT 1,
+                        recurrence_key TEXT NOT NULL DEFAULT '',
+                        applied_to_config TEXT NOT NULL DEFAULT '[]',
+                        peer_shared INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_deaths_monster ON deaths(monster_id)
                 """)
                 conn.execute("""
@@ -127,6 +148,14 @@ class SharedLearningDB:
                 """)
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_prices_item ON prices(item_name)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_failures_recurrence
+                    ON failures(server_id, category, recurrence_key)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_failures_server
+                    ON failures(server_id)
                 """)
                 conn.commit()
             finally:
@@ -314,6 +343,7 @@ class SharedLearningDB:
                 mvp_count = conn.execute("SELECT COUNT(*) FROM mvp_kills").fetchone()[0]
                 price_count = conn.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
                 strat_count = conn.execute("SELECT COUNT(*) FROM strategies").fetchone()[0]
+                fail_count = conn.execute("SELECT COUNT(*) FROM failures").fetchone()[0]
 
                 lines = [f"── Shared Learning Database ──"]
                 lines.append(f"Path: {self._db_path}")
@@ -321,11 +351,279 @@ class SharedLearningDB:
                 lines.append(f"Total MVP kills: {mvp_count}")
                 lines.append(f"Total price records: {price_count}")
                 lines.append(f"Total strategies: {strat_count}")
+                lines.append(f"Total failures: {fail_count}")
 
                 dangerous = self.get_most_dangerous_monsters(3)
                 if dangerous:
                     lines.append("Most dangerous: " + ", ".join(f'{d["monster_name"]}({d["deaths"]})' for d in dangerous))
                 return "\n".join(lines)
+            finally:
+                conn.close()
+
+    # ── Failures ──
+
+    def _ensure_failures_table(self) -> None:
+        """Create the failures table if it doesn't exist (idempotent)."""
+        with self._lock:
+            conn = sqlite3.connect(self._db_path)
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS failures (
+                        id TEXT PRIMARY KEY,
+                        server_id TEXT NOT NULL DEFAULT 'default',
+                        bot_id TEXT NOT NULL DEFAULT '',
+                        category TEXT NOT NULL,
+                        subcategory TEXT,
+                        timestamp REAL NOT NULL,
+                        context TEXT NOT NULL DEFAULT '{}',
+                        reasoning TEXT NOT NULL DEFAULT '',
+                        lesson_learned TEXT NOT NULL DEFAULT '',
+                        action_taken TEXT NOT NULL DEFAULT '',
+                        action_effective INTEGER,
+                        resolved INTEGER NOT NULL DEFAULT 0,
+                        resolved_at REAL,
+                        recurrence_count INTEGER NOT NULL DEFAULT 1,
+                        recurrence_key TEXT NOT NULL DEFAULT '',
+                        applied_to_config TEXT NOT NULL DEFAULT '[]',
+                        peer_shared INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_failures_recurrence
+                    ON failures(server_id, category, recurrence_key)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_failures_server
+                    ON failures(server_id)
+                """)
+                conn.commit()
+            finally:
+                conn.close()
+
+    def record_failure(self, record_dict: dict) -> None:
+        """Record a failure in the shared database."""
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                conn.execute(
+                    """INSERT OR REPLACE INTO failures
+                       (id, server_id, bot_id, category, subcategory, timestamp,
+                        context, reasoning, lesson_learned, action_taken,
+                        action_effective, resolved, resolved_at,
+                        recurrence_count, recurrence_key, applied_to_config, peer_shared)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        record_dict.get("id", ""),
+                        record_dict.get("server_id", "default"),
+                        record_dict.get("bot_id", ""),
+                        record_dict.get("category", "unknown"),
+                        record_dict.get("subcategory"),
+                        record_dict.get("timestamp", time.time()),
+                        record_dict.get("context", "{}"),
+                        record_dict.get("reasoning", ""),
+                        record_dict.get("lesson_learned", ""),
+                        record_dict.get("action_taken", ""),
+                        record_dict.get("action_effective"),
+                        record_dict.get("resolved", 0),
+                        record_dict.get("resolved_at"),
+                        record_dict.get("recurrence_count", 1),
+                        record_dict.get("recurrence_key", ""),
+                        record_dict.get("applied_to_config", "[]"),
+                        record_dict.get("peer_shared", 0),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def get_failures(
+        self,
+        server_id: str | None = None,
+        category: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Get failures with optional filters."""
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                query = "SELECT * FROM failures WHERE 1=1"
+                params: list = []
+                if server_id:
+                    query += " AND server_id = ?"
+                    params.append(server_id)
+                if category:
+                    query += " AND category = ?"
+                    params.append(category)
+                query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+                cursor = conn.execute(query, params)
+                rows = cursor.fetchall()
+                columns = [d[0] for d in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
+            finally:
+                conn.close()
+
+    def get_recurring_failures(
+        self,
+        server_id: str | None = None,
+        min_count: int = 3,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Find failures with recurrence_count >= min_count."""
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                query = "SELECT * FROM failures WHERE recurrence_count >= ?"
+                params: list = [min_count]
+                if server_id:
+                    query += " AND server_id = ?"
+                    params.append(server_id)
+                query += " ORDER BY recurrence_count DESC, timestamp DESC LIMIT ?"
+                params.append(limit)
+                cursor = conn.execute(query, params)
+                rows = cursor.fetchall()
+                columns = [d[0] for d in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
+            finally:
+                conn.close()
+
+    def get_failure_summary(self, server_id: str | None = None) -> str:
+        """Return a formatted failure summary for LLM context injection."""
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                if server_id:
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM failures WHERE server_id = ?",
+                        (server_id,),
+                    ).fetchone()[0]
+                else:
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM failures"
+                    ).fetchone()[0]
+
+                if total == 0:
+                    return "No failures recorded."
+
+                # By category
+                if server_id:
+                    cat_cursor = conn.execute(
+                        "SELECT category, COUNT(*) as cnt FROM failures "
+                        "WHERE server_id = ? GROUP BY category ORDER BY cnt DESC",
+                        (server_id,),
+                    )
+                else:
+                    cat_cursor = conn.execute(
+                        "SELECT category, COUNT(*) as cnt FROM failures "
+                        "GROUP BY category ORDER BY cnt DESC"
+                    )
+                cat_counts = {row[0]: row[1] for row in cat_cursor.fetchall()}
+
+                # By server
+                server_cursor = conn.execute(
+                    "SELECT server_id, COUNT(*) as cnt FROM failures "
+                    "GROUP BY server_id ORDER BY cnt DESC"
+                )
+                server_counts = {row[0]: row[1] for row in server_cursor.fetchall()}
+
+                # Top recurring
+                if server_id:
+                    rec_cursor = conn.execute(
+                        "SELECT category, subcategory, recurrence_count, lesson_learned "
+                        "FROM failures WHERE server_id = ? AND recurrence_count >= 3 "
+                        "ORDER BY recurrence_count DESC LIMIT 5",
+                        (server_id,),
+                    )
+                else:
+                    rec_cursor = conn.execute(
+                        "SELECT category, subcategory, recurrence_count, lesson_learned "
+                        "FROM failures WHERE recurrence_count >= 3 "
+                        "ORDER BY recurrence_count DESC LIMIT 5"
+                    )
+                recurring = rec_cursor.fetchall()
+
+                # Recent lessons
+                if server_id:
+                    lesson_cursor = conn.execute(
+                        "SELECT lesson_learned FROM failures WHERE server_id = ? "
+                        "AND lesson_learned != '' ORDER BY timestamp DESC LIMIT 3",
+                        (server_id,),
+                    )
+                else:
+                    lesson_cursor = conn.execute(
+                        "SELECT lesson_learned FROM failures "
+                        "WHERE lesson_learned != '' ORDER BY timestamp DESC LIMIT 3"
+                    )
+                recent_lessons = [r[0] for r in lesson_cursor.fetchall()]
+
+                lines = [f"── Failure Summary ──"]
+                lines.append(f"Total failures: {total}")
+                lines.append(f"By category: {', '.join(f'{k}={v}' for k, v in cat_counts.items())}")
+                lines.append(f"By server: {', '.join(f'{k}={v}' for k, v in server_counts.items())}")
+                if recurring:
+                    lines.append("Top recurring issues:")
+                    for r in recurring:
+                        lines.append(f"  {r[0]}/{r[1] or '-'} x{r[2]}: {r[3][:80]}")
+                if recent_lessons:
+                    lines.append("Recent lessons:")
+                    for l in recent_lessons:
+                        lines.append(f"  - {l[:100]}")
+                return "\n".join(lines)
+            finally:
+                conn.close()
+
+    def mark_failure_resolved(self, failure_id: str, effective: bool | None = None) -> None:
+        """Mark a failure as resolved."""
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                if effective is not None:
+                    conn.execute(
+                        "UPDATE failures SET resolved = 1, resolved_at = ?, action_effective = ? "
+                        "WHERE id = ?",
+                        (time.time(), 1 if effective else 0, failure_id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE failures SET resolved = 1, resolved_at = ? WHERE id = ?",
+                        (time.time(), failure_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def increment_failure_recurrence(self, recurrence_key: str) -> int:
+        """Increment recurrence count for a matching failure within 1 hour.
+
+        Returns the new recurrence count, or 0 if no matching failure found.
+        """
+        with self._lock:
+            self._ensure_failures_table()
+            conn = sqlite3.connect(self._db_path)
+            try:
+                cutoff = time.time() - 3600
+                cursor = conn.execute(
+                    "SELECT id, recurrence_count FROM failures "
+                    "WHERE recurrence_key = ? AND timestamp > ? "
+                    "ORDER BY timestamp DESC LIMIT 1",
+                    (recurrence_key, cutoff),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return 0
+                failure_id, current_count = row
+                new_count = current_count + 1
+                conn.execute(
+                    "UPDATE failures SET recurrence_count = ? WHERE id = ?",
+                    (new_count, failure_id),
+                )
+                conn.commit()
+                return new_count
             finally:
                 conn.close()
 

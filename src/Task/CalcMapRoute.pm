@@ -396,6 +396,10 @@ sub iterate {
 				if $self->shouldLogDebug();
 
 		foreach my $target ( @{ $self->{targets} } ) {
+			# Guard: skip targets with missing coordinates — prevents spurious
+			# "Called with invalid coordinates" warnings when lockMap changes
+			# race against a running route calculation.
+			next unless defined $target->{x} && $target->{x} ne '' && defined $target->{y} && $target->{y} ne '';
 			# Check whether destination is walkable from the starting point.
 			if ( $self->{source}{map} eq $target->{map} && Task::Route->getRoute( undef, $target->{field}, $self->{source}, $target, 0 ) ) {
 				$self->{mapSolution} = [];

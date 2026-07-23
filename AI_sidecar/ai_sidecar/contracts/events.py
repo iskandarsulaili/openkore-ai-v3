@@ -31,6 +31,9 @@ class EventFamily(StrEnum):
     bridge_telemetry = "bridge_telemetry"
     discovery_shops = "discovery_shops"
     discovery = "discovery"
+    discovery_all_tables = "discovery_all_tables"
+    discovery_portals = "discovery_portals"
+    teamplay_candidate = "teamplay_candidate"
 
 
 class EventSeverity(StrEnum):

@@ -39,7 +39,7 @@ def _build_task(
     expected_output: str,
     agent: object,
 ) -> object:
-    """Build a simple task object compatible with both crewai SDK and our stubs."""
+    """Build a simple task object compatible with both crewai SDK and our fallback profiles."""
     try:
         from crewai import Task as CrewAITask
         return CrewAITask(

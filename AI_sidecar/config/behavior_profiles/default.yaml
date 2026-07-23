@@ -1,0 +1,149 @@
+# ──────────────────────────────────────────────────────────────
+# Default Behavior Profile – Human-like Imperfect Play
+# ──────────────────────────────────────────────────────────────
+# This YAML config is loaded by BehaviorEngine at startup.
+# Each section controls a specific human-like behavior tweak.
+# All probabilities are 0.0–1.0 (0%–100% chance per evaluation).
+# ──────────────────────────────────────────────────────────────
+
+profile_name: "default"
+human_likeness_target: 0.78  # Target score (0.0=perfect bot .. 1.0=flawed human)
+
+# ── 1. Variable reaction times (log-normal distribution) ──────
+reaction_time:
+  enabled: true
+  min_ms: 100
+  max_ms: 900                     # Clamped to [100, 900]
+  distribution: "log_normal"      # log_normal | uniform
+  sigma: 0.55                     # Shape of log-normal; higher = fatter tail
+  consecutive_multiplier: 0.08    # +8% per consecutive action > 5
+  fatigue_threshold: 8            # After N consecutive actions, multiply delay
+
+# ── 2. Bad path selection ─────────────────────────────────────
+bad_path:
+  enabled: true
+  probability: 0.12               # 12% chance to pick a sub-optimal route
+  extra_distance_pct: 0.30        # Up to 30% longer than optimal path
+  detour_chance: 0.04             # 4% chance of a full random detour
+  detour_min_extra_pct: 0.50      # Detour adds 50–150% extra distance
+  detour_max_extra_pct: 1.50
+  recheck_interval_seconds: 15    # Re-evaluate every 15 s
+
+# ── 3. Wrong target selection ─────────────────────────────────
+wrong_target:
+  enabled: true
+  probability: 0.08               # 8% chance to attack a non-optimal mob
+  range_pct: 0.35                 # Target within ±35% of optimal target's level
+  switch_delay_ms: 600            # Delay before switching to correct target
+  max_wrong_targets: 3            # Max consecutive wrong-target picks before forcing correct
+  recheck_on_death: true          # Re-evaluate when current target dies
+
+# ── 4. AFK breaks ─────────────────────────────────────────────
+afk_breaks:
+  enabled: true
+  min_break_seconds: 30
+  max_break_seconds: 300          # 30 s – 5 min
+  min_interval_minutes: 30
+  max_interval_minutes: 90
+  early_break_chance: 0.05        # 5% chance to break early (looks impatient)
+  resume_delay_ms: 400            # Delay after returning from break
+
+# ── 5. Favorite spots ─────────────────────────────────────────
+favorite_spots:
+  enabled: true
+  probability: 0.55               # 55% chance to prefer fav spot on known map
+  return_distance: 20             # How close (tiles) to be considered "at spot"
+  stay_duration_minutes: [3, 12]  # How long to stay at spot before roaming
+  # Known map coordinates that this profile "likes"
+  spots:
+    prt_fild01:
+      - [120, 200]
+      - [150, 180]
+      - [95, 230]
+    pay_fild01:
+      - [100, 100]
+      - [140, 80]
+    mjolnir_01:
+      - [50, 300]
+      - [30, 280]
+    gef_fild01:
+      - [200, 150]
+    izlude:
+      - [150, 120]
+
+# ── 6. Micro-mistakes ─────────────────────────────────────────
+micro_mistakes:
+  enabled: true
+
+  walk_into_wall:
+    probability: 0.015            # 1.5% per movement
+    recovery_ms: 700
+    stuck_duration_ms: 1200       # How long bot is "stuck" before recovering
+
+  cancel_cast:
+    probability: 0.008            # 0.8% per skill cast
+    cast_time_pct: 0.5            # Cancel at ~50% of cast time (looks realistic)
+
+  wrong_direction:
+    probability: 0.025            # 2.5% — move wrong tile first then correct
+    wrong_steps: [1, 3]           # Number of tiles moved in wrong direction
+    correction_delay_ms: 350
+
+  double_click:
+    probability: 0.02             # 2% — issue same command twice
+    duplicate_only_if_queued: true # Only duplicate if action is still queued
+
+  skill_missclick:
+    probability: 0.005            # 0.5% — click wrong skill hotkey
+    recovery_delay_ms: 500
+
+  inventory_stutter:
+    probability: 0.01             # 1% — open/close inventory briefly
+    stutter_duration_ms: 400
+
+# ── Scoring weights (how much each contributes to human_likeness) ──
+scoring:
+  reaction_time_weight: 0.20
+  bad_path_weight: 0.15
+  wrong_target_weight: 0.15
+  afk_break_weight: 0.20
+  favorite_spots_weight: 0.10
+  micro_mistakes_weight: 0.20
+
+# ── 7. Contextual behavior profiles ───────────────────────────
+# These profiles cycle automatically every 15–45 minutes to simulate
+# changing human play states.  GM detection can override to "watching".
+# Each profile adjusts reaction delay, mistake rate, wrong target chance,
+# path quality, social frequency, and AFK break chance.
+contextual_profiles:
+  active:
+    reaction_delay_range: [200, 400]    # Fast reactions — focused play
+    mistake_rate: 0.03                  # 3% base mistake rate
+    wrong_target_chance: 0.08            # 8% wrong target chance
+    path_quality: 0.85                   # 85% optimal pathing
+    social_frequency: 0.05               # 5% social actions
+    afk_chance: 0.05                     # 5% AFK break chance
+
+  afk:
+    reaction_delay_range: [800, 1500]   # Slow reactions — away from keyboard
+    mistake_rate: 0.12                   # 12% mistake rate
+    wrong_target_chance: 0.20            # 20% wrong target chance
+    path_quality: 0.40                   # 40% optimal pathing
+    social_frequency: 0.02               # 2% social actions
+    afk_chance: 0.40                     # 40% AFK break chance
+
+  tired:
+    reaction_delay_range: [500, 1000]    # Slower reactions — fatigued
+    mistake_rate: 0.08                   # 8% mistake rate
+    wrong_target_chance: 0.15            # 15% wrong target chance
+    path_quality: 0.55                   # 55% optimal pathing
+    social_frequency: 0.03               # 3% social actions
+    afk_chance: 0.15                     # 15% AFK break chance
+
+  watching:
+    reaction_delay_range: [100, 200]    # Near-instant reactions — GM nearby
+    mistake_rate: 0.005                  # 0.5% mistake rate (near perfect)
+    wrong_target_chance: 0.01            # 1% wrong target chance
+    path_quality: 0.98                   # 98% optimal pathing
+    social_frequency: 0.01               # 1% social actions
+    afk_chance: 0.0                      # 0% AFK break chance (never AFK when watched)

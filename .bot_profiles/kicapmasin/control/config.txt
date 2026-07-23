@@ -3,13 +3,14 @@
 
 ######## Login options and server-specific options ########
 
-master
-server
-username
-password
+master Asgards Glory
+server 0
+username kicapmasin
+password b0tTib0tTi
 loginPinCode
-char
+char 0
 otpSeed
+profile Use standard control folder
 
 # Poseidon Settings: https://openkore.com/wiki/Poseidon
 # They must be the same as Query Server config in Poseidon.txt
@@ -28,7 +29,7 @@ XKore_dll NetRedirect.dll
 XKore_injectDLL 1
 XKore_autoAttachIfOneExe 1
 XKore_silent 1
-XKore_bypassBotDetection 0
+XKore_bypassBotDetection 1
 XKore_exeName ragexe.exe
 
 # XKore 2 / Proxy configuration
@@ -41,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword triejohe
+adminPassword siekeman
 callSign
 commandPrefix ;
 callSignGM 0
@@ -66,27 +67,23 @@ alias_heal sp 28
 allowedMaps
 allowedMaps_reaction 1
 
-attackAuto 2
-attackAuto_routeToLock 1
 attackAuto_outOfLock 1
 attackAuto_party 1
-attackAuto_onlyWhenSafe 0
-attackAuto_followTarget 1
 attackAuto_notInTown 1
-attackAuto_notWhile_storageAuto 1
-attackAuto_notWhile_buyAuto 1
+attackAuto_notWhile_storageAuto 0
+attackAuto_notWhile_buyAuto 0
 attackAuto_notWhile_sellAuto 1
 attackAuto_considerDamagedAggressive 0
 attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
-attackDistance 1
-attackDistanceAuto 1
-attackMaxDistance 1
+attackDistance 3
+attackDistanceAuto 0
+attackMaxDistance 5
 attackMaxRouteTime 4
 attackMinPlayerDistance 2
 attackMinPortalDistance 4
 attackUseWeapon 1
-attackNoGiveup 0
+attackNoGiveup 1
 attackCanSnipe 0
 attackCheckLOS 1
 attackRouteMaxPathDistance 20
@@ -104,10 +101,10 @@ attackBeyondMaxDistance_sendAttackWhileWaiting 0
 attackSendAttackWithMove 0
 attackWaitApproachFinish 1
 
-autoMoveOnDeath 0
-autoMoveOnDeath_x
-autoMoveOnDeath_y
-autoMoveOnDeath_map
+autoMoveOnDeath 1
+autoMoveOnDeath_x 156
+autoMoveOnDeath_y 129
+autoMoveOnDeath_map prontera
 
 attackEquip_topHead
 attackEquip_midHead
@@ -200,30 +197,20 @@ followLostStep 12
 followSitAuto 0
 followBot 0
 
-itemsTakeAuto 2
-itemsTakeAuto_party 0
-itemsGatherAuto 2
 itemsGatherAuto_notInTown 0
 itemsGatherAutoMinPlayerDistance 6
 itemsGatherAutoMinPortalDistance 5
-itemsMaxWeight 89
-itemsMaxWeight_sellOrStore 48
 itemsMaxNum_sellOrStore 99
 cartMaxWeight 7900
 itemsTakeGreed 0
 itemsCheckWeight 1
 
-lockMap
-lockMap_x
-lockMap_y
-lockMap_randX
-lockMap_randY
 
 route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
 route_randomWalk 1
-route_randomWalk_inLockOnly 0
+route_randomWalk_inLockOnly 1
 route_randomWalk_inTown 0
 route_randomWalk_maxRouteTime 75
 route_maxWarpFee
@@ -243,7 +230,6 @@ route_step 10
 route_removeMissingPortals_NPC 1
 route_removeMissingPortals 0
 route_tryToGuessMissingPortalByDistance 1
-route_reAddMissingPortals 1
 route_avoidWalls 1
 route_randomFactor 0
 
@@ -258,26 +244,22 @@ maxUnobstructedWalkPathDistance 17
 # If there are obstacles and the path is walkable the max dist acceptable is 14
 maxObstructedWalkPathDistance 14
 
-runFromTarget 0
 runFromTarget_inAdvance 0
-runFromTarget_dist 5
 runFromTarget_minStep 7
 runFromTarget_maxPathDistance 13
 runFromTarget_noAttackMethodFallback 0
 runFromTarget_noAttackMethodFallback_attackMaxDist 14
 runFromTarget_noAttackMethodFallback_minStep 8
 
-saveMap
-saveMap_x
-saveMap_y
+saveMap prontera
+saveMap_x 156
+saveMap_y 129
 saveMap_warp 0
-saveMap_warpToBuyOrSell 1
-saveMap_warp_minDistance
-saveMap_warpChatCommand
-memo1
-memo2
 memo3
 memo4
+destMap prontera
+destX 156
+destY 129
 
 shopAuto_open 0
 shop_random 0
@@ -286,13 +268,9 @@ shop_useSkill 1
 buyerShopAuto_open 0
 buyerShop_random 0
 
-sitAuto_hp_lower 40
-sitAuto_hp_upper 100
-sitAuto_sp_lower 0
-sitAuto_sp_upper 0
 sitAuto_follow 0
 sitAuto_over_50 0
-sitAuto_idle 1
+sitAuto_idle 0
 sitAuto_look
 sitAuto_look_from_wall
 sitAuto_look_delay
@@ -309,18 +287,18 @@ skillsAddAuto_list
 tankMode 0
 tankModeTarget
 
-teleportAuto_hp 10
+teleportAuto_hp 15
 teleportAuto_sp 0
 teleportAuto_idle 0
 teleportAuto_portal 0
 teleportAuto_search 0
-teleportAuto_minAggressives 0
-teleportAuto_minAggressivesInLock 0
-teleportAuto_onlyWhenSafe 0
-teleportAuto_maxDmg 500
+teleportAuto_minAggressives 1
+teleportAuto_minAggressivesInLock 3
+teleportAuto_onlyWhenSafe 1
+teleportAuto_maxDmg 9999
 teleportAuto_maxDmgInLock 0
-teleportAuto_deadly 1
-teleportAuto_useSkill 1
+teleportAuto_deadly 0
+teleportAuto_useSkill 0
 teleportAuto_useChatCommand
 teleportAuto_allPlayers 0
 teleportAuto_notPlayers
@@ -346,9 +324,9 @@ dealAuto 1
 dealAuto_names
 dealMaxItems 10
 partyAuto 1
-partyAutoShare 0
-partyAutoShareItem 0
-partyAutoShareItemDiv 0
+partyAutoShare 1
+partyAutoShareItem 1
+partyAutoShareItemDiv 1
 guildAutoDeny 1
 attendanceAuto 1
 
@@ -357,7 +335,7 @@ showDomain 0
 showDomain_NPC parseMsg_presence
 showDomain_Shop list
 squelchDomains
-verboseDomains aiSidecarBridge
+verboseDomains
 beepDomains
 beepDomains_notInTown
 friendlyAID
@@ -439,27 +417,27 @@ monster_filter
 ######## Mercenary Support ########
 
 mercenary_attackAuto 2
-mercenary_attackAuto_routeToLock 1
+mercenary_attackAuto_inLockOnly 1
 mercenary_attackAuto_outOfLock 1
 mercenary_attackAuto_party 1
 mercenary_attackAuto_notInTown 1
-mercenary_attackAuto_notWhile_storageAuto 1
-mercenary_attackAuto_notWhile_buyAuto 1
+mercenary_attackAuto_notWhile_storageAuto 0
+mercenary_attackAuto_notWhile_buyAuto 0
 mercenary_attackAuto_notWhile_sellAuto 1
 mercenary_attackAuto_considerDamagedAggressive 0
 mercenary_attackAuto_considerAggressiveIfCastOnCastSensor 0
 mercenary_attackAuto_onlyWhenSafe 0
 mercenary_attackAuto_duringRandomWalk 0
 mercenary_attackAuto_duringItemsTake 0
-mercenary_attackDistance 1
-mercenary_attackMaxDistance 1
-mercenary_attackDistanceAuto 1
+mercenary_attackDistance 3
+mercenary_attackMaxDistance 3
+mercenary_attackDistanceAuto 0
 mercenary_attackMaxRouteTime 4
 mercenary_attackCanSnipe 0
 mercenary_attackCheckLOS 1
 mercenary_attackRouteMaxPathDistance 20
 mercenary_attackUseWeapon 1
-mercenary_attackNoGiveup 0
+mercenary_attackNoGiveup 1
 mercenary_attackChangeTarget 1
 mercenary_attack_dance_melee 0
 mercenary_attack_dance_ranged 0
@@ -497,10 +475,10 @@ mercenary_route_step 10
 mercenary_tankMode 0
 mercenary_tankModeTarget
 
-mercenary_teleportAuto_hp 10
-mercenary_teleportAuto_maxDmg 500
+mercenary_teleportAuto_hp 5
+mercenary_teleportAuto_maxDmg 9999
 mercenary_teleportAuto_maxDmgInLock 0
-mercenary_teleportAuto_deadly 1
+mercenary_teleportAuto_deadly 0
 mercenary_teleportAuto_unstuck 0
 mercenary_teleportAuto_dropTarget 0
 mercenary_teleportAuto_dropTargetEngaged 1
@@ -512,27 +490,27 @@ mercenary_teleportAuto_attackedWhenSitting 0
 ######## Homunculus Support ########
 
 homunculus_attackAuto 2
-homunculus_attackAuto_routeToLock 1
+homunculus_attackAuto_inLockOnly 1
 homunculus_attackAuto_outOfLock 1
 homunculus_attackAuto_party 1
 homunculus_attackAuto_notInTown 1
-homunculus_attackAuto_notWhile_storageAuto 1
-homunculus_attackAuto_notWhile_buyAuto 1
+homunculus_attackAuto_notWhile_storageAuto 0
+homunculus_attackAuto_notWhile_buyAuto 0
 homunculus_attackAuto_notWhile_sellAuto 1
 homunculus_attackAuto_considerDamagedAggressive 0
 homunculus_attackAuto_considerAggressiveIfCastOnCastSensor 0
 homunculus_attackAuto_onlyWhenSafe 0
 homunculus_attackAuto_duringRandomWalk 0
 homunculus_attackAuto_duringItemsTake 0
-homunculus_attackDistance 1
-homunculus_attackMaxDistance 1
-homunculus_attackDistanceAuto 1
+homunculus_attackDistance 3
+homunculus_attackMaxDistance 3
+homunculus_attackDistanceAuto 0
 homunculus_attackMaxRouteTime 4
 homunculus_attackCanSnipe 0
 homunculus_attackCheckLOS 1
 homunculus_attackRouteMaxPathDistance 20
 homunculus_attackUseWeapon 1
-homunculus_attackNoGiveup 0
+homunculus_attackNoGiveup 1
 homunculus_attackChangeTarget 1
 homunculus_attack_dance_melee 0
 
@@ -569,10 +547,10 @@ homunculus_tankMode 0
 homunculus_tankModeTarget
 
 homunculus_StandByAuto 0
-homunculus_teleportAuto_hp 10
-homunculus_teleportAuto_maxDmg 500
+homunculus_teleportAuto_hp 5
+homunculus_teleportAuto_maxDmg 9999
 homunculus_teleportAuto_maxDmgInLock 0
-homunculus_teleportAuto_deadly 1
+homunculus_teleportAuto_deadly 0
 homunculus_teleportAuto_unstuck 0
 homunculus_teleportAuto_dropTarget 0
 homunculus_teleportAuto_dropTargetEngaged 1
@@ -601,62 +579,53 @@ pet_return 20
 # You can copy & paste any block multiple times. So if you want to
 # configure two attack skills, just duplicate the attackSkillSlot block.
 
-attackSkillSlot {
-	lvl
-	dist 1
-	maxDist 1
-	maxCastTime 0
-	minCastTime 0
-	hp
-	sp > 10
-	ap
-	homunculus
-	homunculus_hp
-	homunculus_sp
-	homunculus_dead
-	homunculus_resting
-	homunculus_noinfo_dead
-	homunculus_noinfo_resting
-	homunculus_onAction
-	homunculus_notOnAction
-	homunculus_whenIdle
-	homunculus_whenNotIdle
-	mercenary
-	mercenary_hp
-	mercenary_sp
-	mercenary_whenStatusActive
-	mercenary_whenStatusInactive
-	mercenary_onAction
-	mercenary_notOnAction
-	mercenary_whenIdle
-	mercenary_whenNotIdle
-	onAction
-	inQueue
-	notInQueue
-	whenStatusActive
-	whenStatusInactive
-	whenFollowing
-	spirit
-	amuletType
-	aggressives
-	previousDamage
-	monsters
-	notMonsters
-	maxAttempts 0
-	maxUses 0
-	isSelfSkill 0
-	isStartSkill 0
-	equip_topHead
-	equip_midHead
-	equip_lowHead
-	equip_leftHand
-	equip_rightHand
-	equip_leftAccessory
-	equip_rightAccessory
-	equip_robe
-	equip_armor
-	equip_shoes
-	equip_arrow
+lvl
+hp
+ap
+homunculus
+homunculus_hp
+homunculus_sp
+homunculus_dead
+homunculus_resting
+homunculus_noinfo_dead
+homunculus_noinfo_resting
+homunculus_onAction
+homunculus_notOnAction
+homunculus_whenIdle
+homunculus_whenNotIdle
+mercenary
+mercenary_hp
+mercenary_sp
+mercenary_whenStatusActive
+mercenary_whenStatusInactive
+mercenary_onAction
+mercenary_notOnAction
+mercenary_whenIdle
+mercenary_whenNotIdle
+onAction
+inQueue
+notInQueue
+whenStatusActive
+whenStatusInactive
+whenFollowing
+spirit
+amuletType
+aggressives
+previousDamage
+monsters
+notMonsters
+isStartSkill 0
+equip_topHead
+equip_midHead
+equip_lowHead
+equip_leftHand
+equip_rightHand
+equip_leftAccessory
+equip_rightAccessory
+equip_robe
+equip_armor
+equip_shoes
+equip_arrow
 	# [checkSelfCondition]
 	# [checkMonsterCondition]
 }
@@ -664,14 +633,8 @@ attackSkillSlot {
 attackComboSlot {
 	afterSkill
 	waitBeforeUse
-	dist 1
-	maxDist 1
 	lvl
-	maxCastTime 0
-	minCastTime 0
-	maxUses 0
 	autoCombo 0
-	isSelfSkill 1
 	monsters
 	notMonsters
 	# [checkSelfCondition]
@@ -715,25 +678,17 @@ doCommand {
 	notMonsters
 	monstersCount
 	monstersCountDist
-	stopWhenHit 0
-	inLockOnly 0
-	notWhileSitting 0
-	notInTown 0
 	timeout
-	disabled 0
 	whenPartyMembersNear
 	whenPartyMembersNearDist
 	inInventory
 	inCart
 	inMap
-	manualAI 0
 	# [checkSelfCondition]
 }
 
 useSelf_skill {
 	lvl
-	maxCastTime 0
-	minCastTime 0
 	hp
 	sp
 	ap
@@ -770,18 +725,10 @@ useSelf_skill {
 	notMonsters
 	monstersCount
 	monstersCountDist
-	stopWhenHit 0
-	inLockOnly 0
-	notWhileSitting 0
-	notInTown 0
-	timeout 0
-	disabled 0
 	whenPartyMembersNear
 	whenPartyMembersNearDist
 	inInventory
-	manualAI 0
 	smartEncore 0
-	noSmartHeal 0
 	# [checkSelfCondition]
 }
 
@@ -791,10 +738,6 @@ partySkillDistance 0..8
 
 partySkill {
 	lvl
-	dist 1
-	maxDist 8
-	maxCastTime 0
-	minCastTime 0
 	hp
 	sp
 	ap
@@ -831,16 +774,8 @@ partySkill {
 	notMonsters
 	monstersCount
 	monstersCountDist
-	stopWhenHit 0
-	inLockOnly 0
-	notWhileSitting 0
-	notInTown 0
-	timeout 0
-	disabled 0
-	manualAI 0
 	target
 	notPartyOnly 0
-	isSelfSkill 0
 	noSmartHeal 0
 	# [checkSelfCondition]
 	# [checkPlayerCondition]
@@ -852,7 +787,6 @@ monsterSkill {
 	lvl
 	maxCastTime 0
 	minCastTime 0
-	isSelfSkill 0
 	# [checkSelfCondition]
 	# [checkMonsterCondition]
 }
@@ -873,108 +807,101 @@ autoSwitch {
 	useWeapon
 }
 
-equipAuto {
-	topHead
-	midHead
-	lowHead
-	leftHand
-	rightHand
-	leftAccessory
-	rightAccessory
-	robe
-	armor
-	shoes
-	arrow
-	target
-	weight 0
-	whileSitting 0
-	hp
-	sp
-	ap
-	homunculus
-	homunculus_hp
-	homunculus_sp
-	homunculus_dead
-	homunculus_resting
-	homunculus_noinfo_dead
-	homunculus_noinfo_resting
-	homunculus_onAction
-	homunculus_notOnAction
-	homunculus_whenIdle
-	homunculus_whenNotIdle
-	mercenary
-	mercenary_hp
-	mercenary_sp
-	mercenary_whenStatusActive
-	mercenary_whenStatusInactive
-	mercenary_onAction
-	mercenary_notOnAction
-	mercenary_whenIdle
-	mercenary_whenNotIdle
-	onAction
-	inQueue
-	notInQueue
-	whenStatusActive
-	whenStatusInactive
-	whenFollowing
-	spirit
-	amuletType
-	aggressives
-	stopWhenHit 0
-	inLockOnly 0
-	notWhileSitting 0
-	notInTown 0
-	timeout 0
-	disabled 0
-	whenPartyMembersNear
-	whenPartyMembersNearDist
-	inInventory
-	manualAI 0
+topHead
+midHead
+lowHead
+leftHand
+rightHand
+leftAccessory
+rightAccessory
+robe
+armor
+shoes
+arrow
+target
+weight 2000
+whileSitting 0
+hp
+sp
+ap
+homunculus
+homunculus_hp
+homunculus_sp
+homunculus_dead
+homunculus_resting
+homunculus_noinfo_dead
+homunculus_noinfo_resting
+homunculus_onAction
+homunculus_notOnAction
+homunculus_whenIdle
+homunculus_whenNotIdle
+mercenary
+mercenary_hp
+mercenary_sp
+mercenary_whenStatusActive
+mercenary_whenStatusInactive
+mercenary_onAction
+mercenary_notOnAction
+mercenary_whenIdle
+mercenary_whenNotIdle
+onAction
+inQueue
+notInQueue
+whenStatusActive
+whenStatusInactive
+whenFollowing
+spirit
+amuletType
+aggressives
+stopWhenHit 0
+inLockOnly 0
+whenPartyMembersNear
+whenPartyMembersNearDist
+inInventory
+manualAI 0
 	# [checkSelfCondition]
 	# [checkMonsterCondition]
 }
 
-useSelf_item {
-	dcOnEmpty 0
-	# [checkSelfCondition]
-}
 
 ######## Autostorage/autosell ########
 
-buyAuto {
-	npc
-	npc_steps b
-	isMarket 0
-	standpoint
-	distance 3
-	price
-	minAmount 2
-	maxAmount 3
-	batchSize
-	onlyIdentified
-	zeny
-	minDistance
-	maxDistance
-	dcOnEmpty 0
+buyAuto 1
+
+npc
+npc_steps b
+isMarket 0
+standpoint
+distance 3
+price
+minAmount 2
+maxAmount 3
+batchSize
+onlyIdentified
+zeny
+minDistance
+maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 0
-sellAuto_npc
+sellAuto 1
+sellAuto_npc prt_in 126 76
+sellAuto_npc_steps c r0 c
 sellAuto_standpoint
-sellAuto_distance 3
-sellAuto_maxDistance
-sellAuto_npc_steps s
+sellAuto_distance 5
+sellAuto_maxDistance 15
+sellAuto_npc prt_in 126 76
+sellAuto_npc_steps c r0 c
 
 storageAuto 0
 storageAuto_onStart 0
 storageAuto_npc
 storageAuto_standpoint
-storageAuto_distance 3
-storageAuto_maxDistance
+storageAuto_distance 5
+storageAuto_maxDistance 15
 storageAuto_npc_type 1
 storageAuto_type 0
-storageAuto_npc_steps
+storageAuto_npc_steps c r1 c
 storageAuto_password
 rodexMaxItems 5
 storageAuto_keepOpen 0
@@ -1203,3 +1130,137 @@ macro_file ai_sidecar_generated_macros.txt
 #	target_isAIMode_TakesFixed_1_Damage_Magic 0
 #	target_isAIMode_TakesFixed_1_Damage_None 0
 #}
+
+# Attack skill slots — dynamically configured by game engine
+attackSkillSlot {
+	lvl 1
+	dist 1
+	maxDist 9
+	sp > 10
+	whenNotInTown 1
+	notInTown 0
+	maxAttempts 0
+	maxUses 0
+	target_hp
+	isSelfSkill 0
+}
+
+# ── Auto-use items (AI-managed: LLM decides when to buy) ──
+# These auto-use items the bot loots or buys through the AI economy system.
+
+attackAuto_useSkill 1
+attackAuto_useWeapon 1
+
+attackAuto_startOnSight 1
+
+attackAuto_routeToLockDistance 1
+
+lockMap_clear 1
+
+lockMap_teleport 0
+
+partyAutoCreate 1
+partyAutoJoinCode team1
+partyAutoCreateCode team1
+
+
+# Auto potions
+sp
+whenStatusInactive
+}
+sp
+whenStatusInactive
+}
+useSelf_item White Potion {
+	hp < 60%
+	sp
+	whenStatusInactive
+	notWhileSitting 0
+	timeout 2
+	disabled 0
+	inInventory "White Potion" > 0
+}
+
+
+# Buy potions automatically
+
+# ── Auto-buy Healing Items ──
+
+lockMap
+route_reAddMissingPortals 1
+
+
+
+# ── Auto loot ──
+itemsTakeAuto 2
+itemsTakeAuto_party 0
+itemsGatherAuto 2
+itemsGatherAuto_bag 4
+itemsMaxWeight 70
+itemsMaxWeight_buyOrSell 49
+itemsMaxWeight_sellOrStore 49
+
+# ── Auto sit regen ──
+sitAuto_hp_lower 30
+sitAuto_hp_upper 60
+sitAuto_sp_lower 0
+sitAuto_sp_upper 0
+sitAuto_hp_thread 0
+sitAuto_hp_thread_maxDmg 99999
+sitAuto_maxDmg 99999
+
+# ── Attack config ──
+attackAuto 2
+attackAuto_inLockOnly 1
+attackAuto_followTarget 0
+attackAuto_onlyWhenSafe 0
+attackAuto_noMove 0
+attackAuto_notWhileSitting 0
+
+# ── Auto equip ──
+autoSwitch_default_rightHand
+autoSwitch_default_leftHand
+autoSwitch_default_arrow
+equipAuto 0
+
+# ── Run from target to avoid walls ──
+runFromTarget 0
+runFromTarget_dist 3
+
+# ── Auto-Buy Red Potions ──
+
+# Pro RO: Auto-buy Red Potions
+buyAuto_Red_Potion {
+    npc = prontera 126 76
+    npc_steps = c r0 n
+    distance = 5
+    minAmount = 3
+    maxAmount = 10
+    price = 50
+}
+
+# Pro RO: Auto-buy Arrows (for Archer)
+buyAuto_Arrow {
+    npc = prontera 160 133
+    npc_steps = c r0 n
+    distance = 5
+    minAmount = 50
+    maxAmount = 500
+    price = 2
+}
+
+# Pro RO: Auto-buy Bow (for Archer)
+buyAuto_Bow {
+    npc = prontera 160 133
+    npc_steps = c r0 n
+    distance = 5
+    minAmount = 0
+    maxAmount = 1
+    price = 100
+}
+
+# Pro RO: Auto-sell junk items
+sellAuto = 1
+sellAuto_npc = prontera 126 76
+sellAuto_npc_steps = c r0 n
+sellAuto_distance = 5

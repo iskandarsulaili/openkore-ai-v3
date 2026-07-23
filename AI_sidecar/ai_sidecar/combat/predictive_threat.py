@@ -30,6 +30,8 @@ class PredictedThreat:
 
     monster_id: int
     monster_name: str
+    monster_x: float
+    monster_y: float
     skill_name: str
     skill_element: str
     cast_time_ms: int
@@ -293,6 +295,8 @@ class PredictiveThreatEngine:
             threat = PredictedThreat(
                 monster_id=monster.get("id", 0),
                 monster_name=monster.get("name", "Unknown"),
+                monster_x=float(monster.get("x", 0)),
+                monster_y=float(monster.get("y", 0)),
                 skill_name=skill_name,
                 skill_element=skill_data["element"],
                 cast_time_ms=cast_time_ms,
@@ -437,11 +441,20 @@ class PredictiveThreatEngine:
             if threat.time_to_impact_ms < 2000:
                 weight *= 2.0  # Imminent threats are more urgent
 
-            # Without actual monster positions, push away from the
-            # direction of the most dangerous threat (generic avoidance).
-            # In production, use monster.x / monster.y from the bridge.
-            dx_total += weight * 1.0  # placeholder — real impl uses monster pos
-            dy_total += weight * 1.0
+            # Push away from the monster's actual position
+            dx = my_x - threat.monster_x
+            dy = my_y - threat.monster_y
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < 0.1:
+                # Monster is on top of us — push in a random direction
+                dx = 1.0
+                dy = 0.0
+            else:
+                dx /= dist
+                dy /= dist
+
+            dx_total += dx * weight
+            dy_total += dy * weight
             weight_total += weight
 
         if weight_total == 0:

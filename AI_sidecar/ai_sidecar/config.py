@@ -121,7 +121,6 @@ class SidecarSettings(BaseSettings):
     api_auth_enabled: bool = False  # Enable manually + set api_auth_token for the bridge
     api_auth_token: str = ""  # Set via env or auto-generated at startup
 
-
     provider_ollama_enabled: bool = True
     provider_ollama_base_url: str = "http://127.0.0.1:11434"  # Override via PROVIDER_OLLAMA_BASE_URL env
     provider_ollama_default_model: str = "qwen3.6:35b-a3b-q4_K_M"
@@ -175,6 +174,13 @@ class SidecarSettings(BaseSettings):
     fleet_request_timeout_seconds: float = Field(default=8.0, ge=0.1, le=30.0)
     fleet_outcome_backlog_limit: int = Field(default=2000, ge=100, le=200000)
     fleet_local_partition_ttl_seconds: int = Field(default=600, ge=30, le=86400)
+
+    # ── Keep Alive Mode ──────────────────────────────────────────
+    keep_alive_enabled: bool = False
+    keep_alive_timeout_minutes: int = Field(default=30, ge=1, le=1440)
+    keep_alive_poll_interval_s: float = Field(default=30.0, ge=5.0, le=300.0)
+    game_server_host: str = "asgardsglory.ddns.net"
+    game_server_port: int = 6900
 
 
 settings = SidecarSettings()

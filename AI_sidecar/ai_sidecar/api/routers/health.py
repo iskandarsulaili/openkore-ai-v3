@@ -105,3 +105,34 @@ def ready(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
         "goal_decomposition": runtime.goal_decomposition_progress() if hasattr(runtime, "goal_decomposition_progress") else {},
         "swarm_telemetry": runtime.swarm_telemetry_snapshot() if hasattr(runtime, "swarm_telemetry_snapshot") else {},
     }
+
+@router.get("")
+@router.get("/")
+def health(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, object]:
+    """Consolidated health endpoint: uptime, bot count, server status."""
+    now = datetime.now(UTC)
+    uptime_s = max(0.0, (now - runtime.started_at.astimezone(UTC)).total_seconds())
+    bot_count = runtime.bot_registry.count()
+    server_status = "unknown"
+    if runtime.keep_alive_enabled:
+        if runtime.keep_alive_server_was_up:
+            server_status = "up"
+        elif runtime.keep_alive_bots_restarted:
+            server_status = "up"
+        else:
+            server_status = "waiting"
+    else:
+        server_status = "up" if bot_count > 0 else "idle"
+    return {
+        "ok": True,
+        "uptime_s": round(uptime_s, 1),
+        "uptime_human": str(now - runtime.started_at.astimezone(UTC)).split(".")[0],
+        "bot_count": bot_count,
+        "server_status": server_status,
+        "keep_alive_enabled": runtime.keep_alive_enabled,
+        "keep_alive_timeout_minutes": runtime.keep_alive_timeout_minutes,
+        "keep_alive_server_was_up": runtime.keep_alive_server_was_up,
+        "keep_alive_bots_restarted": runtime.keep_alive_bots_restarted,
+        "started_at": runtime.started_at.isoformat(),
+        "now": now.isoformat(),
+    }

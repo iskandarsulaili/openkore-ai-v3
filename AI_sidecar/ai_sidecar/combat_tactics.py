@@ -54,10 +54,13 @@ class CombatTactics:
             {"skills": ["ss arrow_shower"], "condition": "aggro>2", "description": "Arrow Shower AoE + knockback"},
         ],
         # ── Hunter ──
+        # Pro Hunter: Double Strafe is primary. Blitz Beat is PASSIVE (falcon auto-proc).
+        # Improve Concentration is a must-cast buff for ASPD + DEX.
         "hunter": [
-            {"skills": ["ss double_strafing", "ss blitz_beat"], "condition": "hp>0.7", "description": "Double strafe + falcon"},
-            {"skills": ["ss double_strafing", "ss double_strafing"], "condition": "always", "description": "Double strafe spam"},
-            {"skills": ["ss arrow_shower"], "condition": "aggro>2", "description": "AoE arrow"},
+            {"skills": ["ss improve_concentration", "ss double_strafing"], "condition": "hp>0.8", "description": "Buff ASPD/DEX then double strafe"},
+            {"skills": ["ss double_strafing", "ss double_strafing"], "condition": "always", "description": "Double strafe spam — primary damage skill"},
+            {"skills": ["ss arrow_shower"], "condition": "aggro>2", "description": "Arrow Shower AoE + knockback for grouped mobs"},
+            {"skills": ["ss double_strafing", "ss arrow_shower"], "condition": "aggro>1", "description": "Single target then AoE clear"},
         ],
         # ── Swordsman ──
         "swordman": [
@@ -65,10 +68,15 @@ class CombatTactics:
             {"skills": ["ss magnum_break", "ss bash"], "condition": "aggro>2", "description": "Magnum Break AoE then bash"},
         ],
         # ── Knight ──
+        # Pro Knight: Two-Hand Quicken is mandatory ASPD buff. Bowling Bash for AoE.
+        # Brandish Spear for single-target with spear. Magnum Break for fire AoE opener.
         "knight": [
-            {"skills": ["ss bowling_bash", "ss bowling_bash"], "condition": "aggro>1", "description": "Bowling Bash AoE spam"},
-            {"skills": ["ss spear_boomerang", "ss bowling_bash"], "condition": "hp>0.6", "description": "Ranged opener then AoE"},
-            {"skills": ["ss bowling_bash", "ss magnum_break"], "condition": "aggro>3", "description": "Double AoE clear"},
+            {"skills": ["ss two_hand_quicken", "ss bowling_bash"], "condition": "hp>0.7", "description": "ASPD buff then Bowling Bash AoE"},
+            {"skills": ["ss bowling_bash", "ss bowling_bash"], "condition": "aggro>1", "description": "Bowling Bash AoE spam — primary AoE"},
+            {"skills": ["ss brandish_spear", "ss brandish_spear"], "condition": "always", "description": "Brandish Spear single-target with spear"},
+            {"skills": ["ss spear_boomerang", "ss bowling_bash"], "condition": "hp>0.6", "description": "Spear Boomerang ranged opener then AoE"},
+            {"skills": ["ss magnum_break", "ss bowling_bash"], "condition": "aggro>3", "description": "Magnum Break fire AoE opener then Bowling Bash"},
+            {"skills": ["ss bowling_bash", "ss magnum_break"], "condition": "aggro>5", "description": "Double AoE clear for large groups"},
         ],
         # ── Thief ──
         "thief": [
@@ -76,11 +84,14 @@ class CombatTactics:
             {"skills": ["ss hiding"], "condition": "hp<0.3", "description": "Emergency hide — drop aggro"},
         ],
         # ── Assassin ──
+        # Pro Assassin: Sonic Blow is primary damage. Grimtooth is niche PvP wall-pierce.
+        # Venom Dust for AoE poison. Hiding for emergency aggro drop.
         "assassin": [
-            {"skills": ["ss grimtooth", "ss sonic_blow"], "condition": "hp>0.5", "description": "Grimtooth ranged poke → Sonic Blow finisher"},
+            {"skills": ["ss sonic_blow", "ss sonic_blow"], "condition": "always", "description": "Sonic Blow spam — primary damage skill"},
             {"skills": ["ss sonic_blow", "ss sonic_blow"], "condition": "hp<0.3", "description": "Desperation Sonic Blow spam"},
-            {"skills": ["ss venom_dust"], "condition": "aggro>2", "description": "Poison AoE for groups"},
-            {"skills": ["ss grimtooth", "ss grimtooth"], "condition": "always", "description": "Grimtooth ranged spam"},
+            {"skills": ["ss venom_dust"], "condition": "aggro>2", "description": "Venom Dust AoE poison for grouped mobs"},
+            {"skills": ["ss grimtooth", "ss sonic_blow"], "condition": "hp>0.5", "description": "Grimtooth ranged opener → Sonic Blow finisher"},
+            {"skills": ["ss hiding"], "condition": "hp<0.2", "description": "Emergency hide — drop all aggro"},
         ],
         # ── Acolyte ──
         "acolyte": [

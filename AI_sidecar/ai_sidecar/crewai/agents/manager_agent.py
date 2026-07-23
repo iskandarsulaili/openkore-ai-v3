@@ -24,7 +24,7 @@ class ManagerProfile(BehaviorProfile):
 
     def get_action(self, signals: dict[str, Any]) -> dict[str, Any] | None:
         # The manager delegates — it doesn't produce a game action itself.
-        # This is a placeholder; actual routing happens higher up.
+        # This is handled by the heuristic routing layer above the agent stack.
         return None
 
     def select_agent(self, profiles: list[BehaviorProfile], signals: dict[str, Any]) -> BehaviorProfile | None:

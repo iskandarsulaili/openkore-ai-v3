@@ -99,14 +99,31 @@ class Humanizer:
             return random.random() < self._profile.typo_chance
 
     def make_typo(self, text: str) -> str:
-        """Introduce a typo into text."""
+        """Introduce a typo into text using keyboard proximity."""
         if not text or len(text) < 3:
             return text
-        pos = random.randint(1, len(text) - 2)
-        chars = list(text)
-        # Swap two adjacent characters
-        chars[pos], chars[pos + 1] = chars[pos + 1], chars[pos]
-        return "".join(chars)
+        if random.random() > self._profile.typo_chance:
+            return text
+        # Keyboard proximity map for realistic typos
+        proximity = {
+            'q': 'w', 'w': 'qe', 'e': 'wr', 'r': 'et', 't': 'ry',
+            'y': 'tu', 'u': 'yi', 'i': 'uo', 'o': 'ip', 'p': 'o',
+            'a': 's', 's': 'ad', 'd': 'sf', 'f': 'dg', 'g': 'fh',
+            'h': 'gj', 'j': 'hk', 'k': 'jl', 'l': 'k',
+            'z': 'x', 'x': 'zc', 'c': 'xv', 'v': 'cb', 'b': 'vn',
+            'n': 'bm', 'm': 'n',
+        }
+        pos = random.randint(0, len(text) - 1)
+        char = text[pos].lower()
+        if char in proximity:
+            replacement = random.choice(proximity[char])
+            if text[pos].isupper():
+                replacement = replacement.upper()
+            return text[:pos] + replacement + text[pos + 1:]
+        # Fallback: double a character
+        if random.random() < 0.3:
+            return text[:pos] + text[pos] + text[pos:]
+        return text
 
     def record_perfect_move(self) -> None:
         """Track consecutive perfect moves to increase randomization."""

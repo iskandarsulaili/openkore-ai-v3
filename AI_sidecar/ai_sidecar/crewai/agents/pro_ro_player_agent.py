@@ -669,8 +669,13 @@ class ProRoPlayerProfile(BehaviorProfile):
         from ai_sidecar.game_knowledge import game_knowledge
         gk = game_knowledge()
         early = CLASS_EARLY_GAME.get(player_class, CLASS_EARLY_GAME["novice"])
-        rec_map, rec_desc = gk.recommended_map(level, player_class)
-        dyn_stats = gk.starting_stats(player_class)
+        # Use CLASS_EARLY_GAME first_map (per-class expert hunting grounds) instead of generic ladder
+        rec_map = early.get("first_map", "")
+        rec_desc = early.get("advice", "")[:80]
+        if not rec_map:
+            rec_map, rec_desc = gk.recommended_map(level, player_class)
+        # Use CLASS_EARLY_GAME stats (per-class expert builds) instead of heuristic
+        dyn_stats = early.get("stats", gk.starting_stats(player_class))
         dyn_equip = gk.equipment_by_level(level, player_class)
         hunting_grounds = []
         safe_maps = gk.safe_hunting_maps(level)

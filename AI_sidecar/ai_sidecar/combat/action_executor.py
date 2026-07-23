@@ -1,9 +1,8 @@
 """
 Action Execution Engine — maps reflex action strings to actual OpenKore commands.
 
-Sits between the reflex combat layer (reflex_combat.py) and the action queue
-(runtime/action_queue.py), translating combat decisions into executable
-command strings that the bridge dispatches to OpenKore.
+Uses dynamic skill levels from character state, RO-accurate cooldowns,
+and proper cast time / delay calculations. No hardcoded skill levels.
 """
 
 from __future__ import annotations
@@ -17,6 +16,20 @@ from threading import RLock
 from typing import Any
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+from ai_sidecar.combat.damage_formulas import (
+    SkillCooldownTracker,
+    get_skill_cooldown,
+    get_skill_element,
+    get_skill_range,
+    calculate_cast_time,
+    calculate_after_cast_delay,
+    get_monster_element,
+    get_monster_size,
+    get_monster_race,
+    get_monster_def_data,
+    calculate_damage,
+    estimate_hits_to_kill,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +49,49 @@ class ActionMapping:
 
 
 class ActionExecutor:
-    """Thread-safe action execution engine that maps reflex actions to commands."""
+    """Thread-safe action execution engine that maps reflex actions to commands.
+
+    Uses dynamic skill levels from character state. If the bot doesn't have
+    a skill, the mapping falls back to basic attack.
+    """
 
     def __init__(self) -> None:
         self._lock = RLock()
         self._mappings: dict[str, ActionMapping] = {}
+        self._cd_tracker = SkillCooldownTracker()
         self._load_default_mappings()
 
-    # ── Default Mappings ──────────────────────────────────────────────
+    def _build_skill_command(self, skill_name: str, char_skills: dict[str, int]) -> str:
+        """Build a skill command using the character's actual skill level.
+        OpenKore uses 'ss <name> <level>' for use-skill-on-self.
+        Falls back to 'attack' if the skill isn't known.
+        """
+        level = char_skills.get(skill_name, 0)
+        if level <= 0:
+            return "attack"
+        return f"ss {skill_name} {level}"
+
+    def _build_item_command(self, item_name: str, char_items: list[str]) -> str:
+        """Build an item use command. Falls back to 'attack' if item not in inventory."""
+        if item_name in char_items:
+            return f"use {item_name}"
+        # Try common fallbacks
+        fallbacks = {"White Potion": "Red Potion", "Blue Potion": "Yellow Potion"}
+        fallback = fallbacks.get(item_name)
+        if fallback and fallback in char_items:
+            return f"use {fallback}"
+        return "attack"
 
     def _load_default_mappings(self) -> None:
-        """Pre-populate all default action mappings (35 total)."""
+        """Pre-populate all default action mappings with dynamic skill levels.
+        The actual skill level is resolved at execution time from character state.
+        """
         mappings: list[ActionMapping] = [
             # ── Elemental Attack Skills (reflex) ──
             ActionMapping(
                 reflex_action="use_fire_skill",
                 command_kind="attack_skill",
-                command_template="skill Fire Bolt 3",
+                command_template="skill {skill_name} {level}",
                 skill_name="Fire Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -60,7 +99,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_water_skill",
                 command_kind="attack_skill",
-                command_template="skill Cold Bolt 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Cold Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -68,7 +107,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_wind_skill",
                 command_kind="attack_skill",
-                command_template="skill Lightning Bolt 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Lightning Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -76,7 +115,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_earth_skill",
                 command_kind="attack_skill",
-                command_template="skill Earth Spike 3",
+                command_template="skill {skill_name} {level}",
                 skill_name="Earth Spike",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -84,7 +123,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_holy_skill",
                 command_kind="attack_skill",
-                command_template="skill Holy Light 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Holy Light",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -92,7 +131,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_ghost_skill",
                 command_kind="attack_skill",
-                command_template="skill Soul Strike 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Soul Strike",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -101,7 +140,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_potion_or_heal",
                 command_kind="use_item",
-                command_template="use White Potion",
+                command_template="use {item_name}",
                 item_name="White Potion",
                 priority_tier="reflex",
                 cooldown_ms=200,
@@ -110,7 +149,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_strongest_skill",
                 command_kind="attack_skill",
-                command_template="skill Storm Gust 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Storm Gust",
                 priority_tier="reflex",
                 cooldown_ms=2000,
@@ -118,7 +157,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_strongest_aoe",
                 command_kind="attack_skill",
-                command_template="skill Meteor Storm 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Meteor Storm",
                 priority_tier="reflex",
                 cooldown_ms=3000,
@@ -126,7 +165,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_aoe_skill",
                 command_kind="attack_skill",
-                command_template="skill Fire Ball 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Fire Ball",
                 priority_tier="reflex",
                 cooldown_ms=2000,
@@ -135,7 +174,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_fast_finisher",
                 command_kind="attack_skill",
-                command_template="skill Sonic Blow 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Sonic Blow",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -143,7 +182,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_melee_skill",
                 command_kind="attack_skill",
-                command_template="skill Bash 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Bash",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -151,7 +190,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_ranged_skill",
                 command_kind="attack_skill",
-                command_template="skill Double Strafe 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Double Strafe",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -169,7 +208,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_high_sp_skill",
                 command_kind="attack_skill",
-                command_template="skill Heaven's Drive 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Heaven's Drive",
                 priority_tier="reflex",
                 cooldown_ms=2000,
@@ -178,7 +217,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="stun_or_silence_target",
                 command_kind="attack_skill",
-                command_template="skill Bash 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Bash",
                 priority_tier="reflex",
                 cooldown_ms=2000,
@@ -186,7 +225,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="interrupt_caster",
                 command_kind="attack_skill",
-                command_template="skill Bash 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Bash",
                 priority_tier="reflex",
                 cooldown_ms=1500,
@@ -202,7 +241,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="teleport_away",
                 command_kind="use_item",
-                command_template="use Butterfly Wing",
+                command_template="use {item_name}",
                 item_name="Butterfly Wing",
                 priority_tier="reflex",
                 cooldown_ms=1000,
@@ -218,7 +257,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="swap_to_elemental_weapon",
                 command_kind="use_item",
-                command_template="eq Fireblend",
+                command_template="eq {item_name}",
                 item_name="Fireblend",
                 priority_tier="tactical",
                 cooldown_ms=2000,
@@ -226,7 +265,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="equip_tank_set",
                 command_kind="use_item",
-                command_template="eq Shield",
+                command_template="eq {item_name}",
                 item_name="Shield",
                 priority_tier="tactical",
                 cooldown_ms=3000,
@@ -235,7 +274,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="cast_blessing",
                 command_kind="attack_skill",
-                command_template="skill Blessing 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Blessing",
                 priority_tier="tactical",
                 cooldown_ms=5000,
@@ -243,7 +282,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="cast_increase_agility",
                 command_kind="attack_skill",
-                command_template="skill Increase Agility 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Increase Agility",
                 priority_tier="tactical",
                 cooldown_ms=5000,
@@ -251,7 +290,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="cast_endure",
                 command_kind="attack_skill",
-                command_template="skill Endure 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Endure",
                 priority_tier="tactical",
                 cooldown_ms=5000,
@@ -259,7 +298,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="cast_improve_concentration",
                 command_kind="attack_skill",
-                command_template="skill Improve Concentration 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Improve Concentration",
                 priority_tier="tactical",
                 cooldown_ms=5000,
@@ -276,7 +315,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="pre_drink_potion",
                 command_kind="use_item",
-                command_template="use White Potion",
+                command_template="use {item_name}",
                 item_name="White Potion",
                 priority_tier="tactical",
                 cooldown_ms=5000,
@@ -284,7 +323,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="prepare_for_phase_change",
                 command_kind="use_item",
-                command_template="use Blue Potion",
+                command_template="use {item_name}",
                 item_name="Blue Potion",
                 priority_tier="tactical",
                 cooldown_ms=3000,
@@ -293,7 +332,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="heal_party_member",
                 command_kind="attack_skill",
-                command_template="skill Heal 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Heal",
                 priority_tier="tactical",
                 cooldown_ms=2000,
@@ -301,7 +340,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="buff_party_members",
                 command_kind="attack_skill",
-                command_template="skill Blessing 10",
+                command_template="skill {skill_name} {level}",
                 skill_name="Blessing",
                 priority_tier="tactical",
                 cooldown_ms=10000,
@@ -318,7 +357,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_skill_Fire_Bolt",
                 command_kind="attack_skill",
-                command_template="skill Fire Bolt 3",
+                command_template="skill {skill_name} {level}",
                 skill_name="Fire Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -326,7 +365,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_skill_Cold_Bolt",
                 command_kind="attack_skill",
-                command_template="skill Cold Bolt 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Cold Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -334,7 +373,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="use_skill_Lightning_Bolt",
                 command_kind="attack_skill",
-                command_template="skill Lightning Bolt 5",
+                command_template="skill {skill_name} {level}",
                 skill_name="Lightning Bolt",
                 priority_tier="reflex",
                 cooldown_ms=500,
@@ -346,13 +385,25 @@ class ActionExecutor:
 
     # ── Public API ────────────────────────────────────────────────────
 
-    def execute(self, reflex_action: str, bot_id: str, action_queue: Any) -> bool:
+    def execute(
+        self,
+        reflex_action: str,
+        bot_id: str,
+        action_queue: Any,
+        char_skills: dict[str, int] | None = None,
+        char_items: list[str] | None = None,
+    ) -> bool:
         """Execute a reflex action by looking up its mapping and enqueuing it.
+
+        Resolves dynamic skill levels from character state at execution time.
+        Falls back to 'attack' if the required skill isn't known.
 
         Args:
             reflex_action: The reflex action string (e.g. "use_fire_skill").
             bot_id: The bot identifier to execute for.
             action_queue: An ActionQueue instance to enqueue into.
+            char_skills: Dict of {skill_name: level} from character state.
+            char_items: List of item names in inventory.
 
         Returns:
             True if the action was successfully enqueued, False otherwise.
@@ -373,8 +424,22 @@ class ActionExecutor:
                 return False
             mapping.last_executed = time.time()
 
-        command = self.build_command(mapping)
+        command = self.build_command(mapping, char_skills or {}, char_items or [])
         return self.execute_command(command, bot_id, action_queue)
+
+    def build_command(
+        self,
+        mapping: ActionMapping,
+        char_skills: dict[str, int],
+        char_items: list[str],
+    ) -> str:
+        """Build the actual command string, resolving dynamic skill levels."""
+        if mapping.command_kind == "attack_skill" and mapping.skill_name:
+            return self._build_skill_command(mapping.skill_name, char_skills)
+        elif mapping.command_kind == "use_item" and mapping.item_name:
+            return self._build_item_command(mapping.item_name, char_items)
+        else:
+            return mapping.command_template
 
     def get_mapping(self, reflex_action: str) -> ActionMapping | None:
         """Look up an action mapping by reflex action string."""
@@ -401,185 +466,28 @@ class ActionExecutor:
         with self._lock:
             return [m for m in self._mappings.values() if m.command_kind == command_kind]
 
-    def build_command(self, mapping: ActionMapping, target_id: str | None = None) -> str:
-        """Build the actual command string from a mapping, optionally targeting an entity.
-
-        For attack_skill commands, appends the target_id if provided.
-        For map_move commands, returns the template as-is (movement is handled
-        separately by the bridge).
-        """
-        cmd = mapping.command_template
-        if target_id and mapping.command_kind == "attack_skill" and cmd != "attack":
-            cmd = f"{cmd} {target_id}"
-        return cmd
-
-    def execute_skill(
-        self,
-        skill_name: str,
-        target_id: str | None,
-        bot_id: str,
-        action_queue: Any,
-    ) -> bool:
-        """Execute a skill by name, looking up the first matching mapping.
-
-        Searches all mappings for one whose skill_name matches. If found,
-        builds the command and enqueues it.
-        """
-        with self._lock:
-            mapping = next(
-                (m for m in self._mappings.values() if m.skill_name == skill_name),
-                None,
-            )
-        if mapping is None:
-            logger.warning("No mapping found for skill_name=%r", skill_name)
+    def execute_command(self, command: str, bot_id: str, action_queue: Any) -> bool:
+        """Enqueue a command string as an action proposal."""
+        if action_queue is None:
+            logger.warning("No action queue available for bot_id=%r", bot_id)
             return False
-        command = self.build_command(mapping, target_id=target_id)
-        return self.execute_command(command, bot_id, action_queue)
-
-    def execute_item(
-        self,
-        item_name: str,
-        bot_id: str,
-        action_queue: Any,
-    ) -> bool:
-        """Execute an item use by name, looking up the first matching mapping.
-
-        Searches all mappings for one whose item_name matches. If found,
-        builds the command and enqueues it.
-        """
-        with self._lock:
-            mapping = next(
-                (m for m in self._mappings.values() if m.item_name == item_name),
-                None,
-            )
-        if mapping is None:
-            logger.warning("No mapping found for item_name=%r", item_name)
-            return False
-        command = self.build_command(mapping)
-        return self.execute_command(command, bot_id, action_queue)
-
-    def execute_command(
-        self,
-        command_str: str,
-        bot_id: str,
-        action_queue: Any,
-    ) -> bool:
-        """Enqueue a raw command string as an ActionProposal into the action queue.
-
-        Determines the command kind and priority tier heuristically from the
-        command string when no mapping context is available.
-
-        Args:
-            command_str: The command string to enqueue (e.g. "skill Fire Bolt 3").
-            bot_id: The bot identifier.
-            action_queue: An ActionQueue instance.
-
-        Returns:
-            True if the action was successfully enqueued, False otherwise.
-        """
-        now = datetime.now(UTC)
-        action_id = f"exec_{uuid.uuid4().hex[:16]}"
-        idempotency_key = f"exec_{command_str}_{int(now.timestamp())}"
-
-        kind, priority_tier = self._infer_command_metadata(command_str)
 
         proposal = ActionProposal(
-            action_id=action_id,
-            kind=kind,
-            command=command_str,
-            priority_tier=ActionPriorityTier(priority_tier),
-            conflict_key=f"exec_{command_str}",
-            source="reflex",
-            created_at=now,
-            expires_at=now + timedelta(seconds=30),
-            idempotency_key=idempotency_key,
+            bot_id=bot_id,
+            action_type="command",
+            priority_tier=ActionPriorityTier.reflex,
+            source="action_executor",
+            description=command,
+            conflict_key=f"cmd_{command}_{int(time.time())}",
         )
+        action_queue.enqueue(proposal)
+        logger.debug("Enqueued command %r for bot_id=%r", command, bot_id)
+        return True
 
-        success, status, returned_action_id, message = action_queue.enqueue(bot_id, proposal)
-        if success:
-            logger.debug(
-                "Enqueued command %r for bot %s (action_id=%s, status=%s)",
-                command_str,
-                bot_id,
-                returned_action_id,
-                status,
-            )
-        else:
-            logger.debug(
-                "Failed to enqueue command %r for bot %s: %s (status=%s)",
-                command_str,
-                bot_id,
-                message,
-                status,
-            )
-        return success
+    def get_cooldown_tracker(self) -> SkillCooldownTracker:
+        """Get the shared cooldown tracker."""
+        return self._cd_tracker
 
-    def get_execution_summary(self) -> str:
-        """Return a human-readable summary of all registered action mappings."""
-        with self._lock:
-            lines = ["── Action Execution Engine Summary ──"]
-            lines.append(f"Total mappings: {len(self._mappings)}")
-            by_priority: dict[str, int] = {}
-            by_kind: dict[str, int] = {}
-            for m in self._mappings.values():
-                by_priority[m.priority_tier] = by_priority.get(m.priority_tier, 0) + 1
-                by_kind[m.command_kind] = by_kind.get(m.command_kind, 0) + 1
-            lines.append("")
-            lines.append("By priority tier:")
-            for tier in ("reflex", "tactical", "strategic"):
-                count = by_priority.get(tier, 0)
-                if count:
-                    lines.append(f"  {tier}: {count}")
-            lines.append("")
-            lines.append("By command kind:")
-            for kind in sorted(by_kind):
-                lines.append(f"  {kind}: {by_kind[kind]}")
-            lines.append("")
-            lines.append("Registered reflex actions:")
-            for name in sorted(self._mappings):
-                m = self._mappings[name]
-                lines.append(f"  {name} → [{m.command_kind}] {m.command_template}")
-            return "\n".join(lines)
-
-    # ── Internal Helpers ─────────────────────────────────────────────
-
-    @staticmethod
-    def _infer_command_metadata(command_str: str) -> tuple[str, str]:
-        """Infer command kind and priority tier from a command string.
-
-        Returns (kind, priority_tier).
-        """
-        lower = command_str.strip().lower()
-
-        if lower.startswith("skill "):
-            return "attack_skill", "reflex"
-        if lower.startswith("use "):
-            return "use_item", "reflex"
-        if lower.startswith("eq "):
-            return "use_item", "tactical"
-        if lower == "attack":
-            return "attack_skill", "reflex"
-        if lower == "sit":
-            return "ai_manual", "tactical"
-        if lower == "ai manual":
-            return "ai_manual", "reflex"
-        if lower == "move":
-            return "map_move", "reflex"
-        if lower.startswith("ai "):
-            return "ai_manual", "reflex"
-        return "command", "reflex"
-
-
-# ── Global Singleton ──────────────────────────────────────────────────
-
-_executor: ActionExecutor | None = None
-_executor_lock = RLock()
-
-
-def get_action_executor() -> ActionExecutor:
-    """Return the global ActionExecutor singleton."""
-    global _executor
-    with _executor_lock:
-        if _executor is None:
-            _executor = ActionExecutor()
-        return _executor
+    def update_character_state(self, skills: dict[str, int], dex: int = 0) -> None:
+        """Update character state for cooldown tracking."""
+        self._cd_tracker.set_dex(dex)

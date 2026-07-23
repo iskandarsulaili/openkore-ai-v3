@@ -332,6 +332,13 @@ sub on_mainLoop_post {
 	_send_discovery_data();
 		_survival_check();
 		_teamplay_check();
+		# Check for party invites and leader broadcasts in recent chat
+		if ($main::chatLog) {
+		    my @chat_lines = ref($main::chatLog) eq 'ARRAY' ? @{$main::chatLog} : ();
+		    for my $cl (splice(@chat_lines, -10)) {
+		        _check_party_invite($cl);
+		    }
+		}
 
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
@@ -4332,7 +4339,7 @@ my %sell_items = map { $_ => 1 } @sell_list;
 
 # ── State tracking ──
 my $_pro_ro_last_check_ms = 0;
-my $_pro_ro_check_interval_ms = 5000;  # Check every 5s
+my $_pro_ro_check_interval_ms = 2000;  # Check every 2s for faster response
 my $_pro_ro_last_job_check_ms = 0;
 my $_pro_ro_last_sell_ms = 0;
 my $_pro_ro_last_stat_ms = 0;
@@ -4340,6 +4347,24 @@ my $_pro_ro_last_gear_check_ms = 0;
 my $_pro_ro_last_map_check_ms = 0;
 my $_pro_ro_job_changing = 0;  # 1 = currently in job change dialog
 my $_pro_ro_job_target = '';   # Target job class
+my $_pro_ro_leader_bot = '';   # Name of the leader bot
+my $_pro_ro_is_leader = 0;     # 1 if this bot is the leader
+my $_pro_ro_leader_map = '';   # Map the leader is on (for followers)
+my $_pro_ro_leader_last_seen = 0;  # When leader was last seen
+my $_pro_ro_follow_leader = 0;  # 1 if this bot should follow the leader
+my $_pro_ro_last_skill_check_ms = 0;
+my $_pro_ro_last_party_check_ms = 0;
+my $_pro_ro_last_leader_broadcast_ms = 0;
+my $_pro_ro_last_formation_check_ms = 0;
+my $_pro_ro_role = 'dps';      # Role: tank, dps, support
+my $_pro_ro_party_formed = 0;  # 1 if party is formed
+my $_pro_ro_party_leader_name = '';  # Name of party leader
+my $_pro_ro_last_autobuy_ms = 0;
+my $_pro_ro_last_autosell_ms = 0;
+my $_pro_ro_last_weapon_check_ms = 0;
+my $_pro_ro_last_skill_learn_ms = 0;
+my $_pro_ro_last_arrow_check_ms = 0;
+my $_pro_ro_last_leader_cmd_ms = 0;
 
 sub _pro_ro_tick {
     my $now = _now_ms();
@@ -4360,48 +4385,112 @@ sub _pro_ro_tick {
     my $weight = $cr->{weight} || 0;
     my $weight_max = $cr->{weight_max} || 1;
     my $weight_pct = $weight_max > 0 ? int($weight * 100 / $weight_max) : 0;
+    my $bot_name = $cr->{name} || '';
     
-    # ── 1. JOB CHANGE: if base_lv >= 10 and job_lv >= 10 and still Novice ──
+    # ── LEADER DETECTION: kicapmasin is always the leader ──
+    if ($bot_name =~ /kicapmasin$/i && !$_pro_ro_is_leader) {
+        $_pro_ro_is_leader = 1;
+        $_pro_ro_leader_bot = $bot_name;
+        $_pro_ro_role = 'leader';
+        warning "[pro_ro] DESIGNATED LEADER: $bot_name\n", 'aiSidecarBridge', 1;
+    } elsif ($bot_name !~ /kicapmasin$/i && !$_pro_ro_leader_bot) {
+        $_pro_ro_leader_bot = 'kicapmasin';
+        $_pro_ro_role = 'follower';
+        warning "[pro_ro] FOLLOWER: $bot_name, leader=$_pro_ro_leader_bot\n", 'aiSidecarBridge', 1;
+    }
+    
+    # ── LEADER: Broadcast position and commands to followers ──
+    if ($_pro_ro_is_leader && $now - $_pro_ro_last_leader_broadcast_ms > 10000) {
+        $_pro_ro_last_leader_broadcast_ms = $now;
+        my $leader_map = $field ? $field->name() : $map;
+        $leader_map =~ s/\.gat$//;
+        my $leader_x = $char->{x} || 0;
+        my $leader_y = $char->{y} || 0;
+        my $leader_hp_pct = $hp_pct;
+        my $leader_target_map = $::config{lockMap} || $leader_map;
+        # Broadcast via party chat or public chat
+        my $cmd = sprintf("\@pro_ro_leader|%s|%s|%d|%d|%d|%s", 
+            $leader_map, $leader_target_map, $leader_x, $leader_y, $leader_hp_pct, $_pro_ro_role);
+        eval { Commands::run("c $cmd"); 1; };
+        warning "[pro_ro] leader broadcast: map=$leader_map target=$leader_target_map pos=($leader_x,$leader_y)\n", 'aiSidecarBridge', 1;
+    }
+    
+    # ── FOLLOWER: Parse leader broadcasts ──
+    if (!$_pro_ro_is_leader && $now - $_pro_ro_last_leader_cmd_ms > 5000) {
+        $_pro_ro_last_leader_cmd_ms = $now;
+        # Check if leader is on a different map - follow them
+        if ($_pro_ro_leader_map ne '' && $_pro_ro_leader_map ne $map) {
+            my $current_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+            if ($current_lock ne $_pro_ro_leader_map) {
+                warning "[pro_ro] follower: leader on $_pro_ro_leader_map, following\n", 'aiSidecarBridge', 1;
+                $::config{lockMap} = $_pro_ro_leader_map;
+                $::config{attackAuto} = 3;
+                $::config{attackAuto_inLockOnly} = 0;
+                eval { Commands::run("move $_pro_ro_leader_map"); 1; };
+            }
+        }
+    }
+    
+    # ── 1. PARTY FORMATION (leader only) ──
+    if ($_pro_ro_is_leader && $now - $_pro_ro_last_party_check_ms > 15000) {
+        $_pro_ro_last_party_check_ms = $now;
+        _pro_ro_form_party($cr);
+    }
+    
+    # ── 2. JOB CHANGE: if base_lv >= 10 and job_lv >= 10 and still Novice ──
     if ($base_lv >= 10 && $job_lv >= 10 && $job_name =~ /novice/i && !$_pro_ro_job_changing) {
         _pro_ro_do_job_change($cr);
         return;
     }
     
-    # ── 2. JOB CHANGE DIALOG: continue dialog if in progress ──
+    # ── 3. JOB CHANGE DIALOG: continue dialog if in progress ──
     if ($_pro_ro_job_changing) {
         _pro_ro_continue_job_dialog($cr);
         return;
     }
     
-    # ── 3. SELL JUNK: if weight > 50% or zeny < 100 ──
+    # ── 4. SELL JUNK: if weight > 50% or zeny < 100 ──
     if (($weight_pct > 50 || $zeny < 100) && $now - $_pro_ro_last_sell_ms > 30000) {
         $_pro_ro_last_sell_ms = $now;
         _pro_ro_sell_junk($cr);
         return;
     }
     
-    # ── 4. BUY POTIONS: if zeny >= 50 and potions < 5 ──
+    # ── 5. BUY POTIONS: if zeny >= 50 and potions < 5 ──
     if ($zeny >= 50 && $now - $_pro_ro_last_gear_check_ms > 30000) {
         $_pro_ro_last_gear_check_ms = $now;
         _pro_ro_buy_supplies($cr);
         return;
     }
     
-    # ── 5. ALLOCATE STATS: if stat points available ──
-    if ($now - $_pro_ro_last_stat_ms > 10000) {
-        $_pro_ro_last_stat_ms = $now;
-        _pro_ro_allocate_stats($cr);
-        # Don't return - let other checks run too
+    # ── 6. BUY ARROWS (Archer only): if zeny >= 10 and arrows < 200 ──
+    if ($job_name =~ /archer|hunter/i && $now - $_pro_ro_last_arrow_check_ms > 30000) {
+        $_pro_ro_last_arrow_check_ms = $now;
+        _pro_ro_buy_arrows($cr);
     }
     
-    # ── 6. MAP PROGRESSION: if on wrong map for level ──
-    if ($now - $_pro_ro_last_map_check_ms > 60000) {
+    # ── 7. ALLOCATE STATS: if stat points available ──
+    if ($now - $_pro_ro_last_stat_ms > 5000) {
+        $_pro_ro_last_stat_ms = $now;
+        _pro_ro_allocate_stats($cr);
+    }
+    
+    # ── 8. LEARN SKILLS: if skill points available ──
+    if ($now - $_pro_ro_last_skill_learn_ms > 10000) {
+        $_pro_ro_last_skill_learn_ms = $now;
+        _pro_ro_learn_skills($cr);
+    }
+    
+    # ── 9. MAP PROGRESSION (leader decides, followers follow) ──
+    if ($now - $_pro_ro_last_map_check_ms > 30000) {
         $_pro_ro_last_map_check_ms = $now;
-        _pro_ro_check_map_progression($cr);
+        if ($_pro_ro_is_leader) {
+            _pro_ro_check_map_progression($cr);
+        }
         return;
     }
     
-    # ── 7. USE FREE HEALING ITEMS: if HP < 50% and have Carrots/Apples ──
+    # ── 10. USE FREE HEALING ITEMS: if HP < 50% and have Carrots/Apples ──
     if ($hp_pct < 50 && $hp_pct > 0) {
         _pro_ro_use_free_heals($cr);
         return;
@@ -4412,6 +4501,7 @@ sub _pro_ro_do_job_change {
     my ($cr) = @_;
     my $base_lv = $cr->{lv} || $cr->{level} || 1;
     my $map = $cr->{map} || '';
+    my $bot_name = $cr->{name} || '';
     
     # Must be in Prontera for job change
     if ($map !~ /^prontera/i) {
@@ -4421,24 +4511,37 @@ sub _pro_ro_do_job_change {
         return;
     }
     
-    # Choose job: Archer (best for leveling) or Thief
-    # Archer NPC: prontera 160 191 (Bowman Guild)
-    # Thief NPC: prontera 231 38 (Thief Guild)
-    # We'll try Archer first (best solo leveling)
-    $_pro_ro_job_target = 'Archer';
+    # Assign roles based on bot name
+    # Leader (kicapmasin) -> Archer (best for leading)
+    # kicapmasin2 -> Thief (melee DPS)
+    # kicapmasin3 -> Acolyte (support/healer)
+    my $target_job = 'Archer';
+    my $npc_coords = '160 191';  # Archer Guild
+    if ($bot_name =~ /kicapmasin2$/i) {
+        $target_job = 'Thief';
+        $npc_coords = '231 38';  # Thief Guild
+    } elsif ($bot_name =~ /kicapmasin3$/i) {
+        $target_job = 'Acolyte';
+        $npc_coords = '200 170';  # Acolyte Guild (approximate)
+    }
+    
+    $_pro_ro_job_target = $target_job;
     $_pro_ro_job_changing = 1;
     
-    warning "[pro_ro] starting job change to Archer at (160, 191)\n", 'aiSidecarBridge', 1;
-    eval { Commands::run('talknpc 160 191'); 1; };
+    warning "[pro_ro] $bot_name -> starting job change to $target_job at ($npc_coords)\n", 'aiSidecarBridge', 1;
+    eval { Commands::run("talknpc $npc_coords"); 1; };
 }
 
 sub _pro_ro_continue_job_dialog {
     my ($cr) = @_;
-    # Check if we're in a dialog
+    my $bot_name = $cr->{name} || '';
+    
+    # Check if we're in a dialog by looking at AI sequence
     my $in_dialog = 0;
-    if ($::AI::ai_seq) {
-        for my $seq (@::AI::ai_seq) {
-            if ($seq =~ /npc/i) { $in_dialog = 1; last; }
+    my $ai_seq_ref = $::AI::ai_seq;
+    if (defined $ai_seq_ref && ref($ai_seq_ref) eq 'ARRAY') {
+        for my $seq (@{$ai_seq_ref}) {
+            if (defined $seq && $seq =~ /npc/i) { $in_dialog = 1; last; }
         }
     }
     
@@ -4446,69 +4549,90 @@ sub _pro_ro_continue_job_dialog {
         # Dialog ended - check if job changed
         my $job = $cr->{job_name} || '';
         if ($job !~ /novice/i) {
-            warning "[pro_ro] job change complete! New job: $job\n", 'aiSidecarBridge', 1;
+            warning "[pro_ro] $bot_name job change complete! New job: $job\n", 'aiSidecarBridge', 1;
             $_pro_ro_job_changing = 0;
+            # Set role based on new job
+            if ($job =~ /archer|hunter/i) { $_pro_ro_role = 'dps'; }
+            elsif ($job =~ /thief|assassin|rogue/i) { $_pro_ro_role = 'dps'; }
+            elsif ($job =~ /acolyte|priest|monk/i) { $_pro_ro_role = 'support'; }
+            elsif ($job =~ /sword|knight|crusader|paladin/i) { $_pro_ro_role = 'tank'; }
             # Buy weapon for new class
             _pro_ro_buy_weapon($cr);
         } else {
-            warning "[pro_ro] job change dialog ended but still Novice, retrying\n", 'aiSidecarBridge', 1;
+            warning "[pro_ro] $bot_name job change dialog ended but still Novice, retrying\n", 'aiSidecarBridge', 1;
             $_pro_ro_job_changing = 0;
         }
         return;
     }
     
     # We're in dialog - send responses
-    # Archer NPC dialog: talk -> "I want to become an Archer" -> confirm
-    # The exact dialog depends on the server, but typically:
-    # talknpc -> c (continue) -> r1 (first response) -> c -> r0 -> c
-    my $ai_top = @ai_seq ? $ai_seq[0] : '';
-    if ($ai_top =~ /npc/i) {
-        # Send dialog responses
-        eval { Commands::run('talk resp 0'); 1; };  # Select first option
-        eval { Commands::run('talk continue'); 1; };
-    }
+    # Standard job change NPC dialog flow:
+    # talknpc -> c (continue through intro) -> r1 (select "I want to become X") -> c -> r0 (confirm) -> c
+    # Try all standard responses
+    eval { Commands::run('talk continue'); 1; };
+    eval { Commands::run('talk resp 0'); 1; };
+    eval { Commands::run('talk resp 1'); 1; };
+    eval { Commands::run('talk resp 2'); 1; };
+    eval { Commands::run('talk any'); 1; };
 }
 
 sub _pro_ro_sell_junk {
     my ($cr) = @_;
     my $map = $cr->{map} || '';
+    my $bot_name = $cr->{name} || '';
     
     # Must be in town to sell
-    if ($map !~ /^prontera/i) {
+    if ($map !~ /^prontera|izlude|morocc|payon|geffen|aldebaran/i) {
         return;
     }
     
-    # Sell junk items via auto-sell
-    warning "[pro_ro] selling junk items\n", 'aiSidecarBridge', 1;
+    warning "[pro_ro] $bot_name selling junk items\n", 'aiSidecarBridge', 1;
+    # Use the existing _sell_junk_items which sells by item name list
+    _sell_junk_items();
+    # Also try sell all command
     eval { Commands::run('sell auto'); 1; };
+    eval { Commands::run('sell all'); 1; };
 }
 
 sub _pro_ro_buy_supplies {
     my ($cr) = @_;
     my $zeny = $cr->{zeny} || 0;
     my $map = $cr->{map} || '';
+    my $bot_name = $cr->{name} || '';
     
     # Must be in town
-    if ($map !~ /^prontera/i) {
+    if ($map !~ /^prontera|izlude|morocc|payon|geffen|aldebaran/i) {
         return;
     }
     
-    # Count potions
+    # Count potions in inventory
     my $potion_count = 0;
     if ($cr->{inventory}) {
         for my $item (@{$cr->{inventory}}) {
             next if ref($item) ne 'HASH';
             my $name = $item->{name} || '';
-            if ($name =~ /red potion|orange potion|white potion/i) {
+            if ($name =~ /red potion|orange potion|white potion|blue potion/i) {
                 $potion_count += $item->{amount} || 0;
             }
         }
     }
     
-    # Buy potions if low
-    if ($potion_count < 5 && $zeny >= 50) {
-        warning "[pro_ro] buying potions (have $potion_count, zeny=$zeny)\n", 'aiSidecarBridge', 1;
-        eval { Commands::run('autobuy'); 1; };
+    # Buy potions if low (keep 5-10 potions)
+    my $target_potions = 10;
+    if ($_pro_ro_role eq 'tank') { $target_potions = 20; }
+    elsif ($_pro_ro_role eq 'support') { $target_potions = 15; }
+    
+    if ($potion_count < $target_potions && $zeny >= 50) {
+        warning "[pro_ro] $bot_name buying potions (have $potion_count/$target_potions, zeny=$zeny)\n", 'aiSidecarBridge', 1;
+        # Walk to potion shop and buy
+        if ($map =~ /^prontera/i) {
+            # Prontera Potion Shop is at (126, 76) - use the configured buyAuto
+            eval { Commands::run('autobuy'); 1; };
+            # Also try direct NPC interaction
+            eval { Commands::run('talknpc 126 76'); 1; };
+        } else {
+            eval { Commands::run('autobuy'); 1; };
+        }
     }
 }
 
@@ -4516,18 +4640,107 @@ sub _pro_ro_buy_weapon {
     my ($cr) = @_;
     my $job = $cr->{job_name} || '';
     my $zeny = $cr->{zeny} || 0;
+    my $map = $cr->{map} || '';
+    my $bot_name = $cr->{name} || '';
     
-    warning "[pro_ro] checking weapon for job=$job zeny=$zeny\n", 'aiSidecarBridge', 1;
+    warning "[pro_ro] $bot_name checking weapon for job=$job zeny=$zeny\n", 'aiSidecarBridge', 1;
     
-    # Archer: buy Bow (1701) from Weapon Shop
-    if ($job =~ /archer/i && $zeny >= 100) {
-        # Weapon Shop in Prontera: (160, 133) or similar
-        # For now, use autobuy which should have bow configured
+    # Must be in town
+    if ($map !~ /^prontera/i) {
+        warning "[pro_ro] $bot_name need to be in Prontera to buy weapon\n", 'aiSidecarBridge', 1;
+        return;
+    }
+    
+    # Check if we already have a weapon equipped
+    my $has_weapon = 0;
+    if ($cr->{inventory}) {
+        for my $item (@{$cr->{inventory}}) {
+            next if ref($item) ne 'HASH';
+            my $name = $item->{name} || '';
+            my $equip = $item->{equipped} || 0;
+            if ($equip && ($name =~ /bow|knife|cutter|dagger|sword|staff|rod|mace|axe|spear|katar|claw|book|instrument|whip/i)) {
+                $has_weapon = 1;
+                last;
+            }
+        }
+    }
+    
+    if ($has_weapon) {
+        warning "[pro_ro] $bot_name already has weapon equipped\n", 'aiSidecarBridge', 1;
+        return;
+    }
+    
+    # Buy weapon based on job
+    if ($job =~ /archer|hunter/i && $zeny >= 100) {
+        # Prontera Weapon Shop: (160, 133) - buy Bow (1701)
+        warning "[pro_ro] $bot_name buying Bow from Weapon Shop\n", 'aiSidecarBridge', 1;
+        eval { Commands::run('talknpc 160 133'); 1; };
+        eval { Commands::run('talk resp 0'); 1; };
+        eval { Commands::run('talk resp 1'); 1; };
+        eval { Commands::run('talk continue'); 1; };
+        eval { Commands::run('buy 1701 1'); 1; };  # Buy 1 Bow
+        eval { Commands::run('talk continue'); 1; };
+    } elsif ($job =~ /thief|assassin|rogue/i && $zeny >= 100) {
+        # Buy Knife (1301) or Cutter (1302)
+        warning "[pro_ro] $bot_name buying Knife from Weapon Shop\n", 'aiSidecarBridge', 1;
+        eval { Commands::run('talknpc 160 133'); 1; };
+        eval { Commands::run('talk resp 0'); 1; };
+        eval { Commands::run('talk resp 1'); 1; };
+        eval { Commands::run('talk continue'); 1; };
+        eval { Commands::run('buy 1301 1'); 1; };  # Buy 1 Knife
+        eval { Commands::run('talk continue'); 1; };
+    } elsif ($job =~ /acolyte|priest|monk|champion/i && $zeny >= 100) {
+        # Buy Mace (1501) or Staff (1601)
+        warning "[pro_ro] $bot_name buying Mace from Weapon Shop\n", 'aiSidecarBridge', 1;
+        eval { Commands::run('talknpc 160 133'); 1; };
+        eval { Commands::run('talk resp 0'); 1; };
+        eval { Commands::run('talk resp 1'); 1; };
+        eval { Commands::run('talk continue'); 1; };
+        eval { Commands::run('buy 1501 1'); 1; };  # Buy 1 Mace
+        eval { Commands::run('talk continue'); 1; };
+    } else {
+        # Default: use autobuy config
         eval { Commands::run('autobuy'); 1; };
     }
-    # Thief: buy Knife (1301) or Cutter (1302)
-    elsif ($job =~ /thief/i && $zeny >= 100) {
+}
+
+sub _pro_ro_buy_arrows {
+    my ($cr) = @_;
+    my $zeny = $cr->{zeny} || 0;
+    my $map = $cr->{map} || '';
+    my $bot_name = $cr->{name} || '';
+    
+    # Must be in town
+    if ($map !~ /^prontera|izlude|morocc|payon|geffen|aldebaran/i) {
+        return;
+    }
+    
+    # Count arrows in inventory
+    my $arrow_count = 0;
+    if ($cr->{inventory}) {
+        for my $item (@{$cr->{inventory}}) {
+            next if ref($item) ne 'HASH';
+            my $name = $item->{name} || '';
+            if ($name =~ /arrow/i) {
+                $arrow_count += $item->{amount} || 0;
+            }
+        }
+    }
+    
+    # Buy arrows if low (keep 500+ arrows)
+    if ($arrow_count < 200 && $zeny >= 10) {
+        warning "[pro_ro] $bot_name buying arrows (have $arrow_count, zeny=$zeny)\n", 'aiSidecarBridge', 1;
+        # Use autobuy config which should have arrows configured
         eval { Commands::run('autobuy'); 1; };
+        # Also try direct buy from Arrow NPC
+        if ($map =~ /^prontera/i) {
+            eval { Commands::run('talknpc 160 133'); 1; };  # Weapon Shop
+            eval { Commands::run('talk resp 0'); 1; };
+            eval { Commands::run('talk resp 1'); 1; };
+            eval { Commands::run('talk continue'); 1; };
+            eval { Commands::run('buy 1750 500'); 1; };  # Buy 500 Arrows (ID 1750)
+            eval { Commands::run('talk continue'); 1; };
+        }
     }
 }
 
@@ -4535,27 +4748,80 @@ sub _pro_ro_allocate_stats {
     my ($cr) = @_;
     my $base_lv = $cr->{lv} || $cr->{level} || 1;
     my $job = $cr->{job_name} || '';
+    my $bot_name = $cr->{name} || '';
     
     # Check if we have stat points
     my $stat_points = $cr->{stat_points} || 0;
     return if $stat_points <= 0;
     
-    # Determine primary stat based on class
-    my $primary_stat = 'str';
+    # Determine stat allocation based on class and role
+    # Pro RO build: primary stat to 99 first, then secondary
+    my @stat_order;
     if ($job =~ /archer|hunter/i) {
-        $primary_stat = 'dex';
+        @stat_order = ('dex', 'agi', 'str');  # Archer: DEX > AGI > STR
     } elsif ($job =~ /thief|assassin|rogue/i) {
-        $primary_stat = 'agi';
-    } elsif ($job =~ /mage|wizard|sorcerer/i) {
-        $primary_stat = 'int';
-    } elsif ($job =~ /sword|knight|crusader|paladin/i) {
-        $primary_stat = 'str';
+        @stat_order = ('agi', 'str', 'dex');  # Thief: AGI > STR > DEX
     } elsif ($job =~ /acolyte|priest|monk|champion/i) {
-        $primary_stat = 'int';
+        @stat_order = ('int', 'dex', 'str');  # Acolyte: INT > DEX > STR
+    } elsif ($job =~ /mage|wizard|sorcerer/i) {
+        @stat_order = ('int', 'dex', 'agi');  # Mage: INT > DEX > AGI
+    } elsif ($job =~ /sword|knight|crusader|paladin/i) {
+        @stat_order = ('str', 'agi', 'vit');  # Knight: STR > AGI > VIT
+    } else {
+        @stat_order = ('str', 'agi', 'dex');  # Default: STR > AGI > DEX
     }
     
-    warning "[pro_ro] allocating $stat_points stat points to $primary_stat\n", 'aiSidecarBridge', 1;
-    eval { Commands::run("stat_add $primary_stat $stat_points"); 1; };
+    # Allocate 1 point at a time to primary stat
+    my $primary = $stat_order[0];
+    warning "[pro_ro] $bot_name allocating $stat_points points (primary=$primary)\n", 'aiSidecarBridge', 1;
+    
+    # Allocate in batches of 5 to avoid flooding the server
+    my $batch = $stat_points > 5 ? 5 : $stat_points;
+    eval { Commands::run("stat_add $primary $batch"); 1; };
+}
+
+sub _pro_ro_learn_skills {
+    my ($cr) = @_;
+    my $job = $cr->{job_name} || '';
+    my $skill_points = $cr->{skill_points} || 0;
+    my $bot_name = $cr->{name} || '';
+    
+    return if $skill_points <= 0;
+    
+    warning "[pro_ro] $bot_name learning skills ($skill_points points available, job=$job)\n", 'aiSidecarBridge', 1;
+    
+    # Learn skills based on class
+    if ($job =~ /archer/i) {
+        # Archer skills: Double Strafe (AC_DOUBLE), Improve Concentration (AC_CONCENTRATION)
+        # Try to learn Double Strafe first (best DPS)
+        eval { Commands::run('skills add AC_DOUBLE 1'); 1; };
+        eval { Commands::run('skills add AC_CONCENTRATION 1'); 1; };
+        eval { Commands::run('skills add AC_OWL 1'); 1; };  # Owl's Eye (DEX+)
+        eval { Commands::run('skills add AC_VULTURE 1'); 1; };  # Vulture's Eye (range+)
+    } elsif ($job =~ /thief/i) {
+        # Thief skills: Double Attack (TF_DOUBLE), Improve Hiding (TF_HIDING)
+        eval { Commands::run('skills add TF_DOUBLE 1'); 1; };
+        eval { Commands::run('skills add TF_MISS 1'); 1; };  # Avoid
+        eval { Commands::run('skills add TF_STEAL 1'); 1; };  # Steal
+        eval { Commands::run('skills add TF_HIDING 1'); 1; };
+    } elsif ($job =~ /acolyte/i) {
+        # Acolyte skills: Heal (AL_HEAL), Increase SP Recovery (AL_INCSPRATE)
+        eval { Commands::run('skills add AL_HEAL 1'); 1; };
+        eval { Commands::run('skills add AL_INCSPRATE 1'); 1; };
+        eval { Commands::run('skills add AL_DP 1'); 1; };  # Divine Protection
+        eval { Commands::run('skills add AL_BLESSING 1'); 1; };
+        eval { Commands::run('skills add AL_CURE 1'); 1; };
+    } elsif ($job =~ /mage/i) {
+        eval { Commands::run('skills add MG_FIREBOLT 1'); 1; };
+        eval { Commands::run('skills add MG_SRECOVERY 1'); 1; };
+    } elsif ($job =~ /swordman|sword/i) {
+        eval { Commands::run('skills add SM_SWORD 1'); 1; };  # Sword Mastery
+        eval { Commands::run('skills add SM_RECOVERY 1'); 1; };  # Increase HP Recovery
+        eval { Commands::run('skills add SM_BASH 1'); 1; };
+    }
+    
+    # Also try generic skill learn command
+    eval { Commands::run('skills add 1'); 1; };
 }
 
 sub _pro_ro_use_free_heals {
@@ -4607,7 +4873,7 @@ sub _pro_ro_check_map_progression {
     
     # Only change if different from current
     # Don't re-set if already on a hunting map (any _fild map is fine)
-    my $_pro_ro_current_map = $field ? $field->name() : ($cr->{map} || '');
+    my $_pro_ro_current_map = $cr->{map} || '';
     $_pro_ro_current_map = lc($_pro_ro_current_map);
     $_pro_ro_current_map =~ s/\.gat$//;
     if ($_pro_ro_current_map =~ /_fild/) {
@@ -4627,6 +4893,77 @@ sub _pro_ro_check_map_progression {
     }
 }
 
+sub _pro_ro_form_party {
+    my ($cr) = @_;
+    my $bot_name = $cr->{name} || '';
+    my $map = $cr->{map} || '';
+    
+    return if !$_pro_ro_is_leader;
+    
+    my $party = $main::partiesList;
+    my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
+    
+    if (!$in_party) {
+        warning "[pro_ro] $bot_name forming party...\n", 'aiSidecarBridge', 1;
+        
+        # Create party
+        eval { Commands::run('party create'); 1; };
+        eval { Commands::run('party create 1'); 1; };
+        
+        # Wait a moment then invite known sibling bots
+        if ($main::playersList) {
+            foreach my $_pl (@{$main::playersList}) {
+                next unless ref($_pl) eq 'HASH';
+                my $_pn = $_pl->{name} || '';
+                next if $_pn eq '' || $_pn eq $bot_name;
+                # Invite bots that match our naming pattern
+                next unless $_pn =~ /^openkoreai/i || $_pn =~ /kicapmasin/i;
+                warning "[pro_ro] $bot_name inviting $_pn to party\n", 'aiSidecarBridge', 1;
+                eval { Commands::run("c \@invite $_pn"); 1; };
+                eval { Commands::run("party invite $_pn"); 1; };
+            }
+        }
+        
+        # Set party settings: share exp, share items
+        eval { Commands::run('party share exp'); 1; };
+        eval { Commands::run('party share item'); 1; };
+        
+        $_pro_ro_party_formed = 1;
+        $_pro_ro_party_leader_name = $bot_name;
+    } else {
+        # Already in party - check if we're the leader
+        my $party_leader = $party->{PartyLeader} || '';
+        if ($party_leader eq $bot_name) {
+            $_pro_ro_party_formed = 1;
+            $_pro_ro_party_leader_name = $bot_name;
+            
+            # Check party members and invite missing siblings
+            if ($main::playersList) {
+                foreach my $_pl (@{$main::playersList}) {
+                    next unless ref($_pl) eq 'HASH';
+                    my $_pn = $_pl->{name} || '';
+                    next if $_pn eq '' || $_pn eq $bot_name;
+                    next unless $_pn =~ /^openkoreai/i || $_pn =~ /kicapmasin/i;
+                    
+                    # Check if already in party
+                    my $_already = 0;
+                    foreach my $_k (keys %$party) {
+                        my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : '';
+                        if ($_pm eq $_pn) { $_already = 1; last; }
+                    }
+                    next if $_already;
+                    
+                    warning "[pro_ro] $bot_name inviting missing sibling $_pn\n", 'aiSidecarBridge', 1;
+                    eval { Commands::run("c \@invite $_pn"); 1; };
+                }
+            }
+        } else {
+            # We're not the leader - follow their map
+            $_pro_ro_party_leader_name = $party_leader;
+        }
+    }
+}
+
 sub _teamplay_check {
 	my $now = _now_ms();
 	state $_last_tp_ms = 0;
@@ -4637,79 +4974,100 @@ sub _teamplay_check {
 	return if !$cr;
 	my $name = $cr->{name} || '';
 	return if $name eq '';
+	my $map = $cr->{map} || '';
 
 	my $party = $main::partiesList;
 	my $in_party = (defined $party && ref($party) eq 'HASH' && scalar(keys %$party) > 0) ? 1 : 0;
 
-	if (!$in_party) {
-	    # Auto-invite: look for known sibling bots without party and invite them
-	    if ($main::playersList) {
-	        foreach my $_pl (@{$main::playersList}) {
-	            next unless ref($_pl) eq 'HASH';
-	            my $_pn = $_pl->{name} || '';
-	            next if $_pn eq '' || $_pn eq $name;
-	            next unless $_pn =~ /^openkoreai/i;
-	            # Check if they're already in a party
-	            my $_already_in_party = 0;
-	            if (defined $party && ref($party) eq 'HASH') {
-	                foreach my $_k (keys %$party) {
-	                    my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : '';
-	                    if ($_pm eq $_pn) { $_already_in_party = 1; last; }
-	                }
+	# ── Parse leader broadcasts from chat messages ──
+	# Leader broadcasts look like: @pro_ro_leader|map|target_map|x|y|hp_pct|role
+	# These come through as public chat messages
+	if ($main::playersList) {
+	    foreach my $_pl (@{$main::playersList}) {
+	        next unless ref($_pl) eq 'HASH';
+	        my $_pn = $_pl->{name} || '';
+	        next if $_pn eq '' || $_pn eq $name;
+	        # Check if this is the leader
+	        if ($_pn =~ /kicapmasin$/i && $_pn ne $name) {
+	            $_pro_ro_leader_bot = $_pn;
+	            # Leader's map is wherever they are
+	            my $_lm = $_pl->{map} || '';
+	            $_lm =~ s/\.gat$//;
+	            if ($_lm ne '') {
+	                $_pro_ro_leader_map = $_lm;
+	                $_pro_ro_leader_last_seen = $now;
 	            }
-	            next if $_already_in_party;
-	            # Invite via chat command
-	            eval { Commands::run("c \@invite $_pn"); 1 };
-	            last;  # Only invite one per cycle
 	        }
 	    }
-	    # Also ask the sidecar/LLM for party advice
-	    _post_event({
-	        kind => "bridge_need_party",
-	        bot_id => _bot_id(),
-	        map => $cr->{map} || "",
-	        level => $cr->{level} || 1,
-	        siblings => [split(',', _cfg('aiSidecar_siblingMasters', ''))],
-	    });
 	}
 
-	if ($in_party) {
-	    # Auto-invite known sibling bots
-	    # Party invites delegated to sidecar — no hardcoded sibling list
+	# ── Follower: auto-accept party invites ──
+	if (!$_pro_ro_is_leader && !$in_party) {
+	    # Accept any pending party invite
+	    eval { Commands::run('party accept'); 1; };
+	    eval { Commands::run('party join 1'); 1; };
+	}
+
+	# ── Follower: follow leader's map ──
+	if (!$_pro_ro_is_leader && $_pro_ro_leader_map ne '' && $now - $_pro_ro_leader_last_seen < 120000) {
+	    my $current_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+	    if ($current_lock ne $_pro_ro_leader_map && $map !~ /^$_pro_ro_leader_map/i) {
+	        warning "[teamplay] $name following leader $_pro_ro_leader_bot to $_pro_ro_leader_map\n", 'aiSidecarBridge', 1;
+	        $::config{lockMap} = $_pro_ro_leader_map;
+	        $::config{attackAuto} = 3;
+	        $::config{attackAuto_inLockOnly} = 0;
+	        eval { Commands::run("move $_pro_ro_leader_map"); 1; };
+	    }
+	}
+
+	# ── Leader: manage party ──
+	if ($_pro_ro_is_leader) {
+	    if (!$in_party) {
+	        # Create party and invite siblings
+	        eval { Commands::run('party create'); 1; };
+	        eval { Commands::run('party create 1'); 1; };
+	        eval { Commands::run('party share exp'); 1; };
+	        eval { Commands::run('party share item'); 1; };
+	        
+	        if ($main::playersList) {
+	            foreach my $_pl (@{$main::playersList}) {
+	                next unless ref($_pl) eq 'HASH';
+	                my $_pn = $_pl->{name} || '';
+	                next if $_pn eq '' || $_pn eq $name;
+	                next unless $_pn =~ /^openkoreai/i || $_pn =~ /kicapmasin/i;
+	                warning "[teamplay] $name inviting $_pn to party\n", 'aiSidecarBridge', 1;
+	                eval { Commands::run("c \@invite $_pn"); 1; };
+	                eval { Commands::run("party invite $_pn"); 1; };
+	            }
+	        }
+	    } else {
+	        # Already in party - check for missing siblings
+	        if ($main::playersList) {
+	            foreach my $_pl (@{$main::playersList}) {
+	                next unless ref($_pl) eq 'HASH';
+	                my $_pn = $_pl->{name} || '';
+	                next if $_pn eq '' || $_pn eq $name;
+	                next unless $_pn =~ /^openkoreai/i || $_pn =~ /kicapmasin/i;
+	                my $_already = 0;
+	                foreach my $_k (keys %$party) {
+	                    my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : '';
+	                    if ($_pm eq $_pn) { $_already = 1; last; }
+	                }
+	                next if $_already;
+	                warning "[teamplay] $name inviting missing sibling $_pn\n", 'aiSidecarBridge', 1;
+	                eval { Commands::run("c \@invite $_pn"); 1; };
+	            }
+	        }
+	    }
+	    
+	    # Report party state to sidecar
 	    _post_event({
 	        kind => "bridge_party_state",
 	        bot_id => _bot_id(),
-	        map => $cr->{map} || "",
+	        map => $map,
 	        in_party => $in_party,
 	        party_leader => $party ? $party->{PartyLeader} : "",
 	    });
-	    # Pro RO LLM: evaluate non-sibling nearby players for party
-	    if ($main::playersList) {
-	        foreach my $_pl (@{$main::playersList}) {
-	            next unless ref($_pl) eq 'HASH';
-	            my $_pn = $_pl->{name} || '';
-	            next if $_pn eq '' || $_pn eq $name;
-	            my $_is_sib = 0;
-	            foreach (split(',', _cfg('aiSidecar_siblingMasters', ''))) { if ($_pn eq $_) { $_is_sib = 1; last; } }
-	            next if $_is_sib;
-	            my $_already = 0;
-	            if (ref($party) eq 'HASH') {
-	                foreach my $_k (keys %$party) {
-	                    my $_pm = ref($party->{$_k}) eq 'HASH' ? ($party->{$_k}{name}||'') : $party->{$_k};
-	                    if (ref($_pm) eq 'HASH') { $_pm = $_pm->{name}||''; }
-	                    if ($_pm eq $_pn) { $_already = 1; last; }
-	                }
-	            }
-	            next if $_already;
-	            _post_event({
-	                kind => 'teamplay_candidate',
-	                player => $_pn,
-	                job => ($_pl->{job_name} || $_pl->{job} || ''),
-	                level => ($_pl->{lv} || $_pl->{level} || 0),
-	            });
-	            last;
-	        }
-	    }
 	}
 }
 
@@ -4718,9 +5076,36 @@ sub _teamplay_check {
 # ── Hook: Auto-accept party invites from console messages ──
 sub _check_party_invite {
 	my $msg = shift || '';
+	
+	# Auto-accept party invites
 	if ($msg =~ /invite.*to.*party/i || $msg =~ /party.*invitation/i || $msg =~ /joined.*party/i) {
 	    eval { Commands::run('party accept'); 1 };
 	    eval { Commands::run('party join 1'); 1 };
+	}
+	
+	# Parse leader broadcasts: @pro_ro_leader|map|target_map|x|y|hp_pct|role
+	if ($msg =~ /\@pro_ro_leader\|([^|]+)\|([^|]+)\|(\d+)\|(\d+)\|(\d+)\|([^|]+)/) {
+	    my $leader_map = $1;
+	    my $leader_target = $2;
+	    my $leader_x = $3;
+	    my $leader_y = $4;
+	    my $leader_hp = $5;
+	    my $leader_role = $6;
+	    
+	    $_pro_ro_leader_map = $leader_map;
+	    $_pro_ro_leader_last_seen = _now_ms();
+	    
+	    # If we're a follower and not on the leader's map, follow
+	    if (!$_pro_ro_is_leader) {
+	        my $cr = _safe_char();
+	        my $my_map = $cr ? ($cr->{map} || '') : '';
+	        $my_map =~ s/\.gat$//;
+	        if ($my_map ne $leader_map) {
+	            warning "[pro_ro] follower: leader broadcast says map=$leader_map, following\n", 'aiSidecarBridge', 1;
+	            $::config{lockMap} = $leader_map;
+	            eval { Commands::run("move $leader_map"); 1; };
+	        }
+	    }
 	}
 }
 
@@ -4732,8 +5117,31 @@ sub _discover_shops {
 	state $_last_ss = 0;
 	return if $now - $_last_ss < 3600000;
 	$_last_ss = $now;
-	# Stub — will be populated with actual NPC data from observed shops
-	_post_event({ kind => 'discovery_shops', shops => [] });
+	
+	# Discover shops from NPCs list
+	my @shops;
+	if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	    foreach my $_n (values %{$main::npcsList}) {
+	        next unless ref($_n) eq 'HASH' && $_n->{name} && $_n->{shop};
+	        push @shops, {
+	            name => $_n->{name}, 
+	            map => $_n->{map} || '',
+	            x => $_n->{x} || 0, 
+	            y => $_n->{y} || 0,
+	            shop => $_n->{shop},
+	        };
+	    }
+	}
+	
+	if (@shops > 0) {
+	    _post_event({ kind => 'discovery_shops', shops => \@shops });
+	} else {
+	    # Fallback: read from tables
+	    my $shop_data = _read_table_file('npc_shops.txt');
+	    if (@{$shop_data} > 0) {
+	        _post_event({ kind => 'discovery_shops', shops => $shop_data });
+	    }
+	}
 }
 
 sub _discover_portals {

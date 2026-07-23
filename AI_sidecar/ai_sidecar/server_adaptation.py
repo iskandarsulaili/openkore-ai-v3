@@ -136,6 +136,17 @@ class ServerAdaptationEngine:
         with self._lock:
             return self._profile
 
+    def get_server_id(self) -> str:
+        """Get the server name/ID from the profile.
+
+        Returns the server_name if set, otherwise 'default'.
+        """
+        with self._lock:
+            name = self._profile.server_name
+            if name:
+                return name
+        return "default"
+
     def record_exp_gain(self, monster_name: str, actual_base_exp: int,
                         actual_job_exp: int) -> dict[str, Any]:
         """Record actual EXP gained from killing a monster.
