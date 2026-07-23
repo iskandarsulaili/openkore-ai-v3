@@ -283,9 +283,10 @@ sub on_mainLoop_post {
 			    $_pro_ro_respawn_ms = _now_ms();
 		}
 	}
-        # Override attack distances AFTER AI::CoreLogic auto-detection
+        # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
+        $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -4221,6 +4222,7 @@ sub _apply_bot_config {
 	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
 	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'};
+	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection (overrides our 7/12)
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '30') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
 	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
