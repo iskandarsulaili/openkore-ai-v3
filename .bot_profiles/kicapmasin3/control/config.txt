@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword licheeze
+adminPassword twihipas
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1189,7 +1189,7 @@ useSelf_item White Potion {
 
 # ── Auto-buy Healing Items ──
 
-lockMap prt_fild05
+lockMap prontera
 route_reAddMissingPortals 1
 
 

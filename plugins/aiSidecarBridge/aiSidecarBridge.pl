@@ -191,7 +191,12 @@ sub _cleanup_runtime {
 sub on_start3 {
 	# Set stay_in_town for 30s after startup to allow economy
 	$_pro_ro_stay_in_town_ms = _now_ms() + 30000;
+	$_pro_ro_respawn_ms = _now_ms();  # Trigger economy window
 	warning "[startup] set stay_in_town for 30s after plugin load\n", 'aiSidecarBridge', 1;
+	# Force lockMap to Prontera so bot stays in town
+	$::config{lockMap} = 'prontera';
+	$_pro_ro_last_lock_set = 'prontera';
+	$_pro_ro_last_lock_ms = _now_ms();
 	
 	# STALE PORTAL FILTER: remove known-stale NPC teleport entries from portalsLOS.txt
 	# OpenKore regenerates this file at runtime, so stale entries keep reappearing
