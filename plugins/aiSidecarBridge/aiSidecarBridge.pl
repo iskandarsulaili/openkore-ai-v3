@@ -116,6 +116,8 @@ my $death_count = 0;
 my $respawn_state = 'unknown';
 my $last_map_name = '';
 my $last_route_signature = '';
+my $_last_ai_toggle_ms = 0;
+my $_last_ai_mode = '';
 my $route_churn_count = 0;
 my $route_failure_count = 0;
 my $last_actor_source_probe_log_ms = 0;
@@ -3333,7 +3335,7 @@ sub _cfg_bool {
 
 # -- AI mode debounce -- prevent rapid auto/manual oscillation --
     eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
-my $_last_ai_mode = '';
+				eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
 sub _toggle_ai_mode {
 	my ($mode) = @_;
 	return if !$mode;
