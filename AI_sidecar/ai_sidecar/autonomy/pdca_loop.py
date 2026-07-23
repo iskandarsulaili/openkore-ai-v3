@@ -198,6 +198,9 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         bot_id = str(latest["bot_id"])
                 except Exception:
                     pass
+        # Skip default/unknown bot_ids - they cause TOWN_HUNT actions for wrong bots
+        if bot_id and (bot_id == "default" or bot_id == "unknown_master:unknown_user"):
+            return 0
         bot_id = bot_id or "default"
         
         # Build signals from available state

@@ -2934,6 +2934,61 @@ sub _rewrite_runtime_command {
 			return ($command, 'coordinate_move_raw');
 		}
 	}
+	# ── PARTY REWRITE: fix party create/join syntax ──
+	if ($command =~ /^party\s+create\s+(.+)$/i) {
+		my $_party_name = $1;
+		debug "[party_rewrite] $command -> party create $_party_name\n", 'aiSidecarBridge', 2;
+		$command = "party create $_party_name";
+		return ($command, 'party_command');
+	}
+	if ($command =~ /^party\s+join\s+(\d+)$/i) {
+		debug "[party_rewrite] $command -> party join $1\n", 'aiSidecarBridge', 2;
+		$command = "party join $1";
+		return ($command, 'party_command');
+	}
+	# ── TALK REWRITE: fix talknpc dialog commands ──
+	if ($command =~ /^talknpc\s+(\d+)\s+(\d+)$/i) {
+		debug "[talk_rewrite] $command\n", 'aiSidecarBridge', 2;
+		return ($command, 'talknpc_command');
+	}
+	if ($command =~ /^talk\s+(resp|continue|any|next|close)/i) {
+		debug "[talk_rewrite] $command\n", 'aiSidecarBridge', 2;
+		return ($command, 'talk_command');
+	}
+	# ── SELL/STORE REWRITE: fix sell/store commands ──
+	if ($command =~ /^sell$/i) {
+		debug "[sell_rewrite] $command -> sell auto\n", 'aiSidecarBridge', 2;
+		$command = "sell auto";
+		return ($command, 'sell_command');
+	}
+	if ($command =~ /^store$/i) {
+		debug "[store_rewrite] $command -> store\n", 'aiSidecarBridge', 2;
+		return ($command, 'store_command');
+	}
+	if ($command =~ /^buy\s+(\d+)\s+(\d+)$/i) {
+		debug "[buy_rewrite] $command\n", 'aiSidecarBridge', 2;
+		return ($command, 'buy_command');
+	}
+		my $_target = lc($1);
+		# Known hunting maps from Prontera
+		my %_map_coords = (
+			'prt_fild05' => 'move 22 203',
+			'prt_fild04' => 'move 22 203',
+			'prt_fild03' => 'move 22 203',
+			'prt_fild02' => 'move 22 203',
+			'prt_fild01' => 'move 22 203',
+			'prt_fild00' => 'move 22 203',
+			'prt_fild08' => 'move 22 203',
+			'prt_fild07' => 'move 22 203',
+			'prt_fild06' => 'move 22 203',
+		);
+		if (exists $_map_coords{$_target}) {
+			my $_new_cmd = $_map_coords{$_target};
+			debug "[move_rewrite] $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
+			$command = $_new_cmd;
+			return ($command, 'coordinate_move_raw');
+		}
+	}
 
 	# NPC DIALOG STATE: track whether bot is in an NPC dialog
 	my $_in_dialog = 0;
@@ -3620,7 +3675,6 @@ sub _rewrite_runtime_command {
 
 	# Default: pass through
 	return ($trimmed, 'passthrough');
-}
 
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
