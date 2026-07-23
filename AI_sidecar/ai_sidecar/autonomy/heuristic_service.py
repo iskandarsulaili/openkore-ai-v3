@@ -43,6 +43,30 @@ CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
     "soul_linker":[("int", 50), ("dex", 30)],
 }
 
+# ── Job change NPC locations ──
+JOB_CHANGE_NPCS: dict[str, tuple[str, int, int]] = {
+    "novice": ("prontera", 160, 191),
+    "archer": ("prontera", 160, 191),
+    "thief": ("prontera", 231, 38),
+    "acolyte": ("prontera", 200, 170),
+    "mage": ("prontera", 180, 150),
+    "swordman": ("prontera", 140, 120),
+    "merchant": ("prontera", 120, 200),
+}
+
+# ── Bot role assignments ──
+BOT_ROLES: dict[str, str] = {
+    "kicapmasin": "leader",
+    "kicapmasin2": "dps",
+    "kicapmasin3": "support",
+}
+
+BOT_JOBS: dict[str, str] = {
+    "kicapmasin": "archer",
+    "kicapmasin2": "thief",
+    "kicapmasin3": "acolyte",
+}
+
 # ── Class-aware hunting grounds ──
 # (min_level, max_level, map_name, description)
 CLASS_HUNTING_GROUNDS: dict[str, list[tuple[int, int, str, str]]] = {
