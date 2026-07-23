@@ -290,6 +290,11 @@ sub on_mainLoop_post {
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
 	}
+        # Set stay_in_town at startup so bot stays in Prontera for 30s after login
+        if ($_pro_ro_stay_in_town_ms == 0 && $char && $char->{hp} > 0) {
+            $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
+            warning "[startup] setting stay_in_town for 30s to allow economy\n", 'aiSidecarBridge', 1;
+        }
         # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
@@ -334,7 +339,7 @@ sub on_mainLoop_post {
             if (grep { $_town_map eq $_ } @_towns) {
                 my $_town_now = _now_ms();
                 my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
-                if ($_town_now - $_last_town_routine > 5000) {
+                if ($_last_town_routine == 0 || $_town_now - $_last_town_routine > 5000) {
                     $_last_reflex_fire_ms{'town_routine'} = $_town_now;
                     # Force sell if weight > 5%
                     my $_town_weight = $char->{weight} || 0;
