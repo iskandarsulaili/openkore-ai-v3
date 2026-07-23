@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword clebrohi
+adminPassword fristaya
 callSign
 commandPrefix ;
 callSignGM 0
@@ -76,9 +76,9 @@ attackAuto_notWhile_sellAuto 1
 attackAuto_considerDamagedAggressive 0
 attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
-attackDistance 1
-attackDistanceAuto 1
-attackMaxDistance 1
+attackDistance 7
+attackDistanceAuto 0
+attackMaxDistance 12
 attackMaxRouteTime 4
 attackMinPlayerDistance 2
 attackMinPortalDistance 4
@@ -210,9 +210,9 @@ route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
 route_randomWalk 2
-route_randomWalk_inLockOnly 1
-route_randomWalk_inTown 0
-route_randomWalk_maxRouteTime 75
+route_randomWalk_inLockOnly 0
+route_randomWalk_inTown 1
+route_randomWalk_maxRouteTime 300
 route_maxWarpFee
 route_maxNpcTries 5
 route_teleport 0
@@ -431,7 +431,7 @@ mercenary_attackAuto_duringRandomWalk 0
 mercenary_attackAuto_duringItemsTake 0
 mercenary_attackDistance 7
 mercenary_attackMaxDistance 3
-mercenary_attackDistanceAuto 1
+mercenary_attackDistanceAuto 0
 mercenary_attackMaxRouteTime 4
 mercenary_attackCanSnipe 0
 mercenary_attackCheckLOS 1
@@ -504,7 +504,7 @@ homunculus_attackAuto_duringRandomWalk 0
 homunculus_attackAuto_duringItemsTake 0
 homunculus_attackDistance 7
 homunculus_attackMaxDistance 3
-homunculus_attackDistanceAuto 1
+homunculus_attackDistanceAuto 0
 homunculus_attackMaxRouteTime 4
 homunculus_attackCanSnipe 0
 homunculus_attackCheckLOS 1
@@ -1268,16 +1268,16 @@ sellAuto_npc_steps = c r0 n
 sellAuto_distance 25
 
 useAuto_Red_Potion {
-    hp_upper 80%
-    hp_lower 30%
-    sp_upper 100%
-    sp_lower 0%
-    inLockOnly 0
-    notWhileSitting 1
-    notWhileBusy 1
-    isSelfSkill 0
-    timeout 2
-    disabled 0
-    inInventory 0
-    manualAI 0
+	hp_upper 80%
+	hp_lower 30%
+	sp_upper 100%
+	sp_lower 0%
+	inLockOnly 0
+	notWhileSitting 1
+	notWhileBusy 1
+	isSelfSkill 0
+	timeout 2
+	disabled 0
+	inInventory 0
+	manualAI 0
 }

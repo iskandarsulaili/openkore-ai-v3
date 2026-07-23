@@ -1972,6 +1972,8 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: bot is in NPC dialog');
 	} elsif ($rewrite_kind eq 'combat_guard_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: bot is in combat');
+	} elsif ($rewrite_kind eq 'sit_blocked_town') {
+		($success, $result_code, $msg) = (1, 'ok', 'sit blocked in town');
 	} elsif ($rewrite_kind eq 'sit_blocked_hunting') {
 		($success, $result_code, $msg) = (1, 'ok', 'sit blocked: on hunting map');
 	} elsif ($rewrite_kind eq 'map_move_low_hp_no_toggle') {

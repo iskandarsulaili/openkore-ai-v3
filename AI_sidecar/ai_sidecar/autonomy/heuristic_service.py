@@ -500,6 +500,11 @@ class HeuristicService:
         # ── STATE: DEAD ──
         if state == "DEAD":
             actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="survival",
+                reason="Stand up after respawn",
+            ))
+            actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="survival",
                 reason="Just respawned - re-enable AI",
@@ -515,6 +520,12 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
+            # Stand up first
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="economy",
+                reason="Stand up before walking to Tool Dealer",
+            ))
             # Walk to Tool Dealer (126, 76) and sell
             actions.append(HeuristicAction(
                 kind="command", command="move 126 76",
@@ -547,6 +558,12 @@ class HeuristicService:
 
         # ── STATE: BUY ──
         if state == "BUY":
+            # Stand up first
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="economy",
+                reason="Stand up before walking to Tool Dealer",
+            ))
             # Buy Red Potions from Tool Dealer (126, 76)
             actions.append(HeuristicAction(
                 kind="command", command="move 126 76",
@@ -587,6 +604,11 @@ class HeuristicService:
 
         # ── STATE: JOB_CHANGE ──
         if state == "JOB_CHANGE":
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="progression",
+                reason="Stand up before walking to Archer Guild",
+            ))
             actions.append(HeuristicAction(
                 kind="command", command="move 160 191",
                 confidence=0.95, domain="progression",
@@ -707,6 +729,17 @@ class HeuristicService:
 
         # ── STATE: TOWN_HUNT ──
         if state == "TOWN_HUNT":
+            # Stand up and ensure auto mode
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="combat",
+                reason="Stand up before moving to hunting map",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.95, domain="combat",
+                reason="Ensure AI is in auto mode",
+            ))
             # Move to hunting map
             target_map = "prt_fild05"
             if base_level >= 20:
@@ -729,7 +762,12 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
-            # Ensure AI is in auto mode
+            # Ensure AI is in auto mode and standing
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="combat",
+                reason="Stand up for combat",
+            ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="combat",
