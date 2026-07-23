@@ -348,11 +348,10 @@ class AdaptiveDataStore:
     def get_best_map(self, bot_id: str, base_level: int) -> str | None:
         """Get the best hunting map for this bot's level from adaptive data."""
         with self._lock:
-            maps = self._data.get("map_performance", {})
-            if not maps:
+            if not self.map_performance:
                 return None
             candidates = []
-            for map_name, perf in maps.items():
+            for map_name, perf in self.map_performance.items():
                 avg_level = perf.get("avg_level", base_level)
                 if abs(avg_level - base_level) <= 5:
                     candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))
