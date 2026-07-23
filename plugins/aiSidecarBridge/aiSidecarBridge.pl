@@ -308,6 +308,23 @@ sub on_mainLoop_post {
             eval { Commands::run('stand'); 1; };
         }
         
+        # ── FORCE PARTY JOIN: if kicapmasin3 not in party after 30s, force it ──
+        if ($char && $::config{username} eq 'kicapmasin3') {
+            my $_pj3_now = _now_ms();
+            my $_pj3_last = $_last_reflex_fire_ms{'force_party_join'} || 0;
+            if ($_pj3_now - $_pj3_last > 30000) {
+                $_last_reflex_fire_ms{'force_party_join'} = $_pj3_now;
+                my $_pj3_in_party = 0;
+                if ($char->{party} && ref($char->{party}) eq 'HASH' && scalar(keys %{$char->{party}}) > 0) {
+                    $_pj3_in_party = 1;
+                }
+                if (!$_pj3_in_party) {
+                    warning "[force_party] kicapmasin3 not in party, forcing join\n", 'aiSidecarBridge', 1;
+                    eval { Commands::run('party join 1'); 1; };
+                }
+            }
+        }
+        
         # ── TEAMPLAY ROUTINE: party formation, follow, healing ──
         if ($char) {
             my $_tp_now = _now_ms();
@@ -3063,11 +3080,11 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
-	# PARTY JOIN GUARD: block party join for leader (kicapmasin creates party, doesn't join)
-	my $_pj_bot_name = $::config{username} || '';
-	if ($normalized =~ /^party\s+join\s+(.+)$/ && $_pj_bot_name eq 'kicapmasin') {
-	    debug "[party_guard] blocking party join for leader\n", 'aiSidecarBridge', 1;
-	    return ('', 'party_join_blocked_leader');
+	# PARTY JOIN GUARD: block ALL party join commands from sidecar
+	# Config settings (partyAutoCreate/partyAutoJoinCode) handle party formation
+	if ($normalized =~ /^party\s+join\s+(.+)$/) {
+	    debug "[party_guard] blocking party join (config handles it)\n", 'aiSidecarBridge', 1;
+	    return ('', 'party_join_blocked');
 	}
 
 
