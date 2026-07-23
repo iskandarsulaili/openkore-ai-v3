@@ -4279,6 +4279,11 @@ sub _survival_check {
 	        if ($_tgt_map ne '' && $_tgt_map ne $map) {
 	            $::config{'lockMap'} = $_tgt_map;
 	            if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
+	            # Auto-sell junk items when in town
+	            my $_sc_map = $field ? $field->name() : '';
+	            if ($_sc_map =~ /^prontera|izlude|morocc|payon|geffen|aldebaran/i) {
+	                _sell_junk_items();
+	            }
 	        }
 	    } else {
 	        # Fallback: stand up, try buying, sit as last resort
@@ -4335,7 +4340,19 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	    my $iamount = $item->{amount} || 0;
 	    next if $iname eq '' || $iamount < 1;
 	    next unless $sell_items{$iname};
-	    eval { Commands::run("sell $iname"); 1 };
+	    # Sell by inventory index (OpenKore requires index, not name)
+	    my $_sell_idx = 0;
+	    if ($cr->{inventory}) {
+	        for my $_si (@{$cr->{inventory}}) {
+	            next unless ref($_si) eq 'HASH';
+	            my $_sin = $_si->{name} || '';
+	            if ($_sin eq $iname) {
+	                eval { Commands::run("sell $_sell_idx"); 1; };
+	                last;
+	            }
+	            $_sell_idx++;
+	        }
+	    }
 	}
 }
 
