@@ -4592,9 +4592,9 @@ sub _pro_ro_check_map_progression {
     # Determine best map for level
     my $target_map = '';
     if ($base_lv < 10) {
-        $target_map = 'prt_fild01';  # Poring, Lunatic, Fabre
+        $target_map = 'prt_fild05';  # Poring, Lunatic, Fabre
     } elsif ($base_lv < 20) {
-        $target_map = 'prt_fild01';  # Still good, more spawns
+        $target_map = 'prt_fild05';  # Still good, more spawns
     } elsif ($base_lv < 30) {
         $target_map = 'pay_fild01';  # Familiar, Yoyo, Smokie
     } elsif ($base_lv < 40) {
@@ -4606,7 +4606,9 @@ sub _pro_ro_check_map_progression {
     }
     
     # Only change if different from current
-    if ($target_map ne '' && $target_map ne $current_lock) {
+    # Don't re-set if already on this map
+    my $_pro_ro_current_map = $cr->{map} || '';
+    if ($target_map ne '' && ($target_map ne $current_lock || $_pro_ro_current_map !~ /^$target_map/i)) {
         warning "[pro_ro] level $base_lv -> moving to $target_map\n", 'aiSidecarBridge', 1;
         $_pro_ro_last_lock_set = $target_map;
         $_pro_ro_last_lock_ms = _now_ms();
