@@ -119,7 +119,7 @@ my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
 my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
-my $_pro_ro_stay_in_town_ms = 99999999999999;  # Stay in town until this timestamp (set to far future at load)
+my $_pro_ro_stay_in_town_ms = 0;  # Stay in town until this timestamp (0 = not active)
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -302,6 +302,12 @@ sub on_mainLoop_post {
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
+        # ── FORCE STAND: counter any sit commands that slip through ──
+        if ($char && $char->{sitting}) {
+            warning "[force_stand] bot is sitting, forcing stand\n", 'aiSidecarBridge', 1;
+            eval { Commands::run('stand'); 1; };
+        }
+        
         # ── TEAMPLAY ROUTINE: party formation, follow, healing ──
         if ($char) {
             my $_tp_now = _now_ms();
@@ -376,6 +382,13 @@ sub on_mainLoop_post {
                     eval { Commands::run('move 156 196'); 1; };
                 }
             }
+        }
+        
+        # ── STAY IN TOWN EXPIRED: if stay_in_town expired and bot is in town, allow hunting ──
+        if ($char && $_pro_ro_stay_in_town_ms > 0 && _now_ms() > $_pro_ro_stay_in_town_ms) {
+            warning "[stay_in_town] expired, allowing hunting\n", 'aiSidecarBridge', 1;
+            $_pro_ro_stay_in_town_ms = 0;  # Clear the flag
+            # Don't force a lockMap change - let the PDCA loop handle it
         }
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
@@ -3097,17 +3110,20 @@ sub _rewrite_runtime_command {
 		my $_now = _now_ms();
 		my $_last_same_type = $_committed_actions{"$_action_type:$_action_target"} || 0;
 		warning "[guard] type=$_action_type target=$_action_target last=$_last_same_type\n", 'aiSidecarBridge', 1;
-		# Block sit in town and on hunting maps (bot should never sit)
+		# Block sit in ALL cases (bot should never sit - standing is always better)
 		if ($_action_type eq 'sit') {
 		    my $_sit_map = lc($char->{map} || '');
 		    $_sit_map =~ s/\.gat$//;
+		    my $_sit_hp = _safe_hp_ratio();
+		    # Block sit in town unconditionally
 		    my @_blocked_maps = qw(prontera izlude morocc payon geffen aldebaran comodo);
 		    if (grep { $_sit_map eq $_ } @_blocked_maps) {
 		        warning "[sit_guard] blocking sit in town '$_sit_map'\n", 'aiSidecarBridge', 1;
 		        return ('', 'sit_blocked_town');
 		    }
-		    if ($_sit_map =~ /^[a-z]+_fild/ && _safe_hp_ratio() >= 0.01) {
-		        warning "[sit_guard] blocking sit on hunting map '$_sit_map'\n", 'aiSidecarBridge', 1;
+		    # Block sit on hunting maps unless HP is critically low (< 1%)
+		    if ($_sit_map =~ /^[a-z]+_fild/ && $_sit_hp >= 0.01) {
+		        warning "[sit_guard] blocking sit on hunting map '$_sit_map' (HP=$_sit_hp)\n", 'aiSidecarBridge', 1;
 		        return ('', 'sit_blocked_hunting');
 		    }
 		}
@@ -3289,6 +3305,14 @@ sub _rewrite_runtime_command {
 					        $_pro_ro_last_lock_set = $set_val;
 					        return ('', 'config_set_ok');
 					    }
+					    # If stay_in_town expired, allow hunting map
+					    if (_now_ms() > $_pro_ro_stay_in_town_ms) {
+					        warning "[lockMap] stay in town expired, allowing set lockMap to '$set_val'\n", 'aiSidecarBridge', 1;
+					        $::config{lockMap} = $set_val;
+					        $_pro_ro_last_lock_set = $set_val;
+					        $_pro_ro_stay_in_town_ms = 0;
+					        return ('', 'config_set_ok');
+					    }
 					}
 					# Allow retreat when HP < 60%
 					my $_hp_ratio = _safe_hp_ratio();
@@ -3369,6 +3393,12 @@ sub _rewrite_runtime_command {
 			    my $_stay_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 			    if ($_stay_target_is_town) {
 			        warning "[lockMap] stay in town active, allowing move to town '$target'\n", 'aiSidecarBridge', 1;
+			        return ($trimmed, 'coordinate_move_raw');
+			    }
+			    # If stay_in_town expired, allow hunting map
+			    if (_now_ms() > $_pro_ro_stay_in_town_ms) {
+			        warning "[lockMap] stay in town expired, allowing move to '$target'\n", 'aiSidecarBridge', 1;
+			        $_pro_ro_stay_in_town_ms = 0;
 			        return ($trimmed, 'coordinate_move_raw');
 			    }
 			}
