@@ -3253,7 +3253,17 @@ sub _rewrite_runtime_command {
 					my $_hp_ratio = _safe_hp_ratio();
 					if ($_hp_ratio >= 0.60) {
 						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
-						$::config{"
+						$::config{"lockMap"} = $_actual_map;
+					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
+						$::config{"attackAuto_inLockOnly"} = 0;
+						$::config{"attackAuto"} = 3;
+						$::config{"sitAuto_hp_lower"} = 0;
+						$::config{"sitAuto_hp_upper"} = 0;
+						Commands::run("stand");
+						if (!_ai_already_auto_mode()) {
+							Commands::run("ai auto");
+						}
+						return ('', 'hunting_map_priority');
 					}
 				}
 			}
@@ -3327,38 +3337,7 @@ sub _rewrite_runtime_command {
 			        return ($trimmed, 'coordinate_move_raw');
 			    }
 			}
-			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
-			my $_actual_map = $field ? $field->name() : '';
-			$_actual_map = lc($_actual_map || '');
-			$_actual_map =~ s/\.gat$//;
-			my $_is_on_hunting_map = $_actual_map =~ /^[a-z]+_fild/;
-			my $_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			if ($_pro_ro_guard || ($_is_on_hunting_map && $_target_is_town)) {
-				my $_hp_ratio = _safe_hp_ratio();
-				# Allow retreat when HP < 60% (bot needs to restock potions)
-				if ($_hp_ratio >= 0.60) {
-					warning "[lockMap] on hunting map '$_actual_map', ignoring move to town '$target' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
-					$::config{"lockMap"} = $_actual_map;
-					$::config{"attackAuto_inLockOnly"} = 0;
-					$::config{"attackAuto"} = 3;
-					$::config{"sitAuto_hp_lower"} = 0;
-					$::config{"sitAuto_hp_upper"} = 0;
-					$::config{"route_randomWalk_avoidInLock"} = 0;
-					$::config{"route_randomWalk_inTown"} = 0;
-					Commands::run("stand");
-					if (!_ai_already_auto_mode()) {
-						Commands::run("ai auto");
-					}
-					@::AI::ai_seq = ();
-					                    # Portal block: if bot is near a town portal, force it away
-					                    my $_pos = $char->{pos_to} || $char->{pos};
-					                    if ($_pos && $_pos->{x} >= 20 && $_pos->{x} <= 30 && $_pos->{y} >= 198 && $_pos->{y} <= 210) {
-					                        warning "[lockMap] near Prontera portal, moving away\n", 'aiSidecarBridge', 1;
-					                        Commands::run("move 50 200");
-					                    }
-					return ('ai auto', 'hunting_map_priority');
-				}
-			}
+
 		}
 		# Set lockMap to target and switch to auto mode
 		$::config{'lockMap'} = $target;
@@ -3625,7 +3604,6 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
-}
 }
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
