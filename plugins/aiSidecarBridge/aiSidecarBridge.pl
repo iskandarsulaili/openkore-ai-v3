@@ -344,12 +344,17 @@ sub on_mainLoop_post {
                 my $_town_now = _now_ms();
                 my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
                 if ($_last_town_routine == 0 || $_town_now - $_last_town_routine > 5000) {
-                    warning "[town_routine] executing town routine (weight=$_town_weight_pct, zeny=$_town_zeny, lv=$_town_base_lv/$_town_job_lv, stat_pts=$_town_stat_points)\n", 'aiSidecarBridge', 1;
                     $_last_reflex_fire_ms{'town_routine'} = $_town_now;
                     # Force sell if weight > 5%
                     my $_town_weight = $char->{weight} || 0;
                     my $_town_weight_max = $char->{weight_max} || 1;
                     my $_town_weight_pct = $_town_weight_max > 0 ? $_town_weight / $_town_weight_max : 0;
+                    my $_town_zeny = $char->{zeny} || 0;
+                    my $_town_base_lv = $char->{lv} || 0;
+                    my $_town_job_lv = $char->{lv_job} || 0;
+                    my $_town_job = $char->{jobID} || 0;
+                    my $_town_stat_points = $char->{status_points} || 0;
+                    warning "[town_routine] executing (weight=$_town_weight_pct, zeny=$_town_zeny, lv=$_town_base_lv/$_town_job_lv, stat_pts=$_town_stat_points)\n", 'aiSidecarBridge', 1;
                     if ($_town_weight_pct > 0.05) {
                         warning "[town_routine] weight=$_town_weight_pct, forcing sell\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('move 147 175'); 1; };
@@ -358,7 +363,6 @@ sub on_mainLoop_post {
                         eval { Commands::run('talk any'); 1; };
                     }
                     # Force buy if zeny > 0
-                    my $_town_zeny = $char->{zeny} || 0;
                     if ($_town_zeny > 0) {
                         warning "[town_routine] zeny=$_town_zeny, forcing buy\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('move 147 175'); 1; };
@@ -372,9 +376,6 @@ sub on_mainLoop_post {
                         eval { Commands::run('talk any'); 1; };
                     }
                     # Force job change if level 10/10 Novice
-                    my $_town_base_lv = $char->{lv} || 0;
-                    my $_town_job_lv = $char->{lv_job} || 0;
-                    my $_town_job = $char->{jobID} || 0;
                     if ($_town_base_lv >= 10 && $_town_job_lv >= 10 && $_town_job == 0) {
                         warning "[town_routine] level $_town_base_lv/$_town_job_lv Novice, forcing job change\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('move 160 191'); 1; };
@@ -383,7 +384,6 @@ sub on_mainLoop_post {
                         eval { Commands::run('talk resp 0'); 1; };
                     }
                     # Force stat allocation if stat points > 0
-                    my $_town_stat_points = $char->{status_points} || 0;
                     if ($_town_stat_points > 0) {
                         warning "[town_routine] $_town_stat_points stat points available, allocating\n", 'aiSidecarBridge', 1;
                         for (1..$_town_stat_points) {
