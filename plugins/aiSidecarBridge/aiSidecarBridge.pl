@@ -120,7 +120,6 @@ my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
 my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
 my $_pro_ro_stay_in_town_ms = 99999999999999;  # Stay in town until this timestamp (set to far future at load)
-my $_party_formed = 0;  # Set to 1 once party formation is confirmed
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -308,26 +307,7 @@ sub on_mainLoop_post {
             my $_tp_now = _now_ms();
             my $_tp_last = $_last_reflex_fire_ms{'teamplay'} || 0;
             my $_tp_name = $::config{username} || '';
-            # Party formation: let config settings (partyAutoCreate, partyAutoJoinCode) handle it
-            # Only intervene if bot is not in a party after 30s
-            if ($_tp_now - $_tp_last > 30000) {
-                $_last_reflex_fire_ms{'teamplay'} = $_tp_now;
-                my $_tp_in_party = 0;
-                if ($char->{party} && ref($char->{party}) eq 'HASH' && scalar(keys %{$char->{party}}) > 0) {
-                    $_tp_in_party = 1;
-                }
-                if (!$_tp_in_party) {
-                    warning "[teamplay] not in party after 30s, forcing formation\n", 'aiSidecarBridge', 1;
-                    if ($_tp_name eq 'kicapmasin') {
-                        eval { Commands::run('party create AI_Team'); 1; };
-                        eval { Commands::run('party share exp'); 1; };
-                        eval { Commands::run('party invite kicapmasin2'); 1; };
-                        eval { Commands::run('party invite kicapmasin3'); 1; };
-                    } else {
-                        eval { Commands::run('party join 1'); 1; };
-                    }
-                }
-            }
+
             # Party healing (every 3s, support bot only)
             if ($_tp_name eq 'kicapmasin3' && $_tp_now - ($_last_reflex_fire_ms{'party_heal'} || 0) > 3000) {
                 $_last_reflex_fire_ms{'party_heal'} = $_tp_now;
@@ -3066,20 +3046,7 @@ sub _rewrite_runtime_command {
 	$metadata = {} if ref($metadata) ne 'HASH';
 
 
-	# EARLY REWRITE: party join <name> -> party join 1 (must be before guard section)
-	# Block party join for the leader bot (kicapmasin creates party, doesn't join)
-	my $_tp_bot_name = $::config{username} || '';
-	if ($normalized =~ /^party\s+join\s+(.+)$/) {
-	    if ($_tp_bot_name eq 'kicapmasin') {
-	        debug "[party_rewrite] blocking party join for leader\n", 'aiSidecarBridge', 1;
-	        return ('', 'party_join_blocked_leader');
-	    }
-	    if ($1 ne '1') {
-	        $normalized = 'party join 1';
-	        debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
-	        return ($normalized, 'party_join_rewritten');
-	    }
-	}
+
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
 	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
 	# Uses direct key access (not each()) to avoid Perl's shared hash iterator bug

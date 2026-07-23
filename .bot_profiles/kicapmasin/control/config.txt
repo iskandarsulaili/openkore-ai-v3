@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword secucali
+adminPassword chaigruf
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1161,7 +1161,6 @@ lockMap_clear 1
 lockMap_teleport 0
 
 partyAutoCreate 1
-partyAutoJoinCode team1
 partyAutoCreateCode team1
 
 
