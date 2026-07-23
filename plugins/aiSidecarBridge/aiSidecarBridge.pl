@@ -197,6 +197,12 @@ sub on_start3 {
 	$::config{lockMap} = 'prontera';
 	$_pro_ro_last_lock_set = 'prontera';
 	$_pro_ro_last_lock_ms = _now_ms();
+	# Disable sitAuto at startup
+	$::config{sitAuto_hp} = 0;
+	$::config{sitAuto_hp_upper} = 0;
+	$::config{sitAuto_sp} = 0;
+	$::config{sitAuto_sp_upper} = 0;
+	$::config{sitAuto_idle} = 0;
 	# STALE PORTAL FILTER: remove known-stale NPC teleport entries from portalsLOS.txt
 	# OpenKore regenerates this file at runtime, so stale entries keep reappearing
 	my $_portals_file = Settings::getTableFilename("portalsLOS.txt");
@@ -302,6 +308,17 @@ sub on_mainLoop_post {
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
+        # ── DISABLE SIT IN AI: prevent OpenKore's internal AI from sitting ──
+        if ($char) {
+            # Override sitAuto config every cycle to prevent AI from re-enabling it
+            $::config{sitAuto_hp} = 0;
+            $::config{sitAuto_hp_upper} = 0;
+            $::config{sitAuto_sp} = 0;
+            $::config{sitAuto_sp_upper} = 0;
+            $::config{sitAuto_idle} = 0;
+            $::config{sitAuto_over_50} = 0;
+        }
+        
         # ── FORCE STAND: counter any sit commands that slip through ──
         if ($char && $char->{sitting}) {
             warning "[force_stand] bot is sitting, forcing stand\n", 'aiSidecarBridge', 1;
@@ -310,6 +327,12 @@ sub on_mainLoop_post {
             # Force AI to auto mode
             $::config{attackAuto} = 2;
             $::config{attackAuto_inLockOnly} = 0;
+            # Disable sitAuto at the config level
+            $::config{sitAuto_hp} = 0;
+            $::config{sitAuto_hp_upper} = 0;
+            $::config{sitAuto_sp} = 0;
+            $::config{sitAuto_sp_upper} = 0;
+            $::config{sitAuto_idle} = 0;
             eval { Commands::run('stand'); 1; };
             eval { Commands::run('ai auto'); 1; };
             # Force move to hunting map if in town
