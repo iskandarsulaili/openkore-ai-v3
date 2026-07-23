@@ -2912,15 +2912,22 @@ sub _rewrite_runtime_command {
 
 	# AI MANUAL BLOCK: prevent 'ai manual' from disabling auto-attack mode
 	# The LLM planner sends 'ai manual' as a proxy for 'sit' (bridge compat layer rewrites 'sit' to 'ai manual')
-	# We convert it back to 'sit' to keep the bot in auto-attack mode while still allowing resting
+	# We convert to 'stand' in town (so auto-buy/route can work) or 'sit' on hunting map (to rest)
 	# Throttled to once per 30s to prevent tight loop
 	if ($normalized eq 'ai manual') {
 		my $_now_ms = _now_ms();
 		my $_last_sit = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
 		if ($_now_ms - $_last_sit > 30000) {
 			$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_now_ms;
-			warning "[ai_manual] converting to 'sit' to preserve auto-attack mode\n", 'aiSidecarBridge', 1;
-			return ('sit', 'ai_manual_to_sit');
+			my $_am_actual_map = $field ? $field->name() : '';
+			$_am_actual_map = lc($_am_actual_map || '');
+			$_am_actual_map =~ s/\.gat$//;
+			if ($_am_actual_map =~ /^[a-z]+_fild/) {
+				warning "[ai_manual] on hunting map, converting to 'sit' for resting\n", 'aiSidecarBridge', 1;
+				return ('sit', 'ai_manual_to_sit');
+			}
+			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
+			return ('stand', 'ai_manual_to_sit');
 		}
 		# Within cooldown: silently ignore duplicate ai manual
 		return ('', 'ai_manual_throttled');
