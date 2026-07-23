@@ -567,9 +567,10 @@ class HeuristicService:
         # ── ECONOMY: Sell junk when in Prontera ──
         if weight_ratio > 0.50 and "prontera" in map_name:
             actions.append(HeuristicAction(
-                kind="command", command="sell auto",
+                kind="command", command="ai auto",
                 confidence=0.90, domain="economy",
-                reason=f"Weight {weight_ratio:.0%} — selling junk items in Prontera",
+                reason=f"Weight {weight_ratio:.0%} — in Prontera, LLM should plan sell route",
+                metadata={"needs_llm_vendor_route": True, "weight_ratio": weight_ratio},
             ))
             weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.90)
             total_confidence = max(total_confidence, 0.90)
@@ -578,9 +579,19 @@ class HeuristicService:
         has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
         if not has_potion and zeny and zeny > 50 and "prontera" in map_name:
             actions.append(HeuristicAction(
-                kind="command", command="autobuy",
+                kind="command", command="talknpc 126 76",
                 confidence=0.85, domain="economy",
-                reason=f"Restock potions at Prontera shop (zeny={zeny})",
+                reason=f"Restock potions at Prontera Potion Shop (126,76) (zeny={zeny})",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk resp 0",
+                confidence=0.80, domain="economy",
+                reason="Select buy option at potion shop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk continue",
+                confidence=0.80, domain="economy",
+                reason="Continue through potion shop dialog",
             ))
             weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
             total_confidence = max(total_confidence, 0.85)
@@ -590,9 +601,14 @@ class HeuristicService:
             has_arrows = any("Arrow" in str(k) for k in inventory) if isinstance(inventory, list) else False
             if not has_arrows:
                 actions.append(HeuristicAction(
-                    kind="command", command="autobuy",
+                    kind="command", command="talknpc 160 133",
                     confidence=0.85, domain="economy",
-                    reason=f"Buy arrows for Archer at Prontera (zeny={zeny})",
+                    reason=f"Buy arrows at Prontera Weapon Shop (160,133) (zeny={zeny})",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk resp 0",
+                    confidence=0.80, domain="economy",
+                    reason="Select buy option at weapon shop",
                 ))
                 weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
                 total_confidence = max(total_confidence, 0.85)
@@ -602,9 +618,14 @@ class HeuristicService:
             has_weapon = any("Bow" in str(k) or "Knife" in str(k) or "Mace" in str(k) or "Sword" in str(k) or "Staff" in str(k) for k in inventory) if isinstance(inventory, list) else False
             if not has_weapon:
                 actions.append(HeuristicAction(
-                    kind="command", command="autobuy",
+                    kind="command", command="talknpc 160 133",
                     confidence=0.80, domain="economy",
-                    reason=f"Buy weapon (zeny={zeny})",
+                    reason=f"Buy weapon at Prontera Weapon Shop (160,133) (zeny={zeny})",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk resp 0",
+                    confidence=0.75, domain="economy",
+                    reason="Select buy option at weapon shop",
                 ))
                 weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
                 total_confidence = max(total_confidence, 0.80)
