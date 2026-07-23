@@ -118,6 +118,7 @@ my $last_map_name = '';
 my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
+my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -273,10 +274,13 @@ sub on_mainLoop_post {
 		my $_dh_now = _now_ms();
 		if ($_dh_now - $_pro_ro_last_lock_ms > 60000) {
 			warning "[pro_ro] death detected, re-applying lockMap=$_pro_ro_last_lock_set\n", 'aiSidecarBridge', 1;
+			    # Wait 5s after respawn to let economy commands execute
+			    eval { Commands::run('ai auto'); 1; };
 			$_pro_ro_last_lock_ms = $_dh_now;
 			$::config{lockMap} = $_pro_ro_last_lock_set;
 			$::config{attackAuto} = 3;
 			$::config{attackAuto_inLockOnly} = 0;
+			    $_pro_ro_respawn_ms = _now_ms();
 		}
 	}
 	return unless _bridge_enabled();
@@ -1007,7 +1011,7 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_29 => 'skills_add',
 		aiSidecarPolicy_allow_30 => 'skills',
 		aiSidecarPolicy_allow_31 => 'stat_add',
-		aiSidecarPolicy_allow_32 => 'stats_add',
+		aiSidecarPolicy_allow_32 => 'stat_add',  # Note: stats_add is not a real command
 		aiSidecarPolicy_allow_33 => 'deal',
 		aiSidecarPolicy_allow_34 => 'trade',
 		aiSidecarPolicy_allow_35 => 'friend',
@@ -1937,6 +1941,7 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
 	    # Suppressed - do nothing, bot stays in auto mode
 	    ($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
+	    ($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'sit_blocked_on_hunting_map') {
 	    # Blocked - bot should fight, not rest
 	    ($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
@@ -3107,6 +3112,13 @@ sub _rewrite_runtime_command {
 						Commands::run("ai auto");
 					}
 					@::AI::ai_seq = ();
+					                    # Starvation timer: if no exp gained in 5min, allow town move
+					                    my $_starvation_ms = 300000;  # 5 minutes
+					                    my $_last_exp_gain = $_last_reflex_fire_ms{'exp_gain'} || 0;
+					                    if ($_last_exp_gain > 0 && _now_ms() - $_last_exp_gain > $_starvation_ms) {
+					                        warning "[lockMap] starvation detected - allowing town move for resupply\n", 'aiSidecarBridge', 1;
+					                        last;  # Break out of the if block, allow the move
+					                    }
 					return ('ai auto', 'hunting_map_priority');
 				}
 			}
@@ -3173,6 +3185,16 @@ sub _rewrite_runtime_command {
 		return ($trimmed, 'sit_allowed');
 	}
 
+	# Block teleport attempts to known-stale NPCs
+	if ($normalized =~ /^talknpc\s+(\d+)\s+(\d+)/) {
+	    my $_tn_x = $1;
+	    my $_tn_y = $2;
+	    if (defined %stale_npcs && $stale_npcs{"$_tn_x,$_tn_y"}) {
+	        warning "[stale_npc] blocked teleport to ($_tn_x, $_tn_y)\n", 'aiSidecarBridge', 1;
+	        return ('', 'stale_npc_blocked');
+	    }
+	}
+	
 	# Handle 'teleport auto' -> rewrite to skill or ai auto
 	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
 		my $has_teleport = 0;
