@@ -3168,6 +3168,14 @@ sub _rewrite_runtime_command {
 		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
 		$orig_key = $set_key unless defined $orig_key;
 
+		# STAY IN TOWN: if recently respawned, block lockMap changes to non-town maps
+		if (lc($orig_key) eq 'lockmap' && $_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
+		    my $_stay_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+		    if (!$_stay_target_is_town) {
+		        warning "[stay_in_town] blocking set lockMap to '$set_val' - stay in town active\n", 'aiSidecarBridge', 1;
+		        return ('', 'stay_in_town_blocked');
+		    }
+		}
 		# HUNTING MAP STICKINESS: if setting lockMap to a TOWN while on a hunting map, skip
 		if (lc($orig_key) eq 'lockmap') {
 			my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
