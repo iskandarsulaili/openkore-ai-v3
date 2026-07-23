@@ -4326,15 +4326,7 @@ my %sell_items = map { $_ => 1 } @sell_list;
 # ═══════════════════════════════════════════════════════════════
 
 # ── State tracking ──
-my $_pro_ro_last_check_ms = 0;
-my $_pro_ro_check_interval_ms = 5000;  # Check every 5s
-my $_pro_ro_last_job_check_ms = 0;
-my $_pro_ro_last_sell_ms = 0;
-my $_pro_ro_last_stat_ms = 0;
-my $_pro_ro_last_gear_check_ms = 0;
-my $_pro_ro_last_map_check_ms = 0;
-my $_pro_ro_job_changing = 0;  # 1 = currently in job change dialog
-my $_pro_ro_job_target = '';   # Target job class
+
 
 
 1;
