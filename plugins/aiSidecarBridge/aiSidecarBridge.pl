@@ -2934,6 +2934,8 @@ sub _rewrite_runtime_command {
 		my $_am_town = $_am_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 		if ($_am_hunt) {
 			warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
+			# Ensure auto mode so bot attacks monsters
+			eval { Commands::run('ai auto'); 1; };
 			return ('', 'ai_manual_throttled');
 		}
 		if ($_am_map =~ /^[a-z]+_fild/) {
