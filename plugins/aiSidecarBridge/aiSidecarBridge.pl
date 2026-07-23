@@ -4182,6 +4182,9 @@ sub _check_bridge_reflexes {
 	}
 }
 sub _apply_bot_config {
+    # Override attack distances after OpenKore auto-detection
+    $::config{'attackDistance'} = 7;
+    $::config{'attackMaxDistance'} = 12;
 	# Apply optimal OpenKore configs for autonomous operation
 	# (Overrides user config with AI-optimized values)
 	# SKIP if sidecar has explicitly set these values via "set" command
@@ -4192,8 +4195,8 @@ sub _apply_bot_config {
 	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0') unless $::config{'_sidecar_set_attackAuto_followTarget'};
 	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
 	$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0') unless $::config{'_sidecar_set_attackAuto_noMove'};
-	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7') unless $::config{'_sidecar_set_attackAuto_maxDistance'};
-	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12') unless $::config{'_sidecar_set_attackMaxDistance'};
+	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7');
+	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
 	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'};
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '30') unless $::config{'_sidecar_set_teleportAuto_hp'};
