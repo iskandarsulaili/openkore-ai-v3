@@ -320,6 +320,10 @@ sub on_mainLoop_post {
                 }
                 if (!$_pj3_in_party) {
                     warning "[force_party] kicapmasin3 not in party, forcing join\n", 'aiSidecarBridge', 1;
+                    # Force stand first
+                    if ($char->{sitting}) {
+                        eval { Commands::run('stand'); 1; };
+                    }
                     eval { Commands::run('party join 1'); 1; };
                 }
             }
@@ -405,6 +409,10 @@ sub on_mainLoop_post {
         if ($char && $_pro_ro_stay_in_town_ms > 0 && _now_ms() > $_pro_ro_stay_in_town_ms) {
             warning "[stay_in_town] expired, forcing hunting map\n", 'aiSidecarBridge', 1;
             $_pro_ro_stay_in_town_ms = 0;  # Clear the flag
+            # Force stand first (bot might be sitting)
+            if ($char->{sitting}) {
+                eval { Commands::run('stand'); 1; };
+            }
             # Force lockMap to a hunting map
             $::config{lockMap} = 'prt_fild05';
             $_pro_ro_last_lock_set = 'prt_fild05';
