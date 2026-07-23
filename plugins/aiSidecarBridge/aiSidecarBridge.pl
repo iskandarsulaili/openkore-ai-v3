@@ -4181,11 +4181,10 @@ sub _apply_bot_config {
 	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0') unless $::config{'_sidecar_set_attackAuto_followTarget'};
 	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
 	$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0') unless $::config{'_sidecar_set_attackAuto_noMove'};
-	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7')
-	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12') unless $::config{'_sidecar_set_attackMaxDistance'}; unless $::config{'_sidecar_set_attackAuto_maxDistance'};
-	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1')
-	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'}; unless $::config{'_sidecar_set_attackAuto_minDistance'};
-	$::config{'teleportAuto_minAggressives'} = _cfg('aiSidecar_teleportAutoMinAggressives', '5') unless $::config{'_sidecar_set_teleportAuto_minAggressives'};
+	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7') unless $::config{'_sidecar_set_attackAuto_maxDistance'};
+	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12') unless $::config{'_sidecar_set_attackMaxDistance'};
+	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
+	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'};
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '30') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
 	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
