@@ -441,6 +441,120 @@ class HeuristicService:
             weighted_domains["recovery"] = max(weighted_domains.get("recovery", 0), 0.90)
             total_confidence = max(total_confidence, 0.90)
 
+        # ── JOB CHANGE: if base_lv >= 10 and job_lv >= 10 and still Novice ──
+        job_level = signals.get("job_level", 0)
+        if base_level >= 10 and job_level >= 10 and "novice" in job_name:
+            # Route to job change NPC
+            npc_info = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
+            npc_map, npc_x, npc_y = npc_info
+            if "prontera" not in map_name:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move prontera",
+                    confidence=0.98, domain="progression",
+                    reason=f"Level {base_level}/{job_level} Novice — walk to Prontera for job change",
+                ))
+                weighted_domains["progression"] = 0.98
+                total_confidence = max(total_confidence, 0.98)
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"talknpc {npc_x} {npc_y}",
+                    confidence=0.98, domain="progression",
+                    reason=f"Level {base_level}/{job_level} Novice — start job change at ({npc_x},{npc_y})",
+                ))
+                weighted_domains["progression"] = 0.98
+                total_confidence = max(total_confidence, 0.98)
+
+        # ── PARTY FORMATION (leader only): create party, invite siblings ──
+        bot_name = signals.get("bot_name", "")
+        is_leader = BOT_ROLES.get(bot_name, "") == "leader"
+        in_party = signals.get("in_party", False)
+        if is_leader and not in_party:
+            actions.append(HeuristicAction(
+                kind="command", command="party create",
+                confidence=0.95, domain="social",
+                reason=f"Leader {bot_name} — create party for team play",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="party share exp",
+                confidence=0.95, domain="social",
+                reason="Share experience in party",
+            ))
+            weighted_domains["social"] = 0.95
+            total_confidence = max(total_confidence, 0.95)
+
+        # ── PARTY INVITE: leader invites known sibling bots ──
+        if is_leader and in_party:
+            siblings = signals.get("nearby_players", [])
+            party_members = signals.get("party_members", [])
+            for sib_name in ["kicapmasin2", "kicapmasin3"]:
+                if sib_name in siblings and sib_name not in party_members:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"party invite {sib_name}",
+                        confidence=0.90, domain="social",
+                        reason=f"Invite {sib_name} to party",
+                    ))
+                    weighted_domains["social"] = 0.90
+                    total_confidence = max(total_confidence, 0.90)
+
+        # ── FOLLOWER: follow leader's map ──
+        if not is_leader:
+            leader_map = signals.get("leader_map", "")
+            if leader_map and leader_map != map_name and "prontera" not in map_name:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {leader_map}",
+                    confidence=0.85, domain="social",
+                    reason=f"Follower — move to leader's map ({leader_map})",
+                ))
+                weighted_domains["social"] = 0.85
+                total_confidence = max(total_confidence, 0.85)
+
+        # ── ECONOMY: Sell junk when overweight ──
+        if weight_ratio > 0.70 and "prontera" in map_name:
+            actions.append(HeuristicAction(
+                kind="command", command="sell auto",
+                confidence=0.85, domain="economy",
+                reason=f"Weight {weight_ratio:.0%} — selling junk items",
+            ))
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.85)
+            total_confidence = max(total_confidence, 0.85)
+
+        # ── ECONOMY: Buy potions when low ──
+        has_potion = any("Potion" in str(k) for k in inventory) if isinstance(inventory, list) else False
+        if not has_potion and zeny and zeny > 50 and "prontera" in map_name:
+            actions.append(HeuristicAction(
+                kind="command", command="autobuy",
+                confidence=0.80, domain="economy",
+                reason=f"Restock potions (zeny={zeny})",
+            ))
+            weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
+            total_confidence = max(total_confidence, 0.80)
+
+        # ── ECONOMY: Buy arrows for Archer ──
+        if "archer" in job_name and zeny > 10 and "prontera" in map_name:
+            has_arrows = any("Arrow" in str(k) for k in inventory) if isinstance(inventory, list) else False
+            if not has_arrows:
+                actions.append(HeuristicAction(
+                    kind="command", command="autobuy",
+                    confidence=0.80, domain="economy",
+                    reason=f"Buy arrows for Archer (zeny={zeny})",
+                ))
+                weighted_domains["economy"] = max(weighted_domains.get("economy", 0), 0.80)
+                total_confidence = max(total_confidence, 0.80)
+
+        # ── MAP PROGRESSION: move to better hunting grounds ──
+        hunting_ground = _class_hunting_ground(job_name, base_level, map_name)
+        if hunting_ground is not None:
+            target_map, map_desc = hunting_ground
+            # Only queue if not already on this map
+            if target_map not in map_name:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {target_map}",
+                    confidence=0.90, domain="exploration",
+                    reason=f"Level {base_level} {job_name} → {target_map} ({map_desc})",
+                ))
+                weighted_domains["exploration"] = 0.90
+                total_confidence = max(total_confidence, 0.90)
+
         # Determine top domain
         top_domain = "none"
         if weighted_domains:

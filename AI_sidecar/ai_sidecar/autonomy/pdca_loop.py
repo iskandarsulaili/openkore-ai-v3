@@ -230,6 +230,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         pos = latest.get("position") or {}
                         signals["map"] = str(pos.get("map", "") or "")
                         signals["job_name"] = str(prog.get("job_name", "novice") or "novice")
+                        signals["job_level"] = int(prog.get("job_level", 0) or 0)
+                        signals["stat_points"] = int(prog.get("stat_points", 0) or 0)
+                        signals["skill_points"] = int(prog.get("skill_points", 0) or 0)
+                        signals["bot_name"] = str(latest.get("bot_id", "") or "")
+                        signals["in_party"] = bool(latest.get("in_party", False))
+                        signals["party_members"] = latest.get("party_members", []) or []
+                        signals["nearby_players"] = latest.get("nearby_players", []) or []
+                        signals["leader_map"] = str(latest.get("leader_map", "") or "")
                     else:
                         v = getattr(latest, "vitals", None) or {}
                         signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) or 1.0)
@@ -248,6 +256,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         pos = getattr(latest, "position", None) or {}
                         signals["map"] = str(getattr(pos, "map", "") or "")
                         signals["job_name"] = str(getattr(prog, "job_name", "novice") or "novice")
+                        signals["job_level"] = int(getattr(prog, "job_level", 0) or 0)
+                        signals["stat_points"] = int(getattr(prog, "stat_points", 0) or 0)
+                        signals["skill_points"] = int(getattr(prog, "skill_points", 0) or 0)
+                        signals["bot_name"] = str(getattr(latest, "bot_id", "") or "")
+                        signals["in_party"] = bool(getattr(latest, "in_party", False))
+                        signals["party_members"] = getattr(latest, "party_members", []) or []
+                        signals["nearby_players"] = getattr(latest, "nearby_players", []) or []
+                        signals["leader_map"] = str(getattr(latest, "leader_map", "") or "")
             except Exception:
                 pass
         assessment = hs.assess(signals)
