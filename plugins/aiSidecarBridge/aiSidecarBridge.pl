@@ -266,6 +266,7 @@ sub on_mainLoop_pre {
 }
 
 sub on_mainLoop_post {
+	_pro_ro_tick();
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -2885,13 +2886,13 @@ sub _rewrite_runtime_command {
 	}
 	if ($_action_type ne q{}) {
 		my $_now = _now_ms();
-		my $_last_same_type = $_committed_actions{$_action_type} || 0;
+		my $_last_same_type = $_committed_actions{"$_action_type:$_action_target"} || 0;
 		warning "[guard] type=$_action_type target=$_action_target last=$_last_same_type\n", 'aiSidecarBridge', 1;
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
 		}
-		$_committed_actions{$_action_type} = $_now;
+		$_committed_actions{"$_action_type:$_action_target"} = $_now;
 		# Clean old entries (use keys() not each() to avoid iterator issues)
 		for my $_ckey (keys %_committed_actions) {
 			delete $_committed_actions{$_ckey} if $_now - $_committed_actions{$_ckey} > $COMMITTED_ACTION_COOLDOWN_MS * 2;
@@ -2952,6 +2953,8 @@ sub _rewrite_runtime_command {
 		my $_fh_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
 		if (($_am_lock eq '' || $_am_town) && $_am_now - $_fh_last > 120000) {
 			$_last_reflex_fire_ms{'forced_hunt_map'} = $_am_now;
+			# Clear committed action guard so the move command isn't blocked
+			delete $_committed_actions{'move'};
 			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
 			$::config{lockMap} = 'prt_fild05';
 			$::config{attackAuto} = 3;
@@ -2959,6 +2962,8 @@ sub _rewrite_runtime_command {
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
 			# Trigger move to hunting map (this gets executed at top level by _execute_action)
+			# Clear committed action guard so the move isn't blocked
+			delete $_committed_actions{'move:prt_fild05'};
 			return ('move prt_fild05', 'coordinate_move_raw');
 		}
 		return ('stand', 'ai_manual_to_sit');
@@ -3048,6 +3053,8 @@ sub _rewrite_runtime_command {
 	# Handle map-name moves: "move <map>" -> set lockMap + ai auto
 	if ($normalized =~ /^move\s+(.+)$/) {
 		my $target = $1;
+		# Clear committed action guard for this move target
+		delete $_committed_actions{"move:$target"};
 		if ($target =~ /^\d+\s+\d+$/) {
 			return ($trimmed, 'coordinate_move_raw');
 		}
@@ -4292,6 +4299,298 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	}
 }
 
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# PRO RO PLAYER AUTOMATION MODULE
+# Handles job change, stat allocation, economy, map progression
+# Runs in the bridge main loop, no LLM required
+# ═══════════════════════════════════════════════════════════════
+
+# ── State tracking ──
+my $_pro_ro_last_check_ms = 0;
+my $_pro_ro_check_interval_ms = 5000;  # Check every 5s
+my $_pro_ro_last_job_check_ms = 0;
+my $_pro_ro_last_sell_ms = 0;
+my $_pro_ro_last_stat_ms = 0;
+my $_pro_ro_last_gear_check_ms = 0;
+my $_pro_ro_last_map_check_ms = 0;
+my $_pro_ro_job_changing = 0;  # 1 = currently in job change dialog
+my $_pro_ro_job_target = '';   # Target job class
+
+sub _pro_ro_tick {
+    my $now = _now_ms();
+    return if $now - $_pro_ro_last_check_ms < $_pro_ro_check_interval_ms;
+    $_pro_ro_last_check_ms = $now;
+    
+    my $cr = _safe_char();
+    return if !$cr;
+    
+    my $hp = $cr->{hp} || 0;
+    my $hp_max = $cr->{hp_max} || 1;
+    my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+    my $zeny = $cr->{zeny} || 0;
+    my $base_lv = $cr->{lv} || $cr->{level} || 1;
+    my $job_lv = $cr->{job_level} || 0;
+    my $job_name = $cr->{job_name} || '';
+    my $map = $cr->{map} || '';
+    my $weight = $cr->{weight} || 0;
+    my $weight_max = $cr->{weight_max} || 1;
+    my $weight_pct = $weight_max > 0 ? int($weight * 100 / $weight_max) : 0;
+    
+    # ── 1. JOB CHANGE: if base_lv >= 10 and job_lv >= 10 and still Novice ──
+    if ($base_lv >= 10 && $job_lv >= 10 && $job_name =~ /novice/i && !$_pro_ro_job_changing) {
+        _pro_ro_do_job_change($cr);
+        return;
+    }
+    
+    # ── 2. JOB CHANGE DIALOG: continue dialog if in progress ──
+    if ($_pro_ro_job_changing) {
+        _pro_ro_continue_job_dialog($cr);
+        return;
+    }
+    
+    # ── 3. SELL JUNK: if weight > 50% or zeny < 100 ──
+    if (($weight_pct > 50 || $zeny < 100) && $now - $_pro_ro_last_sell_ms > 30000) {
+        $_pro_ro_last_sell_ms = $now;
+        _pro_ro_sell_junk($cr);
+        return;
+    }
+    
+    # ── 4. BUY POTIONS: if zeny >= 50 and potions < 5 ──
+    if ($zeny >= 50 && $now - $_pro_ro_last_gear_check_ms > 30000) {
+        $_pro_ro_last_gear_check_ms = $now;
+        _pro_ro_buy_supplies($cr);
+        return;
+    }
+    
+    # ── 5. ALLOCATE STATS: if stat points available ──
+    if ($now - $_pro_ro_last_stat_ms > 10000) {
+        $_pro_ro_last_stat_ms = $now;
+        _pro_ro_allocate_stats($cr);
+        # Don't return - let other checks run too
+    }
+    
+    # ── 6. MAP PROGRESSION: if on wrong map for level ──
+    if ($now - $_pro_ro_last_map_check_ms > 60000) {
+        $_pro_ro_last_map_check_ms = $now;
+        _pro_ro_check_map_progression($cr);
+        return;
+    }
+    
+    # ── 7. USE FREE HEALING ITEMS: if HP < 50% and have Carrots/Apples ──
+    if ($hp_pct < 50 && $hp_pct > 0) {
+        _pro_ro_use_free_heals($cr);
+        return;
+    }
+}
+
+sub _pro_ro_do_job_change {
+    my ($cr) = @_;
+    my $base_lv = $cr->{lv} || $cr->{level} || 1;
+    my $map = $cr->{map} || '';
+    
+    # Must be in Prontera for job change
+    if ($map !~ /^prontera/i) {
+        warning "[pro_ro] need to be in Prontera for job change, walking back\n", 'aiSidecarBridge', 1;
+        $::config{lockMap} = 'prontera';
+        eval { Commands::run('ai auto'); 1; };
+        return;
+    }
+    
+    # Choose job: Archer (best for leveling) or Thief
+    # Archer NPC: prontera 160 191 (Bowman Guild)
+    # Thief NPC: prontera 231 38 (Thief Guild)
+    # We'll try Archer first (best solo leveling)
+    $_pro_ro_job_target = 'Archer';
+    $_pro_ro_job_changing = 1;
+    
+    warning "[pro_ro] starting job change to Archer at (160, 191)\n", 'aiSidecarBridge', 1;
+    eval { Commands::run('talknpc 160 191'); 1; };
+}
+
+sub _pro_ro_continue_job_dialog {
+    my ($cr) = @_;
+    # Check if we're in a dialog
+    my $in_dialog = 0;
+    if ($::AI::ai_seq) {
+        for my $seq (@::AI::ai_seq) {
+            if ($seq =~ /npc/i) { $in_dialog = 1; last; }
+        }
+    }
+    
+    if (!$in_dialog) {
+        # Dialog ended - check if job changed
+        my $job = $cr->{job_name} || '';
+        if ($job !~ /novice/i) {
+            warning "[pro_ro] job change complete! New job: $job\n", 'aiSidecarBridge', 1;
+            $_pro_ro_job_changing = 0;
+            # Buy weapon for new class
+            _pro_ro_buy_weapon($cr);
+        } else {
+            warning "[pro_ro] job change dialog ended but still Novice, retrying\n", 'aiSidecarBridge', 1;
+            $_pro_ro_job_changing = 0;
+        }
+        return;
+    }
+    
+    # We're in dialog - send responses
+    # Archer NPC dialog: talk -> "I want to become an Archer" -> confirm
+    # The exact dialog depends on the server, but typically:
+    # talknpc -> c (continue) -> r1 (first response) -> c -> r0 -> c
+    my $ai_top = @ai_seq ? $ai_seq[0] : '';
+    if ($ai_top =~ /npc/i) {
+        # Send dialog responses
+        eval { Commands::run('talk resp 0'); 1; };  # Select first option
+        eval { Commands::run('talk continue'); 1; };
+    }
+}
+
+sub _pro_ro_sell_junk {
+    my ($cr) = @_;
+    my $map = $cr->{map} || '';
+    
+    # Must be in town to sell
+    if ($map !~ /^prontera/i) {
+        return;
+    }
+    
+    # Sell junk items via auto-sell
+    warning "[pro_ro] selling junk items\n", 'aiSidecarBridge', 1;
+    eval { Commands::run('sell auto'); 1; };
+}
+
+sub _pro_ro_buy_supplies {
+    my ($cr) = @_;
+    my $zeny = $cr->{zeny} || 0;
+    my $map = $cr->{map} || '';
+    
+    # Must be in town
+    if ($map !~ /^prontera/i) {
+        return;
+    }
+    
+    # Count potions
+    my $potion_count = 0;
+    if ($cr->{inventory}) {
+        for my $item (@{$cr->{inventory}}) {
+            next if ref($item) ne 'HASH';
+            my $name = $item->{name} || '';
+            if ($name =~ /red potion|orange potion|white potion/i) {
+                $potion_count += $item->{amount} || 0;
+            }
+        }
+    }
+    
+    # Buy potions if low
+    if ($potion_count < 5 && $zeny >= 50) {
+        warning "[pro_ro] buying potions (have $potion_count, zeny=$zeny)\n", 'aiSidecarBridge', 1;
+        eval { Commands::run('autobuy'); 1; };
+    }
+}
+
+sub _pro_ro_buy_weapon {
+    my ($cr) = @_;
+    my $job = $cr->{job_name} || '';
+    my $zeny = $cr->{zeny} || 0;
+    
+    warning "[pro_ro] checking weapon for job=$job zeny=$zeny\n", 'aiSidecarBridge', 1;
+    
+    # Archer: buy Bow (1701) from Weapon Shop
+    if ($job =~ /archer/i && $zeny >= 100) {
+        # Weapon Shop in Prontera: (160, 133) or similar
+        # For now, use autobuy which should have bow configured
+        eval { Commands::run('autobuy'); 1; };
+    }
+    # Thief: buy Knife (1301) or Cutter (1302)
+    elsif ($job =~ /thief/i && $zeny >= 100) {
+        eval { Commands::run('autobuy'); 1; };
+    }
+}
+
+sub _pro_ro_allocate_stats {
+    my ($cr) = @_;
+    my $base_lv = $cr->{lv} || $cr->{level} || 1;
+    my $job = $cr->{job_name} || '';
+    
+    # Check if we have stat points
+    my $stat_points = $cr->{stat_points} || 0;
+    return if $stat_points <= 0;
+    
+    # Determine primary stat based on class
+    my $primary_stat = 'str';
+    if ($job =~ /archer|hunter/i) {
+        $primary_stat = 'dex';
+    } elsif ($job =~ /thief|assassin|rogue/i) {
+        $primary_stat = 'agi';
+    } elsif ($job =~ /mage|wizard|sorcerer/i) {
+        $primary_stat = 'int';
+    } elsif ($job =~ /sword|knight|crusader|paladin/i) {
+        $primary_stat = 'str';
+    } elsif ($job =~ /acolyte|priest|monk|champion/i) {
+        $primary_stat = 'int';
+    }
+    
+    warning "[pro_ro] allocating $stat_points stat points to $primary_stat\n", 'aiSidecarBridge', 1;
+    eval { Commands::run("stat_add $primary_stat $stat_points"); 1; };
+}
+
+sub _pro_ro_use_free_heals {
+    my ($cr) = @_;
+    my $hp = $cr->{hp} || 0;
+    my $hp_max = $cr->{hp_max} || 1;
+    my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
+    
+    # Use free healing items: Carrot, Apple, etc.
+    if ($cr->{inventory}) {
+        for my $item (@{$cr->{inventory}}) {
+            next if ref($item) ne 'HASH';
+            my $name = $item->{name} || '';
+            my $amount = $item->{amount} || 0;
+            next if $amount <= 0;
+            
+            # Free healing items (looted, not bought)
+            if ($name =~ /carrot|apple|grape|banana|orange/i) {
+                warning "[pro_ro] using $name for free heal (HP=$hp_pct%)\n", 'aiSidecarBridge', 1;
+                eval { Commands::run("use $name"); 1; };
+                return;
+            }
+        }
+    }
+}
+
+sub _pro_ro_check_map_progression {
+    my ($cr) = @_;
+    my $base_lv = $cr->{lv} || $cr->{level} || 1;
+    my $map = $cr->{map} || '';
+    my $current_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+    
+    # Determine best map for level
+    my $target_map = '';
+    if ($base_lv < 10) {
+        $target_map = 'prt_fild01';  # Poring, Lunatic, Fabre
+    } elsif ($base_lv < 20) {
+        $target_map = 'prt_fild01';  # Still good, more spawns
+    } elsif ($base_lv < 30) {
+        $target_map = 'pay_fild01';  # Familiar, Yoyo, Smokie
+    } elsif ($base_lv < 40) {
+        $target_map = 'gef_fild01';  # Creamy, Savage Bebe, Spore
+    } elsif ($base_lv < 50) {
+        $target_map = 'mjolnir_04';  # Orc Warrior, Orc Zombie
+    } else {
+        $target_map = 'gef_fild04';  # High orc, etc.
+    }
+    
+    # Only change if different from current
+    if ($target_map ne '' && $target_map ne $current_lock) {
+        warning "[pro_ro] level $base_lv -> moving to $target_map\n", 'aiSidecarBridge', 1;
+        $::config{lockMap} = $target_map;
+        $::config{attackAuto} = 3;
+        $::config{attackAuto_inLockOnly} = 0;
+        eval { Commands::run('ai auto'); 1; };
+    }
+}
 
 sub _teamplay_check {
 	my $now = _now_ms();
