@@ -2911,6 +2911,7 @@ sub _command_allowed {
 my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
+	my ($command, $metadata) = @_;
 	# ── MOVE REWRITE: convert map-name moves to coordinate moves ──
 	if ($command =~ /^move\s+(\S+)$/i) {
 		my $_target = lc($1);
@@ -2933,8 +2934,6 @@ sub _rewrite_runtime_command {
 			return ($command, 'coordinate_move_raw');
 		}
 	}
-
-	my ($command, $metadata) = @_;
 
 	# NPC DIALOG STATE: track whether bot is in an NPC dialog
 	my $_in_dialog = 0;
