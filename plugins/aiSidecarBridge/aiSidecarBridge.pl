@@ -3129,6 +3129,12 @@ sub _rewrite_runtime_command {
 	    return ('', 'ai_manual_blocked');
 	}
 	
+	# MACRO GUARD: block broken macros that cause syntax errors
+	if ($normalized =~ /^macro\s+(reflex_mob_swarm|reflex_pvp_escape|reflex_relog)/) {
+	    debug "[macro_guard] blocking broken macro: $1\n", 'aiSidecarBridge', 1;
+	    return ('', 'macro_blocked_broken');
+	}
+	
 	# PARTY JOIN GUARD: block ALL party join commands from sidecar
 	# Config settings (partyAutoCreate/partyAutoJoinCode) handle party formation
 	if ($normalized =~ /^party\s+join\s+(.+)$/) {
