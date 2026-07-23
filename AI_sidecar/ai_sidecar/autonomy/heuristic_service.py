@@ -45,13 +45,13 @@ CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
 
 # ── Job change NPC locations ──
 JOB_CHANGE_NPCS: dict[str, tuple[str, int, int]] = {
-    "novice": ("prontera", 160, 191),
-    "archer": ("prontera", 160, 191),
-    "thief": ("prontera", 231, 38),
-    "acolyte": ("prontera", 200, 170),
-    "mage": ("prontera", 180, 150),
-    "swordman": ("prontera", 140, 120),
-    "merchant": ("prontera", 120, 200),
+    "novice": ("prontera", 160, 191),   # Archer Guild
+    "archer": ("prontera", 160, 191),    # Bowman Guild
+    "thief": ("prontera", 231, 38),      # Thief Guild
+    "acolyte": ("prontera", 200, 170),   # Acolyte Guild (approximate)
+    "mage": ("prontera", 180, 150),      # Mage Guild (approximate)
+    "swordman": ("prontera", 140, 120),  # Swordman Guild (approximate)
+    "merchant": ("prontera", 120, 200),  # Merchant Guild (approximate)
 }
 
 # ── Bot role assignments ──
@@ -303,9 +303,9 @@ class HeuristicService:
             }
             allocations = _class_stat_allocation(job_name, current_stats, stat_points)
             for stat_name, points in allocations:
-                stat_upper = stat_name.upper()
+                # OpenKore expects lowercase stat names (str, agi, dex, etc.)
                 actions.append(HeuristicAction(
-                    kind="command", command=f"stat_add {stat_upper} {points}",
+                    kind="command", command=f"stat_add {stat_name} {points}",
                     confidence=0.95, domain="progression",
                     reason=f"Allocate {points} {stat_upper} ({job_name} build: {_build_summary(job_name)})",
                 ))

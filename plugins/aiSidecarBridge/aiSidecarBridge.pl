@@ -2883,14 +2883,6 @@ sub _rewrite_runtime_command {
 
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
-	# Fix stat_add: OpenKore expects uppercase stat names (DEX, AGI, STR, etc.)
-	if ($normalized =~ /^stat_add\s+/) {
-	    my @parts = split(/\s+/, $normalized, 3);
-	    if ($parts[1]) {
-	        $parts[1] = uc($parts[1]);
-	        $normalized = join(' ', @parts);
-	    }
-	}
 	$metadata = {} if ref($metadata) ne 'HASH';
 
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
