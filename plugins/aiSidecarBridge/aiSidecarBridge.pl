@@ -453,7 +453,7 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── FORCE PARTY INVITE: leader invites kicapmasin3 every 30s ──
+        # ── FORCE PARTY INVITE: leader recreates party if needed, then invites kicapmasin3 ──
         if ($char && $::config{username} eq 'kicapmasin') {
             my $_pi_now = _now_ms();
             my $_pi_last = $_last_reflex_fire_ms{'force_party_invite'} || 0;
@@ -473,7 +473,18 @@ sub on_mainLoop_post {
                     }
                 }
                 if (!$_pi_k3_in_party) {
-                    warning "[force_party] kicapmasin3 not in party, leader inviting\n", 'aiSidecarBridge', 1;
+                    warning "[force_party] kicapmasin3 not in party, leader recreating party\n", 'aiSidecarBridge', 1;
+                    # First check if leader is in a party
+                    my $_pi_leader_in_party = 0;
+                    if (%::party && scalar(keys %::party) > 0) {
+                        $_pi_leader_in_party = 1;
+                    }
+                    if (!$_pi_leader_in_party) {
+                        # Leader not in party - create one
+                        eval { Commands::run('party create AI Team'); 1; };
+                        sleep(1);
+                    }
+                    # Now invite kicapmasin3
                     eval { Commands::run('party invite kicapmasin3'); 1; };
                 }
             }
