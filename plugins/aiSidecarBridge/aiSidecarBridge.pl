@@ -2923,6 +2923,12 @@ sub _rewrite_runtime_command {
 			my $_am_actual_map = $field ? $field->name() : '';
 			$_am_actual_map = lc($_am_actual_map || '');
 			$_am_actual_map =~ s/\.gat$//;
+			# If lockMap is already a hunting map, ignore ai manual entirely
+			my $_am_lockmap = defined $::config{lockMap} ? $::config{lockMap} : '';
+			if ($_am_lockmap =~ /^[a-z]+_fild/) {
+				warning "[ai_manual] lockMap=$_am_lockmap is a hunting map, ignoring\n", 'aiSidecarBridge', 1;
+				return ('', 'ai_manual_throttled');
+			}
 			if ($_am_actual_map =~ /^[a-z]+_fild/) {
 				warning "[ai_manual] on hunting map, converting to 'sit' for resting\n", 'aiSidecarBridge', 1;
 				return ('sit', 'ai_manual_to_sit');
@@ -2949,7 +2955,11 @@ sub _rewrite_runtime_command {
 				$::config{attackAuto_inLockOnly} = 0;
 				$::config{route_randomWalk_avoidInLock} = 0;
 				$::config{route_randomWalk_inTown} = 0;
-				eval { _toggle_ai_mode('manual'); Commands::run('ai auto'); 1; };
+				# Toggle manual then auto to force route calc (skip debounce)
+				$_last_ai_toggle_ms = 0;
+				eval { _toggle_ai_mode('manual'); 1; };
+				$_last_ai_toggle_ms = 0;
+				eval { _toggle_ai_mode('auto'); 1; };
 			}
 			return ('stand', 'ai_manual_to_sit');
 		}
