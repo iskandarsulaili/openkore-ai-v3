@@ -1921,6 +1921,8 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'ai_manual_to_sit') {
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
+	} elsif ($rewrite_kind eq 'ai_manual_throttled') {
+		($success, $result_code, $msg) = (1, 'ok', 'ai manual throttled (30s cooldown)');
 	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: potion cooldown');
 	} elsif ($rewrite_kind eq 'committed_action_blocked') {
