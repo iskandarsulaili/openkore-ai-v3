@@ -4666,7 +4666,6 @@ sub _discover_shops_sync {
 	    }
 	}
 	}
-	return \@shops;
 
 
 sub _discover_portals_sync {
