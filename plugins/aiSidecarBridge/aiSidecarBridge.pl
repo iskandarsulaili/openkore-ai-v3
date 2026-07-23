@@ -2929,9 +2929,10 @@ sub _rewrite_runtime_command {
 			}
 			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
 			# Periodic autobuy: trigger auto-buy every 60s when in town
+			my $_ab_now = _now_ms();
 			my $_last_ab = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
-			if ($_now_ms - $_last_ab > 60000) {
-				$_last_reflex_fire_ms{'autobuy_trigger'} = $_now_ms;
+			if ($_ab_now - $_last_ab > 60000) {
+				$_last_reflex_fire_ms{'autobuy_trigger'} = $_ab_now;
 				warning "[ai_manual] periodic autobuy trigger\n", 'aiSidecarBridge', 1;
 				eval { Commands::run("autobuy"); 1; };
 			}
