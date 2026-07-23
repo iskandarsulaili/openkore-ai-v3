@@ -344,6 +344,7 @@ sub on_mainLoop_post {
                 my $_town_now = _now_ms();
                 my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
                 if ($_last_town_routine == 0 || $_town_now - $_last_town_routine > 5000) {
+                    warning "[town_routine] executing town routine (weight=$_town_weight_pct, zeny=$_town_zeny, lv=$_town_base_lv/$_town_job_lv, stat_pts=$_town_stat_points)\n", 'aiSidecarBridge', 1;
                     $_last_reflex_fire_ms{'town_routine'} = $_town_now;
                     # Force sell if weight > 5%
                     my $_town_weight = $char->{weight} || 0;
@@ -388,6 +389,9 @@ sub on_mainLoop_post {
                         for (1..$_town_stat_points) {
                             eval { Commands::run('stat_add dex'); 1; };
                         }
+                    } else {
+                        # No stat points - log for debugging
+                        debug "[town_routine] no stat points available (status_points=$_town_stat_points)\n", 'aiSidecarBridge', 1;
                     }
                 }
             }
