@@ -3045,6 +3045,13 @@ sub _command_allowed {
 my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
+	# EARLY REWRITE: party join <name> -> party join 1 (must be before guard section)
+	if ($normalized =~ /^party\s+join\s+(.+)$/ && $1 ne '1') {
+	    $normalized = 'party join 1';
+	    debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
+	    return ($normalized, 'party_join_rewritten');
+	}
+
 	my ($command, $metadata) = @_;
 
 	# NPC DIALOG STATE: track whether bot is in an NPC dialog
