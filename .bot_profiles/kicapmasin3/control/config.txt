@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword twihipas
+adminPassword stiwreav
 callSign
 commandPrefix ;
 callSignGM 0
@@ -186,13 +186,13 @@ dcOnServerClose 0
 dcOnJobLevel
 dcOnLevel
 
-follow 0
-followTarget
+follow 1
+followTarget kicapmasin
 followEmotion 1
 followEmotion_distance 4
 followFaceDirection 0
-followDistanceMax 6
-followDistanceMin 3
+followDistanceMax 4
+followDistanceMin 2
 followLostStep 12
 followSitAuto 0
 followBot 0
@@ -463,7 +463,7 @@ mercenary_runFromTarget_noAttackMethodFallback_minStep 8
 
 mercenary_idleWalkType 1
 mercenary_followMode 1
-mercenary_followDistanceMin 3
+mercenary_followDistanceMin 2
 mercenary_followDistanceMax 10
 
 mercenary_moveNearWhenIdle 1
@@ -534,7 +534,7 @@ homunculus_runFromTarget_noAttackMethodFallback_minStep 8
 
 homunculus_idleWalkType 1
 homunculus_followMode 1
-homunculus_followDistanceMin 3
+homunculus_followDistanceMin 2
 homunculus_followDistanceMax 10
 
 homunculus_moveNearWhenIdle 1

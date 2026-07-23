@@ -304,6 +304,87 @@ sub on_mainLoop_post {
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
         
+        # ── TEAMPLAY ROUTINE: party formation, follow, healing ──
+        if ($char) {
+            my $_tp_now = _now_ms();
+            my $_tp_last = $_last_reflex_fire_ms{'teamplay'} || 0;
+            
+            my $_tp_name = $::config{username} || '';
+            
+            # Party formation (every 10s)
+            if ($_tp_now - $_tp_last > 10000) {
+                $_last_reflex_fire_ms{'teamplay'} = $_tp_now;
+                
+                # Leader: create party and invite
+                if ($_tp_name eq 'kicapmasin') {
+                    my $_tp_in_party = 0;
+                    if ($char->{party}) {
+                        $_tp_in_party = 1;
+                    }
+                    if (!$_tp_in_party) {
+                        warning "[teamplay] leader creating party\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run('party create'); 1; };
+                        eval { Commands::run('party share exp'); 1; };
+                        eval { Commands::run('party invite kicapmasin2'); 1; };
+                        eval { Commands::run('party invite kicapmasin3'); 1; };
+                    }
+                }
+                
+                # Followers: auto-join party
+                if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
+                    my $_tp_in_party = 0;
+                    if ($char->{party}) {
+                        $_tp_in_party = 1;
+                    }
+                    if (!$_tp_in_party) {
+                        warning "[teamplay] follower joining party\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run('party join 1'); 1; };
+                    }
+                }
+            }
+            
+            # Party healing (every 3s, support bot only)
+            if ($_tp_name eq 'kicapmasin3' && $_tp_now - ($_last_reflex_fire_ms{'party_heal'} || 0) > 3000) {
+                $_last_reflex_fire_ms{'party_heal'} = $_tp_now;
+                # Check party members' HP from global party object
+                if (defined %::party) {
+                    for my $_pm_id (keys %::party) {
+                        my $_pm = $::party{$_pm_id};
+                        next unless ref($_pm) eq 'HASH';
+                        my $_pm_hp = $_pm->{hp} || 0;
+                        my $_pm_hp_max = $_pm->{hp_max} || 1;
+                        my $_pm_ratio = $_pm_hp_max > 0 ? $_pm_hp / $_pm_hp_max : 0;
+                        if ($_pm_ratio > 0 && $_pm_ratio < 0.50) {
+                            warning "[teamplay] healing party member $_pm->{name} (HP=$_pm_ratio)\n", 'aiSidecarBridge', 1;
+                            eval { Commands::run("use_skill AL_HEAL"); 1; };
+                        }
+                    }
+                }
+            }
+            
+            # Follow coordination: if follower is on different map than leader, move to leader
+            if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
+                my $_tp_leader_map = '';
+                if (defined %::party) {
+                    for my $_pm_id (keys %::party) {
+                        my $_pm = $::party{$_pm_id};
+                        next unless ref($_pm) eq 'HASH';
+                        if ($_pm->{name} && lc($_pm->{name}) eq 'kicapmasin') {
+                            $_tp_leader_map = $_pm->{map} || '';
+                            last;
+                        }
+                    }
+                }
+                my $_tp_my_map = $char->{map} || '';
+                if ($_tp_leader_map && $_tp_my_map && lc($_tp_leader_map) ne lc($_tp_my_map)) {
+                    warning "[teamplay] follower on $_tp_my_map, leader on $_tp_leader_map, moving to leader\n", 'aiSidecarBridge', 1;
+                    $::config{lockMap} = $_tp_leader_map;
+                    @::AI::ai_seq = ();
+                    eval { Commands::run("move $_tp_leader_map"); 1; };
+                }
+            }
+        }
+        
         # ── MAP CHANGE DETECTION: detect when bot enters town ──
         if ($char) {
             my $_cur_map = lc($char->{map} || '');
