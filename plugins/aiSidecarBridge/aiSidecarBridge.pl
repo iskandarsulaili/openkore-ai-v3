@@ -120,6 +120,7 @@ my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
 my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
 my $_pro_ro_stay_in_town_ms = 99999999999999;  # Stay in town until this timestamp (set to far future at load)
+my $_party_formed = 0;  # Set to 1 once party formation is confirmed
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -313,30 +314,29 @@ sub on_mainLoop_post {
                 # Leader: create party and invite
                 if ($_tp_name eq 'kicapmasin') {
                     my $_tp_in_party = 0;
-                    if ($char->{party}) {
+                    # Check if already in party via global %party hash
+                    if (%::party && scalar(keys %::party) > 0) {
                         $_tp_in_party = 1;
                     }
                     if (!$_tp_in_party) {
                         warning "[teamplay] leader creating party\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('party create'); 1; };
                         eval { Commands::run('party share exp'); 1; };
-                    } else {
-                        # Already in party - invite followers if not already in party
-                        eval { Commands::run('party invite kicapmasin2'); 1; };
-                        eval { Commands::run('party invite kicapmasin3'); 1; };
                     }
+                    # Always invite followers (no-op if already in party)
+                    eval { Commands::run('party invite kicapmasin2'); 1; };
+                    eval { Commands::run('party invite kicapmasin3'); 1; };
                 }
                 # Followers: auto-join party
                 if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
                     my $_tp_in_party = 0;
-                    if ($char->{party}) {
+                    # Check if already in party via global %party hash
+                    if (%::party && scalar(keys %::party) > 0) {
                         $_tp_in_party = 1;
                     }
                     if (!$_tp_in_party) {
                         warning "[teamplay] follower joining party\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('party join 1'); 1; };
-                    } else {
-                        debug "[teamplay] follower already in party\n", 'aiSidecarBridge', 1;
                     }
                 }
             }
