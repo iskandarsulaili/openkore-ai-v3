@@ -3332,7 +3332,7 @@ sub _cfg_bool {
 
 
 # -- AI mode debounce -- prevent rapid auto/manual oscillation --
-	my ($mode) = @_;
+sub _toggle_ai_mode {
 	return if !$mode;
 	return if $mode eq $_last_ai_mode;
 	my $now = _now_ms();
