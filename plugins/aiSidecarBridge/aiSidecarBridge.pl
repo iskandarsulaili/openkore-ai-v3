@@ -2988,47 +2988,6 @@ sub _rewrite_runtime_command {
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
 		}
-	}
-
-	# NPC DIALOG STATE: track whether bot is in an NPC dialog
-	my $_in_dialog = 0;
-	if ($::AI::ai_seq) {
-		for my $seq (@::AI::ai_seq) {
-			if ($seq =~ /^talknpc|talknpc_/) {
-				$_in_dialog = 1;
-				last;
-			}
-		}
-	}
-
-	# If in dialog, block non-dialog commands
-	if ($_in_dialog) {
-		my $normalized_lc = lc($command);
-
-		if ($normalized_lc !~ /^(talk |talknpc|talk cont|talk resp)/) {
-			debug "[dialog_guard] bot is in NPC dialog, blocking non-dialog command: '$command'\n", 'aiSidecarBridge', 1;
-			return ('', 'dialog_guard_blocked');
-		}
-	}
-
-	# COMBAT GUARD: if bot is attacking a monster, block non-combat commands
-	my $_is_attacking = 0;
-	if ($char) {
-		for my $seq (@::AI::ai_seq) {
-			if ($seq =~ /^(attack|skill|auto_attack)/i) {
-				$_is_attacking = 1;
-				last;
-			}
-		}
-	}
-	if ($_is_attacking) {
-		my $normalized_lc = lc($command);
-		if ($normalized_lc !~ /^(use_skill|is |stand|ai auto|ai manual|attack|stop_attack|use_item)/) {
-			debug "[combat_guard] bot is attacking, blocking non-combat command: '$command'\n", 'aiSidecarBridge', 1;
-			return ('', 'combat_guard_blocked');
-		}
-	}
-
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
@@ -3676,6 +3635,7 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
+}
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
