@@ -464,6 +464,24 @@ class HeuristicService:
                 return True
         return False
 
+    def get_best_map(self, bot_id: str, base_level: int) -> str | None:
+        """Get the best hunting map for this bot's level from adaptive data."""
+        with self._lock:
+            maps = self._data.get("map_performance", {})
+            if not maps:
+                return None
+            # Filter maps by level range
+            candidates = []
+            for map_name, perf in maps.items():
+                avg_level = perf.get("avg_level", base_level)
+                if abs(avg_level - base_level) <= 5:
+                    candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))
+            if not candidates:
+                return None
+            # Sort by kill/death ratio
+            candidates.sort(key=lambda x: x[1] / max(x[2], 1), reverse=True)
+            return candidates[0][0] if candidates else None
+
     def set_domain_weights(self, weights: dict) -> None:
         pass
 
@@ -703,33 +721,18 @@ class HeuristicService:
 
         # ── STATE: PARTY ──
         if state == "PARTY":
-            if bot_name == "kicapmasin":
-                actions.append(HeuristicAction(
-                    kind="command", command="party create",
-                    confidence=0.90, domain="social",
-                    reason="Leader - create party for team play",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party share exp",
-                    confidence=0.85, domain="social",
-                    reason="Share experience in party",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party invite kicapmasin2",
-                    confidence=0.80, domain="social",
-                    reason="Invite kicapmasin2 to party",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party invite kicapmasin3",
-                    confidence=0.80, domain="social",
-                    reason="Invite kicapmasin3 to party",
-                ))
-            else:
-                actions.append(HeuristicAction(
-                    kind="command", command="party join kicapmasin",
-                    confidence=0.85, domain="social",
-                    reason="Join leader's party",
-                ))
+            # Use bot_name from signals - no hardcoded names
+            # The bridge rewrite handles party join syntax
+            actions.append(HeuristicAction(
+                kind="command", command="party create AI Team",
+                confidence=0.90, domain="social",
+                reason="Create party for team play",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="party share exp",
+                confidence=0.85, domain="social",
+                reason="Share experience in party",
+            ))
             total_confidence = 0.85
             top_domain = "social"
             assessment = HeuristicAssessment(
@@ -752,12 +755,16 @@ class HeuristicService:
                 confidence=0.95, domain="combat",
                 reason="Ensure AI is in auto mode",
             ))
-            # Move to hunting map
-            target_map = "prt_fild05"
-            if base_level >= 20:
-                target_map = "pay_fild01"
-            elif base_level >= 15:
-                target_map = "prt_fild08"
+            # Move to hunting map - use adaptive data
+            target_map = self._adaptive.get_best_map(bot_id, base_level)
+            if not target_map:
+                # Fallback based on level
+                if base_level >= 20:
+                    target_map = "pay_fild01"
+                elif base_level >= 15:
+                    target_map = "prt_fild08"
+                else:
+                    target_map = "prt_fild05"
             actions.append(HeuristicAction(
                 kind="command", command=f"move {target_map}",
                 confidence=0.90, domain="exploration",
@@ -807,7 +814,9 @@ class HeuristicService:
             ))
             # If stuck, suggest moving to a different map
             if is_stuck:
-                target_map = "prt_fild08" if base_level < 20 else "pay_fild01"
+                target_map = self._adaptive.get_best_map(bot_id, base_level)
+                if not target_map:
+                    target_map = "prt_fild08" if base_level < 20 else "pay_fild01"
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {target_map}",
                     confidence=0.50, domain="exploration",

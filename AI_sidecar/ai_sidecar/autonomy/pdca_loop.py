@@ -290,7 +290,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 source="planner",
                 created_at=_now,
                 expires_at=_now + _td(seconds=30),
-                idempotency_key=f"heuristic_{horizon}_{ha.domain}",
+                idempotency_key=f"heuristic_{horizon}_{ha.domain}_{ha.command}_{_t.monotonic_ns()}",
                 metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon, "reason": ha.reason},
             )
             try:
