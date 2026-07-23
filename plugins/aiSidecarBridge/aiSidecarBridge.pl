@@ -189,14 +189,6 @@ sub _cleanup_runtime {
 }
 
 sub on_start3 {
-	# Set stay_in_town for 30s after startup to allow economy
-	$_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-	$_pro_ro_respawn_ms = _now_ms();  # Trigger economy window
-	warning "[startup] set stay_in_town for 30s after plugin load\n", 'aiSidecarBridge', 1;
-	# Force lockMap to Prontera so bot stays in town
-	$::config{lockMap} = 'prontera';
-	$_pro_ro_last_lock_set = 'prontera';
-	$_pro_ro_last_lock_ms = _now_ms();
 	# Disable sitAuto at startup
 	$::config{sitAuto_hp} = 0;
 	$::config{sitAuto_hp_upper} = 0;
@@ -400,36 +392,9 @@ sub on_mainLoop_post {
             }
             $last_map_name = $_cur_map;
         }
-        # ── FORCED RETURN TO TOWN: if on hunting map for 5min, force return ──
-        if ($char) {
-            my $_hunt_map = lc($char->{map} || '');
-            $_hunt_map =~ s/\.gat$//;
-            if ($_hunt_map =~ /^[a-z]+_fild/) {
-                my $_hunt_start = $_pro_ro_last_lock_ms || _now_ms();
-                if (_now_ms() - $_hunt_start > 300000) {  # 5 minutes
-                    warning "[forced_return] on $_hunt_map for 5min, forcing return to Prontera\n", 'aiSidecarBridge', 1;
-                    $::config{lockMap} = 'prontera';
-                    $_pro_ro_last_lock_set = 'prontera';
-                    $_pro_ro_respawn_ms = _now_ms();
-                    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-                    $_pro_ro_last_lock_ms = _now_ms();
-                    @::AI::ai_seq = ();
-                    eval { Commands::run('move 156 196'); 1; };
-                }
-            }
-        }
+
         
-        # ── STAY IN TOWN EXPIRED: allow bot to go hunting ──
-        if ($char && $_pro_ro_stay_in_town_ms > 0 && _now_ms() > $_pro_ro_stay_in_town_ms) {
-            warning "[stay_in_town] expired, allowing hunting\n", 'aiSidecarBridge', 1;
-            $_pro_ro_stay_in_town_ms = 0;  # Clear the flag
-            # Force stand first (bot might be sitting)
-            if ($char->{sitting}) {
-                eval { Commands::run('stand'); 1; };
-            }
-            # Clear stay_in_town - let sidecar decide where to go
-            @::AI::ai_seq = ();
-        }
+
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
             my $_town_map = lc($char->{map} || '');
@@ -3353,36 +3318,7 @@ sub _rewrite_runtime_command {
 					    @::AI::ai_seq = ();
 					    return ('', 'config_set_ok');
 					}
-					# RESPAWN ECONOMY WINDOW: recently respawned, allow town move
-					if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
-					    # Only allow moves to TOWN, not to hunting maps
-					    my $_respawn_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-					    if ($_respawn_target_is_town) {
-					        warning "[lockMap] recently respawned - allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
-					        $::config{lockMap} = $set_val;
-					        $_pro_ro_last_lock_set = $set_val;
-					        return ('', 'config_set_ok');
-					    }
-					}
-					# STAY IN TOWN: if recently respawned, allow town move
-					if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
-					    # Only allow moves to TOWN, not to hunting maps
-					    my $_stay_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-					    if ($_stay_target_is_town) {
-					        warning "[lockMap] stay in town active, allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
-					        $::config{lockMap} = $set_val;
-					        $_pro_ro_last_lock_set = $set_val;
-					        return ('', 'config_set_ok');
-					    }
-					    # If stay_in_town expired, allow hunting map
-					    if (_now_ms() > $_pro_ro_stay_in_town_ms) {
-					        warning "[lockMap] stay in town expired, allowing set lockMap to '$set_val'\n", 'aiSidecarBridge', 1;
-					        $::config{lockMap} = $set_val;
-					        $_pro_ro_last_lock_set = $set_val;
-					        $_pro_ro_stay_in_town_ms = 0;
-					        return ('', 'config_set_ok');
-					    }
-					}
+
 					# Allow retreat when HP < 60%
 					my $_hp_ratio = _safe_hp_ratio();
 					if ($_hp_ratio >= 0.60) {
