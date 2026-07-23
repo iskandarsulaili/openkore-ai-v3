@@ -2939,8 +2939,9 @@ sub _rewrite_runtime_command {
 			# FORCED HUNTING MAP: if in town for >120s without lockMap set, force walk to prt_fild00
 			my $_fm_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
 			my $_fm_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+			my $_fm_is_town = $_fm_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 			warning "[ai_manual] forced hunt debug: lockMap='$_fm_lock' ab_now=$_ab_now fm_last=$_fm_last diff=" . ($_ab_now - $_fm_last) . "\n", 'aiSidecarBridge', 1;
-			if ($_fm_lock eq '' && $_ab_now - $_fm_last > 120000) {
+			if (($_fm_lock eq '' || $_fm_is_town) && $_ab_now - $_fm_last > 120000) {
 				$_last_reflex_fire_ms{'forced_hunt_map'} = $_ab_now;
 				warning "[ai_manual] no lockMap set, forcing move to prt_fild00\n", 'aiSidecarBridge', 1;
 				$::config{lockMap} = 'prt_fild00';
