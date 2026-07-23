@@ -384,11 +384,16 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── STAY IN TOWN EXPIRED: if stay_in_town expired and bot is in town, allow hunting ──
+        # ── STAY IN TOWN EXPIRED: force bot to go hunting ──
         if ($char && $_pro_ro_stay_in_town_ms > 0 && _now_ms() > $_pro_ro_stay_in_town_ms) {
-            warning "[stay_in_town] expired, allowing hunting\n", 'aiSidecarBridge', 1;
+            warning "[stay_in_town] expired, forcing hunting map\n", 'aiSidecarBridge', 1;
             $_pro_ro_stay_in_town_ms = 0;  # Clear the flag
-            # Don't force a lockMap change - let the PDCA loop handle it
+            # Force lockMap to a hunting map
+            $::config{lockMap} = 'prt_fild05';
+            $_pro_ro_last_lock_set = 'prt_fild05';
+            $_pro_ro_last_lock_ms = _now_ms();
+            @::AI::ai_seq = ();
+            eval { Commands::run('move 22 203'); 1; };  # Walk to Prontera portal
         }
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
