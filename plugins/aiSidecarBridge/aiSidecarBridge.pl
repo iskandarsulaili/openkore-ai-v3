@@ -269,6 +269,17 @@ sub on_mainLoop_pre {
 
 sub on_mainLoop_post {
 	_pro_ro_tick();
+	# Death handler: re-apply Pro RO lockMap after respawn
+	if ($char && defined $char->{hp} && $char->{hp} == 0 && $_pro_ro_last_lock_set ne '') {
+		my $_dh_now = _now_ms();
+		if ($_dh_now - $_pro_ro_last_lock_ms > 60000) {
+			warning "[pro_ro] death detected, re-applying lockMap=$_pro_ro_last_lock_set\n", 'aiSidecarBridge', 1;
+			$_pro_ro_last_lock_ms = $_dh_now;
+			$::config{lockMap} = $_pro_ro_last_lock_set;
+			$::config{attackAuto} = 3;
+			$::config{attackAuto_inLockOnly} = 0;
+		}
+	}
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
