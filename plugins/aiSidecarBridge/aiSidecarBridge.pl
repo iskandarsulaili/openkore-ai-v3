@@ -119,6 +119,7 @@ my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
 my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
+my $_pro_ro_stay_in_town_ms = 0;  # Stay in town until this timestamp
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -282,6 +283,7 @@ sub on_mainLoop_post {
 			$::config{attackAuto} = 3;
 			$::config{attackAuto_inLockOnly} = 0;
 			$_pro_ro_respawn_ms = _now_ms();
+			$_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
 			# Trigger economy: walk to Tool Dealer
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
@@ -357,6 +359,7 @@ sub on_mainLoop_post {
                     $::config{lockMap} = 'prontera';
                     $_pro_ro_last_lock_set = 'prontera';
                     $_pro_ro_respawn_ms = _now_ms();
+                    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
                     $_pro_ro_last_lock_ms = _now_ms();  # Reset timer
                     @::AI::ai_seq = ();
                     eval { Commands::run('move 156 196'); 1; };
@@ -3192,6 +3195,13 @@ sub _rewrite_runtime_command {
 					    $_pro_ro_last_lock_set = $set_val;
 					    return ('', 'config_set_ok');
 					}
+					# STAY IN TOWN: if recently respawned, allow town move
+					if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
+					    warning "[lockMap] stay in town active, allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
+					    $::config{lockMap} = $set_val;
+					    $_pro_ro_last_lock_set = $set_val;
+					    return ('', 'config_set_ok');
+					}
 					# Allow retreat when HP < 60%
 					my $_hp_ratio = _safe_hp_ratio();
 					if ($_hp_ratio >= 0.60) {
@@ -3245,6 +3255,7 @@ sub _rewrite_runtime_command {
 			    $::config{lockMap} = 'prontera';
 			    $_pro_ro_last_lock_set = 'prontera';
 			    $_pro_ro_respawn_ms = _now_ms();
+			    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
 			    $_hunting_start = _now_ms();
 			    $_pro_ro_guard = 0;
 			    @::AI::ai_seq = ();
@@ -3256,7 +3267,13 @@ sub _rewrite_runtime_command {
 			    warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
 			    $::config{lockMap} = 'prontera';
 			    $_pro_ro_last_lock_set = 'prontera';
+			    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
 			    $_pro_ro_guard = 0;
+			    return ($trimmed, 'coordinate_move_raw');
+			}
+			# STAY IN TOWN: if recently respawned, allow town move
+			if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
+			    warning "[lockMap] stay in town active, allowing move to town '$target'\n", 'aiSidecarBridge', 1;
 			    return ($trimmed, 'coordinate_move_raw');
 			}
 			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
