@@ -1932,6 +1932,10 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', '@go command sent as chat');
 	} elsif ($rewrite_kind =~ /^use_item_/) {
 		($success, $result_code, $msg) = (1, 'ok', "item use handled: $rewrite_kind");
+	} elsif ($rewrite_kind eq 'skills_add_rewritten') {
+		($success, $result_code, $msg) = (1, 'ok', 'skills_add rewritten to skills add');
+	} elsif ($rewrite_kind eq 'attack_skill_basic_attack_ignored') {
+		($success, $result_code, $msg) = (1, 'ok', 'basic attack ignored (auto-attack handles this)');
 	} elsif ($rewrite_kind eq 'attack_skill_delegated') {
 		($success, $result_code, $msg) = (1, 'ok', 'attack skill delegated to auto-AI');
 	} elsif ($rewrite_kind eq 'ai_manual_already_manual' || $rewrite_kind eq 'ai_auto_already_auto') {
@@ -3220,9 +3224,17 @@ if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
 	}
 
 	# Handle 'skills add' / 'skills_add'
+	# OpenKore expects: skills add <skill_id> (numeric)
+	# If we get skills_add <name> <level>, try to extract the numeric ID
 	if ($normalized =~ /^skills?\s*add\s+(\d+)$/) {
 		my $skill_points = $1;
 		# Check if bot has any skill points available
+	} elsif ($normalized =~ /^skills?\s*add\s+(\w+)\s+(\d+)$/) {
+		# skills_add <name> <level> -> try to use the level as skill ID (fallback)
+		my $_skill_id = $2;
+		warning "[skills_add] rewriting skills_add $1 $2 -> skills add $_skill_id\n", 'aiSidecarBridge', 1;
+		$normalized = "skills add $_skill_id";
+		$rewrite_kind = 'skills_add_rewritten';
 		# $char->{skills} may be a hash or array depending on OpenKore version
 		my $has_skill_points = 0;
 		if ($char && $char->{skills} && ref($char->{skills}) eq 'ARRAY') {
