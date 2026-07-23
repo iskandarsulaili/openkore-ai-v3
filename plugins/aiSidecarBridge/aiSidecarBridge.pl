@@ -3145,6 +3145,30 @@ sub _rewrite_runtime_command {
 		        return ('', 'sit_blocked_hunting');
 		    }
 		}
+    
+    # Block stat_add when bot has 0 stat points
+    if ($normalized =~ /^stat_add\s+(.+)$/) {
+        my $_stat_pts = $char ? ($char->{status_points} || 0) : 0;
+        if ($_stat_pts <= 0) {
+            debug "[stat_guard] blocking stat_add - no stat points\n", 'aiSidecarBridge', 1;
+            return ('', 'stat_add_blocked_no_points');
+        }
+    }
+    
+    # Block party join <name> - rewrite to party join 1
+    if ($normalized =~ /^party\s+join\s+(.+)$/ && $1 ne '1') {
+        $normalized = 'party join 1';
+        debug "[party_guard] rewriting 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
+        return ($normalized, 'party_join_rewritten');
+    }
+
+    # Block broken macros that cause syntax errors
+    if ($normalized =~ /^macro\s+(reflex_mob_swarm|reflex_pvp_escape|reflex_relog)/) {
+        debug "[macro_guard] blocking broken macro: $1\n", 'aiSidecarBridge', 1;
+        return ('', 'macro_blocked_broken');
+    }
+    }
+    
 		
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
@@ -3604,6 +3628,17 @@ sub _rewrite_runtime_command {
 	if ($normalized =~ /^use_skill\s+(.+)$/) {
 		$rewrite_kind = 'use_skill_rewritten';
 		return ($normalized, $rewrite_kind);
+
+	# Handle 'macro' commands - block broken macros
+	if ($normalized =~ /^macro\s+(.+)$/) {
+		my $_macro_name = $1;
+		if ($_macro_name =~ /reflex_mob_swarm|reflex_pvp_escape|reflex_relog/) {
+		    debug "[macro_guard] blocking broken macro: $_macro_name\n", 'aiSidecarBridge', 1;
+		    return ('', 'macro_blocked_broken');
+		}
+		$rewrite_kind = 'macro_rewritten';
+		return ($normalized, $rewrite_kind);
+	}
 	}
 
 	# Handle 'skills add' commands
@@ -3705,7 +3740,7 @@ sub _rewrite_runtime_command {
 
 	# Default: pass through
 	return ($trimmed, 'passthrough');
-}
+
 
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
