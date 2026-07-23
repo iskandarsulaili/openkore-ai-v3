@@ -1918,6 +1918,9 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'lockMap already set to target');
 	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
+	} elsif ($rewrite_kind eq 'ai_manual_to_sit') {
+		my $ok = eval { Commands::run('sit'); 1; };
+		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: potion cooldown');
 	} elsif ($rewrite_kind eq 'committed_action_blocked') {
@@ -2904,6 +2907,14 @@ sub _rewrite_runtime_command {
 	}
 
 
+
+	# AI MANUAL BLOCK: prevent 'ai manual' from disabling auto-attack mode
+	# The LLM planner sends 'ai manual' as a proxy for 'sit' (bridge compat layer rewrites 'sit' to 'ai manual')
+	# We convert it back to 'sit' to keep the bot in auto-attack mode while still allowing resting
+	if ($normalized eq 'ai manual') {
+		warning "[ai_manual] converting to 'sit' to preserve auto-attack mode\n", 'aiSidecarBridge', 1;
+		return ('sit', 'ai_manual_to_sit');
+	}
 
 	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
 	# OpenKore regenerates portalsLOS.txt at runtime, so stale entries keep reappearing
