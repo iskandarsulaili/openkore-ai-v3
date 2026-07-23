@@ -213,7 +213,7 @@ rules:
       priority_tier: reflex
       conflict_key: ""
 
-  - rule_id: emergency_orange_potion
+  - rule_id: emergency_red_potion
     enabled: true
     priority: 3
     category: survival

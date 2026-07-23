@@ -706,7 +706,7 @@ class ReflexRuleEngine:
             # SURVIVAL: Heal when HP < 30% (deadly)
             # ═══════════════════════════════════════════════════════════
             ReflexRule(
-                rule_id="emergency_orange_potion",
+                rule_id="emergency_red_potion",
                 enabled=True,
                 priority=3,
                 trigger=ReflexTriggerClause(
@@ -717,12 +717,12 @@ class ReflexRuleEngine:
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="use orange_potion",
+                    command="use red_potion",
                     priority_tier="reflex",
                     conflict_key="survival.heal",
                     metadata={"category": "emergency_heal"},
                 ),
-                fallback_macro="reflex_survival_orange",
+                fallback_macro="reflex_survival_red",
                 cooldown_ms=2000,
                 circuit_breaker_key="combat.default",
                 category=ReflexCategory.survival,

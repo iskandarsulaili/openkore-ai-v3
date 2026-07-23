@@ -2897,7 +2897,7 @@ sub _rewrite_runtime_command {
 	# NPC DIALOG AUTO-COMPLETION}
 
 	# MACRO POTION SPAM FIX: add 5-minute cooldown to emergency potion macros
-	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)_potion$/) {
+	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)(?:_potion)?$/) {
 		my $_potion_type = $1;
 		my $_now = _now_ms();
 		my $_last_macro = $_last_reflex_fire_ms{"macro_$_potion_type"} || 0;
