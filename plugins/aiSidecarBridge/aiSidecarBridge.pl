@@ -294,46 +294,8 @@ sub on_mainLoop_pre {
 }
 
 
-	# ── PREVENT SIT: remove sit from AI sequence every cycle ──
-	if ($char) {
-	    @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
-	    $::config{sitAuto_hp} = 0;
-	    $::config{sitAuto_hp_upper} = 0;
-	    $::config{sitAuto_sp} = 0;
-	    $::config{sitAuto_sp_upper} = 0;
-	    $::config{sitAuto_idle} = 0;
-	    $::config{sitAuto_over_50} = 0;
-	    if ($char->{sitting}) {
-	        eval { Commands::run('stand'); 1; };
-	        eval { Commands::run('ai auto'); 1; };
-	    }
-	}
 sub on_mainLoop_post {
-	# Death handler: re-apply Pro RO lockMap after respawn
-	if ($char && defined $char->{hp} && $char->{hp} == 0 && $_pro_ro_last_lock_set ne '') {
-		my $_dh_now = _now_ms();
-		if ($_dh_now - $_pro_ro_last_lock_ms > 60000) {
-			warning "[pro_ro] death detected, re-applying lockMap=$_pro_ro_last_lock_set\n", 'aiSidecarBridge', 1;
-			    # Wait 5s after respawn to let economy commands execute
-			    eval { Commands::run('ai auto'); 1; };
-			$_pro_ro_last_lock_ms = $_dh_now;
-			# After respawn, set lockMap to town so bot stays to sell/buy
-			$::config{lockMap} = 'prontera';
-			$::config{attackAuto} = 3;
-			$::config{attackAuto_inLockOnly} = 0;
-			$_pro_ro_respawn_ms = _now_ms();
-			$_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
-			# Clear AI sequence to prevent bot from walking back to hunting map
-			@::AI::ai_seq = ();
-			# Force stand
-			if ($char->{sitting}) {
-			    eval { Commands::run('stand'); 1; };
-			}
 
-			# Trigger economy: walk to Tool Dealer
-			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
-		}
-	}
         # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
@@ -381,78 +343,11 @@ sub on_mainLoop_post {
 
         
                 }
-        # ── MAP CHANGE DETECTION: detect when bot enters town ──
-        if ($char) {
-            my $_cur_map = lc($char->{map} || '');
-            $_cur_map =~ s/\.gat$//;
-            my @_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
-            if ($_cur_map ne $last_map_name && grep { $_cur_map eq $_ } @_towns) {
-                warning "[map_change] entered town '$_cur_map' (was '$last_map_name'), triggering immediate town routine\n", 'aiSidecarBridge', 1;
-                $_last_reflex_fire_ms{'town_routine'} = 0;  # Reset cooldown so town routine fires immediately
-            }
-            $last_map_name = $_cur_map;
-        }
+
 
         
 
-        # ── TOWN ROUTINE: when bot is in town, force economy actions ──
-        if ($char) {
-            my $_town_map = lc($char->{map} || '');
-            $_town_map =~ s/\.gat$//;
-            my @_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
-            if (grep { $_town_map eq $_ } @_towns) {
-                my $_town_now = _now_ms();
-                my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
-                if ($_last_town_routine == 0 || $_town_now - $_last_town_routine > 5000) {
-                    $_last_reflex_fire_ms{'town_routine'} = $_town_now;
-                    # Force sell if weight > 5%
-                    my $_town_weight = $char->{weight} || 0;
-                    my $_town_weight_max = $char->{weight_max} || 1;
-                    my $_town_weight_pct = $_town_weight_max > 0 ? $_town_weight / $_town_weight_max : 0;
-                    my $_town_zeny = $char->{zeny} || 0;
-                    my $_town_base_lv = $char->{lv} || 0;
-                    my $_town_job_lv = $char->{lv_job} || 0;
-                    my $_town_job = $char->{jobID} || 0;
-                    my $_town_stat_points = $char->{status_points} || 0;
-                    warning "[town_routine] executing (weight=$_town_weight_pct, zeny=$_town_zeny, lv=$_town_base_lv/$_town_job_lv, stat_pts=$_town_stat_points)\n", 'aiSidecarBridge', 1;
-                    if ($_town_weight_pct > 0.05) {
-                        warning "[town_routine] weight=$_town_weight_pct, forcing sell\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('move 147 175'); 1; };
-                        eval { Commands::run('talknpc 147 175'); 1; };
-                        eval { Commands::run('sell'); 1; };
-                        eval { Commands::run('talk any'); 1; };
-                    }
-                    # Force buy if zeny > 0
-                    if ($_town_zeny > 0) {
-                        warning "[town_routine] zeny=$_town_zeny, forcing buy\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('move 147 175'); 1; };
-                        eval { Commands::run('talknpc 147 175'); 1; };
-                        eval { Commands::run('store'); 1; };
-                        my $_max_buy = int($_town_zeny / 50);
-                        $_max_buy = 30 if $_max_buy > 30;
-                        if ($_max_buy > 0) {
-                            eval { Commands::run("buy 501 $_max_buy"); 1; };
-                        }
-                        eval { Commands::run('talk any'); 1; };
-                    }
-                    # Force job change if level 10/10 Novice
-                    if ($_town_base_lv >= 10 && $_town_job_lv >= 10 && $_town_job == 0) {
-                        warning "[town_routine] level $_town_base_lv/$_town_job_lv Novice, forcing job change\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('move 160 191'); 1; };
-                        eval { Commands::run('talknpc 160 191'); 1; };
-                        eval { Commands::run('talk continue'); 1; };
-                        eval { Commands::run('talk resp 0'); 1; };
-                    }
-                    # Force stat allocation if stat points > 0
-                    if ($_town_stat_points > 0) {
-                        warning "[town_routine] $_town_stat_points stat points available, allocating\n", 'aiSidecarBridge', 1;
-                        for (1..$_town_stat_points) {
-                            eval { Commands::run('stat_add dex'); 1; };
-                        }
-                    }
-                }
-            }
-        }
+
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
