@@ -197,7 +197,6 @@ sub on_start3 {
 	$::config{lockMap} = 'prontera';
 	$_pro_ro_last_lock_set = 'prontera';
 	$_pro_ro_last_lock_ms = _now_ms();
-	
 	# STALE PORTAL FILTER: remove known-stale NPC teleport entries from portalsLOS.txt
 	# OpenKore regenerates this file at runtime, so stale entries keep reappearing
 	my $_portals_file = Settings::getTableFilename("portalsLOS.txt");
@@ -303,18 +302,14 @@ sub on_mainLoop_post {
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
-        
         # ── TEAMPLAY ROUTINE: party formation, follow, healing ──
         if ($char) {
             my $_tp_now = _now_ms();
             my $_tp_last = $_last_reflex_fire_ms{'teamplay'} || 0;
-            
             my $_tp_name = $::config{username} || '';
-            
             # Party formation (every 10s)
             if ($_tp_now - $_tp_last > 10000) {
                 $_last_reflex_fire_ms{'teamplay'} = $_tp_now;
-                
                 # Leader: create party and invite
                 if ($_tp_name eq 'kicapmasin') {
                     my $_tp_in_party = 0;
@@ -329,7 +324,6 @@ sub on_mainLoop_post {
                         eval { Commands::run('party invite kicapmasin3'); 1; };
                     }
                 }
-                
                 # Followers: auto-join party
                 if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
                     my $_tp_in_party = 0;
@@ -342,7 +336,6 @@ sub on_mainLoop_post {
                     }
                 }
             }
-            
             # Party healing (every 3s, support bot only)
             if ($_tp_name eq 'kicapmasin3' && $_tp_now - ($_last_reflex_fire_ms{'party_heal'} || 0) > 3000) {
                 $_last_reflex_fire_ms{'party_heal'} = $_tp_now;
@@ -361,7 +354,6 @@ sub on_mainLoop_post {
                     }
                 }
             }
-            
             # Follow coordination: if follower is on different map than leader, move to leader
             if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
                 my $_tp_leader_map = '';
@@ -384,7 +376,6 @@ sub on_mainLoop_post {
                 }
             }
         }
-        
         # ── MAP CHANGE DETECTION: detect when bot enters town ──
         if ($char) {
             my $_cur_map = lc($char->{map} || '');
@@ -396,7 +387,6 @@ sub on_mainLoop_post {
             }
             $last_map_name = $_cur_map;
         }
-        
         # ── FORCED RETURN TO TOWN: if on hunting map for 5min, force return ──
         if ($char) {
             my $_hunt_map = lc($char->{map} || '');
@@ -415,7 +405,6 @@ sub on_mainLoop_post {
                 }
             }
         }
-        
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
             my $_town_map = lc($char->{map} || '');
@@ -474,7 +463,6 @@ sub on_mainLoop_post {
                 }
             }
         }
-        
 	return unless _bridge_enabled();
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
@@ -530,7 +518,6 @@ sub on_mainLoop_post {
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
         }
-        
 }
 
 sub on_add_actor_list_probe {
@@ -651,6 +638,7 @@ sub on_packet_hook {
 	return if !_cfg_bool('aiSidecar_packetEventsEnabled', 1);
 
 	my $normalized_type = _normalize_event_type($event_type || $hook || 'packet.unknown');
+
 	my $payload = _extract_hook_payload($args);
 	my $text = _trim("captured $normalized_type", _cfg_int('aiSidecar_maxEventTextChars', 220));
 
@@ -2076,13 +2064,11 @@ sub _execute_action {
 	my $command = defined $action->{command} ? $action->{command} : '';
 	my $metadata = ref($action->{metadata}) eq 'HASH' ? $action->{metadata} : {};
 	my $started = _now_ms();
-	
 	# Anti-detection: random delay before executing action
 	if ($ANTI_DETECTION_ENABLED) {
 		my $delay_ms = $ANTI_DETECTION_MIN_DELAY_MS + int(rand($ANTI_DETECTION_MAX_DELAY_MS - $ANTI_DETECTION_MIN_DELAY_MS + 1));
 		usleep($delay_ms * 1000) if $delay_ms > 0;
 	}
-	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
 
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
@@ -2358,12 +2344,10 @@ sub _flush_ack_queue {
 sub _post_event {
 	my ($event) = @_;
 	return if !_bridge_enabled();
-	
 	# Normalize flat bridge event to NormalizedEvent schema
 	my $event_family = $event->{kind} || 'bridge_reflex';
 	my $event_type = $event->{reflex} || $event->{event_type} || 'unknown';
 	my $severity = $event->{severity} || 'info';
-	
 	# Build tags (string values) and numeric (float values) from event params
 	my %tags = ();
 	my %numeric = ();
@@ -2379,7 +2363,6 @@ sub _post_event {
 		}
 	}
 	$text = substr($event_type . ' ' . join(' ', values %tags), 0, 1024) if $text eq '';
-	
 	my $normalized = {
 		meta => _meta(_bot_id()),
 		event_family => $event_family,
@@ -2390,7 +2373,6 @@ sub _post_event {
 		numeric => \%numeric,
 		payload => \%payload,
 	};
-	
 	my $payload = {
 		meta => _meta(_bot_id()),
 		events => [$normalized],
@@ -3045,12 +3027,6 @@ sub _command_allowed {
 my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
-	# EARLY REWRITE: party join <name> -> party join 1 (must be before guard section)
-	if ($normalized =~ /^party\s+join\s+(.+)$/ && $1 ne '1') {
-	    $normalized = 'party join 1';
-	    debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
-	    return ($normalized, 'party_join_rewritten');
-	}
 
 	my ($command, $metadata) = @_;
 
@@ -3068,6 +3044,7 @@ sub _rewrite_runtime_command {
 	# If in dialog, block non-dialog commands
 	if ($_in_dialog) {
 		my $normalized_lc = lc($command);
+
 		if ($normalized_lc !~ /^(talk |talknpc|talk cont|talk resp)/) {
 			debug "[dialog_guard] bot is in NPC dialog, blocking non-dialog command: '$command'\n", 'aiSidecarBridge', 1;
 			return ('', 'dialog_guard_blocked');
@@ -3096,6 +3073,13 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
+
+	# EARLY REWRITE: party join <name> -> party join 1 (must be before guard section)
+	if ($normalized =~ /^party\s+join\s+(.+)$/ && $1 ne '1') {
+	    $normalized = 'party join 1';
+	    debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
+	    return ($normalized, 'party_join_rewritten');
+	}
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
 	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
 	# Uses direct key access (not each()) to avoid Perl's shared hash iterator bug
@@ -3152,7 +3136,6 @@ sub _rewrite_runtime_command {
 		        return ('', 'sit_blocked_hunting');
 		    }
 		}
-		
 		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
 			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
 			return (q{}, q{committed_action_blocked});
@@ -3509,7 +3492,6 @@ sub _rewrite_runtime_command {
 		return ($trimmed, 'sit_allowed');
 	}
 
-	
 	my $rewrite_kind = '';
 
 	# Handle 'attack_skill' -> rewrite to use_skill or ignore basic_attack
@@ -4736,7 +4718,6 @@ sub _survival_check {
 	        known_shops => _discover_shops_sync(),
 	        known_portals => _discover_portals_sync(),
 	    });
-	    
 	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
 	        my $_cmd = $_strat->{json}{command};
 	        eval { Commands::run($_cmd); 1 };
@@ -4794,11 +4775,9 @@ sub _survival_check {
 sub _sell_junk_items {
 	my $cr = _safe_char();
 	return if !$cr || !$cr->{inventory};
-	
 	# # Items to auto-sell (configurable via aiSidecar_sellItems CSV)
 my @sell_list = split(',', _cfg('aiSidecar_sellItems', 'Jellopy,Stem,Empty Bottle,Red Herb,Yellow Herb,White Herb,Feather,Cactus Needle,Shell'));
 my %sell_items = map { $_ => 1 } @sell_list;
-	
 	foreach my $item (@{$cr->{inventory}}) {
 	    next unless ref($item) eq 'HASH';
 	    my $iname = $item->{name} || '';
