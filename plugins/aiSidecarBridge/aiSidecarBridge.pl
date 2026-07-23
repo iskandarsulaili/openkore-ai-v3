@@ -2949,14 +2949,14 @@ sub _rewrite_runtime_command {
 		my $_fh_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
 		if (($_am_lock eq '' || $_am_town) && $_am_now - $_fh_last > 120000) {
 			$_last_reflex_fire_ms{'forced_hunt_map'} = $_am_now;
-			warning "[ai_manual] force prt_fild00\n", 'aiSidecarBridge', 1;
-			$::config{lockMap} = 'prt_fild00';
+			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
+			$::config{lockMap} = 'prt_fild05';
 			$::config{attackAuto} = 3;
 			$::config{attackAuto_inLockOnly} = 0;
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
 			# Trigger move to hunting map (this gets executed at top level by _execute_action)
-			return ('move prt_fild00', 'coordinate_move_raw');
+			return ('move prt_fild05', 'coordinate_move_raw');
 		}
 		return ('stand', 'ai_manual_to_sit');
 	}
