@@ -2928,24 +2928,12 @@ sub _rewrite_runtime_command {
 				return ('sit', 'ai_manual_to_sit');
 			}
 			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
-			# Emergency autobuy: if in town with no potions and has zeny, trigger Commands::run("autobuy")
-			my $_char_defined = defined $char ? 1 : 0;
-			my $_char_inv = ($char && $char->{inventory}) ? scalar(@{$char->{inventory}}) : -1;
-			my $_char_zeny = defined $char ? (defined $char->{zeny} ? $char->{zeny} : -1) : -1;
-			warning "[ai_manual] debug: char=$_char_defined inv_count=$_char_inv zeny=$_char_zeny\n", 'aiSidecarBridge', 1;
-			if ($char && $char->{inventory}) {
-				my $_has_pots = 0;
-				for my $_i (@{$char->{inventory}}) {
-					if ($_i && ref $_i && $_i->{name} =~ /potion|herb|fruit|berry/i) {
-						$_has_pots += $_i->{amount} || 1;
-					}
-				}
-				my $_has_zeny = defined $char->{zeny} ? $char->{zeny} : 0;
-				warning "[ai_manual] debug: pots=$_has_pots zeny=$_has_zeny\n", 'aiSidecarBridge', 1;
-				if ($_has_pots < 5 && $_has_zeny >= 500) {
-					warning "[ai_manual] emergency autobuy: only $_has_pots potions, zeny=$_has_zeny\n", 'aiSidecarBridge', 1;
-					eval { Commands::run("autobuy"); 1; };
-				}
+			# Periodic autobuy: trigger auto-buy every 60s when in town
+			my $_last_ab = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
+			if ($_now_ms - $_last_ab > 60000) {
+				$_last_reflex_fire_ms{'autobuy_trigger'} = $_now_ms;
+				warning "[ai_manual] periodic autobuy trigger\n", 'aiSidecarBridge', 1;
+				eval { Commands::run("autobuy"); 1; };
 			}
 			return ('stand', 'ai_manual_to_sit');
 		}
