@@ -4387,16 +4387,22 @@ sub _pro_ro_tick {
     my $weight_pct = $weight_max > 0 ? int($weight * 100 / $weight_max) : 0;
     my $bot_name = $cr->{name} || '';
     
-    # ── LEADER DETECTION: kicapmasin is always the leader ──
-    if ($bot_name =~ /kicapmasin$/i && !$_pro_ro_is_leader) {
+    # ── LEADER DETECTION: use profile name (directory) to determine leader ──
+    my $_pro_ro_profile = eval { $profiles::profile } || '';
+    if ($_pro_ro_profile eq '' && $::config{username}) {
+        # Fallback: use config folder name
+        my @ctrl_folders = @Settings::controlFolders;
+        $_pro_ro_profile = $ctrl_folders[0] || '';
+    }
+    if ($_pro_ro_profile =~ /kicapmasin$/i && !$_pro_ro_is_leader) {
         $_pro_ro_is_leader = 1;
-        $_pro_ro_leader_bot = $bot_name;
+        $_pro_ro_leader_bot = $_pro_ro_profile;
         $_pro_ro_role = 'leader';
-        warning "[pro_ro] DESIGNATED LEADER: $bot_name\n", 'aiSidecarBridge', 1;
-    } elsif ($bot_name !~ /kicapmasin$/i && !$_pro_ro_leader_bot) {
+        warning "[pro_ro] DESIGNATED LEADER: $_pro_ro_profile (char=$bot_name)\n", 'aiSidecarBridge', 1;
+    } elsif ($_pro_ro_profile !~ /kicapmasin$/i && !$_pro_ro_leader_bot) {
         $_pro_ro_leader_bot = 'kicapmasin';
         $_pro_ro_role = 'follower';
-        warning "[pro_ro] FOLLOWER: $bot_name, leader=$_pro_ro_leader_bot\n", 'aiSidecarBridge', 1;
+        warning "[pro_ro] FOLLOWER: $_pro_ro_profile, leader=$_pro_ro_leader_bot (char=$bot_name)\n", 'aiSidecarBridge', 1;
     }
     
     # ── LEADER: Broadcast position and commands to followers ──
