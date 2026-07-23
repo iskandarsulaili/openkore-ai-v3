@@ -455,7 +455,7 @@ sub on_mainLoop_post {
                     }
                 }
                 # If party members are on different maps, regroup
-                my $_tc_unique_maps = scalar(keys { map { $_ => 1 } @_tc_party_maps });
+                my $_tc_unique_maps = 0; my %_tc_map_count; for (@_tc_party_maps) { $_tc_map_count{$_}++ }; $_tc_unique_maps = scalar(keys %_tc_map_count);
                 if ($_tc_unique_maps > 1) {
                     warning "[team] party members on different maps, regrouping\n", 'aiSidecarBridge', 1;
                     # Leader stays put, followers will come to leader via follow config
