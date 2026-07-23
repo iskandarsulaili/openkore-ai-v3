@@ -3045,6 +3045,14 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
+	# PARTY JOIN GUARD: block party join for leader (kicapmasin creates party, doesn't join)
+	my $_pj_bot_name = $::config{username} || '';
+	if ($normalized =~ /^party\s+join\s+(.+)$/ && $_pj_bot_name eq 'kicapmasin') {
+	    debug "[party_guard] blocking party join for leader\n", 'aiSidecarBridge', 1;
+	    return ('', 'party_join_blocked_leader');
+	}
+
+
 
 
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
