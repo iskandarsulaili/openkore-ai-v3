@@ -119,7 +119,7 @@ my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
 my $_pro_ro_last_lock_set = '';
 my $_pro_ro_respawn_ms = 0;  # Timestamp of last respawn
-my $_pro_ro_stay_in_town_ms = 0;  # Stay in town until this timestamp
+my $_pro_ro_stay_in_town_ms = 99999999999999;  # Stay in town until this timestamp (set to far future at load)
 my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
@@ -189,6 +189,10 @@ sub _cleanup_runtime {
 }
 
 sub on_start3 {
+	# Set stay_in_town for 30s after startup to allow economy
+	$_pro_ro_stay_in_town_ms = _now_ms() + 30000;
+	warning "[startup] set stay_in_town for 30s after plugin load\n", 'aiSidecarBridge', 1;
+	
 	# STALE PORTAL FILTER: remove known-stale NPC teleport entries from portalsLOS.txt
 	# OpenKore regenerates this file at runtime, so stale entries keep reappearing
 	my $_portals_file = Settings::getTableFilename("portalsLOS.txt");
@@ -290,11 +294,6 @@ sub on_mainLoop_post {
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
 	}
-        # Set stay_in_town at startup so bot stays in Prontera for 30s after login
-        if ($_pro_ro_stay_in_town_ms == 0 && $char && $char->{hp} > 0) {
-            $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-            warning "[startup] setting stay_in_town for 30s to allow economy\n", 'aiSidecarBridge', 1;
-        }
         # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
