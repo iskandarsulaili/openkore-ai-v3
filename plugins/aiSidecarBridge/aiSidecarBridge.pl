@@ -3055,6 +3055,15 @@ sub _rewrite_runtime_command {
 		my $target = $1;
 		# Clear committed action guard for this move target
 		delete $_committed_actions{"move:$target"};
+		# PRO RO GUARD: if Pro RO module just set a hunting map lock, block PDCA's town moves
+		my $_pro_ro_guard = 0;
+		if ($_pro_ro_last_lock_set ne '' && _now_ms() - $_pro_ro_last_lock_ms < 120000) {
+			my $_target_is_town2 = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			if ($_target_is_town2) {
+				warning "[pro_ro] blocking PDCA move to town '$target' - Pro RO set lock to $_pro_ro_last_lock_set\n", 'aiSidecarBridge', 1;
+				$_pro_ro_guard = 1;
+			}
+		}
 		if ($target =~ /^\d+\s+\d+$/) {
 			return ($trimmed, 'coordinate_move_raw');
 		}
@@ -3065,7 +3074,7 @@ sub _rewrite_runtime_command {
 			$_actual_map =~ s/\.gat$//;
 			my $_is_on_hunting_map = $_actual_map =~ /^[a-z]+_fild/;
 			my $_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			if ($_is_on_hunting_map && $_target_is_town) {
+			if ($_pro_ro_guard || ($_is_on_hunting_map && $_target_is_town)) {
 				my $_hp_ratio = _safe_hp_ratio();
 				if ($_hp_ratio >= 0.20) {
 					warning "[lockMap] on hunting map '$_actual_map', ignoring move to town '$target' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
@@ -4560,6 +4569,9 @@ sub _pro_ro_use_free_heals {
     }
 }
 
+my $_pro_ro_last_lock_set = '';
+my $_pro_ro_last_lock_ms = 0;
+
 sub _pro_ro_check_map_progression {
     my ($cr) = @_;
     my $base_lv = $cr->{lv} || $cr->{level} || 1;
@@ -4585,6 +4597,8 @@ sub _pro_ro_check_map_progression {
     # Only change if different from current
     if ($target_map ne '' && $target_map ne $current_lock) {
         warning "[pro_ro] level $base_lv -> moving to $target_map\n", 'aiSidecarBridge', 1;
+        $_pro_ro_last_lock_set = $target_map;
+        $_pro_ro_last_lock_ms = _now_ms();
         $::config{lockMap} = $target_map;
         $::config{attackAuto} = 3;
         $::config{attackAuto_inLockOnly} = 0;
