@@ -3253,17 +3253,7 @@ sub _rewrite_runtime_command {
 					my $_hp_ratio = _safe_hp_ratio();
 					if ($_hp_ratio >= 0.60) {
 						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
-						$::config{"lockMap"} = $_actual_map;
-					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
-						$::config{"attackAuto_inLockOnly"} = 0;
-						$::config{"attackAuto"} = 3;
-						$::config{"sitAuto_hp_lower"} = 0;
-						$::config{"sitAuto_hp_upper"} = 0;
-						Commands::run("stand");
-						if (!_ai_already_auto_mode()) {
-							Commands::run("ai auto");
-						}
-						return ('', 'hunting_map_priority');
+						$::config{"
 					}
 				}
 			}
@@ -3635,6 +3625,7 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
+}
 }
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
