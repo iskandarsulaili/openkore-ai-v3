@@ -308,34 +308,22 @@ sub on_mainLoop_post {
             my $_tp_now = _now_ms();
             my $_tp_last = $_last_reflex_fire_ms{'teamplay'} || 0;
             my $_tp_name = $::config{username} || '';
-            # Party formation (every 10s)
-            if ($_tp_now - $_tp_last > 10000) {
+            # Party formation: let config settings (partyAutoCreate, partyAutoJoinCode) handle it
+            # Only intervene if bot is not in a party after 30s
+            if ($_tp_now - $_tp_last > 30000) {
                 $_last_reflex_fire_ms{'teamplay'} = $_tp_now;
-                # Leader: create party and invite
-                if ($_tp_name eq 'kicapmasin') {
-                    my $_tp_in_party = 0;
-                    # Check if already in party via global %party hash
-                    if (%::party && scalar(keys %::party) > 0) {
-                        $_tp_in_party = 1;
-                    }
-                    if (!$_tp_in_party) {
-                        warning "[teamplay] leader creating party\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run('party create AI Team'); 1; };
-                        eval { Commands::run('party share exp'); 1; };
-                    }
-                    # Always invite followers (no-op if already in party)
-                    eval { Commands::run('party invite kicapmasin2'); 1; };
-                    eval { Commands::run('party invite kicapmasin3'); 1; };
+                my $_tp_in_party = 0;
+                if ($char->{party} && ref($char->{party}) eq 'HASH' && scalar(keys %{$char->{party}}) > 0) {
+                    $_tp_in_party = 1;
                 }
-                # Followers: auto-join party
-                if ($_tp_name eq 'kicapmasin2' || $_tp_name eq 'kicapmasin3') {
-                    my $_tp_in_party = 0;
-                    # Check if already in party via global %party hash
-                    if (%::party && scalar(keys %::party) > 0) {
-                        $_tp_in_party = 1;
-                    }
-                    if (!$_tp_in_party) {
-                        warning "[teamplay] follower joining party\n", 'aiSidecarBridge', 1;
+                if (!$_tp_in_party) {
+                    warning "[teamplay] not in party after 30s, forcing formation\n", 'aiSidecarBridge', 1;
+                    if ($_tp_name eq 'kicapmasin') {
+                        eval { Commands::run('party create AI_Team'); 1; };
+                        eval { Commands::run('party share exp'); 1; };
+                        eval { Commands::run('party invite kicapmasin2'); 1; };
+                        eval { Commands::run('party invite kicapmasin3'); 1; };
+                    } else {
                         eval { Commands::run('party join 1'); 1; };
                     }
                 }
