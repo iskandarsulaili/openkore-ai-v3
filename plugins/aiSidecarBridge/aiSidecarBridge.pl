@@ -345,6 +345,64 @@ sub on_mainLoop_post {
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
         }
+        
+        # ── TOWN ROUTINE: when bot is in town, force economy actions ──
+        if ($char) {
+            my $_town_map = lc($char->{map} || '');
+            $_town_map =~ s/\.gat$//;
+            my @_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
+            if (grep { $_town_map eq $_ } @_towns) {
+                my $_town_now = _now_ms();
+                my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
+                if ($_town_now - $_last_town_routine > 30000) {
+                    $_last_reflex_fire_ms{'town_routine'} = $_town_now;
+                    # Force sell if weight > 5%
+                    my $_town_weight = $char->{weight} || 0;
+                    my $_town_weight_max = $char->{weight_max} || 1;
+                    my $_town_weight_pct = $_town_weight_max > 0 ? $_town_weight / $_town_weight_max : 0;
+                    if ($_town_weight_pct > 0.05) {
+                        warning "[town_routine] weight=$_town_weight_pct, forcing sell\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run('move 126 76'); 1; };
+                        eval { Commands::run('talknpc 126 76'); 1; };
+                        eval { Commands::run('talk resp 0'); 1; };
+                        eval { Commands::run('talk any'); 1; };
+                    }
+                    # Force buy if zeny > 0
+                    my $_town_zeny = $char->{zeny} || 0;
+                    if ($_town_zeny > 0) {
+                        warning "[town_routine] zeny=$_town_zeny, forcing buy\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run('move 126 76'); 1; };
+                        eval { Commands::run('talknpc 126 76'); 1; };
+                        eval { Commands::run('talk resp 1'); 1; };
+                        my $_max_buy = int($_town_zeny / 50);
+                        $_max_buy = 30 if $_max_buy > 30;
+                        if ($_max_buy > 0) {
+                            eval { Commands::run("buy 501 $_max_buy"); 1; };
+                        }
+                        eval { Commands::run('talk any'); 1; };
+                    }
+                    # Force job change if level 10/10 Novice
+                    my $_town_base_lv = $char->{lv} || 0;
+                    my $_town_job_lv = $char->{lv_job} || 0;
+                    my $_town_job = $char->{jobID} || 0;
+                    if ($_town_base_lv >= 10 && $_town_job_lv >= 10 && $_town_job == 0) {
+                        warning "[town_routine] level $_town_base_lv/$_town_job_lv Novice, forcing job change\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run('move 160 191'); 1; };
+                        eval { Commands::run('talknpc 160 191'); 1; };
+                        eval { Commands::run('talk continue'); 1; };
+                        eval { Commands::run('talk resp 0'); 1; };
+                    }
+                    # Force stat allocation if stat points > 0
+                    my $_town_stat_points = $char->{status_points} || 0;
+                    if ($_town_stat_points > 0) {
+                        warning "[town_routine] $_town_stat_points stat points available, allocating\n", 'aiSidecarBridge', 1;
+                        for (1..$_town_stat_points) {
+                            eval { Commands::run('stat_add dex'); 1; };
+                        }
+                    }
+                }
+            }
+        }
 }
 
 sub on_add_actor_list_probe {
@@ -3141,6 +3199,28 @@ sub _rewrite_runtime_command {
 			return ($trimmed, 'coordinate_move_raw');
 		}
 		if ($target !~ /^(savepoint|random_walk_seek)$/) {
+			# RESUPPLY TIMER: if on hunting map for 5min, force return to town
+			my $_resupply_ms = 300000;  # 5 minutes
+			my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
+			if (_now_ms() - $_hunting_start > $_resupply_ms) {
+			    warning "[resupply] forcing return to Prontera to sell/buy\n", 'aiSidecarBridge', 1;
+			    $::config{lockMap} = 'prontera';
+			    $_pro_ro_last_lock_set = 'prontera';
+			    $_pro_ro_respawn_ms = _now_ms();
+			    $_hunting_start = _now_ms();
+			    $_pro_ro_guard = 0;
+			    @::AI::ai_seq = ();
+			    eval { Commands::run('move 156 196'); 1; };
+			    return ($trimmed, 'coordinate_move_raw');
+			}
+			# RESPAWN ECONOMY WINDOW: recently respawned, allow town move for 30s
+			if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
+			    warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
+			    $::config{lockMap} = 'prontera';
+			    $_pro_ro_last_lock_set = 'prontera';
+			    $_pro_ro_guard = 0;
+			    return ($trimmed, 'coordinate_move_raw');
+			}
 			# HUNTING MAP STICKINESS: if on a hunting map and target is town, skip
 			my $_actual_map = $field ? $field->name() : '';
 			$_actual_map = lc($_actual_map || '');
@@ -3149,7 +3229,8 @@ sub _rewrite_runtime_command {
 			my $_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 			if ($_pro_ro_guard || ($_is_on_hunting_map && $_target_is_town)) {
 				my $_hp_ratio = _safe_hp_ratio();
-				if ($_hp_ratio >= 0.20) {
+				# Allow retreat when HP < 60% (bot needs to restock potions)
+				if ($_hp_ratio >= 0.60) {
 					warning "[lockMap] on hunting map '$_actual_map', ignoring move to town '$target' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
 					$::config{"lockMap"} = $_actual_map;
 					$::config{"attackAuto_inLockOnly"} = 0;
@@ -3163,33 +3244,6 @@ sub _rewrite_runtime_command {
 						Commands::run("ai auto");
 					}
 					@::AI::ai_seq = ();
-					                    # Starvation timer: if no exp gained in 5min, allow town move
-# Resupply timer: if on hunting map for 5min, force return to town
-my $_resupply_ms = 300000;  # 5 minutes
-my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
-if (_now_ms() - $_hunting_start > $_resupply_ms) {
-    # Force return to town - override lockMap stickiness
-    warning "[resupply] forcing return to Prontera to sell/buy\n", 'aiSidecarBridge', 1;
-    $::config{lockMap} = 'prontera';
-    $_pro_ro_last_lock_set = 'prontera';
-    $_pro_ro_respawn_ms = _now_ms();  # Reuse economy window
-    $_hunting_start = _now_ms();  # Reset timer
-    eval { Commands::run('move 156 196'); 1; };  # Force move to Prontera center
-    last;
-    warning "[lockMap] resupply timer - allowing town move to sell/buy\n", 'aiSidecarBridge', 1;
-    # Set lockMap to town so bot stays there to sell/buy
-    $::config{lockMap} = 'prontera';
-    $_pro_ro_last_lock_set = 'prontera';
-    last;  # Break out of the if block, allow the move
-}
-# Recently respawned: allow town move for 15s (economy window)
-if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
-    warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
-    # Set lockMap to town so bot stays to sell/buy
-    $::config{lockMap} = 'prontera';
-    $_pro_ro_last_lock_set = 'prontera';
-    last;
-}
 					                    # Portal block: if bot is near a town portal, force it away
 					                    my $_pos = $char->{pos_to} || $char->{pos};
 					                    if ($_pos && $_pos->{x} >= 20 && $_pos->{x} <= 30 && $_pos->{y} >= 198 && $_pos->{y} <= 210) {
@@ -4611,8 +4665,9 @@ sub _discover_shops_sync {
 	        };
 	    }
 	}
+	}
 	return \@shops;
-}
+
 
 sub _discover_portals_sync {
 	my %conn;
