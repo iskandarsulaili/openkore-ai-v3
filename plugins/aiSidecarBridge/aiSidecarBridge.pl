@@ -307,8 +307,20 @@ sub on_mainLoop_post {
             warning "[force_stand] bot is sitting, forcing stand\n", 'aiSidecarBridge', 1;
             # Clear AI sequence to prevent immediate re-sit
             @::AI::ai_seq = ();
+            # Force AI to auto mode
+            $::config{attackAuto} = 2;
+            $::config{attackAuto_inLockOnly} = 0;
             eval { Commands::run('stand'); 1; };
             eval { Commands::run('ai auto'); 1; };
+            # Force move to hunting map if in town
+            my $_fs_map = lc($char->{map} || '');
+            $_fs_map =~ s/\.gat$//;
+            if ($_fs_map eq 'prontera') {
+                $::config{lockMap} = 'prt_fild05';
+                $_pro_ro_last_lock_set = 'prt_fild05';
+                $_pro_ro_last_lock_ms = _now_ms();
+                eval { Commands::run('move 22 203'); 1; };
+            }
         }
         
         # ── FORCE HUNTING: if bot is in town and not in stay_in_town window, force move to portal ──
