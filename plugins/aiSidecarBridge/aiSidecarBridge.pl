@@ -3123,6 +3123,12 @@ sub _rewrite_runtime_command {
 	    return ('', 'vendor_blocked_hunting_forced');
 	}
 	
+	# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
+	if ($normalized eq 'ai manual') {
+	    debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
+	    return ('', 'ai_manual_blocked');
+	}
+	
 	# PARTY JOIN GUARD: block ALL party join commands from sidecar
 	# Config settings (partyAutoCreate/partyAutoJoinCode) handle party formation
 	if ($normalized =~ /^party\s+join\s+(.+)$/) {
