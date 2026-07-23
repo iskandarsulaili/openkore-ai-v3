@@ -342,7 +342,6 @@ sub on_mainLoop_post {
         
 
         
-                }
 
 
         
@@ -403,6 +402,7 @@ sub on_mainLoop_post {
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
         }
+}
 
 sub on_add_actor_list_probe {
 	my ($hook, $actor, $actor_type) = @_;
