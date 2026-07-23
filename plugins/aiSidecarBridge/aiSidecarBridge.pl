@@ -1937,6 +1937,9 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
 	    # Suppressed - do nothing, bot stays in auto mode
 	    ($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
+	} elsif ($rewrite_kind eq 'sit_blocked_on_hunting_map') {
+	    # Blocked - bot should fight, not rest
+	    ($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'ai_manual_throttled') {
@@ -3170,7 +3173,7 @@ sub _rewrite_runtime_command {
 		$_actual_map =~ s/\.gat$//;
 		if ($_actual_map =~ /^[a-z]+_fild/) {
 			my $_hp_ratio = _safe_hp_ratio();
-			if ($_hp_ratio >= 0.15) {
+			if ($_hp_ratio >= 0.01) {
 				debug "[sit_guard] on hunting map '$_actual_map', blocking sit (HP=$_hp_ratio >= 0.15)\n", 'aiSidecarBridge', 1;
 				return ('', 'sit_blocked_hunting');
 			}
@@ -4188,8 +4191,8 @@ sub _apply_bot_config {
 	$::config{'itemsTakeAuto'} = _cfg('aiSidecar_itemsTakeAuto', '2') unless $::config{'_sidecar_set_itemsTakeAuto'};
 	$::config{'itemsGatherAuto'} = _cfg('aiSidecar_itemsGatherAuto', '2') unless $::config{'_sidecar_set_itemsGatherAuto'};
 	$::config{'itemsMaxWeight'} = _cfg('aiSidecar_itemsMaxWeight', '89') unless $::config{'_sidecar_set_itemsMaxWeight'};
-	$::config{'sitAuto_hp'} = _cfg('aiSidecar_sitAutoHp', '30') unless $::config{'_sidecar_set_sitAuto_hp'};
-	$::config{'sitAuto_hp_max'} = _cfg('aiSidecar_sitAutoHpMax', '60') unless $::config{'_sidecar_set_sitAuto_hp_max'};
+	$::config{'sitAuto_hp'} = _cfg('aiSidecar_sitAutoHp', '0') unless $::config{'_sidecar_set_sitAuto_hp'};
+	$::config{'sitAuto_hp_max'} = _cfg('aiSidecar_sitAutoHpMax', '0') unless $::config{'_sidecar_set_sitAuto_hp_max'};
 	$::config{'sitAuto_sp'} = _cfg('aiSidecar_sitAutoSp', '0') unless $::config{'_sidecar_set_sitAuto_sp'};
 	$::config{'sitAuto_sp_max'} = _cfg('aiSidecar_sitAutoSpMax', '0') unless $::config{'_sidecar_set_sitAuto_sp_max'};
 	$::config{'sitAuto_idle'} = _cfg('aiSidecar_sitAutoIdle', '0') unless $::config{'_sidecar_set_sitAuto_idle'};
