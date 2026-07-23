@@ -533,16 +533,16 @@ class HeuristicService:
                 confidence=0.95, domain="economy",
                 reason="Stand up before walking to Tool Dealer",
             ))
-            # Walk to Tool Dealer (126, 76) and sell
+            # Walk to Special Dealer (147, 175) and sell
             actions.append(HeuristicAction(
-                kind="command", command="move 126 76",
+                kind="command", command="move 147 175",
                 confidence=0.95, domain="economy",
-                reason=f"Weight {weight:.0f}% - walk to Tool Dealer to sell junk",
+                reason=f"Weight {weight:.0f}% - walk to Special Dealer to sell junk",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 126 76",
+                kind="command", command="talknpc 147 175",
                 confidence=0.90, domain="economy",
-                reason="Open Tool Dealer shop",
+                reason="Open Special Dealer shop",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="talk resp 0",

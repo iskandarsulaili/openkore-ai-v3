@@ -2911,6 +2911,28 @@ sub _command_allowed {
 my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
+	# ── MOVE REWRITE: convert map-name moves to coordinate moves ──
+	if ($command =~ /^move\s+(\S+)$/i) {
+		my $_target = lc($1);
+		# Known hunting maps from Prontera
+		my %_map_coords = (
+			'prt_fild05' => 'move 22 203',
+			'prt_fild04' => 'move 22 203',
+			'prt_fild03' => 'move 22 203',
+			'prt_fild02' => 'move 22 203',
+			'prt_fild01' => 'move 22 203',
+			'prt_fild00' => 'move 22 203',
+			'prt_fild08' => 'move 22 203',
+			'prt_fild07' => 'move 22 203',
+			'prt_fild06' => 'move 22 203',
+		);
+		if (exists $_map_coords{$_target}) {
+			my $_new_cmd = $_map_coords{$_target};
+			debug "[move_rewrite] $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
+			$command = $_new_cmd;
+			return ($command, 'coordinate_move_raw');
+		}
+	}
 
 	my ($command, $metadata) = @_;
 
