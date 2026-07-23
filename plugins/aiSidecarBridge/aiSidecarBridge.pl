@@ -4607,8 +4607,10 @@ sub _pro_ro_check_map_progression {
     
     # Only change if different from current
     # Don't re-set if already on a hunting map (any _fild map is fine)
-    my $_pro_ro_current_map = $cr->{map} || '';
-    if ($_pro_ro_current_map =~ /_fild/i) {
+    my $_pro_ro_current_map = $field ? $field->name() : ($cr->{map} || '');
+    $_pro_ro_current_map = lc($_pro_ro_current_map);
+    $_pro_ro_current_map =~ s/\.gat$//;
+    if ($_pro_ro_current_map =~ /_fild/) {
         return;  # Already on a hunting map, no need to change
     }
     if ($target_map ne '' && ($target_map ne $current_lock || $_pro_ro_current_map !~ /^$target_map/i)) {
