@@ -292,61 +292,6 @@ sub on_mainLoop_post {
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
-	return unless _bridge_enabled();
-	my $now = _now_ms();
-	_probe_actor_post_parse($now);
-
-	if (!$registered && $now >= $next_register_at_ms) {
-	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
-	    _attempt_register('retry');
-	}
-
-	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
-	    my $poll_ok = _poll_next_action();
-	    my $base_delay_ms = _cfg_int('aiSidecar_pollIntervalMs', 100);
-	    my $jitter_pct = _cfg_int('aiSidecar_pollJitterPct', 30);
-	    my $jitter = int(rand($base_delay_ms * $jitter_pct / 100));
-	    $jitter = -$jitter if int(rand(2)) == 0;
-	    my $next_delay_ms = $poll_ok ? ($base_delay_ms + $jitter) : _poll_failure_delay_ms();
-	    $next_poll_at_ms = $now + $next_delay_ms;
-	}
-
-	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms) {
-		$next_ack_at_ms = $now + _cfg_int('aiSidecar_ackRetryMs', 500);
-		_flush_ack_queue();
-	}
-
-	if (_cfg_bool('aiSidecar_telemetryEnabled', 1) && $now >= $next_telemetry_at_ms) {
-		$next_telemetry_at_ms = $now + _cfg_int('aiSidecar_telemetryIntervalMs', 1000);
-		_flush_telemetry_queue();
-	}
-
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_configIngestEnabled', 1) && $now >= $next_config_ingest_at_ms) {
-		$next_config_ingest_at_ms = $now + _cfg_int('aiSidecar_configIngestIntervalMs', 2000);
-		_flush_config_updates();
-	}
-
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_chatIngestEnabled', 1) && $now >= $next_chat_ingest_at_ms) {
-		$next_chat_ingest_at_ms = $now + _cfg_int('aiSidecar_chatIngestIntervalMs', 700);
-		_flush_chat_queue();
-	}
-
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_eventIngestEnabled', 1) && $now >= $next_event_ingest_at_ms) {
-		my $event_ok = _flush_event_queue();
-		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
-		$next_event_ingest_at_ms = $now + $next_delay_ms;
-	}
-	# ── Default survival auto-grind loop (bottom-up fallback) ──
-	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
-		_apply_bot_config();
-		_discover_shops();
-		_discover_portals();
-	_send_discovery_data();
-		_survival_check();
-
-        # Force AI to AUTO mode every cycle — runs even when bridge is disabled
-        if (AI::state() != 2) { AI::state(2); }
-        }
         
         # ── FORCED RETURN TO TOWN: if on hunting map for 5min, force return ──
         if ($char) {
@@ -359,8 +304,8 @@ sub on_mainLoop_post {
                     $::config{lockMap} = 'prontera';
                     $_pro_ro_last_lock_set = 'prontera';
                     $_pro_ro_respawn_ms = _now_ms();
-                    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
-                    $_pro_ro_last_lock_ms = _now_ms();  # Reset timer
+                    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
+                    $_pro_ro_last_lock_ms = _now_ms();
                     @::AI::ai_seq = ();
                     eval { Commands::run('move 156 196'); 1; };
                 }
@@ -424,6 +369,63 @@ sub on_mainLoop_post {
                 }
             }
         }
+        
+	return unless _bridge_enabled();
+	my $now = _now_ms();
+	_probe_actor_post_parse($now);
+
+	if (!$registered && $now >= $next_register_at_ms) {
+	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
+	    _attempt_register('retry');
+	}
+
+	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
+	    my $poll_ok = _poll_next_action();
+	    my $base_delay_ms = _cfg_int('aiSidecar_pollIntervalMs', 100);
+	    my $jitter_pct = _cfg_int('aiSidecar_pollJitterPct', 30);
+	    my $jitter = int(rand($base_delay_ms * $jitter_pct / 100));
+	    $jitter = -$jitter if int(rand(2)) == 0;
+	    my $next_delay_ms = $poll_ok ? ($base_delay_ms + $jitter) : _poll_failure_delay_ms();
+	    $next_poll_at_ms = $now + $next_delay_ms;
+	}
+
+	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms) {
+		$next_ack_at_ms = $now + _cfg_int('aiSidecar_ackRetryMs', 500);
+		_flush_ack_queue();
+	}
+
+	if (_cfg_bool('aiSidecar_telemetryEnabled', 1) && $now >= $next_telemetry_at_ms) {
+		$next_telemetry_at_ms = $now + _cfg_int('aiSidecar_telemetryIntervalMs', 1000);
+		_flush_telemetry_queue();
+	}
+
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_configIngestEnabled', 1) && $now >= $next_config_ingest_at_ms) {
+		$next_config_ingest_at_ms = $now + _cfg_int('aiSidecar_configIngestIntervalMs', 2000);
+		_flush_config_updates();
+	}
+
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_chatIngestEnabled', 1) && $now >= $next_chat_ingest_at_ms) {
+		$next_chat_ingest_at_ms = $now + _cfg_int('aiSidecar_chatIngestIntervalMs', 700);
+		_flush_chat_queue();
+	}
+
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_eventIngestEnabled', 1) && $now >= $next_event_ingest_at_ms) {
+		my $event_ok = _flush_event_queue();
+		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
+		$next_event_ingest_at_ms = $now + $next_delay_ms;
+	}
+	# ── Default survival auto-grind loop (bottom-up fallback) ──
+	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
+		_apply_bot_config();
+		_discover_shops();
+		_discover_portals();
+	_send_discovery_data();
+		_survival_check();
+
+        # Force AI to AUTO mode every cycle — runs even when bridge is disabled
+        if (AI::state() != 2) { AI::state(2); }
+        }
+        
 }
 
 sub on_add_actor_list_probe {
