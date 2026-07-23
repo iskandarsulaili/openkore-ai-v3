@@ -2955,10 +2955,8 @@ sub _rewrite_runtime_command {
 			$::config{attackAuto_inLockOnly} = 0;
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
-			$aiSidecarBridge::_last_ai_toggle_ms = 0;
-			eval { _toggle_ai_mode('manual'); 1; };
-			$aiSidecarBridge::_last_ai_toggle_ms = 0;
-			eval { _toggle_ai_mode('auto'); 1; };
+			# Force route recalc: toggle AI manual->auto
+			eval { require AI; AI::state(1); AI::state(2); 1; };
 		}
 		return ('stand', 'ai_manual_to_sit');
 	}
@@ -3334,9 +3332,6 @@ sub _cfg_bool {
 
 
 # -- AI mode debounce -- prevent rapid auto/manual oscillation --
-    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
-				eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
-sub _toggle_ai_mode {
 	my ($mode) = @_;
 	return if !$mode;
 	return if $mode eq $_last_ai_mode;
