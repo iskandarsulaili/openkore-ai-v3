@@ -346,6 +346,24 @@ sub on_mainLoop_post {
         if (AI::state() != 2) { AI::state(2); }
         }
         
+        # ── FORCED RETURN TO TOWN: if on hunting map for 5min, force return ──
+        if ($char) {
+            my $_hunt_map = lc($char->{map} || '');
+            $_hunt_map =~ s/\.gat$//;
+            if ($_hunt_map =~ /^[a-z]+_fild/) {
+                my $_hunt_start = $_pro_ro_last_lock_ms || _now_ms();
+                if (_now_ms() - $_hunt_start > 300000) {  # 5 minutes
+                    warning "[forced_return] on $_hunt_map for 5min, forcing return to Prontera\n", 'aiSidecarBridge', 1;
+                    $::config{lockMap} = 'prontera';
+                    $_pro_ro_last_lock_set = 'prontera';
+                    $_pro_ro_respawn_ms = _now_ms();
+                    $_pro_ro_last_lock_ms = _now_ms();  # Reset timer
+                    @::AI::ai_seq = ();
+                    eval { Commands::run('move 156 196'); 1; };
+                }
+            }
+        }
+        
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
         if ($char) {
             my $_town_map = lc($char->{map} || '');
@@ -3155,8 +3173,28 @@ sub _rewrite_runtime_command {
 				$_actual_map = lc($_actual_map || '');
 				$_actual_map =~ s/\.gat$//;
 				if ($_actual_map =~ /^[a-z]+_fild/) {
+					# RESUPPLY TIMER: if on hunting map for 5min, allow town move
+					my $_resupply_ms = 300000;
+					my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
+					if (_now_ms() - $_hunting_start > $_resupply_ms) {
+					    warning "[resupply] set lockMap to town '$set_val' (hunted for 5min)\n", 'aiSidecarBridge', 1;
+					    $::config{lockMap} = $set_val;
+					    $_pro_ro_last_lock_set = $set_val;
+					    $_pro_ro_respawn_ms = _now_ms();
+					    $_hunting_start = _now_ms();
+					    @::AI::ai_seq = ();
+					    return ('', 'config_set_ok');
+					}
+					# RESPAWN ECONOMY WINDOW: recently respawned, allow town move
+					if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
+					    warning "[lockMap] recently respawned - allowing set lockMap to town '$set_val'\n", 'aiSidecarBridge', 1;
+					    $::config{lockMap} = $set_val;
+					    $_pro_ro_last_lock_set = $set_val;
+					    return ('', 'config_set_ok');
+					}
+					# Allow retreat when HP < 60%
 					my $_hp_ratio = _safe_hp_ratio();
-					if ($_hp_ratio >= 0.20) {
+					if ($_hp_ratio >= 0.60) {
 						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
 						$::config{"lockMap"} = $_actual_map;
 					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
