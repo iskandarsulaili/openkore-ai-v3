@@ -117,6 +117,8 @@ my $respawn_state = 'unknown';
 my $last_map_name = '';
 my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
+my $_pro_ro_last_lock_set = '';
+my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
 my $route_failure_count = 0;
@@ -4569,8 +4571,6 @@ sub _pro_ro_use_free_heals {
     }
 }
 
-my $_pro_ro_last_lock_set = '';
-my $_pro_ro_last_lock_ms = 0;
 
 sub _pro_ro_check_map_progression {
     my ($cr) = @_;
