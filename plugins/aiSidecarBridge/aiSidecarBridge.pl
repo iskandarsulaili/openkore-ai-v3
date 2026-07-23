@@ -2956,9 +2956,9 @@ sub _rewrite_runtime_command {
 				$::config{route_randomWalk_avoidInLock} = 0;
 				$::config{route_randomWalk_inTown} = 0;
 				# Toggle manual then auto to force route calc (skip debounce)
-				$_last_ai_toggle_ms = 0;
+    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
 				eval { _toggle_ai_mode('manual'); 1; };
-				$_last_ai_toggle_ms = 0;
+    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
 				eval { _toggle_ai_mode('auto'); 1; };
 			}
 			return ('stand', 'ai_manual_to_sit');
@@ -3147,6 +3147,7 @@ sub _rewrite_runtime_command {
 	if ($normalized eq 'teleport' || $normalized eq 'teleport auto') {
 		my $has_teleport = 0;
 		if ($char && $char->{skills}) {
+			if (ref($char->{skills}) ne 'ARRAY') { return ('', 'skills_add_no_skills'); }
 			for my $skill (@{$char->{skills}}) {
 				if ($skill && lc($skill->{name}) eq 'al_teleport') {
 					$has_teleport = 1;
@@ -3337,7 +3338,7 @@ sub _cfg_bool {
 
 
 # -- AI mode debounce -- prevent rapid auto/manual oscillation --
-my $_last_ai_toggle_ms = 0;
+    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
 my $_last_ai_mode = '';
 sub _toggle_ai_mode {
 	my ($mode) = @_;
