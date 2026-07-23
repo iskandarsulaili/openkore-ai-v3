@@ -2910,61 +2910,55 @@ sub _rewrite_runtime_command {
 
 
 
-	# AI MANUAL BLOCK: prevent 'ai manual' from disabling auto-attack mode
-	# The LLM planner sends 'ai manual' as a proxy for 'sit' (bridge compat layer rewrites 'sit' to 'ai manual')
-	# We convert to 'stand' in town (so auto-buy/route can work) or 'sit' on hunting map (to rest)
-	# Throttled to once per 30s to prevent tight loop
-	# When in town with no potions, also trigger autobuy
+		# AI MANUAL BLOCK: prevent 'ai manual' from disabling auto-attack mode
+	# Root cause: PDCA sends 'ai manual' every 2s (compat layer rewrites 'sit' -> 'ai manual')
+	# When lockMap is a hunting map -> IGNORE entirely (let bot walk/hunt)
+	# When on hunting map -> convert to sit (let bot rest)
+	# When in town -> convert to stand (allow autobuy/route)
+	# Throttled to 30s to prevent tight PDCA loop
 	if ($normalized eq 'ai manual') {
-		my $_now_ms = _now_ms();
-		my $_last_sit = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
-		if ($_now_ms - $_last_sit > 30000) {
-			$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_now_ms;
-			my $_am_actual_map = $field ? $field->name() : '';
-			$_am_actual_map = lc($_am_actual_map || '');
-			$_am_actual_map =~ s/\.gat$//;
-			# If lockMap is already a hunting map, ignore ai manual entirely
-			my $_am_lockmap = defined $::config{lockMap} ? $::config{lockMap} : '';
-			if ($_am_lockmap =~ /^[a-z]+_fild/) {
-				warning "[ai_manual] lockMap=$_am_lockmap is a hunting map, ignoring\n", 'aiSidecarBridge', 1;
-				return ('', 'ai_manual_throttled');
-			}
-			if ($_am_actual_map =~ /^[a-z]+_fild/) {
-				warning "[ai_manual] on hunting map, converting to 'sit' for resting\n", 'aiSidecarBridge', 1;
-				return ('sit', 'ai_manual_to_sit');
-			}
-			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
-			my $_ab_now = _now_ms();
-			# Periodic autobuy: trigger auto-buy every 60s when in town
-			my $_last_ab = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
-			if ($_ab_now - $_last_ab > 60000) {
-				$_last_reflex_fire_ms{'autobuy_trigger'} = $_ab_now;
-				warning "[ai_manual] periodic autobuy trigger\n", 'aiSidecarBridge', 1;
-				eval { Commands::run("autobuy"); 1; };
-			}
-			# FORCED HUNTING MAP: if in town for >120s without lockMap set, force walk to prt_fild00
-			my $_fm_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
-			my $_fm_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
-			my $_fm_is_town = $_fm_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			warning "[ai_manual] forced hunt debug: lockMap='$_fm_lock' ab_now=$_ab_now fm_last=$_fm_last diff=" . ($_ab_now - $_fm_last) . "\n", 'aiSidecarBridge', 1;
-			if (($_fm_lock eq '' || $_fm_is_town) && $_ab_now - $_fm_last > 120000) {
-				$_last_reflex_fire_ms{'forced_hunt_map'} = $_ab_now;
-				warning "[ai_manual] no lockMap set, forcing move to prt_fild00\n", 'aiSidecarBridge', 1;
-				$::config{lockMap} = 'prt_fild00';
-				$::config{attackAuto} = 3;
-				$::config{attackAuto_inLockOnly} = 0;
-				$::config{route_randomWalk_avoidInLock} = 0;
-				$::config{route_randomWalk_inTown} = 0;
-				# Toggle manual then auto to force route calc (skip debounce)
-    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
-				eval { _toggle_ai_mode('manual'); 1; };
-    eval { $aiSidecarBridge::_last_ai_toggle_ms = 0; 1; };
-				eval { _toggle_ai_mode('auto'); 1; };
-			}
-			return ('stand', 'ai_manual_to_sit');
+		my $_am_now = _now_ms();
+		my $_am_last = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
+		if ($_am_now - $_am_last < 30000) {
+			return ('', 'ai_manual_throttled');
 		}
-		# Within cooldown: silently ignore duplicate ai manual
-		return ('', 'ai_manual_throttled');
+		$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_am_now;
+		my $_am_map = $field ? $field->name() : '';
+		$_am_map = lc($_am_map || '');
+		$_am_map =~ s/\.gat$//;
+		my $_am_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+		my $_am_hunt = $_am_lock =~ /^[a-z]+_fild/;
+		my $_am_town = $_am_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+		if ($_am_hunt) {
+			warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
+			return ('', 'ai_manual_throttled');
+		}
+		if ($_am_map =~ /^[a-z]+_fild/) {
+			warning "[ai_manual] on $_am_map -> sit\n", 'aiSidecarBridge', 1;
+			return ('sit', 'ai_manual_to_sit');
+		}
+		warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
+		my $_ab_last = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
+		if ($_am_now - $_ab_last > 60000) {
+			$_last_reflex_fire_ms{'autobuy_trigger'} = $_am_now;
+			warning "[ai_manual] autobuy\n", 'aiSidecarBridge', 1;
+			eval { Commands::run("autobuy"); 1; };
+		}
+		my $_fh_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
+		if (($_am_lock eq '' || $_am_town) && $_am_now - $_fh_last > 120000) {
+			$_last_reflex_fire_ms{'forced_hunt_map'} = $_am_now;
+			warning "[ai_manual] force prt_fild00\n", 'aiSidecarBridge', 1;
+			$::config{lockMap} = 'prt_fild00';
+			$::config{attackAuto} = 3;
+			$::config{attackAuto_inLockOnly} = 0;
+			$::config{route_randomWalk_avoidInLock} = 0;
+			$::config{route_randomWalk_inTown} = 0;
+			$aiSidecarBridge::_last_ai_toggle_ms = 0;
+			eval { _toggle_ai_mode('manual'); 1; };
+			$aiSidecarBridge::_last_ai_toggle_ms = 0;
+			eval { _toggle_ai_mode('auto'); 1; };
+		}
+		return ('stand', 'ai_manual_to_sit');
 	}
 
 	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
