@@ -320,6 +320,8 @@ sub on_mainLoop_post {
                         warning "[teamplay] leader creating party\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('party create'); 1; };
                         eval { Commands::run('party share exp'); 1; };
+                    } else {
+                        # Already in party - invite followers if not already in party
                         eval { Commands::run('party invite kicapmasin2'); 1; };
                         eval { Commands::run('party invite kicapmasin3'); 1; };
                     }
@@ -333,6 +335,8 @@ sub on_mainLoop_post {
                     if (!$_tp_in_party) {
                         warning "[teamplay] follower joining party\n", 'aiSidecarBridge', 1;
                         eval { Commands::run('party join 1'); 1; };
+                    } else {
+                        debug "[teamplay] follower already in party\n", 'aiSidecarBridge', 1;
                     }
                 }
             }
@@ -3075,10 +3079,18 @@ sub _rewrite_runtime_command {
 
 
 	# EARLY REWRITE: party join <name> -> party join 1 (must be before guard section)
-	if ($normalized =~ /^party\s+join\s+(.+)$/ && $1 ne '1') {
-	    $normalized = 'party join 1';
-	    debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
-	    return ($normalized, 'party_join_rewritten');
+	# Block party join for the leader bot (kicapmasin creates party, doesn't join)
+	my $_tp_bot_name = $::config{username} || '';
+	if ($normalized =~ /^party\s+join\s+(.+)$/) {
+	    if ($_tp_bot_name eq 'kicapmasin') {
+	        debug "[party_rewrite] blocking party join for leader\n", 'aiSidecarBridge', 1;
+	        return ('', 'party_join_blocked_leader');
+	    }
+	    if ($1 ne '1') {
+	        $normalized = 'party join 1';
+	        debug "[party_rewrite] 'party join $1' -> 'party join 1'\n", 'aiSidecarBridge', 1;
+	        return ($normalized, 'party_join_rewritten');
+	    }
 	}
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
 	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
