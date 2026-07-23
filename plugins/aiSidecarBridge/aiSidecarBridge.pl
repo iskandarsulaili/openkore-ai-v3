@@ -305,7 +305,10 @@ sub on_mainLoop_post {
         # ── FORCE STAND: counter any sit commands that slip through ──
         if ($char && $char->{sitting}) {
             warning "[force_stand] bot is sitting, forcing stand\n", 'aiSidecarBridge', 1;
+            # Clear AI sequence to prevent immediate re-sit
+            @::AI::ai_seq = ();
             eval { Commands::run('stand'); 1; };
+            eval { Commands::run('ai auto'); 1; };
         }
         
         # ── FORCE HUNTING: if bot is in town and not in stay_in_town window, force move to portal ──
