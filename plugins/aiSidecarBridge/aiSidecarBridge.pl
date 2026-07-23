@@ -2962,7 +2962,7 @@ sub _rewrite_runtime_command {
 			return ('', 'ai_manual_throttled');
 		}
 		if ($_am_map =~ /^[a-z]+_fild/) {
-			warning "[ai_manual] on $_am_map -> sit\n", 'aiSidecarBridge', 1;
+			warning "[ai_manual] on $_am_map -> suppress (stay auto)\n", 'aiSidecarBridge', 1;
 			return ('', 'ai_manual_suppressed');
 		}
 		warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
@@ -4215,6 +4215,12 @@ sub _apply_bot_config {
 	$::config{'dcOnPlayer'} = '0';
 	$::config{'dcOnTeleport'} = '0';
 	$::config{'dcOnChangeMap'} = '0';
+    # Pro RO: disable auto-sit, let sidecar handle healing
+    $::config{sitAuto_hp_lower} = 0;
+    $::config{sitAuto_hp_upper} = 0;
+    $::config{attackAuto} = 2;
+    $::config{attackAuto_inLockOnly} = 0;
+    $::config{attackDistance} = 7;
 }
 
 # ── Safe character accessor ──

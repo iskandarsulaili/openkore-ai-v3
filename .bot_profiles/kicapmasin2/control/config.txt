@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword chayispi
+adminPassword buwuprea
 callSign
 commandPrefix ;
 callSignGM 0
@@ -76,8 +76,8 @@ attackAuto_notWhile_sellAuto 1
 attackAuto_considerDamagedAggressive 0
 attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
-attackDistance 3
-attackDistanceAuto 0
+attackDistance 7
+attackDistanceAuto 1
 attackMaxDistance 5
 attackMaxRouteTime 4
 attackMinPlayerDistance 2
@@ -416,7 +416,7 @@ monster_filter
 
 ######## Mercenary Support ########
 
-mercenary_attackAuto 2
+mercenary_attackAuto 3
 mercenary_attackAuto_inLockOnly 1
 mercenary_attackAuto_outOfLock 1
 mercenary_attackAuto_party 1
@@ -429,9 +429,9 @@ mercenary_attackAuto_considerAggressiveIfCastOnCastSensor 0
 mercenary_attackAuto_onlyWhenSafe 0
 mercenary_attackAuto_duringRandomWalk 0
 mercenary_attackAuto_duringItemsTake 0
-mercenary_attackDistance 3
+mercenary_attackDistance 7
 mercenary_attackMaxDistance 3
-mercenary_attackDistanceAuto 0
+mercenary_attackDistanceAuto 1
 mercenary_attackMaxRouteTime 4
 mercenary_attackCanSnipe 0
 mercenary_attackCheckLOS 1
@@ -489,7 +489,7 @@ mercenary_teleportAuto_attackedWhenSitting 0
 
 ######## Homunculus Support ########
 
-homunculus_attackAuto 2
+homunculus_attackAuto 3
 homunculus_attackAuto_inLockOnly 1
 homunculus_attackAuto_outOfLock 1
 homunculus_attackAuto_party 1
@@ -502,9 +502,9 @@ homunculus_attackAuto_considerAggressiveIfCastOnCastSensor 0
 homunculus_attackAuto_onlyWhenSafe 0
 homunculus_attackAuto_duringRandomWalk 0
 homunculus_attackAuto_duringItemsTake 0
-homunculus_attackDistance 3
+homunculus_attackDistance 7
 homunculus_attackMaxDistance 3
-homunculus_attackDistanceAuto 0
+homunculus_attackDistanceAuto 1
 homunculus_attackMaxRouteTime 4
 homunculus_attackCanSnipe 0
 homunculus_attackCheckLOS 1
@@ -1200,8 +1200,8 @@ itemsMaxWeight_buyOrSell 49
 itemsMaxWeight_sellOrStore 49
 
 # ── Auto sit regen ──
-sitAuto_hp_lower 30
-sitAuto_hp_upper 60
+sitAuto_hp_lower 0
+sitAuto_hp_upper 0
 sitAuto_sp_lower 0
 sitAuto_sp_upper 0
 sitAuto_hp_thread 0
@@ -1209,7 +1209,7 @@ sitAuto_hp_thread_maxDmg 99999
 sitAuto_maxDmg 99999
 
 # ── Attack config ──
-attackAuto 2
+attackAuto 3
 attackAuto_inLockOnly 1
 attackAuto_followTarget 0
 attackAuto_onlyWhenSafe 0
