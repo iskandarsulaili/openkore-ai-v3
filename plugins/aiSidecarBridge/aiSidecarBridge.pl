@@ -284,6 +284,8 @@ sub on_mainLoop_post {
 			$::config{attackAuto_inLockOnly} = 0;
 			$_pro_ro_respawn_ms = _now_ms();
 			$_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
+			# Clear AI sequence to prevent bot from walking back to hunting map
+			@::AI::ai_seq = ();
 			# Trigger economy: walk to Tool Dealer
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
@@ -292,6 +294,18 @@ sub on_mainLoop_post {
         $::config{'attackDistance'} = 7;
         $::config{'attackMaxDistance'} = 12;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
+        
+        # ── MAP CHANGE DETECTION: detect when bot enters town ──
+        if ($char) {
+            my $_cur_map = lc($char->{map} || '');
+            $_cur_map =~ s/\.gat$//;
+            my @_towns = qw(prontera izlude morocc payon geffen aldebaran comodo);
+            if ($_cur_map ne $last_map_name && grep { $_cur_map eq $_ } @_towns) {
+                warning "[map_change] entered town '$_cur_map' (was '$last_map_name'), triggering immediate town routine\n", 'aiSidecarBridge', 1;
+                $_last_reflex_fire_ms{'town_routine'} = 0;  # Reset cooldown so town routine fires immediately
+            }
+            $last_map_name = $_cur_map;
+        }
         
         # ── FORCED RETURN TO TOWN: if on hunting map for 5min, force return ──
         if ($char) {
@@ -320,7 +334,7 @@ sub on_mainLoop_post {
             if (grep { $_town_map eq $_ } @_towns) {
                 my $_town_now = _now_ms();
                 my $_last_town_routine = $_last_reflex_fire_ms{'town_routine'} || 0;
-                if ($_town_now - $_last_town_routine > 30000) {
+                if ($_town_now - $_last_town_routine > 5000) {
                     $_last_reflex_fire_ms{'town_routine'} = $_town_now;
                     # Force sell if weight > 5%
                     my $_town_weight = $char->{weight} || 0;
@@ -3274,12 +3288,16 @@ sub _rewrite_runtime_command {
 			}
 			# RESPAWN ECONOMY WINDOW: recently respawned, allow town move for 30s
 			if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
-			    warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
-			    $::config{lockMap} = 'prontera';
-			    $_pro_ro_last_lock_set = 'prontera';
-			    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-			    $_pro_ro_guard = 0;
-			    return ($trimmed, 'coordinate_move_raw');
+			    # Only allow moves to TOWN, not to hunting maps
+			    my $_respawn_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			    if ($_respawn_target_is_town) {
+			        warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
+			        $::config{lockMap} = 'prontera';
+			        $_pro_ro_last_lock_set = 'prontera';
+			        $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
+			        $_pro_ro_guard = 0;
+			        return ($trimmed, 'coordinate_move_raw');
+			    }
 			}
 			# STAY IN TOWN: if recently respawned, allow town move
 			if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
