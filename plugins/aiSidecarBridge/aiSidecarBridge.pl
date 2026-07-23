@@ -2928,8 +2928,8 @@ sub _rewrite_runtime_command {
 				return ('sit', 'ai_manual_to_sit');
 			}
 			warning "[ai_manual] in town, converting to 'stand' so auto-buy/route can work\n", 'aiSidecarBridge', 1;
-			# Periodic autobuy: trigger auto-buy every 60s when in town
 			my $_ab_now = _now_ms();
+			# Periodic autobuy: trigger auto-buy every 60s when in town
 			my $_last_ab = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
 			if ($_ab_now - $_last_ab > 60000) {
 				$_last_reflex_fire_ms{'autobuy_trigger'} = $_ab_now;
@@ -2939,6 +2939,7 @@ sub _rewrite_runtime_command {
 			# FORCED HUNTING MAP: if in town for >120s without lockMap set, force walk to prt_fild00
 			my $_fm_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
 			my $_fm_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+			warning "[ai_manual] forced hunt debug: lockMap='$_fm_lock' ab_now=$_ab_now fm_last=$_fm_last diff=" . ($_ab_now - $_fm_last) . "\n", 'aiSidecarBridge', 1;
 			if ($_fm_lock eq '' && $_ab_now - $_fm_last > 120000) {
 				$_last_reflex_fire_ms{'forced_hunt_map'} = $_ab_now;
 				warning "[ai_manual] no lockMap set, forcing move to prt_fild00\n", 'aiSidecarBridge', 1;
