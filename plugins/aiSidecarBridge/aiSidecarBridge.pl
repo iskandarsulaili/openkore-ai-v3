@@ -2936,6 +2936,19 @@ sub _rewrite_runtime_command {
 				warning "[ai_manual] periodic autobuy trigger\n", 'aiSidecarBridge', 1;
 				eval { Commands::run("autobuy"); 1; };
 			}
+			# FORCED HUNTING MAP: if in town for >120s without lockMap set, force walk to prt_fild00
+			my $_fm_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
+			my $_fm_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+			if ($_fm_lock eq '' && $_ab_now - $_fm_last > 120000) {
+				$_last_reflex_fire_ms{'forced_hunt_map'} = $_ab_now;
+				warning "[ai_manual] no lockMap set, forcing move to prt_fild00\n", 'aiSidecarBridge', 1;
+				$::config{lockMap} = 'prt_fild00';
+				$::config{attackAuto} = 3;
+				$::config{attackAuto_inLockOnly} = 0;
+				$::config{route_randomWalk_avoidInLock} = 0;
+				$::config{route_randomWalk_inTown} = 0;
+				eval { Commands::run("ai auto"); 1; };
+			}
 			return ('stand', 'ai_manual_to_sit');
 		}
 		# Within cooldown: silently ignore duplicate ai manual
