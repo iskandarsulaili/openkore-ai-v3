@@ -277,10 +277,13 @@ sub on_mainLoop_post {
 			    # Wait 5s after respawn to let economy commands execute
 			    eval { Commands::run('ai auto'); 1; };
 			$_pro_ro_last_lock_ms = $_dh_now;
-			$::config{lockMap} = $_pro_ro_last_lock_set;
+			# After respawn, set lockMap to town so bot stays to sell/buy
+			$::config{lockMap} = 'prontera';
 			$::config{attackAuto} = 3;
 			$::config{attackAuto_inLockOnly} = 0;
-			    $_pro_ro_respawn_ms = _now_ms();
+			$_pro_ro_respawn_ms = _now_ms();
+			# Trigger economy: walk to Tool Dealer
+			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
 	}
         # Override attack distances (also disable auto-detection)
@@ -3122,17 +3125,22 @@ sub _rewrite_runtime_command {
 					}
 					@::AI::ai_seq = ();
 					                    # Starvation timer: if no exp gained in 5min, allow town move
-# Starvation timer: if no exp gained in 5min, allow town move
-my $_starvation_ms = 300000;  # 5 minutes
-my $_last_exp_gain = $_last_reflex_fire_ms{'exp_gain'} || 0;
+# Resupply timer: if on hunting map for 5min, allow town move to sell/buy
+my $_resupply_ms = 300000;  # 5 minutes
 my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
-if ((_now_ms() - $_hunting_start > $_starvation_ms) && ($_last_exp_gain == 0 || _now_ms() - $_last_exp_gain > $_starvation_ms)) {
-    warning "[lockMap] starvation detected - allowing town move for resupply\n", 'aiSidecarBridge', 1;
+if (_now_ms() - $_hunting_start > $_resupply_ms) {
+    warning "[lockMap] resupply timer - allowing town move to sell/buy\n", 'aiSidecarBridge', 1;
+    # Set lockMap to town so bot stays there to sell/buy
+    $::config{lockMap} = 'prontera';
+    $_pro_ro_last_lock_set = 'prontera';
     last;  # Break out of the if block, allow the move
 }
 # Recently respawned: allow town move for 15s (economy window)
 if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 15000) {
     warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
+    # Set lockMap to town so bot stays to sell/buy
+    $::config{lockMap} = 'prontera';
+    $_pro_ro_last_lock_set = 'prontera';
     last;
 }
 					                    # Portal block: if bot is near a town portal, force it away

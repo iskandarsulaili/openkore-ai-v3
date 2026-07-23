@@ -380,116 +380,32 @@ class AdaptiveDataStore:
             entry["last_price"] = price
 
 
+
 class HeuristicService:
-    """State-machine-based heuristic service.
+    """Economy-first state machine for bot progression.
 
-    Bot states:
-      TOWN: In town → sell junk, buy potions, buy weapon, job change
-      HUNTING: On hunting map → kill monsters, loot, level up
-      DEAD: Just respawned → sell junk, buy supplies, go back
-      SHOPPING: In town with supplies → buy potions, arrows, weapon
-      JOB_CHANGE: Ready to job change → walk to NPC, complete dialog
-      STUCK: No progress in 5min → lower confidence, let LLM handle
-
-    Each state generates specific actions. Confidence drops when stuck.
+    Priority:
+      1. SELL: In town with inventory -> sell all junk
+      2. BUY: In town with zeny -> buy potions, arrows, weapon
+      3. JOB_CHANGE: Level 10/10 Novice in town -> change job
+      4. STATS: Have stat points -> allocate
+      5. SKILLS: Have skill points -> learn
+      6. PARTY: Not in party -> create/join
+      7. HUNT: On hunting map -> kill monsters
+      8. FLEE: Low HP -> teleport or use potion
     """
 
     def __init__(self):
         self._adaptive = AdaptiveDataStore()
         self._last_assessment: dict[str, HeuristicAssessment] = {}
-        self._bot_state: dict[str, str] = {}  # bot_id -> state
-        self._state_since: dict[str, float] = {}  # bot_id -> timestamp
-        self._last_progress: dict[str, dict] = {}  # bot_id -> {exp, zeny, level, kills}
+        self._bot_state: dict[str, str] = {}
+        self._state_since: dict[str, float] = {}
+        self._last_progress: dict[str, dict] = {}
+        self._last_sell_time: dict[str, float] = {}
+        self._last_buy_time: dict[str, float] = {}
 
     def _get_state(self, signals: dict) -> str:
         """Determine bot state from signals."""
-        bot_id = signals.get("bot_id", "default")
-        hp = signals.get("hp_ratio", 1.0)
-        sp = signals.get("sp_ratio", 1.0)
-        map_name = signals.get("map", "").lower()
-        zeny = signals.get("zeny", 0)
-        weight = signals.get("weight_ratio", 0)
-        base_level = signals.get("base_level", 1)
-        job_level = signals.get("job_level", 1)
-        job_name = signals.get("job_name", "novice").lower()
-        stat_points = signals.get("stat_points", 0)
-        skill_points = signals.get("skill_points", 0)
-        in_party = signals.get("in_party", False)
-        inventory = signals.get("inventory_items", [])
-        skills = signals.get("skills", [])
-
-        # DEAD: HP == 0
-        if hp <= 0:
-            return "DEAD"
-
-        # TOWN: In a town map
-        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
-                               "aldebaran", "comodo", "umbala", "niflheim",
-                               "rachel", "veins", "einbroch", "lighthalzen",
-                               "juno", "hugel", "yuno", "amatsu", "gonryun",
-                               "louyang", "ayothaya")
-
-        if is_town:
-            # JOB_CHANGE: Ready to change job
-            if base_level >= 10 and job_level >= 10 and job_name == "novice":
-                return "JOB_CHANGE"
-            # SHOPPING: Need to buy supplies
-            if zeny > 0 and weight < 50:
-                return "SHOPPING"
-            # TOWN: Default town state
-            return "TOWN"
-
-        # HUNTING: On a hunting map
-        is_hunting = "_fild" in map_name or "_field" in map_name or "_01" in map_name or "_02" in map_name
-        if is_hunting or not is_town:
-            return "HUNTING"
-
-        return "TOWN"
-
-    def _check_progress(self, signals: dict) -> bool:
-        """Check if bot made progress since last cycle."""
-        bot_id = signals.get("bot_id", "default")
-        last = self._last_progress.get(bot_id, {})
-        now = {
-            "exp": signals.get("exp", 0) or signals.get("base_exp", 0) or 0,
-            "zeny": signals.get("zeny", 0) or 0,
-            "level": signals.get("base_level", 1) or 1,
-            "kills": signals.get("kills", 0) or 0,
-        }
-        self._last_progress[bot_id] = now
-
-        if not last:
-            return True  # First cycle, assume progress
-
-        # Check if any metric improved
-        for key in ("exp", "zeny", "level", "kills"):
-            if now.get(key, 0) > last.get(key, 0):
-                return True
-        return False
-
-    def set_domain_weights(self, weights: dict) -> None:
-        """Set domain weights (kept for compatibility)."""
-        pass
-
-    def assess(self, signals: dict[str, Any]) -> HeuristicAssessment:
-        """Produce heuristic actions based on bot state."""
-        actions: list[HeuristicAction] = []
-        bot_id = signals.get("bot_id", "default")
-        state = self._get_state(signals)
-        prev_state = self._bot_state.get(bot_id, "UNKNOWN")
-
-        # Track state transitions
-        if state != prev_state:
-            self._bot_state[bot_id] = state
-            self._state_since[bot_id] = __import__("time").time()
-            logger.info(f"[heuristic] {bot_id} state: {prev_state} -> {state}")
-
-        # Check for stuck condition
-        made_progress = self._check_progress(signals)
-        state_duration = __import__("time").time() - self._state_since.get(bot_id, 0)
-        is_stuck = not made_progress and state_duration > 120  # 2min without progress
-
-        # Extract signals
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
         zeny = signals.get("zeny", 0) or 0
@@ -500,15 +416,89 @@ class HeuristicService:
         stat_points = signals.get("stat_points", 0) or 0
         skill_points = signals.get("skill_points", 0) or 0
         in_party = signals.get("in_party", False)
-        inventory = signals.get("inventory_items", [])
-        skills = signals.get("skills", [])
+        inventory = signals.get("inventory_items", []) or []
+
+        # DEAD
+        if hp <= 0:
+            return "DEAD"
+
+        # TOWN maps
+        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
+                               "aldebaran", "comodo", "umbala", "niflheim",
+                               "rachel", "veins", "einbroch", "lighthalzen",
+                               "juno", "hugel", "yuno", "amatsu", "gonryun",
+                               "louyang", "ayothaya")
+
+        if is_town:
+            # Priority: SELL > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
+            if weight > 30 and zeny < 1000:
+                return "SELL"
+            if zeny > 100:
+                return "BUY"
+            if base_level >= 10 and job_level >= 10 and job_name == "novice":
+                return "JOB_CHANGE"
+            if stat_points > 0:
+                return "STATS"
+            if skill_points > 0:
+                return "SKILLS"
+            if not in_party:
+                return "PARTY"
+            return "TOWN_HUNT"
+
+        # HUNTING
+        return "HUNT"
+
+    def _check_progress(self, signals: dict) -> bool:
+        bot_id = signals.get("bot_id", "default")
+        last = self._last_progress.get(bot_id, {})
+        now = {
+            "exp": signals.get("exp", 0) or signals.get("base_exp", 0) or 0,
+            "zeny": signals.get("zeny", 0) or 0,
+            "level": signals.get("base_level", 1) or 1,
+        }
+        self._last_progress[bot_id] = now
+        if not last:
+            return True
+        for key in ("exp", "zeny", "level"):
+            if now.get(key, 0) > last.get(key, 0):
+                return True
+        return False
+
+    def set_domain_weights(self, weights: dict) -> None:
+        pass
+
+    def assess(self, signals: dict[str, Any]) -> HeuristicAssessment:
+        actions: list[HeuristicAction] = []
+        bot_id = signals.get("bot_id", "default")
+        state = self._get_state(signals)
+        prev_state = self._bot_state.get(bot_id, "UNKNOWN")
+
+        if state != prev_state:
+            self._bot_state[bot_id] = state
+            self._state_since[bot_id] = __import__("time").time()
+            logger.info(f"[heuristic] {bot_id} state: {prev_state} -> {state}")
+
+        made_progress = self._check_progress(signals)
+        state_duration = __import__("time").time() - self._state_since.get(bot_id, 0)
+        is_stuck = not made_progress and state_duration > 120
+
+        hp = signals.get("hp_ratio", 1.0)
+        map_name = signals.get("map", "").lower()
+        zeny = signals.get("zeny", 0) or 0
+        weight = signals.get("weight_ratio", 0) or 0
+        base_level = signals.get("base_level", 1) or 1
+        job_level = signals.get("job_level", 1) or 1
+        job_name = signals.get("job_name", "novice").lower()
+        stat_points = signals.get("stat_points", 0) or 0
+        skill_points = signals.get("skill_points", 0) or 0
+        in_party = signals.get("in_party", False)
+        inventory = signals.get("inventory_items", []) or []
+        skills = signals.get("skills", []) or []
         bot_name = signals.get("bot_name", bot_id)
         horizon = signals.get("horizon", "short_term")
 
         # ── STATE: DEAD ──
         if state == "DEAD":
-            # Just respawn - let the bridge's death handler handle it
-            # The bridge will set respawn_ms and allow 15s economy window
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="survival",
@@ -523,12 +513,80 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
+        # ── STATE: SELL ──
+        if state == "SELL":
+            # Walk to Tool Dealer (126, 76) and sell
+            actions.append(HeuristicAction(
+                kind="command", command="move 126 76",
+                confidence=0.95, domain="economy",
+                reason=f"Weight {weight:.0f}% - walk to Tool Dealer to sell junk",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talknpc 126 76",
+                confidence=0.90, domain="economy",
+                reason="Open Tool Dealer shop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk resp 0",
+                confidence=0.85, domain="economy",
+                reason="Select sell option",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk any",
+                confidence=0.80, domain="economy",
+                reason="Complete sell dialog",
+            ))
+            total_confidence = 0.90
+            top_domain = "economy"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: BUY ──
+        if state == "BUY":
+            # Buy Red Potions from Tool Dealer (126, 76)
+            actions.append(HeuristicAction(
+                kind="command", command="move 126 76",
+                confidence=0.95, domain="economy",
+                reason=f"Zeny {zeny} - walk to Tool Dealer to buy potions",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talknpc 126 76",
+                confidence=0.90, domain="economy",
+                reason="Open Tool Dealer shop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk resp 1",
+                confidence=0.85, domain="economy",
+                reason="Select buy option",
+            ))
+            # Buy Red Potions (item 501) - as many as zeny allows
+            max_buy = min(int(zeny / 50), 30)  # 50z each, max 30
+            if max_buy > 0:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"buy 501 {max_buy}",
+                    confidence=0.90, domain="economy",
+                    reason=f"Buy {max_buy} Red Potions (50z each)",
+                ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk any",
+                confidence=0.80, domain="economy",
+                reason="Complete buy dialog",
+            ))
+            total_confidence = 0.90
+            top_domain = "economy"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
         # ── STATE: JOB_CHANGE ──
         if state == "JOB_CHANGE":
-            # Walk to job change NPC and complete dialog
-            # Archer Guild: (160, 191) in Prontera
-            # Thief Guild: (270, 220) in Prontera
-            # Acolyte Guild: (270, 220) in Prontera
             actions.append(HeuristicAction(
                 kind="command", command="move 160 191",
                 confidence=0.95, domain="progression",
@@ -547,11 +605,10 @@ class HeuristicService:
             actions.append(HeuristicAction(
                 kind="command", command="talk resp 0",
                 confidence=0.80, domain="progression",
-                reason="Select first job option (Archer)",
+                reason="Select Archer job option",
             ))
             total_confidence = 0.90
             top_domain = "progression"
-
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=actions, confidence=total_confidence,
                 actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
@@ -559,51 +616,60 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: TOWN ──
-        if state == "TOWN":
-            # Sell junk items
-            if weight > 50:
+        # ── STATE: STATS ──
+        if state == "STATS":
+            stat_builds = {
+                "novice": ["dex", "str", "agi", "vit"],
+                "archer": ["dex", "agi", "str", "vit"],
+                "thief": ["agi", "dex", "str", "vit"],
+                "acolyte": ["int", "dex", "vit", "str"],
+                "swordman": ["str", "vit", "dex", "agi"],
+                "mage": ["int", "dex", "vit", "str"],
+            }
+            build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
+            for stat_name in build:
+                if stat_points > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"stat_add {stat_name}",
+                        confidence=0.95, domain="progression",
+                        reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
+                    ))
+                    stat_points -= 1
+            total_confidence = 0.95
+            top_domain = "progression"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: SKILLS ──
+        if state == "SKILLS":
+            if "NV_BASIC" not in skills:
                 actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.90, domain="economy",
-                    reason=f"Weight {weight:.0f}% - in Prontera, LLM should plan sell route",
+                    kind="command", command="skills add 1",
+                    confidence=0.90, domain="progression",
+                    reason="Learn Basic Skill to sit and regen",
                 ))
-            # Allocate stat points
-            if stat_points > 0:
-                # Determine which stat to raise based on class
-                stat_builds = {
-                    "novice": ["dex", "str", "agi", "vit"],
-                    "archer": ["dex", "agi", "str", "vit"],
-                    "thief": ["agi", "dex", "str", "vit"],
-                    "acolyte": ["int", "dex", "vit", "str"],
-                    "swordman": ["str", "vit", "dex", "agi"],
-                    "mage": ["int", "dex", "vit", "str"],
-                }
-                build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
-                for stat_name in build:
-                    if stat_points > 0:
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"stat_add {stat_name}",
-                            confidence=0.95, domain="progression",
-                            reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
-                        ))
-                        stat_points -= 1
-            # Learn skills
-            if skill_points > 0:
-                if "NV_BASIC" not in skills:
-                    actions.append(HeuristicAction(
-                        kind="command", command="skills add 1",
-                        confidence=0.90, domain="progression",
-                        reason="Learn Basic Skill to sit and regen",
-                    ))
-                elif "NV_FIRSTAID" not in skills:
-                    actions.append(HeuristicAction(
-                        kind="command", command="skills add 2",
-                        confidence=0.85, domain="progression",
-                        reason="Learn First Aid for emergency healing",
-                    ))
-            # Party
-            if not in_party and bot_name == "kicapmasin":
+            elif "NV_FIRSTAID" not in skills:
+                actions.append(HeuristicAction(
+                    kind="command", command="skills add 2",
+                    confidence=0.85, domain="progression",
+                    reason="Learn First Aid for emergency healing",
+                ))
+            total_confidence = 0.90
+            top_domain = "progression"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: PARTY ──
+        if state == "PARTY":
+            if bot_name == "kicapmasin":
                 actions.append(HeuristicAction(
                     kind="command", command="party create",
                     confidence=0.90, domain="social",
@@ -614,15 +680,24 @@ class HeuristicService:
                     confidence=0.85, domain="social",
                     reason="Share experience in party",
                 ))
-            # Move to hunting map
-            actions.append(HeuristicAction(
-                kind="command", command="move prt_fild05",
-                confidence=0.80, domain="exploration",
-                reason=f"Level {base_level} - move to prt_fild05 for grinding",
-            ))
-            total_confidence = 0.90
-            top_domain = "progression"
-
+                actions.append(HeuristicAction(
+                    kind="command", command="party invite kicapmasin2",
+                    confidence=0.80, domain="social",
+                    reason="Invite kicapmasin2 to party",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="party invite kicapmasin3",
+                    confidence=0.80, domain="social",
+                    reason="Invite kicapmasin3 to party",
+                ))
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command="party join kicapmasin",
+                    confidence=0.85, domain="social",
+                    reason="Join leader's party",
+                ))
+            total_confidence = 0.85
+            top_domain = "social"
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=actions, confidence=total_confidence,
                 actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
@@ -630,49 +705,46 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: HUNTING ──
-        if state == "HUNTING":
+        # ── STATE: TOWN_HUNT ──
+        if state == "TOWN_HUNT":
+            # Move to hunting map
+            target_map = "prt_fild05"
+            if base_level >= 20:
+                target_map = "pay_fild01"
+            elif base_level >= 15:
+                target_map = "prt_fild08"
+            actions.append(HeuristicAction(
+                kind="command", command=f"move {target_map}",
+                confidence=0.90, domain="exploration",
+                reason=f"Level {base_level} - move to {target_map} for grinding",
+            ))
+            total_confidence = 0.90
+            top_domain = "exploration"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: HUNT ──
+        if state == "HUNT":
             # Ensure AI is in auto mode
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="combat",
                 reason="Ensure AI is in auto mode for hunting",
             ))
-            # Allocate stat points if available
-            if stat_points > 0:
-                stat_builds = {
-                    "novice": ["dex", "str", "agi", "vit"],
-                    "archer": ["dex", "agi", "str", "vit"],
-                    "thief": ["agi", "dex", "str", "vit"],
-                    "acolyte": ["int", "dex", "vit", "str"],
-                }
-                build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
-                for stat_name in build:
-                    if stat_points > 0:
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"stat_add {stat_name}",
-                            confidence=0.95, domain="progression",
-                            reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
-                        ))
-                        stat_points -= 1
-            # Learn skills if available
-            if skill_points > 0:
-                if "NV_BASIC" not in skills:
-                    actions.append(HeuristicAction(
-                        kind="command", command="skills add 1",
-                        confidence=0.90, domain="progression",
-                        reason="Learn Basic Skill to sit and regen",
-                    ))
             # If stuck, suggest moving to a different map
             if is_stuck:
+                target_map = "prt_fild08" if base_level < 20 else "pay_fild01"
                 actions.append(HeuristicAction(
-                    kind="command", command="move prt_fild08",
+                    kind="command", command=f"move {target_map}",
                     confidence=0.50, domain="exploration",
-                    reason=f"Stuck on {map_name} for {state_duration:.0f}s - try different map",
+                    reason=f"Stuck on {map_name} for {state_duration:.0f}s - try {target_map}",
                 ))
             total_confidence = 0.90
             top_domain = "combat"
-
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=actions, confidence=total_confidence,
                 actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
@@ -680,7 +752,7 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── FALLBACK: Unknown state ──
+        # ── FALLBACK ──
         actions.append(HeuristicAction(
             kind="command", command="ai auto",
             confidence=0.50, domain="survival",
@@ -688,7 +760,6 @@ class HeuristicService:
         ))
         total_confidence = 0.50
         top_domain = "survival"
-
         assessment = HeuristicAssessment(
             horizon=horizon, actions=actions, confidence=total_confidence,
             actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
@@ -697,23 +768,22 @@ class HeuristicService:
         return assessment
 
     def confidence_for(self, horizon: str, signals: dict = None, bot_id: str = None) -> float:
-        """Return confidence for a given horizon."""
         if signals:
             state = self._get_state(signals)
-            # Lower confidence for stuck states (let LLM handle)
+            if state in ("SELL", "BUY", "STATS", "SKILLS"):
+                return 0.95  # High confidence - mechanical actions
             if state == "JOB_CHANGE":
-                return 0.90  # High confidence - job change is mechanical
+                return 0.90
             if state == "DEAD":
-                return 0.50  # Low confidence - let LLM handle respawn strategy
-            if state == "TOWN":
-                return 0.85  # Medium-high - town actions are routine
-            if state == "HUNTING":
-                return 0.85  # Medium-high - hunting is routine
+                return 0.50
+            if state in ("HUNT", "TOWN_HUNT"):
+                return 0.85
+            if state == "PARTY":
+                return 0.85
             return 0.70
         return 0.70
 
     def _build_summary(self, assessment: HeuristicAssessment) -> str:
-        """Build a summary string from an assessment."""
         if not assessment or not assessment.actions:
             return "no heuristic actions"
         parts = [f"{a.domain}:{a.command}" for a in assessment.actions[:5]]

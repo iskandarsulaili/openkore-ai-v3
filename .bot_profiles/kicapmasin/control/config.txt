@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword draushie
+adminPassword guthotha
 callSign
 commandPrefix ;
 callSignGM 0
@@ -287,15 +287,15 @@ skillsAddAuto_list
 tankMode 0
 tankModeTarget
 
-teleportAuto_hp 30
+teleportAuto_hp 25
 teleportAuto_sp 0
 teleportAuto_idle 0
 teleportAuto_portal 0
 teleportAuto_search 0
-teleportAuto_minAggressives 5
+teleportAuto_minAggressives 3
 teleportAuto_minAggressivesInLock 8
 teleportAuto_onlyWhenSafe 1
-teleportAuto_maxDmg 9999
+teleportAuto_maxDmg 500
 teleportAuto_maxDmgInLock 0
 teleportAuto_deadly 0
 teleportAuto_useSkill 0
@@ -476,7 +476,7 @@ mercenary_tankMode 0
 mercenary_tankModeTarget
 
 mercenary_teleportAuto_hp 5
-mercenary_teleportAuto_maxDmg 9999
+mercenary_teleportAuto_maxDmg 500
 mercenary_teleportAuto_maxDmgInLock 0
 mercenary_teleportAuto_deadly 0
 mercenary_teleportAuto_unstuck 0
@@ -548,7 +548,7 @@ homunculus_tankModeTarget
 
 homunculus_StandByAuto 0
 homunculus_teleportAuto_hp 5
-homunculus_teleportAuto_maxDmg 9999
+homunculus_teleportAuto_maxDmg 500
 homunculus_teleportAuto_maxDmgInLock 0
 homunculus_teleportAuto_deadly 0
 homunculus_teleportAuto_unstuck 0
@@ -884,7 +884,7 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 0
+sellAuto 1
 sellAuto_npc = prontera 126 76
 sellAuto_npc_steps = c r0 n
 sellAuto_standpoint
@@ -1264,3 +1264,18 @@ sellAuto 0
 sellAuto_npc = prontera 126 76
 sellAuto_npc_steps = c r0 n
 sellAuto_distance 25
+
+useAuto_Red_Potion {
+    hp_upper 80%
+    hp_lower 30%
+    sp_upper 100%
+    sp_lower 0%
+    inLockOnly 0
+    notWhileSitting 1
+    notWhileBusy 1
+    isSelfSkill 0
+    timeout 2
+    disabled 0
+    inInventory 0
+    manualAI 0
+}
