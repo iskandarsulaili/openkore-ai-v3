@@ -418,6 +418,8 @@ sub on_mainLoop_post {
             $_pro_ro_last_lock_set = 'prt_fild05';
             $_pro_ro_last_lock_ms = _now_ms();
             @::AI::ai_seq = ();
+            # Block vendor commands for 10s to prevent sidecar from sending bot back to NPC
+            $_last_reflex_fire_ms{'block_vendor_until'} = _now_ms() + 10000;
             eval { Commands::run('move 22 203'); 1; };  # Walk to Prontera portal
         }
         # ── TOWN ROUTINE: when bot is in town, force economy actions ──
@@ -3088,6 +3090,12 @@ sub _rewrite_runtime_command {
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
 
+	# VENDOR BLOCK: block talknpc commands when hunting is forced
+	if ($normalized =~ /^talknpc\s+/ && $_last_reflex_fire_ms{'block_vendor_until'} && _now_ms() < $_last_reflex_fire_ms{'block_vendor_until'}) {
+	    debug "[vendor_block] blocking talknpc - hunting forced\n", 'aiSidecarBridge', 1;
+	    return ('', 'vendor_blocked_hunting_forced');
+	}
+	
 	# PARTY JOIN GUARD: block ALL party join commands from sidecar
 	# Config settings (partyAutoCreate/partyAutoJoinCode) handle party formation
 	if ($normalized =~ /^party\s+join\s+(.+)$/) {
