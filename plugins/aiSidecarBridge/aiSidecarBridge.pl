@@ -4602,7 +4602,10 @@ sub _pro_ro_check_map_progression {
         $::config{lockMap} = $target_map;
         $::config{attackAuto} = 3;
         $::config{attackAuto_inLockOnly} = 0;
-        eval { Commands::run('ai auto'); 1; };
+        $::config{route_randomWalk_avoidInLock} = 0;
+        $::config{route_randomWalk_inTown} = 0;
+        # Force route recalculation by sending move command
+        eval { Commands::run("move $target_map"); 1; };
     }
 }
 
