@@ -333,6 +333,14 @@ sub on_mainLoop_post {
 			$_pro_ro_stay_in_town_ms = _now_ms() + 30000;  # Stay in town for 30s
 			# Clear AI sequence to prevent bot from walking back to hunting map
 			@::AI::ai_seq = ();
+			# Force stand
+			if ($char->{sitting}) {
+			    eval { Commands::run('stand'); 1; };
+			}
+			# Force party join for kicapmasin3
+			if ($::config{username} eq 'kicapmasin3') {
+			    eval { Commands::run('party join 1'); 1; };
+			}
 			# Trigger economy: walk to Tool Dealer
 			$_pro_ro_last_lock_set = 'prontera';  # Reset so next move goes to hunting map
 		}
