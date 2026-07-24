@@ -630,13 +630,21 @@ class HeuristicService:
 
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
-            # Set a 5-minute cooldown so this doesn't re-trigger immediately
+            # Set a 5-minute cooldown
             self._town_entry_time[bot_id] = __import__("time").time() + 300
-            actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
-                confidence=0.99, domain="emergency",
-                reason="Stuck in town > 300s with 0 kills - force portal to hunting map",
-            ))
+            # If already on hunting map, just enable auto-attack
+            if map_name not in _hunt_towns:
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.99, domain="hunting",
+                    reason="Already on hunting map - enable auto-attack",
+                ))
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command="move 22 203",
+                    confidence=0.99, domain="emergency",
+                    reason="Stuck in town > 300s with 0 kills - force portal to hunting map",
+                ))
             total_confidence = 0.99
             top_domain = "emergency"
             assessment = HeuristicAssessment(

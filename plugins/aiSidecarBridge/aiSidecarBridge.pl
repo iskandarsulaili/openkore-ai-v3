@@ -302,7 +302,9 @@ sub on_mainLoop_post {
 	    $_pe_map =~ s/\.gat$//;
 	    if ($_pe_map =~ /^[a-z]+_fild/ && $char) {
 	        my ($_pe_x, $_pe_y) = ($char->{pos}{x}, $char->{pos}{y});
-	        if (abs($_pe_x - 367) < 15 && abs($_pe_y - 205) < 15) {
+	        my $_last_pe = $_last_reflex_fire_ms{'portal_exit'} || 0;
+	        if (abs($_pe_x - 367) < 15 && abs($_pe_y - 205) < 15 && _now_ms() - $_last_pe > 30000) {
+	            $_last_reflex_fire_ms{'portal_exit'} = _now_ms();
 	            warning "[portal_exit] on $_pe_map at portal exit - moving to center\n", 'aiSidecarBridge', 1;
 	            $::config{'lockMap'} = $_pe_map;
 	            $::config{'attackAuto'} = 3;
