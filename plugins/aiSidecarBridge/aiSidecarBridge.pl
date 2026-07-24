@@ -3010,6 +3010,17 @@ sub _rewrite_runtime_command {
 	# PORTAL WALK LOCK: if bot is walking to portal, block non-essential commands for 10s
 	my $_portal_lock = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
 	if ($_portal_lock > 0 && _now_ms() < $_portal_lock) {
+		# When bot warps to hunting map, move away from portal immediately
+		my $_pl_map = $field ? lc($field->name()) : '';
+		$_pl_map =~ s/\.gat$//;
+		if ($_pl_map =~ /^[a-z]+_fild/ && $_pl_map ne '') {
+		    my ($_pl_x, $_pl_y) = ($char->{pos}{x}, $char->{pos}{y});
+		    # If near portal exit (367,205), move to center
+		    if (abs($_pl_x - 367) < 10 && abs($_pl_y - 205) < 10) {
+		        warning "[portal_lock] on $_pl_map near portal exit - moving to center\n", 'aiSidecarBridge', 1;
+		        eval { Commands::run('move 200 200'); 1; };
+		    }
+		}
 		if ($normalized ne 'stand' && $normalized ne 'ai auto') {
 			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
 			return ('', 'portal_walk_lock');

@@ -443,14 +443,17 @@ class HeuristicService:
                                "louyang", "ayothaya")
 
         if is_town:
-            # STUCK DETECTION: if in town > 60s with 0 kills, force hunting
+            # STUCK DETECTION: if in town > 120s with 0 kills, force hunting
             _town_start = self._town_entry_time.get(bot_id, 0)
             _now_t = __import__("time").time()
             if _town_start == 0:
                 self._town_entry_time[bot_id] = _now_t
             _town_duration = _now_t - _town_start
             _kills_this_town = signals.get("kills_this_session", 0) or 0
-            if _town_duration > 60 and _kills_this_town == 0:
+            # Check if bot just warped (map changed in last 5s) - don't trigger TOWN_STUCK
+            _last_map_change = signals.get("last_map_change", 0) or 0
+            _just_warped = (_now_t - _last_map_change) < 5
+            if _town_duration > 120 and _kills_this_town == 0 and not _just_warped:
                 # Been in town too long with no kills - force hunting
                 return "TOWN_STUCK"
             # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
