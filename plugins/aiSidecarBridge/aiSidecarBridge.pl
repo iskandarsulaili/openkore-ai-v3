@@ -2938,7 +2938,7 @@ sub _rewrite_runtime_command {
 			return ('', 'already_on_target_map');
 		}
 		# If in Prontera and target is a hunting map, walk to the Prontera-side portal
-		my %_portals_from_prontera = (
+		my %_portal_coords = (
 			'prt_fild05' => 'move 22 203',  # Portal in Prontera to prt_fild05
 			'prt_fild04' => 'move 22 203',
 			'prt_fild03' => 'move 22 203',
@@ -2949,8 +2949,8 @@ sub _rewrite_runtime_command {
 			'prt_fild07' => 'move 22 203',
 			'prt_fild06' => 'move 22 203',
 		);
-		if ($_cur_map eq 'prontera' && exists $_portals_from_prontera{$_target}) {
-			my $_new_cmd = $_portals_from_prontera{$_target};
+		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
+			my $_new_cmd = $_portal_coords{$_target};
 			debug "[move_rewrite] from Prontera: $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
@@ -2996,21 +2996,8 @@ sub _rewrite_runtime_command {
 		debug "[buy_rewrite] $command\n", 'aiSidecarBridge', 2;
 		return ($command, 'buy_command');
 	}
-		my $_target = lc($1);
 		# Known hunting maps from Prontera
-		my %_map_coords = (
-			'prt_fild05' => 'move 50 200',
-			'prt_fild04' => 'move 22 203',
-			'prt_fild03' => 'move 22 203',
-			'prt_fild02' => 'move 22 203',
-			'prt_fild01' => 'move 22 203',
-			'prt_fild00' => 'move 22 203',
-			'prt_fild08' => 'move 22 203',
-			'prt_fild07' => 'move 22 203',
-			'prt_fild06' => 'move 22 203',
-		);
-		if (exists $_map_coords{$_target}) {
-			my $_new_cmd = $_map_coords{$_target};
+		
 			debug "[move_rewrite] $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
@@ -3598,7 +3585,6 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
-}
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
