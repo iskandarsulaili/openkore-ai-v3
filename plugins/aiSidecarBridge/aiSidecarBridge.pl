@@ -2927,12 +2927,19 @@ my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
-	# ── MOVE REWRITE: convert map-name moves to coordinate moves ──
+	# ── MOVE REWRITE: context-aware map-name to coordinate conversion ──
 	if ($command =~ /^move\s+(\S+)$/i) {
 		my $_target = lc($1);
-		# Known hunting maps from Prontera
-		my %_map_coords = (
-			'prt_fild05' => 'move 22 203',
+		my $_cur_map = $field ? lc($field->name()) : '';
+		$_cur_map =~ s/\.gat$//;
+		# If already on target map, ignore the move (already there)
+		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
+			debug "[move_rewrite] already on $_target, ignoring\n", 'aiSidecarBridge', 2;
+			return ('', 'already_on_target_map');
+		}
+		# If in Prontera and target is a hunting map, walk to the Prontera-side portal
+		my %_portals_from_prontera = (
+			'prt_fild05' => 'move 22 203',  # Portal in Prontera to prt_fild05
 			'prt_fild04' => 'move 22 203',
 			'prt_fild03' => 'move 22 203',
 			'prt_fild02' => 'move 22 203',
@@ -2942,10 +2949,15 @@ sub _rewrite_runtime_command {
 			'prt_fild07' => 'move 22 203',
 			'prt_fild06' => 'move 22 203',
 		);
-		if (exists $_map_coords{$_target}) {
-			my $_new_cmd = $_map_coords{$_target};
-			debug "[move_rewrite] $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
+		if ($_cur_map eq 'prontera' && exists $_portals_from_prontera{$_target}) {
+			my $_new_cmd = $_portals_from_prontera{$_target};
+			debug "[move_rewrite] from Prontera: $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
 			$command = $_new_cmd;
+			return ($command, 'coordinate_move_raw');
+		}
+		# If on hunting map and target is a town, pass through (return to town is allowed)
+		if ($_cur_map =~ /^[a-z]+_fild/ && $_target eq 'prontera') {
+			debug "[move_rewrite] on $_cur_map, allowing return to town\n", 'aiSidecarBridge', 2;
 			return ($command, 'coordinate_move_raw');
 		}
 	}
@@ -3451,10 +3463,22 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'party invite <name>' -> rewrite to 'party invite <name>'
+	# Handle 'party invite <name>' -> rewrite to 'party invite <name>' with proper syntax
 	if ($normalized =~ /^party\s+invite\s+(.+)$/) {
+		my $_invite_name = $1;
+		warning "[party_invite] inviting $_invite_name\n", 'aiSidecarBridge', 1;
+		$command = "party invite $_invite_name";
 		$rewrite_kind = 'party_invite_rewritten';
-		return ($normalized, $rewrite_kind);
+		return ($command, $rewrite_kind);
+	}
+	# Handle 'party join 1' (accept invite) - already handled above
+	# Handle 'party create' with name
+	if ($normalized =~ /^party\s+create\s+(.+)$/) {
+		my $_party_name = $1;
+		warning "[party_create] creating party $_party_name\n", 'aiSidecarBridge', 1;
+		$command = "party create $_party_name";
+		$rewrite_kind = 'party_create_rewritten';
+		return ($command, $rewrite_kind);
 	}
 
 	# Handle 'party create' -> rewrite

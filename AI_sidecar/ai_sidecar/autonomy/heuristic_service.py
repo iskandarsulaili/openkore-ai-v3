@@ -440,9 +440,13 @@ class HeuristicService:
                                "louyang", "ayothaya")
 
         if is_town:
-            # Priority: SELL > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
+            # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
             if weight > 5:
                 return "SELL"
+            # Check if bot has a weapon by checking attack power > 30 (bare hands = 19)
+            _has_weapon = signals.get("attack_power", 0) or 0 > 30
+            if zeny >= 500 and not _has_weapon:
+                return "WEAPON_BUY"
             if zeny > 0:
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
@@ -461,15 +465,21 @@ class HeuristicService:
     def _check_progress(self, signals: dict) -> bool:
         bot_id = signals.get("bot_id", "default")
         last = self._last_progress.get(bot_id, {})
+        # Track kills separately - increment when monster dies
+        _kills_sig = int(signals.get("last_monster_kill", 0) or 0)
         now = {
             "exp": signals.get("exp", 0) or signals.get("base_exp", 0) or 0,
             "zeny": signals.get("zeny", 0) or 0,
             "level": signals.get("base_level", 1) or 1,
+            "kills": _kills_sig,
+            "job_level": signals.get("job_level", 1) or 1,
+            "items": len(signals.get("inventory_items", []) or []),
         }
         self._last_progress[bot_id] = now
         if not last:
             return True
-        for key in ("exp", "zeny", "level"):
+        # Check multiple progress indicators
+        for key in ("exp", "zeny", "level", "kills", "job_level", "items"):
             if now.get(key, 0) > last.get(key, 0):
                 return True
         return False
@@ -556,6 +566,52 @@ class HeuristicService:
                 kind="command", command="talk cont",
                 confidence=0.80, domain="economy",
                 reason="Continue sell dialog",
+            ))
+            total_confidence = 0.90
+            top_domain = "economy"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: WEAPON_BUY (priority over potions) ──
+        if state == "WEAPON_BUY":
+            actions.append(HeuristicAction(
+                kind="command", command="move 160 133",
+                confidence=0.95, domain="economy",
+                reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talknpc 160 133",
+                confidence=0.90, domain="economy",
+                reason="Open Weapon Shop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk resp 0",
+                confidence=0.85, domain="economy",
+                reason="Select buy option",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk cont",
+                confidence=0.85, domain="economy",
+                reason="Continue weapon buy dialog",
+            ))
+            # Buy a bow (1701) or knife (1301) depending on class
+            _weapon = "1701"  # Default: Bow
+            if "thief" in job_name or "assassin" in job_name:
+                _weapon = "1301"  # Knife
+            elif "sword" in job_name or "knight" in job_name:
+                _weapon = "1201"  # Sword
+            elif "mage" in job_name or "wizard" in job_name:
+                _weapon = "1501"  # Rod
+            elif "acolyte" in job_name or "priest" in job_name:
+                _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
+            actions.append(HeuristicAction(
+                kind="command", command=f"buy {_weapon} 1",
+                confidence=0.85, domain="economy",
+                reason=f"Buy weapon {_weapon} for class {job_name}",
             ))
             total_confidence = 0.90
             top_domain = "economy"
@@ -776,8 +832,16 @@ class HeuristicService:
             # Check if it's time to return to town (every 10 minutes)
             _hunt_start = self._state_since.get(bot_id, 0)
             _hunt_duration = __import__("time").time() - _hunt_start
-            if _hunt_duration > 1800:  # 30 minutes
-                # Force return to town to sell/buy/check job change
+            # Check if weight is high or any items to sell - return to town sooner
+            _to_sell = weight > 0.3 or zeny == 0  # Sell if >30% weight or no zeny
+            if _to_sell and _hunt_duration > 120:  # At least 2 min hunt
+                actions.append(HeuristicAction(
+                    kind="command", command="move prontera",
+                    confidence=0.95, domain="exploration",
+                    reason=f"Items to sell or need zeny - return to town (hunted {_hunt_duration:.0f}s)",
+                ))
+                self._state_since[bot_id] = __import__("time").time()  # Reset timer
+            elif _hunt_duration > 1800:  # 30 minutes max
                 actions.append(HeuristicAction(
                     kind="command", command="move prontera",
                     confidence=0.95, domain="exploration",
@@ -799,19 +863,21 @@ class HeuristicService:
                 confidence=0.95, domain="combat",
                 reason="Ensure AI is in auto mode for hunting",
             ))
-            # If hasn't moved in 60s, force move to find monsters
+            # If hasn't moved in 30s, force move to find monsters (faster exploration)
             _last_hunt_move = self._last_hunt_move.get(bot_id, 0)
             _hunt_now = __import__("time").time()
             _hunt_towns = ("prontera", "izlude", "morocc", "payon", "geffen",
                           "aldebaran", "comodo", "umbala", "niflheim")
-            if _hunt_now - _last_hunt_move > 60 and map_name not in _hunt_towns:
+            if _hunt_now - _last_hunt_move > 30 and map_name not in _hunt_towns:
                 self._last_hunt_move[bot_id] = _hunt_now
-                _move_x = 100 + int(__import__("random").random() * 200)
-                _move_y = 100 + int(__import__("random").random() * 200)
+                # Smarter exploration: move toward center of map first, then spiral
+                _map_size = 300  # Typical hunting map size
+                _move_x = 50 + int(__import__("random").random() * (_map_size - 100))
+                _move_y = 50 + int(__import__("random").random() * (_map_size - 100))
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_move_x} {_move_y}",
                     confidence=0.70, domain="exploration",
-                    reason=f"Haven't moved in 60s - explore to ({_move_x},{_move_y})",
+                    reason=f"Explore to ({_move_x},{_move_y}) - find monsters",
                 ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
