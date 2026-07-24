@@ -242,7 +242,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         latest = _cached
                     else:
                         _log.warning(f"snapshot_missing: bot_id={bot_id} no snapshot available - skipping")
-                        continue
+                        return 0
                 if latest is not None:
                     if isinstance(latest, dict):
                         v = latest.get("vitals") or {}
