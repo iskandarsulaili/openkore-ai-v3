@@ -556,6 +556,8 @@ class HeuristicService:
 
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
+            # Reset town entry timer so it doesn't re-trigger immediately
+            self._town_entry_time[bot_id] = 0
             # Force move to hunting map via portal - no lockMap change (interferes with routing)
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",

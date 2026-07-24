@@ -3266,6 +3266,10 @@ sub _rewrite_runtime_command {
 		if ($target eq '22 203') {
 		    return ($trimmed, 'coordinate_move_raw');
 		}
+		# Coordinate moves (e.g. "move 150 150") - pass through
+		if ($target =~ /^\d+\s+\d+$/) {
+		    return ($trimmed, 'coordinate_move_raw');
+		}
 		# PRO RO GUARD: if Pro RO module just set a hunting map lock, block PDCA's town moves
 		my $_pro_ro_guard = 0;
 		if ($_pro_ro_last_lock_set ne '' && _now_ms() - $_pro_ro_last_lock_ms < 120000) {
