@@ -2964,10 +2964,11 @@ sub _rewrite_runtime_command {
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
 		}
-		# If on hunting map and target is a town, pass through (return to town is allowed)
+		# If on hunting map and target is a town, block it - bot should stay and hunt
+		# The heuristic service handles return-to-town logic via TOWN_STUCK timer
 		if ($_cur_map =~ /^[a-z]+_fild/ && $_target eq 'prontera') {
-			debug "[move_rewrite] on $_cur_map, allowing return to town\n", 'aiSidecarBridge', 2;
-			return ($command, 'coordinate_move_raw');
+			debug "[move_rewrite] on $_cur_map, blocking return to town - stay and hunt\n", 'aiSidecarBridge', 2;
+			return ('', 'hunting_map_priority');
 		}
 	}
 	# ── PARTY REWRITE: fix party create/join syntax ──

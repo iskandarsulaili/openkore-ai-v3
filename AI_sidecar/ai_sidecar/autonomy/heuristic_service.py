@@ -420,9 +420,8 @@ class HeuristicService:
         map_name = map_name.replace(".gat", "")
         map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
-        # Compute weight from inventory items count (weight_ratio signal is unreliable)
-        _inv_count = len(signals.get("inventory_items", []) or [])
-        weight = _inv_count * 0.01  # Each item ~1% weight
+        # Weight: use 0 (no reliable signal) - let TOWN_STUCK handle town exits
+        weight = 0
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = signals.get("job_name", "novice").lower()
@@ -453,7 +452,7 @@ class HeuristicService:
             # Check if bot just warped (map changed in last 5s) - don't trigger TOWN_STUCK
             _last_map_change = signals.get("last_map_change", 0) or 0
             _just_warped = (_now_t - _last_map_change) < 5
-            if _town_duration > 120 and _kills_this_town == 0 and not _just_warped:
+            if _town_duration > 300 and _kills_this_town == 0 and not _just_warped:
                 # Been in town too long with no kills - force hunting
                 return "TOWN_STUCK"
             # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
@@ -556,13 +555,13 @@ class HeuristicService:
 
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
-            # Reset town entry timer so it doesn't re-trigger immediately
-            self._town_entry_time[bot_id] = 0
-            # Force move to hunting map via portal - no lockMap change (interferes with routing)
+            # Set a 5-minute cooldown so this doesn't re-trigger immediately
+            self._town_entry_time[bot_id] = __import__("time").time() + 300
+            # Force move to hunting map via portal
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
-                reason="Stuck in town > 60s with 0 kills - force portal to hunting map",
+                reason="Stuck in town > 120s with 0 kills - force portal to hunting map",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
