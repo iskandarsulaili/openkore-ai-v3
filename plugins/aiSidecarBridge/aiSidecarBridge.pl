@@ -2997,10 +2997,6 @@ sub _rewrite_runtime_command {
 		return ($command, 'buy_command');
 	}
 		# Known hunting maps from Prontera
-		
-			debug "[move_rewrite] $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
-			$command = $_new_cmd;
-			return ($command, 'coordinate_move_raw');
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	$metadata = {} if ref($metadata) ne 'HASH';
