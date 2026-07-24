@@ -3526,14 +3526,8 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'stat_add' commands
+	# Handle 'stat_add' commands - always pass through, let OpenKore validate
 	if ($normalized =~ /^stat_add\s+(.+)$/) {
-		# Bridge-level guard: block stat_add if bot has 0 stat points
-		my $_stat_pts = $char ? ($char->{status_points} || $char->{points} || $char->{stat_pts} || 0) : 0;
-		if ($_stat_pts <= 0) {
-		    warning "[stat_guard] blocking stat_add - no stat points available\n", 'aiSidecarBridge', 1;
-		    return ('', 'stat_add_blocked_no_points');
-		}
 		$rewrite_kind = 'stat_add_rewritten';
 		return ($normalized, $rewrite_kind);
 	}
