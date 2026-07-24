@@ -413,7 +413,7 @@ class HeuristicService:
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
 
-    def _get_state(self, signals: dict) -> str:
+    def _get_state(self, signals: dict, bot_id: str = "default") -> str:
         """Determine bot state from signals."""
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
@@ -503,7 +503,7 @@ class HeuristicService:
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
-        state = self._get_state(signals)
+        state = self._get_state(signals, bot_id)
         prev_state = self._bot_state.get(bot_id, "UNKNOWN")
 
         if state != prev_state:
