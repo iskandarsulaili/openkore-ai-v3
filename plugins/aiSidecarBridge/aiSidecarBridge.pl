@@ -2917,15 +2917,15 @@ sub _rewrite_runtime_command {
 		my $_target = lc($1);
 		# Known hunting maps from Prontera
 		my %_map_coords = (
-			'prt_fild05' => 'move 22 203',
-			'prt_fild04' => 'move 22 203',
-			'prt_fild03' => 'move 22 203',
-			'prt_fild02' => 'move 22 203',
-			'prt_fild01' => 'move 22 203',
-			'prt_fild00' => 'move 22 203',
-			'prt_fild08' => 'move 22 203',
-			'prt_fild07' => 'move 22 203',
-			'prt_fild06' => 'move 22 203',
+			'prt_fild05' => 'move 50 200',
+			'prt_fild04' => 'move 50 200',
+			'prt_fild03' => 'move 50 200',
+			'prt_fild02' => 'move 50 200',
+			'prt_fild01' => 'move 50 200',
+			'prt_fild00' => 'move 50 200',
+			'prt_fild08' => 'move 50 200',
+			'prt_fild07' => 'move 50 200',
+			'prt_fild06' => 'move 50 200',
 		);
 		if (exists $_map_coords{$_target}) {
 			my $_new_cmd = $_map_coords{$_target};
@@ -2972,7 +2972,7 @@ sub _rewrite_runtime_command {
 		my $_target = lc($1);
 		# Known hunting maps from Prontera
 		my %_map_coords = (
-			'prt_fild05' => 'move 22 203',
+			'prt_fild05' => 'move 50 200',
 			'prt_fild04' => 'move 22 203',
 			'prt_fild03' => 'move 22 203',
 			'prt_fild02' => 'move 22 203',
@@ -3048,11 +3048,11 @@ sub _rewrite_runtime_command {
 		    # Convert map-name moves to direct coordinate moves
 		    # (bypasses route calculation which times out in town)
 		    my %_portal_coords = (
-		        'prt_fild05' => '22 203',
-		        'prt_fild08' => '22 203',
-		        'prt_fild00' => '22 203',
-		        'prt_fild01' => '22 203',
-		        'prt_fild04' => '22 203',
+		        'prt_fild05' => '50 200',
+		        'prt_fild08' => '50 200',
+		        'prt_fild00' => '50 200',
+		        'prt_fild01' => '50 200',
+		        'prt_fild04' => '50 200',
 		        'prontera'   => '156 196',
 		    );
 		    if (exists $_portal_coords{$_move_target}) {

@@ -773,7 +773,7 @@ class HeuristicService:
             # Check if it's time to return to town (every 10 minutes)
             _hunt_start = self._state_since.get(bot_id, 0)
             _hunt_duration = __import__("time").time() - _hunt_start
-            if _hunt_duration > 600:  # 10 minutes
+            if _hunt_duration > 1800:  # 30 minutes
                 # Force return to town to sell/buy/check job change
                 actions.append(HeuristicAction(
                     kind="command", command="move prontera",
@@ -792,9 +792,9 @@ class HeuristicService:
             
             # Ensure AI is in auto mode and standing
             actions.append(HeuristicAction(
-                kind="command", command="stand",
+                kind="command", command="ai auto",
                 confidence=0.95, domain="combat",
-                reason="Stand up for combat",
+                reason="Ensure AI is in auto mode for hunting",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
