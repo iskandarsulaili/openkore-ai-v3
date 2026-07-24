@@ -553,19 +553,9 @@ class HeuristicService:
                 reason=f"Weight {weight:.0f}% - walk to Special Dealer to sell junk",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175",
+                kind="command", command="talknpc 147 175 c r0 n",
                 confidence=0.90, domain="economy",
-                reason="Open Special Dealer shop",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk resp 0",
-                confidence=0.85, domain="economy",
-                reason="Select sell option",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk cont",
-                confidence=0.80, domain="economy",
-                reason="Continue sell dialog",
+                reason="Open Special Dealer and sell items (atomic dialog)",
             ))
             total_confidence = 0.90
             top_domain = "economy"
@@ -584,19 +574,9 @@ class HeuristicService:
                 reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 160 133",
+                kind="command", command="talknpc 160 133 c r0 n",
                 confidence=0.90, domain="economy",
-                reason="Open Weapon Shop",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk resp 0",
-                confidence=0.85, domain="economy",
-                reason="Select buy option",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk cont",
-                confidence=0.85, domain="economy",
-                reason="Continue weapon buy dialog",
+                reason="Open Weapon Shop and open buy menu (atomic dialog)",
             ))
             # Buy a bow (1701) or knife (1301) depending on class
             _weapon = "1701"  # Default: Bow
@@ -872,8 +852,9 @@ class HeuristicService:
                 self._last_hunt_move[bot_id] = _hunt_now
                 # Smarter exploration: move toward center of map first, then spiral
                 _map_size = 300  # Typical hunting map size
-                _move_x = 50 + int(__import__("random").random() * (_map_size - 100))
-                _move_y = 50 + int(__import__("random").random() * (_map_size - 100))
+                # Use safer coordinates - center of map where monsters spawn
+                _move_x = 150 + int(__import__("random").random() * 100)
+                _move_y = 150 + int(__import__("random").random() * 100)
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_move_x} {_move_y}",
                     confidence=0.70, domain="exploration",
