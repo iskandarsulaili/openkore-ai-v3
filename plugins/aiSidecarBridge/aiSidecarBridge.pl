@@ -295,6 +295,22 @@ sub on_mainLoop_pre {
 
 
 sub on_mainLoop_post {
+	# ── PORTAL EXIT DETECTION ──
+	# When bot warps to hunting map, move away from portal exit immediately
+	if ($field) {
+	    my $_pe_map = lc($field->name());
+	    $_pe_map =~ s/\.gat$//;
+	    if ($_pe_map =~ /^[a-z]+_fild/ && $char) {
+	        my ($_pe_x, $_pe_y) = ($char->{pos}{x}, $char->{pos}{y});
+	        if (abs($_pe_x - 367) < 15 && abs($_pe_y - 205) < 15) {
+	            warning "[portal_exit] on $_pe_map at portal exit - moving to center\n", 'aiSidecarBridge', 1;
+	            $::config{'lockMap'} = $_pe_map;
+	            $::config{'attackAuto'} = 3;
+	            $::config{'attackAuto_inLockOnly'} = 0;
+	            eval { Commands::run('move 200 200'); 1; };
+	        }
+	    }
+	}
 
         # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 7;
