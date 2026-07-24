@@ -2964,11 +2964,24 @@ sub _rewrite_runtime_command {
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
 		}
-		# If on hunting map and target is a town, block it - bot should stay and hunt
-		# The heuristic service handles return-to-town logic via TOWN_STUCK timer
+		# If on hunting map and target is a town, check if return is allowed
+		# Allow return if: died recently (<60s ago) or hunted >30min
 		if ($_cur_map =~ /^[a-z]+_fild/ && $_target eq 'prontera') {
-			debug "[move_rewrite] on $_cur_map, blocking return to town - stay and hunt\n", 'aiSidecarBridge', 2;
-			return ('', 'hunting_map_priority');
+		    my $_allow_return = 0;
+		    my $_death_time = $_last_reflex_fire_ms{'player_died'} || 0;
+		    my $_hunt_start = $_last_reflex_fire_ms{'hunting_start'} || _now_ms();
+		    if ($_death_time > 0 && _now_ms() - $_death_time < 60000) {
+		        $_allow_return = 1;  # Died recently - allow return to town
+		    }
+		    if (_now_ms() - $_hunt_start > 1800000) {
+		        $_allow_return = 1;  # Hunted >30min - allow resupply
+		    }
+		    if ($_allow_return) {
+		        debug "[move_rewrite] on $_cur_map, allowing return to town (death/resupply)\n", 'aiSidecarBridge', 2;
+		        return ($command, 'coordinate_move_raw');
+		    }
+		    debug "[move_rewrite] on $_cur_map, blocking return to town - stay and hunt\n", 'aiSidecarBridge', 2;
+		    return ('', 'hunting_map_priority');
 		}
 	}
 	# ── PARTY REWRITE: fix party create/join syntax ──
@@ -3462,9 +3475,15 @@ sub _rewrite_runtime_command {
 	}
 
 	# Handle 'stand' -> always allow (prevents sitting)
+	# Track death - allow return to town after death
 	if ($normalized eq 'stand') {
 		$rewrite_kind = 'stand_allowed';
 		return ($normalized, $rewrite_kind);
+	}
+	# Track player death for return-to-town allowance
+	if ($normalized eq 'died' || $normalized eq 'death') {
+	    $_last_reflex_fire_ms{'player_died'} = _now_ms();
+	    return ($normalized, 'death_tracked');
 	}
 
 	# Handle 'ai auto' -> rewrite

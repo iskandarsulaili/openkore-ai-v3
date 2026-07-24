@@ -418,6 +418,12 @@ class HeuristicService:
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
         map_name = map_name.replace(".gat", "")
+        # COLD_START: if bot never had a kill and has 0 zeny, go hunt immediately
+        _prev_state = self._bot_state.get(bot_id, "UNKNOWN")
+        _total_kills = signals.get("total_kills", 0) or 0
+        _total_zeny = signals.get("zeny", 0) or 0
+        if _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
+            return "COLD_START"
         map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
@@ -459,13 +465,12 @@ class HeuristicService:
                 # Been in town too long with no kills - force hunting
                 return "TOWN_STUCK"
             # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
-            if weight > 0.05:  # 5% weight threshold
+            if weight > 0.05:
                 return "SELL"
-            # Check if bot has a weapon by checking attack power > 30 (bare hands = 19)
-            _has_weapon = signals.get("attack_power", 0) or 0 > 30
-            if zeny >= 500 and not _has_weapon:
-                return "WEAPON_BUY"
             if zeny > 0:
+                _has_weapon = signals.get("attack_power", 0) or 0 > 30
+                if zeny >= 500 and not _has_weapon:
+                    return "WEAPON_BUY"
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
                 return "JOB_CHANGE"
@@ -556,15 +561,35 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
+        # ── STATE: COLD_START (fresh spawn - go hunt immediately) ──
+        if state == "COLD_START":
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - stand up",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="move 22 203",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - go to hunting map via portal",
+            ))
+            total_confidence = 0.99
+            top_domain = "emergency"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
             # Set a 5-minute cooldown so this doesn't re-trigger immediately
             self._town_entry_time[bot_id] = __import__("time").time() + 300
-            # Force move to hunting map via portal
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
-                reason="Stuck in town > 120s with 0 kills - force portal to hunting map",
+                reason="Stuck in town > 300s with 0 kills - force portal to hunting map",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
