@@ -2957,6 +2957,7 @@ sub _rewrite_runtime_command {
 			'prt_fild08' => 'move 22 203',
 			'prt_fild07' => 'move 22 203',
 			'prt_fild06' => 'move 22 203',
+			'prt_fild09' => 'move 22 203',
 		);
 		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
 			my $_new_cmd = $_portal_coords{$_target};
@@ -3522,11 +3523,13 @@ sub _rewrite_runtime_command {
 
 	# Handle 'stat_add' commands
 	if ($normalized =~ /^stat_add\s+(.+)$/) {
-		# Bridge-level guard: block stat_add if bot has 0 stat points
+		# Send the command regardless - let OpenKore handle validation
+		# The bot might have stat points that aren't reflected in $char->{status_points}
 		my $_stat_pts = $char ? ($char->{status_points} || $char->{points} || $char->{stat_pts} || 0) : 0;
 		if ($_stat_pts <= 0) {
-		    warning "[stat_guard] blocking stat_add - no stat points available\n", 'aiSidecarBridge', 1;
-		    return ('', 'stat_add_blocked_no_points');
+		    # Still try - OpenKore will reject if truly no points
+		    warning "[stat_guard] passing stat_add (status_points=$_stat_pts) - let OpenKore validate\n", 'aiSidecarBridge', 1;
+		    return ($normalized, 'stat_add_passthrough');
 		}
 		$rewrite_kind = 'stat_add_rewritten';
 		return ($normalized, $rewrite_kind);

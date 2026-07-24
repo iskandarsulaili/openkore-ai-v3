@@ -420,8 +420,11 @@ class HeuristicService:
         map_name = map_name.replace(".gat", "")
         map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
-        # Weight: use 0 (no reliable signal) - let TOWN_STUCK handle town exits
-        weight = 0
+        # Weight: compute from actual inventory items count in snapshot
+        _inv_items = signals.get("inventory_items", []) or []
+        # Count non-equipment items (stuff you can sell)
+        _sellable = sum(1 for i in _inv_items if isinstance(i, dict) and not i.get("equipped", False))
+        weight = _sellable * 0.02  # Each sellable item ~2% weight
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = signals.get("job_name", "novice").lower()
@@ -578,12 +581,8 @@ class HeuristicService:
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
             if _sell_now - _last_sell < 30:
-                # Skip sell, go straight to hunting via portal
-                actions.append(HeuristicAction(
-                    kind="command", command="move 22 203",
-                    confidence=0.95, domain="hunting",
-                    reason="Sell on cooldown - go hunting via portal",
-                ))
+                # Sell on cooldown - skip and let next state handle
+                pass
                 total_confidence = 0.85
                 top_domain = "hunting"
                 assessment = HeuristicAssessment(
