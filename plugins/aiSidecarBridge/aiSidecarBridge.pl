@@ -3619,10 +3619,11 @@ sub _rewrite_runtime_command {
 	if ($normalized =~ /^talk\s+(cont|resp|no|\d+)/) {
 		return ($trimmed, 'talk_ok');
 	}
-}
 
 	# Default: pass through
 	return ($trimmed, 'passthrough');
+
+}
 
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
