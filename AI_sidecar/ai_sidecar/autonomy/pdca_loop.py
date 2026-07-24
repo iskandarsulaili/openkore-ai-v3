@@ -203,9 +203,9 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
             return 0
         bot_id = bot_id or "default"
         
-        signals["bot_id"] = bot_id
         # Build signals from available state
         signals = {
+            "bot_id": bot_id,
             "hp_ratio": 1.0, "sp_ratio": 1.0,
             "combat.aggro_count": 0, "map_known": False,
             "weight_ratio": 0.0, "horizon": horizon,
