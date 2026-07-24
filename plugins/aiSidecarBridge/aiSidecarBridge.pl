@@ -2934,6 +2934,12 @@ sub _rewrite_runtime_command {
 		$_cur_map =~ s/\.gat$//;
 		# Direct portal coordinate - always pass through
 		if ($_target eq '22 203') {
+			# Check if portal walk lock is active - if so, block this duplicate
+			my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
+			if ($_pl_check > 0 && _now_ms() < $_pl_check) {
+				debug "[portal_lock] blocking duplicate portal move - walk in progress\n", 'aiSidecarBridge', 2;
+				return ('', 'portal_walk_lock');
+			}
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
 			# Set a 10-second lock to prevent PDCA from interrupting the portal walk
 			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 10000;
@@ -3007,25 +3013,7 @@ sub _rewrite_runtime_command {
 		# Known hunting maps from Prontera
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
-	# PORTAL WALK LOCK: if bot is walking to portal, block non-essential commands for 10s
-	my $_portal_lock = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
-	if ($_portal_lock > 0 && _now_ms() < $_portal_lock) {
-		# When bot warps to hunting map, move away from portal immediately
-		my $_pl_map = $field ? lc($field->name()) : '';
-		$_pl_map =~ s/\.gat$//;
-		if ($_pl_map =~ /^[a-z]+_fild/ && $_pl_map ne '') {
-		    my ($_pl_x, $_pl_y) = ($char->{pos}{x}, $char->{pos}{y});
-		    # If near portal exit (367,205), move to center
-		    if (abs($_pl_x - 367) < 10 && abs($_pl_y - 205) < 10) {
-		        warning "[portal_lock] on $_pl_map near portal exit - moving to center\n", 'aiSidecarBridge', 1;
-		        eval { Commands::run('move 200 200'); 1; };
-		    }
-		}
-		if ($normalized ne 'stand' && $normalized ne 'ai auto') {
-			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
-			return ('', 'portal_walk_lock');
-		}
-	}
+
 	$metadata = {} if ref($metadata) ne 'HASH';
 
 	# VENDOR BLOCK: only block talknpc when bot is on a hunting map (not in town)
