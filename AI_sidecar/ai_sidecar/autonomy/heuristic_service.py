@@ -540,6 +540,25 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
+            # Cooldown: only sell every 30s to prevent tight loop
+            _sell_now = __import__("time").time()
+            _last_sell = self._last_sell_time.get(bot_id, 0)
+            if _sell_now - _last_sell < 30:
+                # Skip sell, go straight to hunting
+                actions.append(HeuristicAction(
+                    kind="command", command="move prt_fild05",
+                    confidence=0.85, domain="hunting",
+                    reason="Sell on cooldown - go hunting instead",
+                ))
+                total_confidence = 0.85
+                top_domain = "hunting"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
+            self._last_sell_time[bot_id] = _sell_now
             # Stand up first
             actions.append(HeuristicAction(
                 kind="command", command="stand",
