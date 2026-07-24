@@ -3065,73 +3065,23 @@ sub _rewrite_runtime_command {
 
 
 	debug "[aiSidecarBridge_DEBUG] rewrite_runtime_command: raw='$command' normalized='$normalized'\n", 'aiSidecarBridge', 0;
-	# COMMITTED ACTION GUARD: prevent conflicting commands within 30s window
-	# Uses direct key access (not each()) to avoid Perl's shared hash iterator bug
-	# Keys are action types (move, set_lockmap, sit) - all same-type commands share one key
-	my $_action_type = q{};
-	my $_action_target = q{};
-	if ($normalized =~ /^move\s+(.+)$/) {
-		# If bot is in Prontera, use coordinate_move_raw for ALL moves
-		# (bypasses route calculation which times out in town)
-		my $_move_target = $1;
-		my $_move_map = lc($char->{map} || '');
-		$_move_map =~ s/\.gat$//;
-		if ($_move_map eq 'prontera') {
-		    # Convert map-name moves to direct coordinate moves
-		    # (bypasses route calculation which times out in town)
-		    my %_portal_coords = (
-		        'prt_fild05' => '22 203',
-		        'prt_fild08' => '22 203',
-		        'prt_fild00' => '22 203',
-		        'prt_fild01' => '22 203',
-		        'prt_fild04' => '22 203',
-		        'prontera'   => '156 196',
-		    );
-		    if (exists $_portal_coords{$_move_target}) {
-		        return ("move $_portal_coords{$_move_target}", 'coordinate_move_raw');
-		    }
-		    # For other targets, try direct coordinate move
-		    return ("move $_move_target", 'coordinate_move_raw');
-		}
-		$_action_type = q{move};
-		$_action_target = $1;
-	} elsif ($normalized =~ /^set\s+lockmap\s+(.+)$/) {
-		$_action_type = q{set_lockmap};
-		$_action_target = $1;
-	} elsif ($normalized eq q{sit}) {
-		$_action_type = q{sit};
-		$_action_target = q{sit};
-	}
-	if ($_action_type ne q{}) {
-		my $_now = _now_ms();
-		my $_last_same_type = $_committed_actions{"$_action_type:$_action_target"} || 0;
-		warning "[guard] type=$_action_type target=$_action_target last=$_last_same_type\n", 'aiSidecarBridge', 1;
-		# Block sit in ALL cases (bot should never sit - standing is always better)
-		if ($_action_type eq 'sit') {
-		    my $_sit_map = lc($char->{map} || '');
-		    $_sit_map =~ s/\.gat$//;
-		    my $_sit_hp = _safe_hp_ratio();
-		    # Block sit in town unconditionally
-		    my @_blocked_maps = qw(prontera izlude morocc payon geffen aldebaran comodo);
-		    if (grep { $_sit_map eq $_ } @_blocked_maps) {
-		        warning "[sit_guard] blocking sit in town '$_sit_map'\n", 'aiSidecarBridge', 1;
-		        return ('', 'sit_blocked_town');
-		    }
-		    # Block sit on hunting maps unless HP is critically low (< 1%)
-		    if ($_sit_map =~ /^[a-z]+_fild/ && $_sit_hp >= 0.01) {
-		        warning "[sit_guard] blocking sit on hunting map '$_sit_map' (HP=$_sit_hp)\n", 'aiSidecarBridge', 1;
-		        return ('', 'sit_blocked_hunting');
-		    }
-		}
-		if ($_last_same_type > 0 && ($_now - $_last_same_type) < $COMMITTED_ACTION_COOLDOWN_MS) {
-			warning "[committed_action] blocking '$command' - same action type within cooldown\n", 'aiSidecarBridge', 1;
-			return (q{}, q{committed_action_blocked});
-		}
-		$_committed_actions{"$_action_type:$_action_target"} = $_now;
-		# Clean old entries (use keys() not each() to avoid iterator issues)
-		for my $_ckey (keys %_committed_actions) {
-			delete $_committed_actions{$_ckey} if $_now - $_committed_actions{$_ckey} > $COMMITTED_ACTION_COOLDOWN_MS * 2;
-		}
+	# ── SIT GUARD: block sit commands (bot should never sit) ──
+	if ($normalized eq q{sit}) {
+	    my $_sit_hp = _safe_hp_ratio();
+	    my $_sit_map = lc($char->{map} || '');
+	    $_sit_map =~ s/\.gat$//;
+	    # Block sit in town unconditionally
+	    my @_sit_blocked_maps = qw(prontera izlude morocc payon geffen aldebaran comodo);
+	    if (grep { $_sit_map eq $_ } @_sit_blocked_maps) {
+	        warning "[sit_guard] blocking sit in town '$_sit_map'\n", 'aiSidecarBridge', 1;
+	        return ('', 'sit_blocked_town');
+	    }
+	    # Block sit on hunting maps unless HP is critically low (< 1%)
+	    if ($_sit_map =~ /^[a-z]+_fild/ && $_sit_hp >= 0.01) {
+	        warning "[sit_guard] blocking sit on hunting map '$_sit_map' (HP=$_sit_hp)\n", 'aiSidecarBridge', 1;
+	        return ('', 'sit_blocked_hunting');
+	    }
+		return ($trimmed, 'sit_allowed');
 	}
 	# NPC DIALOG AUTO-COMPLETION}
 
