@@ -513,6 +513,7 @@ class HeuristicService:
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
+        _now_t = __import__("time").time()
         state = self._get_state(signals, bot_id)
         prev_state = self._bot_state.get(bot_id, "UNKNOWN")
 

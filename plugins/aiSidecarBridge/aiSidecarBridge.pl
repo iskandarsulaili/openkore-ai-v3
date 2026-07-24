@@ -2965,23 +2965,10 @@ sub _rewrite_runtime_command {
 			return ($command, 'coordinate_move_raw');
 		}
 		# If on hunting map and target is a town, check if return is allowed
-		# Allow return if: died recently (<60s ago) or hunted >30min
+		# Always allow return to town - the heuristic service handles economy timing
 		if ($_cur_map =~ /^[a-z]+_fild/ && $_target eq 'prontera') {
-		    my $_allow_return = 0;
-		    my $_death_time = $_last_reflex_fire_ms{'player_died'} || 0;
-		    my $_hunt_start = $_last_reflex_fire_ms{'hunting_start'} || _now_ms();
-		    if ($_death_time > 0 && _now_ms() - $_death_time < 60000) {
-		        $_allow_return = 1;  # Died recently - allow return to town
-		    }
-		    if (_now_ms() - $_hunt_start > 1800000) {
-		        $_allow_return = 1;  # Hunted >30min - allow resupply
-		    }
-		    if ($_allow_return) {
-		        debug "[move_rewrite] on $_cur_map, allowing return to town (death/resupply)\n", 'aiSidecarBridge', 2;
-		        return ($command, 'coordinate_move_raw');
-		    }
-		    debug "[move_rewrite] on $_cur_map, blocking return to town - stay and hunt\n", 'aiSidecarBridge', 2;
-		    return ('', 'hunting_map_priority');
+		    debug "[move_rewrite] on $_cur_map, allowing return to town for economy\n", 'aiSidecarBridge', 2;
+		    return ($command, 'coordinate_move_raw');
 		}
 	}
 	# ── PARTY REWRITE: fix party create/join syntax ──
