@@ -2936,10 +2936,10 @@ sub _rewrite_runtime_command {
 		if ($_target eq '22 203') {
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
 			# Set a 15-second lock to prevent PDCA from interrupting the portal walk
+			# This blocks ALL subsequent commands until the bot has time to walk through portal
 			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 15000;
 			return ($command, 'coordinate_move_raw');
 		}
-
 
 		# If already on target map, ignore the move (already there)
 		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
@@ -2957,7 +2957,6 @@ sub _rewrite_runtime_command {
 			'prt_fild08' => 'move 22 203',
 			'prt_fild07' => 'move 22 203',
 			'prt_fild06' => 'move 22 203',
-			'prt_fild09' => 'move 22 203',
 		);
 		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
 			my $_new_cmd = $_portal_coords{$_target};
@@ -3346,8 +3345,8 @@ sub _rewrite_runtime_command {
 		return ('', 'move_already_auto');
 	}
 
-	# Handle 'use <item>' -> use the item by name
-	# OpenKore supports: 'use <item_name>' for consumables
+	# Handle 'use <item>' -> 'is <item>' with 30s cooldown
+	# Extended to 5-minute cooldown when bot has 0 potions total
 	if ($normalized =~ /^use\s+(.+)$/) {
 		my $item_name = $1;
 		my $now_ms = _now_ms();
@@ -3364,32 +3363,26 @@ sub _rewrite_runtime_command {
 		}
 		my $cooldown_ms = ($total_potions == 0) ? 300000 : 30000;
 		if ($last_attempt > 0 && ($now_ms - $last_attempt) < $cooldown_ms) {
-			debug "[use] '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 2;
+			warning "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_cooldown_$item_name");
 		}
 		my $found = 0;
-		my $found_index = -1;
 		if ($char && $char->{inventory}) {
-			for my $i (0..$#{$char->{inventory}}) {
-				my $item = $char->{inventory}[$i];
+			for my $item (@{$char->{inventory}}) {
 				if ($item && lc($item->{name}) eq lc($item_name)) {
 					$found = 1;
-					$found_index = $i;
 					last;
 				}
 			}
 		}
 		if (!$found) {
 			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
-			warning "[use] '$item_name' not in inventory\n", 'aiSidecarBridge', 1;
+			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
-		# Use the item by inventory index for reliability
-		my $ok = eval { Commands::run("use $found_index"); 1 };
-		if (!$ok) {
-		    $ok = eval { Commands::run("is red_potion"); 1 };
-		}
+		my $ok = eval { Commands::run("is $item_name"); 1 };
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
+	}
 
 	# Handle sit/stand
 	if ($normalized eq 'sit') {
@@ -3529,13 +3522,11 @@ sub _rewrite_runtime_command {
 
 	# Handle 'stat_add' commands
 	if ($normalized =~ /^stat_add\s+(.+)$/) {
-		# Send the command regardless - let OpenKore handle validation
-		# The bot might have stat points that aren't reflected in $char->{status_points}
+		# Bridge-level guard: block stat_add if bot has 0 stat points
 		my $_stat_pts = $char ? ($char->{status_points} || $char->{points} || $char->{stat_pts} || 0) : 0;
 		if ($_stat_pts <= 0) {
-		    # Still try - OpenKore will reject if truly no points
-		    warning "[stat_guard] passing stat_add (status_points=$_stat_pts) - let OpenKore validate\n", 'aiSidecarBridge', 1;
-		    return ($normalized, 'stat_add_passthrough');
+		    warning "[stat_guard] blocking stat_add - no stat points available\n", 'aiSidecarBridge', 1;
+		    return ('', 'stat_add_blocked_no_points');
 		}
 		$rewrite_kind = 'stat_add_rewritten';
 		return ($normalized, $rewrite_kind);
@@ -3624,7 +3615,6 @@ sub _rewrite_runtime_command {
 	return ($trimmed, 'passthrough');
 
 }
-
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
