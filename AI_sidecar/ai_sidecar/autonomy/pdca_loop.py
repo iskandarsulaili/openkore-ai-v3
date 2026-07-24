@@ -218,8 +218,18 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 latest = None
                 if hasattr(snapshots, 'get') and bot_id:
                     latest = snapshots.get(bot_id)
-                if latest is None:
-                    latest = snapshots.latest()
+                    # Verify the snapshot bot_id matches (prevent cross-bot contamination)
+                    if latest is not None:
+                        if isinstance(latest, dict):
+                            _snap_bot = latest.get('bot_id', '')
+                            if _snap_bot and _snap_bot != bot_id:
+                                latest = None
+                        elif hasattr(latest, 'bot_id'):
+                            _snap_bot = getattr(latest, 'bot_id', '')
+                            if _snap_bot and _snap_bot != bot_id:
+                                latest = None
+                # Don't fall back to latest() - that uses another bot's data
+                # If no per-bot snapshot, skip this cycle (try again next cycle)
                 if latest is not None:
                     if isinstance(latest, dict):
                         v = latest.get("vitals") or {}
