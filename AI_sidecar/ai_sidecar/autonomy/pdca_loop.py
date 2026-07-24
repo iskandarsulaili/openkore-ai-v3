@@ -214,8 +214,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         snapshots = getattr(runtime_state, "snapshot_cache", None)
         if snapshots is not None:
             try:
-                # Read snapshot data regardless of whether we have candidate bot_ids
-                latest = snapshots.latest()
+                # Read snapshot data for this specific bot_id
+                latest = None
+                if hasattr(snapshots, 'get') and bot_id:
+                    latest = snapshots.get(bot_id)
+                if latest is None:
+                    latest = snapshots.latest()
                 if latest is not None:
                     if isinstance(latest, dict):
                         v = latest.get("vitals") or {}
