@@ -410,6 +410,7 @@ class HeuristicService:
         self._last_progress: dict[str, dict] = {}
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
+        self._bot_deaths: dict[str, int] = {}
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
 
