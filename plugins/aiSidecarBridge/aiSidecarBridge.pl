@@ -3390,7 +3390,6 @@ sub _rewrite_runtime_command {
 		    $ok = eval { Commands::run("is red_potion"); 1 };
 		}
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
-	}
 
 	# Handle sit/stand
 	if ($normalized eq 'sit') {
@@ -3620,6 +3619,7 @@ sub _rewrite_runtime_command {
 	if ($normalized =~ /^talk\s+(cont|resp|no|\d+)/) {
 		return ($trimmed, 'talk_ok');
 	}
+}
 
 	# Default: pass through
 	return ($trimmed, 'passthrough');
