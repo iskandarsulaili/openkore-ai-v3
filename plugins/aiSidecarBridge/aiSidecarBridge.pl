@@ -3008,7 +3008,8 @@ sub _rewrite_runtime_command {
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	# PORTAL WALK LOCK: if bot is walking to portal, block non-essential commands for 10s
-	if ($_last_reflex_fire_ms{'portal_walk_lock'} > 0 && _now_ms() < $_last_reflex_fire_ms{'portal_walk_lock'}) {
+	my $_portal_lock = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
+	if ($_portal_lock > 0 && _now_ms() < $_portal_lock) {
 		if ($normalized ne 'stand' && $normalized ne 'ai auto') {
 			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
 			return ('', 'portal_walk_lock');
