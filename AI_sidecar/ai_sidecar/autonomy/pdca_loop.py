@@ -855,7 +855,10 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             return 0
         
         try:
-            latest = snapshots.latest()
+            if bot_id and hasattr(snapshots, 'get'):
+                latest = snapshots.get(bot_id)
+            else:
+                latest = snapshots.latest()
         except Exception:
             return 0
         if latest is None:
@@ -873,8 +876,8 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
-        # Only act when near full (>80% weight)
-        if weight_ratio < 0.70:
+        # Only act when near full (>95% weight) - prevents false positives from stale data
+        if weight_ratio < 0.95:
             return 0
         
         # Resolve bot_id
