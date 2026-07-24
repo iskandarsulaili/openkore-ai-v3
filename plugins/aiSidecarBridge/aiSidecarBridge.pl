@@ -2932,6 +2932,11 @@ sub _rewrite_runtime_command {
 		my $_target = lc($1);
 		my $_cur_map = $field ? lc($field->name()) : '';
 		$_cur_map =~ s/\.gat$//;
+		# Direct portal coordinate - always pass through
+		if ($_target eq '22 203') {
+			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
+			return ($command, 'coordinate_move_raw');
+		}
 		# If already on target map, ignore the move (already there)
 		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
 			debug "[move_rewrite] already on $_target, ignoring\n", 'aiSidecarBridge', 2;
@@ -3177,6 +3182,15 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
+	# Handle 'set lockMap' - set lockMap to hunting map
+	if ($normalized =~ /^set\s+lockMap\s+(.+)$/i) {
+	    my $_lm_target = $1;
+	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
+	    $::config{'lockMap'} = $_lm_target;
+	    $::config{'attackAuto'} = 3;
+	    $::config{'attackAuto_inLockOnly'} = 0;
+	    return ('', 'lockmap_set');
+	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
 	if ($normalized =~ /^set\s+([a-z_][a-z0-9_]*)\s+(.+)$/) {
 		my $set_key = $1;
@@ -3243,8 +3257,10 @@ sub _rewrite_runtime_command {
 	# Handle map-name moves: "move <map>" -> set lockMap + ai auto
 	if ($normalized =~ /^move\s+(.+)$/) {
 		my $target = $1;
-		# Clear committed action guard for this move target
-		delete $_committed_actions{"move:$target"};
+		# Direct portal coordinates - pass through immediately
+		if ($target eq '22 203') {
+		    return ($trimmed, 'coordinate_move_raw');
+		}
 		# PRO RO GUARD: if Pro RO module just set a hunting map lock, block PDCA's town moves
 		my $_pro_ro_guard = 0;
 		if ($_pro_ro_last_lock_set ne '' && _now_ms() - $_pro_ro_last_lock_ms < 120000) {
@@ -3444,10 +3460,10 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'talknpc' commands
+	# Handle 'talknpc' commands (including atomic with embedded dialog)
 	if ($normalized =~ /^talknpc\s+(.+)$/) {
 		$rewrite_kind = 'talknpc_rewritten';
-		return ($normalized, $rewrite_kind);
+		return ($trimmed, $rewrite_kind);
 	}
 
 	# Handle 'talk' commands

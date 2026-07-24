@@ -419,7 +419,9 @@ class HeuristicService:
         map_name = map_name.replace(".gat", "")
         map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
-        weight = signals.get("weight_ratio", 0) or 0
+        # Compute weight from inventory items count (weight_ratio signal is unreliable)
+        _inv_count = len(signals.get("inventory_items", []) or [])
+        weight = _inv_count * 0.01  # Each item ~1% weight
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = signals.get("job_name", "novice").lower()
@@ -440,6 +442,16 @@ class HeuristicService:
                                "louyang", "ayothaya")
 
         if is_town:
+            # STUCK DETECTION: if in town > 60s with 0 kills, force hunting
+            _town_start = self._town_entry_time.get(bot_id, 0)
+            _now_t = __import__("time").time()
+            if _town_start == 0:
+                self._town_entry_time[bot_id] = _now_t
+            _town_duration = _now_t - _town_start
+            _kills_this_town = signals.get("kills_this_session", 0) or 0
+            if _town_duration > 60 and _kills_this_town == 0:
+                # Been in town too long with no kills - force hunting
+                return "TOWN_STUCK"
             # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
             if weight > 0.05:  # 5% weight threshold
                 return "SELL"
@@ -538,17 +550,40 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
+        # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
+        if state == "TOWN_STUCK":
+            # Force move to hunting map - bypass all economy logic
+            actions.append(HeuristicAction(
+                kind="command", command="move 22 203",
+                confidence=0.99, domain="emergency",
+                reason="Stuck in town > 60s with 0 kills - force portal to hunting map",
+            ))
+            # Also set lockMap to hunting map so OpenKore auto-returns
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap prt_fild05",
+                confidence=0.95, domain="emergency",
+                reason="Set lockMap to hunting map to prevent auto-return to town",
+            ))
+            total_confidence = 0.99
+            top_domain = "emergency"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
         # ── STATE: SELL ──
         if state == "SELL":
             # Cooldown: only sell every 30s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
             if _sell_now - _last_sell < 30:
-                # Skip sell, go straight to hunting
+                # Skip sell, go straight to hunting via portal
                 actions.append(HeuristicAction(
-                    kind="command", command="move prt_fild05",
-                    confidence=0.85, domain="hunting",
-                    reason="Sell on cooldown - go hunting instead",
+                    kind="command", command="move 22 203",
+                    confidence=0.95, domain="hunting",
+                    reason="Sell on cooldown - go hunting via portal",
                 ))
                 total_confidence = 0.85
                 top_domain = "hunting"
@@ -575,6 +610,11 @@ class HeuristicService:
                 kind="command", command="talknpc 147 175 c r0 n",
                 confidence=0.90, domain="economy",
                 reason="Open Special Dealer and sell items (atomic dialog)",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talk cont",
+                confidence=0.80, domain="economy",
+                reason="Complete sell transaction",
             ))
             total_confidence = 0.90
             top_domain = "economy"

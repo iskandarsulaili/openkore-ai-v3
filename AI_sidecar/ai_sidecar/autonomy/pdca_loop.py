@@ -234,8 +234,15 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             latest = None
                         elif _snap_bot:
                             _log.info(f"snapshot_found: bot_id={bot_id} snap_bot={_snap_bot} map={_snap_map}")
-                # Don't fall back to latest() - that uses another bot's data
-                # If no per-bot snapshot, skip this cycle (try again next cycle)
+                # If no per-bot snapshot, use cached last known state
+                if latest is None:
+                    _cached = self._last_snapshot.get(bot_id)
+                    if _cached is not None:
+                        _log.info(f"snapshot_cached: bot_id={bot_id} using cached snapshot")
+                        latest = _cached
+                    else:
+                        _log.warning(f"snapshot_missing: bot_id={bot_id} no snapshot available - skipping")
+                        continue
                 if latest is not None:
                     if isinstance(latest, dict):
                         v = latest.get("vitals") or {}
