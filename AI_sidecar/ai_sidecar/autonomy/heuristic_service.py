@@ -937,86 +937,44 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
-            # Check if it's time to return to town (every 10 minutes)
-            _hunt_start = self._state_since.get(bot_id, 0)
-            _hunt_duration = __import__("time").time() - _hunt_start
-            # Only return to town after 30 minutes max (or when stuck for 5 min)
-            if _hunt_duration > 1800:  # 30 minutes max
+            # On hunting map: just enable auto-attack, let OpenKore hunt
+            _hunt_towns = ("prontera", "izlude", "morocc", "payon", "geffen",
+                          "aldebaran", "comodo", "umbala", "niflheim")
+            if map_name not in _hunt_towns:
                 actions.append(HeuristicAction(
-                    kind="command", command="move prontera",
-                    confidence=0.95, domain="exploration",
-                    reason=f"Hunted for {_hunt_duration:.0f}s - return to town to sell/buy",
+                    kind="command", command="ai auto",
+                    confidence=0.95, domain="hunting",
+                    reason="On hunting map - enable auto-attack",
                 ))
-                self._state_since[bot_id] = __import__("time").time()  # Reset timer
                 total_confidence = 0.95
-                top_domain = "exploration"
+                top_domain = "hunting"
                 assessment = HeuristicAssessment(
                     horizon=horizon, actions=actions, confidence=total_confidence,
                     actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
                 )
                 self._last_assessment[bot_id] = assessment
                 return assessment
-            
-            # Ensure AI is in auto mode and standing
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.95, domain="combat",
-                reason="Ensure AI is in auto mode for hunting",
-            ))
-            # If hasn't moved in 30s, force move to find monsters (faster exploration)
-            _last_hunt_move = self._last_hunt_move.get(bot_id, 0)
-            _hunt_now = __import__("time").time()
-            _hunt_towns = ("prontera", "izlude", "morocc", "payon", "geffen",
-                          "aldebaran", "comodo", "umbala", "niflheim")
-            if _hunt_now - _last_hunt_move > 60 and map_name not in _hunt_towns:
-                self._last_hunt_move[bot_id] = _hunt_now
-                # Smarter exploration: move toward center of map first, then spiral
-                _map_size = 300  # Typical hunting map size
-                # Use safer coordinates - center of map where monsters spawn
-                _move_x = 150 + int(__import__("random").random() * 100)
-                _move_y = 150 + int(__import__("random").random() * 100)
+            # In town: sell items then return to hunting map
+            _has_items_to_sell = weight > 0.05
+            if _has_items_to_sell:
                 actions.append(HeuristicAction(
-                    kind="command", command=f"move {_move_x} {_move_y}",
-                    confidence=0.70, domain="exploration",
-                    reason=f"Explore to ({_move_x},{_move_y}) - find monsters",
+                    kind="command", command="talknpc 147 175 c r0 n",
+                    confidence=0.99, domain="economy",
+                    reason=f"Sell items (weight={weight:.2f})",
                 ))
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.95, domain="combat",
-                reason="Ensure AI is in auto mode for hunting",
+                kind="command", command="move 22 203",
+                confidence=0.95, domain="hunting",
+                reason="Return to hunting map",
             ))
-            # If stuck, suggest moving to a different map
-            if is_stuck:
-                target_map = self._adaptive.get_best_map(bot_id, base_level)
-                if not target_map:
-                    target_map = "prt_fild08" if base_level < 20 else "pay_fild01"
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move {target_map}",
-                    confidence=0.50, domain="exploration",
-                    reason=f"Stuck on {map_name} for {state_duration:.0f}s - try {target_map}",
-                ))
-            total_confidence = 0.90
-            top_domain = "combat"
+            total_confidence = 0.95
+            top_domain = "hunting"
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=actions, confidence=total_confidence,
                 actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
             )
             self._last_assessment[bot_id] = assessment
             return assessment
-
-        # ── FALLBACK ──
-        actions.append(HeuristicAction(
-            kind="command", command="ai auto",
-            confidence=0.50, domain="survival",
-            reason=f"Unknown state '{state}' - fallback to auto",
-        ))
-        total_confidence = 0.50
-        top_domain = "survival"
-        assessment = HeuristicAssessment(
-            horizon=horizon, actions=actions, confidence=total_confidence,
-            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-        )
-        self._last_assessment[bot_id] = assessment
         return assessment
 
     def confidence_for(self, horizon: str, signals: dict = None, bot_id: str = None) -> float:
