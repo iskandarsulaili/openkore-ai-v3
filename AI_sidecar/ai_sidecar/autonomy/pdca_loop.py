@@ -218,16 +218,22 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 latest = None
                 if hasattr(snapshots, 'get') and bot_id:
                     latest = snapshots.get(bot_id)
-                    # Verify the snapshot bot_id matches (prevent cross-bot contamination)
+                    # Debug: log what we found
                     if latest is not None:
+                        _snap_map = ''
+                        _snap_bot = ''
                         if isinstance(latest, dict):
                             _snap_bot = latest.get('bot_id', '')
-                            if _snap_bot and _snap_bot != bot_id:
-                                latest = None
+                            _pos = latest.get('position') or {}
+                            _snap_map = str(_pos.get('map', ''))
                         elif hasattr(latest, 'bot_id'):
                             _snap_bot = getattr(latest, 'bot_id', '')
-                            if _snap_bot and _snap_bot != bot_id:
-                                latest = None
+                        # Verify the snapshot bot_id matches
+                        if _snap_bot and _snap_bot != bot_id:
+                            _log.warning(f"snapshot_contamination: bot_id={bot_id} snap_bot={_snap_bot} map={_snap_map} - DISCARDED")
+                            latest = None
+                        elif _snap_bot:
+                            _log.info(f"snapshot_found: bot_id={bot_id} snap_bot={_snap_bot} map={_snap_map}")
                 # Don't fall back to latest() - that uses another bot's data
                 # If no per-bot snapshot, skip this cycle (try again next cycle)
                 if latest is not None:
