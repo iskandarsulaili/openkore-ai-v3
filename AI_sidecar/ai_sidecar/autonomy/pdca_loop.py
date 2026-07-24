@@ -199,10 +199,11 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 except Exception:
                     pass
         # Skip default/unknown bot_ids - they cause TOWN_HUNT actions for wrong bots
-        if bot_id and (bot_id == "default" or bot_id == "unknown_master:unknown_user"):
+        if not bot_id or bot_id == "default" or bot_id == "unknown_master:unknown_user":
             return 0
         bot_id = bot_id or "default"
         
+        signals["bot_id"] = bot_id
         # Build signals from available state
         signals = {
             "hp_ratio": 1.0, "sp_ratio": 1.0,
@@ -273,7 +274,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["_last_exp"] = int(getattr(prog, "base_exp", 0) or 0)
             except Exception:
                 pass
-        assessment = hs.assess(signals)
+        assessment = hs.assess(signals, bot_id_override=bot_id)
         if not assessment.actions:
             _log.info("heuristic_no_actions horizon=%s signals=%s", horizon, str(signals)[:200])
             return 0
@@ -5798,7 +5799,7 @@ class PDCALoop:
                             _sigs["map_known"] = bool(latest_snapshot.get("map_known", False))
                         _sigs["bot_id"] = decision_meta.bot_id
                         _sigs["horizon"] = horizon.value
-                        _h_assessment = _hs.assess(_sigs)
+                        _h_assessment = _hs.assess(_sigs, bot_id_override=_bid)
                         _llm_goal = str(getattr(goal_state, "selected_goal", "") or "")
                         _llm_obj = str(getattr(getattr(goal_state, "selected_goal", None), "objective", "") or "")
                         _h_action = _h_assessment.actions[0].command if _h_assessment.actions else "none"
