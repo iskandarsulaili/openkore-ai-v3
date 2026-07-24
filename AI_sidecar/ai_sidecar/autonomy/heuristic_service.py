@@ -416,6 +416,8 @@ class HeuristicService:
         """Determine bot state from signals."""
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
+        map_name = map_name.replace(".gat", "")
+        map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
         weight = signals.get("weight_ratio", 0) or 0
         base_level = signals.get("base_level", 1) or 1
