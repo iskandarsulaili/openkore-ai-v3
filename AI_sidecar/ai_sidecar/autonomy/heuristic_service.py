@@ -441,7 +441,7 @@ class HeuristicService:
 
         if is_town:
             # Priority: SELL > WEAPON_BUY > BUY > JOB_CHANGE > STATS > SKILLS > PARTY > HUNT
-            if weight > 5:
+            if weight > 0.05:  # 5% weight threshold
                 return "SELL"
             # Check if bot has a weapon by checking attack power > 30 (bare hands = 19)
             _has_weapon = signals.get("attack_power", 0) or 0 > 30
