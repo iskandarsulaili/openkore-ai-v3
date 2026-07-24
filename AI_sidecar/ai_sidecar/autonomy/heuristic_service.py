@@ -410,6 +410,7 @@ class HeuristicService:
         self._last_progress: dict[str, dict] = {}
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
+        self._last_hunt_move: dict[str, float] = {}
 
     def _get_state(self, signals: dict) -> str:
         """Determine bot state from signals."""
@@ -550,9 +551,9 @@ class HeuristicService:
                 reason="Select sell option",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talk any",
+                kind="command", command="talk cont",
                 confidence=0.80, domain="economy",
-                reason="Complete sell dialog",
+                reason="Continue sell dialog",
             ))
             total_confidence = 0.90
             top_domain = "economy"
@@ -796,6 +797,20 @@ class HeuristicService:
                 confidence=0.95, domain="combat",
                 reason="Ensure AI is in auto mode for hunting",
             ))
+            # If hasn't moved in 60s, force move to find monsters
+            _last_hunt_move = self._last_hunt_move.get(bot_id, 0)
+            _hunt_now = __import__("time").time()
+            _hunt_towns = ("prontera", "izlude", "morocc", "payon", "geffen",
+                          "aldebaran", "comodo", "umbala", "niflheim")
+            if _hunt_now - _last_hunt_move > 60 and map_name not in _hunt_towns:
+                self._last_hunt_move[bot_id] = _hunt_now
+                _move_x = 100 + int(__import__("random").random() * 200)
+                _move_y = 100 + int(__import__("random").random() * 200)
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_move_x} {_move_y}",
+                    confidence=0.70, domain="exploration",
+                    reason=f"Haven't moved in 60s - explore to ({_move_x},{_move_y})",
+                ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="combat",

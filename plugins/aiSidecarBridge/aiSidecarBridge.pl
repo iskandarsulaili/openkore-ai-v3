@@ -401,6 +401,21 @@ sub on_mainLoop_post {
 
         # Force AI to AUTO mode every cycle — runs even when bridge is disabled
         if (AI::state() != 2) { AI::state(2); }
+        
+        # Keep lockMap set to hunting map if bot is on one
+        if ($char) {
+            my $_sm_map = lc($char->{map} || '');
+            $_sm_map =~ s/\.gat$//;
+            if ($_sm_map =~ /^[a-z]+_fild/ && (!defined $::config{lockMap} || $::config{lockMap} ne $_sm_map)) {
+                $::config{lockMap} = $_sm_map;
+            }
+            # Ensure attack config on hunting maps
+            if ($_sm_map =~ /^[a-z]+_fild/) {
+                $::config{attackAuto} = 2;
+                $::config{attackAuto_inLockOnly} = 0;
+                $::config{attackDistanceAuto} = 0;
+            }
+        }
         }
 }
 
@@ -3022,11 +3037,16 @@ sub _rewrite_runtime_command {
 	    return ('', 'macro_blocked_broken');
 	}
 	
-	# PARTY JOIN GUARD: block ALL party join commands from sidecar
-	# Config settings (partyAutoCreate/partyAutoJoinCode) handle party formation
+	# PARTY JOIN: allow party join from sidecar (config auto-join may not work)
+	# Allow party join 1 (accept invite) - this is needed when config auto-join fails
+	if ($normalized =~ /^party\s+join\s+1$/) {
+	    debug "[party_join] allowing party join 1 (accept invite)\n", 'aiSidecarBridge', 1;
+	    return ($trimmed, 'party_join_allowed');
+	}
+	# Block other party join commands (syntax errors)
 	if ($normalized =~ /^party\s+join\s+(.+)$/) {
-	    debug "[party_guard] blocking party join (config handles it)\n", 'aiSidecarBridge', 1;
-	    return ('', 'party_join_blocked');
+	    debug "[party_guard] blocking party join - use 'party join 1' to accept invites\n", 'aiSidecarBridge', 1;
+	    return ('', 'party_join_blocked_syntax');
 	}
 
 

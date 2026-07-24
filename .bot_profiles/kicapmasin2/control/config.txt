@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword prahatwo
+adminPassword grofraro
 callSign
 commandPrefix ;
 callSignGM 0
@@ -186,8 +186,8 @@ dcOnServerClose 0
 dcOnJobLevel
 dcOnLevel
 
-follow 1
-followTarget kicapmasin
+follow 0
+## followTarget kicapmasin
 followEmotion 1
 followEmotion_distance 4
 followFaceDirection 0
