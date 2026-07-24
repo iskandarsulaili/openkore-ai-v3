@@ -2965,14 +2965,6 @@ sub _rewrite_runtime_command {
 		# If in Prontera and target is a hunting map, walk to the Prontera-side portal
 		my %_portal_coords = (
 			'prt_fild05' => 'move 22 203',  # Portal in Prontera to prt_fild05
-			'prt_fild04' => 'move 22 203',
-			'prt_fild03' => 'move 22 203',
-			'prt_fild02' => 'move 22 203',
-			'prt_fild01' => 'move 22 203',
-			'prt_fild00' => 'move 22 203',
-			'prt_fild08' => 'move 22 203',
-			'prt_fild07' => 'move 22 203',
-			'prt_fild06' => 'move 22 203',
 		);
 		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
 			my $_new_cmd = $_portal_coords{$_target};
@@ -3024,12 +3016,13 @@ sub _rewrite_runtime_command {
 		# Known hunting maps from Prontera
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
-	# PORTAL WALK LOCK: if bot is walking to portal, block ALL commands for 15s
+	# PORTAL WALK LOCK: if bot is walking to portal, only block move commands
 	$_last_reflex_fire_ms{'portal_walk_lock'} = 0 unless exists $_last_reflex_fire_ms{'portal_walk_lock'};
 	my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
 	if ($_pl_check > 0 && _now_ms() < $_pl_check) {
-		if ($normalized ne 'move 22 203' && $normalized ne 'stand' && $normalized ne 'ai auto') {
-			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
+		# Only block move commands - let ai auto/stand pass through
+		if ($normalized =~ /^move\s+/) {
+			debug "[portal_lock] blocking move $command - portal walk in progress\n", 'aiSidecarBridge', 2;
 			return ('', 'portal_walk_lock');
 		}
 	}
