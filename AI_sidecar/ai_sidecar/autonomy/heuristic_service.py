@@ -553,17 +553,11 @@ class HeuristicService:
 
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
-            # Force move to hunting map - bypass all economy logic
+            # Force move to hunting map via portal - no lockMap change (interferes with routing)
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
                 reason="Stuck in town > 60s with 0 kills - force portal to hunting map",
-            ))
-            # Also set lockMap to hunting map so OpenKore auto-returns
-            actions.append(HeuristicAction(
-                kind="command", command="set lockMap prt_fild05",
-                confidence=0.95, domain="emergency",
-                reason="Set lockMap to hunting map to prevent auto-return to town",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
@@ -872,16 +866,8 @@ class HeuristicService:
             # Check if it's time to return to town (every 10 minutes)
             _hunt_start = self._state_since.get(bot_id, 0)
             _hunt_duration = __import__("time").time() - _hunt_start
-            # Check if weight is high or any items to sell - return to town sooner
-            _to_sell = weight > 0.3 or zeny == 0  # Sell if >30% weight or no zeny
-            if _to_sell and _hunt_duration > 120:  # At least 2 min hunt
-                actions.append(HeuristicAction(
-                    kind="command", command="move prontera",
-                    confidence=0.95, domain="exploration",
-                    reason=f"Items to sell or need zeny - return to town (hunted {_hunt_duration:.0f}s)",
-                ))
-                self._state_since[bot_id] = __import__("time").time()  # Reset timer
-            elif _hunt_duration > 1800:  # 30 minutes max
+            # Only return to town after 30 minutes max (or when stuck for 5 min)
+            if _hunt_duration > 1800:  # 30 minutes max
                 actions.append(HeuristicAction(
                     kind="command", command="move prontera",
                     confidence=0.95, domain="exploration",
@@ -908,7 +894,7 @@ class HeuristicService:
             _hunt_now = __import__("time").time()
             _hunt_towns = ("prontera", "izlude", "morocc", "payon", "geffen",
                           "aldebaran", "comodo", "umbala", "niflheim")
-            if _hunt_now - _last_hunt_move > 30 and map_name not in _hunt_towns:
+            if _hunt_now - _last_hunt_move > 60 and map_name not in _hunt_towns:
                 self._last_hunt_move[bot_id] = _hunt_now
                 # Smarter exploration: move toward center of map first, then spiral
                 _map_size = 300  # Typical hunting map size
