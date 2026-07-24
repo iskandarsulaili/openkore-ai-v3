@@ -2939,14 +2939,7 @@ sub _rewrite_runtime_command {
 			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 15000;
 			return ($command, 'coordinate_move_raw');
 		}
-		# PORTAL WALK LOCK: if bot is walking to portal, block ALL commands for 15s
-		my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
-		if ($_pl_check > 0 && _now_ms() < $_pl_check) {
-			if ($normalized ne 'move 22 203' && $normalized ne 'stand' && $normalized ne 'ai auto') {
-				debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
-				return ('', 'portal_walk_lock');
-			}
-		}
+
 
 		# If already on target map, ignore the move (already there)
 		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
@@ -3016,6 +3009,14 @@ sub _rewrite_runtime_command {
 		# Known hunting maps from Prontera
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
+	# PORTAL WALK LOCK: if bot is walking to portal, block ALL commands for 15s
+	my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
+	if ($_pl_check > 0 && _now_ms() < $_pl_check) {
+		if ($normalized ne 'move 22 203' && $normalized ne 'stand' && $normalized ne 'ai auto') {
+			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
+			return ('', 'portal_walk_lock');
+		}
+	}
 
 	$metadata = {} if ref($metadata) ne 'HASH';
 
