@@ -2964,10 +2964,9 @@ sub _rewrite_runtime_command {
 			$command = $_new_cmd;
 			return ($command, 'coordinate_move_raw');
 		}
-		# If on hunting map and target is a town, check if return is allowed
 		# Always allow return to town - the heuristic service handles economy timing
 		if ($_cur_map =~ /^[a-z]+_fild/ && $_target eq 'prontera') {
-		    debug "[move_rewrite] on $_cur_map, allowing return to town for economy\n", 'aiSidecarBridge', 2;
+		    debug "[move_rewrite] on $_cur_map, allowing return to town\n", 'aiSidecarBridge', 2;
 		    return ($command, 'coordinate_move_raw');
 		}
 	}
