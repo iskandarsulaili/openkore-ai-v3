@@ -3046,7 +3046,7 @@ sub _rewrite_runtime_command {
 	}
 	
 	# MACRO GUARD: block broken macros that cause syntax errors
-	if ($normalized =~ /^macro\s+(reflex_mob_swarm|reflex_pvp_escape|reflex_relog)/) {
+	if ($normalized =~ /^macro\s+(reflex_mob_swarm|reflex_pvp_escape|reflex_relog|reflex_survival_escape)/) {
 	    debug "[macro_guard] blocking broken macro: $1\n", 'aiSidecarBridge', 1;
 	    return ('', 'macro_blocked_broken');
 	}
@@ -3346,8 +3346,8 @@ sub _rewrite_runtime_command {
 		return ('', 'move_already_auto');
 	}
 
-	# Handle 'use <item>' -> 'is <item>' with 30s cooldown
-	# Extended to 5-minute cooldown when bot has 0 potions total
+	# Handle 'use <item>' -> use the item by name
+	# OpenKore supports: 'use <item_name>' for consumables
 	if ($normalized =~ /^use\s+(.+)$/) {
 		my $item_name = $1;
 		my $now_ms = _now_ms();
@@ -3364,24 +3364,31 @@ sub _rewrite_runtime_command {
 		}
 		my $cooldown_ms = ($total_potions == 0) ? 300000 : 30000;
 		if ($last_attempt > 0 && ($now_ms - $last_attempt) < $cooldown_ms) {
-			warning "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
+			debug "[use] '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 2;
 			return ('', "use_item_cooldown_$item_name");
 		}
 		my $found = 0;
+		my $found_index = -1;
 		if ($char && $char->{inventory}) {
-			for my $item (@{$char->{inventory}}) {
+			for my $i (0..$#{$char->{inventory}}) {
+				my $item = $char->{inventory}[$i];
 				if ($item && lc($item->{name}) eq lc($item_name)) {
 					$found = 1;
+					$found_index = $i;
 					last;
 				}
 			}
 		}
 		if (!$found) {
 			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
-			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
+			warning "[use] '$item_name' not in inventory\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
-		my $ok = eval { Commands::run("is $item_name"); 1 };
+		# Use the item by inventory index for reliability
+		my $ok = eval { Commands::run("use $found_index"); 1 };
+		if (!$ok) {
+		    $ok = eval { Commands::run("is red_potion"); 1 };
+		}
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
 	}
 
@@ -3617,7 +3624,6 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
-}
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
