@@ -2935,7 +2935,16 @@ sub _rewrite_runtime_command {
 		# Direct portal coordinate - always pass through
 		if ($_target eq '22 203') {
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
+			# Set a 10-second lock to prevent PDCA from interrupting the portal walk
+			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 10000;
 			return ($command, 'coordinate_move_raw');
+		}
+		# If portal walk lock is active, block all non-essential commands
+		if ($_last_reflex_fire_ms{'portal_walk_lock'} > 0 && _now_ms() < $_last_reflex_fire_ms{'portal_walk_lock'}) {
+			if ($normalized ne 'stand' && $normalized ne 'ai auto') {
+				debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
+				return ('', 'portal_walk_lock');
+			}
 		}
 		# If already on target map, ignore the move (already there)
 		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
