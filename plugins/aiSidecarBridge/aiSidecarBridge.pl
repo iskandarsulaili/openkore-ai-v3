@@ -3010,6 +3010,7 @@ sub _rewrite_runtime_command {
 	my $trimmed = _trim(_scalarize($command), 256);
 	my $normalized = lc($trimmed || '');
 	# PORTAL WALK LOCK: if bot is walking to portal, block ALL commands for 15s
+	$_last_reflex_fire_ms{'portal_walk_lock'} = 0 unless exists $_last_reflex_fire_ms{'portal_walk_lock'};
 	my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
 	if ($_pl_check > 0 && _now_ms() < $_pl_check) {
 		if ($normalized ne 'move 22 203' && $normalized ne 'stand' && $normalized ne 'ai auto') {
