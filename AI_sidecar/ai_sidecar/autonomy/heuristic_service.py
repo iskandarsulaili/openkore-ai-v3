@@ -1083,19 +1083,16 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
-                # If HP < 30% and have items AND have killed something, return to sell
+                # If HP < 30% and have items AND have killed something, sit to regen
+                # Don't return to town from hunting map - let OpenKore's AI handle it
                 if _hp_ratio < 0.3 and _has_items and _total_kills > 0 and _hunt_duration > 15:
-                    _last_return = self._last_return_to_town.get(bot_id, 0)
-                    _now = __import__("time").time()
-                    if _now - _last_return > 60:  # cooldown: don't spam return
-                        self._last_return_to_town[bot_id] = _now
-                        actions.append(HeuristicAction(
-                            kind="command", command="move prontera",
-                            confidence=0.99, domain="economy",
-                            reason=f"HP={_hp_ratio:.0%} items>0 - return to sell+buy",
-                        ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="sit",
+                        confidence=0.99, domain="survival",
+                        reason=f"HP={_hp_ratio:.0%} items>0 - sit to regen on hunting map",
+                    ))
                     total_confidence = 0.99
-                    top_domain = "economy"
+                    top_domain = "survival"
                     assessment = HeuristicAssessment(
                         horizon=horizon, actions=actions, confidence=total_confidence,
                         actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
@@ -1132,15 +1129,16 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # If have items and been hunting > 120s, return to sell
+                # If have items and been hunting > 120s, keep hunting
+                # Don't return to town from hunting map - let sellAuto handle it
                 if _has_items and _total_kills > 0 and _hunt_duration > 120:
                     actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
-                        confidence=0.95, domain="economy",
-                        reason=f"Items>0 and hunted {_hunt_duration:.0f}s - return to sell",
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason=f"Items>0 and hunted {_hunt_duration:.0f}s - keep hunting, sell later",
                     ))
                     total_confidence = 0.95
-                    top_domain = "economy"
+                    top_domain = "hunting"
                     assessment = HeuristicAssessment(
                         horizon=horizon, actions=actions, confidence=total_confidence,
                         actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
