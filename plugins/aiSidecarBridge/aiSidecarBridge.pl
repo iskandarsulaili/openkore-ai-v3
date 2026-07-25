@@ -317,7 +317,7 @@ sub on_mainLoop_post {
 	}
 
         # Override attack distances (also disable auto-detection)
-        $::config{'attackDistance'} = 1;
+        $::config{'attackDistance'} = 2;
         $::config{'attackMaxDistance'} = 7;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
         # ── DISABLE SIT IN AI: prevent OpenKore's internal AI from sitting ──
@@ -4553,7 +4553,7 @@ sub _apply_bot_config {
 	# SKIP if sidecar has explicitly set these values via "set" command
 	my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
 	my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
-	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '2') unless $::config{'_sidecar_set_attackAuto'};
+	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '3') unless $::config{'_sidecar_set_attackAuto'};
 	$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1') unless $::config{'_sidecar_set_attackAuto_inLockOnly'};
 	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0') unless $::config{'_sidecar_set_attackAuto_followTarget'};
 	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
@@ -4561,7 +4561,7 @@ sub _apply_bot_config {
 	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7');
 	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
-	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'};
+	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '2') unless $::config{'_sidecar_set_attackDistance'};
 	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection (overrides our 7/12)
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
