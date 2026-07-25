@@ -634,6 +634,11 @@ class HeuristicService:
                 reason="Cold start - don't give up mid-fight",
             ))
             actions.append(HeuristicAction(
+                kind="command", command="set lockMap prt_fild05",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - set hunting map lock",
+            ))
+            actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
                 reason="Cold start - go to hunting map via portal",
@@ -669,9 +674,20 @@ class HeuristicService:
             # Don't generate buy here - let next cycle handle it after sell
             # (sellAuto handles the actual selling after talknpc opens dialog)
             # If no items and zeny < 50, return to hunt after 15s in town
-            if not _has_items and zeny < 50:
+            # Return to hunt if no zeny (regardless of starting gear)
+            if zeny < 50:
                 _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
                 if _town_time > 15:
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap prt_fild05",
+                        confidence=0.95, domain="hunting",
+                        reason="Set hunting map lock before returning",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap prt_fild05",
+                        confidence=0.95, domain="hunting",
+                        reason="Set hunting map lock before returning",
+                    ))
                     _portal = self._get_npc("portal_to_hunt", map_name)
                     if _portal:
                         _portal_cmd = f"move {_portal['x']} {_portal['y']}"
@@ -1018,6 +1034,7 @@ class HeuristicService:
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
+                _total_kills = signals.get("kills", 0) or 0
                 # JUST WARPED: if just arrived, sit to regen first
                 if _hunt_duration < 15:
                     if _hp_ratio < 0.5:
@@ -1049,8 +1066,8 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
-                # If HP < 30% and have items, return to town to sell + recover
-                if _hp_ratio < 0.3 and _has_items and _hunt_duration > 15:
+                # If HP < 30% and have items AND have killed something, return to sell
+                if _hp_ratio < 0.3 and _has_items and _total_kills > 0 and _hunt_duration > 15:
                     _last_return = self._last_return_to_town.get(bot_id, 0)
                     _now = __import__("time").time()
                     if _now - _last_return > 60:  # cooldown: don't spam return
@@ -1099,7 +1116,7 @@ class HeuristicService:
                     self._last_assessment[bot_id] = assessment
                     return assessment
                 # If have items and been hunting > 120s, return to sell
-                if _has_items and _hunt_duration > 120:
+                if _has_items and _total_kills > 0 and _hunt_duration > 120:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.95, domain="economy",

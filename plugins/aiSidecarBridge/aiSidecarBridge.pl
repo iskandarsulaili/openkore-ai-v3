@@ -3267,21 +3267,9 @@ sub _rewrite_runtime_command {
 			# RESUPPLY TIMER DISABLED: heuristic handles return-to-town logic
 			# The heuristic service decides when to return based on HP, items, zeny
 			# RESPAWN ECONOMY WINDOW DISABLED: heuristic handles economy on respawn
-			# STAY IN TOWN: if recently respawned, allow town move
-			if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
-			    # Only allow moves to TOWN, not to hunting maps
-			    my $_stay_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			    if ($_stay_target_is_town) {
-			        warning "[lockMap] stay in town active, allowing move to town '$target'\n", 'aiSidecarBridge', 1;
-			        return ($trimmed, 'coordinate_move_raw');
-			    }
-			    # If stay_in_town expired, allow hunting map
-			    if (_now_ms() > $_pro_ro_stay_in_town_ms) {
-			        warning "[lockMap] stay in town expired, allowing move to '$target'\n", 'aiSidecarBridge', 1;
-			        $_pro_ro_stay_in_town_ms = 0;
-			        return ($trimmed, 'coordinate_move_raw');
-			    }
-			}
+			# STAY IN TOWN DISABLED: heuristic handles all routing decisions
+			# The heuristic decides when to return to town and when to go back to hunt
+			# This guard was blocking "move 22 203" (portal to hunting map)
 
 		}
 		# Set lockMap to target only for hunting maps (not towns)
