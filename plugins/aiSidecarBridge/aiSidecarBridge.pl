@@ -3235,7 +3235,7 @@ sub _rewrite_runtime_command {
 		        return ('', 'stay_in_town_blocked');
 		    }
 		}
-		# HUNTING MAP STICKINESS: if setting lockMap to a TOWN while on a hunting map, skip
+		# HUNTING MAP STICKINESS: heuristic handles all routing decisions
 		if (lc($orig_key) eq 'lockmap') {
 			my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 			if ($_target_is_town) {
@@ -3243,35 +3243,12 @@ sub _rewrite_runtime_command {
 				$_actual_map = lc($_actual_map || '');
 				$_actual_map =~ s/\.gat$//;
 				if ($_actual_map =~ /^[a-z]+_fild/) {
-					# RESUPPLY TIMER: if on hunting map for 5min, allow town move
-					my $_resupply_ms = 300000;
-					my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
-					if (_now_ms() - $_hunting_start > $_resupply_ms) {
-					    warning "[resupply] set lockMap to town '$set_val' (hunted for 5min)\n", 'aiSidecarBridge', 1;
-					    $::config{lockMap} = $set_val;
-					    $_pro_ro_last_lock_set = $set_val;
-					    $_pro_ro_respawn_ms = _now_ms();
-					    $_hunting_start = _now_ms();
-					    @::AI::ai_seq = ();
-					    return ('', 'config_set_ok');
-					}
-
-					# Allow retreat when HP < 60%
-					my $_hp_ratio = _safe_hp_ratio();
-					if ($_hp_ratio >= 0.60) {
-						warning "[lockMap] on hunting map '$_actual_map', ignoring set lockMap to town '$set_val' (HP=$_hp_ratio)\n", 'aiSidecarBridge', 1;
-						$::config{"lockMap"} = $_actual_map;
-					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
-						$::config{"attackAuto_inLockOnly"} = 0;
-						# $::config{"attackAuto"} = 3;
-						$::config{"sitAuto_hp_lower"} = 0;
-						$::config{"sitAuto_hp_upper"} = 0;
-						Commands::run("stand");
-						if (!_ai_already_auto_mode()) {
-							Commands::run("ai auto");
-						}
-						return ('', 'hunting_map_priority');
-					}
+					# Allow town move - heuristic handles economy timing
+					$::config{lockMap} = $set_val;
+					$_pro_ro_last_lock_set = $set_val;
+					$_pro_ro_respawn_ms = _now_ms();
+					@::AI::ai_seq = ();
+					return ('', 'config_set_ok');
 				}
 			}
 		}
@@ -3297,44 +3274,15 @@ sub _rewrite_runtime_command {
 		# PRO RO GUARD: if Pro RO module just set a hunting map lock, block PDCA's town moves
 		my $_pro_ro_guard = 0;
 		if ($_pro_ro_last_lock_set ne '' && _now_ms() - $_pro_ro_last_lock_ms < 120000) {
-			my $_target_is_town2 = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			if ($_target_is_town2) {
-				warning "[pro_ro] blocking PDCA move to town '$target' - Pro RO set lock to $_pro_ro_last_lock_set\n", 'aiSidecarBridge', 1;
-				$_pro_ro_guard = 1;
-			}
+			# Pro RO guard disabled: heuristic handles all routing decisions
 		}
 		if ($target =~ /^\d+\s+\d+$/) {
 			return ($trimmed, 'coordinate_move_raw');
 		}
 		if ($target !~ /^(savepoint|random_walk_seek)$/) {
-			# RESUPPLY TIMER: if on hunting map for 5min, force return to town
-			my $_resupply_ms = 300000;  # 5 minutes
-			my $_hunting_start = $_pro_ro_last_lock_ms || _now_ms();
-			if (_now_ms() - $_hunting_start > $_resupply_ms) {
-			    warning "[resupply] forcing return to Prontera to sell/buy\n", 'aiSidecarBridge', 1;
-			    $::config{lockMap} = 'prontera';
-			    $_pro_ro_last_lock_set = 'prontera';
-			    $_pro_ro_respawn_ms = _now_ms();
-			    $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-			    $_hunting_start = _now_ms();
-			    $_pro_ro_guard = 0;
-			    @::AI::ai_seq = ();
-			    eval { Commands::run('move 156 196'); 1; };
-			    return ($trimmed, 'coordinate_move_raw');
-			}
-			# RESPAWN ECONOMY WINDOW: recently respawned, allow town move for 30s
-			if ($_pro_ro_respawn_ms > 0 && _now_ms() - $_pro_ro_respawn_ms < 30000) {
-			    # Only allow moves to TOWN, not to hunting maps
-			    my $_respawn_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-			    if ($_respawn_target_is_town) {
-			        warning "[lockMap] recently respawned - allowing town move for economy\n", 'aiSidecarBridge', 1;
-			        $::config{lockMap} = 'prontera';
-			        $_pro_ro_last_lock_set = 'prontera';
-			        $_pro_ro_stay_in_town_ms = _now_ms() + 30000;
-			        $_pro_ro_guard = 0;
-			        return ($trimmed, 'coordinate_move_raw');
-			    }
-			}
+			# RESUPPLY TIMER DISABLED: heuristic handles return-to-town logic
+			# The heuristic service decides when to return based on HP, items, zeny
+			# RESPAWN ECONOMY WINDOW DISABLED: heuristic handles economy on respawn
 			# STAY IN TOWN: if recently respawned, allow town move
 			if ($_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
 			    # Only allow moves to TOWN, not to hunting maps
