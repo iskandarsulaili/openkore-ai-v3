@@ -418,6 +418,7 @@ class HeuristicService:
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
+        self._cold_start_fired: dict[str, bool] = {}
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
 
@@ -434,12 +435,14 @@ class HeuristicService:
         _prev_state = self._bot_state.get(bot_id, "UNKNOWN")
         _total_kills = signals.get("total_kills", 0) or 0
         _total_zeny = signals.get("zeny", 0) or 0
-        # COLD_START: fresh spawn, go hunt immediately
-        if _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
+        # COLD_START: only on VERY FIRST spawn (never after death)
+        _cold_fired = self._cold_start_fired.get(bot_id, False)
+        if not _cold_fired and _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
+            self._cold_start_fired[bot_id] = True
             return "COLD_START"
         # DEATH: if bot just died and respawned in town, sell/buy before hunting
-        # DEATH: if bot just respawned in town with 0 kills 0 zeny, trigger economy
-        if is_town and _total_kills == 0 and _total_zeny == 0 and _prev_state != "UNKNOWN":
+        # DEATH: if bot respawned in town (not cold_start and has no kills this session)
+        if is_town and _cold_fired and _total_kills == 0 and _prev_state != "UNKNOWN":
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
@@ -1038,11 +1041,7 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"In town - sell items",
                 ))
-                actions.append(HeuristicAction(
-                    kind="command", command="sell all",
-                    confidence=0.99, domain="economy",
-                    reason=f"Sell all items after opening shop",
-                ))
+
             if zeny >= 50:
                 _potions_to_buy = min(10, zeny // 50)
                 if _potions_to_buy > 0:
