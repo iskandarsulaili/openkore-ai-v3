@@ -584,7 +584,7 @@ class HeuristicService:
                 reason="Cold start - stand up",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set attackDistance 2",
+                kind="command", command="set attackDistance 1",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set attack distance",
             ))
@@ -1029,7 +1029,7 @@ class HeuristicService:
                     return assessment
                 # Default: set optimal attack config and enable auto-attack
                 actions.append(HeuristicAction(
-                    kind="command", command="set attackDistance 2",
+                    kind="command", command="set attackDistance 1",
                     confidence=0.95, domain="hunting",
                     reason="Set optimal attack distance",
                 ))

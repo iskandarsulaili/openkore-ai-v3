@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword trihamih
+adminPassword theewaun
 callSign
 commandPrefix ;
 callSignGM 0
@@ -76,7 +76,7 @@ attackAuto_notWhile_sellAuto 1
 attackAuto_considerDamagedAggressive 0
 attackAuto_considerAggressiveIfCastOnCastSensor 0
 attackAllowStartStorageBuySell 1
-attackDistance 2
+attackDistance 1
 attackDistanceAuto 0
 attackMaxDistance 7
 attackMaxRouteTime 4
