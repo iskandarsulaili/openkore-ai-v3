@@ -321,23 +321,24 @@ sub on_mainLoop_post {
         
 
         
-        # ── FORCE STAND: counter any sit commands that slip through ──
+        # ── FORCE STAND: only when HP is high enough to fight ──
+        # Don't force stand when HP is low - bot needs to sit to regen
         if ($char && $char->{sitting}) {
-            warning "[force_stand] bot is sitting, forcing stand\n", 'aiSidecarBridge', 1;
-            # Clear AI sequence to prevent immediate re-sit
-            @::AI::ai_seq = ();
-            # Force AI to auto mode
-            # $::config{attackAuto} = 3;
-            $::config{attackAuto_inLockOnly} = 0;
-            # Disable sitAuto at the config level
-            $::config{sitAuto_hp} = 0;
-            $::config{sitAuto_hp_upper} = 0;
-            $::config{sitAuto_sp} = 0;
-            $::config{sitAuto_sp_upper} = 0;
-            $::config{sitAuto_idle} = 0;
-            eval { Commands::run('stand'); 1; };
-            eval { Commands::run('ai auto'); 1; };
-
+            my $_fs_hp = $char->{hp} || 0;
+            my $_fs_hp_max = $char->{hp_max} || 1;
+            my $_fs_hp_pct = $_fs_hp_max > 0 ? int($_fs_hp * 100 / $_fs_hp_max) : 0;
+            if ($_fs_hp_pct >= 50) {
+                warning "[force_stand] bot sitting with HP=$_fs_hp_pct%, forcing stand\n", 'aiSidecarBridge', 1;
+                @::AI::ai_seq = ();
+                $::config{attackAuto_inLockOnly} = 0;
+                $::config{sitAuto_hp} = 0;
+                $::config{sitAuto_hp_upper} = 0;
+                $::config{sitAuto_sp} = 0;
+                $::config{sitAuto_sp_upper} = 0;
+                $::config{sitAuto_idle} = 0;
+                eval { Commands::run('stand'); 1; };
+                eval { Commands::run('ai auto'); 1; };
+            }
         }
         
 
@@ -3261,6 +3262,12 @@ sub _rewrite_runtime_command {
 		if ($_current_map eq lc($target)) {
 		    return ($trimmed, 'coordinate_move_raw');
 		}
+		# HUNTING MAP GUARD: if bot is on a hunting map, block "move prontera"
+		# Heuristic handles all return-to-town logic - other modules should not override
+		if ($_current_map =~ /^[a-z]+_fild/ && lc($target) eq 'prontera') {
+		    warning "[hunting_guard] blocking 'move prontera' - bot is on $_current_map, heuristic handles routing\n", 'aiSidecarBridge', 1;
+		    return ('ai auto', 'hunting_guard_blocked');
+		}
 		# Set lockMap to target only for hunting maps (not towns)
 		# Heuristic handles town routing - bridge should not lock to town
 		my $_move_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
@@ -4448,9 +4455,9 @@ sub _check_bridge_reflexes {
 	}
 }
 sub _apply_bot_config {
-    # Override attack distances after OpenKore auto-detection
-    $::config{'attackDistance'} = 7;
-    $::config{'attackMaxDistance'} = 12;
+    # Heuristic sets attack distances - don't override
+    # $::config{'attackDistance'} = 7;
+    # $::config{'attackMaxDistance'} = 12;
 	# Apply optimal OpenKore configs for autonomous operation
 	# (Overrides user config with AI-optimized values)
 	# SKIP if sidecar has explicitly set these values via "set" command
@@ -4552,18 +4559,8 @@ sub _survival_check {
 	    if ($hp_pct < 15 && !$_hp_is_town) { eval { Commands::run('sit'); 1 }; }
 	    return;
 	}
-	# ── Economy: Not enough zeny and not in combat → go grind ──
-	if ($zeny < 100 && $base_lv < 99) {
-	    my $clm = defined $::config{'lockMap'} ? $::config{'lockMap'} : '';
-	    if ($clm eq '' || $clm eq 'prt_in' || $clm eq (_cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera')) {
-	        my $_hunt = _cfg('aiSidecar_huntingMap', '');
-		$::config{'lockMap'} = $_hunt || _cfg('aiSidecar_huntMap', '');
-	    }
-	    if ($AI::AI != 2) {
-	        eval { require AI; AI::state(2); 1 };
-	    }
-	    return;
-	}
+	# ── Economy DISABLED: heuristic handles all routing decisions ──
+	# The heuristic service decides when to return to town and when to go back to hunt
 
 	# ── Progression: Apply optimal configs if not already set ──
 	_apply_bot_config();
