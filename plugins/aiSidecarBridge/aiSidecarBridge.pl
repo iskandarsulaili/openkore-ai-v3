@@ -297,12 +297,13 @@ sub on_mainLoop_pre {
 sub on_mainLoop_post {
 	# ── PORTAL EXIT DETECTION ──
 	# When bot warps to hunting map, move away from portal exit immediately
+	$_last_reflex_fire_ms{'portal_exit'} = _now_ms() unless exists $_last_reflex_fire_ms{'portal_exit'};
 	if ($field) {
 	    my $_pe_map = lc($field->name());
 	    $_pe_map =~ s/\.gat$//;
 	    if ($_pe_map =~ /^[a-z]+_fild/ && $char) {
 	        my ($_pe_x, $_pe_y) = ($char->{pos}{x}, $char->{pos}{y});
-	        my $_last_pe = $_last_reflex_fire_ms{'portal_exit'} || 0;
+	        my $_last_pe = $_last_reflex_fire_ms{'portal_exit'} || _now_ms();
 	        if (abs($_pe_x - 367) < 15 && abs($_pe_y - 205) < 15 && _now_ms() - $_last_pe > 30000) {
 	            $_last_reflex_fire_ms{'portal_exit'} = _now_ms();
 	            warning "[portal_exit] on $_pe_map at portal exit - moving to center\n", 'aiSidecarBridge', 1;
