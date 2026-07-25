@@ -443,7 +443,7 @@ class HeuristicService:
         # DEATH: if bot just died and respawned in town, sell/buy before hunting
         # DEATH: if bot respawned (not cold_start and has no kills this session)
         # Works both in town and on hunting map (after death respawn)
-        if _cold_fired and _total_kills == 0 and _prev_state != "UNKNOWN":
+        if _cold_fired and _total_kills == 0 and _prev_state not in ("UNKNOWN", "COLD_START"):
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
@@ -626,19 +626,14 @@ class HeuristicService:
         # ── STATE: DEATH (respawned - sell items, buy potions) ──
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
+            # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
             actions.append(HeuristicAction(
                 kind="command", command="talknpc 147 175 c r1 n",
                 confidence=0.99, domain="economy",
                 reason="Death recovery - sell items",
             ))
-            if zeny > 0:
-                _potions_to_buy = min(3, zeny // 50)
-                if _potions_to_buy > 0:
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"buy 501 {_potions_to_buy}",
-                        confidence=0.99, domain="economy",
-                        reason=f"Death recovery - buy {_potions_to_buy} potions",
-                    ))
+            # Buy potions on next cycle (after sell dialog completes)
+            # Don't generate buy here - let next cycle handle it after sell
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.99
             top_domain = "economy"
@@ -1082,19 +1077,20 @@ class HeuristicService:
             # "move" interrupts NPC dialog - it comes on next cycle
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
             if _has_items:
+                # Sell first - talknpc opens NPC dialog, sellAuto handles the rest
                 actions.append(HeuristicAction(
                     kind="command", command="talknpc 147 175 c r1 n",
                     confidence=0.99, domain="economy",
                     reason=f"In town - sell items",
                 ))
-
-            if zeny >= 50:
+            elif zeny >= 50:
+                # No items to sell, but have zeny - walk to NPC first, buy on next cycle
                 _potions_to_buy = min(10, zeny // 50)
                 if _potions_to_buy > 0:
                     actions.append(HeuristicAction(
-                        kind="command", command=f"buy 501 {_potions_to_buy}",
+                        kind="command", command="move 147 175",
                         confidence=0.99, domain="economy",
-                        reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
+                        reason=f"Walk to NPC to buy {_potions_to_buy} potions",
                     ))
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.95
