@@ -602,6 +602,11 @@ class HeuristicService:
                 confidence=0.99, domain="economy",
                 reason="Death recovery - sell items",
             ))
+            actions.append(HeuristicAction(
+                kind="command", command="sell all",
+                confidence=0.99, domain="economy",
+                reason="Sell all items after opening shop",
+            ))
             if zeny > 0:
                 _potions_to_buy = min(3, zeny // 50)
                 if _potions_to_buy > 0:
@@ -1032,6 +1037,11 @@ class HeuristicService:
                     kind="command", command="talknpc 147 175 c r0 n",
                     confidence=0.99, domain="economy",
                     reason=f"In town - sell items",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="sell all",
+                    confidence=0.99, domain="economy",
+                    reason=f"Sell all items after opening shop",
                 ))
             if zeny >= 50:
                 _potions_to_buy = min(10, zeny // 50)

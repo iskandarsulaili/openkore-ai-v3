@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword gusojeam
+adminPassword shiyetwu
 callSign
 commandPrefix ;
 callSignGM 0
@@ -884,15 +884,15 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 0
-sellAuto_npc = prontera 126 76
-sellAuto_npc_steps = c r0 n
+sellAuto 1
+sellAuto_npc = prontera 147 175
+sellAuto_npc_steps = c r0 n c
 sellAuto_standpoint
 sellAuto_maxWeight 10
 sellAuto_distance 25
 sellAuto_maxDistance 15
-sellAuto_npc = prontera 126 76
-sellAuto_npc_steps = c r0 n
+sellAuto_npc = prontera 147 175
+sellAuto_npc_steps = c r0 n c
 
 storageAuto 0
 storageAuto_onStart 0
@@ -1260,9 +1260,9 @@ buyAuto_Bow {
 }
 
 # Pro RO: Auto-sell junk items
-sellAuto 0
-sellAuto_npc = prontera 126 76
-sellAuto_npc_steps = c r0 n
+sellAuto 1
+sellAuto_npc = prontera 147 175
+sellAuto_npc_steps = c r0 n c
 sellAuto_maxWeight 10
 sellAuto_distance 25
 
