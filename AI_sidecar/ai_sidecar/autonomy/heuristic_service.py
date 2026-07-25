@@ -635,6 +635,15 @@ class HeuristicService:
             # Buy potions on next cycle (after sell dialog completes)
             # Don't generate buy here - let next cycle handle it after sell
             # (sellAuto handles the actual selling after talknpc opens dialog)
+            # If no items and zeny < 50, return to hunt after 15s in town
+            if not _has_items and zeny < 50:
+                _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
+                if _town_time > 15:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 22 203",
+                        confidence=0.95, domain="hunting",
+                        reason=f"In town {_town_time:.0f}s, no items, zeny={zeny} - return to hunt",
+                    ))
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.99
             top_domain = "economy"
