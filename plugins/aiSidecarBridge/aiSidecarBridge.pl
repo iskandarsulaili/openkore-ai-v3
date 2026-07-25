@@ -4896,12 +4896,12 @@ sub _apply_ml_override {
 		if ($profile eq 'aggressive') {
 			# $::config{attackAuto} = 3;
 			$::config{autoMove} = 2;
-			$::config{attackDistance} = 5;
+			# $::config{attackDistance} = 5;  # heuristic controls this
 			warning("ml_override applied: encounter_classifier=aggressive (attackAuto = 3, autoMove=2)");
 		} elsif ($profile eq 'safe') {
-			$::config{attackAuto} = 1;
+			# $::config{attackAuto} = 1;  # heuristic controls this
 			$::config{autoMove} = 0;
-			$::config{attackDistance} = 3;
+			# $::config{attackDistance} = 3;  # heuristic controls this
 			warning("ml_override applied: encounter_classifier=safe (attackAuto = 3, autoMove=0)");
 		} else {
 			# $::config{attackAuto} = 3;

@@ -1082,21 +1082,6 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # If we have zeny but no items, return to town to buy potions
-                if zeny >= 50 and not _has_items:
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
-                        confidence=0.95, domain="economy",
-                        reason=f"Return to town to buy potions (zeny={zeny})",
-                    ))
-                    total_confidence = 0.95
-                    top_domain = "economy"
-                    assessment = HeuristicAssessment(
-                        horizon=horizon, actions=actions, confidence=total_confidence,
-                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                    )
-                    self._last_assessment[bot_id] = assessment
-                    return assessment
                 # Default: set optimal attack config and enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="set attackDistance 2",
@@ -1160,7 +1145,10 @@ class HeuristicService:
                     # Check if near NPC - if so, buy directly. Otherwise walk to NPC first
                     _x = signals.get("x", 0) or 0
                     _y = signals.get("y", 0) or 0
-                    _dist_to_npc = abs(_x - 147) + abs(_y - 175)
+                    _buy_npc = self._get_npc("buy_potion", map_name)
+                    _buy_x = _buy_npc['x'] if _buy_npc else 126
+                    _buy_y = _buy_npc['y'] if _buy_npc else 76
+                    _dist_to_npc = abs(_x - _buy_x) + abs(_y - _buy_y)
                     if _dist_to_npc < 10:
                         actions.append(HeuristicAction(
                             kind="command", command=f"buy 501 {_potions_to_buy}",
