@@ -3211,14 +3211,7 @@ sub _rewrite_runtime_command {
 		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
 		$orig_key = $set_key unless defined $orig_key;
 
-		# STAY IN TOWN: if recently respawned, block lockMap changes to non-town maps
-		if (lc($orig_key) eq 'lockmap' && $_pro_ro_stay_in_town_ms > 0 && _now_ms() < $_pro_ro_stay_in_town_ms) {
-		    my $_stay_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-		    if (!$_stay_target_is_town) {
-		        warning "[stay_in_town] blocking set lockMap to '$set_val' - stay in town active\n", 'aiSidecarBridge', 1;
-		        return ('', 'stay_in_town_blocked');
-		    }
-		}
+		# STAY IN TOWN DISABLED: heuristic handles all routing decisions
 		# HUNTING MAP STICKINESS: heuristic handles all routing decisions
 		if (lc($orig_key) eq 'lockmap') {
 			my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
@@ -3255,22 +3248,11 @@ sub _rewrite_runtime_command {
 		if ($target =~ /^\d+\s+\d+$/) {
 		    return ($trimmed, 'coordinate_move_raw');
 		}
-		# PRO RO GUARD: if Pro RO module just set a hunting map lock, block PDCA's town moves
-		my $_pro_ro_guard = 0;
-		if ($_pro_ro_last_lock_set ne '' && _now_ms() - $_pro_ro_last_lock_ms < 120000) {
-			# Pro RO guard disabled: heuristic handles all routing decisions
-		}
-		if ($target =~ /^\d+\s+\d+$/) {
-			return ($trimmed, 'coordinate_move_raw');
-		}
-		if ($target !~ /^(savepoint|random_walk_seek)$/) {
-			# RESUPPLY TIMER DISABLED: heuristic handles return-to-town logic
-			# The heuristic service decides when to return based on HP, items, zeny
-			# RESPAWN ECONOMY WINDOW DISABLED: heuristic handles economy on respawn
-			# STAY IN TOWN DISABLED: heuristic handles all routing decisions
-			# The heuristic decides when to return to town and when to go back to hunt
-			# This guard was blocking "move 22 203" (portal to hunting map)
-
+		# If already on target map, "move <map>" is a no-op random walk - pass through
+		my $_current_map = $field ? lc($field->name()) : '';
+		$_current_map =~ s/\.gat$//;
+		if ($_current_map eq lc($target)) {
+		    return ($trimmed, 'coordinate_move_raw');
 		}
 		# Set lockMap to target only for hunting maps (not towns)
 		# Heuristic handles town routing - bridge should not lock to town

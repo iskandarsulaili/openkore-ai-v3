@@ -1995,7 +1995,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
             if _job_match:
                 _target_job = _job_match.group(1).lower()
         if not _target_job:
-            return "move prontera"
+            return "move 22 203"
         # Read job change locations from tables file (database-driven, not hardcoded)
         from ai_sidecar.autonomy.ro_knowledge import _DEFAULT_TABLES_DIR as _JC_TABLES_DIR
         _jc_path = _JC_TABLES_DIR / "job_change_locations.txt"
@@ -2003,7 +2003,7 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
         _npc_map = ""
         _npc_x = ""
         _npc_y = ""
-        _move_cmd = "move prontera"
+        _move_cmd = "move 22 203"
         if _jc_path.exists():
             try:
                 _jc_text = _jc_path.read_text()

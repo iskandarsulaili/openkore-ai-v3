@@ -634,7 +634,6 @@ class HeuristicService:
                 reason="Cold start - don't give up mid-fight",
             ))
             # Sell starting gear first (weight > 90% prevents movement)
-            # Only sell - let next cycle (HUNT in town) handle return to hunt
             actions.append(HeuristicAction(
                 kind="command", command="move 147 175",
                 confidence=0.99, domain="economy",
@@ -644,6 +643,28 @@ class HeuristicService:
                 kind="command", command="talknpc 147 175 c r1 n",
                 confidence=0.99, domain="economy",
                 reason="Cold start - sell starting gear to reduce weight",
+            ))
+            # Buy weapon after selling (bot sold its starting weapon)
+            actions.append(HeuristicAction(
+                kind="command", command="move 160 133",
+                confidence=0.95, domain="economy",
+                reason="Cold start - walk to Weapon Shop to buy weapon",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talknpc 160 133 c r0 n",
+                confidence=0.95, domain="economy",
+                reason="Cold start - buy weapon from Weapon Shop",
+            ))
+            # Set lockMap and go to hunting map
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap prt_fild05",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - set hunting map lock",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="move 22 203",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - go to hunting map via portal",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
