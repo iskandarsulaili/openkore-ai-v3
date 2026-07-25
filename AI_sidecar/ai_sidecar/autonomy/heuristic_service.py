@@ -947,13 +947,36 @@ class HeuristicService:
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
-                # If HP < 50% and have items, return to town to sell + recover
-                if _hp_ratio < 0.5 and _has_items and _hunt_duration > 15:
+                # If HP < 30% and have items, return to town to sell + recover
+                if _hp_ratio < 0.3 and _has_items and _hunt_duration > 15:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
-                        reason=f"HP={_hp_ratio:.0%} items>0 - return to town to sell+buy",
+                        reason=f"HP={_hp_ratio:.0%} items>0 - return to sell+buy",
                     ))
+                    total_confidence = 0.99
+                    top_domain = "economy"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
+                # If HP < 20% and no items, sit and regen instead of returning
+                if _hp_ratio < 0.2 and not _has_items:
+                    actions.append(HeuristicAction(
+                        kind="command", command="sit",
+                        confidence=0.99, domain="survival",
+                        reason=f"HP={_hp_ratio:.0%} no items - sitting to regen",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "survival"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                     total_confidence = 0.99
                     top_domain = "economy"
                     assessment = HeuristicAssessment(
@@ -977,7 +1000,22 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # Default: just enable auto-attack
+                # If HP < 30% and no items, sit to regen
+                if _hp_ratio < 0.3 and not _has_items:
+                    actions.append(HeuristicAction(
+                        kind="command", command="sit",
+                        confidence=0.99, domain="survival",
+                        reason=f"HP={_hp_ratio:.0%} no items - sitting to regen",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "survival"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
+                # Default: enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
@@ -999,12 +1037,14 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"In town - sell items",
                 ))
-            if zeny > 0:
-                actions.append(HeuristicAction(
-                    kind="command", command="buy 501 3",
-                    confidence=0.99, domain="economy",
-                    reason=f"In town - buy 3 potions (zeny={zeny})",
-                ))
+            if zeny >= 50:
+                _potions_to_buy = min(10, zeny // 50)
+                if _potions_to_buy > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy 501 {_potions_to_buy}",
+                        confidence=0.99, domain="economy",
+                        reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
+                    ))
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.95, domain="hunting",
