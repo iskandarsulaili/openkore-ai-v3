@@ -3300,8 +3300,12 @@ sub _rewrite_runtime_command {
 			}
 
 		}
-		# Set lockMap to target and switch to auto mode
-		$::config{'lockMap'} = $target;
+		# Set lockMap to target only for hunting maps (not towns)
+		# Heuristic handles town routing - bridge should not lock to town
+		my $_move_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+		if (!$_move_target_is_town) {
+		    $::config{'lockMap'} = $target;
+		}
 		if (!_ai_already_auto_mode()) {
 			return ('ai auto', 'move_rewritten');
 		}
@@ -4606,11 +4610,8 @@ sub _survival_check {
 	        # Fallback: stand up, try buying, sit as last resort
 	        if (0) { eval { Commands::run('stand'); 1 }; }
 	        my $_rec_city = _cfg('aiSidecar_recoveryCity', '');
-		$::config{'lockMap'} = $_rec_city || (_safe_char() && _safe_char()->{map} ? _safe_char()->{map} : 'prontera');
-    $::config{'lockMap_x'} = 159;
-    $::config{'lockMap_y'} = 193;
-    $::config{'lockMap_randX'} = 2;
-    $::config{'lockMap_randY'} = 2;
+		# Cold start lockMap disabled - heuristic handles all routing
+		# $::config{'lockMap'} = $_rec_city || (_safe_char() && _safe_char()->{map} ? _safe_char()->{map} : 'prontera');
 	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
         # Sidecar decides navigation -- no hardcoded move
         # No hardcoded NPC interaction -- sidecar decides
