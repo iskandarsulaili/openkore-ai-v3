@@ -634,6 +634,7 @@ class HeuristicService:
             ))
             # Buy potions on next cycle (after sell dialog completes)
             # Don't generate buy here - let next cycle handle it after sell
+            # (sellAuto handles the actual selling after talknpc opens dialog)
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.99
             top_domain = "economy"
@@ -1084,14 +1085,32 @@ class HeuristicService:
                     reason=f"In town - sell items",
                 ))
             elif zeny >= 50:
-                # No items to sell, but have zeny - walk to NPC first, buy on next cycle
+                # No items to sell, but have zeny - buy potions
                 _potions_to_buy = min(10, zeny // 50)
                 if _potions_to_buy > 0:
-                    actions.append(HeuristicAction(
-                        kind="command", command="move 147 175",
-                        confidence=0.99, domain="economy",
-                        reason=f"Walk to NPC to buy {_potions_to_buy} potions",
-                    ))
+                    # Check if near NPC - if so, buy directly. Otherwise walk to NPC first
+                    _x = signals.get("x", 0) or 0
+                    _y = signals.get("y", 0) or 0
+                    _dist_to_npc = abs(_x - 147) + abs(_y - 175)
+                    if _dist_to_npc < 10:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"buy 501 {_potions_to_buy}",
+                            confidence=0.99, domain="economy",
+                            reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="move 147 175",
+                            confidence=0.99, domain="economy",
+                            reason=f"Walk to NPC to buy {_potions_to_buy} potions",
+                        ))
+            # If no items and no zeny, return to hunting map
+            if not _has_items and zeny < 50:
+                actions.append(HeuristicAction(
+                    kind="command", command="move 22 203",
+                    confidence=0.95, domain="hunting",
+                    reason="No items to sell, no zeny to buy - return to hunt",
+                ))
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.95
             top_domain = "hunting"

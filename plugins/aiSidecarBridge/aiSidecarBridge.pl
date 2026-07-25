@@ -278,8 +278,8 @@ sub on_mainLoop_pre {
 	if ($char) {
 	    # Disable OpenKore's internal teleport at 30% HP - heuristic handles HP management
 	    $::config{teleportAuto_hp} = 0;
-	    $::config{attackAuto_maxDistance} = 3;
-	    $::config{attackAuto_unstuck} = 1;
+	    # $::config{attackAuto_maxDistance} = 3;  # heuristic controls this
+	    # $::config{attackAuto_unstuck} = 1;  # heuristic controls this
 	    # Override sitAuto config every cycle
 	    $::config{sitAuto_hp} = 0;
 	    $::config{sitAuto_hp_upper} = 0;
@@ -311,7 +311,7 @@ sub on_mainLoop_post {
 	            $_last_reflex_fire_ms{'portal_exit'} = _now_ms();
 	            warning "[portal_exit] on $_pe_map at portal exit - moving to center\n", 'aiSidecarBridge', 1;
 	            $::config{'lockMap'} = $_pe_map;
-	            $::config{'attackAuto'} = 3;
+	            # $::config{'attackAuto'} = 3;
 	            $::config{'attackAuto_inLockOnly'} = 0;
 	            eval { Commands::run('move 200 200'); 1; };
 	        }
@@ -343,7 +343,7 @@ sub on_mainLoop_post {
             # Clear AI sequence to prevent immediate re-sit
             @::AI::ai_seq = ();
             # Force AI to auto mode
-            $::config{attackAuto} = 3;
+            # $::config{attackAuto} = 3;
             $::config{attackAuto_inLockOnly} = 0;
             # Disable sitAuto at the config level
             $::config{sitAuto_hp} = 0;
@@ -433,7 +433,7 @@ sub on_mainLoop_post {
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
-                $::config{attackAuto} = 3;
+                # $::config{attackAuto} = 3;
                 $::config{attackAuto_inLockOnly} = 0;
                 $::config{attackDistanceAuto} = 0;
             }
@@ -3158,7 +3158,7 @@ sub _rewrite_runtime_command {
 			delete $_committed_actions{'move'};
 			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
 			$::config{lockMap} = 'prt_fild05';
-			$::config{attackAuto} = 3;
+			# $::config{attackAuto} = 3;
 			$::config{attackAuto_inLockOnly} = 0;
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
@@ -3216,7 +3216,7 @@ sub _rewrite_runtime_command {
 	    my $_lm_target = $1;
 	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
 	    $::config{'lockMap'} = $_lm_target;
-	    $::config{'attackAuto'} = 3;
+	    # $::config{'attackAuto'} = 3;
 	    $::config{'attackAuto_inLockOnly'} = 0;
 	    return ('', 'lockmap_set');
 	}
@@ -3263,7 +3263,7 @@ sub _rewrite_runtime_command {
 						$::config{"lockMap"} = $_actual_map;
 					$_pro_ro_last_lock_ms = _now_ms();  # Reset hunting start timer
 						$::config{"attackAuto_inLockOnly"} = 0;
-						$::config{"attackAuto"} = 3;
+						# $::config{"attackAuto"} = 3;
 						$::config{"sitAuto_hp_lower"} = 0;
 						$::config{"sitAuto_hp_upper"} = 0;
 						Commands::run("stand");
@@ -4603,7 +4603,7 @@ sub _apply_bot_config {
     # Pro RO: disable auto-sit, let sidecar handle healing
     $::config{sitAuto_hp_lower} = 0;
     $::config{sitAuto_hp_upper} = 0;
-    $::config{attackAuto} = 3;
+    # $::config{attackAuto} = 3;
     $::config{attackAuto_inLockOnly} = 0;
     $::config{attackDistance} = 7;
 }
@@ -4894,7 +4894,7 @@ sub _apply_ml_override {
 	if ($family eq 'encounter_classifier' && defined $rec->{encounter_profile}) {
 		my $profile = lc($rec->{encounter_profile});
 		if ($profile eq 'aggressive') {
-			$::config{attackAuto} = 3;
+			# $::config{attackAuto} = 3;
 			$::config{autoMove} = 2;
 			$::config{attackDistance} = 5;
 			warning("ml_override applied: encounter_classifier=aggressive (attackAuto = 3, autoMove=2)");
@@ -4904,7 +4904,7 @@ sub _apply_ml_override {
 			$::config{attackDistance} = 3;
 			warning("ml_override applied: encounter_classifier=safe (attackAuto = 3, autoMove=0)");
 		} else {
-			$::config{attackAuto} = 3;
+			# $::config{attackAuto} = 3;
 			$::config{autoMove} = 1;
 			$::config{attackDistance} = 7;
 			warning("ml_override applied: encounter_classifier=balanced (attackAuto = 3, autoMove=1)");
