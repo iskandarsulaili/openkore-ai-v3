@@ -594,22 +594,23 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: DEATH (respawned - sell items, buy potions/weapon, then hunt) ──
+        # ── STATE: DEATH (respawned - sell items, buy potions, return to hunt) ──
         if state == "DEATH":
-            # Always try to sell - even 1 item is worth selling
+            # Try to sell items (NPC handles empty inventory gracefully)
             actions.append(HeuristicAction(
                 kind="command", command="talknpc 147 175 c r0 n",
                 confidence=0.99, domain="economy",
                 reason="Death recovery - sell items",
             ))
-            # Buy potions if we have any zeny
+            # Buy potions if we survived with some zeny
             if zeny > 0:
-                actions.append(HeuristicAction(
-                    kind="command", command="buy 501 3",
-                    confidence=0.99, domain="economy",
-                    reason="Death recovery - buy 3 potions",
-                ))
-            # Always return to hunt after death recovery
+                _potions_to_buy = min(3, zeny // 50)
+                if _potions_to_buy > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy 501 {_potions_to_buy}",
+                        confidence=0.99, domain="economy",
+                        reason=f"Death recovery - buy {_potions_to_buy} potions",
+                    ))
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
@@ -941,8 +942,42 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
-            # On hunting map: just enable auto-attack, let OpenKore hunt
             if map_name not in _HUNT_TOWNS:
+                # On hunting map: check if we should return to town
+                _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
+                _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
+                _has_items = (signals.get("inventory_items", 0) or 0) > 0
+                # If HP < 50% and have items, return to town to sell + recover
+                if _hp_ratio < 0.5 and _has_items and _hunt_duration > 15:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="economy",
+                        reason=f"HP={_hp_ratio:.0%} items>0 - return to town to sell+buy",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "economy"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
+                # If have items and been hunting > 60s, return to sell
+                if _has_items and _hunt_duration > 60:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.95, domain="economy",
+                        reason=f"Items>0 and hunted {_hunt_duration:.0f}s - return to sell",
+                    ))
+                    total_confidence = 0.95
+                    top_domain = "economy"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
+                # Default: just enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
@@ -956,15 +991,20 @@ class HeuristicService:
                 )
                 self._last_assessment[bot_id] = assessment
                 return assessment
-            # In town: sell items if any, then return to hunting map
-            _has_items_to_sell = signals.get("inventory_items", 0) or 0 > 0
-            if _has_items_to_sell:
+            # In town: sell items, buy potions, then return to hunt
+            _has_items = (signals.get("inventory_items", 0) or 0) > 0
+            if _has_items:
                 actions.append(HeuristicAction(
                     kind="command", command="talknpc 147 175 c r0 n",
                     confidence=0.99, domain="economy",
-                    reason=f"Sell items (count={signals.get('inventory_items', 0)})",
+                    reason=f"In town - sell items",
                 ))
-            # Always return to hunting map - don't wait
+            if zeny > 0:
+                actions.append(HeuristicAction(
+                    kind="command", command="buy 501 3",
+                    confidence=0.99, domain="economy",
+                    reason=f"In town - buy 3 potions (zeny={zeny})",
+                ))
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.95, domain="hunting",
