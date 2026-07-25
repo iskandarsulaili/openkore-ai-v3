@@ -651,6 +651,8 @@ class HeuristicService:
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
             # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
+            _has_items = (signals.get("inventory_items", 0) or 0) > 0
+            _total_kills = signals.get("kills", 0) or 0
             # Only sell if bot has killed something (not starting gear)
             if _total_kills > 0:
                 _sell_npc = self._get_npc("sell", map_name)
@@ -666,8 +668,6 @@ class HeuristicService:
             # Buy potions on next cycle (after sell dialog completes)
             # Don't generate buy here - let next cycle handle it after sell
             # (sellAuto handles the actual selling after talknpc opens dialog)
-            _has_items = (signals.get("inventory_items", 0) or 0) > 0
-            _total_kills = signals.get("kills", 0) or 0
             # If no items and zeny < 50, return to hunt after 15s in town
             if not _has_items and zeny < 50:
                 _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
