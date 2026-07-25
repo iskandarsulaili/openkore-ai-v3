@@ -464,10 +464,10 @@ class HeuristicService:
         if not _cold_fired and _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
-        # DEATH: if bot just died and respawned in town, sell/buy before hunting
-        # DEATH: if bot respawned (not cold_start and has no kills this session)
-        # Works both in town and on hunting map (after death respawn)
-        if _cold_fired and _total_kills == 0 and _prev_state not in ("UNKNOWN", "COLD_START"):
+        # DEATH: if bot just died and respawned
+        # Only trigger DEATH if bot actually died (HP was 0 or very low)
+        # Not just because bot has 0 kills after selling starting gear
+        if _cold_fired and _prev_state not in ("UNKNOWN", "COLD_START") and hp <= 0:
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
@@ -633,15 +633,17 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
+            # Sell starting gear first (weight > 90% prevents movement)
+            # Only sell - let next cycle (HUNT in town) handle return to hunt
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap prt_fild05",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - set hunting map lock",
+                kind="command", command="move 147 175",
+                confidence=0.99, domain="economy",
+                reason="Cold start - walk to Special Dealer to sell starting gear",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
-                confidence=0.99, domain="emergency",
-                reason="Cold start - go to hunting map via portal",
+                kind="command", command="talknpc 147 175 c r1 n",
+                confidence=0.99, domain="economy",
+                reason="Cold start - sell starting gear to reduce weight",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
@@ -658,8 +660,8 @@ class HeuristicService:
             # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
             _total_kills = signals.get("kills", 0) or 0
-            # Only sell if bot has killed something (not starting gear)
-            if _total_kills > 0:
+            # Sell if has items (starting gear or loot) - need to reduce weight to move
+            if _has_items:
                 _sell_npc = self._get_npc("sell", map_name)
                 if _sell_npc:
                     _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
