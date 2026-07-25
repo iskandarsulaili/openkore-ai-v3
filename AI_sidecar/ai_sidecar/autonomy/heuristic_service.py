@@ -675,32 +675,24 @@ class HeuristicService:
             # Buy potions on next cycle (after sell dialog completes)
             # Don't generate buy here - let next cycle handle it after sell
             # (sellAuto handles the actual selling after talknpc opens dialog)
-            # If no items and zeny < 50, return to hunt after 15s in town
-            # Return to hunt if no zeny (regardless of starting gear)
-            if zeny < 50:
-                _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
-                if _town_time > 15:
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prt_fild05",
-                        confidence=0.95, domain="hunting",
-                        reason="Set hunting map lock before returning",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prt_fild05",
-                        confidence=0.95, domain="hunting",
-                        reason="Set hunting map lock before returning",
-                    ))
-                    _portal = self._get_npc("portal_to_hunt", map_name)
-                    if _portal:
-                        _portal_cmd = f"move {_portal['x']} {_portal['y']}"
-                    else:
-                        _portal_cmd = "move 22 203"  # fallback
-                    actions.append(HeuristicAction(
-                        kind="command", command=_portal_cmd,
-                        confidence=0.95, domain="hunting",
-                        reason=f"In town {_town_time:.0f}s, no items, zeny={zeny} - return to hunt",
-                    ))
-            # No move here - let next cycle handle it after shop dialog completes
+            # Return to hunt via portal after 15s in town
+            _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
+            if _town_time > 15:
+                actions.append(HeuristicAction(
+                    kind="command", command="set lockMap prt_fild05",
+                    confidence=0.95, domain="hunting",
+                    reason="Set hunting map lock before returning",
+                ))
+                _portal = self._get_npc("portal_to_hunt", map_name)
+                if _portal:
+                    _portal_cmd = f"move {_portal['x']} {_portal['y']}"
+                else:
+                    _portal_cmd = "move 22 203"  # fallback
+                actions.append(HeuristicAction(
+                    kind="command", command=_portal_cmd,
+                    confidence=0.95, domain="hunting",
+                    reason=f"In town {_town_time:.0f}s - return to hunt via portal",
+                ))
             total_confidence = 0.99
             top_domain = "economy"
             assessment = HeuristicAssessment(
