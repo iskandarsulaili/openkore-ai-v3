@@ -1119,13 +1119,16 @@ class HeuristicService:
                             confidence=0.99, domain="economy",
                             reason=f"Walk to NPC to buy {_potions_to_buy} potions",
                         ))
-            # If no items and no zeny, return to hunting map
-            if not _has_items and zeny < 50:
-                actions.append(HeuristicAction(
-                    kind="command", command="move 22 203",
-                    confidence=0.95, domain="hunting",
-                    reason="No items to sell, no zeny to buy - return to hunt",
-                ))
+                # After buying (or trying to), return to hunt
+                # This fires on the NEXT cycle after buy command is generated
+                # (buy command was generated this cycle, next cycle we return to hunt)
+                _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
+                if _town_time > 30:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 22 203",
+                        confidence=0.95, domain="hunting",
+                        reason=f"Been in town {_town_time:.0f}s with zeny - return to hunt",
+                    ))
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.95
             top_domain = "hunting"
