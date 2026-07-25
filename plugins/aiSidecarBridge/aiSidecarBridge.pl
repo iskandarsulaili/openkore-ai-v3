@@ -4074,34 +4074,29 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# REFLEX #2 — EMERGENCY FLEE REFLEX
 		# ═══════════════════════════════════════════
-		# Instant flee when HP <15% and aggroed (no anti-detection delay)
+		# Instant sit when HP <15% and aggroed (heuristic handles HP management)
 		if ($hp_ratio < 0.15 && $aggro_count > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, _cfg_int('aiSidecar_reflexFleeCooldownMs', 1000))) {
 				$_reflex_last_fired{flee} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:emergency_flee (HP=$hp/$hp_max, aggro=$aggro_count)\n";
 				my $_reflex_map2 = $char->{map} || '';
 				if ($_reflex_map2 !~ /^prontera/i) {
-					eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; my $_fh_lock = defined $::config{lockMap} ? $::config{lockMap} : ''; if ($_emap !~ /^\Q$_rc\E/i && $_fh_lock !~ /^[a-z]+_fild/) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
+					# Sit to regen instead of teleporting - heuristic handles HP management
+					Commands::run("sit");
 				}
 			}
 		}
 
 		# ═══════════════════════════════════════════
-		# REFLEX #3 — EMERGENCY TELEPORT / SIT REFLEX
+		# REFLEX #3 — EMERGENCY SIT REFLEX
 		# ═══════════════════════════════════════════
-		# Teleport if <12% HP and aggroed, sit+regen otherwise
+		# Sit to regen when HP < 12% (don't teleport - heuristic handles HP management)
 		if ($hp_ratio < 0.12) {
 			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, _cfg_int('aiSidecar_reflexTeleportCooldownMs', 3000))) {
 				$_reflex_last_fired{teleport} = _now_ms();
-				if ($aggro_count > 0) {
-# 					warning "[aiSidecarBridge] bridge_reflex:emergency_teleport (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-					eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; my $_fh_lock = defined $::config{lockMap} ? $::config{lockMap} : ''; if ($_emap !~ /^\Q$_rc\E/i && $_fh_lock !~ /^[a-z]+_fild/) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
-				} else {
-					my $_reflex_map3 = $char->{map} || '';
-					if ($_reflex_map3 !~ /^prontera/i) {
-# 						warning "[aiSidecarBridge] bridge_reflex:emergency_move_prontera (HP=$hp/$hp_max)\n";
-						eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; my $_fh_lock = defined $::config{lockMap} ? $::config{lockMap} : ''; if ($_emap !~ /^\Q$_rc\E/i && $_fh_lock !~ /^[a-z]+_fild/) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
-					}
+				my $_reflex_map3 = $char->{map} || '';
+				if ($_reflex_map3 !~ /^prontera/i) {
+					# Sit to regen instead of teleporting - heuristic handles HP management
+					Commands::run("sit");
 				}
 			}
 		}

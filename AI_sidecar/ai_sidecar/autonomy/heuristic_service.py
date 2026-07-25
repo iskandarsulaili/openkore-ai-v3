@@ -1034,6 +1034,21 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # EMERGENCY: if HP < 15%, sit immediately regardless of items
+                if _hp_ratio < 0.15:
+                    actions.append(HeuristicAction(
+                        kind="command", command="sit",
+                        confidence=0.99, domain="survival",
+                        reason=f"HP={_hp_ratio:.0%} CRITICAL - emergency sit",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "survival"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # If HP < 20% and no items, sit and regen instead of returning
                 if _hp_ratio < 0.2 and not _has_items:
                     actions.append(HeuristicAction(
