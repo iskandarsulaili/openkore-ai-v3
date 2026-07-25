@@ -419,6 +419,11 @@ class HeuristicService:
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
         map_name = map_name.replace(".gat", "")
+        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
+               "aldebaran", "comodo", "umbala", "niflheim",
+               "rachel", "veins", "einbroch", "lighthalzen",
+               "juno", "hugel", "yuno", "amatsu", "gonryun",
+               "louyang", "ayothaya")
         _prev_state = self._bot_state.get(bot_id, "UNKNOWN")
         _total_kills = signals.get("total_kills", 0) or 0
         _total_zeny = signals.get("zeny", 0) or 0
@@ -429,7 +434,6 @@ class HeuristicService:
         # DEATH: if bot just respawned in town with 0 kills 0 zeny, trigger economy
         if is_town and _total_kills == 0 and _total_zeny == 0 and _prev_state != "UNKNOWN":
             return "DEATH"
-        map_name = map_name.replace(".gat", "")
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
         _inv_items = signals.get("inventory_items", []) or []
@@ -449,12 +453,6 @@ class HeuristicService:
             return "DEAD"
 
         # TOWN maps
-        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
-                               "aldebaran", "comodo", "umbala", "niflheim",
-                               "rachel", "veins", "einbroch", "lighthalzen",
-                               "juno", "hugel", "yuno", "amatsu", "gonryun",
-                               "louyang", "ayothaya")
-
         if is_town:
             # STUCK DETECTION: if in town > 120s with 0 kills, force hunting
             _town_start = self._town_entry_time.get(bot_id, 0)
