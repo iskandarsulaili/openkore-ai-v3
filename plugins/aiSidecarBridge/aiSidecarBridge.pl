@@ -4052,15 +4052,8 @@ sub _check_bridge_reflexes {
 							eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; my $_fh_lock = defined $::config{lockMap} ? $::config{lockMap} : ''; if ($_emap !~ /^\Q$_rc\E/i && $_fh_lock !~ /^[a-z]+_fild/) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
 						}
 					} else {
-						# No recent Pro RO command — broader survival check with 120s cooldown
-						if ($_now_ms - $_last_prontera_recovery_ms > 120000) {
-							if ($aggro_count > 3 || ($hp_ratio < 0.10 && $aggro_count > 0)) {
-								$_last_prontera_recovery_ms = $_now_ms;
-								eval { my $_emap = $char->{map}||""; my $_rc = _cfg('aiSidecar_recoveryCity', 'prontera') || 'prontera'; my $_fh_lock = defined $::config{lockMap} ? $::config{lockMap} : ''; if ($_emap !~ /^\Q$_rc\E/i && $_fh_lock !~ /^[a-z]+_fild/) { $::config{"lockMap"}= $_rc; _toggle_ai_mode('auto'); } 1 };
-							} elsif ($hp_ratio < 0.15 && $_reflex_map !~ /^prontera/i) {
-								# Acceptable threshold — low HP, retreat
-							}
-						}
+						# No recent Pro RO command — heuristic handles HP management
+						# Bridge should NOT set lockMap to Prontera - that overrides heuristic
 					}
 				}
 			}
