@@ -651,20 +651,23 @@ class HeuristicService:
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
             # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
-            _sell_npc = self._get_npc("sell", map_name)
-            if _sell_npc:
-                _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
-            else:
-                _sell_cmd = "talknpc 147 175 c r1 n"  # fallback
-            actions.append(HeuristicAction(
-                kind="command", command=_sell_cmd,
-                confidence=0.99, domain="economy",
-                reason="Death recovery - sell items",
-            ))
+            # Only sell if bot has killed something (not starting gear)
+            if _total_kills > 0:
+                _sell_npc = self._get_npc("sell", map_name)
+                if _sell_npc:
+                    _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
+                else:
+                    _sell_cmd = "talknpc 147 175 c r1 n"  # fallback
+                actions.append(HeuristicAction(
+                    kind="command", command=_sell_cmd,
+                    confidence=0.99, domain="economy",
+                    reason="Death recovery - sell items",
+                ))
             # Buy potions on next cycle (after sell dialog completes)
             # Don't generate buy here - let next cycle handle it after sell
             # (sellAuto handles the actual selling after talknpc opens dialog)
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
+            _total_kills = signals.get("kills", 0) or 0
             # If no items and zeny < 50, return to hunt after 15s in town
             if not _has_items and zeny < 50:
                 _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
@@ -1015,6 +1018,37 @@ class HeuristicService:
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
+                # JUST WARPED: if just arrived, sit to regen first
+                if _hunt_duration < 15:
+                    if _hp_ratio < 0.5:
+                        actions.append(HeuristicAction(
+                            kind="command", command="sit",
+                            confidence=0.99, domain="survival",
+                            reason=f"HP={_hp_ratio:.0%} just warped - sit to regen before hunting",
+                        ))
+                        total_confidence = 0.99
+                        top_domain = "survival"
+                        assessment = HeuristicAssessment(
+                            horizon=horizon, actions=actions, confidence=total_confidence,
+                            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                        )
+                        self._last_assessment[bot_id] = assessment
+                        return assessment
+                    # Don't return to town within first 30s - starting gear triggers weight check
+                    if _hunt_duration < 30:
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.95, domain="hunting",
+                            reason=f"Just warped {_hunt_duration:.0f}s ago - hunt first, sell later",
+                        ))
+                        total_confidence = 0.95
+                        top_domain = "hunting"
+                        assessment = HeuristicAssessment(
+                            horizon=horizon, actions=actions, confidence=total_confidence,
+                            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                        )
+                        self._last_assessment[bot_id] = assessment
+                        return assessment
                 # If HP < 30% and have items, return to town to sell + recover
                 if _hp_ratio < 0.3 and _has_items and _hunt_duration > 15:
                     _last_return = self._last_return_to_town.get(bot_id, 0)
