@@ -405,8 +405,15 @@ sub on_mainLoop_post {
 	_send_discovery_data();
 		_survival_check();
 
-        # Force AI to AUTO mode every cycle — runs even when bridge is disabled
-        if (AI::state() != 2) { AI::state(2); }
+        # Force AI to AUTO mode only when on hunting map and not executing a move
+        # Don't force unconditionally - it cancels manual move commands like "move 22 203"
+        if ($char) {
+            my $_ai_map = lc($char->{map} || '');
+            $_ai_map =~ s/\.gat$//;
+            if ($_ai_map =~ /^[a-z]+_fild/ && AI::state() != 2) {
+                AI::state(2);
+            }
+        }
         
         # Keep lockMap set to hunting map if bot is on one
         if ($char) {
@@ -4538,7 +4545,11 @@ sub _survival_check {
 # ── Emergency: HP critically low — heuristic handles HP management ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
 	    # Heuristic handles HP management - bridge only does sub-100ms reflexes
-	    if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
+	    # Only sit on hunting maps (not in town - heuristic handles town economy)
+	    my $_hp_map = $field ? lc($field->name()) : '';
+	    $_hp_map =~ s/\.gat$//;
+	    my $_hp_is_town = $_hp_map =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+	    if ($hp_pct < 15 && !$_hp_is_town) { eval { Commands::run('sit'); 1 }; }
 	    return;
 	}
 	# ── Economy: Not enough zeny and not in combat → go grind ──
