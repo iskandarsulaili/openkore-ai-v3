@@ -423,6 +423,7 @@ class HeuristicService:
         self._load_towns()
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
+        self._last_return_to_town: dict[str, float] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -1016,11 +1017,15 @@ class HeuristicService:
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
                 # If HP < 30% and have items, return to town to sell + recover
                 if _hp_ratio < 0.3 and _has_items and _hunt_duration > 15:
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
-                        confidence=0.99, domain="economy",
-                        reason=f"HP={_hp_ratio:.0%} items>0 - return to sell+buy",
-                    ))
+                    _last_return = self._last_return_to_town.get(bot_id, 0)
+                    _now = __import__("time").time()
+                    if _now - _last_return > 60:  # cooldown: don't spam return
+                        self._last_return_to_town[bot_id] = _now
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prontera",
+                            confidence=0.99, domain="economy",
+                            reason=f"HP={_hp_ratio:.0%} items>0 - return to sell+buy",
+                        ))
                     total_confidence = 0.99
                     top_domain = "economy"
                     assessment = HeuristicAssessment(
@@ -1044,16 +1049,8 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                    total_confidence = 0.99
-                    top_domain = "economy"
-                    assessment = HeuristicAssessment(
-                        horizon=horizon, actions=actions, confidence=total_confidence,
-                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                    )
-                    self._last_assessment[bot_id] = assessment
-                    return assessment
-                # If have items and been hunting > 60s, return to sell
-                if _has_items and _hunt_duration > 60:
+                # If have items and been hunting > 120s, return to sell
+                if _has_items and _hunt_duration > 120:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.95, domain="economy",
