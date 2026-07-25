@@ -29,6 +29,13 @@ class HeuristicAssessment:
     signals: dict[str, Any] = field(default_factory=dict)
 
 
+# ── Town maps constant (used by HUNT and TOWN_STUCK states) ──
+_HUNT_TOWNS = ("prontera", "izlude", "morocc", "payon", "geffen",
+               "aldebaran", "comodo", "umbala", "niflheim",
+               "rachel", "veins", "einbroch", "lighthalzen",
+               "juno", "hugel", "yuno", "amatsu", "gonryun",
+               "louyang", "ayothaya")
+
 # ── Class-aware stat builds ──
 # Each entry: (stat_priority_list, description)
 CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
