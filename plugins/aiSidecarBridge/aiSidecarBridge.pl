@@ -298,25 +298,9 @@ sub on_mainLoop_pre {
 
 
 sub on_mainLoop_post {
-	# ── PORTAL EXIT DETECTION ──
-	# When bot warps to hunting map, move away from portal exit immediately
-	$_last_reflex_fire_ms{'portal_exit'} = _now_ms() unless exists $_last_reflex_fire_ms{'portal_exit'};
-	if ($field) {
-	    my $_pe_map = lc($field->name());
-	    $_pe_map =~ s/\.gat$//;
-	    if ($_pe_map =~ /^[a-z]+_fild/ && $char) {
-	        my ($_pe_x, $_pe_y) = ($char->{pos}{x}, $char->{pos}{y});
-	        my $_last_pe = $_last_reflex_fire_ms{'portal_exit'} || _now_ms();
-	        if (abs($_pe_x - 367) < 15 && abs($_pe_y - 205) < 15 && _now_ms() - $_last_pe > 30000) {
-	            $_last_reflex_fire_ms{'portal_exit'} = _now_ms();
-	            warning "[portal_exit] on $_pe_map at portal exit - moving to center\n", 'aiSidecarBridge', 1;
-	            $::config{'lockMap'} = $_pe_map;
-	            # $::config{'attackAuto'} = 3;
-	            $::config{'attackAuto_inLockOnly'} = 0;
-	            eval { Commands::run('move 200 200'); 1; };
-	        }
-	    }
-	}
+	# ── PORTAL EXIT DETECTION DISABLED ──
+	# Disabled: moving bot from portal exit creates a warp loop
+	# Heuristic handles positioning on hunting maps
 
         # Override attack distances (also disable auto-detection)
         $::config{'attackDistance'} = 2;
@@ -4581,43 +4565,10 @@ sub _survival_check {
 	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
 	my $map = $cr->{map} || '';
 
-# ── Emergency: HP critically low — call Pro RO LLM for healing strategy ──
+# ── Emergency: HP critically low — heuristic handles HP management ──
 	if ($hp_pct < 20 && $hp_pct > 0) {
-	    my $_strat = _http_post_json('/discover/heal', {
-	        bot_id => _bot_id(),
-	        hp => $hp,
-	        hp_max => $hp_max,
-	        zeny => $zeny,
-	        map => $map,
-	        inventory => _safe_inventory_list(),
-	        known_shops => _discover_shops_sync(),
-	        known_portals => _discover_portals_sync(),
-	    });
-	    if ($_strat && $_strat->{status} == 200 && $_strat->{json}{command}) {
-	        my $_cmd = $_strat->{json}{command};
-	        eval { Commands::run($_cmd); 1 };
-	        my $_tgt_map = $_strat->{json}{target_map} || '';
-	        if ($_tgt_map ne '' && $_tgt_map ne $map) {
-	            $::config{'lockMap'} = $_tgt_map;
-	            if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
-	            # Auto-sell junk items when in town
-	            my $_sc_map = $field ? $field->name() : '';
-	            if ($_sc_map =~ /^prontera|izlude|morocc|payon|geffen|aldebaran/i) {
-	                _sell_junk_items();
-	            }
-	        }
-	    } else {
-	        # Fallback: stand up, try buying, sit as last resort
-	        if (0) { eval { Commands::run('stand'); 1 }; }
-	        my $_rec_city = _cfg('aiSidecar_recoveryCity', '');
-		# Cold start lockMap disabled - heuristic handles all routing
-		# $::config{'lockMap'} = $_rec_city || (_safe_char() && _safe_char()->{map} ? _safe_char()->{map} : 'prontera');
-	        if ($AI::AI != 2) { eval { require AI; AI::state(2); 1 }; }
-        # Sidecar decides navigation -- no hardcoded move
-        # No hardcoded NPC interaction -- sidecar decides
-        # No hardcoded item use -- sidecar decides
-	        if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
-	    }
+	    # Heuristic handles HP management - bridge only does sub-100ms reflexes
+	    if ($hp_pct < 15) { eval { Commands::run('sit'); 1 }; }
 	    return;
 	}
 	# ── Economy: Not enough zeny and not in combat → go grind ──
