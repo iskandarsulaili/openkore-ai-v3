@@ -594,7 +594,7 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: DEATH (respawned - sell items, buy potions, return to hunt) ──
+        # ── STATE: DEATH (respawned - sell items, buy potions) ──
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
             actions.append(HeuristicAction(
@@ -602,7 +602,6 @@ class HeuristicService:
                 confidence=0.99, domain="economy",
                 reason="Death recovery - sell items",
             ))
-            # Buy potions if we survived with some zeny
             if zeny > 0:
                 _potions_to_buy = min(3, zeny // 50)
                 if _potions_to_buy > 0:
@@ -611,11 +610,7 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason=f"Death recovery - buy {_potions_to_buy} potions",
                     ))
-            actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
-                confidence=0.99, domain="emergency",
-                reason="Death recovery - return to hunting map",
-            ))
+            # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.99
             top_domain = "economy"
             assessment = HeuristicAssessment(
@@ -627,7 +622,6 @@ class HeuristicService:
 
         # ── STATE: TOWN_STUCK (in town too long, force hunting) ──
         if state == "TOWN_STUCK":
-            # Set a 5-minute cooldown
             self._town_entry_time[bot_id] = __import__("time").time() + 300
             # If already on hunting map, just enable auto-attack
             if map_name not in _HUNT_TOWNS:
@@ -1029,7 +1023,9 @@ class HeuristicService:
                 )
                 self._last_assessment[bot_id] = assessment
                 return assessment
-            # In town: sell items, buy potions, then return to hunt
+            # In town: sell items, buy potions
+            # IMPORTANT: ONLY generate shop commands, NOT "move" 
+            # "move" interrupts NPC dialog - it comes on next cycle
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
             if _has_items:
                 actions.append(HeuristicAction(
@@ -1045,11 +1041,7 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
                     ))
-            actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
-                confidence=0.95, domain="hunting",
-                reason="Return to hunting map",
-            ))
+            # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.95
             top_domain = "hunting"
             assessment = HeuristicAssessment(
