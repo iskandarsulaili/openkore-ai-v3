@@ -343,7 +343,7 @@ sub on_mainLoop_post {
             # Clear AI sequence to prevent immediate re-sit
             @::AI::ai_seq = ();
             # Force AI to auto mode
-            $::config{attackAuto} = 2;
+            $::config{attackAuto} = 3;
             $::config{attackAuto_inLockOnly} = 0;
             # Disable sitAuto at the config level
             $::config{sitAuto_hp} = 0;
@@ -433,7 +433,7 @@ sub on_mainLoop_post {
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
-                $::config{attackAuto} = 2;
+                $::config{attackAuto} = 3;
                 $::config{attackAuto_inLockOnly} = 0;
                 $::config{attackDistanceAuto} = 0;
             }
@@ -4603,7 +4603,7 @@ sub _apply_bot_config {
     # Pro RO: disable auto-sit, let sidecar handle healing
     $::config{sitAuto_hp_lower} = 0;
     $::config{sitAuto_hp_upper} = 0;
-    $::config{attackAuto} = 2;
+    $::config{attackAuto} = 3;
     $::config{attackAuto_inLockOnly} = 0;
     $::config{attackDistance} = 7;
 }
@@ -4894,20 +4894,20 @@ sub _apply_ml_override {
 	if ($family eq 'encounter_classifier' && defined $rec->{encounter_profile}) {
 		my $profile = lc($rec->{encounter_profile});
 		if ($profile eq 'aggressive') {
-			$::config{attackAuto} = 2;
+			$::config{attackAuto} = 3;
 			$::config{autoMove} = 2;
 			$::config{attackDistance} = 5;
-			warning("ml_override applied: encounter_classifier=aggressive (attackAuto=2, autoMove=2)");
+			warning("ml_override applied: encounter_classifier=aggressive (attackAuto = 3, autoMove=2)");
 		} elsif ($profile eq 'safe') {
 			$::config{attackAuto} = 1;
 			$::config{autoMove} = 0;
 			$::config{attackDistance} = 3;
-			warning("ml_override applied: encounter_classifier=safe (attackAuto=1, autoMove=0)");
+			warning("ml_override applied: encounter_classifier=safe (attackAuto = 3, autoMove=0)");
 		} else {
-			$::config{attackAuto} = 2;
+			$::config{attackAuto} = 3;
 			$::config{autoMove} = 1;
 			$::config{attackDistance} = 7;
-			warning("ml_override applied: encounter_classifier=balanced (attackAuto=2, autoMove=1)");
+			warning("ml_override applied: encounter_classifier=balanced (attackAuto = 3, autoMove=1)");
 		}
 	} elsif ($family eq 'route_recovery_classifier' && defined $rec->{stuck_strategy}) {
 		my $strategy = lc($rec->{stuck_strategy});
