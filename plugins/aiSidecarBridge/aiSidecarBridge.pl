@@ -316,8 +316,8 @@ sub on_mainLoop_post {
 	}
 
         # Override attack distances (also disable auto-detection)
-        $::config{'attackDistance'} = 7;
-        $::config{'attackMaxDistance'} = 12;
+        $::config{'attackDistance'} = 2;
+        $::config{'attackMaxDistance'} = 7;
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
         # ── DISABLE SIT IN AI: prevent OpenKore's internal AI from sitting ──
         if ($char) {
