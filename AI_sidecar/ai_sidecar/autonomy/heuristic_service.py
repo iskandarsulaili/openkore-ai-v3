@@ -441,8 +441,9 @@ class HeuristicService:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
         # DEATH: if bot just died and respawned in town, sell/buy before hunting
-        # DEATH: if bot respawned in town (not cold_start and has no kills this session)
-        if is_town and _cold_fired and _total_kills == 0 and _prev_state != "UNKNOWN":
+        # DEATH: if bot respawned (not cold_start and has no kills this session)
+        # Works both in town and on hunting map (after death respawn)
+        if _cold_fired and _total_kills == 0 and _prev_state != "UNKNOWN":
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
         # Weight: compute from actual inventory items count in snapshot
@@ -594,9 +595,19 @@ class HeuristicService:
                 reason="Cold start - set chase distance",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set attackAuto 2",
+                kind="command", command="set attackAuto 3",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - enable aggressive auto-attack",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_maxDistance 3",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - keep attacking even if target moves",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_unstuck 1",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - don't give up mid-fight",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
@@ -1039,9 +1050,19 @@ class HeuristicService:
                     reason="Set max chase distance",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto 2",
+                    kind="command", command="set attackAuto 3",
                     confidence=0.95, domain="hunting",
                     reason="Enable aggressive auto-attack",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackAuto_maxDistance 3",
+                    confidence=0.95, domain="hunting",
+                    reason="Keep attacking even if target moves",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackAuto_unstuck 1",
+                    confidence=0.95, domain="hunting",
+                    reason="Don't give up mid-fight",
                 ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",

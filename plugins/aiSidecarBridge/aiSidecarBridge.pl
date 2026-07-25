@@ -278,6 +278,8 @@ sub on_mainLoop_pre {
 	if ($char) {
 	    # Disable OpenKore's internal teleport at 30% HP - heuristic handles HP management
 	    $::config{teleportAuto_hp} = 0;
+	    $::config{attackAuto_maxDistance} = 3;
+	    $::config{attackAuto_unstuck} = 1;
 	    # Override sitAuto config every cycle
 	    $::config{sitAuto_hp} = 0;
 	    $::config{sitAuto_hp_upper} = 0;
@@ -4554,6 +4556,8 @@ sub _apply_bot_config {
 	my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
 	my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
 	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '3') unless $::config{'_sidecar_set_attackAuto'};
+	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '3') unless $::config{'_sidecar_set_attackAuto_maxDistance'};
+	$::config{'attackAuto_unstuck'} = _cfg('aiSidecar_attackAutoUnstuck', '1') unless $::config{'_sidecar_set_attackAuto_unstuck'};
 	$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1') unless $::config{'_sidecar_set_attackAuto_inLockOnly'};
 	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '0') unless $::config{'_sidecar_set_attackAuto_followTarget'};
 	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
