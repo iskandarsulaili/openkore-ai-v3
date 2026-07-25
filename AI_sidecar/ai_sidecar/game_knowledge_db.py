@@ -8,6 +8,7 @@ by storing learned knowledge in player_memory table.
 from __future__ import annotations
 
 import json
+import threading
 import logging
 import os
 import sqlite3
@@ -26,16 +27,16 @@ class GameKnowledgeDB:
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self._db_path = Path(db_path) if db_path else _DB_PATH
-        self._local = None  # thread-local connection
+        self._local = threading.local()
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
-        if self._local is None:
-            self._local = sqlite3.connect(str(self._db_path))
-            self._local.row_factory = sqlite3.Row
-            self._local.execute("PRAGMA journal_mode=WAL")
-            self._local.execute("PRAGMA busy_timeout=5000")
-        return self._local
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            self._local.conn = sqlite3.connect(str(self._db_path))
+            self._local.conn.row_factory = sqlite3.Row
+            self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA busy_timeout=5000")
+        return self._local.conn
 
     # ── Zone Ladder ────────────────────────────────────────────────
 

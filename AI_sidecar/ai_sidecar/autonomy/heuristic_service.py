@@ -420,10 +420,30 @@ class HeuristicService:
         self._last_buy_time: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
-        self._gkd = GameKnowledgeDB()
         self._load_towns()
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
+
+    def _get_npc(self, task_type: str, map_name: str) -> dict | None:
+        """Thread-safe NPC lookup - creates new DB connection per call."""
+        try:
+            gkd = GameKnowledgeDB()
+            return gkd.find_npc_for_task(task_type, map_name)
+        except Exception:
+            return None
+
+    def _load_towns(self) -> None:
+        """Load town map names from database."""
+        global _HUNT_TOWNS
+        try:
+            gkd = GameKnowledgeDB()
+            conn = gkd._get_conn()
+            rows = conn.execute("SELECT map_name FROM npc_interactions WHERE interaction_type='town_flag'").fetchall()
+            _HUNT_TOWNS = {row['map_name'] for row in rows}
+        except Exception:
+            pass
+        if not _HUNT_TOWNS:
+            _HUNT_TOWNS = {"prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude", "comodo", "umbala", "yuno", "einbroch", "einbech", "lighthalzen", "rachel", "veins", "niflheim", "manuk", "splendide", "brasilis", "moscovia", "amatsu", "kunlun", "louyang", "ayothaya", "jawaii", "gonryun", "hugel"}
 
     def _get_state(self, signals: dict, bot_id: str = "default") -> str:
         """Determine bot state from signals."""
@@ -630,7 +650,7 @@ class HeuristicService:
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
             # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
-            _sell_npc = self._gkd.find_npc_for_task("sell", map_name)
+            _sell_npc = self._get_npc("sell", map_name)
             if _sell_npc:
                 _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
             else:
@@ -647,7 +667,7 @@ class HeuristicService:
             if not _has_items and zeny < 50:
                 _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
                 if _town_time > 15:
-                    _portal = self._gkd.find_npc_for_task("portal_to_hunt", map_name)
+                    _portal = self._get_npc("portal_to_hunt", map_name)
                     if _portal:
                         _portal_cmd = f"move {_portal['x']} {_portal['y']}"
                     else:
@@ -678,7 +698,7 @@ class HeuristicService:
                     reason="Already on hunting map - enable auto-attack",
                 ))
             else:
-                _portal = self._gkd.find_npc_for_task("portal_to_hunt", map_name)
+                _portal = self._get_npc("portal_to_hunt", map_name)
                 if _portal:
                     _portal_cmd = f"move {_portal['x']} {_portal['y']}"
                 else:
@@ -1122,7 +1142,7 @@ class HeuristicService:
             if _has_items:
                 # Sell first - talknpc opens NPC dialog, sellAuto handles the rest
                 # Look up sell NPC from database
-                _sell_npc = self._gkd.find_npc_for_task("sell", map_name)
+                _sell_npc = self._get_npc("sell", map_name)
                 if _sell_npc:
                     _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
                 else:
@@ -1147,7 +1167,7 @@ class HeuristicService:
                             reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
                         ))
                     else:
-                        _buy_npc = self._gkd.find_npc_for_task("buy_potion", map_name)
+                        _buy_npc = self._get_npc("buy_potion", map_name)
                         if _buy_npc:
                             _buy_cmd = f"move {_buy_npc['x']} {_buy_npc['y']}"
                         else:
@@ -1162,7 +1182,7 @@ class HeuristicService:
                 # (buy command was generated this cycle, next cycle we return to hunt)
                 _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
                 if _town_time > 30:
-                    _portal = self._gkd.find_npc_for_task("portal_to_hunt", map_name)
+                    _portal = self._get_npc("portal_to_hunt", map_name)
                     if _portal:
                         _portal_cmd = f"move {_portal['x']} {_portal['y']}"
                     else:
