@@ -1034,6 +1034,21 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # If we have zeny but no items, return to town to buy potions
+                if zeny >= 50 and not _has_items:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.95, domain="economy",
+                        reason=f"Return to town to buy potions (zeny={zeny})",
+                    ))
+                    total_confidence = 0.95
+                    top_domain = "economy"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # Default: set optimal attack config and enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="set attackDistance 2",
