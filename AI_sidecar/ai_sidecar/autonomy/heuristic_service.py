@@ -584,6 +584,21 @@ class HeuristicService:
                 reason="Cold start - stand up",
             ))
             actions.append(HeuristicAction(
+                kind="command", command="set attackDistance 5",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - set attack distance",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackMaxDistance 15",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - set chase distance",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto 2",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - enable aggressive auto-attack",
+            ))
+            actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
                 reason="Cold start - go to hunting map via portal",
@@ -1012,7 +1027,22 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # Default: enable auto-attack
+                # Default: set optimal attack config and enable auto-attack
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackDistance 5",
+                    confidence=0.95, domain="hunting",
+                    reason="Set optimal attack distance",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackMaxDistance 15",
+                    confidence=0.95, domain="hunting",
+                    reason="Set max chase distance",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackAuto 2",
+                    confidence=0.95, domain="hunting",
+                    reason="Enable aggressive auto-attack",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
