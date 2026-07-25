@@ -416,16 +416,25 @@ sub on_mainLoop_post {
             }
         }
         
-        # Keep lockMap set to hunting map if bot is on one
+        # Keep lockMap set to hunting map at ALL times (not just when on one)
+        # This prevents OpenKore's internal AI from generating "move prontera" endlessly
         if ($char) {
             my $_sm_map = lc($char->{map} || '');
             $_sm_map =~ s/\.gat$//;
-            if ($_sm_map =~ /^[a-z]+_fild/ && (!defined $::config{lockMap} || $::config{lockMap} ne $_sm_map)) {
-                $::config{lockMap} = $_sm_map;
+            my $_hunt_map = _cfg('aiSidecar_huntingMap', 'prt_fild05') || 'prt_fild05';
+            if ($_sm_map =~ /^[a-z]+_fild/) {
+                # On hunting map: ensure lockMap matches current map
+                if (!defined $::config{lockMap} || $::config{lockMap} ne $_sm_map) {
+                    $::config{lockMap} = $_sm_map;
+                }
+            } else {
+                # In town: ensure lockMap is set to hunting map
+                if (!defined $::config{lockMap} || $::config{lockMap} eq 'prontera' || $::config{lockMap} eq '') {
+                    $::config{lockMap} = $_hunt_map;
+                }
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
-                # $::config{attackAuto} = 3;
                 $::config{attackAuto_inLockOnly} = 0;
                 $::config{attackDistanceAuto} = 0;
             }
