@@ -274,13 +274,14 @@ sub on_mainLoop_pre {
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 	
-	# ── PREVENT SIT IN AI SEQUENCE: remove sit from AI sequence every cycle ──
+	# ── PREVENT TELEPORT AT LOW HP: disable OpenKore internal teleport ──
 	if ($char) {
-	    # Remove sit from AI sequence before it executes
-	    @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
+	    # Disable OpenKore's internal teleport at 30% HP - heuristic handles HP management
+	    $::config{teleportAuto_hp} = 0;
 	    # Override sitAuto config every cycle
 	    $::config{sitAuto_hp} = 0;
 	    $::config{sitAuto_hp_upper} = 0;
+	    $::config{teleportAuto_hp} = 0;
 	    $::config{sitAuto_sp} = 0;
 	    $::config{sitAuto_sp_upper} = 0;
 	    $::config{sitAuto_idle} = 0;
@@ -4562,7 +4563,7 @@ sub _apply_bot_config {
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
 	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '7') unless $::config{'_sidecar_set_attackDistance'};
 	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection (overrides our 7/12)
-	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '30') unless $::config{'_sidecar_set_teleportAuto_hp'};
+	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
 	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
 	$::config{'route_randomWalk_inLockOnly'} = _cfg('aiSidecar_routeRandomWalkInLockOnly', '1') unless $::config{'_sidecar_set_route_randomWalk_inLockOnly'};
