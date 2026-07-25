@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword stafreab
+adminPassword zustocac
 callSign
 commandPrefix ;
 callSignGM 0
@@ -886,7 +886,7 @@ maxDistance
 
 sellAuto 1
 sellAuto_npc = prontera 147 175
-sellAuto_npc_steps = c r0 n c
+sellAuto_npc_steps = c r1 n
 sellAuto_standpoint
 sellAuto_maxWeight 0
 sellAuto_distance 25
@@ -1261,7 +1261,7 @@ buyAuto_Bow {
 # Pro RO: Auto-sell junk items
 sellAuto 1
 sellAuto_npc = prontera 147 175
-sellAuto_npc_steps = c r0 n c
+sellAuto_npc_steps = c r1 n
 sellAuto_maxWeight 0
 sellAuto_distance 25
 

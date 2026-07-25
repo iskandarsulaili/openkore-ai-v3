@@ -601,7 +601,7 @@ class HeuristicService:
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175 c r0 n",
+                kind="command", command="talknpc 147 175 c r1 n",
                 confidence=0.99, domain="economy",
                 reason="Death recovery - sell items",
             ))
@@ -678,7 +678,7 @@ class HeuristicService:
                 reason=f"Weight {weight:.0f}% - walk to Special Dealer to sell junk",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175 c r0 n",
+                kind="command", command="talknpc 147 175 c r1 n",
                 confidence=0.90, domain="economy",
                 reason="Open Special Dealer and sell items (atomic dialog)",
             ))
@@ -1032,7 +1032,7 @@ class HeuristicService:
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
             if _has_items:
                 actions.append(HeuristicAction(
-                    kind="command", command="talknpc 147 175 c r0 n",
+                    kind="command", command="talknpc 147 175 c r1 n",
                     confidence=0.99, domain="economy",
                     reason=f"In town - sell items",
                 ))
