@@ -4561,8 +4561,7 @@ sub _apply_bot_config {
 	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7');
 	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
-	$::config{'attackDistance'} = _cfg('aiSidecar_attackDistance', '2') unless $::config{'_sidecar_set_attackDistance'};
-	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection (overrides our 7/12)
+	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
 	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
