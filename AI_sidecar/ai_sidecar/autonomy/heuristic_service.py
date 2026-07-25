@@ -1035,6 +1035,23 @@ class HeuristicService:
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
                 _total_kills = signals.get("kills", 0) or 0
+                # AT PORTAL EXIT: if bot is at (367, 205) on prt_fild05, move to center
+                _x = signals.get("x", 0) or 0
+                _y = signals.get("y", 0) or 0
+                if abs(_x - 367) < 10 and abs(_y - 205) < 10 and map_name == "prt_fild05":
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 200 200",
+                        confidence=0.99, domain="hunting",
+                        reason="At portal exit - move to center of hunting map",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "hunting"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # JUST WARPED: if just arrived, sit to regen first
                 if _hunt_duration < 15:
                     if _hp_ratio < 0.5:
