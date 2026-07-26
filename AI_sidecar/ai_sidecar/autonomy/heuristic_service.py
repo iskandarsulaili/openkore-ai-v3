@@ -658,6 +658,17 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
+            # 1b. Set teleport config to prevent running from monsters
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_minAggressives 8",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - only teleport at 8+ mobs",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_hp 0",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - never teleport due to HP",
+            ))
             # 2. Go directly to hunting map via portal (keep starting weapon!)
             actions.append(HeuristicAction(
                 kind="command", command=f"move {_cs_portal_coords}",
@@ -1300,6 +1311,16 @@ class HeuristicService:
                         kind="command", command="set attackAuto 3",
                         confidence=0.95, domain="hunting",
                         reason="Enable aggressive auto-attack",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set teleportAuto_minAggressives 8",
+                        confidence=0.95, domain="survival",
+                        reason="Only teleport when 8+ mobs (stop running from 1 mob)",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set teleportAuto_hp 0",
+                        confidence=0.95, domain="survival",
+                        reason="Never teleport due to HP - use sit instead",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_maxDistance 3",
