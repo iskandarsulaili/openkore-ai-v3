@@ -626,6 +626,7 @@ class HeuristicService:
         _expected_count = len(_all_bots)
         _actual_count = len(_party_members) + (1 if _party_in else 0)
         _party_incomplete = _actual_count < _expected_count
+        logger.info("[party_check] " + str(bot_id) + " in_party=" + str(_party_in) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " expected=" + str(_expected_count) + " actual=" + str(_actual_count) + " incomplete=" + str(_party_incomplete))
 
         # Leader: check if party is incomplete
         if _is_leader and _party_incomplete and state != "COLD_START" and state != "DEAD":
