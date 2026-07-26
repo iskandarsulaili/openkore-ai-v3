@@ -1364,7 +1364,7 @@ sub _build_snapshot_payload {
 		# ── Populate all_bots from .bot_profiles directory ──
 		if (!defined $::aiSidecar_all_bots || $::aiSidecar_all_bots eq '') {
 			my @_profiles;
-			my $_prof_dir = "$::ENV{HOME}/openkore-ai-v3/.bot_profiles";
+			my $_prof_dir = ".bot_profiles";
 			if (-d $_prof_dir) {
 				opendir my $_dh, $_prof_dir or do { debug "bridge_all_bots: cannot open $_prof_dir\n", 'aiSidecarBridge', 1 };
 				if ($_dh) {
@@ -1381,12 +1381,39 @@ sub _build_snapshot_payload {
 		if (defined($char) && !defined($char->{party})) {
 			$::config{partyAuto} = 2;
 		}
-			# Not in a party - check for incoming invites
-			# The heuristic should set partyAuto 2, but we do it here too as backup
-			$::config{partyAuto} = 2;
-		}
 		# ── Direct party invite: leader invites missing members ──
 		# This runs OUTSIDE the eval block so errors don't get swallowed
+		# First, check if leader needs to create a party
+		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0]) {
+			if (!defined($char->{party})) {
+				my $_ts = time();
+				my $_ok = eval { Commands::run("party create AI$_ts"); 1; };
+				debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+			}
+		}
+		# Then invite missing members
+		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && defined($char->{party})) {
+			my $_pu = $char->{party}{users} || {};
+			my $_mc = scalar(keys %$_pu) + 1;
+			if ($_mc < 3) {
+				my %_mn;
+				for my $_uid (keys %$_pu) {
+					my $_pm = $_pu->{$_uid};
+					my $_pn = eval { $_pm->{name} || $_pm->name() || '' } || '';
+					$_mn{$_pn} = 1 if $_pn;
+				}
+				$_mn{$char->{name}} = 1;
+				# Dynamic mapping: use all_bots from sidecar
+				for my $_pn (@::aiSidecar_all_bots_split) {
+					next if $_pn eq ($::config{username} || '');
+					my $_cn = $_pn;  # Use profile name as char name (fallback)
+					if (!$_mn{$_cn}) {
+						my $_ok = eval { Commands::run("party request $_cn"); 1; };
+						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+					}
+				}
+			}
+		}
 		# Leader invites missing members
 		# Leader detection: check if this bot is the first in all_bots
 		# all_bots comes from sidecar via snapshot cache

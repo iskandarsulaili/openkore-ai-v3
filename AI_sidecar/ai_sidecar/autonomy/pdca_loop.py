@@ -4929,7 +4929,7 @@ class PDCALoop:
                                         if _gm_snap is not None:
                                             # Convert BotStateSnapshot to dict
                                             if hasattr(_gm_snap, 'model_dump'):
-                                                _gm_snap_dict[_gm_bid] = _gm_snap.model_dump()
+                                                _gm_snap_dict[_gm_bid] = _gm_snap.model_dump(mode='json')
                                             elif hasattr(_gm_snap, 'dict'):
                                                 _gm_snap_dict[_gm_bid] = _gm_snap.dict()
                                             else:
