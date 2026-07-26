@@ -619,7 +619,7 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         if not _party_in and state != "COLD_START" and state != "DEAD":
             _bot_name = signals.get("bot_name", bot_id) or bot_id
-            _all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys())
+            _all_bots = signals.get("all_bots", []) or []
             _sorted_bots = sorted(_all_bots)
             _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
             if _is_leader:
