@@ -1378,6 +1378,39 @@ sub _build_snapshot_payload {
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
+			# ── Direct party invite: leader invites missing members ──
+			# This bypasses the heuristic entirely - runs every cycle
+			my $_is_leader = ($p{bot_id} || '') eq 'kicapmasin';
+			if ($_is_leader && defined($char) && defined($char->{party})) {
+				my $_party_users = $char->{party}{users} || {};
+				my $_member_count = scalar(keys %$_party_users) + 1;  # +1 for self
+				if ($_member_count < 3) {
+					# Missing members - invite them
+					my %_member_names;
+					for my $_uid (keys %$_party_users) {
+						my $_pm = $_party_users->{$_uid};
+						my $_pm_name = '';
+						eval { $_pm_name = $_pm->{name} || $_pm->name() || '' };
+						$_member_names{$_pm_name} = 1 if $_pm_name;
+					}
+					# Add self
+					$_member_names{$char->{name}} = 1;
+					# Check each bot
+					my %_profile_to_char = (
+						kicapmasin => 'openkoreai',
+						kicapmasin2 => 'openkoreaiobs',
+						kicapmasin3 => 'openkoreaihuman',
+					);
+					for my $_pname (keys %_profile_to_char) {
+						next if $_pname eq 'kicapmasin';  # Skip self
+						my $_cname = $_profile_to_char{$_pname};
+						if (!$_member_names{$_cname}) {
+							Commands::run("party request $_cname");
+							main::ai_sidecar_debug("bridge_party_invite: requesting $_cname");
+						}
+					}
+				}
+			}
 			# Cache party state to survive death/respawn
 			# Use bot_id (profile name) as cache key
 			my $_cache_key = $p{bot_id} || $::config{username} || $ENV{BOT_NAME} || 'unknown';
