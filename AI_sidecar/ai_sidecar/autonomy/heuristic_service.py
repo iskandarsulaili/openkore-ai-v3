@@ -1063,14 +1063,9 @@ class HeuristicService:
                     reason="Leader - create party for team play",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="party invite kicapmasin2",
-                    confidence=0.85, domain="social",
-                    reason="Leader - invite kicapmasin2",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party invite kicapmasin3",
-                    confidence=0.85, domain="social",
-                    reason="Leader - invite kicapmasin3",
+                    kind="command", command="party setcode team1",
+                    confidence=0.90, domain="social",
+                    reason="Leader - set join code so partyAutoJoinCode bots auto-join",
                 ))
                 actions.append(HeuristicAction(
                     kind="command", command="party share exp",
@@ -1078,8 +1073,7 @@ class HeuristicService:
                     reason="Share experience in party",
                 ))
             else:
-                # Joiners: do nothing - partyAuto 1 in config auto-accepts invites
-                # Sending "party join 1" gives error when no invitation is pending
+                # Joiners: do nothing - partyAuto 1 + partyAutoJoinCode team1 auto-joins
                 pass
             total_confidence = 0.85
             top_domain = "social"
@@ -1354,14 +1348,9 @@ class HeuristicService:
                             reason="Leader - create party for team play",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="party invite kicapmasin2",
-                            confidence=0.90, domain="social",
-                            reason="Leader - invite kicapmasin2",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="party invite kicapmasin3",
-                            confidence=0.90, domain="social",
-                            reason="Leader - invite kicapmasin3",
+                            kind="command", command="party setcode team1",
+                            confidence=0.95, domain="social",
+                            reason="Leader - set join code so partyAutoJoinCode bots auto-join",
                         ))
                         actions.append(HeuristicAction(
                             kind="command", command="party share exp",
@@ -1369,7 +1358,7 @@ class HeuristicService:
                             reason="Share experience in party",
                         ))
                     else:
-                        # Joiners: do nothing - partyAuto 1 in config auto-accepts invites
+                        # Joiners: do nothing - partyAuto 1 + partyAutoJoinCode team1 auto-joins
                         pass
                     actions.append(HeuristicAction(
                         kind="command", command="ai auto",
