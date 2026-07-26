@@ -641,7 +641,7 @@ class HeuristicService:
         _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
         # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
         _expected_count = len(_all_bots)
-        _actual_count = len(_party_members) + (1 if _party_in else 0)
+        _actual_count = len(_party_members)
         _party_incomplete = _actual_count < _expected_count
         logger.info("[party_check] " + str(bot_id) + " in_party=" + str(_party_in) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " expected=" + str(_expected_count) + " actual=" + str(_actual_count) + " incomplete=" + str(_party_incomplete))
 
