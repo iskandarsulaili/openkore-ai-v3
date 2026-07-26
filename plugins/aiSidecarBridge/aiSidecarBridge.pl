@@ -1415,7 +1415,7 @@ sub _build_snapshot_payload {
 				}
 			}
 		}
-		$progression = eval {
+				# ── $progression = eval {
 			my %p;
 			$p{job_id}       = $char->{jobID}     if defined $char->{jobID};
 			$p{base_level}   = $char->{level}      if defined $char->{level};
