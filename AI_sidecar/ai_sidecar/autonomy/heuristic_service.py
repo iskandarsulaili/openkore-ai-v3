@@ -1307,7 +1307,8 @@ class HeuristicService:
                     self._last_level[bot_id] = _current_level
                     # Level-up detected - allocate 5 stat points per level gained
                     # Don't skip first detection (when _last_level was 0)
-                    if _level_change > 0:
+                    # Only allocate if actual level-up detected (not first sighting)
+                    if _level_change > 0 and _last_level > 0:
                         _stat_builds = {
                             "novice": ["dex", "str", "agi", "vit"],
                             "archer": ["dex", "agi", "str", "vit"],
