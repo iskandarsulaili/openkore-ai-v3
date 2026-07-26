@@ -3632,10 +3632,13 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'stat_add' commands - always pass through, let OpenKore validate
+	# Handle 'stat_add' commands - rewrite to 'st add' (correct OpenKore command)
 	if ($normalized =~ /^stat_add\s+(.+)$/) {
+		my $_stat_name = $1;
+		debug "[stat_add_rewrite] $normalized -> st add $_stat_name\n", 'aiSidecarBridge', 2;
+		$command = "st add $_stat_name";
 		$rewrite_kind = 'stat_add_rewritten';
-		return ($normalized, $rewrite_kind);
+		return ($command, $rewrite_kind);
 	}
 
 	# Handle 'move' commands (already handled above in guard section)
