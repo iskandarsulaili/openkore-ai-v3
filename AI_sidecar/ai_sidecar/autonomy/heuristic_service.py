@@ -1498,7 +1498,13 @@ class HeuristicService:
                         _last_party = self._last_party_attempt.get(bot_id, 0)
                         if _now - _last_party > 30:
                             self._last_party_attempt[bot_id] = _now
-                            # Leader: leave current party first, then create new one
+                            # Leader: move to town first so all bots are on same map for party request
+                            actions.append(HeuristicAction(
+                                kind="command", command="move prontera",
+                                confidence=0.99, domain="social",
+                                reason="Leader - move to town for party formation",
+                            ))
+                            # Leave old party, create new one
                             actions.append(HeuristicAction(
                                 kind="command", command="party leave",
                                 confidence=0.99, domain="social",
@@ -1510,7 +1516,6 @@ class HeuristicService:
                                 reason="Leader - create party with unique name",
                             ))
                             # Request all known bots to join using character names
-                            # Profile->char mapping for party requests
                             _profile_to_char = {
                                 "kicapmasin": "openkoreai",
                                 "kicapmasin2": "openkoreaiobs",
@@ -1530,7 +1535,12 @@ class HeuristicService:
                                 reason="Share experience in party",
                             ))
                     else:
-                        # Joiners: set partyAuto to 2 (auto-accept) and wait
+                        # Joiners: move to town, set partyAuto to 2, wait for invite
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prontera",
+                            confidence=0.99, domain="social",
+                            reason="Joiners - move to town for party formation",
+                        ))
                         actions.append(HeuristicAction(
                             kind="command", command="set partyAuto 2",
                             confidence=0.99, domain="social",
@@ -1539,7 +1549,7 @@ class HeuristicService:
                         actions.append(HeuristicAction(
                             kind="command", command="ai auto",
                             confidence=0.95, domain="hunting",
-                            reason="Continue hunting while waiting for party invite",
+                            reason="Continue while waiting for party invite",
                         ))
                     actions.append(HeuristicAction(
                         kind="command", command="ai auto",
