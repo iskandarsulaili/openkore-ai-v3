@@ -76,7 +76,7 @@ my $hooks = Plugins::addHooks(
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
 	['post_configModify', \&on_post_config_modify, undef],
 	['post_bulkConfigModify', \&on_post_bulk_config_modify, undef],
-	['command', \&on_command_intercept, undef],
+	['Commands::run', \&on_command_intercept, undef],
 	['Commands::run/post', \&on_command_run_post, undef],
 );
 

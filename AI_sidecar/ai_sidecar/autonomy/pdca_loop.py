@@ -5019,7 +5019,7 @@ class PDCALoop:
                                                     try:
                                                         _hc_configs = [
                                                             ("lockMap", _cr_map if _cr_map else "prt_fild08"),
-                                                            ("attackAuto", "2"),
+                                                            ("attackAuto", "3"),
                                                             ("attackAuto_inLockOnly", "0"),
                                                             ("route_randomWalk", "2"),
                                                             ("teleportAuto_minAggressives", "5"),
