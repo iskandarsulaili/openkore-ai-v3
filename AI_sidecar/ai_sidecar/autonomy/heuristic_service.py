@@ -1487,13 +1487,20 @@ class HeuristicService:
                                 confidence=0.95, domain="social",
                                 reason="Leader - create party with unique name",
                             ))
-                            # Request all known bots to join (dynamically detected)
+                            # Request all known bots to join using character names
+                            # Profile->char mapping for party requests
+                            _profile_to_char = {
+                                "kicapmasin": "openkoreai",
+                                "kicapmasin2": "openkoreaiobs",
+                                "kicapmasin3": "openkoreaihuman",
+                            }
                             for _other_bot in _all_bots:
                                 if _other_bot != _bot_name:
+                                    _char_name = _profile_to_char.get(_other_bot, _other_bot)
                                     actions.append(HeuristicAction(
-                                        kind="command", command=f"party request {_other_bot}",
+                                        kind="command", command=f"party request {_char_name}",
                                         confidence=0.95, domain="social",
-                                        reason=f"Leader - request {_other_bot} to join party",
+                                        reason=f"Leader - request {_other_bot} ({_char_name}) to join party",
                                     ))
                             actions.append(HeuristicAction(
                                 kind="command", command="party share exp",

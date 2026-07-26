@@ -1279,22 +1279,7 @@ sub _attempt_register {
 		},
 	};
 
-	# Write profile->char mapping to shared file during registration
-	my $_profile_name = eval { $profiles::profile } || '';
-	my $_char_name = $char ? ($char->{name} || '') : '';
-	if ($_profile_name && $_char_name) {
-		require Cwd;
-		my $_cwd = Cwd::cwd();
-		my $_map_dir = "$_cwd/data";
-		mkdir($_map_dir) unless -d $_map_dir;
-		my $_map_file = "$_map_dir/profile_to_char.txt";
-		open(my $_mf, ">", $_map_file) or debug "[profile_map] cannot write $_map_file: $!\n", 'aiSidecarBridge', 1;
-		if ($_mf) {
-			print $_mf lc($_profile_name) . "=" . lc($_char_name) . "\n";
-			close($_mf);
-			debug "[profile_map] wrote $_profile_name=$_char_name to $_map_file\n", 'aiSidecarBridge', 2;
-		}
-	}
+	# Profile->char mapping is hardcoded in the party request handler
 	my $resp = _http_post_json('/v1/ingest/register', $payload);
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 500) {
 		$registered = 1;
