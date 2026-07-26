@@ -30,6 +30,7 @@ from ai_sidecar.fleet.swarm_ai import (
     FormationType, SkillCombo,
 )
 from ai_sidecar.autonomy.goal_decomposer import GoalDecomposer, GoalHorizon, CrossHorizonSynergy
+from ai_sidecar.autonomy.god_mode import god_mode_assess, get_god_mode
 from ai_sidecar.autonomy.committed_action_tracker import CommittedActionTracker
 from ai_sidecar.npc_discovery import NPCDiscoveryEngine
 from ai_sidecar.server_adaptation import ServerAdaptationEngine
