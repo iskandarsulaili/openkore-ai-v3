@@ -1384,9 +1384,14 @@ sub _build_snapshot_payload {
 			if (defined($char->{party}) && ref($char->{party}{users}) eq "HASH") {
 				for my $_pm_key (keys %{$char->{party}{users}}) {
 					my $_pm = $char->{party}{users}{$_pm_key};
-					# Actor::Party objects are blessed HASH refs - ref() returns class name, not "HASH"
-					# Use eval to safely access name field regardless of blessing
-					my $_pm_name = eval { $_pm->{name} } || '';
+					# Actor::Party objects are blessed HASH refs - use nameString() method
+					my $_pm_name = '';
+					if (UNIVERSAL::can($_pm, 'name')) {
+						$_pm_name = eval { $_pm->name() } || '';
+					}
+					if (!$_pm_name) {
+						$_pm_name = eval { $_pm->{name} } || '';
+					}
 					if ($_pm_name) {
 						push @{$raw->{party_members}}, lc($_pm_name);
 					}

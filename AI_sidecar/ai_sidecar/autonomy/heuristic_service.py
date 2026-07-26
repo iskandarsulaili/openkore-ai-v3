@@ -970,11 +970,6 @@ class HeuristicService:
                     confidence=0.95, domain="economy",
                     reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
                 ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talknpc 160 133 c r0 n",
-                    confidence=0.90, domain="economy",
-                    reason="Open Weapon Shop and open buy menu (atomic dialog)",
-                ))
                 # Buy a bow (1701) or knife (1301) depending on class
                 _weapon = "1701"  # Default: Bow
                 if "thief" in job_name or "assassin" in job_name:
@@ -985,6 +980,17 @@ class HeuristicService:
                     _weapon = "1501"  # Rod
                 elif "acolyte" in job_name or "priest" in job_name:
                     _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
+                # Atomic: walk to NPC, open shop, buy weapon in one cycle
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move 160 133",
+                    confidence=0.95, domain="economy",
+                    reason=f"Walk to Weapon Shop to buy weapon {_weapon}",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command=f"talknpc 160 133 c r0 n",
+                    confidence=0.90, domain="economy",
+                    reason="Open Weapon Shop dialog",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_weapon} 1",
                     confidence=0.85, domain="economy",
@@ -1485,6 +1491,12 @@ class HeuristicService:
                         _last_party = self._last_party_attempt.get(bot_id, 0)
                         if _now - _last_party > 30:
                             self._last_party_attempt[bot_id] = _now
+                            # Leader: leave current party first, then create new one
+                            actions.append(HeuristicAction(
+                                kind="command", command="party leave",
+                                confidence=0.99, domain="social",
+                                reason="Leader - leave old party first",
+                            ))
                             actions.append(HeuristicAction(
                                 kind="command", command=f"party create AI{int(_now_t)}",
                                 confidence=0.95, domain="social",
@@ -1511,26 +1523,16 @@ class HeuristicService:
                                 reason="Share experience in party",
                             ))
                     else:
-                        # Joiners: leave current party first, set partyAuto to 2, move to hunting map
-                        actions.append(HeuristicAction(
-                            kind="command", command="party leave",
-                            confidence=0.99, domain="social",
-                            reason="Leave current party to join leader's party",
-                        ))
+                        # Joiners: set partyAuto to 2 (auto-accept) and wait
                         actions.append(HeuristicAction(
                             kind="command", command="set partyAuto 2",
                             confidence=0.99, domain="social",
                             reason="Set partyAuto to auto-accept party requests",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="move 22 203",
-                            confidence=0.95, domain="social",
-                            reason="Joiners - move to hunting map to be on same map as leader",
-                        ))
-                        actions.append(HeuristicAction(
                             kind="command", command="ai auto",
                             confidence=0.95, domain="hunting",
-                            reason="Continue after moving to hunting map",
+                            reason="Continue hunting while waiting for party invite",
                         ))
                     actions.append(HeuristicAction(
                         kind="command", command="ai auto",
