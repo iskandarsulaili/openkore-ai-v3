@@ -3573,23 +3573,15 @@ sub _rewrite_runtime_command {
 	# Handle 'party request <name>' -> resolve name to player list # and send request
 	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
 		my $_req_name = $1;
-		# Resolve profile name to character name from shared mapping file
+		# Resolve profile name to character name using known mapping
 		my $_char_name = $_req_name;
-		require Cwd;
-		my $_map_file = Cwd::cwd() . "/data/profile_to_char.txt";
-		if (-f $_map_file) {
-			open(my $_mf, "<", $_map_file) or debug "[party_request] cannot read $_map_file: $!\n", 'aiSidecarBridge', 1;
-			if ($_mf) {
-				while (my $_line = <$_mf>) {
-					chomp $_line;
-					my ($_prof, $_char) = split(/=/, $_line, 2);
-					if ($_prof && $_char && lc($_prof) eq lc($_req_name)) {
-						$_char_name = lc($_char);
-						last;
-					}
-				}
-				close($_mf);
-			}
+		my %_profile_to_char = (
+			kicapmasin => 'openkoreai',
+			kicapmasin2 => 'openkoreaiobs',
+			kicapmasin3 => 'openkoreaihuman',
+		);
+		if (exists $_profile_to_char{lc($_req_name)}) {
+			$_char_name = $_profile_to_char{lc($_req_name)};
 		}
 		my $_req_id = 0;
 		if ($playersList) {
