@@ -619,7 +619,7 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         if not _party_in and state != "COLD_START" and state != "DEAD":
             _bot_name = signals.get("bot_name", bot_id) or bot_id
-            _all_bots = signals.get("all_bots", []) or []
+            _all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
             _sorted_bots = sorted(_all_bots)
             _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
             if _is_leader:
@@ -742,7 +742,7 @@ class HeuristicService:
             # 1b. Party creation for leader - do this early so others can join
             _cs_bot_name = signals.get("bot_name", bot_id) or bot_id
             # Dynamic leader detection: first bot alphabetically is leader
-            _cs_all_bots = signals.get("all_bots", []) or []
+            _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
             _cs_sorted = sorted(_cs_all_bots)
             _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_name == _cs_sorted[0]
             if _cs_is_leader:
