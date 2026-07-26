@@ -1474,11 +1474,11 @@ class HeuristicService:
                 _all_bots = signals.get("all_bots", []) or []
                 _party_incomplete = _party_in and len(_party_members) + 1 < len(_all_bots)
                 if not _party_in or _party_incomplete:
-                    _bot_name = signals.get("bot_name", bot_id) or bot_id
-                    # Dynamic leader detection: first bot alphabetically is leader
+                    # Leader detection: use profile name (from bot_id) not character name
+                    _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
                     _all_bots = signals.get("all_bots", []) or []
                     _sorted_bots = sorted(_all_bots)
-                    _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
+                    _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
                     # Leader sends party commands with 30s cooldown (party request only works on same map)
                     if _is_leader:
                         _now = __import__("time").time()
