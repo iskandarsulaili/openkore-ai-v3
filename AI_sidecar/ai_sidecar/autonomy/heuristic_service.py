@@ -1369,6 +1369,51 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # PARTY: Leader creates + invites, joiners accept (party join 1 = accept)
+                _party_in = signals.get("in_party", False)
+                if not _party_in:
+                    _bot_name = signals.get("bot_name", bot_id) or bot_id
+                    _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
+                    if _is_leader:
+                        actions.append(HeuristicAction(
+                            kind="command", command="party create AI Team",
+                            confidence=0.95, domain="social",
+                            reason="Leader - create party for team play",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="party invite kicapmasin2",
+                            confidence=0.90, domain="social",
+                            reason="Leader - invite kicapmasin2",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="party invite kicapmasin3",
+                            confidence=0.90, domain="social",
+                            reason="Leader - invite kicapmasin3",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="party share exp",
+                            confidence=0.90, domain="social",
+                            reason="Share experience in party",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="party join 1",
+                            confidence=0.95, domain="social",
+                            reason="Accept party invitation",
+                        ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Continue hunting after party attempt",
+                    ))
+                    total_confidence = 0.95
+                    top_domain = "social"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # HP MANAGEMENT: Sit when low HP to prevent death
                 # Ranged classes (Archer/Mage) get lower threshold (30%) since they're at range
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
