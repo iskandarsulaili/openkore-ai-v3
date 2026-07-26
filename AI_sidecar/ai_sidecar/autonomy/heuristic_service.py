@@ -622,10 +622,13 @@ class HeuristicService:
         _bot_name = signals.get("bot_name", bot_id) or bot_id
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
-        _missing_members = [b for b in _all_bots if b != _bot_name and b not in _party_members]
+        # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
+        _expected_count = len(_all_bots)
+        _actual_count = len(_party_members) + (1 if _party_in else 0)
+        _party_incomplete = _actual_count < _expected_count
 
-        # Leader: check if party is incomplete (missing members)
-        if _is_leader and (_missing_members or not _party_in) and state != "COLD_START" and state != "DEAD":
+        # Leader: check if party is incomplete
+        if _is_leader and _party_incomplete and state != "COLD_START" and state != "DEAD":
             _now = __import__("time").time()
             _last_party = self._last_party_attempt.get(bot_id, 0)
             if _now - _last_party > 30:
@@ -637,12 +640,14 @@ class HeuristicService:
                         confidence=0.95, domain="social",
                         reason="Direct party check - leader creates party",
                     ))
-                for _missing in _missing_members:
-                    actions.append(HeuristicAction(
-                        kind="command", command=("party request " + str(_missing)),
-                        confidence=0.95, domain="social",
-                        reason="Direct party check - request missing " + str(_missing),
-                    ))
+                # Request ALL other bots (OpenKore ignores duplicates)
+                for _other_bot in _all_bots:
+                    if _other_bot != _bot_name:
+                        actions.append(HeuristicAction(
+                            kind="command", command=("party request " + str(_other_bot)),
+                            confidence=0.95, domain="social",
+                            reason="Direct party check - request " + str(_other_bot),
+                        ))
                 if not _party_in:
                     actions.append(HeuristicAction(
                         kind="command", command="party share exp",
