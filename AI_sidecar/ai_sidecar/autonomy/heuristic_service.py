@@ -652,6 +652,19 @@ class HeuristicService:
             # Economy (sell loot, buy potions, buy weapon) handled by separate states
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"
+            # Class-specific attack distance (critical for Archer with bow)
+            _cs_job = signals.get("job_name", "novice") or "novice"
+            if _cs_job.lower().startswith("archer") or _cs_job.lower().startswith("hunter"):
+                _cs_atk_dist = 7
+            elif _cs_job.lower().startswith("mage") or _cs_job.lower().startswith("wizard"):
+                _cs_atk_dist = 7
+            else:
+                _cs_atk_dist = 2
+            actions.append(HeuristicAction(
+                kind="command", command=f"set attackDistance {_cs_atk_dist}",
+                confidence=0.99, domain="hunting",
+                reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
+            ))
             # 1. Set lockMap first
             actions.append(HeuristicAction(
                 kind="command", command=f"set lockMap {_cs_hunt_map}",
