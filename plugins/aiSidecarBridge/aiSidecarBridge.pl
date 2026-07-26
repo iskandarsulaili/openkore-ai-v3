@@ -1376,6 +1376,16 @@ sub _build_snapshot_payload {
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			$p{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 0) ? 1 : 0;
+			# party_members: list of party member names
+			$p{party_members} = [];
+			if (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH") {
+				for my $_pm_key (keys %{$char->{party}{party}{member}}) {
+					my $_pm = $char->{party}{party}{member}{$_pm_key};
+					if (ref($_pm) eq "HASH" && defined($_pm->{name})) {
+						push @{$p{party_members}}, lc($_pm->{name});
+					}
+				}
+			}
 			# attack_power: total attack power (weapon + stats)
 			$p{attack_power} = $char->{attack} || $char->{atk} || 0;
 			# equipment digest: all equipped items with slot/card/refine info
