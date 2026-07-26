@@ -1376,15 +1376,18 @@ sub _build_snapshot_payload {
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
-			# Party members are in $char->{party}{users} (Actor::Party class)
+			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			$raw->{in_party} = (defined($char->{party}) && ref($char->{party}{users}) eq "HASH" && scalar(keys %{$char->{party}{users}}) > 0) ? 1 : 0;
 			# party_members: list of party member names
 			$raw->{party_members} = [];
 			if (defined($char->{party}) && ref($char->{party}{users}) eq "HASH") {
 				for my $_pm_key (keys %{$char->{party}{users}}) {
 					my $_pm = $char->{party}{users}{$_pm_key};
-					if (ref($_pm) eq "HASH" && defined($_pm->{name})) {
-						push @{$raw->{party_members}}, lc($_pm->{name});
+					if (ref($_pm) eq "HASH") {
+						my $_pm_name = $_pm->{name} || '';
+						if ($_pm_name) {
+							push @{$raw->{party_members}}, lc($_pm_name);
+						}
 					}
 				}
 			}
@@ -1505,6 +1508,15 @@ sub _build_snapshot_payload {
 		my $party_members = ($char && $char->{party} && ref($char->{party}{users}) eq 'HASH')
 			? $char->{party}{users}
 			: undef;
+		my %_party_member_names;
+		if ($party_members) {
+			for my $_pmk (keys %{$party_members}) {
+				my $_pmv = $party_members->{$_pmk};
+				if (ref($_pmv) eq 'HASH' && $_pmv->{name}) {
+					$_party_member_names{$_pmk} = 1;
+				}
+			}
+		}
 
 		my $append_actor = sub {
 			my (%args) = @_;
@@ -1667,7 +1679,7 @@ sub _build_snapshot_payload {
 						my ($row) = @_;
 						my $relation = 'neutral';
 						if ($party_members && _is_hash_like($row) && defined $row->{binID}) {
-							$relation = 'party' if exists $party_members->{$row->{binID}};
+							$relation = 'party' if exists $_party_member_names{$row->{binID}};
 						}
 						return $relation;
 					},
@@ -3557,26 +3569,21 @@ sub _rewrite_runtime_command {
 	# Handle 'party request <name>' -> resolve name to player list # and send request
 	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
 		my $_req_name = $1;
-		# Resolve profile name to character name from shared file
+		# Resolve profile name to character name from config file
 		my $_char_name = $_req_name;
-		my $_map_file = "$::SCRIPT_DIR/data/profile_to_char.txt";
-		if (-f $_map_file) {
-			open(my $_mf, "<", $_map_file) or debug "[profile_map] cannot read $_map_file: $!\n", 'aiSidecarBridge', 1;
-			if ($_mf) {
-				while (my $_line = <$_mf>) {
+		my $_cfg_file = "$::SCRIPT_DIR/.bot_profiles/$_req_name/control/config.txt";
+		if (-f $_cfg_file) {
+			open(my $_cf, "<", $_cfg_file) or debug "[party_request] cannot read $_cfg_file: $!\n", 'aiSidecarBridge', 1;
+			if ($_cf) {
+				while (my $_line = <$_cf>) {
 					chomp $_line;
-					my ($_prof, $_char) = split(/=/, $_line, 2);
-					if ($_prof && $_char && lc($_prof) eq lc($_req_name)) {
-						$_char_name = $_char;
+					if ($_line =~ /^char\s+(.+)$/i) {
+						$_char_name = lc($1);
 						last;
 					}
 				}
-				close($_mf);
+				close($_cf);
 			}
-		}
-		# Also check in-memory global (may have been set by this process)
-		if ($_char_name eq $_req_name && $::aiSidecar_profile_to_char{lc($_req_name)}) {
-			$_char_name = $::aiSidecar_profile_to_char{lc($_req_name)};
 		}
 		my $_req_id = 0;
 		if ($playersList) {
