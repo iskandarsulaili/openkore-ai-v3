@@ -1355,6 +1355,28 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
+                # WEAPON CHECK: If no weapon (0 kills after 30s on hunting map) and has zeny, buy one
+                _atk_power = signals.get("attack_power", 0) or 0
+                _zeny = signals.get("zeny", 0) or 0
+                _kills_this_hunt = signals.get("kills", 0) or 0
+                _hunt_duration = _now_t - self._state_since.get(bot_id, _now_t)
+                _no_weapon = _atk_power < 10 or (_kills_this_hunt == 0 and _hunt_duration > 30)
+                if _no_weapon and _zeny >= 500:
+                    self._state[bot_id] = "WEAPON_BUY"
+                    self._state_since[bot_id] = _now_t
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="economy",
+                        reason="No weapon detected - go buy one",
+                    ))
+                    total_confidence = 0.95
+                    top_domain = "economy"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # PARTY: Leader creates + invites, joiners accept (party join 1 = accept)
                 _party_in = signals.get("in_party", False)
                 if not _party_in:
