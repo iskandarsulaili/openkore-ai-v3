@@ -619,7 +619,7 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
         _all_bots = signals.get("all_bots", []) or ["kicapmasin", "kicapmasin2", "kicapmasin3"]
-        _bot_name = signals.get("bot_name", bot_id) or bot_id
+        _bot_name = (signals.get("bot_name", bot_id) or bot_id).split(":")[-1].split("/")[-1]
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
         # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
