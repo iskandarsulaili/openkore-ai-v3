@@ -1361,6 +1361,12 @@ sub _build_snapshot_payload {
 	# --- Progression digest (job, level, exp) ---
 	my $progression = {};
 	if ($char) {
+		# ── Party join auto-accept: non-leader bots accept invites ──
+		if (($::config{username} || '') ne 'kicapmasin' && defined($char) && !defined($char->{party})) {
+			# Not in a party - check for incoming invites
+			# The heuristic should set partyAuto 2, but we do it here too as backup
+			$::config{partyAuto} = 2;
+		}
 		# ── Direct party invite: leader invites missing members ──
 		# This runs OUTSIDE the eval block so errors don't get swallowed
 		if (($::config{username} || '') eq 'kicapmasin' && defined($char->{party})) {
