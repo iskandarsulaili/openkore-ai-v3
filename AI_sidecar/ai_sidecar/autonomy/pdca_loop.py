@@ -4918,6 +4918,22 @@ class PDCALoop:
                                 _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
                         except Exception:
                             pass
+                        # ── GOD MODE: override layer before heuristic (runs every cycle) ──
+                        try:
+                            _gm_snapshots = getattr(self._runtime, "snapshot_cache", None)
+                            if _gm_snapshots is not None:
+                                _gm_snap_dict = {}
+                                if hasattr(_gm_snapshots, 'bot_ids'):
+                                    for _gm_bid in _gm_snapshots.bot_ids():
+                                        _gm_snap = _gm_snapshots.get(_gm_bid) if hasattr(_gm_snapshots, 'get') else None
+                                        if _gm_snap:
+                                            _gm_snap_dict[_gm_bid] = _gm_snap
+                                if _gm_snap_dict:
+                                    _gm_actions = god_mode_assess(_gm_snap_dict)
+                                    if _gm_actions:
+                                        logger.info("[god_mode] %d actions for %d bots", len(_gm_actions), len(_gm_snap_dict))
+                        except Exception as e:
+                            logger.warning("[god_mode] error: %s", e)
                         _actions_queued_swarm = _emit_swarm_actions(
                             self._runtime, horizon.value, bot_id=_bid
                         )
