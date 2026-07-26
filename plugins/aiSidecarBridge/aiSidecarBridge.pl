@@ -462,6 +462,21 @@ sub on_mainLoop_post {
                 if (!defined $::config{lockMap} || $::config{lockMap} eq 'prontera' || $::config{lockMap} eq '') {
                     $::config{lockMap} = $_hunt_map;
                 }
+                # In town: disable random walk (prevents "move prontera" spam from OpenKore's AI)
+                if ($_sm_map eq 'prontera') {
+                    if (defined $::config{route_randomWalk} && $::config{route_randomWalk} != 0) {
+                        $::config{route_randomWalk} = 0;
+                        warning "[town] disabling random walk in town to prevent 'move prontera' spam\n", 'aiSidecarBridge', 1;
+                    }
+                    # PORTAL ROUTE: every 30s, move directly to portal
+                    state $_last_portal_move_ms = 0;
+                    my $_now_ms = _now_ms();
+                    if ($_now_ms - $_last_portal_move_ms > 30000) {
+                        $_last_portal_move_ms = $_now_ms;
+                        warning "[portal_route] in Prontera, moving to portal\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run("move 22 203"); 1; };
+                    }
+                }
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
