@@ -1359,7 +1359,8 @@ class HeuristicService:
                 _atk_power = signals.get("attack_power", 0) or 0
                 _zeny = signals.get("zeny", 0) or 0
                 _kills_this_hunt = signals.get("kills", 0) or 0
-                _hunt_duration = _now_t - self._state_since.get(bot_id, _now_t)
+                _hunt_start = self._state_since.get(bot_id, 0)
+                _hunt_duration = _now_t - _hunt_start if _hunt_start > 0 else 999
                 _no_weapon = _atk_power < 10 or (_kills_this_hunt == 0 and _hunt_duration > 30)
                 if _no_weapon and _zeny >= 500:
                     self._state[bot_id] = "WEAPON_BUY"
