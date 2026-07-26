@@ -709,6 +709,13 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Disable weight-based teleport",
             ))
+            # 1c. Buy arrows for Archer class (can't deal damage without them)
+            if _cs_job.lower().startswith("archer") or _cs_job.lower().startswith("hunter"):
+                actions.append(HeuristicAction(
+                    kind="command", command="buy 1750 200",
+                    confidence=0.99, domain="economy",
+                    reason="Buy 200 arrows for Archer (need ammo to deal damage)",
+                ))
             # 2. Go directly to hunting map via portal (keep starting weapon!)
             actions.append(HeuristicAction(
                 kind="command", command=f"move {_cs_portal_coords}",
