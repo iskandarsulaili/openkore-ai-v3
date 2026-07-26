@@ -676,9 +676,9 @@ class HeuristicService:
             _cs_is_leader = "kicapmasin" in _cs_bot_name.lower() and "2" not in _cs_bot_name and "3" not in _cs_bot_name
             if _cs_is_leader:
                 actions.append(HeuristicAction(
-                    kind="command", command="party create AI Team",
+                    kind="command", command=f"party create AI{int(_now_t)}",
                     confidence=0.99, domain="social",
-                    reason="Cold start - leader creates party early",
+                    reason="Cold start - leader creates party with unique name",
                 ))
                 actions.append(HeuristicAction(
                     kind="command", command="party share exp",
