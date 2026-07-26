@@ -1380,7 +1380,7 @@ sub _build_snapshot_payload {
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			# ── Direct party invite: leader invites missing members ──
 			# This bypasses the heuristic entirely - runs every cycle
-			my $_is_leader = ($p{bot_id} || '') eq 'kicapmasin';
+			my $_is_leader = ($::config{username} || '') eq 'kicapmasin';
 			if ($_is_leader && defined($char) && defined($char->{party})) {
 				my $_party_users = $char->{party}{users} || {};
 				my $_member_count = scalar(keys %$_party_users) + 1;  # +1 for self
