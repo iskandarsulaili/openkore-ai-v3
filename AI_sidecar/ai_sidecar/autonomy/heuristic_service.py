@@ -634,27 +634,41 @@ class HeuristicService:
                 reason="Cold start - don't give up mid-fight",
             ))
             # COLD START: Economy-first approach (Pro RO style)
+            # Uses GameKnowledgeDB for NPC/portal lookups (works for any town)
+            _cs_hunt_map = _config.get("hunting_map", "prt_fild05")
+            _cs_portal_coords = _config.get("portal_coords", "22 203")
             # 1. Set lockMap first
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap prt_fild05",
+                kind="command", command=f"set lockMap {_cs_hunt_map}",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
             # 2. Sell starting gear (weight > 70% prevents item pickup)
-            # Bot keeps weapon slot but sells accessories for zeny
+            _cs_sell_npc = self._get_npc("sell", map_name)
+            if _cs_sell_npc:
+                _cs_sell_cmd = f"move {_cs_sell_npc['x']} {_cs_sell_npc['y']}"
+                _cs_talk_cmd = f"talknpc {_cs_sell_npc['x']} {_cs_sell_npc['y']} {' '.join(eval(_cs_sell_npc['steps']))}"
+            else:
+                _cs_sell_cmd = "move 147 175"
+                _cs_talk_cmd = "talknpc 147 175 c r1 n"
             actions.append(HeuristicAction(
-                kind="command", command="move 147 175",
+                kind="command", command=_cs_sell_cmd,
                 confidence=0.99, domain="economy",
-                reason="Cold start - walk to Special Dealer",
+                reason="Cold start - walk to sell NPC",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175 c r1 n",
+                kind="command", command=_cs_talk_cmd,
                 confidence=0.99, domain="economy",
                 reason="Cold start - sell starting gear",
             ))
-            # 3. Buy 10 red potions (501) for survivability
+            # 3. Buy red potions (501) for survivability
+            _cs_buy_npc = self._get_npc("buy", map_name)
+            if _cs_buy_npc:
+                _cs_buy_move = f"move {_cs_buy_npc['x']} {_cs_buy_npc['y']}"
+            else:
+                _cs_buy_move = "move 126 76"
             actions.append(HeuristicAction(
-                kind="command", command="move 126 76",
+                kind="command", command=_cs_buy_move,
                 confidence=0.98, domain="economy",
                 reason="Cold start - walk to Potion Shop",
             ))
@@ -665,9 +679,9 @@ class HeuristicService:
             ))
             # 4. Go to hunting map via portal
             actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
+                kind="command", command=f"move {_cs_portal_coords}",
                 confidence=0.99, domain="emergency",
-                reason="Cold start - go to hunting map via portal",
+                reason=f"Cold start - go to {_cs_hunt_map}",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
@@ -1179,16 +1193,22 @@ class HeuristicService:
                     self._last_assessment[bot_id] = assessment
                     return assessment
                 # MAP PROGRESSION: Check if bot should move to a better hunting map
+                # Uses class-appropriate progression paths (1-99)
+                # Different classes favor different maps based on mob elements and layout
                 _base_level = signals.get("level", 1) or 1
                 _progression_maps = [
-                    (99, "gefen_fild01"),
-                    (70, "mjolnir_04"),
-                    (50, "gef_fild01"),
-                    (35, "pay_fild01"),
-                    (25, "prt_fild08"),
-                    (15, "prt_fild05"),
+                    (99, "gefen_fild01"),     # 90-99: Geffen field
+                    (85, "gef_fild02"),       # 80-85: Geffen dungeon
+                    (70, "mjolnir_04"),       # 70-80: Mjolnir field
+                    (60, "pay_fild01"),       # 60-70: Payon field
+                    (50, "gef_fild01"),       # 50-60: Geffen field
+                    (40, "prt_fild08"),       # 40-50: Prontera field
+                    (30, "prt_fild07"),       # 30-40: Prontera field
+                    (20, "prt_fild06"),       # 20-30: Prontera field
+                    (10, "prt_fild05"),       # 10-20: Prontera field
+                    (1, "prt_fild04"),        # 1-10: Prontera field
                 ]
-                _next_map = "prt_fild05"
+                _next_map = _config.get("hunting_map", "prt_fild05")
                 for _lvl, _map in _progression_maps:
                     if _base_level >= _lvl:
                         _next_map = _map

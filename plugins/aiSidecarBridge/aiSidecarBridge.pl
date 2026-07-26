@@ -774,18 +774,34 @@ sub on_command_intercept {
 	my (undef, $args) = @_;
 	my $cmd = $args->{command} || '';
 	return if $cmd !~ /^move\s+prontera$/i;
-	# Get current map
-	my $_ic_map = $field ? lc($field->name()) : '';
-	$_ic_map =~ s/\.gat$//;
+	# Get current map from field or character
+	my $_ic_map = '';
+	if ($field) { $_ic_map = lc($field->name()); $_ic_map =~ s/\.gat$//; }
+	elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
+	return '' if !$_ic_map;
 	if ($_ic_map eq 'prontera') {
-	    # In Prontera: redirect "move prontera" to portal (22, 203)
-	    warning "[command_intercept] intercepting 'move prontera' in Prontera -> redirecting to portal\n", 'aiSidecarBridge', 1;
-	    $args->{command} = 'move 22 203';
-	} elsif ($_ic_map =~ /^[a-z]+_fild/) {
-	    # On hunting map: block "move prontera" entirely
-	    warning "[command_intercept] blocking 'move prontera' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
-	    $args->{command} = '';
+	    # In Prontera: redirect "move prontera" to the configured portal coordinates
+	    # Get portal coords from config (default: prt_fild05 portal at 22,203)
+	    my $_portal_x = _cfg('aiSidecar_portalX', '22') || '22';
+	    my $_portal_y = _cfg('aiSidecar_portalY', '203') || '203';
+	    my $_hunt_map = _cfg('aiSidecar_huntingMap', 'prt_fild05') || 'prt_fild05';
+	    # Only redirect if lockMap is set to a hunting map (not for town-to-town moves)
+	    my $_lm = $::config{lockMap} || '';
+	    if ($_lm =~ /^[a-z]+_fild/ || $_lm =~ /_field/) {
+	        warning "[command_intercept] '$cmd' in Prontera (lockMap=$_lm) -> redirect to portal\n", 'aiSidecarBridge', 1;
+	        return "move $_portal_x $_portal_y";
+	    }
+	} elsif ($_ic_map =~ /^[a-z]+_fild/ || $_ic_map =~ /_field/) {
+	    # On hunting map: block "move prontera" entirely (attempting to leave map to sell)
+	    # Let the heuristic handle return-to-town decisions
+	    warning "[command_intercept] blocking '$cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
+	    return '';
+	} elsif ($_ic_map =~ /^pvp_/ || $_ic_map =~ /^gvg_/ || $_ic_map =~ /^turbo_/) {
+	    # PvP/GvG/Turbo maps: allow "move prontera" (player might need to leave)
+	    return;
 	}
+	# Unknown map: allow through
+	return;
 }
 
 sub on_command_run_post {
