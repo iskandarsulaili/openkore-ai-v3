@@ -1376,6 +1376,8 @@ sub _build_snapshot_payload {
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			$p{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 1) ? 1 : 0;
+			# attack_power: total attack power (weapon + stats)
+			$p{attack_power} = $char->{attack} || $char->{atk} || 0;
 			\%p;
 		} || {};
 	}
