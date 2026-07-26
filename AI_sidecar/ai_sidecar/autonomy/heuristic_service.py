@@ -671,7 +671,21 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 1b. Comprehensive teleport config - DISABLE ALL teleport triggers
+            # 1b. Party creation for leader - do this early so others can join
+            _cs_bot_name = signals.get("bot_name", bot_id) or bot_id
+            _cs_is_leader = "kicapmasin" in _cs_bot_name.lower() and "2" not in _cs_bot_name and "3" not in _cs_bot_name
+            if _cs_is_leader:
+                actions.append(HeuristicAction(
+                    kind="command", command="party create AI Team",
+                    confidence=0.99, domain="social",
+                    reason="Cold start - leader creates party early",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="party share exp",
+                    confidence=0.95, domain="social",
+                    reason="Share experience in party",
+                ))
+            # 1c. Comprehensive teleport config - DISABLE ALL teleport triggers
             # Only teleport when 8+ mobs aggressive (practically never on low-level maps)
             actions.append(HeuristicAction(
                 kind="command", command="set teleportAuto_minAggressives 8",
@@ -1355,8 +1369,11 @@ class HeuristicService:
                     self._last_assessment[bot_id] = assessment
                     return assessment
                 # HP MANAGEMENT: Sit when low HP to prevent death
+                # Ranged classes (Archer/Mage) get lower threshold (30%) since they're at range
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
-                if _hp < 0.50:
+                _hp_job = signals.get("job_name", "novice") or "novice"
+                _hp_threshold = 0.30 if any(x in _hp_job.lower() for x in ["archer", "hunter", "mage", "wizard"]) else 0.50
+                if _hp < _hp_threshold:
                     actions.append(HeuristicAction(
                         kind="command", command="sit",
                         confidence=0.99, domain="survival",

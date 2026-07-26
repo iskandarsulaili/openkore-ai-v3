@@ -191,11 +191,11 @@ sub _cleanup_runtime {
 
 sub on_start3 {
 	# Disable sitAuto at startup
-	$::config{sitAuto_hp} = 0;
-	$::config{sitAuto_hp_upper} = 0;
-	$::config{sitAuto_sp} = 0;
-	$::config{sitAuto_sp_upper} = 0;
-	$::config{sitAuto_idle} = 0;
+	# sitAuto controlled by heuristic - not overridden here
+	# sitAuto_hp_upper controlled by heuristic
+	# sitAuto_sp controlled by heuristic
+	# sitAuto_sp_upper controlled by heuristic
+	# sitAuto_idle controlled by heuristic
 	# STALE PORTAL FILTER: remove known-stale NPC teleport entries from portalsLOS.txt
 	# OpenKore regenerates this file at runtime, so stale entries keep reappearing
 	my $_portals_file = Settings::getTableFilename("portalsLOS.txt");
@@ -282,13 +282,13 @@ sub on_mainLoop_pre {
 	    # $::config{attackAuto_maxDistance} = 3;  # heuristic controls this
 	    # $::config{attackAuto_unstuck} = 1;  # heuristic controls this
 	    # Override sitAuto config every cycle
-	    $::config{sitAuto_hp} = 0;
-	    $::config{sitAuto_hp_upper} = 0;
+	    # sitAuto controlled by heuristic - not overridden here
+	    # sitAuto_hp_upper controlled by heuristic
 	    $::config{teleportAuto_hp} = 0;
-	    $::config{sitAuto_sp} = 0;
-	    $::config{sitAuto_sp_upper} = 0;
-	    $::config{sitAuto_idle} = 0;
-	    $::config{sitAuto_over_50} = 0;
+	    # sitAuto_sp controlled by heuristic
+	    # sitAuto_sp_upper controlled by heuristic
+	    # sitAuto_idle controlled by heuristic
+	    # sitAuto_over_50 controlled by heuristic
 	    # Force stand if sitting
 	    if ($char->{sitting}) {
 	        eval { Commands::run('stand'); 1; };
@@ -304,20 +304,20 @@ sub on_mainLoop_post {
 	# Heuristic handles positioning on hunting maps
 
         # Override attack distances (also disable auto-detection)
-        $::config{'attackDistance'} = 2;
-        $::config{'attackMaxDistance'} = 7;
+        # attackDistance controlled by heuristic - not overridden here
+        # attackMaxDistance controlled by heuristic - not overridden here
         $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
         # ── DISABLE SIT IN AI: prevent OpenKore's internal AI from sitting ──
         if ($char) {
             # Override sitAuto config every cycle to prevent AI from re-enabling it
-            $::config{sitAuto_hp} = 0;
-            $::config{sitAuto_hp_upper} = 0;
-            $::config{sitAuto_sp} = 0;
-            $::config{sitAuto_sp_upper} = 0;
-            $::config{sitAuto_idle} = 0;
-            $::config{sitAuto_over_50} = 0;
+            # sitAuto controlled by heuristic - not overridden here
+            # sitAuto_hp_upper controlled by heuristic
+            # sitAuto_sp controlled by heuristic
+            # sitAuto_sp_upper controlled by heuristic
+            # sitAuto_idle controlled by heuristic
+            # sitAuto_over_50 controlled by heuristic
             # Also clear sit from AI sequence if present
-            @::AI::ai_seq = grep { $_ !~ /^sit/i } @::AI::ai_seq;
+            # AI sequence sit removal controlled by heuristic
         }
         
 
@@ -332,11 +332,11 @@ sub on_mainLoop_post {
                 warning "[force_stand] bot sitting with HP=$_fs_hp_pct%, forcing stand\n", 'aiSidecarBridge', 1;
                 @::AI::ai_seq = ();
                 $::config{attackAuto_inLockOnly} = 0;
-                $::config{sitAuto_hp} = 0;
-                $::config{sitAuto_hp_upper} = 0;
-                $::config{sitAuto_sp} = 0;
-                $::config{sitAuto_sp_upper} = 0;
-                $::config{sitAuto_idle} = 0;
+                # sitAuto controlled by heuristic - not overridden here
+                # sitAuto_hp_upper controlled by heuristic
+                # sitAuto_sp controlled by heuristic
+                # sitAuto_sp_upper controlled by heuristic
+                # sitAuto_idle controlled by heuristic
                 eval { Commands::run('stand'); 1; };
                 eval { Commands::run('ai auto'); 1; };
             }
@@ -4603,7 +4603,7 @@ sub _apply_bot_config {
 	$::config{'dcOnChangeMap'} = '0';
     # Pro RO: disable auto-sit, let sidecar handle healing
     $::config{sitAuto_hp_lower} = 0;
-    $::config{sitAuto_hp_upper} = 0;
+    # sitAuto_hp_upper controlled by heuristic
     # $::config{attackAuto} = 3;
     $::config{attackAuto_inLockOnly} = 0;
     $::config{attackDistance} = 7;
