@@ -1631,6 +1631,12 @@ class HeuristicService:
                     confidence=0.95, domain="hunting",
                     reason="Don't give up mid-fight",
                 ))
+                # Disable teleporting before enabling auto-attack (prevents town teleport loop)
+                actions.append(HeuristicAction(
+                    kind="command", command="set teleportAuto 0",
+                    confidence=0.99, domain="hunting",
+                    reason="Disable teleporting to prevent town loop",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
