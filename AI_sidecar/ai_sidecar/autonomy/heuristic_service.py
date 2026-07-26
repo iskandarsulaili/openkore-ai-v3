@@ -617,58 +617,38 @@ class HeuristicService:
 
         # ── DIRECT PARTY CHECK: Always check party before any state logic
         _party_in = signals.get("in_party", False)
-        if not _party_in and state != "COLD_START" and state != "DEAD":
-            _bot_name = signals.get("bot_name", bot_id) or bot_id
-            _all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
-            _sorted_bots = sorted(_all_bots)
-            _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
-            if _is_leader:
-                _now = __import__("time").time()
-                _last_party = self._last_party_attempt.get(bot_id, 0)
-                if _now - _last_party > 30:
-                    self._last_party_attempt[bot_id] = _now
-                    _ts = int(__import__("time").time())
+        _party_members = signals.get("party_members", []) or []
+        _all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, "_bot_roles") else []
+        _bot_name = signals.get("bot_name", bot_id) or bot_id
+        _sorted_bots = sorted(_all_bots)
+        _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
+        _missing_members = [b for b in _all_bots if b != _bot_name and b not in _party_members]
+
+        # Leader: check if party is incomplete (missing members)
+        if _is_leader and (_missing_members or not _party_in) and state != "COLD_START" and state != "DEAD":
+            _now = __import__("time").time()
+            _last_party = self._last_party_attempt.get(bot_id, 0)
+            if _now - _last_party > 30:
+                self._last_party_attempt[bot_id] = _now
+                _ts = int(__import__("time").time())
+                if not _party_in:
                     actions.append(HeuristicAction(
                         kind="command", command=("party create AI" + str(_ts)),
                         confidence=0.95, domain="social",
                         reason="Direct party check - leader creates party",
                     ))
-                    for _other_bot in _all_bots:
-                        if _other_bot != _bot_name:
-                            actions.append(HeuristicAction(
-                                kind="command", command=("party request " + str(_other_bot)),
-                                confidence=0.95, domain="social",
-                                reason="Direct party check - request " + str(_other_bot),
-                            ))
+                for _missing in _missing_members:
+                    actions.append(HeuristicAction(
+                        kind="command", command=("party request " + str(_missing)),
+                        confidence=0.95, domain="social",
+                        reason="Direct party check - request missing " + str(_missing),
+                    ))
+                if not _party_in:
                     actions.append(HeuristicAction(
                         kind="command", command="party share exp",
                         confidence=0.90, domain="social",
                         reason="Share experience in party",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.95, domain="hunting",
-                        reason="Continue after party attempt",
-                    ))
-                    total_confidence = 0.95
-                    top_domain = "social"
-                    assessment = HeuristicAssessment(
-                        horizon=horizon, actions=actions, confidence=total_confidence,
-                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                    )
-                    self._last_assessment[bot_id] = assessment
-                    return assessment
-            else:
-                actions.append(HeuristicAction(
-                    kind="command", command="set partyAuto 2",
-                    confidence=0.99, domain="social",
-                    reason="Direct party check - set auto-accept",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="move 22 203",
-                    confidence=0.95, domain="social",
-                    reason="Direct party check - move to hunting map",
-                ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
@@ -682,6 +662,32 @@ class HeuristicService:
                 )
                 self._last_assessment[bot_id] = assessment
                 return assessment
+
+        # Joiners: set partyAuto and move to hunting map
+        if not _party_in and not _is_leader and state != "COLD_START" and state != "DEAD":
+            actions.append(HeuristicAction(
+                kind="command", command="set partyAuto 2",
+                confidence=0.99, domain="social",
+                reason="Direct party check - set auto-accept",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="move 22 203",
+                confidence=0.95, domain="social",
+                reason="Direct party check - move to hunting map",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.95, domain="hunting",
+                reason="Continue after party attempt",
+            ))
+            total_confidence = 0.95
+            top_domain = "social"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
 
         # ── STATE: COLD_START (fresh spawn - go hunt immediately) ──
         if state == "COLD_START":
