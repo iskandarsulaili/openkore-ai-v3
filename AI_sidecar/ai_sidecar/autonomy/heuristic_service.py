@@ -1035,13 +1035,13 @@ class HeuristicService:
         if state == "SKILLS":
             if "NV_BASIC" not in skills:
                 actions.append(HeuristicAction(
-                    kind="command", command="skills add 1",
+                    kind="command", command="add 1",
                     confidence=0.90, domain="progression",
                     reason="Learn Basic Skill to sit and regen",
                 ))
             elif "NV_FIRSTAID" not in skills:
                 actions.append(HeuristicAction(
-                    kind="command", command="skills add 2",
+                    kind="command", command="add 2",
                     confidence=0.85, domain="progression",
                     reason="Learn First Aid for emergency healing",
                 ))
