@@ -870,31 +870,42 @@ class HeuristicService:
 
         # ── STATE: WEAPON_BUY (priority over potions) ──
         if state == "WEAPON_BUY":
-            actions.append(HeuristicAction(
-                kind="command", command="move 160 133",
-                confidence=0.95, domain="economy",
-                reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talknpc 160 133 c r0 n",
-                confidence=0.90, domain="economy",
-                reason="Open Weapon Shop and open buy menu (atomic dialog)",
-            ))
-            # Buy a bow (1701) or knife (1301) depending on class
-            _weapon = "1701"  # Default: Bow
-            if "thief" in job_name or "assassin" in job_name:
-                _weapon = "1301"  # Knife
-            elif "sword" in job_name or "knight" in job_name:
-                _weapon = "1201"  # Sword
-            elif "mage" in job_name or "wizard" in job_name:
-                _weapon = "1501"  # Rod
-            elif "acolyte" in job_name or "priest" in job_name:
-                _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
-            actions.append(HeuristicAction(
-                kind="command", command=f"buy {_weapon} 1",
-                confidence=0.85, domain="economy",
-                reason=f"Buy weapon {_weapon} for class {job_name}",
-            ))
+            _map = signals.get("map", "") or ""
+            _is_hunting = any(x in _map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild"])
+            if _is_hunting:
+                # On hunting map - go through portal to Prontera first
+                actions.append(HeuristicAction(
+                    kind="command", command="move 22 203",
+                    confidence=0.99, domain="economy",
+                    reason="Go through portal to Prontera to buy weapon",
+                ))
+            else:
+                # In Prontera - walk to Weapon Shop
+                actions.append(HeuristicAction(
+                    kind="command", command="move 160 133",
+                    confidence=0.95, domain="economy",
+                    reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talknpc 160 133 c r0 n",
+                    confidence=0.90, domain="economy",
+                    reason="Open Weapon Shop and open buy menu (atomic dialog)",
+                ))
+                # Buy a bow (1701) or knife (1301) depending on class
+                _weapon = "1701"  # Default: Bow
+                if "thief" in job_name or "assassin" in job_name:
+                    _weapon = "1301"  # Knife
+                elif "sword" in job_name or "knight" in job_name:
+                    _weapon = "1201"  # Sword
+                elif "mage" in job_name or "wizard" in job_name:
+                    _weapon = "1501"  # Rod
+                elif "acolyte" in job_name or "priest" in job_name:
+                    _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
+                actions.append(HeuristicAction(
+                    kind="command", command=f"buy {_weapon} 1",
+                    confidence=0.85, domain="economy",
+                    reason=f"Buy weapon {_weapon} for class {job_name}",
+                ))
             total_confidence = 0.90
             top_domain = "economy"
             assessment = HeuristicAssessment(
