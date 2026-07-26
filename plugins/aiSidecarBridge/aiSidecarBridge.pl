@@ -1378,28 +1378,39 @@ sub _build_snapshot_payload {
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
-			$raw->{in_party} = defined($char->{party}) ? 1 : 0;
-			# party_members: list of party member names
-			$raw->{party_members} = [];
-			if (defined($char->{party}) && ref($char->{party}{users}) eq "HASH") {
-				for my $_pm_key (keys %{$char->{party}{users}}) {
-					my $_pm = $char->{party}{users}{$_pm_key};
-					# Actor::Party objects are blessed HASH refs - use name() method
-					my $_pm_name = '';
-					if (UNIVERSAL::can($_pm, 'name')) {
-						$_pm_name = eval { $_pm->name() } || '';
-					}
-					if (!$_pm_name) {
-						$_pm_name = eval { $_pm->{name} } || '';
-					}
-					if ($_pm_name) {
-						push @{$raw->{party_members}}, lc($_pm_name);
+			# Cache party state to survive death/respawn
+			if (defined($char->{party})) {
+				$raw->{in_party} = 1;
+				$raw->{party_members} = [];
+				if (ref($char->{party}{users}) eq "HASH") {
+					for my $_pm_key (keys %{$char->{party}{users}}) {
+						my $_pm = $char->{party}{users}{$_pm_key};
+						my $_pm_name = '';
+						if (UNIVERSAL::can($_pm, 'name')) {
+							$_pm_name = eval { $_pm->name() } || '';
+						}
+						if (!$_pm_name) {
+							$_pm_name = eval { $_pm->{name} } || '';
+						}
+						if ($_pm_name) {
+							push @{$raw->{party_members}}, lc($_pm_name);
+						}
 					}
 				}
-			}
-			# If in party but no members found (just created or users hash empty), add self
-			if ($raw->{in_party} && scalar(@{$raw->{party_members}}) == 0 && $char->{name}) {
-				push @{$raw->{party_members}}, lc($char->{name});
+				if (scalar(@{$raw->{party_members}}) == 0 && $char->{name}) {
+					push @{$raw->{party_members}}, lc($char->{name});
+				}
+				$::aiSidecar_cached_party{$char->{name}} = {
+					in_party => $raw->{in_party},
+					members => [@{$raw->{party_members}}],
+				};
+			} elsif (defined($::aiSidecar_cached_party{$char->{name}})) {
+				my $cache = $::aiSidecar_cached_party{$char->{name}};
+				$raw->{in_party} = $cache->{in_party};
+				$raw->{party_members} = [@{$cache->{members}}];
+			} else {
+				$raw->{in_party} = 0;
+				$raw->{party_members} = [];
 			}
 			# attack_power: total attack power (weapon + stats)
 			$p{attack_power} = $char->{attack} || $char->{atk} || 0;
