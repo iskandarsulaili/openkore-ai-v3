@@ -3265,10 +3265,17 @@ sub _rewrite_runtime_command {
 		if ($target =~ /^\d+\s+\d+$/) {
 		    return ($trimmed, 'coordinate_move_raw');
 		}
-		# If already on target map, "move <map>" is a no-op random walk - pass through
+		# If already on target map, "move <map>" is a no-op random walk
+		# BUT: if bot is in Prontera and target is Prontera, rewrite to portal coords
+		# This prevents OpenKore's internal AI from spamming "move prontera" endlessly
 		my $_current_map = $field ? lc($field->name()) : '';
 		$_current_map =~ s/\.gat$//;
 		if ($_current_map eq lc($target)) {
+		    # In Prontera, "move prontera" should go to portal (22 203) to reach lockMap
+		    if ($_current_map eq 'prontera') {
+		        warning "[portal_rewrite] bot in Prontera, rewriting 'move prontera' to 'move 22 203'\n", 'aiSidecarBridge', 1;
+		        return ('move 22 203', 'portal_rewrite');
+		    }
 		    return ($trimmed, 'coordinate_move_raw');
 		}
 		# HUNTING MAP GUARD: if bot is on a hunting map, block "move prontera"
