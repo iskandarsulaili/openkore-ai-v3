@@ -1387,7 +1387,12 @@ class HeuristicService:
                                 reason="Share experience in party",
                             ))
                     else:
-                        # Joiners: move to hunting map so leader can request them (same map required)
+                        # Joiners: set partyAuto to 2 (auto-accept) and move to hunting map
+                        actions.append(HeuristicAction(
+                            kind="command", command="set partyAuto 2",
+                            confidence=0.99, domain="social",
+                            reason="Set partyAuto to auto-accept party requests",
+                        ))
                         actions.append(HeuristicAction(
                             kind="command", command="move 22 203",
                             confidence=0.95, domain="social",

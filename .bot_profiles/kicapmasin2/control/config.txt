@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword lodrocli
+adminPassword jevobaiw
 callSign
 commandPrefix ;
 callSignGM 0
@@ -323,7 +323,7 @@ teleportAuto_item2
 dealAuto 1
 dealAuto_names
 dealMaxItems 10
-partyAuto 2
+partyAuto 1
 partyAutoShare 1
 partyAutoShareItem 1
 partyAutoShareItemDiv 1
@@ -885,13 +885,13 @@ maxDistance
 }
 
 sellAuto 1
-sellAuto_npc = prt_in 147 175
+sellAuto_npc = prontera 147 175
 sellAuto_npc_steps = c r1 n
 sellAuto_standpoint
-sellAuto_maxWeight = 30
-sellAuto_distance = 25
+sellAuto_maxWeight 0
+sellAuto_distance 25
 sellAuto_maxDistance 15
-sellAuto_npc = prt_in 147 175
+sellAuto_npc = prontera 147 175
 
 storageAuto 0
 storageAuto_onStart 0
@@ -1260,10 +1260,10 @@ buyAuto_Bow {
 
 # Pro RO: Auto-sell junk items
 sellAuto 1
-sellAuto_npc = prt_in 147 175
+sellAuto_npc = prontera 147 175
 sellAuto_npc_steps = c r1 n
-sellAuto_maxWeight = 30
-sellAuto_distance = 25
+sellAuto_maxWeight 0
+sellAuto_distance 25
 
 useAuto_Red_Potion {
 	hp_upper 80%
@@ -1281,28 +1281,11 @@ useAuto_Red_Potion {
 }
 
 buyAuto_1 {
-	npc = prt_in 126 76
-	npc_steps = c r1 n
-	StandPoint = 126 76
-	distance = 5
-	minAmount = 0
-	maxAmount = 30
-	itemID = 501
-}
-
-# AI-sidecar sell/buy config
-sellAuto 1
-sellAuto_npc = prt_in 147 175
-sellAuto_npc_steps = c r1 n
-sellAuto_distance = 25
-sellAuto_maxWeight = 30
-
-buyAuto_1 {
-	npc = prt_in 126 76
-	npc_steps = c r1 n
-	StandPoint = 126 76
-	distance = 5
-	minAmount = 0
-	maxAmount = 30
-	itemID = 501
+    npc = prt_in 126 76
+    npc_steps = c r1 n
+    StandPoint = 126 76
+    distance = 5
+    minAmount = 0
+    maxAmount = 30
+    itemID = 501
 }
