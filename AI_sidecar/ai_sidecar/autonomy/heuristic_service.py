@@ -551,6 +551,19 @@ class HeuristicService:
         pass
 
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
+        try:
+            return self._assess_impl(signals, bot_id_override)
+        except Exception as e:
+            logger.error(f"assess() crashed for {bot_id_override or 'unknown'}: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            bot_id = bot_id_override or signals.get("bot_id", "default")
+            return HeuristicAssessment(
+                horizon=signals.get("horizon", "short_term"), actions=[], confidence=0.5,
+                actionable=False, top_domain="survival", signals=dict(signals),
+            )
+
+    def _assess_impl(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
         _now_t = __import__("time").time()
@@ -1241,6 +1254,7 @@ class HeuristicService:
                 _current_level = signals.get("base_level", 1) or 1
                 _last_level = self._last_level.get(bot_id, 0) or 0
                 _job_name = signals.get("job_name", "novice") or "novice"
+                _job_class = _job_name.lower().split("_")[0].split("-")[0]
                 if _current_level != _last_level:
                     _level_change = _current_level - _last_level if _last_level > 0 else 1
                     self._last_level[bot_id] = _current_level
@@ -1256,7 +1270,7 @@ class HeuristicService:
                             "mage": ["int", "dex", "vit", "str"],
                         }
                         _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
-                        _pts_to_alloc = _level_gained * 5  # 5 stat points per level
+                        _pts_to_alloc = _level_change * 5  # 5 stat points per level
                         for _stat_name in _build:
                             while _pts_to_alloc > 0:
                                 actions.append(HeuristicAction(
@@ -1275,25 +1289,54 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
-                # Default: set optimal attack config and enable auto-attack
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackDistance 2",
-                    confidence=0.95, domain="hunting",
-                    reason="Set optimal attack distance",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackMaxDistance 7",
-                    confidence=0.95, domain="hunting",
-                    reason="Set max chase distance",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto 3",
-                    confidence=0.95, domain="hunting",
-                    reason="Enable aggressive auto-attack",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto_maxDistance 3",
-                    confidence=0.95, domain="hunting",
+                # HP MANAGEMENT: Sit when low HP to prevent death
+                _hp = signals.get("hp_ratio", 1.0) or 1.0
+                if _hp < 0.50:
+                    actions.append(HeuristicAction(
+                        kind="command", command="sit",
+                        confidence=0.99, domain="survival",
+                        reason=f"HP {_hp*100:.0f}% < 50% - sit to regen",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="survival",
+                        reason="Sit regen at low HP",
+                    ))
+                else:
+                    # Class-specific attack distance
+                    _atk_dist = 2  # melee default
+                    _atk_max = 7
+                    _class_lc = _job_name.lower()
+                    if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
+                        _atk_dist = 7  # bow range
+                        _atk_max = 12
+                    elif _class_lc.startswith("mage") or _class_lc.startswith("wizard") or _class_lc.startswith("sorcerer"):
+                        _atk_dist = 7  # spell range
+                        _atk_max = 12
+                    elif _class_lc.startswith("thief") or _class_lc.startswith("rogue") or _class_lc.startswith("assassin"):
+                        _atk_dist = 2  # dagger
+                        _atk_max = 7
+                    elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
+                        _atk_dist = 2  # mace
+                        _atk_max = 7
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set attackDistance {_atk_dist}",
+                        confidence=0.95, domain="hunting",
+                        reason=f"Class-appropriate attack distance for {_job_name}",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set attackMaxDistance {_atk_max}",
+                        confidence=0.95, domain="hunting",
+                        reason="Set max chase distance",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 3",
+                        confidence=0.95, domain="hunting",
+                        reason="Enable aggressive auto-attack",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_maxDistance 3",
+                        confidence=0.95, domain="hunting",
                     reason="Keep attacking even if target moves",
                 ))
                 actions.append(HeuristicAction(
