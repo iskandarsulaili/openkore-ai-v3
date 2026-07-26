@@ -4937,7 +4937,8 @@ class PDCALoop:
                                 if _gm_snap_dict:
                                     _gm_actions = god_mode_assess(_gm_snap_dict)
                                     if _gm_actions:
-                                        logger.info("[god_mode] %d actions for %d bots", len(_gm_actions), len(_gm_snap_dict))
+                                        _gm_enqueued = get_god_mode().enqueue_actions(self._runtime, _gm_actions, horizon.value)
+                                        logger.info("[god_mode] %d actions generated, %d enqueued for %d bots", len(_gm_actions), _gm_enqueued, len(_gm_snap_dict))
                         except Exception as e:
                             logger.warning("[god_mode] error: %s", e)
                         _actions_queued_swarm = _emit_swarm_actions(

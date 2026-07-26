@@ -719,9 +719,11 @@ class HeuristicService:
         # "Wrong party" = in a party that doesn't contain the leader's char name AND has only 1 member (self-only)
         _leader_char = _profile_to_char.get(_sorted_bots[0], _sorted_bots[0]) if _sorted_bots else ""
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1 and _leader_char and _leader_char not in _party_members
-        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char))
+        # Also: if joiner is on a town map while leader is on hunting map, force move
+        _joiner_stuck_in_town = not _is_leader and _map_name and _map_name in ("prontera", "morocc", "geffen", "payon", "alberta", "izlude", "aldebaran", "comodo", "umbala", "niflheim", "louyang", "einbroch", "lighthalzen", "rachel", "veins", "juno", "yuno") and _leader_map and _leader_map not in ("prontera", "morocc", "geffen", "payon", "alberta", "izlude", "aldebaran", "comodo", "umbala", "niflheim", "louyang", "einbroch", "lighthalzen", "rachel", "veins", "juno", "yuno")
+        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " stuck_town=" + str(_joiner_stuck_in_town) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char) + " map=" + str(_map_name) + " leader_map=" + str(_leader_map))
         # Only act if we have all_bots data - empty all_bots means flicker/no data
-        if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots:
+        if (not _party_in or _joiner_in_wrong_party or _joiner_stuck_in_town) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots:
             if _party_in:
                 actions.append(HeuristicAction(
                     kind="command", command="party leave",

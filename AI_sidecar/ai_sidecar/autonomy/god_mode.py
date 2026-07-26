@@ -27,6 +27,16 @@ from threading import RLock
 
 logger = logging.getLogger(__name__)
 
+# Action types that map to ActionProposal
+_GOD_MODE_ACTION_MAP = {
+    "attack": "attack",
+    "heal_self": "heal",
+    "party_organize": "party",
+    "move_to_map": "move",
+    "sell_items": "vendor",
+    "buy_gear": "vendor",
+}
+
 # ═══════════════════════════════════════════════════════════════
 # 1. SERVER LATENCY COMPENSATION
 # ═══════════════════════════════════════════════════════════════
@@ -753,6 +763,39 @@ class GodModeOrchestrator:
         actions.extend(gear_actions)
         
         return actions
+    
+    def enqueue_actions(self, runtime_state, actions: list[dict], horizon: str = "tactical"):
+        """Enqueue God Mode actions into the runtime action queue."""
+        if not actions:
+            return 0
+        try:
+            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+            aq = getattr(runtime_state, 'action_queue', None)
+            if aq is None:
+                return 0
+            count = 0
+            for action in actions:
+                bot_id = action.get("bot_id", "")
+                action_type = action.get("type", "")
+                priority = action.get("priority", 50)
+                data = action.get("data", {})
+                
+                # Map to ActionProposal
+                mapped_type = _GOD_MODE_ACTION_MAP.get(action_type, action_type)
+                proposal = ActionProposal(
+                    bot_id=bot_id,
+                    action_type=mapped_type,
+                    priority_tier=ActionPriorityTier.strategic if priority >= 80 else ActionPriorityTier.tactical,
+                    source="god_mode",
+                    description=f"[god_mode] {action_type}: {data.get('reason', '')}",
+                    conflict_key=f"god_mode_{bot_id}_{action_type}",
+                )
+                aq.enqueue(proposal)
+                count += 1
+            return count
+        except Exception as e:
+            logger.warning("[god_mode] enqueue error: %s", e)
+            return 0
     
     def _analyze_bots(self, snapshots: dict[str, Any]) -> dict[str, dict]:
         """Analyze all bot states and extract key info."""
