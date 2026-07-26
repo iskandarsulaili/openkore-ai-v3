@@ -704,6 +704,7 @@ class HeuristicService:
 
         # Joiners: if not in party or in wrong party, leave stale party, set partyAuto, move to town
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1
+        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members))
         if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD":
             if _party_in:
                 actions.append(HeuristicAction(
