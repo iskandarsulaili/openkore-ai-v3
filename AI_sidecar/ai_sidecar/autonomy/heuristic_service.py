@@ -635,8 +635,8 @@ class HeuristicService:
             ))
             # COLD START: Economy-first approach (Pro RO style)
             # Uses GameKnowledgeDB for NPC/portal lookups (works for any town)
-            _cs_hunt_map = _config.get("hunting_map", "prt_fild05")
-            _cs_portal_coords = _config.get("portal_coords", "22 203")
+            _cs_hunt_map = "prt_fild05"
+            _cs_portal_coords = "22 203"
             # 1. Set lockMap first
             actions.append(HeuristicAction(
                 kind="command", command=f"set lockMap {_cs_hunt_map}",
@@ -1208,7 +1208,7 @@ class HeuristicService:
                     (10, "prt_fild05"),       # 10-20: Prontera field
                     (1, "prt_fild04"),        # 1-10: Prontera field
                 ]
-                _next_map = _config.get("hunting_map", "prt_fild05")
+                _next_map = "prt_fild05"
                 for _lvl, _map in _progression_maps:
                     if _base_level >= _lvl:
                         _next_map = _map
