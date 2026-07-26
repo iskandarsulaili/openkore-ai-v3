@@ -637,26 +637,42 @@ class HeuristicService:
             if _now - _last_party > 30:
                 self._last_party_attempt[bot_id] = _now
                 _ts = int(__import__("time").time())
-                if not _party_in:
-                    actions.append(HeuristicAction(
-                        kind="command", command=("party create AI" + str(_ts)),
-                        confidence=0.95, domain="social",
-                        reason="Direct party check - leader creates party",
-                    ))
-                # Request ALL other bots (OpenKore ignores duplicates)
+                # Always move to town and recreate party when incomplete
+                # (party request requires same map, and stale parties need to be replaced)
+                actions.append(HeuristicAction(
+                    kind="command", command="move prontera",
+                    confidence=0.99, domain="social",
+                    reason="Direct party check - move to town for party formation",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="party leave",
+                    confidence=0.99, domain="social",
+                    reason="Direct party check - leave old party",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command=("party create AI" + str(_ts)),
+                    confidence=0.95, domain="social",
+                    reason="Direct party check - leader creates party",
+                ))
+                # Request ALL other bots using character names (bridge resolves to player list index)
+                _profile_to_char = {
+                    "kicapmasin": "openkoreai",
+                    "kicapmasin2": "openkoreaiobs",
+                    "kicapmasin3": "openkoreaihuman",
+                }
                 for _other_bot in _all_bots:
                     if _other_bot != _bot_profile:
+                        _char_name = _profile_to_char.get(_other_bot, _other_bot)
                         actions.append(HeuristicAction(
-                            kind="command", command=("party request " + str(_other_bot)),
+                            kind="command", command=("party request " + str(_char_name)),
                             confidence=0.95, domain="social",
-                            reason="Direct party check - request " + str(_other_bot),
+                            reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
                         ))
-                if not _party_in:
-                    actions.append(HeuristicAction(
-                        kind="command", command="party share exp",
-                        confidence=0.90, domain="social",
-                        reason="Share experience in party",
-                    ))
+                actions.append(HeuristicAction(
+                    kind="command", command="party share exp",
+                    confidence=0.90, domain="social",
+                    reason="Share experience in party",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
@@ -671,7 +687,7 @@ class HeuristicService:
                 self._last_assessment[bot_id] = assessment
                 return assessment
 
-        # Joiners: set partyAuto and move to hunting map
+        # Joiners: set partyAuto and move to town (same map as leader for party request)
         if not _party_in and not _is_leader and state != "COLD_START" and state != "DEAD":
             actions.append(HeuristicAction(
                 kind="command", command="set partyAuto 2",
@@ -679,9 +695,9 @@ class HeuristicService:
                 reason="Direct party check - set auto-accept",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="move 22 203",
+                kind="command", command="move prontera",
                 confidence=0.95, domain="social",
-                reason="Direct party check - move to hunting map",
+                reason="Direct party check - move to town for party invite",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
@@ -1570,6 +1586,14 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # After party is formed, move to hunting map
+                _map = signals.get("map", "") or ""
+                if "prontera" in _map or "prt_in" in _map:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prt_fild05",
+                        confidence=0.95, domain="hunting",
+                        reason="Move to hunting map after party formation",
+                    ))
                 # ECONOMY CONFIG: Ensure sellAuto, itemsTakeAuto, buyAuto are set
                 actions.append(HeuristicAction(
                     kind="command", command="set sellAuto 1",
