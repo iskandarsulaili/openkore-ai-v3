@@ -1242,10 +1242,11 @@ class HeuristicService:
                 _last_level = self._last_level.get(bot_id, 0) or 0
                 _job_name = signals.get("job_name", "novice") or "novice"
                 if _current_level != _last_level:
+                    _level_change = _current_level - _last_level if _last_level > 0 else 1
                     self._last_level[bot_id] = _current_level
-                    # Level-up detected - 5 stat points per level (5 * level_gained)
-                    _level_gained = _current_level - _last_level if _last_level > 0 else _current_level - 1
-                    if _last_level > 0 and _level_gained > 0:
+                    # Level-up detected - allocate 5 stat points per level gained
+                    # Don't skip first detection (when _last_level was 0)
+                    if _level_change > 0:
                         _stat_builds = {
                             "novice": ["dex", "str", "agi", "vit"],
                             "archer": ["dex", "agi", "str", "vit"],
