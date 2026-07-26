@@ -428,11 +428,12 @@ sub on_mainLoop_post {
                     $::config{lockMap} = $_sm_map;
                 }
                 # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
-                # The heuristic can't detect position (no x,y in snapshots), so bridge handles it
-                if ($_sm_map eq 'prt_fild05' && defined $char->{pos_to}) {
-                    my $_px = $char->{pos_to}{x} || 0;
-                    my $_py = $char->{pos_to}{y} || 0;
-                    if (abs($_px - 367) < 10 && abs($_py - 205) < 10) {
+                # Use current position ($char->{pos}) not destination ($char->{pos_to})
+                if ($_sm_map eq 'prt_fild05') {
+                    my @_cpos = $char->{pos} ? @{$char->{pos}} : (0, 0);
+                    my $_px = $_cpos[0] || 0;
+                    my $_py = $_cpos[1] || 0;
+                    if (abs($_px - 367) < 5 && abs($_py - 205) < 5) {
                         warning "[portal_exit] bot at portal exit ($_px, $_py) - moving to center\n", 'aiSidecarBridge', 1;
                         eval { Commands::run("move 200 200"); 1; };
                     }
