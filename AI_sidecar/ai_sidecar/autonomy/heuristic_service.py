@@ -597,6 +597,7 @@ class HeuristicService:
         skills = signals.get("skills", []) or []
         bot_name = signals.get("bot_name", bot_id)
         horizon = signals.get("horizon", "short_term")
+        _leader_map = ""
         # _profile_to_char is accessed via self._profile_to_char throughout
 
         # ── STATE: DEAD ──
@@ -722,7 +723,7 @@ class HeuristicService:
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1 and _leader_char and _leader_char not in _party_members
         # Also: if joiner is on a town map while leader is on hunting map, force move
         _town_maps = ("prontera", "morocc", "geffen", "payon", "alberta", "izlude", "aldebaran", "comodo", "umbala", "niflheim", "louyang", "einbroch", "lighthalzen", "rachel", "veins", "juno", "yuno")
-        _leader_map = _leader_map or ""
+        # _leader_map already initialized at function start
         _joiner_stuck_in_town = not _is_leader and _map_name and _map_name in _town_maps and _leader_map and _leader_map not in _town_maps
         logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " stuck_town=" + str(_joiner_stuck_in_town) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char) + " map=" + str(_map_name) + " leader_map=" + str(_leader_map))
         # Only act if we have all_bots data - empty all_bots means flicker/no data
