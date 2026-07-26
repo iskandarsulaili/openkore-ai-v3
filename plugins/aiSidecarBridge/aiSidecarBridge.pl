@@ -1283,7 +1283,9 @@ sub _attempt_register {
 	my $_profile_name = eval { $profiles::profile } || '';
 	my $_char_name = $char ? ($char->{name} || '') : '';
 	if ($_profile_name && $_char_name) {
-		my $_map_dir = "$::SCRIPT_DIR/data";
+		use Cwd qw(cwd);
+		my $_cwd = cwd();
+		my $_map_dir = "$_cwd/data";
 		mkdir($_map_dir) unless -d $_map_dir;
 		my $_map_file = "$_map_dir/profile_to_char.txt";
 		open(my $_mf, ">", $_map_file) or debug "[profile_map] cannot write $_map_file: $!\n", 'aiSidecarBridge', 1;
@@ -1455,7 +1457,8 @@ sub _build_snapshot_payload {
 			}
 			# Fallback: if no env vars found, use configured bot profiles
 			if (!@_bot_names) {
-				opendir(my $_dh, "$::SCRIPT_DIR/.bot_profiles") or do { $p{all_bots} = []; return; };
+				use Cwd qw(cwd);
+			opendir(my $_dh, cwd() . "/.bot_profiles") or do { $p{all_bots} = []; return; };
 				while (my $_entry = readdir($_dh)) {
 					next if $_entry =~ /^\./;
 					next unless -d "$::SCRIPT_DIR/.bot_profiles/$_entry";
@@ -3587,7 +3590,8 @@ sub _rewrite_runtime_command {
 		my $_req_name = $1;
 		# Resolve profile name to character name from shared mapping file
 		my $_char_name = $_req_name;
-		my $_map_file = "$::SCRIPT_DIR/data/profile_to_char.txt";
+		use Cwd qw(cwd);
+		my $_map_file = cwd() . "/data/profile_to_char.txt";
 		if (-f $_map_file) {
 			open(my $_mf, "<", $_map_file) or debug "[party_request] cannot read $_map_file: $!\n", 'aiSidecarBridge', 1;
 			if ($_mf) {
