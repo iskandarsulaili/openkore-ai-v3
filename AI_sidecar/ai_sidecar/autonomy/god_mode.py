@@ -553,25 +553,85 @@ class EconomyGodMode:
     - Zeny optimization (never waste zeny)
     """
     
-    # Optimal gear progression per class
+    # Optimal gear progression per class - ALL slots
     GEAR_PROGRESSION = {
         "archer": [
-            {"level": 1, "weapon": "bow", "weapon_id": 1701, "cost": 500, "armor": "tunic", "armor_id": 2301, "armor_cost": 1000},
-            {"level": 15, "weapon": "composite_bow", "weapon_id": 1704, "cost": 2500, "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000},
-            {"level": 25, "weapon": "great_bow", "weapon_id": 1705, "cost": 8000, "armor": "boots", "armor_id": 2401, "armor_cost": 5000},
-            {"level": 40, "weapon": "crossbow", "weapon_id": 1710, "cost": 20000, "armor": "coat", "armor_id": 2305, "armor_cost": 15000},
+            {"level": 1, "weapon": "bow", "weapon_id": 1701, "cost": 500, 
+             "armor": "tunic", "armor_id": 2301, "armor_cost": 1000,
+             "headgear": "hood", "headgear_id": 2501, "headgear_cost": 500,
+             "accessory": "earring", "accessory_id": 2601, "accessory_cost": 500,
+             "shoes": "boots", "shoes_id": 2401, "shoes_cost": 2000,
+             "garment": "manteau", "garment_id": 2505, "garment_cost": 3000},
+            {"level": 15, "weapon": "composite_bow", "weapon_id": 1704, "cost": 2500,
+             "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000,
+             "headgear": "cap", "headgear_id": 2502, "headgear_cost": 2000,
+             "accessory": "glove", "accessory_id": 2603, "accessory_cost": 2000,
+             "shoes": "sneakers", "shoes_id": 2403, "shoes_cost": 5000,
+             "garment": "hood", "garment_id": 2506, "garment_cost": 5000},
+            {"level": 25, "weapon": "great_bow", "weapon_id": 1705, "cost": 8000,
+             "armor": "coat", "armor_id": 2305, "armor_cost": 8000,
+             "headgear": "beret", "headgear_id": 2504, "headgear_cost": 5000,
+             "accessory": "ring", "accessory_id": 2605, "accessory_cost": 5000,
+             "shoes": "high_heels", "shoes_id": 2405, "shoes_cost": 10000,
+             "garment": "muffler", "garment_id": 2508, "garment_cost": 10000},
+            {"level": 40, "weapon": "crossbow", "weapon_id": 1710, "cost": 20000,
+             "armor": "chain_mail", "armor_id": 2308, "armor_cost": 20000,
+             "headgear": "helm", "headgear_id": 2507, "headgear_cost": 15000,
+             "accessory": "brooch", "accessory_id": 2607, "accessory_cost": 15000,
+             "shoes": "greaves", "shoes_id": 2407, "shoes_cost": 20000,
+             "garment": "pauldron", "garment_id": 2510, "garment_cost": 20000},
         ],
         "thief": [
-            {"level": 1, "weapon": "knife", "weapon_id": 1201, "cost": 500, "armor": "tunic", "armor_id": 2301, "armor_cost": 1000},
-            {"level": 15, "weapon": "main_gaucher", "weapon_id": 1204, "cost": 3000, "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000},
-            {"level": 25, "weapon": "dagger", "weapon_id": 1207, "cost": 10000, "armor": "boots", "armor_id": 2401, "armor_cost": 5000},
-            {"level": 40, "weapon": "stiletto", "weapon_id": 1210, "cost": 25000, "armor": "coat", "armor_id": 2305, "armor_cost": 15000},
+            {"level": 1, "weapon": "knife", "weapon_id": 1201, "cost": 500,
+             "armor": "tunic", "armor_id": 2301, "armor_cost": 1000,
+             "headgear": "hood", "headgear_id": 2501, "headgear_cost": 500,
+             "accessory": "earring", "accessory_id": 2601, "accessory_cost": 500,
+             "shoes": "boots", "shoes_id": 2401, "shoes_cost": 2000,
+             "garment": "manteau", "garment_id": 2505, "garment_cost": 3000},
+            {"level": 15, "weapon": "main_gaucher", "weapon_id": 1204, "cost": 3000,
+             "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000,
+             "headgear": "cap", "headgear_id": 2502, "headgear_cost": 2000,
+             "accessory": "glove", "accessory_id": 2603, "accessory_cost": 2000,
+             "shoes": "sneakers", "shoes_id": 2403, "shoes_cost": 5000,
+             "garment": "hood", "garment_id": 2506, "garment_cost": 5000},
+            {"level": 25, "weapon": "dagger", "weapon_id": 1207, "cost": 10000,
+             "armor": "coat", "armor_id": 2305, "armor_cost": 8000,
+             "headgear": "beret", "headgear_id": 2504, "headgear_cost": 5000,
+             "accessory": "ring", "accessory_id": 2605, "accessory_cost": 5000,
+             "shoes": "high_heels", "shoes_id": 2405, "shoes_cost": 10000,
+             "garment": "muffler", "garment_id": 2508, "garment_cost": 10000},
+            {"level": 40, "weapon": "stiletto", "weapon_id": 1210, "cost": 25000,
+             "armor": "chain_mail", "armor_id": 2308, "armor_cost": 20000,
+             "headgear": "helm", "headgear_id": 2507, "headgear_cost": 15000,
+             "accessory": "brooch", "accessory_id": 2607, "accessory_cost": 15000,
+             "shoes": "greaves", "shoes_id": 2407, "shoes_cost": 20000,
+             "garment": "pauldron", "garment_id": 2510, "garment_cost": 20000},
         ],
         "acolyte": [
-            {"level": 1, "weapon": "mace", "weapon_id": 1301, "cost": 500, "armor": "tunic", "armor_id": 2301, "armor_cost": 1000},
-            {"level": 15, "weapon": "smashing_mace", "weapon_id": 1303, "cost": 3000, "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000},
-            {"level": 25, "weapon": "chain_mace", "weapon_id": 1305, "cost": 10000, "armor": "boots", "armor_id": 2401, "armor_cost": 5000},
-            {"level": 40, "weapon": "war_axe", "weapon_id": 1308, "cost": 25000, "armor": "coat", "armor_id": 2305, "armor_cost": 15000},
+            {"level": 1, "weapon": "mace", "weapon_id": 1301, "cost": 500,
+             "armor": "tunic", "armor_id": 2301, "armor_cost": 1000,
+             "headgear": "hood", "headgear_id": 2501, "headgear_cost": 500,
+             "accessory": "earring", "accessory_id": 2601, "accessory_cost": 500,
+             "shoes": "boots", "shoes_id": 2401, "shoes_cost": 2000,
+             "garment": "manteau", "garment_id": 2505, "garment_cost": 3000},
+            {"level": 15, "weapon": "smashing_mace", "weapon_id": 1303, "cost": 3000,
+             "armor": "cotton_shirt", "armor_id": 2303, "armor_cost": 3000,
+             "headgear": "cap", "headgear_id": 2502, "headgear_cost": 2000,
+             "accessory": "glove", "accessory_id": 2603, "accessory_cost": 2000,
+             "shoes": "sneakers", "shoes_id": 2403, "shoes_cost": 5000,
+             "garment": "hood", "garment_id": 2506, "garment_cost": 5000},
+            {"level": 25, "weapon": "chain_mace", "weapon_id": 1305, "cost": 10000,
+             "armor": "coat", "armor_id": 2305, "armor_cost": 8000,
+             "headgear": "beret", "headgear_id": 2504, "headgear_cost": 5000,
+             "accessory": "ring", "accessory_id": 2605, "accessory_cost": 5000,
+             "shoes": "high_heels", "shoes_id": 2405, "shoes_cost": 10000,
+             "garment": "muffler", "garment_id": 2508, "garment_cost": 10000},
+            {"level": 40, "weapon": "war_axe", "weapon_id": 1308, "cost": 25000,
+             "armor": "chain_mail", "armor_id": 2308, "armor_cost": 20000,
+             "headgear": "helm", "headgear_id": 2507, "headgear_cost": 15000,
+             "accessory": "brooch", "accessory_id": 2607, "accessory_cost": 15000,
+             "shoes": "greaves", "shoes_id": 2407, "shoes_cost": 20000,
+             "garment": "pauldron", "garment_id": 2510, "garment_cost": 20000},
         ],
     }
     
@@ -627,6 +687,282 @@ class EconomyGodMode:
 # ═══════════════════════════════════════════════════════════════
 # 6. SPAWN MANIPULATION
 # ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+# 6.5 SHARED KNOWLEDGE & SELF-IMPROVEMENT SYSTEM
+# ═══════════════════════════════════════════════════════════════
+
+class SharedKnowledgeNode:
+    """A single piece of shared knowledge with isolation control.
+    
+    Some knowledge is shared across all bots (map data, spawn timers, prices).
+    Some is isolated per bot (combat patterns, failure modes) to prevent
+    one bot's bad experience from contaminating others.
+    """
+    
+    def __init__(self, key: str, value: Any, source_bot: str = "",
+                 is_shared: bool = True, ttl_s: float = 3600):
+        self.key = key
+        self.value = value
+        self.source_bot = source_bot
+        self.is_shared = is_shared
+        self.created_at = time.time()
+        self.ttl = ttl_s
+        self.confidence = 1.0  # 0.0 to 1.0
+        self.hit_count = 0
+        self.fail_count = 0
+    
+    @property
+    def is_expired(self) -> bool:
+        return time.time() - self.created_at > self.ttl
+    
+    @property
+    def success_rate(self) -> float:
+        total = self.hit_count + self.fail_count
+        return self.hit_count / max(1, total)
+    
+    def record_success(self):
+        self.hit_count += 1
+        self.confidence = min(1.0, self.confidence + 0.1)
+    
+    def record_failure(self):
+        self.fail_count += 1
+        self.confidence = max(0.1, self.confidence - 0.2)
+
+
+class SharedKnowledgeBase:
+    """Multi-bot shared knowledge with isolation domains.
+    
+    SHARED domains (all bots can read/write):
+    - map_data: spawn points, warp locations, NPC positions
+    - spawn_timers: monster respawn times
+    - prices: vendor buy/sell prices
+    - danger_zones: areas with high death rate
+    
+    ISOLATED domains (per-bot, not shared):
+    - combat_patterns: what works for THIS bot's class/gear
+    - failure_modes: what caused THIS bot to die
+    - skill_rotations: optimal skill order for THIS bot
+    - movement_prefs: pathing preferences for THIS bot
+    
+    SEMI-SHARED domains (shared but with source tracking):
+    - gear_recommendations: "this gear worked for class X"
+    - hunting_spots: "this map was good for level range Y"
+    - economy_tips: "this item sells well"
+    """
+    
+    SHARED_DOMAINS = {"map_data", "spawn_timers", "prices", "danger_zones"}
+    ISOLATED_DOMAINS = {"combat_patterns", "failure_modes", "skill_rotations", "movement_prefs"}
+    SEMI_SHARED_DOMAINS = {"gear_recommendations", "hunting_spots", "economy_tips"}
+    
+    def __init__(self):
+        self._lock = RLock()
+        self._knowledge: dict[str, SharedKnowledgeNode] = {}
+        self._bot_isolated: dict[str, dict[str, SharedKnowledgeNode]] = {}
+        self._stats = {"total_nodes": 0, "shared_nodes": 0, "isolated_nodes": 0, "hits": 0, "misses": 0}
+    
+    def store(self, domain: str, key: str, value: Any, source_bot: str = "",
+              confidence: float = 1.0, ttl_s: float = 3600):
+        """Store a knowledge node."""
+        is_shared = domain in self.SHARED_DOMAINS or domain in self.SEMI_SHARED_DOMAINS
+        node = SharedKnowledgeNode(
+            key=f"{domain}:{key}", value=value, source_bot=source_bot,
+            is_shared=is_shared, ttl_s=ttl_s
+        )
+        node.confidence = confidence
+        
+        with self._lock:
+            if domain in self.ISOLATED_DOMAINS:
+                if source_bot not in self._bot_isolated:
+                    self._bot_isolated[source_bot] = {}
+                self._bot_isolated[source_bot][node.key] = node
+                self._stats["isolated_nodes"] += 1
+            else:
+                self._knowledge[node.key] = node
+                self._stats["shared_nodes"] += 1
+            self._stats["total_nodes"] += 1
+    
+    def retrieve(self, domain: str, key: str, bot_id: str = "") -> Any | None:
+        """Retrieve a knowledge node. Respects isolation."""
+        full_key = f"{domain}:{key}"
+        
+        with self._lock:
+            # Check isolated first (per-bot knowledge overrides shared)
+            if domain in self.ISOLATED_DOMAINS and bot_id:
+                isolated = self._bot_isolated.get(bot_id, {})
+                node = isolated.get(full_key)
+                if node and not node.is_expired:
+                    node.hit_count += 1
+                    self._stats["hits"] += 1
+                    return node.value
+            
+            # Check shared
+            node = self._knowledge.get(full_key)
+            if node and not node.is_expired:
+                node.hit_count += 1
+                self._stats["hits"] += 1
+                return node.value
+            
+            self._stats["misses"] += 1
+            return None
+    
+    def retrieve_all(self, domain: str, bot_id: str = "") -> list[tuple[str, Any, float]]:
+        """Retrieve all knowledge in a domain with confidence scores."""
+        results = []
+        prefix = f"{domain}:"
+        
+        with self._lock:
+            # Shared
+            for key, node in self._knowledge.items():
+                if key.startswith(prefix) and not node.is_expired:
+                    results.append((key[len(prefix):], node.value, node.confidence))
+            
+            # Isolated (per-bot override)
+            if domain in self.ISOLATED_DOMAINS and bot_id:
+                isolated = self._bot_isolated.get(bot_id, {})
+                for key, node in isolated.items():
+                    if key.startswith(prefix) and not node.is_expired:
+                        # Remove any shared version and add isolated
+                        results = [(k, v, c) for k, v, c in results if k != key[len(prefix):]]
+                        results.append((key[len(prefix):], node.value, node.confidence))
+        
+        return results
+    
+    def record_outcome(self, domain: str, key: str, success: bool, bot_id: str = ""):
+        """Record success/failure for a knowledge node."""
+        full_key = f"{domain}:{key}"
+        with self._lock:
+            if domain in self.ISOLATED_DOMAINS and bot_id:
+                isolated = self._bot_isolated.get(bot_id, {})
+                node = isolated.get(full_key)
+                if node:
+                    if success:
+                        node.record_success()
+                    else:
+                        node.record_failure()
+            else:
+                node = self._knowledge.get(full_key)
+                if node:
+                    if success:
+                        node.record_success()
+                    else:
+                        node.record_failure()
+    
+    def get_stats(self) -> dict:
+        """Get knowledge base statistics."""
+        with self._lock:
+            return dict(self._stats)
+    
+    def cleanup_expired(self):
+        """Remove expired knowledge nodes."""
+        with self._lock:
+            self._knowledge = {k: v for k, v in self._knowledge.items() if not v.is_expired}
+            for bot_id in list(self._bot_isolated.keys()):
+                self._bot_isolated[bot_id] = {
+                    k: v for k, v in self._bot_isolated[bot_id].items() if not v.is_expired
+                }
+                if not self._bot_isolated[bot_id]:
+                    del self._bot_isolated[bot_id]
+
+
+class SelfImprovementEngine:
+    """Self-improvement engine that learns from experience.
+    
+    Analyzes past actions, outcomes, and failures to improve future decisions.
+    Uses the shared knowledge base to propagate learnings across bots
+    while respecting isolation domains.
+    """
+    
+    def __init__(self, knowledge_base: SharedKnowledgeBase):
+        self.kb = knowledge_base
+        self._lock = RLock()
+        self._action_history: dict[str, list[dict]] = {}  # bot_id -> [{action, outcome, timestamp}]
+        self._improvement_interval = 60  # Run improvement analysis every 60s
+        self._last_improvement = 0.0
+    
+    def record_action(self, bot_id: str, action_type: str, action_data: dict, outcome: str):
+        """Record an action and its outcome for later analysis."""
+        with self._lock:
+            if bot_id not in self._action_history:
+                self._action_history[bot_id] = []
+            self._action_history[bot_id].append({
+                "action_type": action_type,
+                "action_data": action_data,
+                "outcome": outcome,
+                "timestamp": time.time(),
+            })
+            # Keep last 100 actions per bot
+            if len(self._action_history[bot_id]) > 100:
+                self._action_history[bot_id] = self._action_history[bot_id][-100:]
+    
+    def analyze_and_improve(self, bot_id: str, bot_state: dict) -> list[dict]:
+        """Analyze past actions and generate improvement suggestions."""
+        now = time.time()
+        if now - self._last_improvement < self._improvement_interval:
+            return []
+        
+        suggestions = []
+        
+        with self._lock:
+            history = self._action_history.get(bot_id, [])
+            if len(history) < 5:
+                return []  # Not enough data
+            
+            # Analyze death patterns
+            deaths = [a for a in history if a["outcome"] == "death"]
+            if len(deaths) >= 3:
+                # Check if deaths are happening on the same map
+                death_maps = {}
+                for d in deaths[-10:]:
+                    dmap = d.get("action_data", {}).get("map", "unknown")
+                    death_maps[dmap] = death_maps.get(dmap, 0) + 1
+                worst_map = max(death_maps, key=death_maps.get)
+                if death_maps[worst_map] >= 2:
+                    suggestions.append({
+                        "type": "avoid_map",
+                        "map": worst_map,
+                        "reason": f"{death_maps[worst_map]} deaths on {worst_map}",
+                        "priority": 90,
+                    })
+                    # Store in shared knowledge (isolated domain)
+                    self.kb.store("danger_zones", f"death_map:{worst_map}", 
+                                  {"count": death_maps[worst_map], "bot": bot_id},
+                                  source_bot=bot_id, confidence=0.7)
+            
+            # Analyze kill efficiency
+            kills = [a for a in history if a["outcome"] == "kill"]
+            if len(kills) >= 5:
+                avg_time = sum(k.get("action_data", {}).get("time_to_kill", 5) for k in kills[-10:]) / max(1, len(kills[-10:]))
+                if avg_time > 10:
+                    suggestions.append({
+                        "type": "improve_damage",
+                        "reason": f"avg TTK {avg_time:.1f}s too high",
+                        "priority": 70,
+                    })
+                    # Store combat pattern (isolated)
+                    self.kb.store("combat_patterns", f"ttk:{bot_id}", 
+                                  {"avg_ttk": avg_time},
+                                  source_bot=bot_id, is_shared=False, confidence=0.6)
+            
+            # Analyze gear effectiveness
+            gear_changes = [a for a in history if a["action_type"] == "buy_gear"]
+            if gear_changes:
+                last_gear = gear_changes[-1]
+                kills_after = [k for k in kills if k["timestamp"] > last_gear["timestamp"]]
+                if len(kills_after) >= 3:
+                    # Store gear recommendation (semi-shared)
+                    self.kb.store("gear_recommendations", f"{bot_id}:{last_gear['action_data'].get('weapon_id', '')}",
+                                  {"kills": len(kills_after), "class": bot_state.get("class", "")},
+                                  source_bot=bot_id, confidence=0.8)
+            
+            self._last_improvement = now
+        
+        return suggestions
+    
+    def get_shared_insight(self, domain: str, key: str, bot_id: str = "") -> Any | None:
+        """Get an insight from shared knowledge, respecting isolation."""
+        return self.kb.retrieve(domain, key, bot_id)
+
 
 class SpawnManipulator:
     """Perfect spawn camping and manipulation.
@@ -723,11 +1059,14 @@ class GodModeOrchestrator:
         self.movement = PerfectMovementEngine()
         self.economy = EconomyGodMode()
         self.spawn = SpawnManipulator()
+        self.knowledge = SharedKnowledgeBase()
+        self.improvement = SelfImprovementEngine(self.knowledge)
         self._lock = RLock()
         self._active_chains: list[str] = []
         self._bot_roles: dict[str, str] = {}
         self._formation: str = "v"
         self._god_mode_enabled = True
+        self._last_gear_check: dict[str, float] = {}
         
     def assess(self, snapshots: dict[str, Any]) -> list[dict]:
         """Main assessment function - called every cycle.
@@ -761,6 +1100,20 @@ class GodModeOrchestrator:
         # 6. Check for gear upgrades
         gear_actions = self._assess_gear(bot_states)
         actions.extend(gear_actions)
+        
+        # 7. Self-improvement analysis
+        try:
+            for bot_id, state in bot_states.items():
+                improvements = self.improvement.analyze_and_improve(bot_id, state)
+                for imp in improvements:
+                    actions.append({
+                        "bot_id": bot_id,
+                        "type": imp["type"],
+                        "priority": imp["priority"],
+                        "data": {"reason": imp["reason"], "map": imp.get("map", "")},
+                    })
+        except Exception:
+            pass
         
         return actions
     
@@ -956,27 +1309,64 @@ class GodModeOrchestrator:
         return actions
     
     def _assess_gear(self, bot_states: dict[str, dict]) -> list[dict]:
-        """Assess gear upgrade needs."""
+        """Assess ALL gear upgrade needs (weapon, armor, headgear, accessory, shoes, garment)."""
         actions = []
+        now = time.time()
         
         for bot_id, state in bot_states.items():
             class_name = state.get("class", "novice").lower()
             level = state.get("level", 1)
             zeny = state.get("zeny", 0)
             
+            # Rate-limit gear checks to once per 30s per bot
+            last_check = self._last_gear_check.get(bot_id, 0)
+            if now - last_check < 30:
+                continue
+            self._last_gear_check[bot_id] = now
+            
             upgrade = self.economy.optimal_gear_for_level(class_name, level, zeny)
             if upgrade:
-                actions.append({
-                    "bot_id": bot_id,
-                    "type": "buy_gear",
-                    "priority": 60,
-                    "data": {
-                        "weapon_id": upgrade["weapon_id"],
-                        "armor_id": upgrade["armor_id"],
-                        "cost": upgrade["cost"],
-                        "reason": f"gear_upgrade_level_{level}",
-                    },
-                })
+                # Check each slot
+                equipped = state.get("equipment", {})
+                slots_to_buy = []
+                
+                # Weapon
+                if upgrade.get("weapon_id") and not equipped.get("weapon"):
+                    slots_to_buy.append(("weapon", upgrade["weapon_id"], upgrade.get("cost", 0)))
+                
+                # Armor
+                if upgrade.get("armor_id") and not equipped.get("armor"):
+                    slots_to_buy.append(("armor", upgrade["armor_id"], upgrade.get("armor_cost", 0)))
+                
+                # Headgear
+                if upgrade.get("headgear_id") and not equipped.get("headgear"):
+                    slots_to_buy.append(("headgear", upgrade["headgear_id"], upgrade.get("headgear_cost", 0)))
+                
+                # Accessory
+                if upgrade.get("accessory_id") and not equipped.get("accessory"):
+                    slots_to_buy.append(("accessory", upgrade["accessory_id"], upgrade.get("accessory_cost", 0)))
+                
+                # Shoes
+                if upgrade.get("shoes_id") and not equipped.get("shoes"):
+                    slots_to_buy.append(("shoes", upgrade["shoes_id"], upgrade.get("shoes_cost", 0)))
+                
+                # Garment
+                if upgrade.get("garment_id") and not equipped.get("garment"):
+                    slots_to_buy.append(("garment", upgrade["garment_id"], upgrade.get("garment_cost", 0)))
+                
+                if slots_to_buy:
+                    total_cost = sum(s[2] for s in slots_to_buy)
+                    if zeny >= total_cost:
+                        actions.append({
+                            "bot_id": bot_id,
+                            "type": "buy_gear",
+                            "priority": 60,
+                            "data": {
+                                "slots": slots_to_buy,
+                                "total_cost": total_cost,
+                                "reason": f"full_gear_upgrade_level_{level}",
+                            },
+                        })
         
         return actions
 
