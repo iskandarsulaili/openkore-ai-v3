@@ -425,6 +425,7 @@ class HeuristicService:
         self._last_hunt_move: dict[str, float] = {}
         self._last_return_to_town: dict[str, float] = {}
         self._last_level: dict[str, int] = {}
+        self._last_party_attempt: dict[str, float] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -618,7 +619,7 @@ class HeuristicService:
         # ── DIRECT PARTY CHECK: Always check party before any state logic
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
-        _all_bots = signals.get("all_bots", []) or ["kicapmasin", "kicapmasin2", "kicapmasin3"]
+        _all_bots = signals.get("all_bots", []) or []
         _bot_name = (signals.get("bot_name", bot_id) or bot_id).split(":")[-1].split("/")[-1]
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
