@@ -66,15 +66,11 @@ JOB_CHANGE_NPCS: dict[str, tuple[str, int, int]] = {
 
 # ── Bot role assignments ──
 BOT_ROLES: dict[str, str] = {
-    "kicapmasin": "leader",
-    "kicapmasin2": "dps",
-    "kicapmasin3": "support",
+    # Dynamic: first bot in all_bots is leader, rest are dps
 }
 
 BOT_JOBS: dict[str, str] = {
-    "kicapmasin": "archer",
-    "kicapmasin2": "thief",
-    "kicapmasin3": "acolyte",
+    # Dynamic: class read from snapshot job_name field
 }
 
 # ── Class-aware hunting grounds ──
@@ -656,14 +652,11 @@ class HeuristicService:
                 # (don't leave+recreate - that destroys existing party)
                 if _party_in and len(_party_members) > 0:
                     # Already have a party - just request missing members
-                    self._profile_to_char = {
-                        "kicapmasin": "openkoreai",
-                        "kicapmasin2": "openkoreaiobs",
-                        "kicapmasin3": "openkoreaihuman",
-                    }
+                    # Build profile_to_char dynamically from all_bots
+                    # Each bot's char name is read from its snapshot
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
-                            _char_name = self._profile_to_char.get(_other_bot, _other_bot)
+                            _char_name = _other_bot  # Fallback: use profile name
                             # Only request if not already in party
                             _already_in = any(_char_name.lower() in m.lower() for m in _party_members)
                             if not _already_in:
@@ -694,14 +687,9 @@ class HeuristicService:
                         reason="Direct party check - leader creates party",
                     ))
                     # Request ALL other bots using character names
-                    self._profile_to_char = {
-                        "kicapmasin": "openkoreai",
-                        "kicapmasin2": "openkoreaiobs",
-                        "kicapmasin3": "openkoreaihuman",
-                    }
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
-                            _char_name = self._profile_to_char.get(_other_bot, _other_bot)
+                            _char_name = _other_bot  # Fallback: use profile name
                             actions.append(HeuristicAction(
                                 kind="command", command=("party request " + str(_char_name)),
                                 confidence=0.95, domain="social",
@@ -1589,14 +1577,9 @@ class HeuristicService:
                                 reason="Leader - create party with unique name",
                             ))
                             # Request all known bots to join using character names
-                            self._profile_to_char = {
-                                "kicapmasin": "openkoreai",
-                                "kicapmasin2": "openkoreaiobs",
-                                "kicapmasin3": "openkoreaihuman",
-                            }
                             for _other_bot in _all_bots:
                                 if _other_bot != _bot_profile:
-                                    _char_name = self._profile_to_char.get(_other_bot, _other_bot)
+                                    _char_name = _other_bot  # Fallback: use profile name
                                     actions.append(HeuristicAction(
                                         kind="command", command=f"party request {_char_name}",
                                         confidence=0.95, domain="social",

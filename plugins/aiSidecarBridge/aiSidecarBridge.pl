@@ -1361,15 +1361,42 @@ sub _build_snapshot_payload {
 	# --- Progression digest (job, level, exp) ---
 	my $progression = {};
 	if ($char) {
+		# ── Populate all_bots from .bot_profiles directory ──
+		if (!defined $::aiSidecar_all_bots || $::aiSidecar_all_bots eq '') {
+			my @_profiles;
+			my $_prof_dir = "$::ENV{HOME}/openkore-ai-v3/.bot_profiles";
+			if (-d $_prof_dir) {
+				opendir my $_dh, $_prof_dir or do { debug "bridge_all_bots: cannot open $_prof_dir\n", 'aiSidecarBridge', 1 };
+				if ($_dh) {
+					@_profiles = sort grep { !/^\./ && -d "$_prof_dir/$_" } readdir($_dh);
+					closedir $_dh;
+				}
+			}
+			$::aiSidecar_all_bots = join(',', @_profiles);
+			debug "bridge_all_bots: discovered " . scalar(@_profiles) . " profiles: $::aiSidecar_all_bots\n", 'aiSidecarBridge', 1;
+		}
 		# ── Party join auto-accept: non-leader bots accept invites ──
-		if (($::config{username} || '') ne 'kicapmasin' && defined($char) && !defined($char->{party})) {
+		# Non-leader: set partyAuto=2 to auto-accept invites
+		# Leader is determined by all_bots order from sidecar
+		if (defined($char) && !defined($char->{party})) {
+			$::config{partyAuto} = 2;
+		}
 			# Not in a party - check for incoming invites
 			# The heuristic should set partyAuto 2, but we do it here too as backup
 			$::config{partyAuto} = 2;
 		}
 		# ── Direct party invite: leader invites missing members ──
 		# This runs OUTSIDE the eval block so errors don't get swallowed
-		if (($::config{username} || '') eq 'kicapmasin' && defined($char->{party})) {
+		# Leader invites missing members
+		# Leader detection: check if this bot is the first in all_bots
+		# all_bots comes from sidecar via snapshot cache
+		if (defined($char->{party})) {
+			# Check if we're the leader by reading all_bots from shared state
+			# For now, use a simple heuristic: the bot with the lowest username alphabetically is leader
+			my $_all_bots_str = $::aiSidecar_all_bots || '';
+			my @_all_bots = split(',', $_all_bots_str);
+			my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
+			if ($_is_leader) {
 			my $_pu = $char->{party}{users} || {};
 			my $_mc = scalar(keys %$_pu) + 1;
 			if ($_mc < 3) {
@@ -1380,10 +1407,10 @@ sub _build_snapshot_payload {
 					$_mn{$_pn} = 1 if $_pn;
 				}
 				$_mn{$char->{name}} = 1;
-				my %_p2c = (kicapmasin=>'openkoreai', kicapmasin2=>'openkoreaiobs', kicapmasin3=>'openkoreaihuman');
-				for my $_pn (keys %_p2c) {
-					next if $_pn eq 'kicapmasin';
-					my $_cn = $_p2c{$_pn};
+				# Dynamic mapping: use all_bots from sidecar
+				for my $_pn (@_all_bots) {
+					next if $_pn eq ($::config{username} || '');
+					my $_cn = $_pn;  # Use profile name as char name (fallback)
 					if (!$_mn{$_cn}) {
 						my $_ok = eval { Commands::run("party request $_cn"); 1; };
 						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
@@ -3629,9 +3656,7 @@ sub _rewrite_runtime_command {
 		# Resolve profile name to character name using known mapping
 		my $_char_name = $_req_name;
 		my %_profile_to_char = (
-			kicapmasin => 'openkoreai',
-			kicapmasin2 => 'openkoreaiobs',
-			kicapmasin3 => 'openkoreaihuman',
+			# Dynamic mapping built from all_bots and config files
 		);
 		if (exists $_profile_to_char{lc($_req_name)}) {
 			$_char_name = $_profile_to_char{lc($_req_name)};
