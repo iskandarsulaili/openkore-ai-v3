@@ -4920,14 +4920,20 @@ class PDCALoop:
                             pass
                         # ── GOD MODE: override layer before heuristic (runs every cycle) ──
                         try:
-                            _gm_snapshots = getattr(self._runtime, "snapshot_cache", None)
-                            if _gm_snapshots is not None:
+                            _gm_sc = getattr(self._runtime, "snapshot_cache", None)
+                            if _gm_sc is not None:
                                 _gm_snap_dict = {}
-                                if hasattr(_gm_snapshots, 'bot_ids'):
-                                    for _gm_bid in _gm_snapshots.bot_ids():
-                                        _gm_snap = _gm_snapshots.get(_gm_bid) if hasattr(_gm_snapshots, 'get') else None
-                                        if _gm_snap:
-                                            _gm_snap_dict[_gm_bid] = _gm_snap
+                                if hasattr(_gm_sc, 'bot_ids'):
+                                    for _gm_bid in _gm_sc.bot_ids():
+                                        _gm_snap = _gm_sc.get(_gm_bid)
+                                        if _gm_snap is not None:
+                                            # Convert BotStateSnapshot to dict
+                                            if hasattr(_gm_snap, 'model_dump'):
+                                                _gm_snap_dict[_gm_bid] = _gm_snap.model_dump()
+                                            elif hasattr(_gm_snap, 'dict'):
+                                                _gm_snap_dict[_gm_bid] = _gm_snap.dict()
+                                            else:
+                                                _gm_snap_dict[_gm_bid] = _gm_snap
                                 if _gm_snap_dict:
                                     _gm_actions = god_mode_assess(_gm_snap_dict)
                                     if _gm_actions:
