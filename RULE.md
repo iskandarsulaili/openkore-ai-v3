@@ -116,3 +116,10 @@ Only ONE system decides where the bot goes: the heuristic service.
 - Bridge enforces lockMap consistency
 - Pro RO agent may RECOMMEND routes but must NOT override lockMap via direct commands
 - No bridge reflex may change lockMap
+
+
+## Config Management
+- **All config adjustments must go through the AI system (heuristic / Pro RO agent)** — never manually edit .bot_profiles/*/control/config.txt
+- The heuristic uses `set <key> <value>` commands to change config at runtime
+- Manual config edits are forbidden because they bypass the AI system's decision-making and create drift between expected and actual config state
+- The bridge must NEVER override config — it only executes commands from the heuristic
