@@ -428,12 +428,11 @@ sub on_mainLoop_post {
                     $::config{lockMap} = $_sm_map;
                 }
                 # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
-                # Use current position ($char->{pos}) not destination ($char->{pos_to})
+                # Use $char->{x} and $char->{y} (raw position integers)
                 if ($_sm_map eq 'prt_fild05') {
-                    my @_cpos = $char->{pos} ? @{$char->{pos}} : (0, 0);
-                    my $_px = $_cpos[0] || 0;
-                    my $_py = $_cpos[1] || 0;
-                    if (abs($_px - 367) < 5 && abs($_py - 205) < 5) {
+                    my $_px = $char->{x} || 0;
+                    my $_py = $char->{y} || 0;
+                    if (abs($_px - 367) < 3 && abs($_py - 205) < 3) {
                         warning "[portal_exit] bot at portal exit ($_px, $_py) - moving to center\n", 'aiSidecarBridge', 1;
                         eval { Commands::run("move 200 200"); 1; };
                     }
