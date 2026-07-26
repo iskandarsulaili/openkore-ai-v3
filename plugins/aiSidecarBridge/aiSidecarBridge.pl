@@ -278,21 +278,21 @@ sub on_mainLoop_pre {
 	# ── PREVENT TELEPORT AT LOW HP: disable OpenKore internal teleport ──
 	if ($char) {
 	    # Disable OpenKore's internal teleport at 30% HP - heuristic handles HP management
-	    $::config{teleportAuto_hp} = 0;
+	    # teleportAuto controlled by heuristic - not overridden here
 	    # $::config{attackAuto_maxDistance} = 3;  # heuristic controls this
 	    # $::config{attackAuto_unstuck} = 1;  # heuristic controls this
 	    # Override sitAuto config every cycle
 	    # sitAuto controlled by heuristic - not overridden here
 	    # sitAuto_hp_upper controlled by heuristic
-	    $::config{teleportAuto_hp} = 0;
+	    # teleportAuto controlled by heuristic - not overridden here
 	    # sitAuto_sp controlled by heuristic
 	    # sitAuto_sp_upper controlled by heuristic
 	    # sitAuto_idle controlled by heuristic
 	    # sitAuto_over_50 controlled by heuristic
 	    # Force stand if sitting
 	    if ($char->{sitting}) {
-	        eval { Commands::run('stand'); 1; };
-	        eval { Commands::run('ai auto'); 1; };
+	        # stand controlled by heuristic
+	        # ai auto controlled by heuristic
 	    }
 	}
 }
@@ -306,7 +306,7 @@ sub on_mainLoop_post {
         # Override attack distances (also disable auto-detection)
         # attackDistance controlled by heuristic - not overridden here
         # attackMaxDistance controlled by heuristic - not overridden here
-        $::config{'attackDistanceAuto'} = 0;  # Prevent server packet from overriding
+        # attackDistanceAuto controlled by heuristic - not overridden here  # Prevent server packet from overriding
         # ── DISABLE SIT IN AI: prevent OpenKore's internal AI from sitting ──
         if ($char) {
             # Override sitAuto config every cycle to prevent AI from re-enabling it
@@ -330,15 +330,15 @@ sub on_mainLoop_post {
             my $_fs_hp_pct = $_fs_hp_max > 0 ? int($_fs_hp * 100 / $_fs_hp_max) : 0;
             if ($_fs_hp_pct >= 50) {
                 warning "[force_stand] bot sitting with HP=$_fs_hp_pct%, forcing stand\n", 'aiSidecarBridge', 1;
-                @::AI::ai_seq = ();
-                $::config{attackAuto_inLockOnly} = 0;
+                # AI sequence clearing controlled by heuristic
+                # attackAuto_inLockOnly controlled by heuristic
                 # sitAuto controlled by heuristic - not overridden here
                 # sitAuto_hp_upper controlled by heuristic
                 # sitAuto_sp controlled by heuristic
                 # sitAuto_sp_upper controlled by heuristic
                 # sitAuto_idle controlled by heuristic
-                eval { Commands::run('stand'); 1; };
-                eval { Commands::run('ai auto'); 1; };
+                # stand controlled by heuristic
+                # ai auto controlled by heuristic
             }
         }
         
@@ -472,7 +472,7 @@ sub on_mainLoop_post {
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
-                $::config{attackAuto_inLockOnly} = 0;
+                # attackAuto_inLockOnly controlled by heuristic
                 $::config{attackDistanceAuto} = 0;
             }
         }
@@ -3215,7 +3215,7 @@ sub _rewrite_runtime_command {
 		if ($_am_hunt) {
 			warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
 			# Ensure auto mode so bot attacks monsters
-			eval { Commands::run('ai auto'); 1; };
+			# ai auto controlled by heuristic
 			return ('', 'ai_manual_throttled');
 		}
 		if ($_am_map =~ /^[a-z]+_fild/) {
@@ -3237,7 +3237,7 @@ sub _rewrite_runtime_command {
 			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
 			$::config{lockMap} = 'prt_fild05';
 			# $::config{attackAuto} = 3;
-			$::config{attackAuto_inLockOnly} = 0;
+			# attackAuto_inLockOnly controlled by heuristic
 			$::config{route_randomWalk_avoidInLock} = 0;
 			$::config{route_randomWalk_inTown} = 0;
 			# Trigger move to hunting map (this gets executed at top level by _execute_action)
@@ -3318,7 +3318,7 @@ sub _rewrite_runtime_command {
 					$::config{lockMap} = $set_val;
 					$_pro_ro_last_lock_set = $set_val;
 					$_pro_ro_respawn_ms = _now_ms();
-					@::AI::ai_seq = ();
+					# AI sequence clearing controlled by heuristic
 					return ('', 'config_set_ok');
 				}
 			}
@@ -4566,7 +4566,7 @@ sub _apply_bot_config {
 	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '7');
 	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '12');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
-	$::config{'attackDistanceAuto'} = 0;  # Disable auto-detection
+	# attackDistanceAuto controlled by heuristic - not overridden here  # Disable auto-detection
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
 	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
@@ -4605,7 +4605,7 @@ sub _apply_bot_config {
     $::config{sitAuto_hp_lower} = 0;
     # sitAuto_hp_upper controlled by heuristic
     # $::config{attackAuto} = 3;
-    $::config{attackAuto_inLockOnly} = 0;
+    # attackAuto_inLockOnly controlled by heuristic
     $::config{attackDistance} = 7;
 }
 
