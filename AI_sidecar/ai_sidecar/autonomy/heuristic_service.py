@@ -673,7 +673,10 @@ class HeuristicService:
             ))
             # 1b. Party creation for leader - do this early so others can join
             _cs_bot_name = signals.get("bot_name", bot_id) or bot_id
-            _cs_is_leader = "kicapmasin" in _cs_bot_name.lower() and "2" not in _cs_bot_name and "3" not in _cs_bot_name
+            # Dynamic leader detection: first bot alphabetically is leader
+            _cs_all_bots = signals.get("all_bots", []) or []
+            _cs_sorted = sorted(_cs_all_bots)
+            _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_name == _cs_sorted[0]
             if _cs_is_leader:
                 actions.append(HeuristicAction(
                     kind="command", command=f"party create AI{int(_now_t)}",
@@ -1066,7 +1069,10 @@ class HeuristicService:
         if state == "PARTY":
             # Differentiate: leader creates, others join by leader name
             _bot_name = signals.get("bot_name", bot_id) or bot_id
-            _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
+            # Dynamic leader detection: first bot alphabetically is leader
+            _all_bots = signals.get("all_bots", []) or []
+            _sorted_bots = sorted(_all_bots)
+            _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
             # Leader sends party commands with 30s cooldown (party request only works on same map)
             if _is_leader:
                 _now = __import__("time").time()
@@ -1074,20 +1080,19 @@ class HeuristicService:
                 if _now - _last_party > 30:
                     self._last_party_attempt[bot_id] = _now
                     actions.append(HeuristicAction(
-                        kind="command", command="party create AI Team",
+                        kind="command", command=f"party create AI{int(_now_t)}",
                         confidence=0.90, domain="social",
-                        reason="Leader - create party for team play",
+                        reason="Leader - create party with unique name",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="party request kicapmasin2",
-                        confidence=0.90, domain="social",
-                        reason="Leader - request kicapmasin2 to join party",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="party request kicapmasin3",
-                        confidence=0.90, domain="social",
-                        reason="Leader - request kicapmasin3 to join party",
-                    ))
+                    # Request all known bots to join (dynamically detected)
+                    _all_bots = signals.get("all_bots", []) or []
+                    for _other_bot in _all_bots:
+                        if _other_bot != _bot_name:
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"party request {_other_bot}",
+                                confidence=0.90, domain="social",
+                                reason=f"Leader - request {_other_bot} to join party",
+                            ))
                     actions.append(HeuristicAction(
                         kind="command", command="party share exp",
                         confidence=0.85, domain="social",
@@ -1395,7 +1400,10 @@ class HeuristicService:
                 _party_in = signals.get("in_party", False)
                 if not _party_in:
                     _bot_name = signals.get("bot_name", bot_id) or bot_id
-                    _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
+                    # Dynamic leader detection: first bot alphabetically is leader
+                    _all_bots = signals.get("all_bots", []) or []
+                    _sorted_bots = sorted(_all_bots)
+                    _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
                     # Leader sends party commands with 30s cooldown (party request only works on same map)
                     if _is_leader:
                         _now = __import__("time").time()
@@ -1403,20 +1411,18 @@ class HeuristicService:
                         if _now - _last_party > 30:
                             self._last_party_attempt[bot_id] = _now
                             actions.append(HeuristicAction(
-                                kind="command", command="party create AI Team",
+                                kind="command", command=f"party create AI{int(_now_t)}",
                                 confidence=0.95, domain="social",
-                                reason="Leader - create party for team play",
+                                reason="Leader - create party with unique name",
                             ))
-                            actions.append(HeuristicAction(
-                                kind="command", command="party request kicapmasin2",
-                                confidence=0.95, domain="social",
-                                reason="Leader - request kicapmasin2 to join party",
-                            ))
-                            actions.append(HeuristicAction(
-                                kind="command", command="party request kicapmasin3",
-                                confidence=0.95, domain="social",
-                                reason="Leader - request kicapmasin3 to join party",
-                            ))
+                            # Request all known bots to join (dynamically detected)
+                            for _other_bot in _all_bots:
+                                if _other_bot != _bot_name:
+                                    actions.append(HeuristicAction(
+                                        kind="command", command=f"party request {_other_bot}",
+                                        confidence=0.95, domain="social",
+                                        reason=f"Leader - request {_other_bot} to join party",
+                                    ))
                             actions.append(HeuristicAction(
                                 kind="command", command="party share exp",
                                 confidence=0.90, domain="social",

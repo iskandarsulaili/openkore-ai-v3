@@ -1417,6 +1417,8 @@ sub _build_snapshot_payload {
 			$p{flee} = $char->{flee} || 0;
 			$p{crit} = $char->{crit} || 0;
 			$p{aspd} = $char->{aspd} || 0;
+			# all_bots: list of all known bot names (for dynamic party formation)
+			$p{all_bots} = [keys %{$::aiSidecar_bot_pids || {}}];
 			\%p;
 		} || {};
 	}
