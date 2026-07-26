@@ -3551,23 +3551,25 @@ sub _rewrite_runtime_command {
 	# Handle 'party request <name>' -> resolve name to player list # and send request
 	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
 		my $_req_name = $1;
+		# Resolve profile name to character name if mapping exists
+		my $_char_name = $::aiSidecar_profile_to_char{lc($_req_name)} || $_req_name;
 		my $_req_id = 0;
 		if ($playersList) {
 			my $_idx = 0;
 			for my $_pl (@{$playersList->getItems()}) {
 				$_idx++;
-				if (defined $_pl && lc($_pl->{name}) eq lc($_req_name)) {
+				if (defined $_pl && lc($_pl->{name}) eq lc($_char_name)) {
 					$_req_id = $_idx;
 					last;
 				}
 			}
 		}
 		if ($_req_id) {
-			warning "[party_request] requesting $_req_name (player #$_req_id)\n", 'aiSidecarBridge', 1;
+			warning "[party_request] requesting $_char_name (player #$_req_id, profile=$_req_name)\n", 'aiSidecarBridge', 1;
 			$command = "party request $_req_id";
 		} else {
-			warning "[party_request] player '$_req_name' not found in player list\n", 'aiSidecarBridge', 1;
-			$command = "party request $_req_name";
+			warning "[party_request] player '$_char_name' not found in player list (profile=$_req_name)\n", 'aiSidecarBridge', 1;
+			$command = "party request $_char_name";
 		}
 		$rewrite_kind = 'party_request_rewritten';
 		return ($command, $rewrite_kind);
