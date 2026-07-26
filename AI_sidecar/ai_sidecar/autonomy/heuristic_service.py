@@ -426,6 +426,7 @@ class HeuristicService:
         self._last_return_to_town: dict[str, float] = {}
         self._last_level: dict[str, int] = {}
         self._last_party_attempt: dict[str, float] = {}
+        self._last_party_members: dict[str, list] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
