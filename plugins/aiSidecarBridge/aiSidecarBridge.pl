@@ -1375,7 +1375,7 @@ sub _build_snapshot_payload {
 			elsif (defined $char->{stat_pts}) { $p{stat_points} = $char->{stat_pts}; }
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
-			$p{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 1) ? 1 : 0;
+			$p{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 0) ? 1 : 0;
 			# attack_power: total attack power (weapon + stats)
 			$p{attack_power} = $char->{attack} || $char->{atk} || 0;
 			\%p;
@@ -3071,9 +3071,30 @@ sub _rewrite_runtime_command {
 		$command = "party create $_party_name";
 		return ($command, 'party_command');
 	}
-	if ($command =~ /^party\s+join\s+(\d+)$/i) {
-		debug "[party_rewrite] $command -> party join $1\n", 'aiSidecarBridge', 2;
-		$command = "party join $1";
+	if ($command =~ /^party\s+join\s+(.+)$/i) {
+		my $_join_target = $1;
+		# If it's a name (not digits), look up the player's account ID
+		if ($_join_target !~ /^\d+$/) {
+			my $_found_id = 0;
+			if ($playersList) {
+				for my $_pl (@{$playersList->getItems()}) {
+					if (defined $_pl && lc($_pl->{name}) eq lc($_join_target)) {
+						$_found_id = $_pl->{ID};
+						last;
+					}
+				}
+			}
+			if ($_found_id) {
+				debug "[party_rewrite] $command -> party join $_found_id (resolved name)\n", 'aiSidecarBridge', 2;
+				$command = "party join $_found_id";
+			} else {
+				debug "[party_rewrite] $command - player '$_join_target' not found nearby, using name\n", 'aiSidecarBridge', 2;
+				$command = "party join $_join_target";
+			}
+		} else {
+			debug "[party_rewrite] $command -> party join $_join_target\n", 'aiSidecarBridge', 2;
+			$command = "party join $_join_target";
+		}
 		return ($command, 'party_command');
 	}
 	# ── TALK REWRITE: fix talknpc dialog commands ──
