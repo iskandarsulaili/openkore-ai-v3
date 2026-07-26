@@ -626,7 +626,7 @@ class HeuristicService:
         # Death/respawn flicker guard: cache party state for 30s to survive snapshot loss
         _now_t = __import__("time").time()
         _last_seen_party = self._last_party_seen.get(bot_id, 0)
-        if (not _party_in or not _all_bots) and _last_seen_party > 0 and _now_t - _last_seen_party < 30:
+        if (not _party_in or not _all_bots) and _last_seen_party > 0 and _now_t - _last_seen_party < 120:
             _party_in = True
             _party_members = self._last_party_members.get(bot_id, [])
             _all_bots = self._all_bots_cache.get(bot_id, [])

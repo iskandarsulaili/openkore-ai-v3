@@ -1379,9 +1379,10 @@ sub _build_snapshot_payload {
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			# Cache party state to survive death/respawn
-			# Use bot_id (profile name) as cache key - char->{name} is undef during death
-			my $_cache_key = $p{bot_id} || $char->{name} || 'unknown';
-			if (defined($char->{party})) {
+			# Use bot_id (profile name) as cache key
+			my $_cache_key = $p{bot_id} || $::config{username} || $ENV{BOT_NAME} || 'unknown';
+			# Check $char exists first - can be undef during death/disconnect
+			if (defined($char) && defined($char->{party})) {
 				$raw->{in_party} = 1;
 				$raw->{party_members} = [];
 				if (ref($char->{party}{users}) eq "HASH") {
