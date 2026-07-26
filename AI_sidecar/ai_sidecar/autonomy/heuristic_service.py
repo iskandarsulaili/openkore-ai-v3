@@ -753,7 +753,13 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 1b. Party creation for leader - do this early so others can join
+            # 1b. All bots move to town first (party request requires same map)
+            actions.append(HeuristicAction(
+                kind="command", command="move prontera",
+                confidence=0.99, domain="social",
+                reason="Cold start - all bots move to town for party formation",
+            ))
+            # 1c. Party creation for leader - do this early so others can join
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # Dynamic leader detection: first bot alphabetically is leader
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
