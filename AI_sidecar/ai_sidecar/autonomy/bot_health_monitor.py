@@ -25,7 +25,7 @@ CONFIG_FIXES = {
     "sell_steps_correct": {"key": "sellAuto_npc_steps", "value": "c r0 c", "reason": "Sell NPC dialog steps wrong"},
     "items_take_2": {"key": "itemsTakeAuto", "value": "2", "reason": "Item pickup disabled"},
     "attack_auto_2": {"key": "attackAuto", "value": "3", "reason": "Attack mode not aggressive"},
-    "teleport_hp_30": {"key": "teleportAuto_hp", "value": "30", "reason": "Teleport HP threshold too low, dying too much"},
+    "teleport_hp_0": {"key": "teleportAuto_hp", "value": "0", "reason": "Teleport HP disabled - use sit instead"},
 }
 
 

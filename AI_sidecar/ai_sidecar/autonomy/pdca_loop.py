@@ -1651,7 +1651,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         # Set minimal engagement range — only attack monsters within 0.5 cells
                         aq.enqueue(_bid, ActionProposal(
                             action_id=f"dl_minimal_{_bid}_{int(__import__('time').time()*1000)}",
-                            kind="command", command="set attackDistance 0.5",
+                            kind="command", command="set attackDistance 2",
                             priority_tier=ActionPriorityTier.reflex, source="planner",
                             created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
                             conflict_key=f"dl_minimal_{_bid}", idempotency_key=f"dl_minimal_{_bid}",
@@ -1712,7 +1712,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     # Queue survival config fixes in response to death loop detection
                     try:
                         _dl_logger = logging.getLogger(__name__)
-                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 2)]:
+                        for _dl_key, _dl_val in [("teleportAuto_minAggressives", 8), ("teleportAuto_hp", 0), ("route_randomWalk", 2)]:
                             _dl_prop = ActionProposal(
                                 action_id=f"dl_surv_{_bid}_{_dl_key}_{int(__import__('time').time()*1000)}",
                                 kind="command", command=f"set {_dl_key} {_dl_val}",
@@ -4976,7 +4976,7 @@ class PDCALoop:
                                             # authoritative source for attack behavior.
                                             pass
                                             # Queue default survival config (death loop will adjust if deaths detected)
-                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 5), ("teleportAuto_hp", 10), ("route_randomWalk", 2)]:
+                                            for _cr_s_key, _cr_s_val in [("teleportAuto_minAggressives", 8), ("teleportAuto_hp", 0), ("route_randomWalk", 2)]:
                                                 try:
                                                     _cr_s_proposal = ActionProposal(
                                                         action_id=f'pro_ro_surv_{_cycle_bot_id or "default"}_{_cr_s_key}_{int(time.monotonic()*1000)}',
@@ -5022,8 +5022,8 @@ class PDCALoop:
                                                             ("attackAuto", "3"),
                                                             ("attackAuto_inLockOnly", "0"),
                                                             ("route_randomWalk", "2"),
-                                                            ("teleportAuto_minAggressives", "5"),
-                                                            ("teleportAuto_hp", "30"),
+                                                            ("teleportAuto_minAggressives", "8"),
+                                                            ("teleportAuto_hp", "0"),
                                                             ("teleportAuto_minAggressivesInLock", "8"),
                                                         ]
                                                         for _hc_key, _hc_val in _hc_configs:
