@@ -1376,14 +1376,14 @@ sub _build_snapshot_payload {
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
-			$p{raw}{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 0) ? 1 : 0;
+			$raw->{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 0) ? 1 : 0;
 			# party_members: list of party member names
-			$p{raw}{party_members} = [];
+			$raw->{party_members} = [];
 			if (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH") {
 				for my $_pm_key (keys %{$char->{party}{party}{member}}) {
 					my $_pm = $char->{party}{party}{member}{$_pm_key};
 					if (ref($_pm) eq "HASH" && defined($_pm->{name})) {
-						push @{$p{raw}{party_members}}, lc($_pm->{name});
+						push @{$raw->{party_members}}, lc($_pm->{name});
 					}
 				}
 			}
@@ -1447,7 +1447,7 @@ sub _build_snapshot_payload {
 			}
 			debug "[all_bots] found: @_bot_names\n", 'aiSidecarBridge', 1;
 			$p{all_bots} = \@_bot_names;
-			$p{raw}{all_bots} = \@_bot_names;
+			$raw->{all_bots} = \@_bot_names;
 			\%p;
 		} || {};
 	}
