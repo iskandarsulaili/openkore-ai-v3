@@ -1078,11 +1078,9 @@ class HeuristicService:
                     reason="Share experience in party",
                 ))
             else:
-                actions.append(HeuristicAction(
-                    kind="command", command="party join 1",
-                    confidence=0.90, domain="social",
-                    reason=f"Accept party invitation",
-                ))
+                # Joiners: do nothing - partyAuto 1 in config auto-accepts invites
+                # Sending "party join 1" gives error when no invitation is pending
+                pass
             total_confidence = 0.85
             top_domain = "social"
             assessment = HeuristicAssessment(
@@ -1371,11 +1369,8 @@ class HeuristicService:
                             reason="Share experience in party",
                         ))
                     else:
-                        actions.append(HeuristicAction(
-                            kind="command", command="party join",
-                            confidence=0.95, domain="social",
-                            reason="Accept party invitation",
-                        ))
+                        # Joiners: do nothing - partyAuto 1 in config auto-accepts invites
+                        pass
                     actions.append(HeuristicAction(
                         kind="command", command="ai auto",
                         confidence=0.95, domain="hunting",
