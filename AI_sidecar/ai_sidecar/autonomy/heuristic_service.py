@@ -623,14 +623,14 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
         _all_bots = signals.get("all_bots", []) or []
-        # Death/respawn flicker guard: if we've seen in_party=True recently, trust the cache
+        # Death/respawn flicker guard: cache party state for 30s to survive snapshot loss
         _now_t = __import__("time").time()
         _last_seen_party = self._last_party_seen.get(bot_id, 0)
-        if not _party_in and _last_seen_party > 0 and _now_t - _last_seen_party < 5:
+        if (not _party_in or not _all_bots) and _last_seen_party > 0 and _now_t - _last_seen_party < 30:
             _party_in = True
             _party_members = self._last_party_members.get(bot_id, [])
             _all_bots = self._all_bots_cache.get(bot_id, [])
-        if _party_in:
+        if _party_in and _all_bots:
             self._last_party_seen[bot_id] = _now_t
             self._last_party_members[bot_id] = _party_members
             self._all_bots_cache[bot_id] = _all_bots
@@ -717,8 +717,9 @@ class HeuristicService:
 
         # Joiners: if not in party or in wrong party, leave stale party, set partyAuto, move to town
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1
-        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members))
-        if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD":
+        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots))
+        # Only act if we have all_bots data - empty all_bots means flicker/no data
+        if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots:
             if _party_in:
                 actions.append(HeuristicAction(
                     kind="command", command="party leave",
