@@ -3551,8 +3551,27 @@ sub _rewrite_runtime_command {
 	# Handle 'party request <name>' -> resolve name to player list # and send request
 	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
 		my $_req_name = $1;
-		# Resolve profile name to character name if mapping exists
-		my $_char_name = $::aiSidecar_profile_to_char{lc($_req_name)} || $_req_name;
+		# Resolve profile name to character name from shared file
+		my $_char_name = $_req_name;
+		my $_map_file = "$::SCRIPT_DIR/data/profile_to_char.txt";
+		if (-f $_map_file) {
+			open(my $_mf, "<", $_map_file) or debug "[profile_map] cannot read $_map_file: $!\n", 'aiSidecarBridge', 1;
+			if ($_mf) {
+				while (my $_line = <$_mf>) {
+					chomp $_line;
+					my ($_prof, $_char) = split(/=/, $_line, 2);
+					if ($_prof && $_char && lc($_prof) eq lc($_req_name)) {
+						$_char_name = $_char;
+						last;
+					}
+				}
+				close($_mf);
+			}
+		}
+		# Also check in-memory global (may have been set by this process)
+		if ($_char_name eq $_req_name && $::aiSidecar_profile_to_char{lc($_req_name)}) {
+			$_char_name = $::aiSidecar_profile_to_char{lc($_req_name)};
+		}
 		my $_req_id = 0;
 		if ($playersList) {
 			my $_idx = 0;
