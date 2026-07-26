@@ -1438,12 +1438,14 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # HP MANAGEMENT: Sit when low HP to prevent death
+                # HP MANAGEMENT: Sit when low HP to prevent death (hunting map only)
                 # Ranged classes (Archer/Mage) get lower threshold (30%) since they're at range
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
                 _hp_job = signals.get("job_name", "novice") or "novice"
+                _hp_map = signals.get("map", "") or ""
+                _hp_on_hunting_map = "prt_fild" in _hp_map or "pay_fild" in _hp_map or "mjolnir" in _hp_map or "gef_fild" in _hp_map or "ra_fild" in _hp_map
                 _hp_threshold = 0.30 if any(x in _hp_job.lower() for x in ["archer", "hunter", "mage", "wizard"]) else 0.50
-                if _hp < _hp_threshold:
+                if _hp < _hp_threshold and _hp_on_hunting_map:
                     actions.append(HeuristicAction(
                         kind="command", command="sit",
                         confidence=0.99, domain="survival",
