@@ -633,15 +633,37 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # Set lockMap so OpenKore knows where to go
+            # COLD START: Economy-first approach (Pro RO style)
+            # 1. Set lockMap first
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap prt_fild05",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # Go directly to hunting map via portal
-            # DON'T sell starting gear - bot needs its weapon to kill monsters
-            # Starting gear weight doesn't prevent movement
+            # 2. Sell starting gear (weight > 70% prevents item pickup)
+            # Bot keeps weapon slot but sells accessories for zeny
+            actions.append(HeuristicAction(
+                kind="command", command="move 147 175",
+                confidence=0.99, domain="economy",
+                reason="Cold start - walk to Special Dealer",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="talknpc 147 175 c r1 n",
+                confidence=0.99, domain="economy",
+                reason="Cold start - sell starting gear",
+            ))
+            # 3. Buy 10 red potions (501) for survivability
+            actions.append(HeuristicAction(
+                kind="command", command="move 126 76",
+                confidence=0.98, domain="economy",
+                reason="Cold start - walk to Potion Shop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="buy 501 10",
+                confidence=0.98, domain="economy",
+                reason="Cold start - buy 10 red potions",
+            ))
+            # 4. Go to hunting map via portal
             actions.append(HeuristicAction(
                 kind="command", command="move 22 203",
                 confidence=0.99, domain="emergency",
@@ -1150,6 +1172,41 @@ class HeuristicService:
                     ))
                     total_confidence = 0.99
                     top_domain = "survival"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
+                # MAP PROGRESSION: Check if bot should move to a better hunting map
+                _base_level = signals.get("level", 1) or 1
+                _progression_maps = [
+                    (99, "gefen_fild01"),
+                    (70, "mjolnir_04"),
+                    (50, "gef_fild01"),
+                    (35, "pay_fild01"),
+                    (25, "prt_fild08"),
+                    (15, "prt_fild05"),
+                ]
+                _next_map = "prt_fild05"
+                for _lvl, _map in _progression_maps:
+                    if _base_level >= _lvl:
+                        _next_map = _map
+                        break
+                # If current map is not the correct one for level, move
+                if map_name != _next_map and _hunt_duration > 30:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set lockMap {_next_map}",
+                        confidence=0.90, domain="hunting",
+                        reason=f"Level {_base_level} - moving to {_next_map}",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_next_map}",
+                        confidence=0.90, domain="hunting",
+                        reason=f"Level {_base_level} - progressing to {_next_map}",
+                    ))
+                    total_confidence = 0.90
+                    top_domain = "hunting"
                     assessment = HeuristicAssessment(
                         horizon=horizon, actions=actions, confidence=total_confidence,
                         actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),

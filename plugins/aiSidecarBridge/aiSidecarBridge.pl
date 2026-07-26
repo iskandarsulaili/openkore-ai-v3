@@ -428,11 +428,31 @@ sub on_mainLoop_post {
                     $::config{lockMap} = $_sm_map;
                 }
                 # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
-                # Use $char->{x} and $char->{y} (raw position integers)
                 if ($_sm_map eq 'prt_fild05') {
-                    my $_px = $char->{x} || 0;
-                    my $_py = $char->{y} || 0;
-                    if (abs($_px - 367) < 3 && abs($_py - 205) < 3) {
+                    my $_px = 0;
+                    my $_py = 0;
+                    # Try multiple position sources (some OpenKore builds store differently)
+                    if (defined $char->{pos_to}) {
+                        $_px = $char->{pos_to}{x} || 0;
+                        $_py = $char->{pos_to}{y} || 0;
+                    }
+                    if ($_px == 0 && defined $char->{pos}) {
+                        # pos as hashref
+                        if (ref($char->{pos}) eq 'HASH') {
+                            $_px = $char->{pos}{x} || 0;
+                            $_py = $char->{pos}{y} || 0;
+                        }
+                    }
+                    if ($_px == 0 && defined $char->{x}) {
+                        $_px = $char->{x};
+                        $_py = $char->{y};
+                    }
+                    if ($_px == 0 && defined $field) {
+                        my ($fx, $fy) = $field->base();
+                        $_px = $fx;
+                        $_py = $fy;
+                    }
+                    if (abs($_px - 367) < 10 && abs($_py - 205) < 10) {
                         warning "[portal_exit] bot at portal exit ($_px, $_py) - moving to center\n", 'aiSidecarBridge', 1;
                         eval { Commands::run("move 200 200"); 1; };
                     }
