@@ -1235,16 +1235,28 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # AUTO-STATS: If bot has unspent stat points, transition to STATS state
+                # DIRECT STAT ALLOCATION: If bot has unspent stat points, allocate immediately
+                # This is more reliable than transitioning to STATS state (which may never fire)
                 _current_stat_points = signals.get("stat_points", 0) or 0
                 if _current_stat_points > 0:
-                    self._state[bot_id] = "STATS"
-                    self._state_since[bot_id] = __import__("time").time()
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.99, domain="progression",
-                        reason=f"Has {_current_stat_points} unspent stat points - allocate via STATS state",
-                    ))
+                    _job_name = signals.get("job_name", "novice") or "novice"
+                    _stat_builds = {
+                        "novice": ["dex", "str", "agi", "vit"],
+                        "archer": ["dex", "agi", "str", "vit"],
+                        "thief": ["agi", "dex", "str", "vit"],
+                        "acolyte": ["int", "dex", "vit", "str"],
+                        "swordman": ["str", "vit", "dex", "agi"],
+                        "mage": ["int", "dex", "vit", "str"],
+                    }
+                    _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
+                    for _stat_name in _build:
+                        if _current_stat_points > 0:
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"stat_add {_stat_name}",
+                                confidence=0.99, domain="progression",
+                                reason=f"Allocate 1 {_stat_name.upper()} ({_job_name} build, {_current_stat_points} pts left)",
+                            ))
+                            _current_stat_points -= 1
                     total_confidence = 0.99
                     top_domain = "progression"
                     assessment = HeuristicAssessment(
