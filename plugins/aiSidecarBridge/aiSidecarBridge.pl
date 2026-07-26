@@ -1379,6 +1379,8 @@ sub _build_snapshot_payload {
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			# Cache party state to survive death/respawn
+			# Use bot_id (profile name) as cache key - char->{name} is undef during death
+			my $_cache_key = $p{bot_id} || $char->{name} || 'unknown';
 			if (defined($char->{party})) {
 				$raw->{in_party} = 1;
 				$raw->{party_members} = [];
@@ -1400,12 +1402,12 @@ sub _build_snapshot_payload {
 				if (scalar(@{$raw->{party_members}}) == 0 && $char->{name}) {
 					push @{$raw->{party_members}}, lc($char->{name});
 				}
-				$::aiSidecar_cached_party{$char->{name}} = {
+				$::aiSidecar_cached_party{$_cache_key} = {
 					in_party => $raw->{in_party},
 					members => [@{$raw->{party_members}}],
 				};
-			} elsif (defined($::aiSidecar_cached_party{$char->{name}})) {
-				my $cache = $::aiSidecar_cached_party{$char->{name}};
+			} elsif (defined($::aiSidecar_cached_party{$_cache_key})) {
+				my $cache = $::aiSidecar_cached_party{$_cache_key};
 				$raw->{in_party} = $cache->{in_party};
 				$raw->{party_members} = [@{$cache->{members}}];
 			} else {
