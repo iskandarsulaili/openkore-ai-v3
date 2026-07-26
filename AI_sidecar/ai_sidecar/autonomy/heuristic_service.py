@@ -424,6 +424,7 @@ class HeuristicService:
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
         self._last_return_to_town: dict[str, float] = {}
+        self._last_level: dict[str, int] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -1235,36 +1236,44 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # DIRECT STAT ALLOCATION: If bot has unspent stat points, allocate immediately
-                # This is more reliable than transitioning to STATS state (which may never fire)
-                _current_stat_points = signals.get("stat_points", 0) or 0
-                if _current_stat_points > 0:
-                    _job_name = signals.get("job_name", "novice") or "novice"
-                    _stat_builds = {
-                        "novice": ["dex", "str", "agi", "vit"],
-                        "archer": ["dex", "agi", "str", "vit"],
-                        "thief": ["agi", "dex", "str", "vit"],
-                        "acolyte": ["int", "dex", "vit", "str"],
-                        "swordman": ["str", "vit", "dex", "agi"],
-                        "mage": ["int", "dex", "vit", "str"],
-                    }
-                    _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
-                    for _stat_name in _build:
-                        if _current_stat_points > 0:
-                            actions.append(HeuristicAction(
-                                kind="command", command=f"stat_add {_stat_name}",
-                                confidence=0.99, domain="progression",
-                                reason=f"Allocate 1 {_stat_name.upper()} ({_job_name} build, {_current_stat_points} pts left)",
-                            ))
-                            _current_stat_points -= 1
-                    total_confidence = 0.99
-                    top_domain = "progression"
-                    assessment = HeuristicAssessment(
-                        horizon=horizon, actions=actions, confidence=total_confidence,
-                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                    )
-                    self._last_assessment[bot_id] = assessment
-                    return assessment
+                # LEVEL-TRACKING STAT ALLOCATION: Detect level-ups and allocate stats
+                # More reliable than depending on stat_points signal (which may not propagate)
+                _current_level = signals.get("base_level", 1) or 1
+                _last_level = self._last_level.get(bot_id, 0) or 0
+                _job_name = signals.get("job_name", "novice") or "novice"
+                if _current_level != _last_level:
+                    self._last_level[bot_id] = _current_level
+                    # Level-up detected - 5 stat points per level (5 * level_gained)
+                    _level_gained = _current_level - _last_level if _last_level > 0 else _current_level - 1
+                    if _last_level > 0 and _level_gained > 0:
+                        _stat_builds = {
+                            "novice": ["dex", "str", "agi", "vit"],
+                            "archer": ["dex", "agi", "str", "vit"],
+                            "thief": ["agi", "dex", "str", "vit"],
+                            "acolyte": ["int", "dex", "vit", "str"],
+                            "swordman": ["str", "vit", "dex", "agi"],
+                            "mage": ["int", "dex", "vit", "str"],
+                        }
+                        _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
+                        _pts_to_alloc = _level_gained * 5  # 5 stat points per level
+                        for _stat_name in _build:
+                            while _pts_to_alloc > 0:
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"stat_add {_stat_name}",
+                                    confidence=0.99, domain="progression",
+                                    reason=f"Allocate 1 {_stat_name.upper()} ({_job_name}, Lv.{_current_level})",
+                                ))
+                                _pts_to_alloc -= 1
+                                if _pts_to_alloc <= 0:
+                                    break
+                        total_confidence = 0.99
+                        top_domain = "progression"
+                        assessment = HeuristicAssessment(
+                            horizon=horizon, actions=actions, confidence=total_confidence,
+                            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                        )
+                        self._last_assessment[bot_id] = assessment
+                        return assessment
                 # Default: set optimal attack config and enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="set attackDistance 2",
