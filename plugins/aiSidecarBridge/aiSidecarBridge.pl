@@ -1461,7 +1461,7 @@ sub _build_snapshot_payload {
 			opendir(my $_dh, Cwd::cwd() . "/.bot_profiles") or do { $p{all_bots} = []; return; };
 				while (my $_entry = readdir($_dh)) {
 					next if $_entry =~ /^\./;
-					next unless -d "$_cwd/.bot_profiles/$_entry";
+					next unless -d Cwd::cwd() . "/.bot_profiles/$_entry";
 					push @_bot_names, $_entry;
 				}
 				closedir($_dh);
