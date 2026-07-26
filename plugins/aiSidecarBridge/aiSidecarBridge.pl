@@ -1279,6 +1279,20 @@ sub _attempt_register {
 		},
 	};
 
+	# Write profile->char mapping to shared file during registration
+	my $_profile_name = eval { $profiles::profile } || '';
+	my $_char_name = $char ? ($char->{name} || '') : '';
+	if ($_profile_name && $_char_name) {
+		my $_map_dir = "$::SCRIPT_DIR/data";
+		mkdir($_map_dir) unless -d $_map_dir;
+		my $_map_file = "$_map_dir/profile_to_char.txt";
+		open(my $_mf, ">", $_map_file) or debug "[profile_map] cannot write $_map_file: $!\n", 'aiSidecarBridge', 1;
+		if ($_mf) {
+			print $_mf lc($_profile_name) . "=" . lc($_char_name) . "\n";
+			close($_mf);
+			debug "[profile_map] wrote $_profile_name=$_char_name to $_map_file\n", 'aiSidecarBridge', 2;
+		}
+	}
 	my $resp = _http_post_json('/v1/ingest/register', $payload);
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 500) {
 		$registered = 1;
@@ -1383,11 +1397,11 @@ sub _build_snapshot_payload {
 			if (defined($char->{party}) && ref($char->{party}{users}) eq "HASH") {
 				for my $_pm_key (keys %{$char->{party}{users}}) {
 					my $_pm = $char->{party}{users}{$_pm_key};
-					if (ref($_pm) eq "HASH") {
-						my $_pm_name = $_pm->{name} || '';
-						if ($_pm_name) {
-							push @{$raw->{party_members}}, lc($_pm_name);
-						}
+					# Actor::Party objects are blessed HASH refs - ref() returns class name, not "HASH"
+					# Use eval to safely access name field regardless of blessing
+					my $_pm_name = eval { $_pm->{name} } || '';
+					if ($_pm_name) {
+						push @{$raw->{party_members}}, lc($_pm_name);
 					}
 				}
 			}
@@ -1512,7 +1526,9 @@ sub _build_snapshot_payload {
 		if ($party_members) {
 			for my $_pmk (keys %{$party_members}) {
 				my $_pmv = $party_members->{$_pmk};
-				if (ref($_pmv) eq 'HASH' && $_pmv->{name}) {
+				# Actor::Party objects are blessed HASH refs - use eval for safe access
+				my $_pmv_name = eval { $_pmv->{name} } || '';
+				if ($_pmv_name) {
 					$_party_member_names{$_pmk} = 1;
 				}
 			}
@@ -3569,20 +3585,21 @@ sub _rewrite_runtime_command {
 	# Handle 'party request <name>' -> resolve name to player list # and send request
 	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
 		my $_req_name = $1;
-		# Resolve profile name to character name from config file
+		# Resolve profile name to character name from shared mapping file
 		my $_char_name = $_req_name;
-		my $_cfg_file = "$::SCRIPT_DIR/.bot_profiles/$_req_name/control/config.txt";
-		if (-f $_cfg_file) {
-			open(my $_cf, "<", $_cfg_file) or debug "[party_request] cannot read $_cfg_file: $!\n", 'aiSidecarBridge', 1;
-			if ($_cf) {
-				while (my $_line = <$_cf>) {
+		my $_map_file = "$::SCRIPT_DIR/data/profile_to_char.txt";
+		if (-f $_map_file) {
+			open(my $_mf, "<", $_map_file) or debug "[party_request] cannot read $_map_file: $!\n", 'aiSidecarBridge', 1;
+			if ($_mf) {
+				while (my $_line = <$_mf>) {
 					chomp $_line;
-					if ($_line =~ /^char\s+(.+)$/i) {
-						$_char_name = lc($1);
+					my ($_prof, $_char) = split(/=/, $_line, 2);
+					if ($_prof && $_char && lc($_prof) eq lc($_req_name)) {
+						$_char_name = lc($_char);
 						last;
 					}
 				}
-				close($_cf);
+				close($_mf);
 			}
 		}
 		my $_req_id = 0;
