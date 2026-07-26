@@ -269,7 +269,13 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = latest.get("party_members", []) or []
                         signals["party_member_names"] = [str(m) for m in (latest.get("party_members", []) or [])]
                         signals["all_bots"] = latest.get("all_bots", []) or []
-                        # Populate all_bots from snapshot cache (proper source of truth)
+                        # Read all_bots from raw bridge digest if not in snapshot
+                        if not signals["all_bots"]:
+                            _raw = latest.get("raw", {}) or {}
+                            _raw_all = _raw.get("all_bots", []) or []
+                            if _raw_all:
+                                signals["all_bots"] = _raw_all
+                        # Fallback: populate from snapshot cache bot_ids
                         if not signals["all_bots"] and snapshots is not None and hasattr(snapshots, 'bot_ids'):
                             _snap_bot_ids = snapshots.bot_ids()
                             if _snap_bot_ids:
@@ -304,7 +310,13 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = getattr(latest, "party_members", []) or []
                         signals["party_member_names"] = [str(m) for m in (getattr(latest, "party_members", []) or [])]
                         signals["all_bots"] = getattr(latest, "all_bots", []) or []
-                        # Populate all_bots from snapshot cache (proper source of truth)
+                        # Read all_bots from raw bridge digest if not in snapshot
+                        if not signals["all_bots"]:
+                            _raw = getattr(latest, "raw", {}) or {}
+                            _raw_all = _raw.get("all_bots", []) or []
+                            if _raw_all:
+                                signals["all_bots"] = _raw_all
+                        # Fallback: populate from snapshot cache bot_ids
                         if not signals["all_bots"] and snapshots is not None and hasattr(snapshots, 'bot_ids'):
                             _snap_bot_ids = snapshots.bot_ids()
                             if _snap_bot_ids:
