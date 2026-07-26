@@ -42,7 +42,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword drozochi
+adminPassword swauprau
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1279,4 +1279,14 @@ useAuto_Red_Potion {
 	disabled 0
 	inInventory 0
 	manualAI 0
+}
+
+buyAuto_1 {
+    npc = prt_in 126 76
+    npc_steps = c r1 n
+    StandPoint = 126 76
+    distance = 5
+    minAmount = 0
+    maxAmount = 30
+    itemID = 501
 }

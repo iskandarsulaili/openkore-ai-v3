@@ -958,15 +958,17 @@ class HeuristicService:
                 "swordman": ["str", "vit", "dex", "agi"],
                 "mage": ["int", "dex", "vit", "str"],
             }
-            build = stat_builds.get(job_name, ["dex", "str", "agi", "vit"])
+            _job_name = signals.get("job_name", "novice") or "novice"
+            build = stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
+            _sp = _current_stat_points
             for stat_name in build:
-                if stat_points > 0:
+                if _sp > 0:
                     actions.append(HeuristicAction(
                         kind="command", command=f"stat_add {stat_name}",
                         confidence=0.95, domain="progression",
                         reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
                     ))
-                    stat_points -= 1
+                    _sp -= 1
             total_confidence = 0.95
             top_domain = "progression"
             assessment = HeuristicAssessment(
@@ -1233,6 +1235,24 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # AUTO-STATS: If bot has unspent stat points, transition to STATS state
+                _current_stat_points = signals.get("stat_points", 0) or 0
+                if _current_stat_points > 0:
+                    self._state[bot_id] = "STATS"
+                    self._state_since[bot_id] = __import__("time").time()
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="progression",
+                        reason=f"Has {_current_stat_points} unspent stat points - allocate via STATS state",
+                    ))
+                    total_confidence = 0.99
+                    top_domain = "progression"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # Default: set optimal attack config and enable auto-attack
                 actions.append(HeuristicAction(
                     kind="command", command="set attackDistance 2",
@@ -1266,6 +1286,24 @@ class HeuristicService:
                 ))
                 total_confidence = 0.95
                 top_domain = "hunting"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
+            # AUTO-STATS: If bot has unspent stat points, transition to STATS state
+            _current_stat_points = signals.get("stat_points", 0) or 0
+            if _current_stat_points > 0:
+                self._state[bot_id] = "STATS"
+                self._state_since[bot_id] = __import__("time").time()
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.99, domain="progression",
+                    reason=f"Has {_current_stat_points} unspent stat points in town - allocate via STATS state",
+                ))
+                total_confidence = 0.99
+                top_domain = "progression"
                 assessment = HeuristicAssessment(
                     horizon=horizon, actions=actions, confidence=total_confidence,
                     actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),

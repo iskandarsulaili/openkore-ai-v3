@@ -76,7 +76,7 @@ my $hooks = Plugins::addHooks(
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
 	['post_configModify', \&on_post_config_modify, undef],
 	['post_bulkConfigModify', \&on_post_bulk_config_modify, undef],
-	['Command', \&on_command_intercept, undef],
+	['Commands::run/pre', \&on_command_intercept, undef],
 	['Commands::run/post', \&on_command_run_post, undef],
 );
 
@@ -762,36 +762,36 @@ sub on_post_bulk_config_modify {
 sub on_command_intercept {
 	# Pre-command hook: intercept ALL commands including OpenKore internal AI
 	# This is the LAST LINE OF DEFENSE against "move prontera" spam
+	# Hook name: Commands::run/pre, params: {switch, args}
 	my (undef, $args) = @_;
-	my $cmd = $args->{command} || '';
-	return if $cmd !~ /^move\s+prontera$/i;
+	my $switch = $args->{switch} || '';
+	my $cmd_args = $args->{args} || '';
+	my $full_cmd = $switch . ' ' . $cmd_args;
+	$full_cmd =~ s/\s+$//;
+	return if $full_cmd !~ /^move\s+prontera$/i;
 	# Get current map from field or character
 	my $_ic_map = '';
 	if ($field) { $_ic_map = lc($field->name()); $_ic_map =~ s/\.gat$//; }
 	elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
-	return '' if !$_ic_map;
+	return if !$_ic_map;
 	if ($_ic_map eq 'prontera') {
-	    # In Prontera: redirect "move prontera" to the configured portal coordinates
-	    # Get portal coords from config (default: prt_fild05 portal at 22,203)
+	    # In Prontera: redirect "move prontera" to portal coordinates
 	    my $_portal_x = _cfg('aiSidecar_portalX', '22') || '22';
 	    my $_portal_y = _cfg('aiSidecar_portalY', '203') || '203';
-	    my $_hunt_map = _cfg('aiSidecar_huntingMap', 'prt_fild05') || 'prt_fild05';
-	    # Only redirect if lockMap is set to a hunting map (not for town-to-town moves)
 	    my $_lm = $::config{lockMap} || '';
 	    if ($_lm =~ /^[a-z]+_fild/ || $_lm =~ /_field/) {
-	        warning "[command_intercept] '$cmd' in Prontera (lockMap=$_lm) -> redirect to portal\n", 'aiSidecarBridge', 1;
-	        return "move $_portal_x $_portal_y";
+	        warning "[command_intercept] '$full_cmd' in Prontera (lockMap=$_lm) -> portal\n", 'aiSidecarBridge', 1;
+	        # Override args to redirect command
+	        $args->{switch} = 'move';
+	        $args->{args} = "$_portal_x $_portal_y";
 	    }
 	} elsif ($_ic_map =~ /^[a-z]+_fild/ || $_ic_map =~ /_field/) {
-	    # On hunting map: block "move prontera" entirely (attempting to leave map to sell)
-	    # Let the heuristic handle return-to-town decisions
-	    warning "[command_intercept] blocking '$cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
-	    return '';
-	} elsif ($_ic_map =~ /^pvp_/ || $_ic_map =~ /^gvg_/ || $_ic_map =~ /^turbo_/) {
-	    # PvP/GvG/Turbo maps: allow "move prontera" (player might need to leave)
-	    return;
+	    # On hunting map: block "move prontera" entirely
+	    warning "[command_intercept] blocking '$full_cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
+	    $args->{switch} = '';
+	    $args->{args} = '';
 	}
-	# Unknown map: allow through
+	# PvP/GvG/Turbo maps: allow through
 	return;
 }
 
