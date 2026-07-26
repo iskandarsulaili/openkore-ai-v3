@@ -1417,8 +1417,14 @@ sub _build_snapshot_payload {
 			$p{flee} = $char->{flee} || 0;
 			$p{crit} = $char->{crit} || 0;
 			$p{aspd} = $char->{aspd} || 0;
-			# all_bots: list of all known bot names (for dynamic party formation)
-			$p{all_bots} = [keys %{$::aiSidecar_bot_pids || {}}];
+			# all_bots: list of all known bot names (from env vars BOT_*_PASS)
+			my @_bot_names;
+			for my $_env_key (keys %ENV) {
+				if ($_env_key =~ /^BOT_(.+)_PASS$/) {
+					push @_bot_names, lc($1);
+				}
+			}
+			$p{all_bots} = \@_bot_names;
 			\%p;
 		} || {};
 	}
