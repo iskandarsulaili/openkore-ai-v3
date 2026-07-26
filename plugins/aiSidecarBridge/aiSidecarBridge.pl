@@ -3480,12 +3480,28 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'party invite <name>' -> rewrite to 'party invite <name>' with proper syntax
-	if ($normalized =~ /^party\s+invite\s+(.+)$/) {
-		my $_invite_name = $1;
-		warning "[party_invite] inviting $_invite_name\n", 'aiSidecarBridge', 1;
-		$command = "party invite $_invite_name";
-		$rewrite_kind = 'party_invite_rewritten';
+	# Handle 'party request <name>' -> resolve name to player list # and send request
+	if ($normalized =~ /^party\s+request\s+(.+)$/i) {
+		my $_req_name = $1;
+		my $_req_id = 0;
+		if ($playersList) {
+			my $_idx = 0;
+			for my $_pl (@{$playersList->getItems()}) {
+				$_idx++;
+				if (defined $_pl && lc($_pl->{name}) eq lc($_req_name)) {
+					$_req_id = $_idx;
+					last;
+				}
+			}
+		}
+		if ($_req_id) {
+			warning "[party_request] requesting $_req_name (player #$_req_id)\n", 'aiSidecarBridge', 1;
+			$command = "party request $_req_id";
+		} else {
+			warning "[party_request] player '$_req_name' not found in player list\n", 'aiSidecarBridge', 1;
+			$command = "party request $_req_name";
+		}
+		$rewrite_kind = 'party_request_rewritten';
 		return ($command, $rewrite_kind);
 	}
 	# Handle 'party join 1' (accept invite) - already handled above
