@@ -1380,7 +1380,7 @@ sub _build_snapshot_payload {
 					my $_cn = $_p2c{$_pn};
 					if (!$_mn{$_cn}) {
 						my $_ok = eval { Commands::run("party request $_cn"); 1; };
-						main::ai_sidecar_debug("bridge_party_invite: requesting $_cn ok=" . ($_ok||0));
+						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
 					}
 				}
 			}
