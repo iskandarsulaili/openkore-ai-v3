@@ -269,6 +269,11 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = latest.get("party_members", []) or []
                         signals["party_member_names"] = [str(m) for m in (latest.get("party_members", []) or [])]
                         signals["all_bots"] = latest.get("all_bots", []) or []
+                        # Populate all_bots from snapshot cache (proper source of truth)
+                        if not signals["all_bots"] and snapshots is not None and hasattr(snapshots, 'bot_ids'):
+                            _snap_bot_ids = snapshots.bot_ids()
+                            if _snap_bot_ids:
+                                signals["all_bots"] = [b.split(":")[-1].split("/")[-1] for b in _snap_bot_ids]
                         signals["nearby_players"] = latest.get("nearby_players", []) or []
                         signals["leader_map"] = str(latest.get("leader_map", "") or "")
                         signals["_last_stat_points"] = int(prog.get("stat_points", 0) or 0)
@@ -299,6 +304,11 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["party_members"] = getattr(latest, "party_members", []) or []
                         signals["party_member_names"] = [str(m) for m in (getattr(latest, "party_members", []) or [])]
                         signals["all_bots"] = getattr(latest, "all_bots", []) or []
+                        # Populate all_bots from snapshot cache (proper source of truth)
+                        if not signals["all_bots"] and snapshots is not None and hasattr(snapshots, 'bot_ids'):
+                            _snap_bot_ids = snapshots.bot_ids()
+                            if _snap_bot_ids:
+                                signals["all_bots"] = [b.split(":")[-1].split("/")[-1] for b in _snap_bot_ids]
                         signals["nearby_players"] = getattr(latest, "nearby_players", []) or []
                         signals["leader_map"] = str(getattr(latest, "leader_map", "") or "")
                         signals["_last_stat_points"] = int(getattr(prog, "stat_points", 0) or 0)
