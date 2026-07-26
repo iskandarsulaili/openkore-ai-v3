@@ -1370,7 +1370,10 @@ sub _build_snapshot_payload {
 			$p{job_exp}      = $char->{exp_job}    if defined $char->{exp_job};
 			$p{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
 			$p{skill_points} = $char->{points_skill} if defined $char->{points_skill};
-			$p{stat_points}  = $char->{points_free}  if defined $char->{points_free};
+			if (defined $char->{status_points}) { $p{stat_points} = $char->{status_points}; }
+			elsif (defined $char->{points_free}) { $p{stat_points} = $char->{points_free}; }
+			elsif (defined $char->{stat_pts}) { $p{stat_points} = $char->{stat_pts}; }
+			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
 			\%p;
 		} || {};
