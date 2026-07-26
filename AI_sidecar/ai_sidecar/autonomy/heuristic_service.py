@@ -427,6 +427,8 @@ class HeuristicService:
         self._last_level: dict[str, int] = {}
         self._last_party_attempt: dict[str, float] = {}
         self._last_party_members: dict[str, list] = {}
+        self._last_party_seen: dict[str, float] = {}
+        self._all_bots_cache: dict[str, list] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -621,6 +623,17 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
         _all_bots = signals.get("all_bots", []) or []
+        # Death/respawn flicker guard: if we've seen in_party=True recently, trust the cache
+        _now_t = __import__("time").time()
+        _last_seen_party = self._last_party_seen.get(bot_id, 0)
+        if not _party_in and _last_seen_party > 0 and _now_t - _last_seen_party < 5:
+            _party_in = True
+            _party_members = self._last_party_members.get(bot_id, [])
+            _all_bots = self._all_bots_cache.get(bot_id, [])
+        if _party_in:
+            self._last_party_seen[bot_id] = _now_t
+            self._last_party_members[bot_id] = _party_members
+            self._all_bots_cache[bot_id] = _all_bots
         _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
