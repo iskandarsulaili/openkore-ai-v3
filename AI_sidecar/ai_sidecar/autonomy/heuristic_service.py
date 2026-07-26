@@ -637,42 +637,57 @@ class HeuristicService:
             if _now - _last_party > 30:
                 self._last_party_attempt[bot_id] = _now
                 _ts = int(__import__("time").time())
-                # Always move to town and recreate party when incomplete
-                # (party request requires same map, and stale parties need to be replaced)
-                actions.append(HeuristicAction(
-                    kind="command", command="move prontera",
-                    confidence=0.99, domain="social",
-                    reason="Direct party check - move to town for party formation",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party leave",
-                    confidence=0.99, domain="social",
-                    reason="Direct party check - leave old party",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command=("party create AI" + str(_ts)),
-                    confidence=0.95, domain="social",
-                    reason="Direct party check - leader creates party",
-                ))
-                # Request ALL other bots using character names (bridge resolves to player list index)
-                _profile_to_char = {
-                    "kicapmasin": "openkoreai",
-                    "kicapmasin2": "openkoreaiobs",
-                    "kicapmasin3": "openkoreaihuman",
-                }
-                for _other_bot in _all_bots:
-                    if _other_bot != _bot_profile:
-                        _char_name = _profile_to_char.get(_other_bot, _other_bot)
-                        actions.append(HeuristicAction(
-                            kind="command", command=("party request " + str(_char_name)),
-                            confidence=0.95, domain="social",
-                            reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
-                        ))
-                actions.append(HeuristicAction(
-                    kind="command", command="party share exp",
-                    confidence=0.90, domain="social",
-                    reason="Share experience in party",
-                ))
+                # If already in party with some members, just request missing ones
+                # (don't leave+recreate - that destroys existing party)
+                if _party_in and len(_party_members) > 0:
+                    # Already have a party - just request missing members
+                    _profile_to_char = {
+                        "kicapmasin": "openkoreai",
+                        "kicapmasin2": "openkoreaiobs",
+                        "kicapmasin3": "openkoreaihuman",
+                    }
+                    for _other_bot in _all_bots:
+                        if _other_bot != _bot_profile:
+                            _char_name = _profile_to_char.get(_other_bot, _other_bot)
+                            # Only request if not already in party
+                            _already_in = any(_char_name.lower() in m.lower() for m in _party_members)
+                            if not _already_in:
+                                actions.append(HeuristicAction(
+                                    kind="command", command=("party request " + str(_char_name)),
+                                    confidence=0.95, domain="social",
+                                    reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
+                                ))
+                else:
+                    # Not in party - move to town and create new one
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="social",
+                        reason="Direct party check - move to town for party formation",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=("party create AI" + str(_ts)),
+                        confidence=0.95, domain="social",
+                        reason="Direct party check - leader creates party",
+                    ))
+                    # Request ALL other bots using character names
+                    _profile_to_char = {
+                        "kicapmasin": "openkoreai",
+                        "kicapmasin2": "openkoreaiobs",
+                        "kicapmasin3": "openkoreaihuman",
+                    }
+                    for _other_bot in _all_bots:
+                        if _other_bot != _bot_profile:
+                            _char_name = _profile_to_char.get(_other_bot, _other_bot)
+                            actions.append(HeuristicAction(
+                                kind="command", command=("party request " + str(_char_name)),
+                                confidence=0.95, domain="social",
+                                reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
+                            ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="party share exp",
+                        confidence=0.90, domain="social",
+                        reason="Share experience in party",
+                    ))
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
@@ -687,8 +702,15 @@ class HeuristicService:
                 self._last_assessment[bot_id] = assessment
                 return assessment
 
-        # Joiners: set partyAuto and move to town (same map as leader for party request)
-        if not _party_in and not _is_leader and state != "COLD_START" and state != "DEAD":
+        # Joiners: if not in party or in wrong party, leave stale party, set partyAuto, move to town
+        _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1
+        if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD":
+            if _party_in:
+                actions.append(HeuristicAction(
+                    kind="command", command="party leave",
+                    confidence=0.99, domain="social",
+                    reason="Direct party check - leave stale party",
+                ))
             actions.append(HeuristicAction(
                 kind="command", command="set partyAuto 2",
                 confidence=0.99, domain="social",
