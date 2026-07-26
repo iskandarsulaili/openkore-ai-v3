@@ -1125,6 +1125,7 @@ class GodModeOrchestrator:
             from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
             aq = getattr(runtime_state, 'action_queue', None)
             if aq is None:
+                logger.warning("[god_mode] enqueue: no action_queue on runtime_state")
                 return 0
             count = 0
             for action in actions:
@@ -1145,9 +1146,14 @@ class GodModeOrchestrator:
                 )
                 aq.enqueue(proposal)
                 count += 1
+                logger.info("[god_mode] enqueued: bot=%s type=%s priority=%d reason=%s", 
+                           bot_id, action_type, priority, data.get('reason', ''))
+            logger.info("[god_mode] enqueued %d/%d actions", count, len(actions))
             return count
         except Exception as e:
             logger.warning("[god_mode] enqueue error: %s", e)
+            import traceback
+            logger.warning("[god_mode] enqueue traceback: %s", traceback.format_exc())
             return 0
     
     def _analyze_bots(self, snapshots: dict[str, Any]) -> dict[str, dict]:

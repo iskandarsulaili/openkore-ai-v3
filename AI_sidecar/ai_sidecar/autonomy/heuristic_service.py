@@ -649,7 +649,7 @@ class HeuristicService:
         if _is_leader and _party_incomplete and state != "COLD_START" and state != "DEAD":
             _now = __import__("time").time()
             _last_party = self._last_party_attempt.get(bot_id, 0)
-            if _now - _last_party > 30:
+            if _now - _last_party > 15:
                 self._last_party_attempt[bot_id] = _now
                 _ts = int(__import__("time").time())
                 # If already in party with some members, just request missing ones
@@ -672,6 +672,15 @@ class HeuristicService:
                                     confidence=0.95, domain="social",
                                     reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
                                 ))
+                            else:
+                                # Even if already_in check says True, still try - party_members might be stale
+                                # Only skip if we have 3+ members confirmed
+                                if _actual_count < 3:
+                                    actions.append(HeuristicAction(
+                                        kind="command", command=("party request " + str(_char_name)),
+                                        confidence=0.80, domain="social",
+                                        reason="Direct party check - retry " + str(_other_bot) + " (" + str(_char_name) + ") - stale check",
+                                    ))
                 else:
                     # Not in party - move to town and create new one
                     actions.append(HeuristicAction(
