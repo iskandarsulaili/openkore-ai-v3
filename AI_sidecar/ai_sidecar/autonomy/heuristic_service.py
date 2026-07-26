@@ -1083,8 +1083,17 @@ class HeuristicService:
                         reason="Share experience in party",
                     ))
             else:
-                # Joiners: do nothing - partyAuto 2 in config auto-accepts requests
-                pass
+                # Joiners: move to hunting map so leader can request them (same map required)
+                actions.append(HeuristicAction(
+                    kind="command", command="move 22 203",
+                    confidence=0.90, domain="social",
+                    reason="Joiners - move to hunting map to be on same map as leader",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.90, domain="hunting",
+                    reason="Continue after moving to hunting map",
+                ))
             total_confidence = 0.85
             top_domain = "social"
             assessment = HeuristicAssessment(
@@ -1378,8 +1387,17 @@ class HeuristicService:
                                 reason="Share experience in party",
                             ))
                     else:
-                        # Joiners: do nothing - partyAuto 2 in config auto-accepts requests
-                        pass
+                        # Joiners: move to hunting map so leader can request them (same map required)
+                        actions.append(HeuristicAction(
+                            kind="command", command="move 22 203",
+                            confidence=0.95, domain="social",
+                            reason="Joiners - move to hunting map to be on same map as leader",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.95, domain="hunting",
+                            reason="Continue after moving to hunting map",
+                        ))
                     actions.append(HeuristicAction(
                         kind="command", command="ai auto",
                         confidence=0.95, domain="hunting",
