@@ -620,9 +620,9 @@ class HeuristicService:
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
         _all_bots = signals.get("all_bots", []) or []
-        _bot_name = (signals.get("bot_name", bot_id) or bot_id).split(":")[-1].split("/")[-1]
+        _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
         _sorted_bots = sorted(_all_bots)
-        _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
+        _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
         # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
         _expected_count = len(_all_bots)
         _actual_count = len(_party_members) + (1 if _party_in else 0)
@@ -644,7 +644,7 @@ class HeuristicService:
                     ))
                 # Request ALL other bots (OpenKore ignores duplicates)
                 for _other_bot in _all_bots:
-                    if _other_bot != _bot_name:
+                    if _other_bot != _bot_profile:
                         actions.append(HeuristicAction(
                             kind="command", command=("party request " + str(_other_bot)),
                             confidence=0.95, domain="social",
@@ -753,11 +753,11 @@ class HeuristicService:
                 reason="Cold start - set hunting map lock",
             ))
             # 1b. Party creation for leader - do this early so others can join
-            _cs_bot_name = signals.get("bot_name", bot_id) or bot_id
+            _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # Dynamic leader detection: first bot alphabetically is leader
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
             _cs_sorted = sorted(_cs_all_bots)
-            _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_name == _cs_sorted[0]
+            _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
             if _cs_is_leader:
                 actions.append(HeuristicAction(
                     kind="command", command=f"party create AI{int(_now_t)}",
@@ -1155,11 +1155,11 @@ class HeuristicService:
         # ── STATE: PARTY ──
         if state == "PARTY":
             # Differentiate: leader creates, others join by leader name
-            _bot_name = signals.get("bot_name", bot_id) or bot_id
+            _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # Dynamic leader detection: first bot alphabetically is leader
             _all_bots = signals.get("all_bots", []) or []
             _sorted_bots = sorted(_all_bots)
-            _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
+            _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
             # Leader sends party commands with 30s cooldown (party request only works on same map)
             if _is_leader:
                 _now = __import__("time").time()
@@ -1174,7 +1174,7 @@ class HeuristicService:
                     # Request all known bots to join (dynamically detected)
                     _all_bots = signals.get("all_bots", []) or []
                     for _other_bot in _all_bots:
-                        if _other_bot != _bot_name:
+                        if _other_bot != _bot_profile:
                             actions.append(HeuristicAction(
                                 kind="command", command=f"party request {_other_bot}",
                                 confidence=0.90, domain="social",
@@ -1478,7 +1478,13 @@ class HeuristicService:
                 _party_in = signals.get("in_party", False)
                 _party_members = signals.get("party_members", []) or []
                 _all_bots = signals.get("all_bots", []) or []
-                _party_incomplete = _party_in and len(_party_members) + 1 < len(_all_bots)
+                # Cache last known party members to handle death/respawn flicker
+                _cached_members = self._last_party_members.get(bot_id, [])
+                if len(_party_members) > len(_cached_members):
+                    self._last_party_members[bot_id] = _party_members
+                    _cached_members = _party_members
+                _effective_members = _party_members if len(_party_members) > 0 else _cached_members
+                _party_incomplete = _party_in and len(_effective_members) + 1 < len(_all_bots)
                 if not _party_in or _party_incomplete:
                     # Leader detection: use profile name (from bot_id) not character name
                     _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
@@ -1510,7 +1516,7 @@ class HeuristicService:
                                 "kicapmasin3": "openkoreaihuman",
                             }
                             for _other_bot in _all_bots:
-                                if _other_bot != _bot_name:
+                                if _other_bot != _bot_profile:
                                     _char_name = _profile_to_char.get(_other_bot, _other_bot)
                                     actions.append(HeuristicAction(
                                         kind="command", command=f"party request {_char_name}",
