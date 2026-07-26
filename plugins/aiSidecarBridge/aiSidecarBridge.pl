@@ -3843,8 +3843,6 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
-}
-
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
@@ -5098,6 +5096,7 @@ sub _apply_ml_override {
 	} else {
 		warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
 	}
+}
 
 
 1;
