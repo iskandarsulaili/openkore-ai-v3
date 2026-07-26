@@ -618,7 +618,7 @@ class HeuristicService:
         # ── DIRECT PARTY CHECK: Always check party before any state logic
         _party_in = signals.get("in_party", False)
         _party_members = signals.get("party_members", []) or []
-        _all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, "_bot_roles") else []
+        _all_bots = signals.get("all_bots", []) or ["kicapmasin", "kicapmasin2", "kicapmasin3"]
         _bot_name = signals.get("bot_name", bot_id) or bot_id
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_name == _sorted_bots[0]
