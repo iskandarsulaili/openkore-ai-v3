@@ -1375,6 +1375,7 @@ sub _build_snapshot_payload {
 			elsif (defined $char->{stat_pts}) { $p{stat_points} = $char->{stat_pts}; }
 			else { $p{stat_points} = 0; }
 			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
+			$p{in_party} = ($char->{party} && ref($char->{party}{party}{member}) eq 'HASH') ? 1 : 0 if defined $char->{party};
 			\%p;
 		} || {};
 	}
