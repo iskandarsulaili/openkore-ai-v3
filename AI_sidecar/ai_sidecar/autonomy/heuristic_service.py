@@ -1495,15 +1495,12 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # EQUIPMENT CHECK: If no weapon (0 kills after 30s or no equipped weapon) and has zeny, buy gear
+                # EQUIPMENT CHECK: If no weapon equipped and has zeny, buy gear
                 _atk_power = signals.get("attack_power", 0) or 0
                 _zeny = signals.get("zeny", 0) or 0
-                _kills_this_hunt = signals.get("kills", 0) or 0
-                _hunt_start = self._state_since.get(bot_id, 0)
-                _hunt_duration = _now_t - _hunt_start if _hunt_start > 0 else 999
                 _equip = signals.get("equipment", {}) or {}
                 _has_weapon_equipped = any("weapon" in k.lower() for k in (_equip.keys() if isinstance(_equip, dict) else []))
-                _no_weapon = not _has_weapon_equipped or _atk_power < 10 or (_kills_this_hunt == 0 and _hunt_duration > 30)
+                _no_weapon = not _has_weapon_equipped and _atk_power < 10
                 if _no_weapon and _zeny >= 100:
                     self._state[bot_id] = "WEAPON_BUY"
                     self._state_since[bot_id] = _now_t
