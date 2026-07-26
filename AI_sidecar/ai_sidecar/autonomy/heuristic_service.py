@@ -1322,11 +1322,10 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
-                # PARTY: If not in party, transition to PARTY state (works across maps)
-                _party_in = signals.get("in_party", False)
-                if not _party_in:
-                    self._state[bot_id] = "PARTY"
-                    self._state_since[bot_id] = __import__("time").time()
+                # PARTY: One-shot attempt to create/join party (uses _tried_party flag)
+                _tried_party = self._tried_party.get(bot_id, False)
+                if not _tried_party:
+                    self._tried_party[bot_id] = True
                     _bot_name = signals.get("bot_name", bot_id) or bot_id
                     _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
                     if _is_leader:
