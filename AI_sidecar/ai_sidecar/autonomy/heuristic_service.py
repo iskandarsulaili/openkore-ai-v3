@@ -1458,6 +1458,22 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # ECONOMY CONFIG: Ensure sellAuto, itemsTakeAuto, buyAuto are set
+                actions.append(HeuristicAction(
+                    kind="command", command="set sellAuto 1",
+                    confidence=0.99, domain="economy",
+                    reason="Enable auto-sell",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set itemsTakeAuto 2",
+                    confidence=0.99, domain="economy",
+                    reason="Enable auto-loot",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set itemsTakeAuto_party 1",
+                    confidence=0.99, domain="economy",
+                    reason="Enable party loot sharing",
+                ))
                 # HP MANAGEMENT: Sit when low HP to prevent death (hunting map only)
                 # Ranged classes (Archer/Mage) get lower threshold (30%) since they're at range
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
