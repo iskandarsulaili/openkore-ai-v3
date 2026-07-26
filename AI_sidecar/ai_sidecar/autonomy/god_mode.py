@@ -1144,7 +1144,7 @@ class GodModeOrchestrator:
                     description=f"[god_mode] {action_type}: {data.get('reason', '')}",
                     conflict_key=f"god_mode_{bot_id}_{action_type}",
                 )
-                aq.enqueue(proposal)
+                aq.enqueue(bot_id, proposal)
                 count += 1
                 logger.info("[god_mode] enqueued: bot=%s type=%s priority=%d reason=%s", 
                            bot_id, action_type, priority, data.get('reason', ''))
