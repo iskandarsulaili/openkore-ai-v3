@@ -427,6 +427,16 @@ sub on_mainLoop_post {
                 if (!defined $::config{lockMap} || $::config{lockMap} ne $_sm_map) {
                     $::config{lockMap} = $_sm_map;
                 }
+                # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
+                # The heuristic can't detect position (no x,y in snapshots), so bridge handles it
+                if ($_sm_map eq 'prt_fild05' && defined $char->{pos_to}) {
+                    my $_px = $char->{pos_to}{x} || 0;
+                    my $_py = $char->{pos_to}{y} || 0;
+                    if (abs($_px - 367) < 10 && abs($_py - 205) < 10) {
+                        warning "[portal_exit] bot at portal exit ($_px, $_py) - moving to center\n", 'aiSidecarBridge', 1;
+                        eval { Commands::run("move 200 200"); 1; };
+                    }
+                }
             } else {
                 # In town: ensure lockMap is set to hunting map
                 if (!defined $::config{lockMap} || $::config{lockMap} eq 'prontera' || $::config{lockMap} eq '') {

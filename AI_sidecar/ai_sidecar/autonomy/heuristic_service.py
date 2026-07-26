@@ -633,23 +633,19 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # Set lockMap so OpenKore knows where to go after selling
+            # Set lockMap so OpenKore knows where to go
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap prt_fild05",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # Sell starting gear first (weight > 90% prevents movement)
-            # Only sell - let next cycle (HUNT in town) handle buy weapon + return to hunt
+            # Go directly to hunting map via portal
+            # DON'T sell starting gear - bot needs its weapon to kill monsters
+            # Starting gear weight doesn't prevent movement
             actions.append(HeuristicAction(
-                kind="command", command="move 147 175",
-                confidence=0.99, domain="economy",
-                reason="Cold start - walk to Special Dealer to sell starting gear",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175 c r1 n",
-                confidence=0.99, domain="economy",
-                reason="Cold start - sell starting gear to reduce weight",
+                kind="command", command="move 22 203",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - go to hunting map via portal",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
