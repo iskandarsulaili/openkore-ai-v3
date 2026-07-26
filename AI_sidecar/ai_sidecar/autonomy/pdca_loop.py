@@ -266,8 +266,15 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["skill_points"] = int(prog.get("skill_points", 0) or 0)
                         signals["bot_name"] = str(latest.get("bot_id", "") or "")
                         signals["in_party"] = bool(latest.get("in_party", False))
+                        # Read in_party from raw bridge digest if not at top level
+                        if not signals["in_party"]:
+                            _raw = latest.get("raw", {}) or {}
+                            signals["in_party"] = bool(_raw.get("in_party", False))
                         signals["party_members"] = latest.get("party_members", []) or []
-                        signals["party_member_names"] = [str(m) for m in (latest.get("party_members", []) or [])]
+                        if not signals["party_members"]:
+                            _raw = latest.get("raw", {}) or {}
+                            signals["party_members"] = _raw.get("party_members", []) or []
+                        signals["party_member_names"] = [str(m) for m in (signals.get("party_members", []) or [])]
                         signals["all_bots"] = latest.get("all_bots", []) or []
                         # Read all_bots from raw bridge digest if not in snapshot
                         if not signals["all_bots"]:
@@ -307,8 +314,15 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["skill_points"] = int(getattr(prog, "skill_points", 0) or 0)
                         signals["bot_name"] = str(getattr(latest, "bot_id", "") or "")
                         signals["in_party"] = bool(getattr(latest, "in_party", False))
+                        # Read in_party from raw bridge digest if not at top level
+                        if not signals["in_party"]:
+                            _raw = getattr(latest, "raw", {}) or {}
+                            signals["in_party"] = bool(_raw.get("in_party", False))
                         signals["party_members"] = getattr(latest, "party_members", []) or []
-                        signals["party_member_names"] = [str(m) for m in (getattr(latest, "party_members", []) or [])]
+                        if not signals["party_members"]:
+                            _raw = getattr(latest, "raw", {}) or {}
+                            signals["party_members"] = _raw.get("party_members", []) or []
+                        signals["party_member_names"] = [str(m) for m in (signals.get("party_members", []) or [])]
                         signals["all_bots"] = getattr(latest, "all_bots", []) or []
                         # Read all_bots from raw bridge digest if not in snapshot
                         if not signals["all_bots"]:
