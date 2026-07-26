@@ -647,8 +647,9 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # COLD START: Economy-first approach (Pro RO style)
-            # Uses GameKnowledgeDB for NPC/portal lookups (works for any town)
+            # COLD START: Minimal - keep weapon, go directly to hunt
+            # Selling starting gear sells the weapon too (bot deals 0 damage)
+            # Economy (sell loot, buy potions, buy weapon) handled by separate states
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"
             # 1. Set lockMap first
@@ -657,45 +658,11 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 2. Sell starting gear (weight > 70% prevents item pickup)
-            _cs_sell_npc = self._get_npc("sell", map_name)
-            if _cs_sell_npc:
-                _cs_sell_cmd = f"move {_cs_sell_npc['x']} {_cs_sell_npc['y']}"
-                _cs_talk_cmd = f"talknpc {_cs_sell_npc['x']} {_cs_sell_npc['y']} {' '.join(eval(_cs_sell_npc['steps']))}"
-            else:
-                _cs_sell_cmd = "move 147 175"
-                _cs_talk_cmd = "talknpc 147 175 c r1 n"
-            actions.append(HeuristicAction(
-                kind="command", command=_cs_sell_cmd,
-                confidence=0.99, domain="economy",
-                reason="Cold start - walk to sell NPC",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command=_cs_talk_cmd,
-                confidence=0.99, domain="economy",
-                reason="Cold start - sell starting gear",
-            ))
-            # 3. Buy red potions (501) for survivability
-            _cs_buy_npc = self._get_npc("buy", map_name)
-            if _cs_buy_npc:
-                _cs_buy_move = f"move {_cs_buy_npc['x']} {_cs_buy_npc['y']}"
-            else:
-                _cs_buy_move = "move 126 76"
-            actions.append(HeuristicAction(
-                kind="command", command=_cs_buy_move,
-                confidence=0.98, domain="economy",
-                reason="Cold start - walk to Potion Shop",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="buy 501 10",
-                confidence=0.98, domain="economy",
-                reason="Cold start - buy 10 red potions",
-            ))
-            # 4. Go to hunting map via portal
+            # 2. Go directly to hunting map via portal (keep starting weapon!)
             actions.append(HeuristicAction(
                 kind="command", command=f"move {_cs_portal_coords}",
                 confidence=0.99, domain="emergency",
-                reason=f"Cold start - go to {_cs_hunt_map}",
+                reason=f"Cold start - go to {_cs_hunt_map} with starting gear",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
