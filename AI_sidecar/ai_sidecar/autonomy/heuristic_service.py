@@ -671,16 +671,43 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 1b. Set teleport config to prevent running from monsters
+            # 1b. Comprehensive teleport config - DISABLE ALL teleport triggers
+            # Only teleport when 8+ mobs aggressive (practically never on low-level maps)
             actions.append(HeuristicAction(
                 kind="command", command="set teleportAuto_minAggressives 8",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - only teleport at 8+ mobs",
+                reason="Only teleport at 8+ mobs",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set teleportAuto_hp 0",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - never teleport due to HP",
+                reason="Never teleport due to HP - use sit instead",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_deadly 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable deadly teleport - prevents running from non-threats",  
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_idle 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable idle teleport",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_search 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable search teleport",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_portal 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable portal teleport",
+            ))
+            # Prevent overweight auto-teleport (some builds enable it)
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_minWeight 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable weight-based teleport",
             ))
             # 2. Go directly to hunting map via portal (keep starting weapon!)
             actions.append(HeuristicAction(
@@ -1328,12 +1355,27 @@ class HeuristicService:
                     actions.append(HeuristicAction(
                         kind="command", command="set teleportAuto_minAggressives 8",
                         confidence=0.95, domain="survival",
-                        reason="Only teleport when 8+ mobs (stop running from 1 mob)",
+                        reason="Only teleport when 8+ mobs",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set teleportAuto_hp 0",
                         confidence=0.95, domain="survival",
-                        reason="Never teleport due to HP - use sit instead",
+                        reason="Never teleport due to HP",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set teleportAuto_deadly 0",
+                        confidence=0.95, domain="survival",
+                        reason="Disable deadly teleport",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set teleportAuto_search 0",
+                        confidence=0.95, domain="survival",
+                        reason="Disable search teleport",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set teleportAuto_portal 0",
+                        confidence=0.95, domain="survival",
+                        reason="Disable portal teleport",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_maxDistance 3",
