@@ -508,7 +508,7 @@ class HeuristicService:
                 return "SELL"
             if zeny > 0:
                 _has_weapon = signals.get("attack_power", 0) or 0 > 30
-                if zeny >= 500 and not _has_weapon:
+                if zeny >= 100 and not _has_weapon:
                     return "WEAPON_BUY"
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
@@ -1362,7 +1362,7 @@ class HeuristicService:
                 _hunt_start = self._state_since.get(bot_id, 0)
                 _hunt_duration = _now_t - _hunt_start if _hunt_start > 0 else 999
                 _no_weapon = _atk_power < 10 or (_kills_this_hunt == 0 and _hunt_duration > 30)
-                if _no_weapon and _zeny >= 500:
+                if _no_weapon and _zeny >= 100:
                     self._state[bot_id] = "WEAPON_BUY"
                     self._state_since[bot_id] = _now_t
                     actions.append(HeuristicAction(
