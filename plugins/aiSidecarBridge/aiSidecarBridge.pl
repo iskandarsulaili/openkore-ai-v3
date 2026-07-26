@@ -1420,10 +1420,21 @@ sub _build_snapshot_payload {
 			# all_bots: list of all known bot names (from env vars BOT_*_PASS)
 			my @_bot_names;
 			for my $_env_key (keys %ENV) {
-				if ($_env_key =~ /^BOT_(.+)_PASS$/) {
+				if ($_env_key =~ /^BOT_(.+)_PASS$/i) {
 					push @_bot_names, lc($1);
 				}
 			}
+			# Fallback: if no env vars found, use configured bot profiles
+			if (!@_bot_names) {
+				opendir(my $_dh, "$::SCRIPT_DIR/.bot_profiles") or do { $p{all_bots} = []; return; };
+				while (my $_entry = readdir($_dh)) {
+					next if $_entry =~ /^\./;
+					next unless -d "$::SCRIPT_DIR/.bot_profiles/$_entry";
+					push @_bot_names, $_entry;
+				}
+				closedir($_dh);
+			}
+			debug "[all_bots] found: @_bot_names\n", 'aiSidecarBridge', 1;
 			$p{all_bots} = \@_bot_names;
 			\%p;
 		} || {};
