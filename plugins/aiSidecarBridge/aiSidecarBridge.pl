@@ -76,7 +76,7 @@ my $hooks = Plugins::addHooks(
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
 	['post_configModify', \&on_post_config_modify, undef],
 	['post_bulkConfigModify', \&on_post_bulk_config_modify, undef],
-	['Commands::run', \&on_command_intercept, undef],
+	['Command', \&on_command_intercept, undef],
 	['Commands::run/post', \&on_command_run_post, undef],
 );
 
@@ -429,33 +429,24 @@ sub on_mainLoop_post {
                     $::config{lockMap} = $_sm_map;
                 }
                 # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
+                # Uses state tracking so it fires even if position is not immediately available
                 if ($_sm_map eq 'prt_fild05') {
-                    my $_px = 0;
-                    my $_py = 0;
-                    # Try multiple position sources (some OpenKore builds store differently)
-                    if (defined $char->{pos_to}) {
-                        $_px = $char->{pos_to}{x} || 0;
-                        $_py = $char->{pos_to}{y} || 0;
-                    }
-                    if ($_px == 0 && defined $char->{pos}) {
-                        # pos as hashref
-                        if (ref($char->{pos}) eq 'HASH') {
-                            $_px = $char->{pos}{x} || 0;
-                            $_py = $char->{pos}{y} || 0;
+                    state $_portal_exit_last_move_ms = 0;
+                    # Get position from any available source
+                    my $_px = 0; my $_py = 0;
+                    if (defined $char->{pos_to}) { $_px = $char->{pos_to}{x} || 0; $_py = $char->{pos_to}{y} || 0; }
+                    if ($_px == 0 && defined $char->{pos}->{x}) { $_px = $char->{pos}{x}; $_py = $char->{pos}{y}; }
+                    if ($_px == 0 && defined $char->{x}) { $_px = $char->{x}; $_py = $char->{y}; }
+                    if ($_px == 0 && defined $field) { my ($fx, $fy) = $field->base(); $_px = $fx; $_py = $fy; }
+                    # If position is near portal exit, move to center
+                    if ($_px > 360 || ($_px == 0 && $_py == 0)) {
+                        my $_now_ms = _now_ms();
+                        # Issue move every 10s until bot leaves portal area
+                        if ($_now_ms - $_portal_exit_last_move_ms > 10000) {
+                            $_portal_exit_last_move_ms = $_now_ms;
+                            warning "[portal_exit] bot near portal exit (pos=$_px,$_py) - moving to center\n", 'aiSidecarBridge', 1;
+                            eval { Commands::run("move 200 200"); 1; };
                         }
-                    }
-                    if ($_px == 0 && defined $char->{x}) {
-                        $_px = $char->{x};
-                        $_py = $char->{y};
-                    }
-                    if ($_px == 0 && defined $field) {
-                        my ($fx, $fy) = $field->base();
-                        $_px = $fx;
-                        $_py = $fy;
-                    }
-                    if (abs($_px - 367) < 10 && abs($_py - 205) < 10) {
-                        warning "[portal_exit] bot at portal exit ($_px, $_py) - moving to center\n", 'aiSidecarBridge', 1;
-                        eval { Commands::run("move 200 200"); 1; };
                     }
                 }
             } else {
