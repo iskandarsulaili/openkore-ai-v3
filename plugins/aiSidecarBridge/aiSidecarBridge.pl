@@ -76,6 +76,7 @@ my $hooks = Plugins::addHooks(
 	['packet_areaSpell', \&on_legacy_packet_hook, 'packet_legacy.area_spell'],
 	['post_configModify', \&on_post_config_modify, undef],
 	['post_bulkConfigModify', \&on_post_bulk_config_modify, undef],
+	['command', \&on_command_intercept, undef],
 	['Commands::run/post', \&on_command_run_post, undef],
 );
 
@@ -765,6 +766,26 @@ sub on_post_bulk_config_modify {
 		{ changed_count => scalar(@changed) + 0 },
 		'info',
 	);
+}
+
+sub on_command_intercept {
+	# Pre-command hook: intercept ALL commands including OpenKore internal AI
+	# This is the LAST LINE OF DEFENSE against "move prontera" spam
+	my (undef, $args) = @_;
+	my $cmd = $args->{command} || '';
+	return if $cmd !~ /^move\s+prontera$/i;
+	# Get current map
+	my $_ic_map = $field ? lc($field->name()) : '';
+	$_ic_map =~ s/\.gat$//;
+	if ($_ic_map eq 'prontera') {
+	    # In Prontera: redirect "move prontera" to portal (22, 203)
+	    warning "[command_intercept] intercepting 'move prontera' in Prontera -> redirecting to portal\n", 'aiSidecarBridge', 1;
+	    $args->{command} = 'move 22 203';
+	} elsif ($_ic_map =~ /^[a-z]+_fild/) {
+	    # On hunting map: block "move prontera" entirely
+	    warning "[command_intercept] blocking 'move prontera' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
+	    $args->{command} = '';
+	}
 }
 
 sub on_command_run_post {
