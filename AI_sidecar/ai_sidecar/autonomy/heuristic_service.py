@@ -702,33 +702,30 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Disable deadly teleport - prevents running from non-threats",  
             ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_idle 0",
-                confidence=0.99, domain="hunting",
-                reason="Disable idle teleport",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_search 0",
-                confidence=0.99, domain="hunting",
-                reason="Disable search teleport",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_portal 0",
-                confidence=0.99, domain="hunting",
-                reason="Disable portal teleport",
-            ))
-            # Prevent overweight auto-teleport (some builds enable it)
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_minWeight 0",
-                confidence=0.99, domain="hunting",
-                reason="Disable weight-based teleport",
-            ))
+            # (teleportAuto_idle/search/portal/minWeight set in HUNT state)
             # 1c. Buy arrows for Archer class (can't deal damage without them)
             if _cs_job.lower().startswith("archer") or _cs_job.lower().startswith("hunter"):
                 actions.append(HeuristicAction(
                     kind="command", command="buy 1750 200",
                     confidence=0.99, domain="economy",
                     reason="Buy 200 arrows for Archer (need ammo to deal damage)",
+                ))
+            # 1d. Buy weapon if starting zeny is enough (prevents 0 DMG from sold weapon)
+            _cs_zeny = signals.get("zeny", 0) or 0
+            if _cs_zeny >= 500:
+                _cs_weapon_id = "1701"  # Default: Bow
+                if "thief" in _cs_job or "assassin" in _cs_job:
+                    _cs_weapon_id = "1301"  # Knife
+                elif "sword" in _cs_job or "knight" in _cs_job:
+                    _cs_weapon_id = "1201"  # Sword
+                elif "mage" in _cs_job or "wizard" in _cs_job:
+                    _cs_weapon_id = "1501"  # Rod
+                elif "acolyte" in _cs_job or "priest" in _cs_job:
+                    _cs_weapon_id = "1501"  # Rod
+                actions.append(HeuristicAction(
+                    kind="command", command=f"buy {_cs_weapon_id} 1",
+                    confidence=0.99, domain="economy",
+                    reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
                 ))
             # 2. Go directly to hunting map via portal (keep starting weapon!)
             actions.append(HeuristicAction(
@@ -1375,7 +1372,7 @@ class HeuristicService:
                         ))
                     else:
                         actions.append(HeuristicAction(
-                            kind="command", command="party join 1",
+                            kind="command", command="party join",
                             confidence=0.95, domain="social",
                             reason="Accept party invitation",
                         ))
