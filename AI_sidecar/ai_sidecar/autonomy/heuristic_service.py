@@ -716,8 +716,10 @@ class HeuristicService:
                 return assessment
 
         # Joiners: if not in party or in wrong party, leave stale party, set partyAuto, move to town
-        _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1
-        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots))
+        # "Wrong party" = in a party that doesn't contain the leader's char name AND has only 1 member (self-only)
+        _leader_char = _profile_to_char.get(_sorted_bots[0], _sorted_bots[0]) if _sorted_bots else ""
+        _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1 and _leader_char and _leader_char not in _party_members
+        logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char))
         # Only act if we have all_bots data - empty all_bots means flicker/no data
         if (not _party_in or _joiner_in_wrong_party) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots:
             if _party_in:
