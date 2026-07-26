@@ -597,6 +597,7 @@ class HeuristicService:
         skills = signals.get("skills", []) or []
         bot_name = signals.get("bot_name", bot_id)
         horizon = signals.get("horizon", "short_term")
+        # _profile_to_char is accessed via self._profile_to_char throughout
 
         # ── STATE: DEAD ──
         if state == "DEAD":
@@ -654,14 +655,14 @@ class HeuristicService:
                 # (don't leave+recreate - that destroys existing party)
                 if _party_in and len(_party_members) > 0:
                     # Already have a party - just request missing members
-                    _profile_to_char = {
+                    self._profile_to_char = {
                         "kicapmasin": "openkoreai",
                         "kicapmasin2": "openkoreaiobs",
                         "kicapmasin3": "openkoreaihuman",
                     }
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
-                            _char_name = _profile_to_char.get(_other_bot, _other_bot)
+                            _char_name = self._profile_to_char.get(_other_bot, _other_bot)
                             # Only request if not already in party
                             _already_in = any(_char_name.lower() in m.lower() for m in _party_members)
                             if not _already_in:
@@ -683,14 +684,14 @@ class HeuristicService:
                         reason="Direct party check - leader creates party",
                     ))
                     # Request ALL other bots using character names
-                    _profile_to_char = {
+                    self._profile_to_char = {
                         "kicapmasin": "openkoreai",
                         "kicapmasin2": "openkoreaiobs",
                         "kicapmasin3": "openkoreaihuman",
                     }
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
-                            _char_name = _profile_to_char.get(_other_bot, _other_bot)
+                            _char_name = self._profile_to_char.get(_other_bot, _other_bot)
                             actions.append(HeuristicAction(
                                 kind="command", command=("party request " + str(_char_name)),
                                 confidence=0.95, domain="social",
@@ -717,7 +718,7 @@ class HeuristicService:
 
         # Joiners: if not in party or in wrong party, leave stale party, set partyAuto, move to town
         # "Wrong party" = in a party that doesn't contain the leader's char name AND has only 1 member (self-only)
-        _leader_char = _profile_to_char.get(_sorted_bots[0], _sorted_bots[0]) if _sorted_bots else ""
+        _leader_char = (getattr(self, '_profile_to_char', {}) or {}).get(_sorted_bots[0], _sorted_bots[0]) if _sorted_bots else ""
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1 and _leader_char and _leader_char not in _party_members
         # Also: if joiner is on a town map while leader is on hunting map, force move
         _town_maps = ("prontera", "morocc", "geffen", "payon", "alberta", "izlude", "aldebaran", "comodo", "umbala", "niflheim", "louyang", "einbroch", "lighthalzen", "rachel", "veins", "juno", "yuno")
@@ -1578,14 +1579,14 @@ class HeuristicService:
                                 reason="Leader - create party with unique name",
                             ))
                             # Request all known bots to join using character names
-                            _profile_to_char = {
+                            self._profile_to_char = {
                                 "kicapmasin": "openkoreai",
                                 "kicapmasin2": "openkoreaiobs",
                                 "kicapmasin3": "openkoreaihuman",
                             }
                             for _other_bot in _all_bots:
                                 if _other_bot != _bot_profile:
-                                    _char_name = _profile_to_char.get(_other_bot, _other_bot)
+                                    _char_name = self._profile_to_char.get(_other_bot, _other_bot)
                                     actions.append(HeuristicAction(
                                         kind="command", command=f"party request {_char_name}",
                                         confidence=0.95, domain="social",
