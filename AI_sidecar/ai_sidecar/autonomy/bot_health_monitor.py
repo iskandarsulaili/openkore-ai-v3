@@ -24,8 +24,8 @@ CONFIG_FIXES = {
     "sell_npc_prt_in": {"key": "sellAuto_npc", "value": "prt_in 126 76", "reason": "Sell NPC not set to Tool Dealer"},
     "sell_steps_correct": {"key": "sellAuto_npc_steps", "value": "c r0 c", "reason": "Sell NPC dialog steps wrong"},
     "items_take_2": {"key": "itemsTakeAuto", "value": "2", "reason": "Item pickup disabled"},
-    "attack_auto_2": {"key": "attackAuto", "value": "3", "reason": "Attack mode not aggressive"},
-    "teleport_hp_0": {"key": "teleportAuto_hp", "value": "0", "reason": "Teleport HP disabled - use sit instead"},
+    # "attack_auto_2": {"key": "attackAuto", "value": "3"},  # heuristic controls this
+    # "teleport_hp_0": {"key": "teleportAuto_hp", "value": "0"},  # heuristic controls this
 }
 
 
