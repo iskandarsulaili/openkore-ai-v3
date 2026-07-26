@@ -269,7 +269,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Read in_party from raw bridge digest if not at top level
                         if not signals["in_party"]:
                             _raw = latest.get("raw", {}) or {}
-                            signals["in_party"] = bool(_raw.get("in_party", False))
+                            _raw_in_party = _raw.get("in_party", False)
+                            if _raw_in_party:
+                                signals["in_party"] = bool(_raw_in_party)
+                                _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
+                            else:
+                                _log.info(f"raw_in_party_missing: bot_id={bot_id} raw_keys={list(_raw.keys())[:10]}")
                         signals["party_members"] = latest.get("party_members", []) or []
                         if not signals["party_members"]:
                             _raw = latest.get("raw", {}) or {}
@@ -317,7 +322,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Read in_party from raw bridge digest if not at top level
                         if not signals["in_party"]:
                             _raw = getattr(latest, "raw", {}) or {}
-                            signals["in_party"] = bool(_raw.get("in_party", False))
+                            _raw_in_party = _raw.get("in_party", False)
+                            if _raw_in_party:
+                                signals["in_party"] = bool(_raw_in_party)
+                                _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
+                            else:
+                                _log.info(f"raw_in_party_missing: bot_id={bot_id} raw_keys={list(_raw.keys())[:10]}")
                         signals["party_members"] = getattr(latest, "party_members", []) or []
                         if not signals["party_members"]:
                             _raw = getattr(latest, "raw", {}) or {}
