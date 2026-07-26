@@ -1378,6 +1378,45 @@ sub _build_snapshot_payload {
 			$p{in_party} = (defined($char->{party}) && ref($char->{party}{party}{member}) eq "HASH" && scalar(keys %{$char->{party}{party}{member}}) > 0) ? 1 : 0;
 			# attack_power: total attack power (weapon + stats)
 			$p{attack_power} = $char->{attack} || $char->{atk} || 0;
+			# equipment digest: all equipped items with slot/card/refine info
+			my %_equip;
+			if ($char->{equipment}) {
+				for my $_eq_slot (keys %{$char->{equipment}}) {
+					my $_eq = $char->{equipment}{$_eq_slot};
+					next unless defined $_eq;
+					$_equip{$_eq_slot} = {
+						id => $_eq->{nameID} || 0,
+						name => $_eq->{name} || '',
+						refine => $_eq->{refine} || 0,
+						cards => [grep { defined && $_ > 0 } ($_eq->{card1} || 0, $_eq->{card2} || 0, $_eq->{card3} || 0, $_eq->{card4} || 0)],
+					};
+				}
+			}
+			$p{equipment} = \%_equip;
+			# inventory weapon check: do we have any weapon in inventory?
+			$p{has_weapon_in_inventory} = 0;
+			if ($char->{inventory}) {
+				for my $_inv_item (@{$char->{inventory}}) {
+					next unless defined $_inv_item;
+					my $_inv_type = $_inv_item->{type} || 0;
+					# type 4 = weapon, type 5 = armor, type 6 = card, type 7 = pet, type 8 = accessory
+					if ($_inv_type == 4 || $_inv_type == 5 || $_inv_type == 8) {
+						$p{has_weapon_in_inventory} = 1;
+						last;
+					}
+				}
+			}
+			# total attack with weapon info
+			$p{atk_min} = $char->{attack} || 0;
+			$p{atk_max} = $char->{attack_max} || $char->{attack} || 0;
+			$p{matk_min} = $char->{matk_min} || 0;
+			$p{matk_max} = $char->{matk_max} || 0;
+			$p{def} = $char->{def} || 0;
+			$p{mdef} = $char->{mdef} || 0;
+			$p{hit} = $char->{hit} || 0;
+			$p{flee} = $char->{flee} || 0;
+			$p{crit} = $char->{crit} || 0;
+			$p{aspd} = $char->{aspd} || 0;
 			\%p;
 		} || {};
 	}
