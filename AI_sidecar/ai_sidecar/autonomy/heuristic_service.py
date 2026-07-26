@@ -1042,13 +1042,21 @@ class HeuristicService:
 
         # ── STATE: PARTY ──
         if state == "PARTY":
-            # Use bot_name from signals - no hardcoded names
-            # The bridge rewrite handles party join syntax
-            actions.append(HeuristicAction(
-                kind="command", command="party create AI Team",
-                confidence=0.90, domain="social",
-                reason="Create party for team play",
-            ))
+            # Differentiate: leader creates, others join by leader name
+            _bot_name = signals.get("bot_name", bot_id) or bot_id
+            _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
+            if _is_leader:
+                actions.append(HeuristicAction(
+                    kind="command", command="party create AI Team",
+                    confidence=0.90, domain="social",
+                    reason="Leader - create party for team play",
+                ))
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command="party join kicapmasin",
+                    confidence=0.90, domain="social",
+                    reason=f"Join party created by leader",
+                ))
             actions.append(HeuristicAction(
                 kind="command", command="party share exp",
                 confidence=0.85, domain="social",
@@ -1314,6 +1322,39 @@ class HeuristicService:
                         )
                         self._last_assessment[bot_id] = assessment
                         return assessment
+                # PARTY: If not in party, transition to PARTY state (works across maps)
+                _party_in = signals.get("in_party", False)
+                if not _party_in:
+                    self._state[bot_id] = "PARTY"
+                    self._state_since[bot_id] = __import__("time").time()
+                    _bot_name = signals.get("bot_name", bot_id) or bot_id
+                    _is_leader = "kicapmasin" in _bot_name.lower() and "2" not in _bot_name and "3" not in _bot_name
+                    if _is_leader:
+                        actions.append(HeuristicAction(
+                            kind="command", command="party create AI Team",
+                            confidence=0.95, domain="social",
+                            reason="Leader - create party for team play (on hunting map)",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="party join kicapmasin",
+                            confidence=0.95, domain="social",
+                            reason="Join party leader (on hunting map)",
+                        ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Continue hunting after party",
+                    ))
+                    total_confidence = 0.95
+                    top_domain = "social"
+
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # HP MANAGEMENT: Sit when low HP to prevent death
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
                 if _hp < 0.50:
