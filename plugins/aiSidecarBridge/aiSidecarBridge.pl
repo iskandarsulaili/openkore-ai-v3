@@ -1790,6 +1790,9 @@ sub _build_snapshot_payload {
 		progression => $progression,
 		skills      => \@skills_list,
 		actors      => \@actors,
+		in_party      => $raw->{in_party} || 0,
+		party_members => $raw->{party_members} || [],
+		all_bots      => $raw->{all_bots} || [],
 		raw         => $raw,
 	};
 }
