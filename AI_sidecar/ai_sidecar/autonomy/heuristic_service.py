@@ -1470,7 +1470,10 @@ class HeuristicService:
                     return assessment
                 # PARTY: Leader creates + invites, joiners accept (party join 1 = accept)
                 _party_in = signals.get("in_party", False)
-                if not _party_in:
+                _party_members = signals.get("party_members", []) or []
+                _all_bots = signals.get("all_bots", []) or []
+                _party_incomplete = _party_in and len(_party_members) + 1 < len(_all_bots)
+                if not _party_in or _party_incomplete:
                     _bot_name = signals.get("bot_name", bot_id) or bot_id
                     # Dynamic leader detection: first bot alphabetically is leader
                     _all_bots = signals.get("all_bots", []) or []
