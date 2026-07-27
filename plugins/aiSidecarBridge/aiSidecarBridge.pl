@@ -3432,10 +3432,15 @@ sub _rewrite_runtime_command {
 	    return ('', 'ai_manual_blocked');
 	}
 	
-	# SIT BLOCK: block sit command from sidecar (we want bots standing)
+	# SIT BLOCK: allow sit when HP is low (let bots regen)
 	if ($normalized eq 'sit') {
-	    debug "[sit_block] blocking sit command\n", 'aiSidecarBridge', 1;
-	    return ('', 'sit_blocked');
+	    my $_sit_hp = _safe_hp_ratio();
+	    if ($_sit_hp >= 0.5) {
+	        debug "[sit_block] blocking sit - HP=$_sit_hp is fine\n", 'aiSidecarBridge', 1;
+	        return ('', 'sit_blocked_high_hp');
+	    }
+	    debug "[sit_block] allowing sit - HP=$_sit_hp is low\n", 'aiSidecarBridge', 1;
+	    return ($trimmed, 'sit_allowed_low_hp');
 	}
 	
 	# MACRO GUARD: block broken macros that cause syntax errors
@@ -3471,8 +3476,8 @@ sub _rewrite_runtime_command {
 	        warning "[sit_guard] blocking sit in town '$_sit_map'\n", 'aiSidecarBridge', 1;
 	        return ('', 'sit_blocked_town');
 	    }
-	    # Block sit on hunting maps unless HP is critically low (< 1%)
-	    if ($_sit_map =~ /^[a-z]+_fild/ && $_sit_hp >= 0.01) {
+	    # Block sit on hunting maps unless HP is low (< 50%)
+	    if ($_sit_map =~ /^[a-z]+_fild/ && $_sit_hp >= 0.5) {
 	        warning "[sit_guard] blocking sit on hunting map '$_sit_map' (HP=$_sit_hp)\n", 'aiSidecarBridge', 1;
 	        return ('', 'sit_blocked_hunting');
 	    }
