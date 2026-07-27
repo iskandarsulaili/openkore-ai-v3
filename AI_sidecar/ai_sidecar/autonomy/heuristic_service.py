@@ -804,12 +804,12 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
-            # Set route_randomWalk: 0 (stand still - attack within 7 cells)
-            _cs_rw = 0
+            # Set route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
+            _cs_rw = 1
             actions.append(HeuristicAction(
                 kind="command", command=f"set route_randomWalk {_cs_rw}",
                 confidence=0.99, domain="hunting",
-                reason=f"Cold start - route_randomWalk 0 (stand still, attack within range)",
+                reason=f"Cold start - route_randomWalk 1 (walk within bounds)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
