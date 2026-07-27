@@ -40,17 +40,19 @@ _HUNT_TOWNS = ("prontera", "izlude", "morocc", "payon", "geffen",
 # ── Class-aware stat builds ──
 # Each entry: (stat_priority_list, description)
 CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
-    "novice":    [("dex", 20), ("str", 20), ("agi", 15), ("vit", 10)],
-    "swordman":  [("str", 40), ("vit", 30), ("dex", 20)],
-    "mage":      [("int", 40), ("dex", 30)],
-    "archer":    [("dex", 50), ("agi", 30)],
-    "acolyte":   [("int", 40), ("dex", 30)],
-    "merchant":  [("str", 40), ("vit", 30), ("dex", 20)],
-    "thief":     [("dex", 40), ("agi", 30)],
-    "taekwon":   [("str", 30), ("agi", 30)],
-    "gunslinger":[("dex", 50), ("agi", 30)],
-    "ninja":     [("int", 40), ("dex", 30)],
-    "soul_linker":[("int", 50), ("dex", 30)],
+    # Pro RO builds: stat priority based on class mechanics
+    # Archer: DEX to 50 for hit rate, then AGI for ASPD, then LUK for crits
+    "novice":    [("dex", 20), ("str", 10), ("agi", 10)],
+    "swordman":  [("str", 40), ("vit", 30), ("dex", 20)],  # Bash has 100% hit, STR first
+    "mage":      [("int", 50), ("dex", 20)],                # INT for damage, DEX for cast time
+    "archer":    [("dex", 50), ("agi", 30), ("luk", 20)],   # DEX for hit, AGI for ASPD, LUK for crit
+    "acolyte":   [("int", 50), ("dex", 20), ("vit", 10)],   # INT for Heal damage, DEX for cast
+    "merchant":  [("str", 50), ("vit", 30), ("dex", 10)],   # STR for damage, VIT for tank
+    "thief":     [("agi", 50), ("dex", 20), ("str", 20)],   # AGI for ASPD+Double Attack proc, DEX for hit
+    "taekwon":   [("str", 40), ("agi", 30), ("dex", 10)],
+    "gunslinger":[("dex", 60), ("agi", 20)],                 # DEX for hit, AGI for ASPD
+    "ninja":     [("int", 50), ("dex", 20)],
+    "soul_linker":[("int", 60), ("dex", 20)],
 }
 
 # ── Job change NPC locations ──
@@ -76,60 +78,62 @@ BOT_JOBS: dict[str, str] = {
 # ── Class-aware hunting grounds ──
 # (min_level, max_level, map_name, description)
 CLASS_HUNTING_GROUNDS: dict[str, list[tuple[int, int, str, str]]] = {
+    # Pro RO progression: dungeons for density, field maps only as fallback
+    # Dungeons have 3-5x spawn density vs field maps
     "novice": [
-        (1, 10,  "izlude",       "Poring Island — Porings, Lunatics, Fabres (safe, flat)"),
-        (10, 20, "prt_fild08",   "South Prontera — Fabres, Peco Peco, Hornets"),
-        (20, 35, "prt_fild04",   "West Prontera — Rockers, Spores, Wolves"),
+        (1, 10,  "pay_dun00",     "Payon Cave 1F — Skeletons, Zombies (undead, 3x density)"),
+        (10, 20, "pay_dun01",     "Payon Cave 2F — Munak, Bongun, Ghoul (undead, 5x density)"),
+        (20, 35, "gef_dun00",     "Geffen Dungeon 1F — Drainliar, Creamy, Flora (element advantage)"),
     ],
     "swordman": [
-        (1, 15,  "payon",        "Payon Fields — Peco Peco, Hornets (great job exp)"),
-        (15, 30, "pay_fild01",   "Payon Forest — Wolves, Savage, Deniro"),
-        (30, 50, "pay_fild04",   "Deep Payon — Ferus, Argiope, Mantis"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Bash one-shots undead)"),
+        (15, 30, "orcsdun01",     "Orc Dungeon — Orc Warriors, Orc Archers (melee heaven, 5x density)"),
+        (30, 50, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo, Alligator"),
     ],
     "mage": [
-        (1, 15,  "gef_fild04",   "Geffen Fields — Rockers, Spores (Fire Bolt one-shots)"),
-        (15, 30, "gef_fild06",   "Geffen West — Drainliar, Flora, Vitata"),
-        (30, 50, "gef_fild10",   "Geffen Deep — Anacondaq, Stapo, Alligator"),
+        (1, 15,  "gef_dun00",     "Geffen Dungeon 1F — Drainliar, Creamy (Fire Bolt one-shots)"),
+        (15, 30, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo (element advantage)"),
+        (30, 50, "mag_dun01",     "Magma Dungeon 1F — Kaho, Lava Golem (fire element)"),
     ],
     "archer": [
-        (1, 15,  "payon",        "Payon Cave 1F — Skeletons, Zombies (easy kite)"),
-        (15, 30, "pay_dun00",    "Payon Cave 2F — Munak, Bongun, Ghoul"),
-        (30, 50, "pay_dun02",    "Payon Cave 3F — Evil Druid, Wraith, Raydric"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons, Zombies (kite from range)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (Double Strafe burst)"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere, Kukre (water element)"),
     ],
     "acolyte": [
-        (1, 15,  "izlude",       "Izlude Fields — Willow, Familiar (Heal vs Undead)"),
-        (15, 30, "pay_dun00",    "Payon Cave 1F — Undead (Heal one-shots)"),
-        (30, 50, "pay_dun02",    "Payon Cave 2F — Munak, Bongun (Turn Undead)"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Undead (Heal one-shots, 3x EXP)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (Turn Undead)"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere (Heal vs undead)"),
     ],
     "merchant": [
-        (1, 15,  "morocc",       "Morocco Plains — Peco Peco, Savage (tanky, high HP)"),
-        (15, 30, "moc_fild01",   "Morocco Fields — Sandman, Pasana, Deviace"),
-        (30, 50, "moc_fild03",   "Morocco Deep — Mimic, Myst, Alarm"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (tanky, high HP)"),
+        (15, 30, "orcsdun01",     "Orc Dungeon — Orc Warriors (tanky, good drops)"),
+        (30, 50, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo"),
     ],
     "thief": [
-        (1, 15,  "payon",        "Payon Fields — Poison Spores, Wolves (AGI build)"),
-        (15, 30, "pay_fild01",   "Payon Forest — Deniro, Savage, Hornet"),
-        (30, 50, "pay_fild04",   "Deep Payon — Ferus, Argiope (Double Attack)"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Double Attack procs)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (AGI build shines)"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere, Kukre"),
     ],
     "taekwon": [
-        (1, 15,  "izlude",       "Izlude Fields — Muka, Yoyo (kick damage)"),
-        (15, 30, "izlude",       "Izlude Deep — Side Winder, Alligator"),
-        (30, 50, "ein_fild01",   "Einbroch Fields — Waste Stove, Kukre"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (kick damage)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
     ],
     "gunslinger": [
-        (1, 15,  "einbroch",     "Einbroch Fields — Poring, Poporing (Single Action)"),
-        (15, 30, "ein_fild01",   "Einbroch Outer — Kukre, Waste Stove"),
-        (30, 50, "ein_fild03",   "Einbroch Deep — Venatu, Dimik"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Single Action burst)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
     ],
     "ninja": [
-        (1, 15,  "amatsu",       "Amatsu Fields — Muka, Savage (Kunai range)"),
-        (15, 30, "ama_fild01",   "Amatsu Forest — Miyabi Doll, Tengu"),
-        (30, 50, "ama_dun01",    "Amatsu Cave — Banshee, Bloody Butterfly"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Kunai range)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
     ],
     "soul_linker": [
-        (1, 15,  "lighthalzen",  "Lighthalzen — Estrun, Luciola Vespa (Soul Strike)"),
-        (15, 30, "lhz_fild01",   "Lighthalzen Fields — Novus, Pinguicula"),
-        (30, 50, "lhz_dun01",    "Lighthalzen Cave — Dimik, Venatu"),
+        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Soul Strike)"),
+        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
+        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
     ],
 }
 
@@ -641,8 +645,8 @@ class HeuristicService:
         _party_incomplete = _actual_count < _expected_count
         logger.info("[party_check] " + str(bot_id) + " in_party=" + str(_party_in) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " expected=" + str(_expected_count) + " actual=" + str(_actual_count) + " incomplete=" + str(_party_incomplete))
 
-        # Leader: check if party is incomplete
-        if _is_leader and _party_incomplete and state != "COLD_START" and state != "DEAD":
+        # Leader: check if party is incomplete AND level >= 40 (solo before 40 is faster)
+        if _is_leader and _party_incomplete and state != "COLD_START" and state != "DEAD" and base_level >= 40:
             _now = __import__("time").time()
             _last_party = self._last_party_attempt.get(bot_id, 0)
             if _now - _last_party > 15:
@@ -792,10 +796,11 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # COLD START: Go to town first to buy weapon/arrows/potions, then hunt
-            # Buy commands only work in town (NPC shops) - on hunting map they silently fail
-            _cs_hunt_map = "prt_fild05"
-            _cs_portal_coords = "22 203"
+            # COLD START: Go directly to dungeon (density 3-5x field maps)
+            # Payon Cave 1F (pay_dun00) — Skeletons, Zombies, undead
+            # Portal from Payon at (156, 119) to pay_dun00
+            _cs_hunt_map = "pay_dun00"
+            _cs_portal_coords = "156 119"
             # Class-specific attack distance
             _cs_job = signals.get("job_name", "novice") or "novice"
             _cs_atk_dist = 7  # all classes: walk up to 7 cells to attack
@@ -1429,11 +1434,15 @@ class HeuristicService:
                 confidence=0.95, domain="hunting",
                 reason="Ensure auto-attack mode is active",
             ))
-            # Teleport config: disable all teleport triggers
+            # Teleport config: pro-level for dungeons
+            # In dungeons (pay_dun00, gef_dun00, etc.), mob density is 3-5x field maps
+            # Walk to find mobs (density is high enough), teleport only to escape danger
+            # teleportAuto 0 = no teleport (walk in dungeons, density is high enough)
+            # teleportAuto_minAggressives 8 = only teleport if 8+ mobs surround you
             actions.append(HeuristicAction(
                 kind="command", command="set teleportAuto 0",
                 confidence=0.99, domain="hunting",
-                reason="Disable teleporting to prevent town loop",
+                reason="No teleport in dungeons (density is 3-5x field maps)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set teleportAuto_minAggressives 8",
