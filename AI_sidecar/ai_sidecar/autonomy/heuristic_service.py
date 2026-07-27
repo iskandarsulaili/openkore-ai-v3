@@ -1606,29 +1606,32 @@ class HeuristicService:
                     self._last_assessment[bot_id] = assessment
                     return assessment
                 # MAP PROGRESSION: Use class-aware hunting grounds (dungeon-first)
-                _base_level = signals.get("level", 1) or 1
-                _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
-                _next_map = None
-                for _min_lv, _max_lv, _map_name, _desc in _grounds:
-                    if _min_lv <= _base_level <= _max_lv:
-                        _next_map = _map_name
-                        break
-                if not _next_map and _grounds:
-                    _next_map = _grounds[-1][2]  # Fallback to highest level map
-                if not _next_map:
-                    _next_map = "pay_dun00"  # Ultimate fallback
-                # If current map is not the correct one for level, move
-                if map_name != _next_map and _hunt_duration > 30:
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"set lockMap {_next_map}",
-                        confidence=0.90, domain="hunting",
-                        reason=f"Level {_base_level} - moving to {_next_map}",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"move {_next_map}",
-                        confidence=0.90, domain="hunting",
-                        reason=f"Level {_base_level} - progressing to {_next_map}",
-                    ))
+                # Skip if bot is already en route to a different map (lockMap != current map)
+                _current_lockmap = signals.get("lockMap", map_name) or map_name
+                if map_name == _current_lockmap or _hunt_duration > 60:
+                    _base_level = signals.get("level", 1) or 1
+                    _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+                    _next_map = None
+                    for _min_lv, _max_lv, _map_name, _desc in _grounds:
+                        if _min_lv <= _base_level <= _max_lv:
+                            _next_map = _map_name
+                            break
+                    if not _next_map and _grounds:
+                        _next_map = _grounds[-1][2]  # Fallback to highest level map
+                    if not _next_map:
+                        _next_map = "pay_dun00"  # Ultimate fallback
+                    # If current map is not the correct one for level, move
+                    if map_name != _next_map and _hunt_duration > 30:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"set lockMap {_next_map}",
+                            confidence=0.90, domain="hunting",
+                            reason=f"Level {_base_level} - moving to {_next_map}",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_next_map}",
+                            confidence=0.90, domain="hunting",
+                            reason=f"Level {_base_level} - progressing to {_next_map}",
+                        ))
                     total_confidence = 0.90
                     top_domain = "hunting"
                     assessment = HeuristicAssessment(
