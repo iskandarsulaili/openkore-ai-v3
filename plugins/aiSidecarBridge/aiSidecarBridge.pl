@@ -1373,7 +1373,6 @@ sub _build_snapshot_payload {
 				}
 			}
 			$::aiSidecar_all_bots = join(',', @_profiles);
-			@::aiSidecar_all_bots_split = @_profiles;
 			debug "bridge_all_bots: discovered " . scalar(@_profiles) . " profiles: $::aiSidecar_all_bots\n", 'aiSidecarBridge', 1;
 		}
 		# ── Party join auto-accept: non-leader bots accept invites ──
