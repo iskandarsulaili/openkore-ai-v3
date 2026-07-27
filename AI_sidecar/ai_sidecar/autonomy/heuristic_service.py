@@ -445,6 +445,7 @@ class HeuristicService:
         self._last_party_members: dict[str, list] = {}
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
+        self._last_lockmap: dict[str, str] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -656,9 +657,10 @@ class HeuristicService:
         _sorted_bots = sorted(_all_bots)
         _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
         # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
+        # party_members does NOT include the leader (OpenKore quirk)
         _expected_count = len(_all_bots)
         _actual_count = len(_party_members)
-        _party_incomplete = _actual_count < _expected_count
+        _party_incomplete = (_actual_count + 1) < _expected_count  # +1 for leader (not in party_members list)
         logger.info("[party_check] " + str(bot_id) + " in_party=" + str(_party_in) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " expected=" + str(_expected_count) + " actual=" + str(_actual_count) + " incomplete=" + str(_party_incomplete))
 
         # Leader: check if party is incomplete AND level >= 40 (solo before 40 is faster)
@@ -843,6 +845,7 @@ class HeuristicService:
                 reason="Cold start - random walk radius Y",
             ))
             # 1. Set lockMap first
+            self._last_lockmap[bot_id] = _cs_hunt_map
             actions.append(HeuristicAction(
                 kind="command", command=f"set lockMap {_cs_hunt_map}",
                 confidence=0.99, domain="hunting",
@@ -1607,7 +1610,8 @@ class HeuristicService:
                     return assessment
                 # MAP PROGRESSION: Use class-aware hunting grounds (dungeon-first)
                 # Skip if bot is already en route to a different map (lockMap != current map)
-                _current_lockmap = signals.get("lockMap", map_name) or map_name
+                _last_set_lockmap = self._last_lockmap.get(bot_id, map_name)
+                _current_lockmap = signals.get("lockMap", _last_set_lockmap) or _last_set_lockmap
                 if map_name == _current_lockmap or _hunt_duration > 60:
                     _base_level = signals.get("level", 1) or 1
                     _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
@@ -1622,6 +1626,7 @@ class HeuristicService:
                         _next_map = "pay_dun00"  # Ultimate fallback
                     # If current map is not the correct one for level, move
                     if map_name != _next_map and _hunt_duration > 30:
+                        self._last_lockmap[bot_id] = _next_map
                         actions.append(HeuristicAction(
                             kind="command", command=f"set lockMap {_next_map}",
                             confidence=0.90, domain="hunting",
