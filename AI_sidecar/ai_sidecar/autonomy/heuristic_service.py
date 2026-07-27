@@ -803,6 +803,9 @@ class HeuristicService:
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
         self._last_lockmap: dict[str, str] = {}
+        # Config dedup cache: bot_id -> {config_key: last_set_value}
+        # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
+        self._last_config_set: dict[str, dict[str, str]] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -936,6 +939,20 @@ class HeuristicService:
                 horizon=signals.get("horizon", "short_term"), actions=[], confidence=0.5,
                 actionable=False, top_domain="survival", signals=dict(signals),
             )
+
+    def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
+        """Emit a 'set' command only if the value has changed since last set.
+        Prevents spamming 'set route_randomWalk 1' every cycle when it's already 1."""
+        cache = self._last_config_set.setdefault(bot_id, {})
+        last = cache.get(key)
+        if last == value:
+            return  # Already set to this value, skip
+        cache[key] = value
+        actions.append(HeuristicAction(
+            kind="command", command=f"set {key} {value}",
+            confidence=confidence, domain=domain,
+            reason=reason,
+        ))
 
     def _assess_impl(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
@@ -1139,40 +1156,79 @@ class HeuristicService:
                 confidence=0.99, domain="emergency",
                 reason="Cold start - stand up",
             ))
+            # Set ai auto FIRST so the bot starts moving immediately
             actions.append(HeuristicAction(
-                kind="command", command="set attackDistance 7",
+                kind="command", command="ai auto",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - set attack distance",
+                reason="Cold start - enable auto-attack before moving",
             ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackMaxDistance 20",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - set chase distance",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto 3",
-                confidence=0.95, domain="hunting",
-                reason="Enable aggressive auto-attack",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_startOnSight 1",
-                confidence=0.95, domain="hunting",
-                reason="Attack monsters as soon as they appear",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_maxDistance 10",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - keep attacking even if target moves",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_unstuck 1",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - don't give up mid-fight",
-            ))
+            # Combat config (deduped)
+            self._set_config_once(actions, bot_id, "attackDistance", "7", "hunting",
+                "Cold start - set attack distance")
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "20", "hunting",
+                "Cold start - set chase distance")
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Enable aggressive auto-attack")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
+                "Attack monsters as soon as they appear")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Cold start - don't give up mid-fight")
             # COLD START: Go to safe field first (prt_fild05 for level 1-10)
             # Then progress to dungeon at level 10+
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"  # Portal from Prontera (156, 164) -> prt_fild05 (22, 203)
+            # Set route_randomWalk and lockMap
+            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
+                "Cold start - route_randomWalk 1 (walk within bounds)")
+            self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
+                "Cold start - random walk radius X")
+            self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
+                "Cold start - random walk radius Y")
+            self._last_lockmap[bot_id] = _cs_hunt_map
+            self._set_config_once(actions, bot_id, "lockMap", _cs_hunt_map, "hunting",
+                "Cold start - set hunting map lock")
+            # Economy: buy potions FIRST (before moving to hunting map)
+            _cs_zeny = signals.get("zeny", 0) or 0
+            if _cs_zeny >= 500:
+                # Buy 10 Red Potions (item 501) for survival
+                actions.append(HeuristicAction(
+                    kind="command", command="buy 501 10",
+                    confidence=0.99, domain="economy",
+                    reason="Cold start - buy 10 Red Potions for survival",
+                ))
+            elif _cs_zeny >= 50:
+                # Buy at least 1 potion if we can afford it
+                _cs_potion_qty = int(_cs_zeny / 50)
+                _cs_potion_qty = min(_cs_potion_qty, 10)
+                if _cs_potion_qty > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy 501 {_cs_potion_qty}",
+                        confidence=0.99, domain="economy",
+                        reason=f"Cold start - buy {_cs_potion_qty} Red Potions",
+                    ))
+            # Buy arrows if enough zeny
+            if _cs_zeny >= 200:
+                actions.append(HeuristicAction(
+                    kind="command", command="buy 1750 200",
+                    confidence=0.99, domain="economy",
+                    reason="Buy 200 arrows (harmless for non-archers, critical for archers)",
+                ))
+            # Buy weapon if any zeny available
+            _cs_job = signals.get("job_name", "novice") or "novice"
+            if _cs_zeny >= 50:
+                _cs_weapon_id = "1301"  # Knife - cheapest weapon, all classes can equip
+                actions.append(HeuristicAction(
+                    kind="command", command=f"buy {_cs_weapon_id} 1",
+                    confidence=0.99, domain="economy",
+                    reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
+                ))
+            # Teleport config
+            self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", "8", "hunting",
+                "Only teleport at 8+ mobs")
+            self._set_config_once(actions, bot_id, "teleportAuto_hp", "0", "hunting",
+                "Never teleport due to HP - use sit instead")
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "0", "hunting",
+                "Disable deadly teleport")
             # Only send move if on a different map
             if map_name != _cs_hunt_map:
                 actions.append(HeuristicAction(
@@ -1180,43 +1236,8 @@ class HeuristicService:
                     confidence=0.99, domain="hunting",
                     reason=f"Cold start - move to {_cs_hunt_map}",
                 ))
-            # Class-specific attack distance
-            _cs_job = signals.get("job_name", "novice") or "novice"
-            _cs_atk_dist = 7  # all classes: walk up to 7 cells to attack
-            actions.append(HeuristicAction(
-                kind="command", command=f"set attackDistance {_cs_atk_dist}",
-                confidence=0.99, domain="hunting",
-                reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
-            ))
-            # Set route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
-            _cs_rw = 1
-            actions.append(HeuristicAction(
-                kind="command", command=f"set route_randomWalk {_cs_rw}",
-                confidence=0.99, domain="hunting",
-                reason=f"Cold start - route_randomWalk 1 (walk within bounds)",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randX 100",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - random walk radius X",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randY 100",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - random walk radius Y",
-            ))
-            # 1. Set lockMap first
-            self._last_lockmap[bot_id] = _cs_hunt_map
-            actions.append(HeuristicAction(
-                kind="command", command=f"set lockMap {_cs_hunt_map}",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - set hunting map lock",
-            ))
-            # 1b. Stay in town first to buy weapon/arrows/potions (buy only works at NPC shops)
-            # Then go to hunting map via portal
-            # 1c. Party creation for leader - do this early so others can join
+            # Party creation for leader
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
-            # Dynamic leader detection: first bot alphabetically is leader
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
             _cs_sorted = sorted(_cs_all_bots)
             _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
@@ -1231,55 +1252,6 @@ class HeuristicService:
                     confidence=0.95, domain="social",
                     reason="Share experience in party",
                 ))
-            # 1c. Comprehensive teleport config - DISABLE ALL teleport triggers
-            # Only teleport when 8+ mobs aggressive (practically never on low-level maps)
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_minAggressives 8",
-                confidence=0.99, domain="hunting",
-                reason="Only teleport at 8+ mobs",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_hp 0",
-                confidence=0.99, domain="hunting",
-                reason="Never teleport due to HP - use sit instead",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_deadly 0",
-                confidence=0.99, domain="hunting",
-                reason="Disable deadly teleport - prevents running from non-threats",  
-            ))
-            # 1c. Go directly to hunting map via portal (keep starting weapon!)
-            # Do NOT sell starting gear - that sells the weapon too (bot deals 0 damage)
-            # Economy (sell loot, buy potions) handled by DEATH/TOWN_STUCK states
-            # 1d. Buy arrows for ALL bots (harmless for non-archers, critical for archers)
-            _cs_zeny = signals.get("zeny", 0) or 0
-            if _cs_zeny >= 200:
-                actions.append(HeuristicAction(
-                    kind="command", command="buy 1750 200",
-                    confidence=0.99, domain="economy",
-                    reason="Buy 200 arrows (harmless for non-archers, critical for archers)",
-                ))
-            # 1e. Buy weapon if any zeny available (prevents 0 DMG from sold weapon)
-            if _cs_zeny >= 50:
-                # Novices can equip Knife (1301) - 50z, works for all classes
-                _cs_weapon_id = "1301"  # Knife - cheapest weapon, all classes can equip
-                actions.append(HeuristicAction(
-                    kind="command", command=f"buy {_cs_weapon_id} 1",
-                    confidence=0.99, domain="economy",
-                    reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
-                ))
-            # 1f. Go to hunting map via portal (after buying in town)
-            actions.append(HeuristicAction(
-                kind="command", command=f"move {_cs_portal_coords}",
-                confidence=0.99, domain="emergency",
-                reason="Cold start - go to hunting map via portal",
-            ))
-            # 2. Enable auto-attack on hunting map
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - enable auto-attack on hunting map",
-            ))
             total_confidence = 0.99
             top_domain = "emergency"
             assessment = HeuristicAssessment(
@@ -1728,151 +1700,68 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
-            # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
+            # ── COMBAT CONFIG: Set once per value change (dedup via _set_config_once) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 7  # all classes: walk up to 7 cells to attack
+            _atk_dist = 7
             _atk_max = 20
-            # route_randomWalk: 1 (walk within lockMap_randX/Y bounds - doesn't block AI)
-            # route_randomWalk=0: stand still (monsters must come to you - bad for passive mobs)
-            # route_randomWalk=1: walk within lockMap_randX/Y bounds (best for field maps)
-            # route_randomWalk=2: walk across entire map (triggers "Calculating random route" which blocks AI)
             _rw = 1
-            actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 1",
-                confidence=0.95, domain="hunting",
-                reason="Walk within lockMap bounds (doesn't block AI, attacks anything it passes)",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randX 100",
-                confidence=0.95, domain="hunting",
-                reason="Random walk radius X",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randY 100",
-                confidence=0.95, domain="hunting",
-                reason="Random walk radius Y",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command=f"set attackDistance {_atk_dist}",
-                confidence=0.95, domain="hunting",
-                reason=f"Class-appropriate attack distance for {_job_name}",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command=f"set attackMaxDistance {_atk_max}",
-                confidence=0.95, domain="hunting",
-                reason="Set max chase distance",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto 3",
-                confidence=0.95, domain="hunting",
-                reason="Enable aggressive auto-attack",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_followTarget 1",
-                confidence=0.95, domain="hunting",
-                reason="Chase fleeing monsters",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_noMove 0",
-                confidence=0.95, domain="hunting",
-                reason="Allow movement during combat",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_inLockOnly 1",
-                confidence=0.95, domain="hunting",
-                reason="Only attack monsters in lockMap area",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_onlyWhenSafe 0",
-                confidence=0.95, domain="hunting",
-                reason="Attack even if not safe",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_fleeToTarget 0",
-                confidence=0.95, domain="hunting",
-                reason="Don't flee to target",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_startDistance 1",
-                confidence=0.95, domain="hunting",
-                reason="Start attacking from 1 cell away (immediate)",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_keepDistance 1",
-                confidence=0.95, domain="hunting",
-                reason="Keep distance while attacking",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_maxDistance 20",
-                confidence=0.95, domain="hunting",
-                reason="Keep attacking even if target moves",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_unstuck 1",
-                confidence=0.95, domain="hunting",
-                reason="Don't give up mid-fight",
-            ))
-            # Ensure ai auto is set (COLD_START sets it but HUNT must re-set)
+            self._set_config_once(actions, bot_id, "route_randomWalk", str(_rw), "hunting",
+                "Walk within lockMap bounds (doesn't block AI, attacks anything it passes)")
+            self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
+                "Random walk radius X")
+            self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
+                "Random walk radius Y")
+            self._set_config_once(actions, bot_id, "attackDistance", str(_atk_dist), "hunting",
+                f"Class-appropriate attack distance for {_job_name}")
+            self._set_config_once(actions, bot_id, "attackMaxDistance", str(_atk_max), "hunting",
+                "Set max chase distance")
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Enable aggressive auto-attack")
+            self._set_config_once(actions, bot_id, "attackAuto_followTarget", "1", "hunting",
+                "Chase fleeing monsters")
+            self._set_config_once(actions, bot_id, "attackAuto_noMove", "0", "hunting",
+                "Allow movement during combat")
+            self._set_config_once(actions, bot_id, "attackAuto_inLockOnly", "1", "hunting",
+                "Only attack monsters in lockMap area")
+            self._set_config_once(actions, bot_id, "attackAuto_onlyWhenSafe", "0", "hunting",
+                "Attack even if not safe")
+            self._set_config_once(actions, bot_id, "attackAuto_fleeToTarget", "0", "hunting",
+                "Don't flee to target")
+            self._set_config_once(actions, bot_id, "attackAuto_startDistance", "1", "hunting",
+                "Start attacking from 1 cell away (immediate)")
+            self._set_config_once(actions, bot_id, "attackAuto_keepDistance", "1", "hunting",
+                "Keep distance while attacking")
+            self._set_config_once(actions, bot_id, "attackAuto_maxDistance", "20", "hunting",
+                "Keep attacking even if target moves")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Don't give up mid-fight")
+            # ai auto is not a config set — always emit (not deduped)
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="hunting",
                 reason="Ensure auto-attack mode is active",
             ))
-            # Teleport config: pro-level for dungeons
-            # In dungeons (pay_dun00, gef_dun00, etc.), mob density is 3-5x field maps
-            # Walk to find mobs (density is high enough), teleport only to escape danger
-            # teleportAuto 0 = no teleport (walk in dungeons, density is high enough)
-            # teleportAuto_minAggressives 8 = only teleport if 8+ mobs surround you
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto 0",
-                confidence=0.99, domain="hunting",
-                reason="No teleport in dungeons (density is 3-5x field maps)",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_minAggressives 8",
-                confidence=0.95, domain="survival",
-                reason="Only teleport when 8+ mobs",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_hp 0",
-                confidence=0.95, domain="survival",
-                reason="Never teleport due to HP",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_deadly 0",
-                confidence=0.95, domain="survival",
-                reason="Disable deadly teleport",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_search 0",
-                confidence=0.95, domain="survival",
-                reason="Disable search teleport",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set teleportAuto_portal 0",
-                confidence=0.95, domain="survival",
-                reason="Disable portal teleport",
-            ))
-            # Loot filtering: only pick up items worth the weight
-            # itemsTakeAuto 1 = pick up items automatically
-            # itemsTakeWeight 50 = only pick up if weight < 50%
-            actions.append(HeuristicAction(
-                kind="command", command="set itemsTakeAuto 1",
-                confidence=0.90, domain="economy",
-                reason="Auto-pickup items",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="set itemsTakeWeight 50",
-                confidence=0.90, domain="economy",
-                reason="Only pick up if weight < 50%",
-            ))
-            # itemsGatherAuto 2 = pick up all items (we filter by weight)
-            actions.append(HeuristicAction(
-                kind="command", command="set itemsGatherAuto 2",
-                confidence=0.90, domain="economy",
-                reason="Gather all items (weight filter prevents junk)",
-            ))
+            # Teleport config
+            self._set_config_once(actions, bot_id, "teleportAuto", "0", "hunting",
+                "No teleport in dungeons (density is 3-5x field maps)", confidence=0.99)
+            self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", "8", "survival",
+                "Only teleport when 8+ mobs")
+            self._set_config_once(actions, bot_id, "teleportAuto_hp", "0", "survival",
+                "Never teleport due to HP")
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "0", "survival",
+                "Disable deadly teleport")
+            self._set_config_once(actions, bot_id, "teleportAuto_search", "0", "survival",
+                "Disable search teleport")
+            self._set_config_once(actions, bot_id, "teleportAuto_portal", "0", "survival",
+                "Disable portal teleport")
+            # Loot config
+            self._set_config_once(actions, bot_id, "itemsTakeAuto", "1", "economy",
+                "Auto-pickup items")
+            self._set_config_once(actions, bot_id, "itemsTakeWeight", "50", "economy",
+                "Only pick up if weight < 50%")
+            self._set_config_once(actions, bot_id, "itemsGatherAuto", "2", "economy",
+                "Gather all items (weight filter prevents junk)")
             if map_name not in _HUNT_TOWNS:
                 # On hunting map: check if we should return to town
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())

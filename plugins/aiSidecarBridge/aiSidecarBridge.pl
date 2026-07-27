@@ -4208,6 +4208,8 @@ our $_last_prontera_recovery_ms = 0;
 	# ── Cached healing resources (from sidecar config push) ──
 	sub _update_heal_cache {
 		my $now = _now_ms();
+		# Guard: initialize if undef (first call or after reload)
+		$_heal_cache_last_update_ms = 0 if !defined $_heal_cache_last_update_ms;
 		return if $now - $_heal_cache_last_update_ms < 250;
 		$_heal_cache_last_update_ms = $now;
 
