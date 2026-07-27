@@ -1425,11 +1425,6 @@ sub _build_snapshot_payload {
 			my @_all_bots = split(',', $_all_bots_str);
 			my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
 			if ($_is_leader) {
-				if (!defined($char->{party})) {
-					my $_ts = time();
-					my $_ok = eval { Commands::run("party create AI$_ts"); 1; };
-					debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
-				}
 			my $_pu = $char->{party}{users} || {};
 			my $_mc = scalar(keys %$_pu) + 1;
 			if ($_mc < 3) {
@@ -1441,7 +1436,7 @@ sub _build_snapshot_payload {
 				}
 				$_mn{$char->{name}} = 1;
 				# Dynamic mapping: use all_bots from sidecar
-				for my $_pn (@::aiSidecar_all_bots_split) {
+				for my $_pn (@_all_bots) {
 					next if $_pn eq ($::config{username} || '');
 					my $_cn = $_pn;  # Use profile name as char name (fallback)
 					if (!$_mn{$_cn}) {
