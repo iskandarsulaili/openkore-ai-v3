@@ -260,7 +260,7 @@ sub on_start3 {
 	my $_reg_char_name = $char ? ($char->{name} || '') : '';
 	if ($registered && $_reg_char_name ne '' && $_reg_char_name ne $_registered_char_name) {
 		$registered = 0;
-		$next_register_at_ms = __time_now_ms();
+		$next_register_at_ms = _now_ms();
 	}
 }
 
@@ -290,7 +290,7 @@ sub _check_reregister {
 		debug "bridge_reregister: char name changed from '$_registered_char_name' to '$current_name'\n", 'aiSidecarBridge', 1;
 		$_registered_char_name = $current_name;
 		$registered = 0;
-		$next_register_at_ms = __time_now_ms();
+		$next_register_at_ms = _now_ms();
 	}
 }
 sub on_mainLoop_pre {
