@@ -805,12 +805,12 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
-            # Set route_randomWalk: 0 for ranged (stand and shoot), 2 for melee (walk to find)
-            _cs_rw = 0 if _cs_atk_dist >= 7 else 2
+            # Set route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
+            _cs_rw = 1
             actions.append(HeuristicAction(
                 kind="command", command=f"set route_randomWalk {_cs_rw}",
                 confidence=0.99, domain="hunting",
-                reason=f"Cold start - route_randomWalk {_cs_rw} for {_cs_job}",
+                reason=f"Cold start - route_randomWalk 1 (walk within bounds)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
@@ -1339,15 +1339,16 @@ class HeuristicService:
             # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 2  # all classes: melee range
+            _atk_dist = 7  # all classes: walk up to 7 cells to attack
             _atk_max = 20
-            # route_randomWalk: 2 (walk across map to find monsters)
-            # "Calculating random route" is OpenKore's walking animation - it does NOT block attacking
+            # route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
+            # route_randomWalk=2 walks across ENTIRE map (ignores lockMap bounds)
+            # route_randomWalk=1 walks within lockMap_randX/Y area (100x100)
             # The bot WILL attack any monster it passes while walking
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 2",
+                kind="command", command="set route_randomWalk 1",
                 confidence=0.95, domain="hunting",
-                reason="Walk to find monsters (attacks anything it passes)",
+                reason="Walk within 100x100 area to find monsters",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
