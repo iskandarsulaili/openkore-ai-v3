@@ -1764,7 +1764,19 @@ class HeuristicService:
                     return assessment
                 # MAP PROGRESSION: Use class-aware hunting grounds (dungeon-first)
                 # Skip if bot is already en route to a different map (lockMap != current map)
-                _last_set_lockmap = self._last_lockmap.get(bot_id, map_name)
+                _last_set_lockmap = self._last_lockmap.get(bot_id, "")
+                # If _last_lockmap not set, initialize from class hunting grounds
+                if not _last_set_lockmap:
+                    _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+                    for _min_lv, _max_lv, _map_name, _desc in _grounds:
+                        if _min_lv <= base_level <= _max_lv:
+                            _last_set_lockmap = _map_name
+                            break
+                    if not _last_set_lockmap and _grounds:
+                        _last_set_lockmap = _grounds[-1][2]
+                    if not _last_set_lockmap:
+                        _last_set_lockmap = "pay_dun00"
+                    self._last_lockmap[bot_id] = _last_set_lockmap
                 _current_lockmap = signals.get("lockMap", _last_set_lockmap) or _last_set_lockmap
                 if map_name == _current_lockmap or _hunt_duration > 60:
                     _base_level = signals.get("level", 1) or 1
