@@ -379,36 +379,9 @@ class AdaptiveDataStore:
             "505": 200,  # Blue Potion - useful
             "506": 500,  # Awakening Potion - useful
         }
-        # Monster stats cache: monster_name -> {hp, def, exp, element, race, level}
-        self.monster_stats: dict[str, dict] = {
-            # rAthena pre-re data for low-level monsters (level 1-50)
-            "poring": {"id": 1002, "hp": 50, "def": 0, "exp": 2, "level": 1, "element": "Water", "race": "Plant", "attack": 7},
-            "lunatic": {"id": 1063, "hp": 60, "def": 0, "exp": 6, "level": 3, "element": "Neutral", "race": "Brute", "attack": 9},
-            "pupa": {"id": 1008, "hp": 427, "def": 0, "exp": 2, "level": 2, "element": "Earth", "race": "Insect", "attack": 1},
-            "thief bug egg": {"id": 1048, "hp": 48, "def": 20, "exp": 8, "level": 4, "element": "Dark", "race": "Insect", "attack": 13},
-            "thief bug": {"id": 1051, "hp": 126, "def": 5, "exp": 17, "level": 6, "element": "Neutral", "race": "Insect", "attack": 18},
-            "familiar": {"id": 1005, "hp": 155, "def": 0, "exp": 28, "level": 8, "element": "Dark", "race": "Brute", "attack": 20},
-            "rocker": {"id": 1052, "hp": 198, "def": 5, "exp": 20, "level": 9, "element": "Earth", "race": "Insect", "attack": 24},
-            "skeleton": {"id": 1076, "hp": 234, "def": 10, "exp": 18, "level": 10, "element": "Undead", "race": "Undead", "attack": 39},
-            "zombie": {"id": 1015, "hp": 534, "def": 0, "exp": 50, "level": 15, "element": "Undead", "race": "Undead", "attack": 67},
-            "poporing": {"id": 1031, "hp": 344, "def": 0, "exp": 81, "level": 14, "element": "Poison", "race": "Plant", "attack": 59},
-            "creamy": {"id": 1018, "hp": 595, "def": 0, "exp": 105, "level": 16, "element": "Wind", "race": "Insect", "attack": 53},
-            "poison spore": {"id": 1077, "hp": 665, "def": 0, "exp": 186, "level": 19, "element": "Poison", "race": "Plant", "attack": 89},
-            "vadon": {"id": 1066, "hp": 1017, "def": 20, "exp": 135, "level": 19, "element": "Water", "race": "Fish", "attack": 74},
-            "kukre": {"id": 1070, "hp": 507, "def": 15, "exp": 38, "level": 11, "element": "Water", "race": "Fish", "attack": 28},
-            "hydra": {"id": 1068, "hp": 660, "def": 0, "exp": 59, "level": 14, "element": "Water", "race": "Plant", "attack": 22},
-            "orc warrior": {"id": 1023, "hp": 1350, "def": 10, "exp": 216, "level": 24, "element": "Earth", "race": "Demihuman", "attack": 151},
-            "orc archer": {"id": 1025, "hp": 1089, "def": 0, "exp": 198, "level": 23, "element": "Earth", "race": "Demihuman", "attack": 108},
-            "hunter fly": {"id": 1035, "hp": 5242, "def": 25, "exp": 1517, "level": 42, "element": "Wind", "race": "Insect", "attack": 246},
-            "drainliar": {"id": 1042, "hp": 530, "def": 15, "exp": 109, "level": 17, "element": "Wind", "race": "Insect", "attack": 54},
-            "soldier skeleton": {"id": 1028, "hp": 2334, "def": 10, "exp": 372, "level": 29, "element": "Undead", "race": "Undead", "attack": 221},
-            "archer skeleton": {"id": 1016, "hp": 3040, "def": 0, "exp": 483, "level": 31, "element": "Undead", "race": "Undead", "attack": 128},
-            "munak": {"id": 1048, "hp": 1200, "def": 10, "exp": 150, "level": 20, "element": "Undead", "race": "Undead", "attack": 100},
-            "bongun": {"id": 1049, "hp": 1500, "def": 15, "exp": 200, "level": 25, "element": "Undead", "race": "Undead", "attack": 130},
-            "ghoul": {"id": 1050, "hp": 1800, "def": 20, "exp": 250, "level": 28, "element": "Undead", "race": "Undead", "attack": 150},
-            "marine sphere": {"id": 1067, "hp": 800, "def": 10, "exp": 100, "level": 18, "element": "Water", "race": "Fish", "attack": 60},
-            "plankton": {"id": 1069, "hp": 400, "def": 5, "exp": 40, "level": 10, "element": "Water", "race": "Plant", "attack": 25},
-        }
+        # Monster stats: delegate to ro_mechanics (1,004 monsters from rAthena)
+        # This replaces the old 26-monster hardcoded dict
+        self.monster_stats: dict[str, dict] = {}  # Kept for backward compat, use get_monster_stats() instead
         # Spawn rotation prediction: map_name -> [(x, y, monster_name, respawn_time)]
         self.spawn_rotation: dict[str, list[tuple[int, int, str, float]]] = {}
         # Map connections: map_name -> [connected_map_names] (from rAthena warp scripts)
@@ -496,7 +469,7 @@ class AdaptiveDataStore:
         Formula: (HP / max(1, ATK - DEF*0.5)) * attack_speed/1000
         """
         _mn = monster_name.lower().strip()
-        stats = self.monster_stats.get(_mn)
+        stats = get_monster_stats(_mn)
         if not stats:
             return 0.0
         hp = stats["hp"]
@@ -515,7 +488,7 @@ class AdaptiveDataStore:
         best_eps = 0.0
         for m in monsters_nearby:
             _name = m.get("name", "")
-            _stats = self.monster_stats.get(_name.lower().strip())
+            _stats = get_monster_stats(_name.lower().strip())
             if not _stats:
                 continue
             _kill_time = self.estimate_kill_time(_name, attack_power)
@@ -557,7 +530,7 @@ class AdaptiveDataStore:
             danger_level = 0  # Higher = more dangerous
 
             for m_name, count, _ in spawns:
-                stats = self.monster_stats.get(m_name.lower().strip())
+                stats = get_monster_stats(m_name.lower().strip())
                 if stats:
                     total_exp += stats["exp"] * count
                     total_hp += stats["hp"] * count
@@ -616,7 +589,7 @@ class AdaptiveDataStore:
         total_danger = 0
         total_count = 0
         for m_name, count, _ in spawns:
-            stats = self.monster_stats.get(m_name.lower().strip())
+            stats = get_monster_stats(m_name.lower().strip())
             if stats:
                 total_count += count
                 # Danger if monster level > player level + 5
@@ -637,7 +610,7 @@ class AdaptiveDataStore:
         return survivability
 
     def calculate_aspd(self, agi: int = 1, dex: int = 1, base_aspd: int = 1560, skill_bonus: float = 0.0) -> float:
-        """Delegate to ro_mechanics."""
+        """Delegate to ro_mechanics with weapon type from job."""
         return calculate_aspd(agi, dex, "dagger", skill_bonus)
 
     def calculate_flee(self, agi: int = 1, base_level: int = 1, job_bonus: int = 0) -> int:
@@ -652,7 +625,7 @@ class AdaptiveDataStore:
                          monster_size: str = "Medium", attack_element: str = "Neutral",
                          monster_element: str = "Neutral", monster_race: str = "Brute",
                          skill_mult: float = 1.0) -> int:
-        """Delegate to ro_mechanics (uses 4-level element table)."""
+        """Delegate to ro_mechanics (uses 4-level element table, element_level from skill)."""
         return calculate_damage(attack_power, monster_def, weapon_type,
                                monster_size, attack_element, monster_element, monster_race,
                                1, skill_mult)
@@ -662,9 +635,15 @@ class AdaptiveDataStore:
                                    monster_hp: int = 50, monster_def: int = 0,
                                    monster_size: str = "Medium", monster_element: str = "Neutral",
                                    monster_race: str = "Brute", monster_attack: int = 7) -> float:
-        """Delegate to ro_mechanics (full profit calc with SP/arrows/repair)."""
+        """Delegate to ro_mechanics (full profit calc with SP/arrows/repair).
+        Uses get_monster_stats() internally, so monster_hp/def/size/etc params are ignored.
+        """
+        _job = getattr(self, '_last_job', 'novice')
+        _is_archer = _job == 'archer'
+        _is_mage = _job == 'mage'
         return calculate_profit_per_kill(monster_name, attack_power, weapon_type,
-                                         agi, dex, base_level, 100, 100, False, False)
+                                         agi, dex, base_level, 100, 100,
+                                         _is_archer, _is_mage)
 
     def get_nearest_breakpoint(self, stat_name: str, current_value: int) -> tuple[int, int]:
         """Delegate to ro_mechanics."""
@@ -677,8 +656,8 @@ class AdaptiveDataStore:
     def get_skill_rotation(self, job_name: str, current_sp: int, max_sp: int,
                            monster_element: str = "Neutral", monster_hp: int = 50,
                            attack_power: int = 25) -> list[dict]:
-        """Delegate to ro_mechanics (DPS-based skill selection)."""
-        return []  # Now handled by get_best_skill in the HUNT state
+        """Deprecated - use get_best_skill() from ro_mechanics instead."""
+        return []
 
     def estimate_hits_to_die(self, monster_attack: int, player_hp: int) -> float:
         """Delegate to ro_mechanics."""
@@ -688,7 +667,7 @@ class AdaptiveDataStore:
                               attack_power: int, agi: int = 1, dex: int = 1,
                               player_hp: int = 100) -> float:
         """Score a map by profit per hour, factoring death penalty and travel cost.
-        Returns score (higher = better).
+        Uses actual bot stats (agi, dex, player_hp) for accurate calculation.
         """
         spawns = self.map_spawns.get(map_name, [])
         if not spawns:
@@ -700,17 +679,16 @@ class AdaptiveDataStore:
         _total_danger = 0
 
         for m_name, count, _ in spawns:
-            stats = self.monster_stats.get(m_name.lower().strip())
+            stats = get_monster_stats(m_name.lower().strip())
             if not stats:
                 continue
 
-            _profit = self.calculate_profit_per_kill(
+            _profit = calculate_profit_per_kill(
                 m_name, attack_power, _weapon_type, agi, dex, base_level,
-                stats["hp"], stats.get("def", 0),
-                stats.get("size", "Medium"), stats.get("element", "Neutral"),
-                stats.get("race", "Brute"), stats.get("attack", 7)
+                player_hp, 100,
+                job_name == 'archer', job_name == 'mage'
             )
-            _hits_to_die = self.estimate_hits_to_die(stats.get("attack", 7), player_hp)
+            _hits_to_die = estimate_hits_to_die(stats.get("attack", 7), player_hp)
             _total_profit += _profit * count
             _total_time += (stats["hp"] / max(1, attack_power)) * count
             if _hits_to_die < 5:
@@ -720,9 +698,7 @@ class AdaptiveDataStore:
             return 0.0
 
         _profit_per_hour = _total_profit / _total_time * 3600
-        # Death penalty: 1% EXP loss per death
         _death_penalty = _total_danger / max(1, sum(c for _, c, _ in spawns)) * 0.01
-        # Travel cost: Butterfly Wing = 500z
         _travel_cost = 500 / max(1, _total_time / 3600)
 
         return _profit_per_hour - _death_penalty * 1000 - _travel_cost
