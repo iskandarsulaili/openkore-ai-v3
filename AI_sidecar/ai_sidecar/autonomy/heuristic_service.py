@@ -321,8 +321,39 @@ class AdaptiveDataStore:
             "mage": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
             "acolyte": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
         }
+        # Loot value estimation: item_id -> estimated_vendor_price
+        # Only pick up items worth more than the potion cost to kill the monster
+        self.loot_values: dict[str, int] = {
+            "909": 10,   # Jellopy (Poring drop) - cheap, skip if weight > 50%
+            "938": 50,   # Memento - worth picking up
+            "703": 500,  # Hinalle - valuable herb
+            "704": 1000, # Aloe - valuable herb
+            "705": 2000, # Master's Herb - very valuable
+            "706": 5000, # Yggdrasil Seed - extremely valuable
+            "707": 10000,# Yggdrasil Berry - jackpot
+            "511": 100,  # Green Herb - common
+            "512": 50,   # Apple - cheap
+            "513": 30,   # Banana - cheap
+            "514": 20,   # Grape - cheap
+            "515": 10,   # Carrot - cheap
+            "516": 5,    # Potato - very cheap
+            "517": 3,    # Meat - very cheap
+            "518": 2,    # Honey - very cheap
+            "601": 1,    # Fly Wing - cheap but useful
+            "602": 1,    # Butterfly Wing - cheap but useful
+            "501": 10,   # Red Potion - useful
+            "502": 20,   # Orange Potion - useful
+            "503": 40,   # Yellow Potion - useful
+            "504": 100,  # White Potion - useful
+            "505": 200,  # Blue Potion - useful
+            "506": 500,  # Awakening Potion - useful
+        }
+        # Monster stats cache: monster_name -> {hp, def, exp, element, race}
+        self.monster_stats: dict[str, dict] = {}
+        # Spawn rotation prediction: map_name -> [(x, y, monster_name, respawn_time)]
+        self.spawn_rotation: dict[str, list[tuple[int, int, str, float]]] = {}
 
-    def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0) -> None:
+    def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0, monster_name: str = "") -> None:
         with self._lock:
             self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
             self.map_performance[map_name]["kills"] += 1
@@ -333,6 +364,13 @@ class AdaptiveDataStore:
                 self.spawn_heatmap.setdefault(map_name, {})
                 key = (x // 10 * 10, y // 10 * 10)  # Bucket to 10x10 cells
                 self.spawn_heatmap[map_name][key] = self.spawn_heatmap[map_name].get(key, 0) + 1
+                # Record spawn rotation (predict respawn time ~5s for most mobs)
+                self.spawn_rotation.setdefault(map_name, [])
+                _now = __import__("time").time()
+                # Remove old entries (>30s old)
+                self.spawn_rotation[map_name] = [(sx, sy, sm, st) for sx, sy, sm, st in self.spawn_rotation[map_name] if _now - st < 30]
+                # Add this kill as a predicted respawn point
+                self.spawn_rotation[map_name].append((x, y, monster_name, _now + 5.0))  # Predict respawn in ~5s
 
     def record_death(self, map_name: str, hp_at_death: float = 0) -> None:
         with self._lock:
@@ -1487,6 +1525,25 @@ class HeuristicService:
                 kind="command", command="set teleportAuto_portal 0",
                 confidence=0.95, domain="survival",
                 reason="Disable portal teleport",
+            ))
+            # Loot filtering: only pick up items worth the weight
+            # itemsTakeAuto 1 = pick up items automatically
+            # itemsTakeWeight 50 = only pick up if weight < 50%
+            actions.append(HeuristicAction(
+                kind="command", command="set itemsTakeAuto 1",
+                confidence=0.90, domain="economy",
+                reason="Auto-pickup items",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set itemsTakeWeight 50",
+                confidence=0.90, domain="economy",
+                reason="Only pick up if weight < 50%",
+            ))
+            # itemsGatherAuto 2 = pick up all items (we filter by weight)
+            actions.append(HeuristicAction(
+                kind="command", command="set itemsGatherAuto 2",
+                confidence=0.90, domain="economy",
+                reason="Gather all items (weight filter prevents junk)",
             ))
             if map_name not in _HUNT_TOWNS:
                 # On hunting map: check if we should return to town
