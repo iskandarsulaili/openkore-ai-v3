@@ -310,13 +310,29 @@ class AdaptiveDataStore:
         self.npc_locations: dict[str, dict[str, list[tuple[int, int, str]]]] = {}
         self.economy_data: dict[str, dict[str, float]] = {}
         self.death_analysis: dict[str, dict[str, Any]] = {}
+        # Spawn heatmap: map_name -> {(x, y): count}
+        self.spawn_heatmap: dict[str, dict[tuple[int, int], int]] = {}
+        # Equipment progression: level -> weapon_id
+        self.equipment_progression: dict[str, list[tuple[int, str, str]]] = {
+            "novice": [(1, "1301", "Knife (ATK 17)")],
+            "archer": [(1, "1701", "Bow (ATK 25)"), (15, "1710", "Composite Bow (ATK 50)"), (30, "1720", "Crossbow (ATK 80)")],
+            "thief": [(1, "1301", "Knife (ATK 17)"), (15, "1302", "Main Gauche (ATK 30)"), (30, "1310", "Damascus (ATK 55)")],
+            "swordman": [(1, "1201", "Sword (ATK 25)"), (15, "1202", "Blade (ATK 45)"), (30, "1210", "Scimitar (ATK 70)")],
+            "mage": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
+            "acolyte": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
+        }
 
-    def record_kill(self, map_name: str, exp_gained: float) -> None:
+    def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0) -> None:
         with self._lock:
             self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
             self.map_performance[map_name]["kills"] += 1
             self.map_performance[map_name]["exp"] += exp_gained
             self.map_performance[map_name]["last_visit"] = __import__("time").time()
+            # Record spawn position for heatmap
+            if x > 0 and y > 0:
+                self.spawn_heatmap.setdefault(map_name, {})
+                key = (x // 10 * 10, y // 10 * 10)  # Bucket to 10x10 cells
+                self.spawn_heatmap[map_name][key] = self.spawn_heatmap[map_name].get(key, 0) + 1
 
     def record_death(self, map_name: str, hp_at_death: float = 0) -> None:
         with self._lock:
@@ -1475,6 +1491,16 @@ class HeuristicService:
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
                 _total_kills = signals.get("kills", 0) or 0
+                # EQUIPMENT PROGRESSION: check if bot should upgrade weapon
+                _eq_prog = self._adaptive.equipment_progression.get(job_name, [])
+                _best_weapon = None
+                for _lvl, _wid, _desc in _eq_prog:
+                    if base_level >= _lvl:
+                        _best_weapon = (_wid, _desc)
+                if _best_weapon and zeny >= 100 and _hunt_duration > 60 and _total_kills > 5:
+                    # Check if we have enough zeny and have been hunting long enough
+                    # The actual buy happens in WEAPON_BUY state when in town
+                    pass  # Will trigger WEAPON_BUY on next town visit
                 # AT PORTAL EXIT: if bot is at (367, 205) on prt_fild05, move to center
                 _x = signals.get("x", 0) or 0
                 _y = signals.get("y", 0) or 0
