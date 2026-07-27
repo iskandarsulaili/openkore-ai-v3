@@ -1735,16 +1735,16 @@ class HeuristicService:
                     _class_lc = _job_name.lower()
                     if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
                         _atk_dist = 7  # bow range
-                        _atk_max = 12
+                        _atk_max = 20
                     elif _class_lc.startswith("mage") or _class_lc.startswith("wizard") or _class_lc.startswith("sorcerer"):
                         _atk_dist = 7  # spell range
-                        _atk_max = 12
+                        _atk_max = 20
                     elif _class_lc.startswith("thief") or _class_lc.startswith("rogue") or _class_lc.startswith("assassin"):
                         _atk_dist = 2  # dagger
-                        _atk_max = 7
+                        _atk_max = 20
                     elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
                         _atk_dist = 2  # mace
-                        _atk_max = 7
+                        _atk_max = 20
                     actions.append(HeuristicAction(
                         kind="command", command=f"set attackDistance {_atk_dist}",
                         confidence=0.95, domain="hunting",
