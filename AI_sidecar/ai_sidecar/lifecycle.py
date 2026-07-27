@@ -5907,6 +5907,14 @@ def create_runtime() -> RuntimeState:
 
 
 def start_fleet_sync_loop(runtime: RuntimeState) -> asyncio.Task[None]:
+    # Skip entirely if fleet central is disabled — no point polling a server that doesn't exist
+    if not settings.fleet_central_enabled:
+        logger.info("fleet_sync_loop_disabled: fleet_central_enabled=False")
+        async def _noop() -> None:
+            await asyncio.sleep(3600)  # Sleep forever, never wake
+        loop = asyncio.get_event_loop()
+        return loop.create_task(_noop())
+
     async def _fleet_sync_loop() -> None:
         while True:
             try:

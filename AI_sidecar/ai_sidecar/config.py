@@ -172,7 +172,7 @@ class SidecarSettings(BaseSettings):
     crewai_verbose: bool = False
     crewai_memory_enabled: bool = False
 
-    fleet_central_enabled: bool = True
+    fleet_central_enabled: bool = False
     fleet_central_base_url: str = "http://127.0.0.1:18090"
     fleet_request_timeout_seconds: float = Field(default=8.0, ge=0.1, le=30.0)
     fleet_outcome_backlog_limit: int = Field(default=2000, ge=100, le=200000)
