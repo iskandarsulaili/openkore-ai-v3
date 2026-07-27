@@ -4873,22 +4873,28 @@ sub _apply_bot_config {
 	# SKIP if sidecar has explicitly set these values via "set" command
 	my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
 	my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
-	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '3') unless $::config{'_sidecar_set_attackAuto'};
-	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '5') unless $::config{'_sidecar_set_attackAuto_maxDistance'};
-	$::config{'attackAuto_unstuck'} = _cfg('aiSidecar_attackAutoUnstuck', '1') unless $::config{'_sidecar_set_attackAuto_unstuck'};
-	$::config{'attackAuto_inLockOnly'} = _cfg('aiSidecar_attackAutoInLockOnly', '1') unless $::config{'_sidecar_set_attackAuto_inLockOnly'};
-	$::config{'attackAuto_followTarget'} = _cfg('aiSidecar_attackAutoFollowTarget', '1') unless $::config{'_sidecar_set_attackAuto_followTarget'};
-	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
-	$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0') unless $::config{'_sidecar_set_attackAuto_noMove'};
-	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '20');
-	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '20');
-	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
-	# attackDistanceAuto controlled by heuristic - not overridden here  # Disable auto-detection
+	# COMBAT CONFIG: All controlled by heuristic - bridge does NOT override
+	# attackAuto, attackAuto_maxDistance, attackAuto_inLockOnly, attackAuto_followTarget,
+	# attackAuto_noMove, attackAuto_onlyWhenSafe, attackAuto_unstuck, attackAuto_minDistance,
+	# attackMaxDistance, attackDistance, route_randomWalk, route_randomWalk_inLockOnly
+	# are ALL controlled by the heuristic service. Bridge does not touch them.
 	$::config{'teleportAuto'} = _cfg('aiSidecar_teleportAuto', '0') unless $::config{'_sidecar_set_teleportAuto'};
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
-	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '1') unless $::config{'_sidecar_set_route_randomWalk'};
-	$::config{'route_randomWalk_inLockOnly'} = _cfg('aiSidecar_routeRandomWalkInLockOnly', '1') unless $::config{'_sidecar_set_route_randomWalk_inLockOnly'};
+	$::config{'itemsTakeAuto'} = _cfg('aiSidecar_itemsTakeAuto', '2') unless $::config{'_sidecar_set_itemsTakeAuto'};
+	$::config{'itemsGatherAuto'} = _cfg('aiSidecar_itemsGatherAuto', '2') unless $::config{'_sidecar_set_itemsGatherAuto'};
+	$::config{'itemsMaxWeight'} = _cfg('aiSidecar_itemsMaxWeight', '89') unless $::config{'_sidecar_set_itemsMaxWeight'};
+	$::config{'sitAuto_hp'} = _cfg('aiSidecar_sitAutoHp', '0') unless $::config{'_sidecar_set_sitAuto_hp'};
+	$::config{'sitAuto_hp_max'} = _cfg('aiSidecar_sitAutoHpMax', '0') unless $::config{'_sidecar_set_sitAuto_hp_max'};
+	$::config{'sitAuto_sp'} = _cfg('aiSidecar_sitAutoSp', '0') unless $::config{'_sidecar_set_sitAuto_sp'};
+	$::config{'sitAuto_sp_max'} = _cfg('aiSidecar_sitAutoSpMax', '0') unless $::config{'_sidecar_set_sitAuto_sp_max'};
+	$::config{'sitAuto_idle'} = _cfg('aiSidecar_sitAutoIdle', '0') unless $::config{'_sidecar_set_sitAuto_idle'};
+	$::config{'sitAuto_look'} = _cfg('aiSidecar_sitAutoLook', '0') unless $::config{'_sidecar_set_sitAuto_look'};
+	$::config{'followAuto'} = _cfg('aiSidecar_followAuto', '0') unless $::config{'_sidecar_set_followAuto'};
+	$::config{'partyAuto'} = _cfg('aiSidecar_partyAuto', '1') unless $::config{'_sidecar_set_partyAuto'};
+	$::config{'partyAutoShare'} = _cfg('aiSidecar_partyAutoShare', '1') unless $::config{'_sidecar_set_partyAutoShare'};
+	$::config{'sellAuto'} = _cfg('aiSidecar_sellAuto', '0') unless $::config{'_sidecar_set_sellAuto'};
+
 	$::config{'itemsTakeAuto'} = _cfg('aiSidecar_itemsTakeAuto', '2') unless $::config{'_sidecar_set_itemsTakeAuto'};
 	$::config{'itemsGatherAuto'} = _cfg('aiSidecar_itemsGatherAuto', '2') unless $::config{'_sidecar_set_itemsGatherAuto'};
 	$::config{'itemsMaxWeight'} = _cfg('aiSidecar_itemsMaxWeight', '89') unless $::config{'_sidecar_set_itemsMaxWeight'};

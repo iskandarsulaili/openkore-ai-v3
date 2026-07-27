@@ -921,12 +921,12 @@ class HeuristicService:
                     reason="Lock to hunting map",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randX 200",
+                    kind="command", command="set lockMap_randX 0",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius X",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randY 200",
+                    kind="command", command="set lockMap_randY 0",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius Y",
                 ))
@@ -1504,10 +1504,10 @@ class HeuristicService:
                     _stat_builds = {
                         "novice": ["dex", "str", "agi", "vit"],
                         "archer": ["dex", "agi", "str", "vit"],
-                        "thief": ["agi", "dex", "str", "vit"],
-                        "acolyte": ["int", "dex", "vit", "str"],
-                        "swordman": ["str", "vit", "dex", "agi"],
-                        "mage": ["int", "dex", "vit", "str"],
+                        "thief": ["dex", "agi", "str", "vit"],
+                        "acolyte": ["dex", "int", "vit", "str"],
+                        "swordman": ["dex", "str", "vit", "agi"],
+                        "mage": ["dex", "int", "vit", "str"],
                     }
                     _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
                     _pts_to_alloc = _stat_points
@@ -1551,8 +1551,9 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # PARTY: Only handle party formation if in town (don't interrupt hunting)
-                if map_name in _HUNT_TOWNS:
+                # PARTY: Only handle party formation if level >= 20 (solo farm until then)
+                _base_level = signals.get("level", 1) or 1
+                if _base_level >= 20 and map_name in _HUNT_TOWNS:
                     _party_in = signals.get("in_party", False)
                     _party_members = signals.get("party_members", []) or []
                     _all_bots = signals.get("all_bots", []) or []
@@ -1678,9 +1679,14 @@ class HeuristicService:
                         reason="Enable aggressive auto-attack",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_followTarget 1",
+                        kind="command", command="set attackAuto_followTarget 0",
                         confidence=0.95, domain="hunting",
-                        reason="Chase monsters when they flee",
+                        reason="Dont chase - let monsters come to you",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_noMove 1",
+                        confidence=0.95, domain="hunting",
+                        reason="Stand still while attacking",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_inLockOnly 1",
@@ -1688,7 +1694,7 @@ class HeuristicService:
                         reason="Only attack monsters in lockMap area",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 2",
+                        kind="command", command="set route_randomWalk 0",
                         confidence=0.95, domain="hunting",
                         reason="Walk in small area, not random across map",
                     ))
