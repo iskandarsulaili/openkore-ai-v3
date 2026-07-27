@@ -1647,7 +1647,7 @@ class HeuristicService:
                 else:
                     # Class-specific attack distance
                     _atk_dist = 2  # melee default
-                    _atk_max = 7
+                    _atk_max = 20
                     _class_lc = _job_name.lower()
                     if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
                         _atk_dist = 7  # bow range
