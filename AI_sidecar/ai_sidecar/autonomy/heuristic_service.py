@@ -1339,16 +1339,16 @@ class HeuristicService:
             # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 2  # all classes: melee range
+            _atk_dist = 7  # all classes: walk up to 7 cells to attack
             _atk_max = 20
-            # route_randomWalk: 2 (walk across map to find monsters)
-            # "Calculating random route" is OpenKore's walking animation - it does NOT block attacking
-            # The bot WILL attack any monster it passes while walking
-            # With attackAuto_inLockOnly=1, the bot stays on the hunting map
+            # route_randomWalk: 0 (stand still - attack any monster within 7 cells)
+            # route_randomWalk != 0 causes "Calculating random route" which blocks attacking
+            # With route_randomWalk=0, the bot stands still and the AI state machine
+            # triggers attacks on any monster within attackDistance (7 cells)
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 2",
+                kind="command", command="set route_randomWalk 0",
                 confidence=0.95, domain="hunting",
-                reason="Walk to find monsters (attacks anything it passes)",
+                reason="Stand still - attack monsters within 7 cells",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
