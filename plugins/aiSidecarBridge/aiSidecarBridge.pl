@@ -1415,6 +1415,42 @@ sub _build_snapshot_payload {
 				}
 			}
 		}
+		# Leader invites missing members
+		# Leader detection: check if this bot is the first in all_bots
+		# all_bots comes from sidecar via snapshot cache
+		if (defined($char->{party})) {
+			# Check if we're the leader by reading all_bots from shared state
+			# For now, use a simple heuristic: the bot with the lowest username alphabetically is leader
+			my $_all_bots_str = $::aiSidecar_all_bots || '';
+			my @_all_bots = split(',', $_all_bots_str);
+			my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
+			if ($_is_leader) {
+				if (!defined($char->{party})) {
+					my $_ts = time();
+					my $_ok = eval { Commands::run("party create AI$_ts"); 1; };
+					debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+				}
+			my $_pu = $char->{party}{users} || {};
+			my $_mc = scalar(keys %$_pu) + 1;
+			if ($_mc < 3) {
+				my %_mn;
+				for my $_uid (keys %$_pu) {
+					my $_pm = $_pu->{$_uid};
+					my $_pn = eval { $_pm->{name} || $_pm->name() || '' } || '';
+					$_mn{$_pn} = 1 if $_pn;
+				}
+				$_mn{$char->{name}} = 1;
+				# Dynamic mapping: use all_bots from sidecar
+				for my $_pn (@::aiSidecar_all_bots_split) {
+					next if $_pn eq ($::config{username} || '');
+					my $_cn = $_pn;  # Use profile name as char name (fallback)
+					if (!$_mn{$_cn}) {
+						my $_ok = eval { Commands::run("party request $_cn"); 1; };
+						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+					}
+				}
+			}
+		}
 		$progression = eval {
 			my %p;
 			$p{job_id}       = $char->{jobID}     if defined $char->{jobID};
@@ -3843,6 +3879,7 @@ sub _rewrite_runtime_command {
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
+}
 sub _ai_already_auto_mode {
 	my $state = eval { AI::state() };
 	return 0 if $@;
