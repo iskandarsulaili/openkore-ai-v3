@@ -795,7 +795,7 @@ class HeuristicService:
             # COLD START: Minimal - keep weapon, go directly to hunt
             # Selling starting gear sells the weapon too (bot deals 0 damage)
             # Economy (sell loot, buy potions, buy weapon) handled by separate states
-            _cs_hunt_map = "prt_fild04"
+            _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"
             # Class-specific attack distance (critical for Archer with bow)
             _cs_job = signals.get("job_name", "novice") or "novice"
@@ -833,11 +833,12 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 1b. All bots move to town first (party request requires same map)
+            # 1b. Go directly to hunting map via portal (keep starting weapon!)
+            # Do NOT move to town first - that triggers sell logic which sells the weapon
             actions.append(HeuristicAction(
-                kind="command", command="move prontera",
-                confidence=0.99, domain="social",
-                reason="Cold start - all bots move to town for party formation",
+                kind="command", command=f"move {_cs_portal_coords}",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - go directly to hunting map via portal",
             ))
             # 1c. Party creation for leader - do this early so others can join
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
@@ -898,11 +899,11 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
                 ))
-            # 2. Go directly to hunting map via portal (keep starting weapon!)
+            # 2. Enable auto-attack on hunting map
             actions.append(HeuristicAction(
-                kind="command", command=f"move {_cs_portal_coords}",
-                confidence=0.99, domain="emergency",
-                reason=f"Cold start - go to {_cs_hunt_map} with starting gear",
+                kind="command", command="ai auto",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - enable auto-attack on hunting map",
             ))
             total_confidence = 0.99
             top_domain = "emergency"
