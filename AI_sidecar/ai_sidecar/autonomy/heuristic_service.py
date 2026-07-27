@@ -46,7 +46,7 @@ CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
     "archer":    [("dex", 50), ("agi", 30)],
     "acolyte":   [("int", 40), ("dex", 30)],
     "merchant":  [("str", 40), ("vit", 30), ("dex", 20)],
-    "thief":     [("agi", 40), ("dex", 30)],
+    "thief":     [("dex", 40), ("agi", 30)],
     "taekwon":   [("str", 30), ("agi", 30)],
     "gunslinger":[("dex", 50), ("agi", 30)],
     "ninja":     [("int", 40), ("dex", 30)],
@@ -1783,6 +1783,19 @@ class HeuristicService:
                     kind="command", command="ai auto",
                     confidence=0.95, domain="hunting",
                     reason="On hunting map - enable auto-attack",
+                ))
+                total_confidence = 0.95
+                top_domain = "hunting"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                # GUARANTEED FALLTHROUGH: If no condition matched, keep attacking
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.95, domain="hunting",
+                    reason="Fallthrough - continuous auto-attack on hunting map",
                 ))
                 total_confidence = 0.95
                 top_domain = "hunting"
