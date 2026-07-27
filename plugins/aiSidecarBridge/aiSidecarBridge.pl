@@ -4878,6 +4878,7 @@ sub _apply_bot_config {
 	# attackAuto_noMove, attackAuto_onlyWhenSafe, attackAuto_unstuck, attackAuto_minDistance,
 	# attackMaxDistance, attackDistance, route_randomWalk, route_randomWalk_inLockOnly
 	# are ALL controlled by the heuristic service. Bridge does not touch them.
+	$::config{'attackAuto'} = _cfg('aiSidecar_attackAuto', '3') unless $::config{'_sidecar_set_attackAuto'};
 	$::config{'teleportAuto'} = _cfg('aiSidecar_teleportAuto', '0') unless $::config{'_sidecar_set_teleportAuto'};
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
