@@ -480,7 +480,9 @@ sub on_mainLoop_post {
             if ($_sm_map =~ /^[a-z]+_fild/) {
                 # On hunting map: ensure lockMap matches current map
                 # BUT respect heuristic's lockMap if it was explicitly set via sidecar
-                if (!defined $::config{lockMap} || ($::config{lockMap} ne $_sm_map && !$::config{'_sidecar_set_lockMap'} && !$::config{'_sidecar_set_lockmap'})) {
+                # Also respect if the bot is en route to a different map (lockMap != current map)
+                my $_heuristic_lockmap = $::config{'_sidecar_set_lockMap'} || $::config{'_sidecar_set_lockmap'} || '';
+                if (!defined $::config{lockMap} || ($::config{lockMap} ne $_sm_map && !$_heuristic_lockmap)) {
                     $::config{lockMap} = $_sm_map;
                 }
                 # PORTAL EXIT REFLEX: if bot is at portal exit, move to center
