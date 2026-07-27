@@ -509,8 +509,9 @@ sub on_mainLoop_post {
                     $::config{lockMap} = $_hunt_map;
                 }
                 # In town: disable random walk (prevents "move prontera" spam from OpenKore's AI)
+                # BUT only if the heuristic hasn't explicitly set it (sidecar_set flag)
                 if ($_sm_map eq 'prontera') {
-                    if (defined $::config{route_randomWalk} && $::config{route_randomWalk} != 0) {
+                    if (!defined $::config{'_sidecar_set_route_randomWalk'} && defined $::config{route_randomWalk} && $::config{route_randomWalk} != 0) {
                         $::config{route_randomWalk} = 0;
                         warning "[town] disabling random walk in town to prevent 'move prontera' spam\n", 'aiSidecarBridge', 1;
                     }
@@ -3999,11 +4000,11 @@ sub _bot_id {
 	}
 
 	my $master = _normalize_identity_part($config{master}, 'unknown_master');
-	my $identity_override = _normalize_identity_part(_cfg('aiSidecar_botIdentity', ''), '');
-	my $char_name = _normalize_identity_part($char && $char->{name} ? $char->{name} : '', '');
+	# ALWAYS use username (profile name) as identity - matches heuristic bot_id format
+	# Using char_name causes bot_id mismatch: bridge polls with master:char_name
+	# but heuristic enqueues actions for master:profile
 	my $username = _normalize_identity_part($config{username}, 'unknown_user');
-	my $identity = $identity_override ne '' ? $identity_override : ($char_name ne '' ? $char_name : $username);
-	return "$master:$identity";
+	return "$master:$username";
 }
 
 sub _normalize_identity_part {
