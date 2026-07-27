@@ -4926,6 +4926,7 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	}
 }
 
+}
 1;
 sub _discover_shops {
 	my $now = _now_ms();
