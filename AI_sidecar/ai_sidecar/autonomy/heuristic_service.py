@@ -926,12 +926,12 @@ class HeuristicService:
                     reason="Lock to hunting map",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randX 50",
+                    kind="command", command="set lockMap_randX 30",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius X",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randY 50",
+                    kind="command", command="set lockMap_randY 30",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius Y",
                 ))
@@ -1466,16 +1466,16 @@ class HeuristicService:
                 # Different classes favor different maps based on mob elements and layout
                 _base_level = signals.get("level", 1) or 1
                 _progression_maps = [
-                    (99, "gefen_fild01"),     # 90-99: Geffen field
-                    (85, "gef_fild02"),       # 80-85: Geffen dungeon
-                    (70, "mjolnir_04"),       # 70-80: Mjolnir field
-                    (60, "pay_fild01"),       # 60-70: Payon field
-                    (50, "gef_fild01"),       # 50-60: Geffen field
-                    (40, "prt_fild08"),       # 40-50: Prontera field
-                    (30, "prt_fild07"),       # 30-40: Prontera field
-                    (20, "prt_fild06"),       # 20-30: Prontera field
-                    (10, "prt_fild05"),       # 10-20: Prontera field (porings, lunatics)
-                    (1, "prt_fild05"),        # 1-10: Prontera field (start map, porings)
+                    (99, "gefen_fild01"),
+                    (85, "gef_fild02"),
+                    (70, "mjolnir_04"),
+                    (60, "pay_fild01"),
+                    (50, "gef_fild01"),
+                    (40, "prt_fild08"),
+                    (30, "pay_fild03"),
+                    (20, "pay_fild01"),       # 20+: Porings/Poporings/Lunatics — better melee density
+                    (10, "prt_fild05"),       # 10-20: Porings, Lunatics, Fabres
+                    (1, "prt_fild04"),        # 1-10: Starter field (dense spawns for novices)
                 ]
                 _next_map = "prt_fild05"
                 for _lvl, _map in _progression_maps:
@@ -1667,12 +1667,23 @@ class HeuristicService:
                     elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
                         _atk_dist = 2  # mace
                         _atk_max = 20
-                    # Class-specific route_randomWalk: melee=2 (walk to find), ranged=0 (stand and shoot)
-                    _rw_val = 0 if _atk_dist >= 7 else 2
+                    # route_randomWalk: 0 for ALL classes (stand still, attack what comes)
+                    # route_randomWalk causes endless "Calculating random route" without attacking.
+                    # Passive mobs (porings, lunatics) walk around naturally and enter attack range
                     actions.append(HeuristicAction(
-                        kind="command", command=f"set route_randomWalk {_rw_val}",
+                        kind="command", command="set route_randomWalk 0",
                         confidence=0.95, domain="hunting",
-                        reason=f"Class-appropriate walk: {_rw_val} for {_job_name}",
+                        reason="Stand still - monsters come to you",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randX 30",
+                        confidence=0.95, domain="hunting",
+                        reason="Small random walk radius",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randY 30",
+                        confidence=0.95, domain="hunting",
+                        reason="Small random walk radius",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"set attackDistance {_atk_dist}",
@@ -1693,30 +1704,18 @@ class HeuristicService:
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_followTarget 1",
                         confidence=0.95, domain="hunting",
-                        reason="Dont chase - let monsters come to you",
+                        reason="Chase fleeing monsters",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_noMove 0",
                         confidence=0.95, domain="hunting",
-                        reason="Stand still while attacking",
+                        reason="Allow movement during combat",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_inLockOnly 1",
                         confidence=0.95, domain="hunting",
                         reason="Only attack monsters in lockMap area",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 2",
-                        confidence=0.95, domain="hunting",
-                        reason="Walk to find monsters (melee needs to move)",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prt_fild05",
-                        confidence=0.95, domain="hunting",
-                        reason="Lock to hunting map",
-                    ))
-
-                    # Monster control: only attack porings, lunatics, fabres
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_onlyWhenSafe 0",
                         confidence=0.95, domain="hunting",
@@ -1728,9 +1727,9 @@ class HeuristicService:
                         reason="Don't flee to target",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_startDistance 5",
+                        kind="command", command="set attackAuto_startDistance 1",
                         confidence=0.95, domain="hunting",
-                        reason="Start attacking from 5 cells away",
+                        reason="Start attacking from 1 cell away (immediate)",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto_keepDistance 1",
@@ -1764,7 +1763,7 @@ class HeuristicService:
                         reason="Disable portal teleport",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_maxDistance 10",
+                        kind="command", command="set attackAuto_maxDistance 20",
                         confidence=0.95, domain="hunting",
                     reason="Keep attacking even if target moves",
                 ))

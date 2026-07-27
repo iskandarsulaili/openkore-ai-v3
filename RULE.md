@@ -61,7 +61,7 @@ The Pro RO agent and health monitor previously set attackAuto=2 (passive) which 
 The sidecar (`AI_sidecar/`) handles:
 - **Config changes**: Detect overweight → queue `set sellAuto 1` action
 - **Routing**: Detect stuck in town → queue `move <hunting_map>` via portal coords
-- **Job change**: Detect job_level ≥ 10 for Novice → route to job change NPC
+- **Job change**: Detect job_level >= 10 for Novice → route to job change NPC
 - **Healing**: Detect low HP → queue potion use or sit
 - **Skill/stat allocation**: Detect unspent points → queue stat_add/skills add
 - **Economy**: Detect full inventory → queue sell/restock actions
@@ -77,18 +77,21 @@ Fresh spawns follow: set lockMap → sell starting gear → buy 10 red potions �
 Stat points are allocated by tracking level changes:
 - Heuristic tracks `_last_level[bot_id]` per bot
 - On level-up detected: allocate 5 stat points in class-appropriate order
+- **DEX first for ALL classes** (hit rate is the #1 bottleneck at low levels)
 - Archer: DEX > AGI > STR > VIT
-- Thief: AGI > DEX > STR > VIT
-- Acolyte: INT > DEX > VIT > STR
+- Thief: DEX > AGI > STR > VIT
+- Acolyte: DEX > INT > VIT > STR
+- Swordman: DEX > STR > VIT > AGI
+- Mage: DEX > INT > VIT > STR
 - NO dependency on `stat_points` signal (which may not propagate)
 
 ### 7. Map Progression Ladder
 Bots progress through maps based on level:
 ```
-Level 1-10:  prt_fild04 (starter field)
-Level 10-20: prt_fild05 (Porings, Lunatics)
-Level 20-30: prt_fild06 
-Level 30-40: prt_fild07
+Level 1-10:  prt_fild04 (starter field — porings, lunatics, fabres, picky)
+Level 10-20: prt_fild05 (Porings, Lunatics, Fabres)
+Level 20-30: pay_fild01 (Porings, Poporings, Lunatics — better density for melee)
+Level 30-40: pay_fild03
 Level 40-50: prt_fild08
 Level 50-60: gef_fild01 (Geffen field)
 Level 60-70: pay_fild01 (Payon field)
@@ -96,6 +99,7 @@ Level 70-80: mjolnir_04
 Level 80-85: gef_fild02 (Geffen dungeon)
 Level 85-99: gefen_fild01 (endgame field)
 ```
+**Map choice rule**: Melee classes favor flat maps with high passive-mob spawn density (porings, lunatics, fabres). Ranged classes can use larger maps since they attack from distance.
 
 ### 8. Economy Loop
 - sellAuto enabled with maxWeight=30% (triggers early)
@@ -116,7 +120,6 @@ Only ONE system decides where the bot goes: the heuristic service.
 - Bridge enforces lockMap consistency
 - Pro RO agent may RECOMMEND routes but must NOT override lockMap via direct commands
 - No bridge reflex may change lockMap
-
 
 ## Config Management
 - **All config adjustments must go through the AI system (heuristic / Pro RO agent)** — never manually edit .bot_profiles/*/control/config.txt
