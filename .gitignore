@@ -98,4 +98,11 @@ Thumbs.db
 *.log.gz
 
 # Graphify
-graphify-out/
+graphify-out/.codegraph/
+AI_sidecar/ai_sidecar/economy/price_tracker.backup_*
+AI_sidecar/experience.db
+_fix_*
+data/sidecar_experience.sqlite
+fixes_summary.md
+plugins/aiSidecarBridge/aiSidecarBridge.pl.bak*
+src/test/data/create_if_missing_child.txt
