@@ -19,14 +19,10 @@ class MicroMacroGenerator:
         lines: list[str] = [
             f"log reflex executing fallback macro for {rule.rule_id}",
         ]
-        # NOTE: Do NOT add the command to the macro body. OpenKore's macro
-        # plugin doesn't support "use <item>" (there's no such registered
-        # command) and "use_skill <skill>" directly. The bridge processes
-        # all sidecar actions including item/skill use. The macro just
-        # resets AI state so the bridge can take over.
+        # Include the actual command in the macro body so the fallback
+        # actually does something useful (e.g. "sit", "use red_potion")
         if command:
-            # Strip to prevent empty lines, but don't add commands to macro
-            pass
+            lines.append(command)
         lines.append("stop")
         return MacroRoutine(name=name, lines=lines)
 

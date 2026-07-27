@@ -85,6 +85,17 @@ class ReflexRuleEngine:
                 self._breakers.ensure_bot(bot_id=bot_id)
                 return
 
+            # First, check if we have YAML-loaded default rules to copy from
+            default_rules = self._rules_by_bot.get("default")
+            if default_rules:
+                # Copy YAML-loaded defaults for this bot
+                self._rules_by_bot[bot_id] = dict(default_rules)
+                self._descriptors_by_bot[bot_id] = self._build_descriptors(list(default_rules.values()))
+                self._recent_triggers.setdefault(bot_id, deque(maxlen=self._history_per_bot))
+                self._breakers.ensure_bot(bot_id=bot_id)
+                return
+
+            # Fall back to hardcoded Python defaults if no YAML rules loaded
             defaults = self._default_rules()
             self._rules_by_bot[bot_id] = {item.rule_id: item for item in defaults}
             self._descriptors_by_bot[bot_id] = self._build_descriptors(defaults)
@@ -743,7 +754,7 @@ class ReflexRuleEngine:
                 guards=[],
                 action_template=ReflexActionTemplate(
                     kind="command",
-                    command="ai manual",
+                    command="sit",
                     priority_tier="reflex",
                     conflict_key="survival.escape",
                     metadata={"category": "lethal_escape"},
