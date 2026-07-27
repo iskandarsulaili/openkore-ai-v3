@@ -3604,7 +3604,7 @@ sub _rewrite_runtime_command {
 	    my $_lm_target = $1;
 	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
 	    $::config{'lockMap'} = $_lm_target;
-	    # $::config{'attackAuto'} = 3;
+	    $::config{'_sidecar_set_lockMap'} = 1;
 	    $::config{'attackAuto_inLockOnly'} = 1;
 	    return ('', 'lockmap_set');
 	}
