@@ -479,12 +479,13 @@ sub on_mainLoop_post {
             my $_hunt_map = _cfg('aiSidecar_huntingMap', 'prt_fild05') || 'prt_fild05';
             if ($_sm_map =~ /^[a-z]+_fild/) {
                 # On hunting map: ensure lockMap matches current map
-                if (!defined $::config{lockMap} || $::config{lockMap} ne $_sm_map) {
+                # BUT respect heuristic's lockMap if it was explicitly set via sidecar
+                if (!defined $::config{lockMap} || ($::config{lockMap} ne $_sm_map && !defined $::config{'_sidecar_set_lockmap'})) {
                     $::config{lockMap} = $_sm_map;
                 }
-                # PORTAL EXIT REFLEX: if bot is on prt_fild05 at portal exit, move to center
-                # Uses state tracking so it fires even if position is not immediately available
-                if ($_sm_map eq 'prt_fild05') {
+                # PORTAL EXIT REFLEX: if bot is at portal exit, move to center
+                # Works for any map (field or dungeon)
+                if ($_sm_map eq 'prt_fild05' || $_sm_map eq 'pay_dun00' || $_sm_map eq 'gef_dun00') {
                     state $_portal_exit_last_move_ms = 0;
                     # Get position from any available source
                     my $_px = 0; my $_py = 0;
