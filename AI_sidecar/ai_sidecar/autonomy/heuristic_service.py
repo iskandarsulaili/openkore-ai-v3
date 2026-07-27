@@ -880,9 +880,9 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason="Buy 200 arrows for Archer (need ammo to deal damage)",
                 ))
-            # 1d. Buy weapon if starting zeny is enough (prevents 0 DMG from sold weapon)
+            # 1d. Buy weapon if any zeny available (prevents 0 DMG from sold weapon)
             _cs_zeny = signals.get("zeny", 0) or 0
-            if _cs_zeny >= 500:
+            if _cs_zeny >= 50:
                 _cs_weapon_id = "1701"  # Default: Bow
                 if "thief" in _cs_job or "assassin" in _cs_job:
                     _cs_weapon_id = "1301"  # Knife
