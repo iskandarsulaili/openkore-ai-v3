@@ -1339,16 +1339,17 @@ class HeuristicService:
             # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 7  # all classes: walk up to 7 cells to attack
+            _atk_dist = 2  # all classes: melee range (fists for novices)
             _atk_max = 20
-            # route_randomWalk: 0 (stand still - attack any monster within 7 cells)
-            # route_randomWalk != 0 causes "Calculating random route" which blocks the AI
-            # state machine from processing attacks. With route_randomWalk=0, the bot stands
-            # still and the AI triggers attacks on any monster within attackDistance.
+            # route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
+            # route_randomWalk=0: stand still (only ranged can attack)
+            # route_randomWalk=2: walk across ENTIRE map (ignores lockMap)
+            # route_randomWalk=1: walk within lockMap_randX/Y area (100x100)
+            # While walking, the bot passes monsters and the AI triggers attacks
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 0",
+                kind="command", command="set route_randomWalk 1",
                 confidence=0.95, domain="hunting",
-                reason="Stand still - attack monsters within 7 cells",
+                reason="Walk within 100x100 area to find monsters",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
