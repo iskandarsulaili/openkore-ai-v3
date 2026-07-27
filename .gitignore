@@ -106,3 +106,4 @@ data/sidecar_experience.sqlite
 fixes_summary.md
 plugins/aiSidecarBridge/aiSidecarBridge.pl.bak*
 src/test/data/create_if_missing_child.txt
+AI_sidecar/graphify-out/
