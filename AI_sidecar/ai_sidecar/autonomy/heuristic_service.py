@@ -863,13 +863,9 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Disable deadly teleport - prevents running from non-threats",  
             ))
-            # 1c. Sell starting gear to get zeny (fresh characters have 0 zeny)
-            # Starting gear sells for ~50-100z, enough to buy weapon
-            actions.append(HeuristicAction(
-                kind="command", command="sellAuto 1",
-                confidence=0.99, domain="economy",
-                reason="Cold start - enable sell to get zeny for weapon",
-            ))
+            # 1c. Go directly to hunting map via portal (keep starting weapon!)
+            # Do NOT sell starting gear - that sells the weapon too (bot deals 0 damage)
+            # Economy (sell loot, buy potions) handled by DEATH/TOWN_STUCK states
             # 1d. Buy arrows for ALL bots (harmless for non-archers, critical for archers)
             _cs_zeny = signals.get("zeny", 0) or 0
             if _cs_zeny >= 200:
@@ -1347,14 +1343,15 @@ class HeuristicService:
             _class_lc = _job_name.lower()
             _atk_dist = 7  # all classes: walk up to 7 cells to attack
             _atk_max = 20
-            # route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
-            # route_randomWalk=2 walks across ENTIRE map (ignores lockMap bounds)
-            # route_randomWalk=1 walks within lockMap_randX/Y area (100x100)
-            # The bot WILL attack any monster it passes while walking
+            # route_randomWalk: 0 (stand still - attack any monster within 7 cells)
+            # route_randomWalk != 0 causes "Calculating random route" which blocks the AI
+            # state machine from processing attacks. With route_randomWalk=0, the bot stands
+            # still and the AI triggers attacks on any monster within attackDistance.
+            # Passive mobs (porings, lunatics) walk around randomly and enter range.
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 1",
+                kind="command", command="set route_randomWalk 0",
                 confidence=0.95, domain="hunting",
-                reason="Walk within 100x100 area to find monsters",
+                reason="Stand still - attack monsters within 7 cells",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
@@ -1425,6 +1422,12 @@ class HeuristicService:
                 kind="command", command="set attackAuto_unstuck 1",
                 confidence=0.95, domain="hunting",
                 reason="Don't give up mid-fight",
+            ))
+            # Ensure ai auto is set (COLD_START sets it but HUNT must re-set)
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.95, domain="hunting",
+                reason="Ensure auto-attack mode is active",
             ))
             # Teleport config: disable all teleport triggers
             actions.append(HeuristicAction(
