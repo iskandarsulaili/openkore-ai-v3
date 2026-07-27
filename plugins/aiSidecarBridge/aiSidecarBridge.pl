@@ -3935,9 +3935,7 @@ sub _rewrite_runtime_command {
 
 	# Handle 'ai auto'
 	if ($normalized eq 'ai auto') {
-		if (_ai_already_auto_mode()) {
-			return ('', 'ai_auto_already');
-		}
+		# Always pass through - re-triggers AI state machine for continuous combat
 		return ($trimmed, 'ai_auto_ok');
 	}
 
