@@ -39,7 +39,7 @@ rules:
     guards: []
     action:
       kind: command
-      command: "ai manual"
+      command: "sit"
       priority_tier: reflex
       conflict_key: ""
     fallback_macro: reflex_teleport_escape
@@ -75,7 +75,7 @@ rules:
     guards: []
     action:
       kind: command
-      command: "ai manual"
+      command: "sit"
       priority_tier: reflex
       conflict_key: ""
     fallback_macro: reflex_flee_overwhelmed
