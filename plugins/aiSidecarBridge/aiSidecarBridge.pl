@@ -1434,6 +1434,8 @@ sub _build_snapshot_payload {
 			$::aiSidecar_all_bots = join(',', @_profiles);
 			debug "bridge_all_bots: discovered " . scalar(@_profiles) . " profiles: $::aiSidecar_all_bots\n", 'aiSidecarBridge', 1;
 		}
+		my $_leader_lv = defined($char) ? ($char->{lv} || $char->{level} || 0) : 0;
+		if ($_leader_lv >= 40) {
 		# ── Party join auto-accept: non-leader bots accept invites ──
 		# Non-leader: set partyAuto=2 to auto-accept invites
 		# Leader is determined by all_bots order from sidecar
@@ -1441,9 +1443,6 @@ sub _build_snapshot_payload {
 			$::config{partyAuto} = 2;
 		}
 		# ── Direct party invite: leader invites missing members ──
-		# First, check if leader needs to create a party
-		# Only create party at level 40+ (solo before 40 is faster)
-		my $_leader_lv = defined($char) ? ($char->{lv} || $char->{level} || 0) : 0;
 		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && $_leader_lv >= 40) {
 			if (!defined($char->{party})) {
 				my $_ts = time();
@@ -1508,6 +1507,7 @@ sub _build_snapshot_payload {
 					}
 				}
 			}
+		}
 		}
 		$progression = eval {
 			my %p;
