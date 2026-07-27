@@ -797,21 +797,16 @@ class HeuristicService:
             # Economy (sell loot, buy potions, buy weapon) handled by separate states
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"
-            # Class-specific attack distance (critical for Archer with bow)
+            # Class-specific attack distance
             _cs_job = signals.get("job_name", "novice") or "novice"
-            if _cs_job.lower().startswith("archer") or _cs_job.lower().startswith("hunter"):
-                _cs_atk_dist = 7
-            elif _cs_job.lower().startswith("mage") or _cs_job.lower().startswith("wizard"):
-                _cs_atk_dist = 7
-            else:
-                _cs_atk_dist = 2
+            _cs_atk_dist = 7  # all classes: walk up to 7 cells to attack
             actions.append(HeuristicAction(
                 kind="command", command=f"set attackDistance {_cs_atk_dist}",
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
-            # Set route_randomWalk: 0 for ranged (stand and shoot), 1 for melee (walk to find)
-            _cs_rw = 0 if _cs_atk_dist >= 7 else 1
+            # Set route_randomWalk: 0 for ranged (stand and shoot), 2 for melee (walk to find)
+            _cs_rw = 0 if _cs_atk_dist >= 7 else 2
             actions.append(HeuristicAction(
                 kind="command", command=f"set route_randomWalk {_cs_rw}",
                 confidence=0.99, domain="hunting",
@@ -1351,22 +1346,15 @@ class HeuristicService:
             # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 2  # melee default
+            _atk_dist = 7  # all classes: walk up to 7 cells to attack
             _atk_max = 20
-            if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
-                _atk_dist = 7
-            elif _class_lc.startswith("mage") or _class_lc.startswith("wizard") or _class_lc.startswith("sorcerer"):
-                _atk_dist = 7
-            elif _class_lc.startswith("thief") or _class_lc.startswith("rogue") or _class_lc.startswith("assassin"):
-                _atk_dist = 2
-            elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
-                _atk_dist = 2
-            # route_randomWalk: 0 for ranged (stand and shoot), 1 for melee (walk to find)
-            _rw_val = 0 if _atk_dist >= 7 else 1
+            # route_randomWalk: 0 for ALL classes (stand still, attack what comes within range)
+            # With attackDistance 7, the bot will walk to any monster within 7 cells
+            # This prevents endless "Calculating random route" which blocks attacking
             actions.append(HeuristicAction(
-                kind="command", command=f"set route_randomWalk {_rw_val}",
+                kind="command", command="set route_randomWalk 0",
                 confidence=0.95, domain="hunting",
-                reason=f"route_randomWalk {_rw_val} for {_job_name} (ranged=0, melee=1)",
+                reason="Stand still - walk to monsters within 7 cells",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
