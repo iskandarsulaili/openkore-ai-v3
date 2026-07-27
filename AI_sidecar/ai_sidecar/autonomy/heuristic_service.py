@@ -1762,7 +1762,7 @@ class HeuristicService:
                         reason="Enable aggressive auto-attack",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_followTarget 0",
+                        kind="command", command="set attackAuto_followTarget 1",
                         confidence=0.95, domain="hunting",
                         reason="Chase monsters when they flee",
                     ))
