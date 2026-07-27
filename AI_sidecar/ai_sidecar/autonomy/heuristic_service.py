@@ -792,9 +792,8 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # COLD START: Minimal - keep weapon, go directly to hunt
-            # Selling starting gear sells the weapon too (bot deals 0 damage)
-            # Economy (sell loot, buy potions, buy weapon) handled by separate states
+            # COLD START: Go to town first to buy weapon/arrows/potions, then hunt
+            # Buy commands only work in town (NPC shops) - on hunting map they silently fail
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"
             # Class-specific attack distance
@@ -805,12 +804,12 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
-            # Set route_randomWalk: 1 (walk within lockMap_randX/Y bounds)
-            _cs_rw = 1
+            # Set route_randomWalk: 0 (stand still - attack within 7 cells)
+            _cs_rw = 0
             actions.append(HeuristicAction(
                 kind="command", command=f"set route_randomWalk {_cs_rw}",
                 confidence=0.99, domain="hunting",
-                reason=f"Cold start - route_randomWalk 1 (walk within bounds)",
+                reason=f"Cold start - route_randomWalk 0 (stand still, attack within range)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
@@ -828,13 +827,8 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set hunting map lock",
             ))
-            # 1b. Go directly to hunting map via portal (keep starting weapon!)
-            # Do NOT move to town first - that triggers sell logic which sells the weapon
-            actions.append(HeuristicAction(
-                kind="command", command=f"move {_cs_portal_coords}",
-                confidence=0.99, domain="emergency",
-                reason="Cold start - go directly to hunting map via portal",
-            ))
+            # 1b. Stay in town first to buy weapon/arrows/potions (buy only works at NPC shops)
+            # Then go to hunting map via portal
             # 1c. Party creation for leader - do this early so others can join
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # Dynamic leader detection: first bot alphabetically is leader
@@ -869,16 +863,22 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Disable deadly teleport - prevents running from non-threats",  
             ))
-            # (teleportAuto_idle/search/portal/minWeight set in HUNT state)
-            # 1c. Buy arrows for Archer class (can't deal damage without them)
-            if _cs_job.lower().startswith("archer") or _cs_job.lower().startswith("hunter"):
+            # 1c. Sell starting gear to get zeny (fresh characters have 0 zeny)
+            # Starting gear sells for ~50-100z, enough to buy weapon
+            actions.append(HeuristicAction(
+                kind="command", command="sellAuto 1",
+                confidence=0.99, domain="economy",
+                reason="Cold start - enable sell to get zeny for weapon",
+            ))
+            # 1d. Buy arrows for ALL bots (harmless for non-archers, critical for archers)
+            _cs_zeny = signals.get("zeny", 0) or 0
+            if _cs_zeny >= 200:
                 actions.append(HeuristicAction(
                     kind="command", command="buy 1750 200",
                     confidence=0.99, domain="economy",
-                    reason="Buy 200 arrows for Archer (need ammo to deal damage)",
+                    reason="Buy 200 arrows (harmless for non-archers, critical for archers)",
                 ))
-            # 1d. Buy weapon if any zeny available (prevents 0 DMG from sold weapon)
-            _cs_zeny = signals.get("zeny", 0) or 0
+            # 1e. Buy weapon if any zeny available (prevents 0 DMG from sold weapon)
             if _cs_zeny >= 50:
                 # Novices can equip Knife (1301) - 50z, works for all classes
                 _cs_weapon_id = "1301"  # Knife - cheapest weapon, all classes can equip
@@ -887,6 +887,12 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
                 ))
+            # 1f. Go to hunting map via portal (after buying in town)
+            actions.append(HeuristicAction(
+                kind="command", command=f"move {_cs_portal_coords}",
+                confidence=0.99, domain="emergency",
+                reason="Cold start - go to hunting map via portal",
+            ))
             # 2. Enable auto-attack on hunting map
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
@@ -1466,14 +1472,7 @@ class HeuristicService:
                         confidence=0.99, domain="hunting",
                         reason="At portal exit - move to center of hunting map",
                     ))
-                    total_confidence = 0.99
-                    top_domain = "hunting"
-                    assessment = HeuristicAssessment(
-                        horizon=horizon, actions=actions, confidence=total_confidence,
-                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                    )
-                    self._last_assessment[bot_id] = assessment
-                    return assessment
+                    # Don't return early - continue to set combat config below
                 # JUST WARPED: if just arrived, sit to regen first
                 if _hunt_duration < 15:
                     if _hp_ratio < 0.5:
@@ -1482,14 +1481,7 @@ class HeuristicService:
                             confidence=0.99, domain="survival",
                             reason=f"HP={_hp_ratio:.0%} just warped - sit to regen before hunting",
                         ))
-                        total_confidence = 0.99
-                        top_domain = "survival"
-                        assessment = HeuristicAssessment(
-                            horizon=horizon, actions=actions, confidence=total_confidence,
-                            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                        )
-                        self._last_assessment[bot_id] = assessment
-                        return assessment
+                        # Don't return early - continue to set combat config below
                     # Don't return to town within first 30s - starting gear triggers weight check
                     if _hunt_duration < 30:
                         actions.append(HeuristicAction(
@@ -1497,14 +1489,7 @@ class HeuristicService:
                             confidence=0.95, domain="hunting",
                             reason=f"Just warped {_hunt_duration:.0f}s ago - hunt first, sell later",
                         ))
-                        total_confidence = 0.95
-                        top_domain = "hunting"
-                        assessment = HeuristicAssessment(
-                            horizon=horizon, actions=actions, confidence=total_confidence,
-                            actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                        )
-                        self._last_assessment[bot_id] = assessment
-                        return assessment
+                        # Don't return early - continue to set combat config below
                 # If HP < 30% and have items AND have killed something, sit to regen
                 # Don't return to town from hunting map - let OpenKore's AI handle it
                 if _hp_ratio < 0.3 and _has_items and _total_kills > 0 and _hunt_duration > 15:
