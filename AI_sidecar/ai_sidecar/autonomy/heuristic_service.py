@@ -610,7 +610,10 @@ class AdaptiveDataStore:
         return survivability
 
     def calculate_aspd(self, agi: int = 1, dex: int = 1, base_aspd: int = 1560, skill_bonus: float = 0.0) -> float:
-        """Delegate to ro_mechanics with weapon type from job."""
+        """Delegate to ro_mechanics with weapon type from job.
+        NOTE: weapon_type is hardcoded to 'dagger' because this delegate
+        doesn't receive job_name. Callers should use ro_mechanics directly.
+        """
         return calculate_aspd(agi, dex, "dagger", skill_bonus)
 
     def calculate_flee(self, agi: int = 1, base_level: int = 1, job_bonus: int = 0) -> int:
@@ -637,6 +640,7 @@ class AdaptiveDataStore:
                                    monster_race: str = "Brute", monster_attack: int = 7) -> float:
         """Delegate to ro_mechanics (full profit calc with SP/arrows/repair).
         Uses get_monster_stats() internally, so monster_hp/def/size/etc params are ignored.
+        NOTE: _last_job is set in _assess_impl from signals. If not set, defaults to 'novice'.
         """
         _job = getattr(self, '_last_job', 'novice')
         _is_archer = _job == 'archer'
@@ -826,11 +830,7 @@ class HeuristicService:
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
         map_name = map_name.replace(".gat", "")
-        is_town = map_name in ("prontera", "izlude", "morocc", "payon", "geffen",
-               "aldebaran", "comodo", "umbala", "niflheim",
-               "rachel", "veins", "einbroch", "lighthalzen",
-               "juno", "hugel", "yuno", "amatsu", "gonryun",
-               "louyang", "ayothaya")
+        is_town = map_name in _HUNT_TOWNS
         _prev_state = self._bot_state.get(bot_id, "UNKNOWN")
         _total_kills = signals.get("total_kills", 0) or 0
         _total_zeny = signals.get("zeny", 0) or 0
@@ -881,7 +881,7 @@ class HeuristicService:
             if weight > 0.05:
                 return "SELL"
             if zeny > 0:
-                _has_weapon = signals.get("attack_power", 0) or 0 > 30
+                _has_weapon = (signals.get("attack_power", 0) or 0) > 30
                 if zeny >= 100 and not _has_weapon:
                     return "WEAPON_BUY"
                 return "BUY"
@@ -960,6 +960,7 @@ class HeuristicService:
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = signals.get("job_name", "novice").lower()
+        self._adaptive._last_job = job_name  # Set for profit calculation delegate
         stat_points = signals.get("stat_points", 0) or 0
         skill_points = signals.get("skill_points", 0) or 0
         in_party = signals.get("in_party", False)
