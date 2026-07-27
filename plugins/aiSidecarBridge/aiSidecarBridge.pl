@@ -264,6 +264,35 @@ sub on_start3 {
 	}
 }
 
+
+# Track char name for re-registration (checked every cycle)
+my $_registered_char_name = '';
+
+
+sub _load_profile_to_char {
+	my $resp = _http_get_json('/v1/fleet/bots');
+	return if !$resp || !$resp->{json} || !$resp->{json}{bots};
+	my %mapping;
+	for my $bot (@{$resp->{json}{bots}}) {
+		my $bot_id = $bot->{bot_id} || '';
+		next if $bot_id eq '';
+		my ($prefix, $profile) = split(':', $bot_id, 2);
+		next if !$profile;
+		my $char_name = $bot->{attributes}{identity_char_name} || $profile;
+		$mapping{$profile} = $char_name;
+	}
+	%::aiSidecar_profile_to_char = %mapping;
+	debug "bridge_profile_to_char: loaded " . scalar(keys %mapping) . " mappings\n", 'aiSidecarBridge', 1;
+}
+sub _check_reregister {
+	my $current_name = $char ? ($char->{name} || '') : '';
+	if ($registered && $current_name ne '' && $current_name ne $_registered_char_name) {
+		debug "bridge_reregister: char name changed from '$_registered_char_name' to '$current_name'\n", 'aiSidecarBridge', 1;
+		$_registered_char_name = $current_name;
+		$registered = 0;
+		$next_register_at_ms = __time_now_ms();
+	}
+}
 sub on_mainLoop_pre {
 	return unless _bridge_enabled();
 	my $now = _now_ms();
@@ -276,6 +305,8 @@ sub on_mainLoop_pre {
 	    _send_snapshot();
 	    _check_ml_outcome();
 	    _check_bridge_reflexes();
+	# ── Re-register if char name became available ──
+	_check_reregister();
 	}
 
 	_track_lifecycle_transitions();
@@ -1289,6 +1320,7 @@ sub _attempt_register {
 	my $resp = _http_post_json('/v1/ingest/register', $payload);
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 500) {
 		$registered = 1;
+		_load_profile_to_char();
 		debug "[aiSidecarBridge] sidecar registration succeeded\n", 'aiSidecarBridge', 2;
 		return;
 	}
@@ -1410,7 +1442,7 @@ sub _build_snapshot_payload {
 				# Dynamic mapping: use all_bots from sidecar
 				for my $_pn (@::aiSidecar_all_bots_split) {
 					next if $_pn eq ($::config{username} || '');
-					my $_cn = $_pn;  # Use profile name as char name (fallback)
+					my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;  # Use char name from sidecar
 					if (!$_mn{$_cn}) {
 						my $_ok = eval { Commands::run("party request $_cn"); 1; };
 						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
@@ -1428,19 +1460,16 @@ sub _build_snapshot_payload {
 			my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
 			if ($_is_leader) {
 			my $_pu = $char->{party}{users} || {};
-			my $_mc = scalar(keys %$_pu) + 1;
-			if ($_mc < 3) {
 				my %_mn;
 				for my $_uid (keys %$_pu) {
 					my $_pm = $_pu->{$_uid};
 					my $_pn = eval { $_pm->{name} || $_pm->name() || '' } || '';
 					$_mn{$_pn} = 1 if $_pn;
-				}
 				$_mn{$char->{name}} = 1;
 				# Dynamic mapping: use all_bots from sidecar
 				for my $_pn (@_all_bots) {
 					next if $_pn eq ($::config{username} || '');
-					my $_cn = $_pn;  # Use profile name as char name (fallback)
+					my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;  # Use char name from sidecar
 					if (!$_mn{$_cn}) {
 						my $_ok = eval { Commands::run("party request $_cn"); 1; };
 						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
@@ -3052,6 +3081,28 @@ sub _stable_config_fingerprint {
 	return sprintf('cfg-%x-%x-%d', $timestamp, $hash, scalar(@{$keys}));
 }
 
+
+sub _http_get_json {
+	my ($path) = @_;
+	return undef if !$json_available;
+	_load_bridge_config_overrides();
+	my $base_url = _cfg('aiSidecar_baseUrl', 'http://127.0.0.1:18081');
+	$base_url =~ s{/+$}{};
+	my ($scheme, $host, $port) = $base_url =~ m{^(https?)://([^/:]+):?(\d*)}i;
+	return { status => 0, error => 'invalid_base_url', json => undef, raw => '' } if !$scheme || lc($scheme) ne 'http' || !$host;
+	$port ||= 80;
+	require IO::Socket::INET;
+	my $sock = IO::Socket::INET->new(PeerHost=>$host, PeerPort=>$port, Proto=>'tcp', Timeout=>2)
+		or return { status=>0, error=>'connect_failed', json=>undef, raw=>'' };
+	my $req = "GET $path HTTP/1.1\r\nHost: $host:$port\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
+	$sock->send($req);
+	my $resp = ''; while (<$sock>) { $resp .= $_; } close($sock);
+	my ($header, $body) = split /\r\n\r\n/, $resp, 2;
+	my $status = ($header =~ /HTTP\/\d\.\d\s+(\d+)/) ? $1 : 0;
+	my $json = undef;
+	eval { $json = JSON::PP::decode_json($body) } if defined $body && $body ne '';
+	return { status=>$status, error=>'', json=>$json, raw=>$body };
+}
 sub _http_post_json {
 	my ($path, $payload) = @_;
 	return undef if !$json_available;
