@@ -160,31 +160,30 @@ def _class_stat_allocation(
     current_stats: dict[str, int],
     stat_points: int,
     adaptive: AdaptiveDataStore | None = None,
+    base_level: int = 1,
 ) -> list[tuple[str, int]]:
     """Determine which stats to allocate for a given class.
 
-    Uses adaptive data if available, falls back to hardcoded defaults.
+    Uses scaling stat targets with breakpoint awareness.
+    Allocates to the nearest breakpoint (5/7/10) for maximum efficiency.
     Returns a list of (stat_name, points_to_add) tuples.
     """
     if stat_points <= 0:
         return []
 
-    # Try adaptive build first
+    # Get scaling targets for this level
     if adaptive:
-        adaptive_build = adaptive.stat_effectiveness.get(job_name, {})
-        if adaptive_build:
-            # Sort by effectiveness score
-            sorted_stats = sorted(adaptive_build.items(), key=lambda x: x[1], reverse=True)
-            build = [(stat, 99) for stat, _ in sorted_stats]  # Push to 99
-        else:
-            build = CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"])
+        targets = adaptive.get_scaling_stat_targets(job_name, base_level)
+        if not targets:
+            targets = dict(CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"]))
     else:
-        build = CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"])
+        targets = dict(CLASS_STAT_BUILDS.get(job_name, CLASS_STAT_BUILDS["novice"]))
 
     allocations: list[tuple[str, int]] = []
     remaining = stat_points
 
-    for stat_name, target in build:
+    # First pass: allocate to reach scaling targets
+    for stat_name, target in targets.items():
         current = current_stats.get(stat_name, 1)
         needed = max(0, target - current)
         if needed > 0:
@@ -195,9 +194,25 @@ def _class_stat_allocation(
         if remaining <= 0:
             break
 
+    # Second pass: allocate to nearest breakpoint for primary stats
+    if remaining > 0 and adaptive:
+        # Sort stats by priority (first in targets = highest priority)
+        sorted_stats = sorted(targets.items(), key=lambda x: x[1], reverse=True)
+        for stat_name, _ in sorted_stats:
+            if remaining <= 0:
+                break
+            current = current_stats.get(stat_name, 1)
+            # Find nearest breakpoint
+            bp, needed = adaptive.get_nearest_breakpoint(stat_name, current)
+            if needed > 0:
+                add = min(needed, remaining)
+                if add > 0:
+                    allocations.append((stat_name, add))
+                    remaining -= add
+
     # Dump remaining points into the first priority stat
-    if remaining > 0 and build:
-        first_stat = build[0][0]
+    if remaining > 0 and targets:
+        first_stat = list(targets.keys())[0]
         allocations.append((first_stat, remaining))
 
     return allocations
@@ -412,6 +427,113 @@ class AdaptiveDataStore:
             "prt_fild04": [("Rocker", 70, 0), ("Creamy", 40, 0), ("Pupa", 10, 0), ("Poring", 30, 0)],
         }
 
+        # ── RO MECHANICS TABLES ──
+        # Size penalty: weapon_type -> {Small, Medium, Large}
+        self.size_penalty: dict[str, dict[str, float]] = {
+            "dagger":       {"Small": 1.00, "Medium": 0.75, "Large": 0.50},
+            "sword":        {"Small": 0.75, "Medium": 1.00, "Large": 0.75},
+            "two_hand_sword":{"Small": 0.75, "Medium": 0.75, "Large": 1.00},
+            "spear":        {"Small": 0.75, "Medium": 0.75, "Large": 1.00},
+            "bow":          {"Small": 1.00, "Medium": 1.00, "Large": 1.00},
+            "mace":         {"Small": 0.75, "Medium": 1.00, "Large": 0.75},
+            "staff":        {"Small": 1.00, "Medium": 1.00, "Large": 0.75},
+            "knuckle":      {"Small": 1.00, "Medium": 0.75, "Large": 0.50},
+            "instrument":   {"Small": 0.75, "Medium": 1.00, "Large": 0.75},
+            "whip":         {"Small": 0.75, "Medium": 1.00, "Large": 0.75},
+            "book":         {"Small": 0.75, "Medium": 1.00, "Large": 0.75},
+            "katar":        {"Small": 1.00, "Medium": 1.00, "Large": 0.75},
+            "grenade":      {"Small": 1.00, "Medium": 1.00, "Large": 1.00},
+            "shuriken":     {"Small": 1.00, "Medium": 1.00, "Large": 1.00},
+        }
+        # Element table: attack_element -> target_element -> multiplier
+        # Level 1 element (most common for low-level)
+        self.element_table: dict[str, dict[str, float]] = {
+            "Neutral":  {"Neutral": 1.00, "Water": 0.75, "Earth": 0.75, "Fire": 0.75, "Wind": 0.75, "Poison": 0.75, "Holy": 0.75, "Dark": 0.75, "Ghost": 0.50, "Undead": 0.50},
+            "Water":    {"Neutral": 1.00, "Water": 0.25, "Earth": 0.75, "Fire": 1.25, "Wind": 0.50, "Poison": 0.75, "Holy": 1.00, "Dark": 1.00, "Ghost": 0.50, "Undead": 1.00},
+            "Earth":    {"Neutral": 1.00, "Water": 1.25, "Earth": 0.25, "Fire": 0.75, "Wind": 1.25, "Poison": 0.75, "Holy": 1.00, "Dark": 1.00, "Ghost": 0.50, "Undead": 1.00},
+            "Fire":     {"Neutral": 1.00, "Water": 0.50, "Earth": 1.25, "Fire": 0.25, "Wind": 0.75, "Poison": 0.75, "Holy": 1.00, "Dark": 1.00, "Ghost": 0.50, "Undead": 1.25},
+            "Wind":     {"Neutral": 1.00, "Water": 1.25, "Earth": 0.50, "Fire": 1.25, "Wind": 0.25, "Poison": 0.75, "Holy": 1.00, "Dark": 1.00, "Ghost": 0.50, "Undead": 1.00},
+            "Poison":   {"Neutral": 1.00, "Water": 1.00, "Earth": 0.50, "Fire": 1.00, "Wind": 0.50, "Poison": 0.25, "Holy": 0.50, "Dark": 1.00, "Ghost": 0.50, "Undead": 0.50},
+            "Holy":     {"Neutral": 1.00, "Water": 1.00, "Earth": 1.00, "Fire": 1.00, "Wind": 1.00, "Poison": 1.00, "Holy": 0.25, "Dark": 2.00, "Ghost": 1.00, "Undead": 2.00},
+            "Dark":     {"Neutral": 1.00, "Water": 1.00, "Earth": 1.00, "Fire": 1.00, "Wind": 1.00, "Poison": 1.00, "Holy": 0.50, "Dark": 0.25, "Ghost": 1.00, "Undead": 1.00},
+            "Ghost":    {"Neutral": 0.00, "Water": 1.00, "Earth": 1.00, "Fire": 1.00, "Wind": 1.00, "Poison": 1.00, "Holy": 1.00, "Dark": 1.00, "Ghost": 0.75, "Undead": 1.00},
+            "Undead":   {"Neutral": 1.00, "Water": 1.00, "Earth": 1.00, "Fire": 1.25, "Wind": 1.00, "Poison": 0.50, "Holy": 2.00, "Dark": 1.00, "Ghost": 1.00, "Undead": 0.25},
+        }
+        # Weapon type mapping: job_name -> weapon_type
+        self.job_weapon_type: dict[str, str] = {
+            "novice": "dagger", "swordman": "sword", "mage": "staff", "archer": "bow",
+            "acolyte": "mace", "merchant": "sword", "thief": "dagger", "taekwon": "knuckle",
+            "gunslinger": "grenade", "ninja": "shuriken", "soul_linker": "staff",
+        }
+        # Stat breakpoints: stat_name -> [(value, bonus_description)]
+        self.stat_breakpoints: dict[str, list[tuple[int, str]]] = {
+            "str": [(10, "+1 ATK"), (20, "+2 ATK"), (30, "+3 ATK"), (40, "+4 ATK"), (50, "+5 ATK"),
+                    (60, "+6 ATK"), (70, "+7 ATK"), (80, "+8 ATK"), (90, "+9 ATK"), (99, "+10 ATK")],
+            "agi": [(10, "+1 Flee, +1 ASPD"), (20, "+2 Flee, +2 ASPD"), (30, "+3 Flee, +3 ASPD"),
+                    (40, "+4 Flee, +4 ASPD"), (50, "+5 Flee, +5 ASPD"), (60, "+6 Flee, +6 ASPD"),
+                    (70, "+7 Flee, +7 ASPD"), (80, "+8 Flee, +8 ASPD"), (90, "+9 Flee, +9 ASPD"), (99, "+10 Flee, +10 ASPD")],
+            "vit": [(10, "+10 HP"), (20, "+20 HP"), (30, "+30 HP"), (40, "+40 HP"), (50, "+50 HP"),
+                    (60, "+60 HP"), (70, "+70 HP"), (80, "+80 HP"), (90, "+90 HP"), (99, "+100 HP")],
+            "int": [(7, "+1 MATK"), (14, "+2 MATK"), (21, "+3 MATK"), (28, "+4 MATK"), (35, "+5 MATK"),
+                    (42, "+6 MATK"), (49, "+7 MATK"), (56, "+8 MATK"), (63, "+9 MATK"), (70, "+10 MATK"),
+                    (77, "+11 MATK"), (84, "+12 MATK"), (91, "+13 MATK"), (98, "+14 MATK"), (99, "+15 MATK")],
+            "dex": [(10, "+1 Hit, +1 ATK"), (20, "+2 Hit, +2 ATK"), (30, "+3 Hit, +3 ATK"),
+                    (40, "+4 Hit, +4 ATK"), (50, "+5 Hit, +5 ATK"), (60, "+6 Hit, +6 ATK"),
+                    (70, "+7 Hit, +7 ATK"), (80, "+8 Hit, +8 ATK"), (90, "+9 Hit, +9 ATK"), (99, "+10 Hit, +10 ATK")],
+            "luk": [(10, "+1 ATK, +1 Crit"), (20, "+2 ATK, +2 Crit"), (30, "+3 ATK, +3 Crit"),
+                    (40, "+4 ATK, +4 Crit"), (50, "+5 ATK, +5 Crit"), (60, "+6 ATK, +6 Crit"),
+                    (70, "+7 ATK, +7 Crit"), (80, "+8 ATK, +8 Crit"), (90, "+9 ATK, +9 Crit"), (99, "+10 ATK, +10 Crit")],
+        }
+        # Scaling stat targets per class: job_name -> [(level, {stat: target})]
+        self.scaling_stat_targets: dict[str, list[tuple[int, dict[str, int]]]] = {
+            "novice":    [(10, {"dex": 20, "str": 10, "agi": 10})],
+            "swordman":  [(30, {"str": 40, "vit": 30, "dex": 20}), (50, {"str": 60, "vit": 40, "dex": 30}), (70, {"str": 80, "vit": 50, "dex": 40}), (99, {"str": 99, "vit": 60, "dex": 50})],
+            "mage":      [(30, {"int": 50, "dex": 20}), (50, {"int": 70, "dex": 30}), (70, {"int": 90, "dex": 40}), (99, {"int": 99, "dex": 50})],
+            "archer":    [(30, {"dex": 50, "agi": 30, "luk": 20}), (50, {"dex": 70, "agi": 50, "luk": 30}), (70, {"dex": 90, "agi": 60, "luk": 40}), (99, {"dex": 99, "agi": 80, "luk": 50})],
+            "acolyte":   [(30, {"int": 50, "dex": 20, "vit": 10}), (50, {"int": 70, "dex": 30, "vit": 20}), (70, {"int": 90, "dex": 40, "vit": 30}), (99, {"int": 99, "dex": 50, "vit": 40})],
+            "merchant":  [(30, {"str": 50, "vit": 30, "dex": 10}), (50, {"str": 70, "vit": 40, "dex": 20}), (70, {"str": 90, "vit": 50, "dex": 30}), (99, {"str": 99, "vit": 60, "dex": 40})],
+            "thief":     [(30, {"agi": 50, "dex": 20, "str": 20}), (50, {"agi": 70, "dex": 30, "str": 30}), (70, {"agi": 90, "dex": 40, "str": 40}), (99, {"agi": 99, "dex": 50, "str": 50})],
+        }
+        # Skill SP costs: skill_id -> sp_cost
+        self.skill_sp_costs: dict[str, int] = {
+            "NV_BASIC": 0, "NV_FIRSTAID": 5,
+            "SM_BASH": 8, "SM_RECOVERY": 0,
+            "MG_SRECOVERY": 0, "MG_FIREBOLT": 12,
+            "AC_OWL": 0, "AC_DOUBLE": 12,
+            "AL_HEAL": 15, "AL_DEMONBANE": 0,
+            "MC_VENDING": 0, "MC_DISCOUNT": 0,
+            "TF_DOUBLE": 0, "TF_HIDING": 10,
+        }
+        # Skill damage formulas: skill_id -> {base_dmg, sp_cost, cast_time, delay}
+        self.skill_damage: dict[str, dict] = {
+            "SM_BASH": {"base": 1.5, "per_level": 0.5, "sp": 8, "cast": 0, "delay": 1.0},
+            "MG_FIREBOLT": {"base": 1.0, "per_level": 0.3, "sp": 12, "cast": 1.5, "delay": 1.0},
+            "AC_DOUBLE": {"base": 2.0, "per_level": 0.2, "sp": 12, "cast": 0, "delay": 0.5},
+            "AL_HEAL": {"base": 1.0, "per_level": 0.4, "sp": 15, "cast": 1.0, "delay": 1.0},
+            "TF_DOUBLE": {"base": 1.5, "per_level": 0.1, "sp": 0, "cast": 0, "delay": 0},
+        }
+        # Food/buff effects: item_id -> {stat_bonus, duration_s, cost}
+        self.food_items: dict[str, dict] = {
+            "531": {"stat": "str", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked STR food
+            "532": {"stat": "agi", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked AGI food
+            "533": {"stat": "vit", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked VIT food
+            "534": {"stat": "int", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked INT food
+            "535": {"stat": "dex", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked DEX food
+            "536": {"stat": "luk", "bonus": 4, "duration": 1800, "cost": 500},  # Cooked LUK food
+            "505": {"stat": "aspd", "bonus": 10, "duration": 300, "cost": 200},  # Awakening Potion
+        }
+        # Card/drop values: monster_name -> {card_value, valuable_drops}
+        self.card_values: dict[str, dict] = {
+            "poring": {"card": 50000, "drops": ["Jellopy(10z)", "Apple(50z)"]},
+            "lunatic": {"card": 30000, "drops": ["Lunatic Card(30000z)", "Clover(100z)"]},
+            "pupa": {"card": 20000, "drops": ["Pupa Card(20000z)", "Sticky Mucus(50z)"]},
+            "familiar": {"card": 25000, "drops": ["Familiar Card(25000z)", "Bat(100z)"]},
+            "zombie": {"card": 40000, "drops": ["Zombie Card(40000z)", "Decayed Nail(200z)"]},
+            "skeleton": {"card": 35000, "drops": ["Skeleton Card(35000z)", "Bone(150z)"]},
+            "orc warrior": {"card": 80000, "drops": ["Orc Warrior Card(80000z)", "Orcish Voucher(500z)"]},
+            "poporing": {"card": 60000, "drops": ["Poporing Card(60000z)", "Poison Spore(300z)"]},
+        }
+
     def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0, monster_name: str = "") -> None:
         with self._lock:
             self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
@@ -592,6 +714,188 @@ class AdaptiveDataStore:
         danger_ratio = total_danger / total_count
         survivability = max(0.0, 1.0 - danger_ratio * 0.3)
         return survivability
+
+    def calculate_aspd(self, agi: int = 1, dex: int = 1, base_aspd: int = 1560, skill_bonus: float = 0.0) -> float:
+        """Full RO ASPD formula. Returns seconds per hit.
+        ASPD = 2000 - (2000 - base_ASPD) * (1 + AGI/100) * (1 + DEX/100) * (1 - skill_bonus)
+        Lower ASPD = faster attacks. 2000 = 2s per hit, 150 = 0.15s per hit.
+        """
+        _aspd = 2000 - (2000 - base_aspd) * (1 + agi / 100.0) * (1 + dex / 100.0) * (1 - skill_bonus)
+        _aspd = max(100, min(2000, _aspd))  # Clamp to valid range
+        return _aspd / 1000.0  # Convert to seconds per hit
+
+    def calculate_flee(self, agi: int = 1, base_level: int = 1, job_bonus: int = 0) -> int:
+        """Full RO flee formula.
+        Flee = base_level + AGI + job_bonus + item_bonus
+        """
+        return base_level + agi + job_bonus
+
+    def calculate_hit_rate(self, dex: int = 1, base_level: int = 1, job_bonus: int = 0) -> int:
+        """Full RO hit rate formula.
+        Hit = base_level + DEX + job_bonus
+        """
+        return base_level + dex + job_bonus
+
+    def calculate_damage(self, attack_power: int, monster_def: int, weapon_type: str = "dagger",
+                         monster_size: str = "Medium", attack_element: str = "Neutral",
+                         monster_element: str = "Neutral", monster_race: str = "Brute",
+                         skill_mult: float = 1.0) -> int:
+        """Full RO damage formula with size penalty, element modifier, and DEF reduction.
+        Damage = (ATK * size_penalty * element_mod * race_mod) - (DEF * 0.5)
+        """
+        _size_mod = self.size_penalty.get(weapon_type, {}).get(monster_size, 1.0)
+        _elem_mod = self.element_table.get(attack_element, {}).get(monster_element, 1.0)
+        _race_mod = 1.0  # Race modifier (cards, skills) - simplified
+        _raw = attack_power * _size_mod * _elem_mod * _race_mod * skill_mult
+        _dmg = max(1, int(_raw - monster_def * 0.5))
+        return _dmg
+
+    def calculate_profit_per_kill(self, monster_name: str, attack_power: int, weapon_type: str = "dagger",
+                                   agi: int = 1, dex: int = 1, base_level: int = 1,
+                                   monster_hp: int = 50, monster_def: int = 0,
+                                   monster_size: str = "Medium", monster_element: str = "Neutral",
+                                   monster_race: str = "Brute", monster_attack: int = 7) -> float:
+        """Calculate profit per kill: drop_value - (potion_cost * damage_taken / potion_heal).
+        Returns zeny per kill (negative = money sink).
+        """
+        _dmg_per_hit = self.calculate_damage(attack_power, monster_def, weapon_type,
+                                              monster_size, "Neutral", monster_element, monster_race)
+        _hits_to_kill = max(1, monster_hp / max(1, _dmg_per_hit))
+        _aspd_seconds = self.calculate_aspd(agi, dex)
+        _time_to_kill = _hits_to_kill * _aspd_seconds
+
+        # Damage taken per kill
+        _flee = self.calculate_flee(agi, base_level)
+        _monster_hit_rate = max(5, 100 - _flee + monster_attack)  # Simplified hit rate
+        _hit_chance = min(95, max(5, _monster_hit_rate)) / 100.0
+        _damage_per_hit_taken = max(1, monster_attack - 0)  # No player DEF calc
+        _hits_taken = _time_to_kill / _aspd_seconds * _hit_chance  # Monster attacks during fight
+        _total_damage_taken = _damage_per_hit_taken * _hits_taken
+
+        # Potion cost
+        _potion_heal = 100  # White Potion heals 100 HP
+        _potion_cost = 500  # White Potion costs 500z
+        _potions_needed = _total_damage_taken / _potion_heal
+        _potion_expense = _potions_needed * _potion_cost
+
+        # Drop value
+        _mn = monster_name.lower().strip()
+        _card_info = self.card_values.get(_mn, {})
+        _card_value = _card_info.get("card", 0) if _card_info else 0
+        _card_chance = 0.0001  # 0.01% card drop rate
+        _expected_card_value = _card_value * _card_chance
+        _base_drop_value = 50  # Average junk drop value
+        _total_drop_value = _base_drop_value + _expected_card_value
+
+        return _total_drop_value - _potion_expense
+
+    def get_nearest_breakpoint(self, stat_name: str, current_value: int) -> tuple[int, int]:
+        """Find the nearest stat breakpoint above current value.
+        Returns (breakpoint_value, points_needed).
+        """
+        breakpoints = self.stat_breakpoints.get(stat_name, [])
+        for bp, _ in breakpoints:
+            if bp > current_value:
+                return (bp, bp - current_value)
+        return (current_value, 0)
+
+    def get_scaling_stat_targets(self, job_name: str, base_level: int) -> dict[str, int]:
+        """Get scaling stat targets for a class at a given level.
+        Returns {stat: target_value}.
+        """
+        targets = self.scaling_stat_targets.get(job_name, self.scaling_stat_targets["novice"])
+        best = {}
+        for lvl, stats in targets:
+            if base_level >= lvl:
+                best = stats
+        return best
+
+    def get_skill_rotation(self, job_name: str, current_sp: int, max_sp: int,
+                           monster_element: str = "Neutral", monster_hp: int = 50,
+                           attack_power: int = 25) -> list[dict]:
+        """Get dynamic skill rotation based on SP, monster, and situation.
+        Returns list of {skill_id, condition, priority}.
+        """
+        rotation = []
+        _sp_ratio = current_sp / max(1, max_sp)
+
+        if job_name == "swordman":
+            # Bash: use when SP > 30% and monster HP > 3x auto-attack damage
+            _bash_dmg = attack_power * 2.0  # Bash level 1 = 200% ATK
+            _auto_dmg = attack_power
+            if _sp_ratio > 0.3 and monster_hp > _auto_dmg * 3:
+                rotation.append({"skill_id": "SM_BASH", "condition": "sp > 30% && hp > 3x auto",
+                                 "priority": 1, "sp_cost": 8})
+        elif job_name == "mage":
+            # Fire Bolt: use when SP > 40% and monster not Fire element
+            if _sp_ratio > 0.4 and monster_element != "Fire":
+                rotation.append({"skill_id": "MG_FIREBOLT", "condition": "sp > 40% && !Fire",
+                                 "priority": 1, "sp_cost": 12})
+        elif job_name == "archer":
+            # Double Strafe: use when SP > 30%
+            if _sp_ratio > 0.3:
+                rotation.append({"skill_id": "AC_DOUBLE", "condition": "sp > 30%",
+                                 "priority": 1, "sp_cost": 12})
+        elif job_name == "acolyte":
+            # Heal: use on undead (nuke) or when HP < 50%
+            if monster_element == "Undead":
+                rotation.append({"skill_id": "AL_HEAL", "condition": "undead nuke",
+                                 "priority": 1, "sp_cost": 15})
+        elif job_name == "thief":
+            # Double Attack: passive, always active
+            pass
+
+        return rotation
+
+    def estimate_hits_to_die(self, monster_attack: int, player_hp: int) -> float:
+        """Estimate how many hits a player can survive from a monster.
+        Returns hits_to_die. If < 5, map is too dangerous.
+        """
+        _dmg_per_hit = max(1, monster_attack)
+        return player_hp / _dmg_per_hit
+
+    def get_map_profit_score(self, map_name: str, job_name: str, base_level: int,
+                              attack_power: int, agi: int = 1, dex: int = 1,
+                              player_hp: int = 100) -> float:
+        """Score a map by profit per hour, factoring death penalty and travel cost.
+        Returns score (higher = better).
+        """
+        spawns = self.map_spawns.get(map_name, [])
+        if not spawns:
+            return 0.0
+
+        _weapon_type = self.job_weapon_type.get(job_name, "dagger")
+        _total_profit = 0.0
+        _total_time = 0.0
+        _total_danger = 0
+
+        for m_name, count, _ in spawns:
+            stats = self.monster_stats.get(m_name.lower().strip())
+            if not stats:
+                continue
+
+            _profit = self.calculate_profit_per_kill(
+                m_name, attack_power, _weapon_type, agi, dex, base_level,
+                stats["hp"], stats.get("def", 0),
+                stats.get("size", "Medium"), stats.get("element", "Neutral"),
+                stats.get("race", "Brute"), stats.get("attack", 7)
+            )
+            _hits_to_die = self.estimate_hits_to_die(stats.get("attack", 7), player_hp)
+            _total_profit += _profit * count
+            _total_time += (stats["hp"] / max(1, attack_power)) * count
+            if _hits_to_die < 5:
+                _total_danger += count
+
+        if _total_time <= 0:
+            return 0.0
+
+        _profit_per_hour = _total_profit / _total_time * 3600
+        # Death penalty: 1% EXP loss per death
+        _death_penalty = _total_danger / max(1, sum(c for _, c, _ in spawns)) * 0.01
+        # Travel cost: Butterfly Wing = 500z
+        _travel_cost = 500 / max(1, _total_time / 3600)
+
+        return _profit_per_hour - _death_penalty * 1000 - _travel_cost
 
     def get_map_score(self, map_name: str) -> float:
         with self._lock:
@@ -1468,25 +1772,30 @@ class HeuristicService:
                 )
                 self._last_assessment[bot_id] = assessment
                 return assessment
-            stat_builds = {
-                "novice": ["dex", "str", "agi", "vit"],
-                "archer": ["dex", "agi", "str", "vit"],
-                "thief": ["agi", "dex", "str", "vit"],
-                "acolyte": ["int", "dex", "vit", "str"],
-                "swordman": ["str", "vit", "dex", "agi"],
-                "mage": ["int", "dex", "vit", "str"],
-            }
             _job_name = signals.get("job_name", "novice") or "novice"
-            build = stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
-            _sp = _current_stat_points
-            for stat_name in build:
-                if _sp > 0:
+            _current_stats = {
+                "str": signals.get("str", 1) or 1,
+                "agi": signals.get("agi", 1) or 1,
+                "vit": signals.get("vit", 1) or 1,
+                "int": signals.get("int", 1) or 1,
+                "dex": signals.get("dex", 1) or 1,
+                "luk": signals.get("luk", 1) or 1,
+            }
+            # Use scaling targets with breakpoint awareness
+            _allocations = _class_stat_allocation(
+                _job_name, _current_stats, _current_stat_points,
+                self._adaptive, base_level
+            )
+            for _stat_name, _points in _allocations:
+                for _ in range(min(_points, _current_stat_points)):
                     actions.append(HeuristicAction(
-                        kind="command", command=f"stat_add {stat_name}",
+                        kind="command", command=f"stat_add {_stat_name}",
                         confidence=0.95, domain="progression",
-                        reason=f"Allocate 1 {stat_name.upper()} ({job_name} build)",
+                        reason=f"Allocate 1 {_stat_name.upper()} ({_job_name}, scaling target, breakpoint-aware)",
                     ))
-                    _sp -= 1
+                    _current_stat_points -= 1
+                    if _current_stat_points <= 0:
+                        break
             total_confidence = 0.95
             top_domain = "progression"
             assessment = HeuristicAssessment(
@@ -1761,8 +2070,55 @@ class HeuristicService:
                 # On hunting map: check if we should return to town
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
                 _hp_ratio = signals.get("hp_ratio", 1.0) or 1.0
+                _sp_ratio = signals.get("sp_ratio", 1.0) or 1.0
+                _current_sp = signals.get("sp", 0) or 0
+                _max_sp = signals.get("max_sp", 100) or 100
+                _agi = signals.get("agi", 1) or 1
+                _dex = signals.get("dex", 1) or 1
+                _str = signals.get("str", 1) or 1
+                _player_hp = signals.get("hp", 100) or 100
+                _attack_power = signals.get("attack_power", 25) or 25
                 _has_items = (signals.get("inventory_items", 0) or 0) > 0
                 _total_kills = signals.get("kills", 0) or 0
+                _zeny = signals.get("zeny", 0) or 0
+                # ── FLY WING ESCAPE: If surrounded by 3+ mobs, use Fly Wing ──
+                _aggro_count = signals.get("aggressives", 0) or 0
+                if _aggro_count >= 3 and _hp_ratio < 0.5:
+                    actions.append(HeuristicAction(
+                        kind="command", command="use 601",
+                        confidence=0.99, domain="survival",
+                        reason=f"Surrounded by {_aggro_count} mobs at {_hp_ratio:.0%} HP - Fly Wing escape",
+                    ))
+                # ── BUTTERFLY WING RETURN: If low HP + no items + been hunting 5+ min ──
+                if _hp_ratio < 0.3 and not _has_items and _hunt_duration > 300:
+                    actions.append(HeuristicAction(
+                        kind="command", command="use 602",
+                        confidence=0.95, domain="survival",
+                        reason=f"Low HP ({_hp_ratio:.0%}) no items - Butterfly Wing to town",
+                    ))
+                # ── FOOD/BUFF SYSTEM: Use food if zeny > 1000 and been hunting 5+ min ──
+                if _zeny > 1000 and _hunt_duration > 300:
+                    _primary_stat = {"archer": "dex", "thief": "agi", "swordman": "str",
+                                     "mage": "int", "acolyte": "int", "merchant": "str"}.get(_job_name, "str")
+                    _food_id = {"str": "531", "agi": "532", "vit": "533", "int": "534", "dex": "535", "luk": "536"}.get(_primary_stat, "531")
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"use {_food_id}",
+                        confidence=0.80, domain="economy",
+                        reason=f"Use {_primary_stat} food (+4 {_primary_stat.upper()}, 30 min)",
+                    ))
+                # ── DYNAMIC SKILL ROTATION: SP-aware, situation-aware ──
+                _monster_element = signals.get("monster_element", "Neutral") or "Neutral"
+                _monster_hp = signals.get("monster_hp", 50) or 50
+                _skill_rotation = self._adaptive.get_skill_rotation(
+                    _job_name, _current_sp, _max_sp, _monster_element, _monster_hp, _attack_power
+                )
+                for _skill in _skill_rotation:
+                    if _current_sp >= _skill.get("sp_cost", 0):
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"skill {_skill['skill_id']}",
+                            confidence=0.90, domain="combat",
+                            reason=f"Skill: {_skill['skill_id']} ({_skill.get('condition', '')})",
+                        ))
                 # EQUIPMENT PROGRESSION: check if bot should upgrade weapon
                 _eq_prog = self._adaptive.equipment_progression.get(job_name, [])
                 _best_weapon = None
