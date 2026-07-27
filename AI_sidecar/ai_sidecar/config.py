@@ -51,6 +51,9 @@ class SidecarSettings(BaseSettings):
 
     latency_budget_ms: int = Field(default=5000, ge=1, le=30000)
     reflex_latency_budget_ms: int = Field(default=500, ge=10, le=5000)
+    # Reflex chain fallback: when all emit targets fail, use this as last resort
+    # Set to True to enable direct command injection as fallback
+    reflex_chain_fallback_enabled: bool = Field(default=True)
     reflex_trigger_history_per_bot: int = Field(default=1000, ge=100, le=20000)
 
     sqlite_path: str = "AI_sidecar/data/sidecar.sqlite"

@@ -211,13 +211,30 @@ class HighFreqReflex:
         prev_hp = self._last_hp.get(bot_id, hp)
         self._last_hp[bot_id] = hp
         
-        # ── EMERGENCY: Escape teleport at 15% HP ──
+        # ── EMERGENCY: Escape at 15% HP ──
+        # Multi-tier escape for all character levels:
+        # TIER 1: Sit to regen (works for everyone, no items needed)
+        # TIER 2: Run away (move in random direction)
+        # TIER 3: Accept death (don't spam teleport that will fail)
+        # NOTE: Level 1 novices don't have Teleport or Fly Wings.
+        # Sending "ai manual" as escape was causing 100% failure rate.
         if hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.15) and not is_town:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.TELEPORT_COOLDOWN
                 self._stats["actions"] += 1
-            logger.info("highfreq_reflex: bot=%s escape_teleport hp=%.0f%%", bot_id, hp_pct * 100)
-            cmd = "ai manual"
+            logger.info("highfreq_reflex: bot=%s escape hp=%.0f%% aggro=%d", bot_id, hp_pct * 100, aggro_count)
+            # TIER 1: Sit to regen (always available, no items needed)
+            if aggro_count <= 2:
+                cmd = "sit"
+            # TIER 2: Run away if heavily aggroed
+            elif aggro_count <= 5:
+                import random
+                dirs = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se']
+                cmd = f"move {random.choice(dirs)}"
+            # TIER 3: Accept death — don't spam failing teleport
+            else:
+                cmd = "sit"  # Sit and accept death gracefully
+                logger.info("highfreq_reflex: bot=%s accepting_death hp=%.0f%% aggro=%d", bot_id, hp_pct * 100, aggro_count)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
                 return None

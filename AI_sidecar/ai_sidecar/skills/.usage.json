@@ -6,7 +6,7 @@
     "patch_count": 0,
     "pinned": false,
     "provenance": "foreground",
-    "state": "active",
+    "state": "stale",
     "use_count": 121,
     "view_count": 1
   },
@@ -17,7 +17,7 @@
     "patch_count": 0,
     "pinned": false,
     "provenance": "foreground",
-    "state": "active",
+    "state": "stale",
     "use_count": 1,
     "view_count": 0
   },
@@ -28,7 +28,7 @@
     "patch_count": 0,
     "pinned": false,
     "provenance": "foreground",
-    "state": "active",
+    "state": "stale",
     "use_count": 4,
     "view_count": 0
   }

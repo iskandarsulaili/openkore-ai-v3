@@ -1502,13 +1502,13 @@ moc_fild01 22 242 prt_fild09 383 223
 moc_fild01 56 384 prt_fild08 55 21
 moc_fild01 239 382 prt_fild08 233 16
 moc_fild01 321 16 moc_fild02 67 342
-moc_fild01 379 162 pay_fild04 17 165
+moc_fild01 379 162 pay_fild04 20 165
 moc_fild02 67 342 moc_fild01 321 16
 moc_fild02 71 18 moc_fild13 146 368
 moc_fild02 228 29 moc_fild13 298 370
 moc_fild02 332 19 moc_fild03 70 341
 moc_fild02 350 339 pay_fild04 194 17
-moc_fild02 378 272 pay_gld 16 276
+moc_fild02 378 272 pay_gld 20 276
 moc_fild03 17 37 moc_fild13 308 49
 moc_fild03 70 341 moc_fild02 332 19
 moc_fild03 179 16 pay_fild11 38 330
@@ -1626,7 +1626,7 @@ orcsdun01 183 8 orcsdun02 21 188
 orcsdun02 21 188 orcsdun01 183 8
 orcsdun02 180 15 in_orcs01 108 114
 payon 267 89 pay_fild08 17 75
-payon 228 329 pay_arche 81 22
+payon 228 330 pay_arche 81 22
 payon 122 27 pay_fild01 333 356
 payon 16 143 pay_gld 370 149
 payon 141 85 payon_in01 14 51
@@ -1636,7 +1636,7 @@ payon 130 169 payon_in01 13 139
 payon 189 233 payon_in03 149 39
 payon 187 233 payon_in03 149 39
 payon 270 152 payon_in01 90 9
-pay_arche 36 131 pay_dun00 21 186
+pay_arche 36 131 pay_dun00 21 183
 pay_arche 81 17 payon 228 329
 pay_arche 145 165 payon_in02 64 56
 pay_arche 71 156 payon_in02 82 45
@@ -1667,7 +1667,7 @@ pay_fild03 172 281 pay_fild07 164 17
 pay_fild03 313 16 pay_fild06 305 375
 pay_fild03 392 63 alberta 15 234
 pay_fild04 17 165 moc_fild01 379 162
-pay_fild04 194 17 moc_fild02 350 339
+pay_fild04 194 17 moc_fild02 350 336
 pay_fild05 127 378 pay_fild02 134 16
 pay_fild05 271 284 pay_fild06 28 288
 pay_fild06 28 288 pay_fild05 271 284
@@ -1691,7 +1691,7 @@ pay_gld 140 156 payg_cas04 252 275
 pay_gld 204 270 payg_cas05 62 223
 pay_gld 291 116 payg_cas02 276 61
 pay_gld 321 293 payg_cas03 226 22
-pay_gld 374 149 payon 16 143
+pay_gld 374 149 payon 19 143
 payg_cas01 214 44 pay_gld 121 233
 payg_cas01 201 126 payg_cas01 102 21
 payg_cas01 102 17 payg_cas01 201 121
@@ -1920,7 +1920,7 @@ prt_fild07 385 186 prt_fild08 16 187
 prt_fild08 16 187 prt_fild07 380 186
 prt_fild08 16 239 prt_fild07 379 239
 prt_fild08 55 21 moc_fild01 56 384
-prt_fild08 233 16 moc_fild01 239 382
+prt_fild08 233 16 moc_fild01 238 378
 prt_fild08 371 212 izlude 35 78
 prt_fild09 14 139 prt_fild10 339 126
 prt_fild09 87 380 prt_fild07 84 13

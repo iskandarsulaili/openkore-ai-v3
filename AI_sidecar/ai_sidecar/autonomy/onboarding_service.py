@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _STEPS = [
     "allocate_stats",      # spend all stat points
     "train_skills",        # train Basic Skill and build-essential skills
+    "economy_setup",       # sell starting gear, buy basic potions
     "route_to_hunt",       # move to level-appropriate hunting zone
 ]
 
@@ -116,7 +117,31 @@ class OnboardingService:
             if not actions:
                 self.mark_completed(bot_id, "train_skills")
 
-        # ── Step 3: Route to Hunting Zone ──
+        # ── Step 3: Economy Setup (sell starting gear, buy potions) ──
+        if next_step == "economy_setup":
+            # Check if we have zeny to buy potions
+            if zeny < 100:
+                # Sell starting gear to get initial zeny
+                actions.append({
+                    "action": "sell_starting_gear",
+                    "reason": f"Only {zeny}z — sell starting gear for potion money",
+                    "priority": 3,
+                })
+            # Buy basic potions for survival
+            if zeny >= 100:
+                actions.append({
+                    "action": "buy_item",
+                    "item": "Red Potion",
+                    "qty": 10,
+                    "max_price": 50,
+                    "reason": "Buy 10 Red Potions for survival",
+                    "priority": 3,
+                })
+            if not actions:
+                # No economy actions needed — mark done
+                self.mark_completed(bot_id, "economy_setup")
+
+        # ── Step 4: Route to Hunting Zone ──
         if next_step == "route_to_hunt":
             # Use DB-backed optimization for best map
             target_map = self.db.optimize_hunting_map(bot_id, base_level, {map_name})

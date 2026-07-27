@@ -113,6 +113,49 @@ class ActionEmitter:
                 "eventmacro_reason": event_macro.reason,
             },
         )
+        # FALLBACK: If all emit targets failed AND the rule has a direct command,
+        # try to queue it directly as a last resort. This prevents the 242+
+        # "all targets failed" errors that leave bots with no survival action.
+        if rule.action_template and rule.action_template.command:
+            fallback_command = rule.action_template.command.strip()
+            if fallback_command:
+                try:
+                    fallback_proposal = self._build_proposal(
+                        bot_id=bot_id,
+                        rule=rule,
+                        trigger_id=trigger_id,
+                        execution_target="fallback_direct",
+                        kind="command",
+                        command=fallback_command,
+                        conflict_key="",
+                    )
+                    accepted, status, action_id, reason = queue_action(fallback_proposal, bot_id)
+                    if accepted:
+                        logger.info(
+                            "reflex_emit_chain_fallback_succeeded",
+                            extra={
+                                "event": "reflex_emit_chain_fallback_succeeded",
+                                "bot_id": bot_id,
+                                "rule_id": rule.rule_id,
+                                "command": fallback_command,
+                            },
+                        )
+                        return EmitOutcome(
+                            emitted=True,
+                            execution_target="fallback_direct",
+                            action_id=action_id,
+                            reason=f"fallback_direct:{fallback_command}",
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "reflex_emit_chain_fallback_failed",
+                        extra={
+                            "event": "reflex_emit_chain_fallback_failed",
+                            "bot_id": bot_id,
+                            "rule_id": rule.rule_id,
+                            "error": str(e),
+                        },
+                    )
         return EmitOutcome(
             emitted=False,
             execution_target="none",
