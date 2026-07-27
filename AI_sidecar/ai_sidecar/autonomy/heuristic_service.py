@@ -795,7 +795,7 @@ class HeuristicService:
             # COLD START: Minimal - keep weapon, go directly to hunt
             # Selling starting gear sells the weapon too (bot deals 0 damage)
             # Economy (sell loot, buy potions, buy weapon) handled by separate states
-            _cs_hunt_map = "prt_fild05"
+            _cs_hunt_map = "prt_fild04"
             _cs_portal_coords = "22 203"
             # Class-specific attack distance (critical for Archer with bow)
             _cs_job = signals.get("job_name", "novice") or "novice"
@@ -817,14 +817,14 @@ class HeuristicService:
                 reason="Cold start - walk within lockMap bounds to find monsters",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randX 30",
+                kind="command", command="set lockMap_randX 100",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - small random walk radius",
+                reason="Cold start - random walk radius X",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randY 30",
+                kind="command", command="set lockMap_randY 100",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - small random walk radius",
+                reason="Cold start - random walk radius Y",
             ))
             # 1. Set lockMap first
             actions.append(HeuristicAction(
@@ -1366,14 +1366,14 @@ class HeuristicService:
                 reason="Walk within lockMap bounds to find monsters",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randX 30",
+                kind="command", command="set lockMap_randX 100",
                 confidence=0.95, domain="hunting",
-                reason="Small random walk radius",
+                reason="Random walk radius X",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set lockMap_randY 30",
+                kind="command", command="set lockMap_randY 100",
                 confidence=0.95, domain="hunting",
-                reason="Small random walk radius",
+                reason="Random walk radius Y",
             ))
             actions.append(HeuristicAction(
                 kind="command", command=f"set attackDistance {_atk_dist}",
