@@ -91,6 +91,7 @@ my %ml_pending_outcome;
 
 my $registered = 0;
 my $_registered_char_name = '';
+my $_last_reregister = 0;
 my $next_snapshot_at_ms = 0;
 my $next_poll_at_ms = 0;
 my $next_ack_at_ms = 0;
@@ -285,12 +286,19 @@ sub _load_profile_to_char {
 	debug "bridge_profile_to_char: loaded " . scalar(keys %mapping) . " mappings\n", 'aiSidecarBridge', 1;
 }
 sub _check_reregister {
-	my $current_name = $char ? ($char->{name} || '') : '';
+	my $current_name = $char && $char->{name} ? $char->{name} : ($config{username} || '');
 	if ($registered && $current_name ne '' && $current_name ne $_registered_char_name) {
 		debug "bridge_reregister: char name changed from '$_registered_char_name' to '$current_name'\n", 'aiSidecarBridge', 1;
 		$_registered_char_name = $current_name;
 		$registered = 0;
 		$next_register_at_ms = _now_ms();
+	# Force re-register every 30s to catch stale empty-name registration
+	if ($registered && _now_ms() - ($_last_reregister || 0) > 30000) {
+		$_last_reregister = _now_ms();
+		debug "bridge_reregister: 30s heartbeat re-registration\n", 'aiSidecarBridge', 1;
+		$registered = 0;
+		$next_register_at_ms = _now_ms();
+	}
 	}
 }
 sub on_mainLoop_pre {
@@ -1309,7 +1317,7 @@ sub _attempt_register {
 			reason => $reason,
 			master => ($config{master} || ''),
 			identity_username => ($config{username} || ''),
-			identity_char_name => ($char ? ($char->{name} || '') : ''),
+			identity_char_name => ($char && $char->{name} ? $char->{name} : ($config{username} || '')),
 			identity_override => _cfg('aiSidecar_botIdentity', ''),
 			profile => eval { $profiles::profile } || '',
 			control_folder => _active_control_folder(),
