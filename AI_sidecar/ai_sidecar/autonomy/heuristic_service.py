@@ -778,7 +778,7 @@ class HeuristicService:
                 reason="Cold start - enable aggressive auto-attack",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set attackAuto_maxDistance 5",
+                kind="command", command="set attackAuto_maxDistance 10",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - keep attacking even if target moves",
             ))
@@ -1772,7 +1772,7 @@ class HeuristicService:
                         reason="Only attack monsters in lockMap area",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 1",
+                        kind="command", command="set route_randomWalk 2",
                         confidence=0.95, domain="hunting",
                         reason="Walk in small area, not random across map",
                     ))
@@ -1830,7 +1830,7 @@ class HeuristicService:
                         reason="Disable portal teleport",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_maxDistance 3",
+                        kind="command", command="set attackAuto_maxDistance 10",
                         confidence=0.95, domain="hunting",
                     reason="Keep attacking even if target moves",
                 ))
