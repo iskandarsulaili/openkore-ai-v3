@@ -1141,7 +1141,7 @@ class GodModeOrchestrator:
                     action_type=mapped_type,
                     priority_tier=ActionPriorityTier.strategic if priority >= 80 else ActionPriorityTier.tactical,
                     source="god_mode",
-                    description=f"[god_mode] {action_type}: {data.get('reason', '')}",
+                    metadata={"reason": data.get("reason", ""), "gm_type": action_type},
                     conflict_key=f"god_mode_{bot_id}_{action_type}",
                 )
                 aq.enqueue(bot_id, proposal)
