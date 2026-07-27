@@ -12,10 +12,13 @@ from ai_sidecar.autonomy.ro_mechanics import (
     calculate_skill_dps, get_best_skill, get_nearest_breakpoint,
     get_scaling_stat_targets, estimate_hits_to_die,
     calculate_party_exp_share, calculate_weight_time_to_cap,
-    build_spawn_circuit, ELEMENT_TABLE, SIZE_PENALTY, JOB_WEAPON_TYPE,
+    build_spawn_circuit, is_mvp, get_mvp_value, get_skill_element_level,
+    get_optimal_element_for_map,
+    ELEMENT_TABLE, SIZE_PENALTY, JOB_WEAPON_TYPE,
     WEAPON_BASE_ASPD, SKILL_DAMAGE, SKILL_SP_COSTS, FOOD_ITEMS,
     CARD_VALUES, STAT_BREAKPOINTS, SCALING_STAT_TARGETS,
     POTION_COST, POTION_HEAL, BLUE_POTION_COST, BLUE_POTION_SP, ARROW_COST,
+    MVP_MONSTERS, ELEMENTAL_WEAPONS, JOB_CHANGE_TALK,
 )
 
 logger = logging.getLogger(__name__)
@@ -1933,19 +1936,51 @@ class HeuristicService:
                         confidence=0.80, domain="economy",
                         reason=f"Use {_primary_stat} food (+4 {_primary_stat.upper()}, 30 min)",
                     ))
-                # ── DYNAMIC SKILL ROTATION: SP-aware, situation-aware ──
+                # ── DYNAMIC SKILL ROTATION: DPS-based, SP-aware, situation-aware ──
                 _monster_element = signals.get("monster_element", "Neutral") or "Neutral"
                 _monster_hp = signals.get("monster_hp", 50) or 50
-                _skill_rotation = self._adaptive.get_skill_rotation(
-                    _job_name, _current_sp, _max_sp, _monster_element, _monster_hp, _attack_power
+                _monster_def = signals.get("monster_def", 0) or 0
+                _monster_size = signals.get("monster_size", "Medium") or "Medium"
+                _monster_race = signals.get("monster_race", "Brute") or "Brute"
+                _monster_name = signals.get("monster_name", "") or ""
+                _known_skills = signals.get("skills", []) or []
+                _skill_levels = signals.get("skill_levels", {}) or {}
+                _weapon_type = JOB_WEAPON_TYPE.get(_job_name, "dagger")
+                _aggro_count = signals.get("aggressives", 0) or 0
+                _best_skill = get_best_skill(
+                    _known_skills, _skill_levels, _attack_power, _weapon_type,
+                    _monster_def, _monster_size, _monster_element, _monster_race,
+                    _current_sp, _max_sp, _agi, _dex, _aggro_count, _player_hp
                 )
-                for _skill in _skill_rotation:
-                    if _current_sp >= _skill.get("sp_cost", 0):
+                if _best_skill:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"skill {_best_skill}",
+                        confidence=0.90, domain="combat",
+                        reason=f"DPS skill: {_best_skill} (best DPS vs {_monster_element} monster)",
+                    ))
+                # ── MVP AWARENESS: If an MVP is nearby, prioritize it ──
+                _nearby_monsters = signals.get("monsters", []) or []
+                for _nm in _nearby_monsters:
+                    _nm_name = _nm.get("name", "") if isinstance(_nm, dict) else str(_nm)
+                    if is_mvp(_nm_name):
+                        _mvp_value = get_mvp_value(_nm_name)
                         actions.append(HeuristicAction(
-                            kind="command", command=f"skill {_skill['skill_id']}",
-                            confidence=0.90, domain="combat",
-                            reason=f"Skill: {_skill['skill_id']} ({_skill.get('condition', '')})",
+                            kind="command", command=f"attack {_nm_name}",
+                            confidence=0.99, domain="hunting",
+                            reason=f"MVP {_nm_name} nearby! (drop value ~{_mvp_value:,}z)",
                         ))
+                        break
+                # ── WEIGHT TIME-TO-CAP: Skip low-value drops if close to cap ──
+                _weight_capacity = signals.get("weight_capacity", 1000) or 1000
+                _kills_per_min = signals.get("kills_per_min", 5) or 5
+                _avg_drop_weight = 1.0  # Average item weight
+                _time_to_cap = calculate_weight_time_to_cap(_weight_capacity, _avg_drop_weight, _kills_per_min)
+                if _time_to_cap < 10:
+                    actions.append(HeuristicAction(
+                        kind="command", command="set itemsTakeWeight 30",
+                        confidence=0.80, domain="economy",
+                        reason=f"Weight cap in {_time_to_cap:.0f} min - skip low-value drops",
+                    ))
                 # EQUIPMENT PROGRESSION: check if bot should upgrade weapon
                 _eq_prog = self._adaptive.equipment_progression.get(job_name, [])
                 _best_weapon = None
@@ -1966,6 +2001,17 @@ class HeuristicService:
                         reason="At portal exit - move to center of hunting map",
                     ))
                     # Don't return early - continue to set combat config below
+                # ── SPAWN CIRCUIT: Use heatmap to build optimized walking path ──
+                _spawn_heatmap = self._adaptive.spawn_heatmap.get(map_name, {})
+                if _spawn_heatmap and len(_spawn_heatmap) >= 3:
+                    _circuit = build_spawn_circuit(_spawn_heatmap, _x, _y, 5)
+                    if _circuit and len(_circuit) >= 2:
+                        _next_wp = _circuit[0]
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_next_wp[0]} {_next_wp[1]}",
+                            confidence=0.80, domain="hunting",
+                            reason=f"Spawn circuit: walk to hot zone ({_next_wp[0]}, {_next_wp[1]})",
+                        ))
                 # JUST WARPED: if just arrived, sit to regen first
                 if _hunt_duration < 15:
                     if _hp_ratio < 0.5:
