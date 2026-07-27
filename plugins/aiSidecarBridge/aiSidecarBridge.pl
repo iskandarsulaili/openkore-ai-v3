@@ -283,6 +283,15 @@ sub _load_profile_to_char {
 		$mapping{$profile} = $char_name;
 	}
 	%::aiSidecar_profile_to_char = %mapping;
+	# Hardcoded fallback for known profiles
+	if (!keys %mapping) {
+		%::aiSidecar_profile_to_char = (
+			kicapmasin => 'openkoreai',
+			kicapmasin2 => 'openkoreaiobs',
+			kicapmasin3 => 'openkoreaihuman',
+		);
+		debug "bridge_profile_to_char: using hardcoded fallback (3 mappings)\n", 'aiSidecarBridge', 1;
+	}
 	debug "bridge_profile_to_char: loaded " . scalar(keys %mapping) . " mappings\n", 'aiSidecarBridge', 1;
 }
 sub _check_reregister {
@@ -1437,6 +1446,16 @@ sub _build_snapshot_payload {
 				debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
 			}
 		}
+	# PARTY HEARTBEAT: If not in party, create one
+	if (!defined($char->{party}) && @::aiSidecar_all_bots_split) {
+		my $_now = time();
+		if (($_now - ($::aiSidecar_last_party_create || 0)) > 5) {
+			$::aiSidecar_last_party_create = $_now;
+			my $_party_name = 'AI' . int($_now);
+			my $_ok = eval { Commands::run("party create $_party_name"); 1; };
+			debug "bridge_party_create: creating '$_party_name' ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+		}
+	}
 		# Then invite missing members
 		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && defined($char->{party})) {
 			my $_pu = $char->{party}{users} || {};

@@ -1536,6 +1536,56 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
+                # PARTY: Continuous assertion - check every 5s, re-create immediately
+                _party_in = signals.get("in_party", False)
+                _party_members = signals.get("party_members", []) or []
+                _all_bots = signals.get("all_bots", []) or []
+                _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+                _sorted_bots = sorted(_all_bots)
+                _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
+                _party_incomplete = _party_in and len(_party_members) + 1 < len(_all_bots)
+                if not _party_in or _party_incomplete:
+                    if _is_leader:
+                        _now = __import__("time").time()
+                        _last_party = self._last_party_attempt.get(bot_id, 0)
+                        if _now - _last_party > 5:  # Check every 5s
+                            self._last_party_attempt[bot_id] = _now
+                            actions.append(HeuristicAction(
+                                kind="command", command="party leave",
+                                confidence=0.99, domain="social",
+                                reason="Leader - leave old party to re-create",
+                            ))
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"party create AI{int(_now)}",
+                                confidence=0.95, domain="social",
+                                reason="Leader - create party",
+                            ))
+                            for _other_bot in _all_bots:
+                                if _other_bot != _bot_profile:
+                                    actions.append(HeuristicAction(
+                                        kind="command", command=f"party request {_other_bot}",
+                                        confidence=0.95, domain="social",
+                                        reason=f"Leader - request {_other_bot} to join",
+                                    ))
+                            actions.append(HeuristicAction(
+                                kind="command", command="party share exp",
+                                confidence=0.90, domain="social",
+                                reason="Share experience in party",
+                            ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="set partyAuto 2",
+                            confidence=0.99, domain="social",
+                            reason="Set partyAuto to auto-accept",
+                        ))
+                    total_confidence = 0.95
+                    top_domain = "social"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
                 # PARTY: Only handle party formation if in town (don't interrupt hunting)
                 if map_name in _HUNT_TOWNS:
                     _party_in = signals.get("in_party", False)
