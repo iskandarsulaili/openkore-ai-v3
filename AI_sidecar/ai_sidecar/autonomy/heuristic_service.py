@@ -763,7 +763,7 @@ class HeuristicService:
                 reason="Cold start - stand up",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="set attackDistance 2",
+                kind="command", command="set attackDistance 7",
                 confidence=0.99, domain="hunting",
                 reason="Cold start - set attack distance",
             ))
