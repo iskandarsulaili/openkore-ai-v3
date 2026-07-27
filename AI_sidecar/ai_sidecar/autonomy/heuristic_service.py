@@ -921,12 +921,12 @@ class HeuristicService:
                     reason="Lock to hunting map",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randX 0",
+                    kind="command", command="set lockMap_randX 200",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius X",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randY 0",
+                    kind="command", command="set lockMap_randY 200",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius Y",
                 ))
@@ -1679,12 +1679,12 @@ class HeuristicService:
                         reason="Enable aggressive auto-attack",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_followTarget 0",
+                        kind="command", command="set attackAuto_followTarget 1",
                         confidence=0.95, domain="hunting",
                         reason="Dont chase - let monsters come to you",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_noMove 1",
+                        kind="command", command="set attackAuto_noMove 0",
                         confidence=0.95, domain="hunting",
                         reason="Stand still while attacking",
                     ))
@@ -1694,7 +1694,7 @@ class HeuristicService:
                         reason="Only attack monsters in lockMap area",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 0",
+                        kind="command", command="set route_randomWalk 2",
                         confidence=0.95, domain="hunting",
                         reason="Walk in small area, not random across map",
                     ))
