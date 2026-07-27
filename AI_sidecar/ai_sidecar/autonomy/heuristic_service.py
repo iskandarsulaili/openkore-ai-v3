@@ -784,7 +784,8 @@ class HeuristicService:
         _joiner_stuck_in_town = not _is_leader and map_name and map_name in _town_maps and _leader_map and _leader_map not in _town_maps
         logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " stuck_town=" + str(_joiner_stuck_in_town) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char) + " map=" + str(map_name) + " leader_map=" + str(_leader_map))
         # Only act if we have all_bots data - empty all_bots means flicker/no data
-        if (not _party_in or _joiner_in_wrong_party or _joiner_stuck_in_town) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots:
+        # Only party at level 40+ (solo before 40 is faster)
+        if (not _party_in or _joiner_in_wrong_party or _joiner_stuck_in_town) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots and base_level >= 40:
             if _party_in:
                 actions.append(HeuristicAction(
                     kind="command", command="party leave",
