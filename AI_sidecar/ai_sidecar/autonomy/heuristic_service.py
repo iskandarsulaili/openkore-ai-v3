@@ -81,9 +81,10 @@ CLASS_HUNTING_GROUNDS: dict[str, list[tuple[int, int, str, str]]] = {
     # Pro RO progression: dungeons for density, field maps only as fallback
     # Dungeons have 3-5x spawn density vs field maps
     "novice": [
-        (1, 10,  "pay_dun00",     "Payon Cave 1F — Skeletons, Zombies (undead, 3x density)"),
-        (10, 20, "pay_dun01",     "Payon Cave 2F — Munak, Bongun, Ghoul (undead, 5x density)"),
-        (20, 35, "gef_dun00",     "Geffen Dungeon 1F — Drainliar, Creamy, Flora (element advantage)"),
+        (1, 10,  "prt_fild05",   "Prontera Field — Porings, Lunatics, Pupa (safe, level 1-10)"),
+        (10, 20, "pay_dun00",    "Payon Cave 1F — Skeletons, Zombies (undead, 3x density)"),
+        (20, 35, "pay_dun01",    "Payon Cave 2F — Munak, Bongun, Ghoul (undead, 5x density)"),
+        (35, 50, "gef_dun00",    "Geffen Dungeon 1F — Drainliar, Creamy, Flora (element advantage)"),
     ],
     "swordman": [
         (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Bash one-shots undead)"),
@@ -949,11 +950,11 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - don't give up mid-fight",
             ))
-            # COLD START: Go directly to dungeon (density 3-5x field maps)
-            # Payon Cave 1F (pay_dun00) — Skeletons, Zombies, undead
-            # Portal from Payon at (156, 119) to pay_dun00
-            _cs_hunt_map = "pay_dun00"
-            _cs_portal_coords = "156 119"
+            # COLD START: Go to safe field first (prt_fild05 for level 1-10)
+            # Then progress to dungeon at level 10+
+            # Portal from Prontera at (22, 203) to prt_fild05
+            _cs_hunt_map = "prt_fild05"
+            _cs_portal_coords = "22 203"
             # Class-specific attack distance
             _cs_job = signals.get("job_name", "novice") or "novice"
             _cs_atk_dist = 7  # all classes: walk up to 7 cells to attack
