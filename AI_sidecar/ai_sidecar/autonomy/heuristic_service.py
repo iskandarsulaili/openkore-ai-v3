@@ -921,12 +921,12 @@ class HeuristicService:
                     reason="Lock to hunting map",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randX 50",
+                    kind="command", command="set lockMap_randX 200",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius X",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randY 50",
+                    kind="command", command="set lockMap_randY 200",
                     confidence=0.95, domain="hunting",
                     reason="Random walk radius Y",
                 ))
