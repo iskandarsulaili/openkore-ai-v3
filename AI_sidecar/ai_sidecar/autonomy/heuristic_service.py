@@ -1667,6 +1667,13 @@ class HeuristicService:
                     elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
                         _atk_dist = 2  # mace
                         _atk_max = 20
+                    # Class-specific route_randomWalk: melee=2 (walk to find), ranged=0 (stand and shoot)
+                    _rw_val = 0 if _atk_dist >= 7 else 2
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set route_randomWalk {_rw_val}",
+                        confidence=0.95, domain="hunting",
+                        reason=f"Class-appropriate walk: {_rw_val} for {_job_name}",
+                    ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"set attackDistance {_atk_dist}",
                         confidence=0.95, domain="hunting",
@@ -1701,7 +1708,7 @@ class HeuristicService:
                     actions.append(HeuristicAction(
                         kind="command", command="set route_randomWalk 2",
                         confidence=0.95, domain="hunting",
-                        reason="Walk in small area, not random across map",
+                        reason="Walk to find monsters (melee needs to move)",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set lockMap prt_fild05",
