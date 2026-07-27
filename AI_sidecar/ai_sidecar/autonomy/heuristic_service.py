@@ -810,11 +810,12 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
-            # Set route_randomWalk 1 (walk within lockMap bounds) and lockMap_randX/Y 30
+            # Set route_randomWalk: 0 for ranged (stand and shoot), 1 for melee (walk to find)
+            _cs_rw = 0 if _cs_atk_dist >= 7 else 1
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 1",
+                kind="command", command=f"set route_randomWalk {_cs_rw}",
                 confidence=0.99, domain="hunting",
-                reason="Cold start - walk within lockMap bounds to find monsters",
+                reason=f"Cold start - route_randomWalk {_cs_rw} for {_cs_job}",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
@@ -1359,11 +1360,12 @@ class HeuristicService:
                 _atk_dist = 2
             elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
                 _atk_dist = 2
-            # route_randomWalk 1 (walk within lockMap bounds) + lockMap_randX/Y 30
+            # route_randomWalk: 0 for ranged (stand and shoot), 1 for melee (walk to find)
+            _rw_val = 0 if _atk_dist >= 7 else 1
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 1",
+                kind="command", command=f"set route_randomWalk {_rw_val}",
                 confidence=0.95, domain="hunting",
-                reason="Walk within lockMap bounds to find monsters",
+                reason=f"route_randomWalk {_rw_val} for {_job_name} (ranged=0, melee=1)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
