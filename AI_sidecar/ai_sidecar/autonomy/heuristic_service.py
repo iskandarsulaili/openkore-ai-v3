@@ -485,6 +485,114 @@ class AdaptiveDataStore:
                 best = _name
         return best
 
+    def get_optimal_hunting_map(self, job_name: str, base_level: int, attack_power: int = 25) -> tuple[str, str]:
+        """Find the best hunting map using rAthena data.
+        Considers: monster density, monster HP vs player ATK, exp per kill, element advantage.
+        Returns (map_name, reason).
+        """
+        grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+        best_map = None
+        best_reason = ""
+        best_score = -1.0
+
+        for min_lv, max_lv, map_name, desc in grounds:
+            if not (min_lv <= base_level <= max_lv):
+                continue
+            # Score this map using rAthena spawn data
+            spawns = self.map_spawns.get(map_name, [])
+            if not spawns:
+                # No spawn data - use default score
+                if best_map is None:
+                    best_map = map_name
+                    best_reason = desc
+                    best_score = 0.5
+                continue
+
+            total_exp = 0
+            total_hp = 0
+            total_count = 0
+            danger_level = 0  # Higher = more dangerous
+
+            for m_name, count, _ in spawns:
+                stats = self.monster_stats.get(m_name.lower().strip())
+                if stats:
+                    total_exp += stats["exp"] * count
+                    total_hp += stats["hp"] * count
+                    total_count += count
+                    # Danger: monster ATK > player HP/2
+                    if stats["attack"] > attack_power * 2:
+                        danger_level += count
+                    # Element advantage: undead vs holy (Acolyte Heal)
+                    if job_name == "acolyte" and stats["element"] == "Undead":
+                        total_exp *= 3  # Heal one-shots undead
+                    # Element disadvantage: avoid elements that resist our attacks
+                    if stats["element"] == "Water" and job_name in ("thief", "swordman"):
+                        total_exp *= 0.5  # Physical vs water = reduced damage
+
+            if total_count == 0:
+                continue
+
+            avg_exp = total_exp / total_count
+            avg_hp = total_hp / total_count
+            hits_to_kill = avg_hp / max(1, attack_power)
+            danger_ratio = danger_level / max(total_count, 1)
+
+            # Score: high exp, low hits-to-kill, low danger
+            score = avg_exp / max(hits_to_kill, 1) * (1 - danger_ratio * 0.5)
+
+            if score > best_score:
+                best_score = score
+                best_map = map_name
+                best_reason = f"{desc} (score={score:.1f}, avg_hits={hits_to_kill:.1f}, danger={danger_ratio:.0%})"
+
+        if best_map is None:
+            return ("prt_fild05", "Fallback: Prontera Field (safe for all classes)")
+        return (best_map, best_reason)
+
+    def get_optimal_weapon(self, job_name: str, base_level: int, zeny: int) -> tuple[str, str] | None:
+        """Find the best weapon to buy using rAthena-corrected IDs.
+        Returns (weapon_id, description) or None if can't afford.
+        """
+        prog = self.equipment_progression.get(job_name, self.equipment_progression["novice"])
+        best = None
+        for lvl, wid, desc in prog:
+            if base_level >= lvl:
+                best = (wid, desc)
+        if best and zeny >= 100:
+            return best
+        return None
+
+    def estimate_survivability(self, map_name: str, base_level: int, attack_power: int = 25) -> float:
+        """Estimate survivability on a map (0.0 = deadly, 1.0 = safe).
+        Uses rAthena monster stats to check if monsters are too strong.
+        """
+        spawns = self.map_spawns.get(map_name, [])
+        if not spawns:
+            return 0.8  # Unknown map - assume moderately safe
+
+        total_danger = 0
+        total_count = 0
+        for m_name, count, _ in spawns:
+            stats = self.monster_stats.get(m_name.lower().strip())
+            if stats:
+                total_count += count
+                # Danger if monster level > player level + 5
+                if stats["level"] > base_level + 5:
+                    total_danger += count * 2
+                # Danger if monster ATK > player ATK * 3
+                if stats["attack"] > attack_power * 3:
+                    total_danger += count * 3
+                # Danger if monster HP > player ATK * 20
+                if stats["hp"] > attack_power * 20:
+                    total_danger += count
+
+        if total_count == 0:
+            return 0.8
+
+        danger_ratio = total_danger / total_count
+        survivability = max(0.0, 1.0 - danger_ratio * 0.3)
+        return survivability
+
     def get_map_score(self, map_name: str) -> float:
         with self._lock:
             perf = self.map_performance.get(map_name, {})
@@ -1503,15 +1611,15 @@ class HeuristicService:
             _class_lc = _job_name.lower()
             _atk_dist = 7  # all classes: walk up to 7 cells to attack
             _atk_max = 20
-            # route_randomWalk: 2 (walk across map to find monsters)
-            # route_randomWalk=0: stand still (only attacks if monster walks within 7 cells)
-            # route_randomWalk=1: walk within lockMap_randX/Y bounds
-            # route_randomWalk=2: walk across ENTIRE map (passes through multiple spawn areas)
-            # The bot WILL attack any monster it passes while walking
+            # route_randomWalk: 1 (walk within lockMap_randX/Y bounds - doesn't block AI)
+            # route_randomWalk=0: stand still (monsters must come to you - bad for passive mobs)
+            # route_randomWalk=1: walk within lockMap_randX/Y bounds (best for field maps)
+            # route_randomWalk=2: walk across entire map (triggers "Calculating random route" which blocks AI)
+            _rw = 1
             actions.append(HeuristicAction(
-                kind="command", command="set route_randomWalk 2",
+                kind="command", command="set route_randomWalk 1",
                 confidence=0.95, domain="hunting",
-                reason="Walk across map to find monsters (attacks anything it passes)",
+                reason="Walk within lockMap bounds (doesn't block AI, attacks anything it passes)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set lockMap_randX 100",
@@ -1763,46 +1871,37 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # MAP PROGRESSION: Use class-aware hunting grounds (dungeon-first)
-                # Skip if bot is already en route to a different map (lockMap != current map)
+                # MAP PROGRESSION: Use rAthena data-driven optimal map selection
+                # Character-aware: considers level, job, attack power, monster stats
+                _attack_power = signals.get("attack_power", 25) or 25
+                _optimal_map, _optimal_reason = self._adaptive.get_optimal_hunting_map(
+                    job_name, base_level, _attack_power
+                )
+                _survivability = self._adaptive.estimate_survivability(
+                    _optimal_map, base_level, _attack_power
+                )
+                # Skip if bot is already en route to a different map
                 _last_set_lockmap = self._last_lockmap.get(bot_id, "")
-                # If _last_lockmap not set, initialize from class hunting grounds
                 if not _last_set_lockmap:
-                    _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
-                    for _min_lv, _max_lv, _map_name, _desc in _grounds:
-                        if _min_lv <= base_level <= _max_lv:
-                            _last_set_lockmap = _map_name
-                            break
-                    if not _last_set_lockmap and _grounds:
-                        _last_set_lockmap = _grounds[-1][2]
-                    if not _last_set_lockmap:
-                        _last_set_lockmap = "pay_dun00"
+                    _last_set_lockmap = _optimal_map
                     self._last_lockmap[bot_id] = _last_set_lockmap
                 _current_lockmap = signals.get("lockMap", _last_set_lockmap) or _last_set_lockmap
                 if map_name == _current_lockmap or _hunt_duration > 60:
-                    _base_level = signals.get("level", 1) or 1
-                    _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
-                    _next_map = None
-                    for _min_lv, _max_lv, _map_name, _desc in _grounds:
-                        if _min_lv <= _base_level <= _max_lv:
-                            _next_map = _map_name
-                            break
-                    if not _next_map and _grounds:
-                        _next_map = _grounds[-1][2]  # Fallback to highest level map
-                    if not _next_map:
-                        _next_map = "pay_dun00"  # Ultimate fallback
+                    # Use rAthena data-driven optimal map selection
+                    _next_map = _optimal_map
+                    _next_reason = _optimal_reason
                     # If current map is not the correct one for level, move
                     if map_name != _next_map and _hunt_duration > 30:
                         self._last_lockmap[bot_id] = _next_map
                         actions.append(HeuristicAction(
                             kind="command", command=f"set lockMap {_next_map}",
                             confidence=0.90, domain="hunting",
-                            reason=f"Level {_base_level} - moving to {_next_map}",
+                            reason=f"Level {base_level} - {_next_reason}",
                         ))
                         actions.append(HeuristicAction(
                             kind="command", command=f"move {_next_map}",
                             confidence=0.90, domain="hunting",
-                            reason=f"Level {_base_level} - progressing to {_next_map}",
+                            reason=f"Level {base_level} - progressing to {_next_map}",
                         ))
                     total_confidence = 0.90
                     top_domain = "hunting"
