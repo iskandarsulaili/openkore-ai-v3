@@ -4887,7 +4887,7 @@ sub _apply_bot_config {
 	$::config{'teleportAuto'} = _cfg('aiSidecar_teleportAuto', '0') unless $::config{'_sidecar_set_teleportAuto'};
 	$::config{'teleportAuto_hp'} = _cfg('aiSidecar_teleportAutoHp', '0') unless $::config{'_sidecar_set_teleportAuto_hp'};
 	$::config{'teleportAuto_minAggressivesInLock'} = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8') unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'};
-	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '2') unless $::config{'_sidecar_set_route_randomWalk'};
+	$::config{'route_randomWalk'} = _cfg('aiSidecar_routeRandomWalk', '1') unless $::config{'_sidecar_set_route_randomWalk'};
 	$::config{'route_randomWalk_inLockOnly'} = _cfg('aiSidecar_routeRandomWalkInLockOnly', '1') unless $::config{'_sidecar_set_route_randomWalk_inLockOnly'};
 	$::config{'itemsTakeAuto'} = _cfg('aiSidecar_itemsTakeAuto', '2') unless $::config{'_sidecar_set_itemsTakeAuto'};
 	$::config{'itemsGatherAuto'} = _cfg('aiSidecar_itemsGatherAuto', '2') unless $::config{'_sidecar_set_itemsGatherAuto'};
