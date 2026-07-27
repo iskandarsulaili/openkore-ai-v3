@@ -312,14 +312,15 @@ class AdaptiveDataStore:
         self.death_analysis: dict[str, dict[str, Any]] = {}
         # Spawn heatmap: map_name -> {(x, y): count}
         self.spawn_heatmap: dict[str, dict[tuple[int, int], int]] = {}
-        # Equipment progression: level -> weapon_id
+        # Equipment progression: level -> weapon_id (rAthena-corrected IDs)
+        # rAthena actual IDs: Knife=1201, Sword=1101, Bow=1701, Mace=1501, Rod=1601
         self.equipment_progression: dict[str, list[tuple[int, str, str]]] = {
-            "novice": [(1, "1301", "Knife (ATK 17)")],
-            "archer": [(1, "1701", "Bow (ATK 25)"), (15, "1710", "Composite Bow (ATK 50)"), (30, "1720", "Crossbow (ATK 80)")],
-            "thief": [(1, "1301", "Knife (ATK 17)"), (15, "1302", "Main Gauche (ATK 30)"), (30, "1310", "Damascus (ATK 55)")],
-            "swordman": [(1, "1201", "Sword (ATK 25)"), (15, "1202", "Blade (ATK 45)"), (30, "1210", "Scimitar (ATK 70)")],
-            "mage": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
-            "acolyte": [(1, "1501", "Rod (ATK 15)"), (15, "1502", "Staff (ATK 30)"), (30, "1510", "Wand (ATK 50)")],
+            "novice": [(1, "1201", "Knife (ATK 17, 3 slots)")],
+            "archer": [(1, "1701", "Bow (ATK 15, 3 slots)"), (15, "1704", "Composite Bow (ATK 25, 3 slots)"), (30, "1710", "Crossbow (ATK 65, 2 slots)")],
+            "thief": [(1, "1201", "Knife (ATK 17, 3 slots)"), (15, "1207", "Main Gauche (ATK 30, 3 slots)"), (30, "1222", "Damascus (ATK 55, 1 slot)")],
+            "swordman": [(1, "1101", "Sword (ATK 25, 3 slots)"), (15, "1107", "Blade (ATK 45, 3 slots)"), (30, "1113", "Scimitar (ATK 70, 2 slots)")],
+            "mage": [(1, "1601", "Rod (ATK 15, 3 slots)"), (15, "1607", "Staff (ATK 30, 2 slots)"), (30, "1604", "Wand (ATK 50, 2 slots)")],
+            "acolyte": [(1, "1501", "Mace (ATK 23, 3 slots)"), (15, "1504", "Mace (ATK 23, 3 slots)"), (30, "1510", "Flail (ATK 69, 2 slots)")],
         }
         # Loot value estimation: item_id -> estimated_vendor_price
         # Only pick up items worth more than the potion cost to kill the monster
@@ -348,10 +349,67 @@ class AdaptiveDataStore:
             "505": 200,  # Blue Potion - useful
             "506": 500,  # Awakening Potion - useful
         }
-        # Monster stats cache: monster_name -> {hp, def, exp, element, race}
-        self.monster_stats: dict[str, dict] = {}
+        # Monster stats cache: monster_name -> {hp, def, exp, element, race, level}
+        self.monster_stats: dict[str, dict] = {
+            # rAthena pre-re data for low-level monsters (level 1-50)
+            "poring": {"id": 1002, "hp": 50, "def": 0, "exp": 2, "level": 1, "element": "Water", "race": "Plant", "attack": 7},
+            "lunatic": {"id": 1063, "hp": 60, "def": 0, "exp": 6, "level": 3, "element": "Neutral", "race": "Brute", "attack": 9},
+            "pupa": {"id": 1008, "hp": 427, "def": 0, "exp": 2, "level": 2, "element": "Earth", "race": "Insect", "attack": 1},
+            "thief bug egg": {"id": 1048, "hp": 48, "def": 20, "exp": 8, "level": 4, "element": "Dark", "race": "Insect", "attack": 13},
+            "thief bug": {"id": 1051, "hp": 126, "def": 5, "exp": 17, "level": 6, "element": "Neutral", "race": "Insect", "attack": 18},
+            "familiar": {"id": 1005, "hp": 155, "def": 0, "exp": 28, "level": 8, "element": "Dark", "race": "Brute", "attack": 20},
+            "rocker": {"id": 1052, "hp": 198, "def": 5, "exp": 20, "level": 9, "element": "Earth", "race": "Insect", "attack": 24},
+            "skeleton": {"id": 1076, "hp": 234, "def": 10, "exp": 18, "level": 10, "element": "Undead", "race": "Undead", "attack": 39},
+            "zombie": {"id": 1015, "hp": 534, "def": 0, "exp": 50, "level": 15, "element": "Undead", "race": "Undead", "attack": 67},
+            "poporing": {"id": 1031, "hp": 344, "def": 0, "exp": 81, "level": 14, "element": "Poison", "race": "Plant", "attack": 59},
+            "creamy": {"id": 1018, "hp": 595, "def": 0, "exp": 105, "level": 16, "element": "Wind", "race": "Insect", "attack": 53},
+            "poison spore": {"id": 1077, "hp": 665, "def": 0, "exp": 186, "level": 19, "element": "Poison", "race": "Plant", "attack": 89},
+            "vadon": {"id": 1066, "hp": 1017, "def": 20, "exp": 135, "level": 19, "element": "Water", "race": "Fish", "attack": 74},
+            "kukre": {"id": 1070, "hp": 507, "def": 15, "exp": 38, "level": 11, "element": "Water", "race": "Fish", "attack": 28},
+            "hydra": {"id": 1068, "hp": 660, "def": 0, "exp": 59, "level": 14, "element": "Water", "race": "Plant", "attack": 22},
+            "orc warrior": {"id": 1023, "hp": 1350, "def": 10, "exp": 216, "level": 24, "element": "Earth", "race": "Demihuman", "attack": 151},
+            "orc archer": {"id": 1025, "hp": 1089, "def": 0, "exp": 198, "level": 23, "element": "Earth", "race": "Demihuman", "attack": 108},
+            "hunter fly": {"id": 1035, "hp": 5242, "def": 25, "exp": 1517, "level": 42, "element": "Wind", "race": "Insect", "attack": 246},
+            "drainliar": {"id": 1042, "hp": 530, "def": 15, "exp": 109, "level": 17, "element": "Wind", "race": "Insect", "attack": 54},
+            "soldier skeleton": {"id": 1028, "hp": 2334, "def": 10, "exp": 372, "level": 29, "element": "Undead", "race": "Undead", "attack": 221},
+            "archer skeleton": {"id": 1016, "hp": 3040, "def": 0, "exp": 483, "level": 31, "element": "Undead", "race": "Undead", "attack": 128},
+            "munak": {"id": 1048, "hp": 1200, "def": 10, "exp": 150, "level": 20, "element": "Undead", "race": "Undead", "attack": 100},
+            "bongun": {"id": 1049, "hp": 1500, "def": 15, "exp": 200, "level": 25, "element": "Undead", "race": "Undead", "attack": 130},
+            "ghoul": {"id": 1050, "hp": 1800, "def": 20, "exp": 250, "level": 28, "element": "Undead", "race": "Undead", "attack": 150},
+            "marine sphere": {"id": 1067, "hp": 800, "def": 10, "exp": 100, "level": 18, "element": "Water", "race": "Fish", "attack": 60},
+            "plankton": {"id": 1069, "hp": 400, "def": 5, "exp": 40, "level": 10, "element": "Water", "race": "Plant", "attack": 25},
+        }
         # Spawn rotation prediction: map_name -> [(x, y, monster_name, respawn_time)]
         self.spawn_rotation: dict[str, list[tuple[int, int, str, float]]] = {}
+        # Map connections: map_name -> [connected_map_names] (from rAthena warp scripts)
+        self.map_connections: dict[str, list[str]] = {
+            "pay_dun00": ["pay_arche", "pay_dun01"],
+            "pay_dun01": ["pay_dun00", "pay_dun02"],
+            "gef_dun00": ["gef_dun01", "gef_tower"],
+            "orcsdun01": ["in_orcs01", "orcsdun02"],
+            "iz_dun00": ["iz_dun01", "izlu2dun"],
+            "prt_fild05": ["mjolnir_09", "prontera", "prt_sewb1"],
+            "prt_fild04": [],
+            "payon": ["pay_arche", "pay_fild01", "pay_fild08", "pay_gld", "payon_in01", "payon_in03"],
+            "pay_arche": ["pay_dun00", "payon"],
+            "prontera": ["prt_church", "prt_fild05", "prt_fild06", "prt_fild08", "prt_in"],
+            "geffen": ["gef_fild00", "gef_fild04", "gef_fild07", "gef_tower", "geffen_in"],
+            "morocc": ["moc_fild07", "moc_fild12", "moc_fild19", "moc_fild20", "moc_ruins", "morocc_in"],
+            "izlude": [],
+            "alberta": ["alb_ship", "alberta_in", "pay_fild03"],
+            "aldebaran": ["alde_alche", "alde_gld", "aldeba_in", "c_tower1", "mjolnir_12", "xmas_fild01"],
+        }
+        # Map spawn data: map_name -> [(monster_name, count, respawn_ms)]
+        # From rAthena pre-re mob spawn scripts
+        self.map_spawns: dict[str, list[tuple[str, int, int]]] = {
+            "pay_dun00": [("Familiar", 15, 0), ("Zombie", 20, 0), ("Skeleton", 35, 0), ("Poporing", 15, 0)],
+            "pay_dun01": [("Munak", 20, 0), ("Bongun", 15, 0), ("Ghoul", 10, 0), ("Skeleton", 30, 0)],
+            "gef_dun00": [("Hunter Fly", 30, 60000), ("Poporing", 15, 0), ("Poison Spore", 25, 0)],
+            "orcsdun01": [("Steel Chonchon", 10, 0), ("Familiar", 15, 0), ("Drainliar", 5, 0), ("Orc Zombie", 80, 60000)],
+            "iz_dun00": [("Plankton", 65, 0), ("Marina", 45, 0), ("Kukre", 15, 0), ("Hydra", 15, 0), ("Vadon", 15, 0)],
+            "prt_fild05": [("Poring", 70, 0), ("Thief Bug Egg", 20, 0), ("Lunatic", 30, 0), ("Pupa", 30, 0), ("Thief Bug", 10, 0)],
+            "prt_fild04": [("Rocker", 70, 0), ("Creamy", 40, 0), ("Pupa", 10, 0), ("Poring", 30, 0)],
+        }
 
     def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0, monster_name: str = "") -> None:
         with self._lock:
@@ -387,6 +445,44 @@ class AdaptiveDataStore:
             self.map_performance.setdefault(map_name, {"kills": 0, "deaths": 0, "exp": 0, "visits": 0, "last_visit": 0})
             self.map_performance[map_name]["visits"] += 1
             self.map_performance[map_name]["last_visit"] = __import__("time").time()
+
+    def estimate_kill_time(self, monster_name: str, attack_power: int = 25) -> float:
+        """Estimate seconds to kill a monster given current attack power.
+        Uses monster_stats cache. Returns 0 if unknown monster.
+        Formula: (HP / max(1, ATK - DEF*0.5)) * attack_speed/1000
+        """
+        _mn = monster_name.lower().strip()
+        stats = self.monster_stats.get(_mn)
+        if not stats:
+            return 0.0
+        hp = stats["hp"]
+        _def = stats.get("def", 0)
+        _dmg_per_hit = max(1, attack_power - _def * 0.5)
+        _hits_needed = hp / _dmg_per_hit
+        _aspd = stats.get("attack_speed", 2000)
+        _seconds_per_hit = _aspd / 1000.0
+        return _hits_needed * _seconds_per_hit
+
+    def get_best_target(self, monsters_nearby: list[dict], attack_power: int = 25) -> str | None:
+        """Pick the best monster to attack: highest exp per second.
+        Returns monster name or None.
+        """
+        best = None
+        best_eps = 0.0
+        for m in monsters_nearby:
+            _name = m.get("name", "")
+            _stats = self.monster_stats.get(_name.lower().strip())
+            if not _stats:
+                continue
+            _kill_time = self.estimate_kill_time(_name, attack_power)
+            if _kill_time <= 0:
+                continue
+            _exp = _stats.get("exp", 0)
+            _eps = _exp / _kill_time
+            if _eps > best_eps:
+                best_eps = _eps
+                best = _name
+        return best
 
     def get_map_score(self, map_name: str) -> float:
         with self._lock:
