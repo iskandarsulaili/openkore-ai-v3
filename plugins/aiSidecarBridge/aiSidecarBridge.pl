@@ -1441,17 +1441,18 @@ sub _build_snapshot_payload {
 			$::config{partyAuto} = 2;
 		}
 		# ── Direct party invite: leader invites missing members ──
-		# This runs OUTSIDE the eval block so errors don't get swallowed
 		# First, check if leader needs to create a party
-		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0]) {
+		# Only create party at level 40+ (solo before 40 is faster)
+		my $_leader_lv = defined($char) ? ($char->{lv} || $char->{level} || 0) : 0;
+		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && $_leader_lv >= 40) {
 			if (!defined($char->{party})) {
 				my $_ts = time();
 				my $_ok = eval { Commands::run("party create AI$_ts"); 1; };
 				debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
 			}
 		}
-	# PARTY HEARTBEAT: If not in party, create one
-	if (!defined($char->{party}) && @::aiSidecar_all_bots_split) {
+	# PARTY HEARTBEAT: If not in party, create one (only at level 40+)
+	if (!defined($char->{party}) && @::aiSidecar_all_bots_split && $_leader_lv >= 40) {
 		my $_now = time();
 		if (($_now - ($::aiSidecar_last_party_create || 0)) > 5) {
 			$::aiSidecar_last_party_create = $_now;
@@ -1460,8 +1461,8 @@ sub _build_snapshot_payload {
 			debug "bridge_party_create: creating '$_party_name' ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
 		}
 	}
-		# Then invite missing members
-		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && defined($char->{party})) {
+		# Then invite missing members (only at level 40+)
+		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && defined($char->{party}) && $_leader_lv >= 40) {
 			my $_pu = $char->{party}{users} || {};
 				my %_mn;
 				for my $_uid (keys %$_pu) {
