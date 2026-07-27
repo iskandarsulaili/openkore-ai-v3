@@ -774,13 +774,13 @@ class HeuristicService:
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set attackAuto 3",
-                        confidence=0.95, domain="hunting",
-                        reason="Enable aggressive auto-attack",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_startOnSight 1",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - enable aggressive auto-attack",
+                confidence=0.95, domain="hunting",
+                reason="Enable aggressive auto-attack",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_startOnSight 1",
+                confidence=0.95, domain="hunting",
+                reason="Attack monsters as soon as they appear",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set attackAuto_maxDistance 10",
