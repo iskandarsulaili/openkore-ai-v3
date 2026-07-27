@@ -4924,7 +4924,7 @@ sub _apply_bot_config {
     # sitAuto_hp_upper controlled by heuristic
     # $::config{attackAuto} = 3;
     # attackAuto_inLockOnly controlled by heuristic
-    $::config{attackDistance} = 7;
+    # $::config{attackDistance} = 7;  # heuristic controls this
 }
 
 # ── Safe character accessor ──
