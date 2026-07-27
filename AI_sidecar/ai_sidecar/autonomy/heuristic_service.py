@@ -810,6 +810,22 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason=f"Cold start - set class attack distance {_cs_atk_dist} for {_cs_job}",
             ))
+            # Set route_randomWalk 1 (walk within lockMap bounds) and lockMap_randX/Y 30
+            actions.append(HeuristicAction(
+                kind="command", command="set route_randomWalk 1",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - walk within lockMap bounds to find monsters",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap_randX 30",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - small random walk radius",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap_randY 30",
+                confidence=0.99, domain="hunting",
+                reason="Cold start - small random walk radius",
+            ))
             # 1. Set lockMap first
             actions.append(HeuristicAction(
                 kind="command", command=f"set lockMap {_cs_hunt_map}",
@@ -1330,6 +1346,126 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
+            # ── COMBAT CONFIG: Set every cycle (before any early returns) ──
+            _job_name = signals.get("job_name", "novice") or "novice"
+            _class_lc = _job_name.lower()
+            _atk_dist = 2  # melee default
+            _atk_max = 20
+            if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
+                _atk_dist = 7
+            elif _class_lc.startswith("mage") or _class_lc.startswith("wizard") or _class_lc.startswith("sorcerer"):
+                _atk_dist = 7
+            elif _class_lc.startswith("thief") or _class_lc.startswith("rogue") or _class_lc.startswith("assassin"):
+                _atk_dist = 2
+            elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
+                _atk_dist = 2
+            # route_randomWalk 1 (walk within lockMap bounds) + lockMap_randX/Y 30
+            actions.append(HeuristicAction(
+                kind="command", command="set route_randomWalk 1",
+                confidence=0.95, domain="hunting",
+                reason="Walk within lockMap bounds to find monsters",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap_randX 30",
+                confidence=0.95, domain="hunting",
+                reason="Small random walk radius",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set lockMap_randY 30",
+                confidence=0.95, domain="hunting",
+                reason="Small random walk radius",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command=f"set attackDistance {_atk_dist}",
+                confidence=0.95, domain="hunting",
+                reason=f"Class-appropriate attack distance for {_job_name}",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command=f"set attackMaxDistance {_atk_max}",
+                confidence=0.95, domain="hunting",
+                reason="Set max chase distance",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto 3",
+                confidence=0.95, domain="hunting",
+                reason="Enable aggressive auto-attack",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_followTarget 1",
+                confidence=0.95, domain="hunting",
+                reason="Chase fleeing monsters",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_noMove 0",
+                confidence=0.95, domain="hunting",
+                reason="Allow movement during combat",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_inLockOnly 1",
+                confidence=0.95, domain="hunting",
+                reason="Only attack monsters in lockMap area",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_onlyWhenSafe 0",
+                confidence=0.95, domain="hunting",
+                reason="Attack even if not safe",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_fleeToTarget 0",
+                confidence=0.95, domain="hunting",
+                reason="Don't flee to target",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_startDistance 1",
+                confidence=0.95, domain="hunting",
+                reason="Start attacking from 1 cell away (immediate)",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_keepDistance 1",
+                confidence=0.95, domain="hunting",
+                reason="Keep distance while attacking",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_maxDistance 20",
+                confidence=0.95, domain="hunting",
+                reason="Keep attacking even if target moves",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set attackAuto_unstuck 1",
+                confidence=0.95, domain="hunting",
+                reason="Don't give up mid-fight",
+            ))
+            # Teleport config: disable all teleport triggers
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto 0",
+                confidence=0.99, domain="hunting",
+                reason="Disable teleporting to prevent town loop",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_minAggressives 8",
+                confidence=0.95, domain="survival",
+                reason="Only teleport when 8+ mobs",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_hp 0",
+                confidence=0.95, domain="survival",
+                reason="Never teleport due to HP",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_deadly 0",
+                confidence=0.95, domain="survival",
+                reason="Disable deadly teleport",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_search 0",
+                confidence=0.95, domain="survival",
+                reason="Disable search teleport",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="set teleportAuto_portal 0",
+                confidence=0.95, domain="survival",
+                reason="Disable portal teleport",
+            ))
             if map_name not in _HUNT_TOWNS:
                 # On hunting map: check if we should return to town
                 _hunt_duration = __import__("time").time() - self._state_since.get(bot_id, __import__("time").time())
@@ -1651,160 +1787,21 @@ class HeuristicService:
                         reason="Sit regen at low HP",
                     ))
                 else:
-                    # Class-specific attack distance
-                    _atk_dist = 2  # melee default
-                    _atk_max = 20
-                    _class_lc = _job_name.lower()
-                    if _class_lc.startswith("archer") or _class_lc.startswith("hunter"):
-                        _atk_dist = 7  # bow range
-                        _atk_max = 20
-                    elif _class_lc.startswith("mage") or _class_lc.startswith("wizard") or _class_lc.startswith("sorcerer"):
-                        _atk_dist = 7  # spell range
-                        _atk_max = 20
-                    elif _class_lc.startswith("thief") or _class_lc.startswith("rogue") or _class_lc.startswith("assassin"):
-                        _atk_dist = 2  # dagger
-                        _atk_max = 20
-                    elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
-                        _atk_dist = 2  # mace
-                        _atk_max = 20
-                    # route_randomWalk: 1 for ALL classes (walk within lockMap bounds)
-                    # route_randomWalk=0 causes bots to stand still and never find monsters
-                    # route_randomWalk=2 causes endless "Calculating random route" across entire map
-                    # route_randomWalk=1 walks within lockMap_randX/Y bounds (small area)
+                    # Already set combat config at top of HUNT handler
+                    # Just ensure ai auto is set
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 1",
+                        kind="command", command="ai auto",
                         confidence=0.95, domain="hunting",
-                        reason="Walk within lockMap bounds to find monsters",
+                        reason="On hunting map - enable auto-attack",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap_randX 30",
-                        confidence=0.95, domain="hunting",
-                        reason="Small random walk radius",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap_randY 30",
-                        confidence=0.95, domain="hunting",
-                        reason="Small random walk radius",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"set attackDistance {_atk_dist}",
-                        confidence=0.95, domain="hunting",
-                        reason=f"Class-appropriate attack distance for {_job_name}",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"set attackMaxDistance {_atk_max}",
-                        confidence=0.95, domain="hunting",
-                        reason="Set max chase distance",
-                    ))
-                    # MONSTER CONTROL: Only attack low-level monsters (poring, lunatic, fabre, picky)
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 3",
-                        confidence=0.95, domain="hunting",
-                        reason="Enable aggressive auto-attack",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_followTarget 1",
-                        confidence=0.95, domain="hunting",
-                        reason="Chase fleeing monsters",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_noMove 0",
-                        confidence=0.95, domain="hunting",
-                        reason="Allow movement during combat",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_inLockOnly 1",
-                        confidence=0.95, domain="hunting",
-                        reason="Only attack monsters in lockMap area",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_onlyWhenSafe 0",
-                        confidence=0.95, domain="hunting",
-                        reason="Attack even if not safe",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_fleeToTarget 0",
-                        confidence=0.95, domain="hunting",
-                        reason="Don't flee to target",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_startDistance 1",
-                        confidence=0.95, domain="hunting",
-                        reason="Start attacking from 1 cell away (immediate)",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_keepDistance 1",
-                        confidence=0.95, domain="hunting",
-                        reason="Keep distance while attacking",
-                    ))
-
-                    actions.append(HeuristicAction(
-                        kind="command", command="set teleportAuto_minAggressives 8",
-                        confidence=0.95, domain="survival",
-                        reason="Only teleport when 8+ mobs",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set teleportAuto_hp 0",
-                        confidence=0.95, domain="survival",
-                        reason="Never teleport due to HP",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set teleportAuto_deadly 0",
-                        confidence=0.95, domain="survival",
-                        reason="Disable deadly teleport",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set teleportAuto_search 0",
-                        confidence=0.95, domain="survival",
-                        reason="Disable search teleport",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set teleportAuto_portal 0",
-                        confidence=0.95, domain="survival",
-                        reason="Disable portal teleport",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto_maxDistance 20",
-                        confidence=0.95, domain="hunting",
-                    reason="Keep attacking even if target moves",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto_unstuck 1",
-                    confidence=0.95, domain="hunting",
-                    reason="Don't give up mid-fight",
-                ))
-                # Disable teleporting before enabling auto-attack (prevents town teleport loop)
-                actions.append(HeuristicAction(
-                    kind="command", command="set teleportAuto 0",
-                    confidence=0.99, domain="hunting",
-                    reason="Disable teleporting to prevent town loop",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.95, domain="hunting",
-                    reason="On hunting map - enable auto-attack",
-                ))
-                total_confidence = 0.95
-                top_domain = "hunting"
-                assessment = HeuristicAssessment(
-                    horizon=horizon, actions=actions, confidence=total_confidence,
-                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                )
-                self._last_assessment[bot_id] = assessment
-                # GUARANTEED FALLTHROUGH: If no condition matched, keep attacking
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.95, domain="hunting",
-                    reason="Fallthrough - continuous auto-attack on hunting map",
-                ))
-                total_confidence = 0.95
-                top_domain = "hunting"
-                assessment = HeuristicAssessment(
-                    horizon=horizon, actions=actions, confidence=total_confidence,
-                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                )
-                self._last_assessment[bot_id] = assessment
-                return assessment
+                    total_confidence = 0.95
+                    top_domain = "hunting"
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=total_confidence,
+                        actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
             # AUTO-STATS: If bot has unspent stat points, transition to STATS state
             _current_stat_points = signals.get("stat_points", 0) or 0
             if _current_stat_points > 0:
