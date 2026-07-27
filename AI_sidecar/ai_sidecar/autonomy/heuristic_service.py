@@ -917,6 +917,18 @@ class HeuristicService:
             if _town_time > 15:
                 actions.append(HeuristicAction(
                     kind="command", command="set lockMap prt_fild05",
+                        confidence=0.95, domain="hunting",
+                        reason="Lock to hunting map",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randX 50",
+                        confidence=0.95, domain="hunting",
+                        reason="Random walk radius X",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randY 50",
+                        confidence=0.95, domain="hunting",
+                        reason="Random walk radius Y",
                     confidence=0.95, domain="hunting",
                     reason="Set hunting map lock before returning",
                 ))
@@ -1757,7 +1769,7 @@ class HeuristicService:
                         reason="Only attack monsters in lockMap area",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 2",
+                        kind="command", command="set route_randomWalk 1",
                         confidence=0.95, domain="hunting",
                         reason="Walk in small area, not random across map",
                     ))
