@@ -1122,12 +1122,14 @@ class GodModeOrchestrator:
         if not actions:
             return 0
         try:
+            from datetime import datetime, timedelta, timezone
             from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
             aq = getattr(runtime_state, 'action_queue', None)
             if aq is None:
                 logger.warning("[god_mode] enqueue: no action_queue on runtime_state")
                 return 0
             count = 0
+            now = datetime.now(timezone.utc)
             for action in actions:
                 bot_id = action.get("bot_id", "")
                 action_type = action.get("type", "")
@@ -1136,13 +1138,20 @@ class GodModeOrchestrator:
                 
                 # Map to ActionProposal
                 mapped_type = _GOD_MODE_ACTION_MAP.get(action_type, action_type)
+                import hashlib
+                _key = f"gm_{bot_id}_{action_type}_{now.timestamp()}"
                 proposal = ActionProposal(
+                    action_id=hashlib.md5(_key.encode()).hexdigest()[:32],
                     bot_id=bot_id,
                     action_type=mapped_type,
+                    command=mapped_type,
                     priority_tier=ActionPriorityTier.strategic if priority >= 80 else ActionPriorityTier.tactical,
                     source="god_mode",
                     metadata={"reason": data.get("reason", ""), "gm_type": action_type},
                     conflict_key=f"god_mode_{bot_id}_{action_type}",
+                    created_at=now,
+                    expires_at=now + timedelta(seconds=30),
+                    idempotency_key=_key,
                 )
                 aq.enqueue(bot_id, proposal)
                 count += 1
