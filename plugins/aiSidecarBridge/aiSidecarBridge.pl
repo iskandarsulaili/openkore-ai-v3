@@ -4881,7 +4881,7 @@ sub _apply_bot_config {
 	$::config{'attackAuto_onlyWhenSafe'} = _cfg('aiSidecar_attackAutoOnlyWhenSafe', '0') unless $::config{'_sidecar_set_attackAuto_onlyWhenSafe'};
 	$::config{'attackAuto_noMove'} = _cfg('aiSidecar_attackAutoNoMove', '0') unless $::config{'_sidecar_set_attackAuto_noMove'};
 	$::config{'attackAuto_maxDistance'} = _cfg('aiSidecar_attackAutoMaxDistance', '20');
-	\$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '20');
+	$::config{'attackMaxDistance'} = _cfg('aiSidecar_attackMaxDistance', '20');
 	$::config{'attackAuto_minDistance'} = _cfg('aiSidecar_attackAutoMinDistance', '1') unless $::config{'_sidecar_set_attackAuto_minDistance'};
 	# attackDistanceAuto controlled by heuristic - not overridden here  # Disable auto-detection
 	$::config{'teleportAuto'} = _cfg('aiSidecar_teleportAuto', '0') unless $::config{'_sidecar_set_teleportAuto'};
