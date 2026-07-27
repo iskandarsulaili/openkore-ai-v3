@@ -1605,27 +1605,18 @@ class HeuristicService:
                     )
                     self._last_assessment[bot_id] = assessment
                     return assessment
-                # MAP PROGRESSION: Check if bot should move to a better hunting map
-                # Uses class-appropriate progression paths (1-99)
-                # Different classes favor different maps based on mob elements and layout
+                # MAP PROGRESSION: Use class-aware hunting grounds (dungeon-first)
                 _base_level = signals.get("level", 1) or 1
-                _progression_maps = [
-                    (99, "gefen_fild01"),
-                    (85, "gef_fild02"),
-                    (70, "mjolnir_04"),
-                    (60, "pay_fild01"),
-                    (50, "gef_fild01"),
-                    (40, "prt_fild08"),
-                    (30, "pay_fild03"),
-                    (20, "pay_fild01"),       # 20+: Porings/Poporings/Lunatics — better melee density
-                    (10, "prt_fild05"),       # 10-20: Porings, Lunatics, Fabres
-                    (1, "prt_fild04"),        # 1-10: Starter field (dense spawns for novices)
-                ]
-                _next_map = "prt_fild05"
-                for _lvl, _map in _progression_maps:
-                    if _base_level >= _lvl:
-                        _next_map = _map
+                _grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+                _next_map = None
+                for _min_lv, _max_lv, _map_name, _desc in _grounds:
+                    if _min_lv <= _base_level <= _max_lv:
+                        _next_map = _map_name
                         break
+                if not _next_map and _grounds:
+                    _next_map = _grounds[-1][2]  # Fallback to highest level map
+                if not _next_map:
+                    _next_map = "pay_dun00"  # Ultimate fallback
                 # If current map is not the correct one for level, move
                 if map_name != _next_map and _hunt_duration > 30:
                     actions.append(HeuristicAction(
