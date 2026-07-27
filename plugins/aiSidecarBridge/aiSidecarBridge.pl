@@ -90,6 +90,7 @@ my @policy_deny;
 my %ml_pending_outcome;
 
 my $registered = 0;
+my $_registered_char_name = '';
 my $next_snapshot_at_ms = 0;
 my $next_poll_at_ms = 0;
 my $next_ack_at_ms = 0;
@@ -256,6 +257,11 @@ sub on_start3 {
 	$next_config_ingest_at_ms = $now;
 
 	_attempt_register('start3');
+	my $_reg_char_name = $char ? ($char->{name} || '') : '';
+	if ($registered && $_reg_char_name ne '' && $_reg_char_name ne $_registered_char_name) {
+		$registered = 0;
+		$next_register_at_ms = __time_now_ms();
+	}
 }
 
 sub on_mainLoop_pre {
@@ -1394,8 +1400,6 @@ sub _build_snapshot_payload {
 		# Then invite missing members
 		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && defined($char->{party})) {
 			my $_pu = $char->{party}{users} || {};
-			my $_mc = scalar(keys %$_pu) + 1;
-			if ($_mc < 3) {
 				my %_mn;
 				for my $_uid (keys %$_pu) {
 					my $_pm = $_pu->{$_uid};
@@ -1412,7 +1416,6 @@ sub _build_snapshot_payload {
 						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
 					}
 				}
-			}
 		}
 		# Leader invites missing members
 		# Leader detection: check if this bot is the first in all_bots
