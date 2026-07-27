@@ -1060,9 +1060,15 @@ class HeuristicService:
             ))
             # COLD START: Go to safe field first (prt_fild05 for level 1-10)
             # Then progress to dungeon at level 10+
-            # Portal from Prontera at (22, 203) to prt_fild05
             _cs_hunt_map = "prt_fild05"
-            _cs_portal_coords = "22 203"
+            _cs_portal_coords = "22 203"  # Portal from Prontera (156, 164) -> prt_fild05 (22, 203)
+            # Only send move if on a different map
+            if map_name != _cs_hunt_map:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_cs_hunt_map}",
+                    confidence=0.99, domain="hunting",
+                    reason=f"Cold start - move to {_cs_hunt_map}",
+                ))
             # Class-specific attack distance
             _cs_job = signals.get("job_name", "novice") or "novice"
             _cs_atk_dist = 7  # all classes: walk up to 7 cells to attack
