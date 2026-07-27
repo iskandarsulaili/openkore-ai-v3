@@ -1740,11 +1740,69 @@ class HeuristicService:
                         confidence=0.95, domain="hunting",
                         reason="Set max chase distance",
                     ))
+                    # MONSTER CONTROL: Only attack low-level monsters (poring, lunatic, fabre, picky)
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto 3",
                         confidence=0.95, domain="hunting",
                         reason="Enable aggressive auto-attack",
                     ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_inLockOnly 1",
+                        confidence=0.95, domain="hunting",
+                        reason="Only attack monsters in lockMap area",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set route_randomWalk 1",
+                        confidence=0.95, domain="hunting",
+                        reason="Walk in small area, not random across map",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap prt_fild05",
+                        confidence=0.95, domain="hunting",
+                        reason="Lock to hunting map",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_x 200",
+                        confidence=0.95, domain="hunting",
+                        reason="Center X of hunting area",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_y 200",
+                        confidence=0.95, domain="hunting",
+                        reason="Center Y of hunting area",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randX 50",
+                        confidence=0.95, domain="hunting",
+                        reason="Random walk radius X",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap_randY 50",
+                        confidence=0.95, domain="hunting",
+                        reason="Random walk radius Y",
+                    ))
+                    # Monster control: only attack porings, lunatics, fabres
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_onlyWhenSafe 0",
+                        confidence=0.95, domain="hunting",
+                        reason="Attack even if not safe",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_fleeToTarget 0",
+                        confidence=0.95, domain="hunting",
+                        reason="Don't flee to target",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_startDistance 5",
+                        confidence=0.95, domain="hunting",
+                        reason="Start attacking from 5 cells away",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto_keepDistance 1",
+                        confidence=0.95, domain="hunting",
+                        reason="Keep distance while attacking",
+                    ))
+
                     actions.append(HeuristicAction(
                         kind="command", command="set teleportAuto_minAggressives 8",
                         confidence=0.95, domain="survival",
