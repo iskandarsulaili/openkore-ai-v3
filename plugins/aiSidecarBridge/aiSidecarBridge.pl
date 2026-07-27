@@ -3315,9 +3315,9 @@ sub _rewrite_runtime_command {
 		# Direct portal coordinate - always pass through
 		if ($_target eq '22 203') {
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
-			# Set a 15-second lock to prevent PDCA from interrupting the portal walk
+			# Set a 5-second lock to prevent PDCA from interrupting the portal walk
 			# This blocks ALL subsequent commands until the bot has time to walk through portal
-			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 15000;
+			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
 			return ($command, 'coordinate_move_raw');
 		}
 
