@@ -880,15 +880,8 @@ class HeuristicService:
             # 1d. Buy weapon if any zeny available (prevents 0 DMG from sold weapon)
             _cs_zeny = signals.get("zeny", 0) or 0
             if _cs_zeny >= 50:
-                _cs_weapon_id = "1701"  # Default: Bow
-                if "thief" in _cs_job or "assassin" in _cs_job:
-                    _cs_weapon_id = "1301"  # Knife
-                elif "sword" in _cs_job or "knight" in _cs_job:
-                    _cs_weapon_id = "1201"  # Sword
-                elif "mage" in _cs_job or "wizard" in _cs_job:
-                    _cs_weapon_id = "1501"  # Rod
-                elif "acolyte" in _cs_job or "priest" in _cs_job:
-                    _cs_weapon_id = "1501"  # Rod
+                # Novices can equip Knife (1301) - 50z, works for all classes
+                _cs_weapon_id = "1301"  # Knife - cheapest weapon, all classes can equip
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_cs_weapon_id} 1",
                     confidence=0.99, domain="economy",
