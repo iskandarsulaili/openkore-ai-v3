@@ -1667,13 +1667,14 @@ class HeuristicService:
                     elif _class_lc.startswith("acolyte") or _class_lc.startswith("priest") or _class_lc.startswith("monk"):
                         _atk_dist = 2  # mace
                         _atk_max = 20
-                    # route_randomWalk: 0 for ALL classes (stand still, attack what comes)
-                    # route_randomWalk causes endless "Calculating random route" without attacking.
-                    # Passive mobs (porings, lunatics) walk around naturally and enter attack range
+                    # route_randomWalk: 1 for ALL classes (walk within lockMap bounds)
+                    # route_randomWalk=0 causes bots to stand still and never find monsters
+                    # route_randomWalk=2 causes endless "Calculating random route" across entire map
+                    # route_randomWalk=1 walks within lockMap_randX/Y bounds (small area)
                     actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 0",
+                        kind="command", command="set route_randomWalk 1",
                         confidence=0.95, domain="hunting",
-                        reason="Stand still - monsters come to you",
+                        reason="Walk within lockMap bounds to find monsters",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="set lockMap_randX 30",
