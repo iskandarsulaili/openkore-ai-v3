@@ -2415,7 +2415,7 @@ sub _execute_action {
 	
 	# ── AI AUTO SUPPRESSION: if already in auto mode, skip 'ai auto' commands ──
 	# Prevents "AI is already set to auto mode" spam from sidecar pushing ai auto every cycle
-	if (($rewrite_kind eq 'ai_auto_already_auto' || lc($command || '') eq 'ai auto') && defined $AI::AI && $AI::AI == 1) {
+	if (($rewrite_kind eq 'ai_auto_already_auto' || lc($command || '') eq 'ai auto') && defined $AI::AI && $AI::AI == 2) {
 		($success, $result_code, $msg) = (1, 'ok', 'ai_auto_already_auto');
 		$rewrite_kind = 'ai_auto_already_auto';
 		$effective_command = '';
@@ -2515,7 +2515,6 @@ sub _execute_action {
 			my $err = $@ || 'command execution failure';
 			($success, $result_code, $msg) = (0, 'dispatch_error', _trim($err, 220));
 		}
-	}
 	}
 
 	my $latency_ms = _now_ms() - $started;
