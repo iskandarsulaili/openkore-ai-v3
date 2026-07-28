@@ -1785,10 +1785,13 @@ sub _build_snapshot_payload {
 			$p{equipment} = \%_equip;
 			# inventory weapon check: do we have any weapon in inventory?
 			$p{has_weapon_in_inventory} = 0;
+			$p{inventory_items} = [];
 			if ($char->{inventory}) {
 				for my $_inv_item (@{$char->{inventory}}) {
 					next unless defined $_inv_item;
 					my $_inv_type = $_inv_item->{type} || 0;
+					my $_inv_name = $_inv_item->{name} || '';
+					push @{$p{inventory_items}}, $_inv_name if $_inv_name;
 					# type 4 = weapon, type 5 = armor, type 6 = card, type 7 = pet, type 8 = accessory
 					if ($_inv_type == 4 || $_inv_type == 5 || $_inv_type == 8) {
 						$p{has_weapon_in_inventory} = 1;
