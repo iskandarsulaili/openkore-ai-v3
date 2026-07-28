@@ -2543,6 +2543,16 @@ sub _execute_action {
 	}
 	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
+	
+	# ── PRE-EXECUTION AUTO-STAND: if bot is sitting and command is a move, stand first ──
+	# The sidecar may queue 'stand' and 'move prontera' as separate actions.
+	# The bridge only processes ONE action per poll, so 'move prontera' arrives
+	# while the bot is still sitting. Auto-stand ensures the bot can actually move.
+	if ($char && $char->{sitting} && $effective_command =~ /^move\s+/i) {
+		Commands::run("stand");
+		debug "[auto_stand] bot was sitting, auto-stand before move command\n", 'aiSidecarBridge', 1;
+	}
+	
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
 	
 	# ── PARTY LEAVE SUPPRESSION: one-time leave, then suppress forever ──
