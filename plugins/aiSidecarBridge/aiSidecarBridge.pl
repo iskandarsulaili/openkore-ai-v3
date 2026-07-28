@@ -425,8 +425,8 @@ sub on_mainLoop_pre {
 				$_usi_idx++;
 			}
 			# Also set the global timeout to prevent the system from running
-			$main::timeout{ai_item_use_auto}{time} = time;
-			$main::timeout{ai_item_use_auto}{timeout} = 300;
+			$Globals::timeout{ai_item_use_auto}{time} = time;
+			$Globals::timeout{ai_item_use_auto}{timeout} = 300;
 		}
 	}
 	
