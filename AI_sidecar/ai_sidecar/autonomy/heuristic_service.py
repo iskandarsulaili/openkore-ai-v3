@@ -1056,11 +1056,8 @@ class HeuristicService:
                 # Already equipped — skip cold start
                 self._cold_start_step[bot_id] = 4
             else:
-                # Need cold start — ensure we're in Prontera first
-                self._cold_start_step[bot_id] = 1
-                _cold_start_step = 1  # Sync local var
-                # Queue: ai manual + move 22 203 + ai auto
-                # ai manual disables AI, move walks to portal, ai auto re-enables.
+                # Need cold start — keep re-emitting portal commands until in Prontera
+                # Stay at step 0 (don't advance to 1) until bot reaches town
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
                         kind="command", command="ai manual",
@@ -1072,6 +1069,10 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start - walk to Prontera portal",
                     ))
+                else:
+                    # In Prontera — advance to next step based on inventory
+                    self._cold_start_step[bot_id] = 1
+                    _cold_start_step = 1
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon
             # Only queue actions when bot is in town (Prontera)
