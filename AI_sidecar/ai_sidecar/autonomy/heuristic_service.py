@@ -1082,7 +1082,13 @@ class HeuristicService:
                 else:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild01 (safe map with Porings) and farm with fists.
+                    # Must also set lockMap to prevent OpenKore routing back to prt_fild05.
                     if not _cs_in_hunting:
+                        actions.append(HeuristicAction(
+                            kind="command", command="set lockMap prt_fild01",
+                            confidence=0.99, domain="economy",
+                            reason="Cold start - set lockMap to prt_fild01 for farming",
+                        ))
                         actions.append(HeuristicAction(
                             kind="command", command="move prt_fild01",
                             confidence=0.99, domain="economy",
@@ -1109,8 +1115,13 @@ class HeuristicService:
                 self._cold_start_step[bot_id] = 3
                 logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
         if _cold_start_step == 3:
-            # Step 3: Set lockMap and return to hunt
+            # Step 3: Set lockMap to prt_fild05 and return to hunt
             if _cs_in_town:
+                actions.append(HeuristicAction(
+                    kind="command", command="set lockMap prt_fild05",
+                    confidence=0.99, domain="hunting",
+                    reason="Cold start - restore lockMap to prt_fild05",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command="move 367 205",
                     confidence=0.99, domain="hunting",
