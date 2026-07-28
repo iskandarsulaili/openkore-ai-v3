@@ -1294,14 +1294,10 @@ class HeuristicService:
 
         # ── DISABLE OPENCORE'S BUILT-IN POTION USE when 0 potions ──
         # OpenKore's useSelf_item system fires independently of the bridge.
-        # When the bot has 0 potions, set useSelf_item cooldowns to 300s to suppress spam.
-        if _audit_is_hunting and not _audit_has_potions:
-            self._set_config_once(actions, bot_id, "useSelf_item_Red_Potion_timeout", "300", "economy",
-                "Config audit - suppress built-in potion use (0 potions in inventory)")
-            self._set_config_once(actions, bot_id, "useSelf_item_Orange_Potion_timeout", "300", "economy",
-                "Config audit - suppress built-in potion use (0 potions in inventory)")
-            self._set_config_once(actions, bot_id, "useSelf_item_White_Potion_timeout", "300", "economy",
-                "Config audit - suppress built-in potion use (0 potions in inventory)")
+        # When the bot has 0 potions, the bridge's survival mode (Reflex #22)
+        # suppresses heal reflexes. This is handled at the bridge level.
+        # Note: useSelf_item blocks use array syntax, not simple config keys,
+        # so 'set useSelf_item_Red_Potion_timeout 300' won't work here.
 
         # ── JOB CHANGE: Novice with job_level >= 10 should job change ──
         # Force return to town and route to job change NPC
