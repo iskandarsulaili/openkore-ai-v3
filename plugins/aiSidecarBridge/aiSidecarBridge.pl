@@ -2578,9 +2578,9 @@ sub _poll_next_action {
 	}
 
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
-	$::config{'sitAuto_hp_lower'} = 0 unless $::config{'_sidecar_set_sitAuto_hp'};
-	$::config{'sitAuto_hp_upper'} = 0 unless $::config{'_sidecar_set_sitAuto_hp_max'};
-	# Force-set attackAuto=0 when 0 potions — AI keeps re-enabling it
+	$::config{'sitAuto_hp_lower'} = 0;
+	$::config{'sitAuto_hp_upper'} = 0;
+	# Force-set attackAuto=0 when 0 potions on hunting map
 	if ($char && $char->{inventory}) {
 		my $_pa_has_potions = 0;
 		for my $_pai (@{$char->{inventory}}) {
@@ -2596,6 +2596,7 @@ sub _poll_next_action {
 			$_pm =~ s/\.gat$//;
 			if ($_pm =~ /_fild|_dun/i) {
 				$::config{'attackAuto'} = 0;
+				$::config{'route_randomWalk'} = 0;
 			}
 		}
 	}
