@@ -5034,14 +5034,17 @@ class PDCALoop:
                         pass
                     try:
                         # Cold start cooldown: skip if less than 60s since last cold start for this bot
+                        # OVERRIDDEN: heuristic's task-completion-triggered cold start handles this better
                         if not hasattr(self._runtime, '_cold_start_cooldowns'):
                             object.__setattr__(self._runtime, '_cold_start_cooldowns', {})
                         _cs_cooldowns = self._runtime._cold_start_cooldowns
                         _cs_now = time.time()
                         _cs_last = _cs_cooldowns.get(_cycle_bot_id or 'default', 0.0)
-                        if (_cs_now - _cs_last) < 60.0:
-                            pass  # In cooldown — skip cold start this cycle
-                        else:
+                        # Check if heuristic cold start is active — if so, skip Pro RO cold start
+                        _hcs_step = getattr(
+                            getattr(self._runtime, "heuristic_service", None), "_cold_start_step", {}
+                        ).get(_cycle_bot_id, 4)
+                        if _hcs_step >= 4 and (_cs_now - _cs_last) >= 60.0:
                             from ai_sidecar.game_knowledge import game_knowledge
                             gk = game_knowledge()
                             _cr_pro = getattr(self._runtime, 'pro_ro_player_agent', None)
