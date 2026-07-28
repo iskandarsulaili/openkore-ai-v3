@@ -1170,12 +1170,13 @@ class HeuristicService:
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
-            # CRITICAL: Disable avoidOutOfSight on hunting maps
+            # CRITICAL: Disable avoidList on hunting maps
             # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
             # instead of attacking them. This is the root cause of zero kills.
-            self._set_config_once(actions, bot_id, "avoidOutOfSight", "0", "hunting",
+            # OpenKore uses 'avoidList' not 'avoidOutOfSight' for monster avoidance.
+            self._set_config_once(actions, bot_id, "avoidList", "0", "hunting",
                 "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
-            self._set_config_once(actions, bot_id, "avoidOutOfSight_inLockOnly", "0", "hunting",
+            self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "0", "hunting",
                 "Config audit - disable avoid system in lockMap (prevents running from monsters)")
             # Anti-detection: randomize movement and command pacing per bot
             # Use bot name as seed for deterministic but unique behavior per bot
