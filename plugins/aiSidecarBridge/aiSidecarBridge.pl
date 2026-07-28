@@ -565,6 +565,7 @@ sub on_mainLoop_post {
 
         
 
+	debug "[on_mainLoop_post] pre-bridge check\n", .aiSidecarBridge., 1;
 
         
 
