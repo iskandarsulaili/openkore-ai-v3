@@ -1082,17 +1082,11 @@ class HeuristicService:
                 else:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild01 (safe map with Porings) and farm with fists.
-                    # Queue regardless of current map — if on hunting map, still need
-                    # to move to farming map. set lockMap + ai auto handles routing.
+                    # 'move prt_fild01' rewrite handles lockMap + routing.
                     actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prt_fild01",
+                        kind="command", command="move prt_fild01",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - set lockMap to prt_fild01 for farming",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.99, domain="economy",
-                        reason="Cold start - restart AI to route to farming map",
+                        reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
                     ))
             else:
                 # Weapon confirmed — move to step 2
@@ -1115,18 +1109,13 @@ class HeuristicService:
                 self._cold_start_step[bot_id] = 3
                 logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
         if _cold_start_step == 3:
-            # Step 3: Set lockMap to prt_fild05 and return to hunt
-            # Fire on any map — bot might be in town or on farming map (prt_fild01)
+            # Step 3: Return to hunting map with weapon and potions
+            # 'move prt_fild05' rewrite handles lockMap + routing.
             if not _cs_in_hunting or _cs_map == "prt_fild01":
                 actions.append(HeuristicAction(
-                    kind="command", command="set lockMap prt_fild05",
+                    kind="command", command="move prt_fild05",
                     confidence=0.99, domain="hunting",
-                    reason="Cold start - restore lockMap to prt_fild05",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.99, domain="hunting",
-                    reason="Cold start - restart AI to return to hunting map",
+                    reason="Cold start - return to hunting map with weapon and potions",
                 ))
             elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete
