@@ -2409,9 +2409,17 @@ sub _execute_action {
 		my $delay_ms = _human_cmd_delay_ms();
 		usleep($delay_ms * 1000) if $delay_ms > 0;
 	}
+	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
-
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
+	
+	# ── AI AUTO SUPPRESSION: if already in auto mode, skip 'ai auto' commands ──
+	# Prevents "AI is already set to auto mode" spam from sidecar pushing ai auto every cycle
+	if (($rewrite_kind eq 'ai_auto_already_auto' || lc($command || '') eq 'ai auto') && defined $AI::AI && $AI::AI == 1) {
+		($success, $result_code, $msg) = (1, 'ok', 'ai_auto_already_auto');
+		$rewrite_kind = 'ai_auto_already_auto';
+		$effective_command = '';
+	} else {
 
 	# ── Apply ML overrides (source="ml" actions carry learned recommendations) ──
 	my $action_source = lc($action->{source} || '');

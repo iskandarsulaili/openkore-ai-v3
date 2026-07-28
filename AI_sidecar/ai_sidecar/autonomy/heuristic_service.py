@@ -802,6 +802,7 @@ class HeuristicService:
         self._last_party_members: dict[str, list] = {}
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
+        self._last_force_return: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
@@ -1146,6 +1147,64 @@ class HeuristicService:
             )
             self._last_assessment[bot_id] = assessment
             return assessment
+
+        # ── CONFIG AUDIT: detect and fix suboptimal configs retroactively ──
+        # Runs every cycle for all bots, not just COLD_START
+        # Fixes: attackMaxDistance, attackDistance, attackAuto settings
+        _audit_map = signals.get("map", "") or ""
+        _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
+        if _audit_is_hunting:
+            # Ensure attack config is optimal for Novice-level combat
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
+                "Config audit - increase chase distance to 30 for Novice attack range")
+            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
+                "Config audit - attack from 5 cells away")
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Config audit - enable aggressive auto-attack")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
+                "Config audit - attack monsters as soon as they appear")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Config audit - don't give up mid-fight")
+
+        # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
+        _audit_base_level = signals.get("base_level", 1) or 1
+        if _party_in and _audit_base_level < 40 and state not in ("COLD_START", "DEAD"):
+            actions.append(HeuristicAction(
+                kind="command", command="party leave",
+                confidence=0.99, domain="social",
+                reason=f"Level {_audit_base_level} < 40 - leave party (solo is faster)",
+            ))
+
+        # ── FORCE RETURN TO TOWN: 0 potions + 0 weapon + 5+ min on same map ──
+        # Detects bots stuck on hunting map with no supplies
+        _audit_inv = signals.get("inventory", {}) or {}
+        _audit_items = _audit_inv.get("items", []) or []
+        _audit_has_potions = any(
+            "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
+            for item in _audit_items
+        )
+        _audit_has_weapon = any(
+            "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
+            "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
+            for item in _audit_items
+        )
+        _audit_zeny = signals.get("zeny", 0) or 0
+        if _audit_is_hunting and not _audit_has_potions and not _audit_has_weapon and _audit_zeny > 0:
+            # Bot has zeny but no potions and no weapon — force return to town
+            _audit_now = __import__("time").time()
+            _audit_last_force = self._last_force_return.get(bot_id, 0)
+            if _audit_now - _audit_last_force > 120:  # 2 min cooldown
+                self._last_force_return[bot_id] = _audit_now
+                actions.append(HeuristicAction(
+                    kind="command", command="move 367 205",
+                    confidence=0.99, domain="emergency",
+                    reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.95, domain="hunting",
+                    reason="Enable auto-attack after force return",
+                ))
 
         # ── STATE: COLD_START (fresh spawn - go hunt immediately) ──
         if state == "COLD_START":
