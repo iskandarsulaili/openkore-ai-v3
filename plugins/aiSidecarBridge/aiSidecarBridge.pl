@@ -405,28 +405,28 @@ sub on_mainLoop_pre {
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 	
-	# ── DISABLE useSelf_item FOR POTIONS: set 300s timeout to prevent "on cooldown" spam ──
-	# OpenKore's useSelf_item system has its own cooldown (3s default) and logs
-	# "[use] item 'red potion' on cooldown, skipping" before calling Actor::Item::use().
-	# The Actor::Item::use() override blocks the actual use, but the log message
-	# is already printed. Setting timeout to 300s stops the spam at the source.
-	# Must run in on_mainLoop_pre (before the main loop processes useSelf_item).
-	# OpenKore stores useSelf_item as flat config keys: useSelf_item_0, useSelf_item_0_timeout, etc.
+	# ── DISABLE useSelf_item ENTIRELY: prevent "on cooldown" spam ──
+	# OpenKore's useSelf_item system calls $messageSender->sendItemUse() directly,
+	# bypassing Actor::Item::use(). The override never fires.
+	# The "on cooldown, skipping" message is from the server, not OpenKore.
+	# The fix is to DELETE ALL useSelf_item entries so the while loop finds none.
+	# The sidecar handles potion use via explicit commands.
 	if ($char) {
-		state $_last_useSelf_override_ms = 0;
+		state $_last_useSelf_disable_ms = 0;
 		my $_now_ms = _now_ms();
-		if ($_now_ms - $_last_useSelf_override_ms > 60000) {
-			$_last_useSelf_override_ms = $_now_ms;
-			# Iterate over useSelf_item_N entries
+		if ($_now_ms - $_last_useSelf_disable_ms > 60000) {
+			$_last_useSelf_disable_ms = $_now_ms;
+			# Delete ALL useSelf_item entries
 			my $_usi_idx = 0;
-			while (defined $::config{"useSelf_item_$_usi_idx"}) {
-				my $_usi_name = $::config{"useSelf_item_$_usi_idx"} || '';
-				if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-					$::config{"useSelf_item_${_usi_idx}_timeout"} = 300;
-					$::config{"useSelf_item_${_usi_idx}_cooldown"} = 300;
-				}
+			while (exists $::config{"useSelf_item_$_usi_idx"}) {
+				delete $::config{"useSelf_item_$_usi_idx"};
+				delete $::config{"useSelf_item_${_usi_idx}_timeout"};
+				delete $::config{"useSelf_item_${_usi_idx}_cooldown"};
 				$_usi_idx++;
 			}
+			# Also set the global timeout to prevent the system from running
+			$timeout{ai_item_use_auto}{time} = time;
+			$timeout{ai_item_use_auto}{timeout} = 300;
 		}
 	}
 	
@@ -3867,9 +3867,10 @@ sub _rewrite_runtime_command {
 	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
 	# Use $trimmed (original case) to preserve config key case
-	if ($trimmed =~ /^set\s+(\S+)\s+(.+)$/i) {
+	# Value can be empty (e.g. "set avoidList " to disable)
+	if ($trimmed =~ /^set\s+(\S+)\s*(.*)$/i) {
 		my $set_key = $1;
-		my $set_val = $2;
+		my $set_val = $2 || '';
 		# Find the original case from existing config keys, or use the original case from the command
 		my $orig_key = (grep { lc($_) eq lc($set_key) } keys %::config)[0];
 		$orig_key = $set_key unless defined $orig_key;
