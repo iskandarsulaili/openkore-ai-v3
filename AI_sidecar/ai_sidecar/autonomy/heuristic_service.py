@@ -1059,15 +1059,18 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Set attackAuto=0 via config dedup cache — prevents config audit
-                # from overriding it back to "3" every cycle.
+                # Set lockMap to prontera so AI routes there via its own routing.
+                # Bridge force-sets attackAuto=0 + route_randomWalk=0 + inLockOnly=0
+                # every cycle, so AI won't attack or random walk during route.
                 if not _cs_in_town:
                     self._set_config_once(actions, bot_id, "attackAuto", "0", "economy",
                         "Cold start - disable attack to allow portal move", 0.99)
+                    self._set_config_once(actions, bot_id, "lockMap", "prontera", "economy",
+                        "Cold start - set lockMap to Prontera for AI routing", 0.99)
                     actions.append(HeuristicAction(
-                        kind="command", command="move 22 203",
+                        kind="command", command="ai auto",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - go to Prontera portal to reach town",
+                        reason="Cold start - restart AI to route to Prontera",
                     ))
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon
