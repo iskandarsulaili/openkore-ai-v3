@@ -397,7 +397,6 @@ sub on_mainLoop_pre {
 	    $snap_jitter = -$snap_jitter if int(rand(2)) == 0;
 	    $next_snapshot_at_ms = $now + $snap_base + $snap_jitter;
 	    _send_snapshot();
-	    _check_ml_outcome();
 	    _check_bridge_reflexes();
 	# ── Re-register if char name became available ──
 	_check_reregister();
@@ -530,13 +529,11 @@ sub on_mainLoop_post {
 		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
 		$next_event_ingest_at_ms = $now + $next_delay_ms;
 	}
-	# ── Default survival auto-grind loop (bottom-up fallback) ──
-	if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
-		_apply_bot_config();
-		_discover_shops();
-		_discover_portals();
-	_send_discovery_data();
-		_survival_check();
+		# ── Default survival auto-grind loop (bottom-up fallback) ──
+		if (_cfg_bool('aiSidecar_survivalEnabled', 1) && _bridge_enabled() && _bridge_enabled()) {
+			# STRIPPED: _apply_bot_config, _discover_shops, _discover_portals, _send_discovery_data, _survival_check removed
+			# All config management and survival logic is handled by the sidecar heuristic service.
+			# Bridge only does: snapshot forwarding, command execution, emergency sit.
 
         # Force AI to AUTO mode only when on hunting map and not executing a move
         # Don't force unconditionally - it cancels manual move commands like "move 22 203"
@@ -897,12 +894,45 @@ sub on_post_bulk_config_modify {
 sub on_command_intercept {
 	# Pre-command hook: intercept ALL commands including OpenKore internal AI
 	# This is the LAST LINE OF DEFENSE against "move prontera" spam
+	# Also blocks potion use when bot has 0 potions on hunting map
 	# Hook name: Commands::run/pre, params: {switch, args}
 	my (undef, $args) = @_;
 	my $switch = $args->{switch} || '';
 	my $cmd_args = $args->{args} || '';
 	my $full_cmd = $switch . ' ' . $cmd_args;
 	$full_cmd =~ s/\s+$//;
+
+	# ── POTION USE INTERCEPTION: block when 0 potions on hunting map ──
+	# OpenKore's built-in useSelf_item system fires independently of the bridge.
+	# This hook catches ALL potion use commands, including from OpenKore's internal AI.
+	# When the bot has 0 potions on a hunting map, block potion use to prevent spam.
+	if ($full_cmd =~ /^use\s+(?:red\s+potion|orange\s+potion|white\s+potion|yellow\s+potion|blue\s+potion|green\s+potion)$/i) {
+		my $_ic_map = '';
+		if ($field) { $_ic_map = lc($field->name()); $_ic_map =~ s/\.gat$//; }
+		elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
+		# Only block on hunting maps (not in town)
+		if ($_ic_map =~ /_fild|_dun/i) {
+			# Check if we have any potions in inventory
+			my $_ic_has_potions = 0;
+			for my $item_name (@_heal_items) {
+				$item_name = _trim($item_name);
+				next if !$item_name;
+				my $item = eval { Actor::Item::get($item_name) };
+				if ($item && $item->{amount} && $item->{amount} > 0) {
+					$_ic_has_potions = 1;
+					last;
+				}
+			}
+			if (!$_ic_has_potions) {
+				# No potions — block the command silently
+				$args->{switch} = '';
+				$args->{args} = '';
+				return;
+			}
+		}
+	}
+
+	# ── MOVE PRONTERA INTERCEPTION: existing logic ──
 	return if $full_cmd !~ /^move\s+prontera$/i;
 	# Get current map from field or character
 	my $_ic_map = '';
@@ -4382,1009 +4412,96 @@ our $_last_prontera_recovery_ms = 0;
 	}
 
 sub _check_bridge_reflexes {
-		my $now = _now_ms();
-		return if !$char;
+	# STRIPPED BRIDGE: only emergency sit at <10% HP
+	# All other reflexes (heal, flee, teleport, auto-sit, etc.) are handled
+	# by the sidecar's heuristic service and PDCA loop.
+	# The bridge only does: snapshot forwarding, command execution, emergency sit.
+	my $now = _now_ms();
+	return if !$char;
 
-		# ═══════════════════════════════════════════
-		# CONNECTION STATE GUARD — no reflexes until in-game
-		# ═══════════════════════════════════════════
-		# Prevents flooding commands at character select / login screen
-		if (!$net || $net->getState() != Network::IN_GAME) {
-			return;
-		}
+	# ── CONNECTION STATE GUARD ──
+	if (!$net || $net->getState() != Network::IN_GAME) {
+		return;
+	}
 
-		# ═══════════════════════════════════════════
-		# CAN'T-SIT DETECTION — suppress ALL sit-related reflexes if Basic Skill < 3
-		# ═══════════════════════════════════════════
-		# Novices without Basic Skill level 3 literally cannot sit.
-		# Every sit command silently fails. This causes infinite loops:
-		# low HP → try sit → fail → low HP → try sit → fail
-		# Default to can_sit=1 (assume can sit). Only set can_sit=0 when confirmed.
-		# Re-check every 60s regardless of current value (skills data may arrive late).
-		state $_can_sit_checked = 0;
-		state $_can_sit = 1;  # Assume can sit until proven otherwise
-		state $_last_can_sit_recheck_ms = 0;
-		if (!$_can_sit_checked || $now - $_last_can_sit_recheck_ms > 60000) {
-			$_can_sit_checked = 1;
-			$_last_can_sit_recheck_ms = $now;
-			# Check if character has Basic Skill level 3+
-			my $_basic_skill_lv = 0;
-			if ($char && $char->{skills} && ref $char->{skills} eq 'ARRAY') {
-				for my $_sk (@{$char->{skills}}) {
-					next if !$_sk;
-					my $_sk_name = $_sk->{name} || $_sk->{skillName} || '';
-					if ($_sk_name =~ /^basic_skill$/i || $_sk_name =~ /^basic skill$/i || $_sk_name eq 'NV_BASIC') {
-						$_basic_skill_lv = $_sk->{lv} || $_sk->{level} || 0;
-						last;
-					}
-				}
-			}
-			if ($_basic_skill_lv > 0 && $_basic_skill_lv < 3) {
-				$_can_sit = 0;
-				debug "[aiSidecarBridge] can't_sit: Basic Skill level $_basic_skill_lv < 3, suppressing sit reflexes\n", 'aiSidecarBridge', 1;
-			} elsif ($_basic_skill_lv >= 3) {
-				$_can_sit = 1;
-				debug "[aiSidecarBridge] can_sit: Basic Skill level $_basic_skill_lv >= 3, enabling sit reflexes\n", 'aiSidecarBridge', 1;
-			}
-			# If $_basic_skill_lv == 0, skills data not available yet — keep default (can_sit=1)
-		}
-
-		# ═══════════════════════════════════════════
-		# RECONNECT COOLDOWN — suppress ALL commands for 10s after disconnect
-		# ═══════════════════════════════════════════
-		# After a disconnect, the bot reconnects and briefly enters IN_GAME state.
-		# The bridge fires a bunch of commands, which causes another disconnect.
-		# This cooldown gives the server time to stabilize.
-		my $_reconnect_cooldown_ms = 0;
-		if ($last_disconnect_at_ms > 0) {
-			my $_time_since_disconnect = $now - $last_disconnect_at_ms;
-			if ($_time_since_disconnect < 10000) {  # 10s cooldown
-				$_reconnect_cooldown_ms = 10000 - $_time_since_disconnect;
-				# Still allow emergency sit at <10% HP
-				my $_rc_hp = $char->{hp} || 0;
-				my $_rc_hp_max = $char->{hp_max} || 1;
-				my $_rc_hp_ratio = ($_rc_hp_max > 0) ? $_rc_hp / $_rc_hp_max : 1;
-				if ($_rc_hp_ratio < 0.10 && $_can_sit) {
-					if ($AI::AI != 2) {
-						eval { Commands::run("sit"); 1 };
-					}
-				}
-				return;  # Suppress ALL reflexes during reconnect cooldown
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# ITEM 602 SUPPRESSION — block 'use 602' / 'use Butterfly Wing' at reflex level
-		# ═══════════════════════════════════════════
-		# The items_control.txt fix only works at startup. This catches it at runtime.
-		# Item 602 (Butterfly Wing) is managed by the AI system, not auto-use.
-		state $_last_602_suppress_log_ms = 0;
-		if ($_last_602_suppress_log_ms == 0) {
-			$_last_602_suppress_log_ms = _now_ms();
-			debug "[aiSidecarBridge] item_602_suppression_active: Butterfly Wing auto-use blocked at reflex level\n", 'aiSidecarBridge', 2;
-		}
-
-		# ═══════════════════════════════════════════
-		# TOWN HEAL SUPPRESSION — no heal reflexes when in town with 0 potions
-		# ═══════════════════════════════════════════
-		# When bot is in Prontera with 0 healing items, suppress ALL heal reflexes.
-		# The bot should buy potions, not try to use non-existent ones.
-		my $map = $char->{map} || ($field ? $field->baseName() : '');
-		my $_in_town = $map =~ /^prontera/i;
-		my $_has_any_heal_items = 0;
-		if ($_in_town) {
-			# Quick inventory check — count healing items
-			for my $item_name (@_heal_items) {
-				$item_name = _trim($item_name);
-				next if !$item_name;
-				my $item = eval { Actor::Item::get($item_name) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					$_has_any_heal_items = 1;
+	# ── CAN'T-SIT DETECTION ──
+	state $_can_sit_checked = 0;
+	state $_can_sit = 1;
+	state $_last_can_sit_recheck_ms = 0;
+	if (!$_can_sit_checked || $now - $_last_can_sit_recheck_ms > 60000) {
+		$_can_sit_checked = 1;
+		$_last_can_sit_recheck_ms = $now;
+		my $_basic_skill_lv = 0;
+		if ($char && $char->{skills} && ref $char->{skills} eq 'ARRAY') {
+			for my $_sk (@{$char->{skills}}) {
+				next if !$_sk;
+				my $_sk_name = $_sk->{name} || $_sk->{skillName} || '';
+				if ($_sk_name =~ /^basic_skill$/i || $_sk_name =~ /^basic skill$/i || $_sk_name eq 'NV_BASIC') {
+					$_basic_skill_lv = $_sk->{lv} || $_sk->{level} || 0;
 					last;
 				}
 			}
-			# Also check hardcoded fallback
-			if (!$_has_any_heal_items) {
-				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
-				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
-					$_has_any_heal_items = 1;
-				}
-			}
-			if (!$_has_any_heal_items) {
-				# In town with 0 potions — suppress ALL heal reflexes
-				# The heuristic service will handle buying potions
-				# Only allow emergency sit at <10% HP
-				my $_town_hp = $char->{hp} || 0;
-				my $_town_hp_max = $char->{hp_max} || 1;
-				my $_town_hp_ratio = ($_town_hp_max > 0) ? $_town_hp / $_town_hp_max : 1;
-				if ($_town_hp_ratio < 0.10) {
-					if ($AI::AI != 2) {
-						eval { Commands::run("sit"); 1 };
-					}
-				}
-				# Still run the stuck detector and other non-heal reflexes below
-			}
 		}
+		if ($_basic_skill_lv > 0 && $_basic_skill_lv < 3) {
+			$_can_sit = 0;
+		} elsif ($_basic_skill_lv >= 3) {
+			$_can_sit = 1;
+		}
+	}
 
-		# ═══════════════════════════════════════════
-		# TRAVEL MODE — suppress ALL reflexes when actively routing
-		# ═══════════════════════════════════════════
-		# When the bot has an active route (walking to a destination),
-		# suppress ALL reflex checks for 60s. The route IS the action.
-		# Only exception: HP < 10% (emergency sit to avoid death).
-		my $_ai_seq_top = @ai_seq ? $ai_seq[0] : '';
-		my $_is_routing = $_ai_seq_top =~ /^route/ ? 1 : 0;
-		my $_is_moving = $_ai_seq_top =~ /^(?:route|move|follow)/ ? 1 : 0;
-		my $_travel_mode = 0;
-		state $_travel_mode_until_ms = 0;
-		if ($_is_moving) {
-			# Enter travel mode — suppress reflexes for 60s
-			$_travel_mode_until_ms = $now + 60000 if $_travel_mode_until_ms < $now;
-			$_travel_mode = 1;
-		} else {
-			# Clear travel mode when movement ends
-			$_travel_mode_until_ms = 0;
-		}
-		# Check if still in travel mode (60s window)
-		if ($now < $_travel_mode_until_ms) {
-			# In travel mode — only allow emergency sit at <10% HP
-			my $_travel_hp = $char->{hp} || 0;
-			my $_travel_hp_max = $char->{hp_max} || 1;
-			my $_travel_hp_ratio = ($_travel_hp_max > 0) ? $_travel_hp / $_travel_hp_max : 1;
-			if ($_travel_hp_ratio < 0.10) {
-				# Emergency sit — only action allowed during travel
+	# ── RECONNECT COOLDOWN ──
+	if ($last_disconnect_at_ms > 0) {
+		my $_time_since_disconnect = $now - $last_disconnect_at_ms;
+		if ($_time_since_disconnect < 10000) {
+			my $_rc_hp = $char->{hp} || 0;
+			my $_rc_hp_max = $char->{hp_max} || 1;
+			my $_rc_hp_ratio = ($_rc_hp_max > 0) ? $_rc_hp / $_rc_hp_max : 1;
+			if ($_rc_hp_ratio < 0.10 && $_can_sit) {
 				if ($AI::AI != 2) {
 					eval { Commands::run("sit"); 1 };
 				}
 			}
-			return;  # Suppress all other reflexes during travel
+			return;
 		}
+	}
 
-		# ═══════════════════════════════════════════
-		# RE-READ ANTI-DETECTION CONFIG EVERY CYCLE
-		# ═══════════════════════════════════════════
-		# Sidecar pushes aiSidecar_cmdMinDelayMs etc. via config.
-		# Re-read every cycle so pushed values take effect immediately.
-		my $_ad_enabled = _cfg_int('aiSidecar_antiDetectionEnabled', 1);
-		my $_ad_cmd_min = _cfg_int('aiSidecar_cmdMinDelayMs', 150);
-		my $_ad_cmd_max = _cfg_int('aiSidecar_cmdMaxDelayMs', 400);
-		my $_ad_heal_reaction = _cfg_int('aiSidecar_healReactionMs', 100);
-		my $_ad_sit_min = _cfg_int('aiSidecar_sitMinSeconds', 3);
-		my $_ad_sit_max = _cfg_int('aiSidecar_sitMaxSeconds', 8);
-		my $_ad_movement = _cfg_int('aiSidecar_movementVariation', 1);
-		my $_ad_attack_delay = _cfg_int('aiSidecar_attackDelayMs', 50);
-
-		# ── Compute current vitals ──
-		my $hp = $char->{hp} || 0;
-		my $hp_max = $char->{hp_max} || 1;
-		my $sp = $char->{sp} || 0;
-		my $sp_max = $char->{sp_max} || 1;
-		my $hp_ratio = ($hp_max > 0) ? $hp / $hp_max : 1;
-		my $sp_ratio = ($sp_max > 0) ? $sp / $sp_max : 1;
-		my $weight = $char->{weight} || 0;
-		my $weight_max = $char->{weight_max} || 1;
-		my $weight_ratio = ($weight_max > 0) ? $weight / $weight_max : 0;
-		$map = $char->{map} || ($field ? $field->baseName() : '');
-		my $job_name = ($char && $char->{jobName}) ? _trim(_scalarize($char->{jobName}), 64) : '';
-		my $base_level = $char->{level} || 1;
-		my $job_level = $char->{level_job} || 1;
-		my $in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-
-		# Count aggro: monsters that have dealt damage to us
-		my $aggro_count = 0;
-		if ($monstersList) {
-			for my $monster (@{$monstersList}) {
-				next if !$monster;
-				$aggro_count++ if $monster->{dmg_to_us} || $monster->{dmg_to_you};
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #1 — EMERGENCY HEAL REFLEX (FIRST PRIORITY)
-		# ═══════════════════════════════════════════
-		# Threshold: 50% HP (preemptive) → bridge reflex fires at <50%
-		# Action: Use best available heal item/skill INSTANTLY
-		# Rules:
-		#   - Cooldown gate at entry: 3s minimum between heal attempts
-		#   - Inventory check before attempting: skip if no items available
-		#   - Dynamic selection from sidecar-pushed config
-		#   - Hardcoded White Potion fallback (absolute safety net)
-		#   - If nothing available: sit to regen OR return to town
-		#   - Human-like random delay before action (150-400ms)
-		#   - Return-to-town fires ONCE per map visit (tracked by map name)
-		my $heal_triggered = 0;
-
-		if ($hp_ratio < 0.50 && $hp > 0) {
-			# COOLDOWN GATE: minimum 3s between heal attempts
-			if (!_should_fire_reflex($_reflex_last_fired{heal} || 0, 3000)) {
-				return;
-			}
-
-			_update_heal_cache();
-
-			# INVENTORY CHECK: count available healing items first
-			my $total_heal_items = 0;
-			for my $item_name (@_heal_items) {
-				$item_name = _trim($item_name);
-				next if !$item_name;
-				my $item = eval { Actor::Item::get($item_name) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					$total_heal_items += $item->{amount};
-				}
-			}
-
-			# If NO healing items in inventory AND already routing to town:
-			# Skip entire reflex — bot is already handling the situation
-			if ($total_heal_items == 0 && $_is_routing && $map !~ /^prontera/i) {
-				$_reflex_last_fired{heal} = _now_ms();
-				return;
-			}
-
-			# If NO healing items in inventory AND HP < 80%:
-			# Queue return-to-town command ONCE per map visit
-			# Track which maps we've already triggered return for
-			state %_return_triggered_for_map;
-			if ($total_heal_items == 0 && $hp_ratio < 0.80 && $map !~ /^prontera/i) {
-				# Check if we already triggered return for this map visit
-				my $_return_key = $map;
-				if (!$_return_triggered_for_map{$_return_key} && !$_is_routing) {
-					$_return_triggered_for_map{$_return_key} = _now_ms();
-					# Human-like delay before action
-					_random_action_delay();
-					# Move to portal that leads back to town
-					# prt_fild05 portal to Prontera is at (367, 205)
-					eval { Commands::run("move 367 205"); 1 };
-					_post_event({
-						kind => 'bridge_reflex',
-						reflex => 'no_heal_items_returning',
-						hp_ratio => $hp_ratio,
-						hp => $hp,
-						max_hp => $hp_max,
-						map => $map,
-						base_level => $base_level,
-						timestamp => _now_ms(),
-					});
-				}
-				# Clear return trigger when bot reaches town
-				if ($map =~ /^prontera/i) {
-					delete $_return_triggered_for_map{$_return_key};
-				}
-				# Always set heal cooldown to prevent potion spam
-				$_reflex_last_fired{heal} = _now_ms();
-				return;
-			}
-
-			# Try config-pushed items first (dynamic, class-aware)
-			for my $item_name (@_heal_items) {
-				$item_name = _trim($item_name);
-				next if !$item_name;
-				my $item = eval { Actor::Item::get($item_name) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					# Human-like delay before using item
-					_random_action_delay();
-					eval { $item->use(); 1 };
-					$heal_triggered = 1;
-					last;
-				}
-			}
-
-			# Try config-pushed skills if no items available
-			if (!$heal_triggered) {
-				for my $skill_name (@_heal_skills) {
-					$skill_name = _trim($skill_name);
-					next if !$skill_name;
-					my $skill = eval { Skill::get($skill_name) };
-					next if !$skill;
-					next if !$skill->{level} || $skill->{level} < 1;
-					next if $sp <= 0;
-					_random_action_delay();
-					eval { Commands::run("use_skill $skill_name"); 1 };
-					$heal_triggered = 1;
-					last;
-				}
-			}
-
-			# If in town with low HP and no items found, trigger auto-buy
-			if (!$heal_triggered && $map =~ /^prontera/i && $hp_ratio < 0.50) {
-				_random_action_delay();
-				eval { Commands::run("autobuy"); 1 };
-			}
-
-			# HARD CODED FALLBACK: White Potion (absolute safety net)
-			if (!$heal_triggered) {
-				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
-				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
-					_random_action_delay();
-					eval { $fallback->use(); 1 };
-					$heal_triggered = 1;
-				}
-			}
-
-			# If NO healing resources at all: sit to regen (out of combat only)
-			if (!$heal_triggered && $hp_ratio < (_cfg('aiSidecar_sitHpThreshold', '0.30') + 0)) {
-				state $_last_hp = 0;
-				if ($hp >= $_last_hp && $_last_hp > 0) { return; }
-				$_last_hp = $hp;
-				my $_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-				state $_last_combat_end_ms = _now_ms();
-				if ($_in_combat) {
-					$_last_combat_end_ms = _now_ms() + 5000;
-				}
-				my $_since_combat = _now_ms() - $_last_combat_end_ms;
-				my $_sit_cooldown = _cfg_int('aiSidecar_sitPostCombatCooldownMs', 5000);
-				my $_sit_enabled = _cfg_int('aiSidecar_sitFallbackEnabled', 1);
-				if ($_sit_enabled && !$_in_combat && $_since_combat > $_sit_cooldown && $aggro_count == 0 && $AI::AI != 2) {
-					_random_action_delay();
+	# ── TRAVEL MODE ──
+	my $_ai_seq_top = @ai_seq ? $ai_seq[0] : '';
+	my $_is_moving = $_ai_seq_top =~ /^(?:route|move|follow)/ ? 1 : 0;
+	state $_travel_mode_until_ms = 0;
+	if ($_is_moving) {
+		$_travel_mode_until_ms = $now + 60000 if $_travel_mode_until_ms < $now;
+		if ($now < $_travel_mode_until_ms) {
+			my $_travel_hp = $char->{hp} || 0;
+			my $_travel_hp_max = $char->{hp_max} || 1;
+			my $_travel_hp_ratio = ($_travel_hp_max > 0) ? $_travel_hp / $_travel_hp_max : 1;
+			if ($_travel_hp_ratio < 0.10) {
+				if ($AI::AI != 2) {
 					eval { Commands::run("sit"); 1 };
 				}
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'no_heal_items_sitting',
-					hp_ratio => $hp_ratio,
-					hp => $hp,
-					max_hp => $hp_max,
-					sp_ratio => $sp_ratio,
-					sp => $sp,
-					aggro_count => $aggro_count,
-					weight_ratio => $weight_ratio,
-					map => $map,
-					job_name => $job_name,
-					base_level => $base_level,
-					job_level => $job_level,
-					heal_items_cached => scalar(@_heal_items),
-					heal_skills_cached => scalar(@_heal_skills),
-					timestamp => _now_ms(),
-				});
 			}
-
-			$_reflex_last_fired{heal} = _now_ms();
+			return;
 		}
+	} else {
+		$_travel_mode_until_ms = 0;
+	}
 
-		# ═══════════════════════════════════════════
-		# REFLEX #2 — EMERGENCY FLEE REFLEX
-		# ═══════════════════════════════════════════
-		# Multi-tier escape: run away → sit → accept death
-		# Level 1 novices don't have teleport/fly wings, so we need real fallbacks
-		if ($hp_ratio < 0.15 && $aggro_count > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{flee} || 0, _cfg_int('aiSidecar_reflexFleeCooldownMs', 1000))) {
-				$_reflex_last_fired{flee} = _now_ms();
-				my $_reflex_map2 = $char->{map} || ($field ? $field->baseName() : '');
-				if ($_reflex_map2 !~ /^prontera/i) {
-					# TIER 1: Try to run away from aggro (move away from nearest monster)
-					if ($aggro_count <= 3 && $hp_ratio >= 0.08) {
-						# Try moving in a random direction to break aggro
-						my @dirs = ('n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se');
-						my $dir = $dirs[int(rand(@dirs))];
-						eval { Commands::run("move $dir"); 1 };
-					}
-					# TIER 2: Sit to regen (only if not already sitting)
-					if ($AI::AI != 2) {
-						eval { Commands::run("sit"); 1 };
-					}
-					# TIER 3: If HP critically low (<8%) and still aggroed, accept death
-					# Don't spam teleport that will fail — just let the bot die and respawn
-					if ($hp_ratio < 0.08 && $aggro_count > 5) {
-						# Post event to sidecar: "I'm going to die, plan respawn"
-						_post_event({
-							kind => 'bridge_reflex',
-							reflex => 'accepting_death',
-							hp_ratio => $hp_ratio,
-							aggro_count => $aggro_count,
-							map => $_reflex_map2,
-							base_level => $base_level,
-							timestamp => _now_ms(),
-						});
-					}
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #3 — EMERGENCY SIT REFLEX
-		# ═══════════════════════════════════════════
-		# Sit to regen when HP < 12% (don't teleport - heuristic handles HP management)
-		# For level 1 novices: sit is the ONLY viable regen strategy
-		if ($hp_ratio < 0.12) {
-			if (_should_fire_reflex($_reflex_last_fired{teleport} || 0, _cfg_int('aiSidecar_reflexTeleportCooldownMs', 3000))) {
-				$_reflex_last_fired{teleport} = _now_ms();
-				my $_reflex_map3 = $char->{map} || ($field ? $field->baseName() : '');
-				if ($_reflex_map3 !~ /^prontera/i) {
-					# Sit to regen - this is the only reliable escape for low-level chars
-					if ($AI::AI != 2) {
-						eval { Commands::run("sit"); 1 };
-					}
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #4 — AGGRO WARNING REFLEX
-		# ═══════════════════════════════════════════
-		# Notify sidecar when heavily aggroed (>5 attackers)
-		if ($aggro_count > 5) {
-			if (_should_fire_reflex($_reflex_last_fired{aggro_warning} || 0, _cfg_int('aiSidecar_reflexAggroWarningCooldownMs', 5000))) {
-				$_reflex_last_fired{aggro_warning} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:aggro_warning (aggro=$aggro_count)\n";
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'aggro_warning',
-					aggro_count => $aggro_count,
-					hp_ratio => $hp_ratio,
-					map => $map,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #5 — LOW SP REFLEX
-		# ═══════════════════════════════════════════
-		# Notify sidecar when SP is critically low
-		if ($sp_ratio < 0.15) {
-			if (_should_fire_reflex($_reflex_last_fired{low_sp} || 0, _cfg_int('aiSidecar_reflexLowSpCooldownMs', 10000))) {
-				$_reflex_last_fired{low_sp} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:low_sp (SP=$sp/$sp_max, ratio=$sp_ratio)\n";
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'low_sp',
-					sp_ratio => $sp_ratio,
-					sp => $sp,
-					max_sp => $sp_max,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #6 — GM / ADMIN DETECTION REFLEX
-		# ═══════════════════════════════════════════
-		# Detect GM/Admin players within 15 tiles, switch to manual
-		if ($playersList) {
-			my $gm_detected = 0;
-			for my $player (@{$playersList}) {
-				next if !$player;
-				my $pname = $player->{name} || '';
-				next if $pname eq '';
-				if ($pname =~ /GM|GameMaster|Admin|Support/i) {
-					my $dist = _calc_distance($player, $char);
-					if (defined $dist && $dist <= 15) {
-						$gm_detected = 1;
-						last;
-					}
-				}
-			}
-			if ($gm_detected) {
-				if (_should_fire_reflex($_reflex_last_fired{gm_detected} || 0, _cfg_int('aiSidecar_reflexGmDetectedCooldownMs', 60000))) {
-					$_reflex_last_fired{gm_detected} = _now_ms();
-# 					warning "[aiSidecarBridge] bridge_reflex:gm_detected (GM/Admin player within 15 tiles)\n";
-					# GM manual toggle disabled — let survival check handle mode
-					# eval { _toggle_ai_mode('manual'); 1 };
-					_post_event({
-						kind => 'bridge_reflex',
-						reflex => 'gm_detected',
-						message => 'GM/Admin player detected within 15 tiles, AI switched to manual',
-						timestamp => $now,
-					});
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #7 — WEIGHT WARNING REFLEX
-		# ═══════════════════════════════════════════
-		# Notify sidecar when weight exceeds 85%
-		if ($weight_ratio > 0.85) {
-			if (_should_fire_reflex($_reflex_last_fired{weight_warning} || 0, _cfg_int('aiSidecar_reflexWeightWarningCooldownMs', 30000))) {
-				$_reflex_last_fired{weight_warning} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:weight_warning (weight=$weight/$weight_max, ratio=$weight_ratio)\n";
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'weight_warning',
-					weight_ratio => $weight_ratio,
-					weight => $weight,
-					max_weight => $weight_max,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #8 — EQUIPMENT BROKEN REFLEX
-		# ═══════════════════════════════════════════
-		# Notify sidecar when equipped item is damaged/broken
-		if ($char->{equipment}) {
-			my $broken_found = 0;
-			for my $slot (keys %{$char->{equipment}}) {
-				my $item = $char->{equipment}{$slot};
-				next if !$item;
-				if ($item->{broken} || (defined $item->{damage} && $item->{damage} > 0)) {
-					$broken_found = 1;
-					last;
-				}
-			}
-			if ($broken_found) {
-				if (_should_fire_reflex($_reflex_last_fired{equipment_broken} || 0, _cfg_int('aiSidecar_reflexEquipmentBrokenCooldownMs', 60000))) {
-					$_reflex_last_fired{equipment_broken} = _now_ms();
-# 					warning "[aiSidecarBridge] bridge_reflex:equipment_broken (broken equipment detected)\n";
-					_post_event({
-						kind => 'bridge_reflex',
-						reflex => 'equipment_broken',
-						message => 'Broken equipment detected',
-						timestamp => $now,
-					});
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #9 — INTERRUPT CAST REFLEX
-		# ═══════════════════════════════════════════
-		# Interrupt enemy casters within 10 tiles using Bash or similar
-		if ($monstersList) {
-			my $interrupted = 0;
-			for my $monster (@{$monstersList}) {
-				next if !$monster;
-				my $casting = $monster->{casting} || undef;
-				next if !$casting;
-				my $dist = _calc_distance($monster, $char);
-				if (defined $dist && $dist <= 10) {
-					$interrupted = 1;
-					last;
-				}
-			}
-			if ($interrupted) {
-				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, _cfg_int('aiSidecar_reflexInterruptCastCooldownMs', 1500))) {
-					$_reflex_last_fired{interrupt_cast} = _now_ms();
-# 					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
-					eval { Commands::run("use_skill Bash"); 1 };
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #10 — PRE-POT REFLEX (BOSS WITHIN 15 TILES)
-		# ═══════════════════════════════════════════
-		# Preemptively heal before engaging a boss
-		my @BOSS_IDS = (1038, 1046, 1049, 1059, 1086, 1087, 1088, 1112, 1115, 1147, 1150, 1159, 1205, 1272, 1312, 1313, 1511, 1630, 1639, 1719, 1751, 1871, 1874);
-		my %BOSS_LOOKUP = map { $_ => 1 } @BOSS_IDS;
-		if ($monstersList) {
-			my $boss_nearby = 0;
-			for my $monster (@{$monstersList}) {
-				next if !$monster;
-				my $name_id = $monster->{nameID} || 0;
-				next if !$name_id;
-				if ($BOSS_LOOKUP{$name_id}) {
-					my $dist = _calc_distance($monster, $char);
-					if (defined $dist && $dist <= 15) {
-						$boss_nearby = 1;
-						last;
-					}
-				}
-			}
-			if ($boss_nearby && $hp_ratio > 0.9) {
-				if (_should_fire_reflex($_reflex_last_fired{pre_pot} || 0, _cfg_int('aiSidecar_reflexPrePotCooldownMs', 5000))) {
-					$_reflex_last_fired{pre_pot} = _now_ms();
-					_update_heal_cache();
-					my $healed = 0;
-					for my $item_name (@_heal_items) {
-						my $item = eval { Actor::Item::get($item_name) };
-						if ($item) {
-# 							warning "[aiSidecarBridge] bridge_reflex:pre_pot (boss within 15 tiles, HP=$hp/$hp_max, item=$item_name)\n";
-							eval { Commands::run("is $item_name"); 1 };
-							$healed = 1;
-							last;
-						}
-					}
-					if (!$healed) {
-# 						warning "[aiSidecarBridge] bridge_reflex:pre_pot_no_items (boss within 15 tiles, HP=$hp/$hp_max)\n";
-					}
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #11 — BOT-TO-BOT COOPERATION REQUEST
-		# ═══════════════════════════════════════════
-		# If HP critically low with no heal resources and aggro, request help from other bots
-		if (!$heal_triggered && $hp_ratio < 0.50 && $aggro_count > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{bot_request} || 0, _cfg_int('aiSidecar_reflexBotRequestCooldownMs', 5000))) {
-				$_reflex_last_fired{bot_request} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:bot_cooperation_request (HP=$hp/$hp_max, aggro=$aggro_count)\n";
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'bot_cooperation_request',
-					hp_ratio => $hp_ratio,
-					hp => $hp,
-					max_hp => $hp_max,
-					aggro_count => $aggro_count,
-					map => $map,
-					base_level => $base_level,
-					job_name => $job_name,
-					timestamp => _now_ms(),
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #12 — PARTY MEMBER LOW HP ALERT
-		# ═══════════════════════════════════════════
-		# Notify sidecar if any party member has critically low HP
-		if ($playersList) {
-			for my $player (@{$playersList}) {
-				next if !$player;
-				my $pname = $player->{name} || '';
-				next if $pname eq '';
-				# Skip self
-				next if $char && defined $char->{name} && $pname eq $char->{name};
-
-				my $player_hp = $player->{hp} || 0;
-				my $player_hp_max = $player->{hp_max} || 1;
-    # Skip ghost entries: real players never have max_hp < 100
-    next if $player_hp_max < 100;
-				my $player_hp_ratio = ($player_hp_max > 0) ? $player_hp / $player_hp_max : 1;
-
-				if ($player_hp_ratio < 0.20) {
-					my $dist = _calc_distance($player, $char);
-					next if !defined $dist || $dist > 20;
-
-					if (_should_fire_reflex($_reflex_last_fired{party_low_hp} || 0, _cfg_int('aiSidecar_reflexPartyLowHpCooldownMs', 10000))) {
-						$_reflex_last_fired{party_low_hp} = _now_ms();
-# 						warning "[aiSidecarBridge] bridge_reflex:party_low_hp (player=$pname HP=$player_hp/$player_hp_max=$player_hp_ratio, dist=$dist)\n";
-						_post_event({
-							kind => 'bridge_reflex',
-							reflex => 'party_low_hp',
-							player_name => $pname,
-							player_hp => $player_hp,
-							player_hp_max => $player_hp_max,
-							player_hp_ratio => $player_hp_ratio,
-							distance => $dist,
-							timestamp => $now,
-						});
-					}
-					last;  # Only report first low-HP party member per cycle
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #13 — HIGH AGGRO SURROUND REFLEX
-		# ═══════════════════════════════════════════
-		# Immediate emergency when surrounded (>10 aggro)
-		# Multi-tier: run → sit → accept death (no teleport for low-level chars)
-		if ($aggro_count > 10) {
-			if (_should_fire_reflex($_reflex_last_fired{high_aggro_surround} || 0, _cfg_int('aiSidecar_reflexHighAggroSurroundCooldownMs', 3000))) {
-				$_reflex_last_fired{high_aggro_surround} = _now_ms();
-
-				# TIER 1: Try to run in a random direction
-				my @dirs = ('n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se');
-				my $dir = $dirs[int(rand(@dirs))];
-				eval { Commands::run("move $dir"); 1 };
-
-				# TIER 2: Sit if critically low HP
-				if ($hp_ratio < 0.25) {
-					if ($AI::AI != 2) {
-						eval { Commands::run("sit"); 1 };
-					}
-				}
-
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'high_aggro_surround',
-					aggro_count => $aggro_count,
-					hp_ratio => $hp_ratio,
-					map => $map,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #14 — ZONK / DEAD REFLEX (INSTANT)
-		# ═══════════════════════════════════════════
-		# Immediate sit if HP is zero or critically zero (zombie state)
-		if ($hp <= 0 || ($hp > 0 && $hp <= 5)) {
-			if (_should_fire_reflex($_reflex_last_fired{zonk} || 0, _cfg_int('aiSidecar_reflexZonkCooldownMs', 2000))) {
-				$_reflex_last_fired{zonk} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:zonk (HP=$hp/$hp_max, map=$map)\n";
-				eval { 1 };
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'zonk',
-					hp => $hp,
-					hp_max => $hp_max,
-					map => $map,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #15 — DEATH COUNTER (INFORM SIDECAR)
-		# ═══════════════════════════════════════════
-		# Track death count and notify sidecar if deaths spike
-		if ($death_count > 0 && $death_count % 5 == 0) {
-			if (_should_fire_reflex($_reflex_last_fired{death_spike} || 0, _cfg_int('aiSidecar_reflexDeathSpikeCooldownMs', 120000))) {
-				$_reflex_last_fired{death_spike} = _now_ms();
-# 				warning "[aiSidecarBridge] bridge_reflex:death_spike (deaths=$death_count, map=$map)\n";
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'death_spike',
-					death_count => $death_count,
-					map => $map,
-					timestamp => $now,
-				});
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #16 — PROACTIVE PRE-BUFF REFLEX
-		# ═══════════════════════════════════════════
-		# Pre-buff before engaging: cast self-buffs when out of combat
-		# Pro players always buff before engaging, never during combat
-		if (!$in_combat && $hp_ratio > 0.8 && $sp_ratio > 0.3) {
-			if (_should_fire_reflex($_reflex_last_fired{pre_buff} || 0, _cfg_int('aiSidecar_reflexPreBuffCooldownMs', 15000))) {
-				$_reflex_last_fired{pre_buff} = _now_ms();
-				# Try common self-buffs based on class
-				my @buffs = (
-					"use_skill Twohand Quicken",   # Knight ASPD buff
-					"use_skill Increase AGI",     # Acolyte/Priest
-					"use_skill Blessing",          # Acolyte/Priest
-					"use_skill Magnificat",         # Priest SP regen
-					"use_skill Kyrie Eleison",     # Priest shield
-					"use_skill Improve Concentration", # Swordsman
-					"use_skill Enchant Poison",     # Assassin
-					"use_skill Owl's Eye",         # Archer
-					"use_skill Vulture's Eye",     # Archer
-					"use_skill Energy Coat",        # Mage
-				);
-				for my $buff (@buffs) {
-					my ($cmd, $skill_name) = $buff =~ /^use_skill\s+(.+)$/;
-					next if !$skill_name;
-					my $skill = eval { Skill::get($skill_name) };
-					if ($skill && $skill->{level} && $skill->{level} > 0) {
-						# Check if buff is already active
-						my $already_active = 0;
-						if ($char->{buffs} && ref $char->{buffs} eq 'HASH') {
-							$already_active = 1 if exists $char->{buffs}{$skill_name};
-						}
-						if (!$already_active) {
-							_random_action_delay();
-							eval { Commands::run($buff); 1 };
-							last;  # One buff per tick
-						}
-					}
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #17 — PROACTIVE PRE-DODGE REFLEX
-		# ═══════════════════════════════════════════
-		# Pre-dodge when a monster starts casting a dangerous AoE
-		# Pro players don't wait for the hit — they dodge the cast bar
-		if ($monstersList) {
-			for my $monster (@{$monstersList}) {
-				next if !$monster;
-				my $casting = $monster->{casting} || undef;
-				next if !$casting;
-				my $dist = _calc_distance($monster, $char);
-				next if !defined $dist || $dist > 12;
-
-				# Known dangerous AoE skills to dodge
-				my @DODGE_SKILLS = qw(
-					WZ_STORMGUST WZ_METEORSTORM WZ_HEAVENDRIVE MG_THUNDERSTORM
-					WZ_VERMILION NPC_HELLJUDGEMENT NPC_EARTHQUAKE NPC_DARKBREATH
-					NPC_PULSESTRIKE NPC_WIDESTUN NPC_WIDEFREEZE NPC_FIREBREATH
-				);
-				my $should_dodge = 0;
-				for my $dodge_skill (@DODGE_SKILLS) {
-					if ($casting eq $dodge_skill) {
-						$should_dodge = 1;
-						last;
-					}
-				}
-
-				if ($should_dodge) {
-					if (_should_fire_reflex($_reflex_last_fired{pre_dodge} || 0, _cfg_int('aiSidecar_reflexPreDodgeCooldownMs', 2000))) {
-						$_reflex_last_fired{pre_dodge} = _now_ms();
-# 						warning "[aiSidecarBridge] bridge_reflex:pre_dodge (monster casting $casting at dist=$dist)\n";
-						# Move away immediately — no delay
-						eval { 1 };
-						_post_event({
-							kind => 'bridge_reflex',
-							reflex => 'pre_dodge',
-							casting_skill => $casting,
-							distance => $dist,
-							hp_ratio => $hp_ratio,
-							timestamp => $now,
-						});
-					}
-					last;
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #18 — AUTO-SIT REGEN REFLEX
-		# ═══════════════════════════════════════════
-		# Auto-sit when out of combat and HP/SP is low
-		# Pro players sit to regen between pulls, never fight at low HP
-		# Guard: only if bot can sit (Basic Skill >= 3)
-		# Guard: skip if stand-up reflex recently forced a stand (60s cooldown)
-		# Guard: skip if bot has 0 potions on hunting map (sitting won't help)
-		state $_auto_sit_suppressed_until_ms = 0;
-		state $_tier5_autosit_done = 0;
-		if ($_can_sit && !$in_combat && $hp_ratio < 0.6 && $hp > 0) {
-			# Skip if stand-up reflex recently forced a stand
-			if ($now < $_auto_sit_suppressed_until_ms) {
-				# Auto-sit is suppressed — skip
-			} elsif ($map =~ /_fild|_dun/i && !$_in_town) {
-				# Check if we have any potions — skip auto-sit if 0 potions
-				my $_sit_has_potions = 0;
-				for my $item_name (@_heal_items) {
-					$item_name = _trim($item_name);
-					next if !$item_name;
-					my $item = eval { Actor::Item::get($item_name) };
-					if ($item && $item->{amount} && $item->{amount} > 0) {
-						$_sit_has_potions = 1;
-						last;
-					}
-				}
-				if (!$_sit_has_potions) {
-					# No potions — skip auto-sit (sitting won't help, just stand and fight)
-				} else {
-					if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
-						$_reflex_last_fired{auto_sit} = _now_ms();
-						my $ai_top = @ai_seq ? $ai_seq[0] : '';
-						if ($ai_top ne 'sit') {
-							_random_action_delay();
-							eval { Commands::run("sit"); 1 };
-							$_tier5_autosit_done = 1;
-						}
-					}
-				}
-			} else {
-				if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
-					$_reflex_last_fired{auto_sit} = _now_ms();
-					my $ai_top = @ai_seq ? $ai_seq[0] : '';
-					if ($ai_top ne 'sit') {
-						_random_action_delay();
-						eval { Commands::run("sit"); 1 };
-						$_tier5_autosit_done = 1;
-					}
-				}
-			}
-		}
-		# ═══════════════════════════════════════════
-		# REFLEX #19 — PROACTIVE POTION TOP-OFF REFLEX
-		# ═══════════════════════════════════════════
-		# Top off HP when out of combat and HP < 80%
-		# Pro players keep HP topped off between pulls, not just in emergencies
-		if (!$in_combat && $hp_ratio > 0.3 && $hp_ratio < 0.8 && $hp > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{top_off} || 0, _cfg_int('aiSidecar_reflexTopOffCooldownMs', 10000))) {
-				$_reflex_last_fired{top_off} = _now_ms();
-				_update_heal_cache();
-				for my $item_name (@_heal_items) {
-					$item_name = _trim($item_name);
-					next if !$item_name;
-					my $item = eval { Actor::Item::get($item_name) };
-					if ($item && $item->{amount} && $item->{amount} > 0) {
-						_random_action_delay();
-						eval { Commands::run("is $item_name"); 1 };
-						last;
-					}
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #20 — STUCK ON HUNTING MAP DETECTOR
-		# ═══════════════════════════════════════════
-		# If bot has been on a hunting map for 60+ seconds with 0 attack attempts,
-		# force ai auto and reset attack config.
-		# Tracks "time since last attack attempt" not "time since last successful attack"
-		# so it catches bots that never enter combat (e.g. standing still watching).
-		# Also tracks "time since last AI activity" — if bot has been idle on a hunting
-		# map for 60s with zero AI state, force ai auto.
-		my $_hunting_map = $map =~ /_fild|_dun/i ? 1 : 0;
-		if ($_hunting_map && !$_in_town) {
-			state $_last_attack_attempt_ms = 0;
-			state $_last_ai_activity_ms = 0;
-			state $_last_stuck_check_ms = 0;
-			# Track last attack attempt — fires on ANY combat-related AI state
-			if ($_ai_seq_top =~ /^(?:attack|skill_use|route|follow)/) {
-				$_last_attack_attempt_ms = $now;
-				$_last_ai_activity_ms = $now;
-			}
-			# Track last AI activity — fires on ANY non-empty AI state
-			if ($_ai_seq_top ne '') {
-				$_last_ai_activity_ms = $now;
-			}
-			# Check every 30s if bot is stuck (no attack attempts for 60s)
-			if ($now - $_last_stuck_check_ms > 30000) {
-				$_last_stuck_check_ms = $now;
-				# If never attacked since being on this map, or last attack was >60s ago
-				# OR if no AI activity at all for 60s (bot standing still doing nothing)
-				my $_stuck_reason = '';
-				if ($_last_attack_attempt_ms == 0 || $now - $_last_attack_attempt_ms > 60000) {
-					$_stuck_reason = 'no attacks for 60s';
-				} elsif ($_last_ai_activity_ms > 0 && $now - $_last_ai_activity_ms > 60000) {
-					$_stuck_reason = 'no AI activity for 60s';
-				}
-				if ($_stuck_reason) {
-					debug "[aiSidecarBridge] stuck_detector: bot stuck on $map ($_stuck_reason), forcing ai auto\n", 'aiSidecarBridge', 1;
-					eval { Commands::run("ai auto"); 1 };
-					$_last_attack_attempt_ms = $now;  # Reset to prevent spam
-					$_last_ai_activity_ms = $now;
-					_post_event({
-						kind => 'bridge_reflex',
-						reflex => 'stuck_on_hunting_map',
-						hp_ratio => $hp_ratio,
-						map => $map,
-						base_level => $base_level,
-						timestamp => _now_ms(),
-					});
-				}
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #21 — STAND UP WHEN HP IS FULL OR SITTING TOO LONG
-		# ═══════════════════════════════════════════
-		# If bot is sitting and HP > 90%, stand up and force ai auto.
-		# Prevents bots from sitting forever on hunting maps after regen.
-		# Also force stand if bot has been sitting for > 30s (stuck sitting).
-		if ($_hunting_map && !$_in_town && $hp > 0) {
-			state $_sit_start_ms = 0;
-			my $_ai_top = @ai_seq ? $ai_seq[0] : '';
-			if ($_ai_top eq 'sit') {
-				# Track when sitting started
-				if ($_sit_start_ms == 0) {
-					$_sit_start_ms = $now;
-				}
-				# Stand up if HP > 90% OR if been sitting > 30s
-				if ($hp_ratio > 0.90 || ($now - $_sit_start_ms > 30000)) {
-					my $_stand_reason = $hp_ratio > 0.90 ? "HP=$hp/$hp_max > 90%" : "sitting for " . int(($now - $_sit_start_ms)/1000) . "s";
-					debug "[aiSidecarBridge] stand_up: $_stand_reason, standing up\n", 'aiSidecarBridge', 1;
-					eval { Commands::run("stand"); 1 };
-					eval { Commands::run("ai auto"); 1 };
-					$_sit_start_ms = 0;  # Reset
-					# Suppress auto-sit for 60s to prevent infinite sit-stand loop
-					$_auto_sit_suppressed_until_ms = $now + 60000;
-				}
-			} else {
-				# Reset sit timer when not sitting
-				$_sit_start_ms = 0;
-			}
-		}
-
-		# ═══════════════════════════════════════════
-		# REFLEX #22 — SURVIVAL MODE ON HUNTING MAP
-		# ═══════════════════════════════════════════
-		# When bot is on a hunting map with 0 potions, suppress ALL heal reflexes
-		# immediately. The potion checks are wasting cycles.
-		# Uses persistent variables (not state) so it survives map changes.
-		# Re-evaluates every 60s to check if potions have been bought.
-		if ($_hunting_map && !$_in_town) {
-			# Check EVERY cycle if we have potions — suppress immediately if 0
-			my $_survival_has_potions = 0;
-			for my $item_name (@_heal_items) {
-				$item_name = _trim($item_name);
-				next if !$item_name;
-				my $item = eval { Actor::Item::get($item_name) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					$_survival_has_potions = 1;
-					last;
-				}
-			}
-			if (!$_survival_has_potions) {
-				# No potions — suppress ALL heal reflexes immediately
-				$heal_triggered = 1;
-			}
+	# ── EMERGENCY SIT at <10% HP ──
+	my $hp = $char->{hp} || 0;
+	my $hp_max = $char->{hp_max} || 1;
+	my $hp_ratio = ($hp_max > 0) ? $hp / $hp_max : 1;
+	if ($hp_ratio < 0.10 && $hp > 0 && $_can_sit) {
+		my $_ai_top = @ai_seq ? $ai_seq[0] : '';
+		if ($_ai_top ne 'sit') {
+			debug "[aiSidecarBridge] emergency_sit: HP=$hp/$hp_max < 10%, sitting\n", 'aiSidecarBridge', 1;
+			eval { Commands::run("sit"); 1 };
 		}
 	}
 }
-sub _apply_bot_config {
+
+# ── STRIPPED: _apply_bot_config removed — all config is handled by sidecar heuristic ──
+# The heuristic service manages attack config, sit config, teleport config, etc.
+# Bridge only does: snapshot forwarding, command execution, emergency sit.
     # Heuristic sets attack distances - don't override
     # $::config{'attackDistance'} = 7;
     # $::config{'attackMaxDistance'} = 12;
