@@ -4393,23 +4393,30 @@ sub _check_bridge_reflexes {
 			# If NO healing items in inventory AND HP < 80%:
 			# Queue return-to-town command instead of spamming potion uses
 			# Use portal coordinates (prt_fild05 portal to Prontera is at 367, 205)
+			# Long cooldown (30s) to avoid resetting route calculation
 			if ($total_heal_items == 0 && $hp_ratio < 0.80 && $map !~ /^prontera/i) {
-				# Human-like delay before action
-				_random_action_delay();
-				# Move to portal that leads back to town
-				# prt_fild05 portal to Prontera is at (367, 205)
-				eval { Commands::run("move 367 205"); 1 };
+				# Check if we already have a route to the portal — don't re-issue
+				my $_already_routing = @ai_seq && $ai_seq[0] =~ /^route/ ? 1 : 0;
+				if (!$_already_routing && _should_fire_reflex($_reflex_last_fired{return_town} || 0, 30000)) {
+					$_reflex_last_fired{return_town} = _now_ms();
+					# Human-like delay before action
+					_random_action_delay();
+					# Move to portal that leads back to town
+					# prt_fild05 portal to Prontera is at (367, 205)
+					eval { Commands::run("move 367 205"); 1 };
+					_post_event({
+						kind => 'bridge_reflex',
+						reflex => 'no_heal_items_returning',
+						hp_ratio => $hp_ratio,
+						hp => $hp,
+						max_hp => $hp_max,
+						map => $map,
+						base_level => $base_level,
+						timestamp => _now_ms(),
+					});
+				}
+				# Always set heal cooldown to prevent potion spam while walking
 				$_reflex_last_fired{heal} = _now_ms();
-				_post_event({
-					kind => 'bridge_reflex',
-					reflex => 'no_heal_items_returning',
-					hp_ratio => $hp_ratio,
-					hp => $hp,
-					max_hp => $hp_max,
-					map => $map,
-					base_level => $base_level,
-					timestamp => _now_ms(),
-				});
 				return;
 			}
 
