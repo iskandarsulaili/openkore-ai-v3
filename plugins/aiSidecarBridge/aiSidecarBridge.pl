@@ -488,9 +488,8 @@ sub on_mainLoop_post {
         
 
         # ── FORCE STAND: if bot is sitting, force stand to prevent sit-spam ──
-        # This is a reflex — the sidecar may queue 'stand' but sitAuto re-enables
-        # between polls. Force stand every cycle if HP >= 50%.
-        # Also force stand at ANY HP on town maps (cold start needs to move).
+        # Force stand if HP >= 50%, OR in town (cold start needs to move),
+        # OR on hunting map with 0 potions (can't heal anyway).
         if ($char && $char->{sitting}) {
             my $_fs_hp = $char->{hp} || 0;
             my $_fs_hp_max = $char->{hp_max} || 1;
@@ -498,8 +497,20 @@ sub on_mainLoop_post {
             my $_fs_map = lc($field->name() || '');
             my @_fs_town_maps = qw(pronenta morocc geffen payon aldebaran alberta izlude);
             my $_fs_is_town = grep { $_fs_map =~ /\Q$_/ } @_fs_town_maps;
-            if ($_fs_hp_pct >= 50 || $_fs_is_town) {
-                warning "[force_stand] bot sitting (town=$_fs_is_town HP=$_fs_hp_pct%), forcing stand\n", 'aiSidecarBridge', 1;
+            # Check if bot has 0 potions (cold start or emergency)
+            my $_fs_has_potions = 0;
+            if ($char->{inventory}) {
+                for my $_fi (@{$char->{inventory}}) {
+                    next unless $_fi;
+                    my $_fn = $_fi->{name} || '';
+                    if ($_fn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+                        $_fs_has_potions = 1;
+                        last;
+                    }
+                }
+            }
+            if ($_fs_hp_pct >= 50 || $_fs_is_town || !$_fs_has_potions) {
+                warning "[force_stand] bot sitting (HP=$_fs_hp_pct% town=$_fs_is_town pots=$_fs_has_potions), forcing stand\n", 'aiSidecarBridge', 1;
                 # Disable OpenKore's internal sit AI to prevent immediate re-sit
                 $::config{sitAuto_hp_lower} = 0;
                 $::config{sitAuto_hp_upper} = 0;
