@@ -1059,7 +1059,10 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                if not _cs_in_town:
+                # Only queue move prontera if bot is NOT on a hunting map
+                # If already on hunting map, step 1's 'move prt_fild01' will
+                # route through Prontera automatically (covers same path).
+                if not _cs_in_hunting:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
