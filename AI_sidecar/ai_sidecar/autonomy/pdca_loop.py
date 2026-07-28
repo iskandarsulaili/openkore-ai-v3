@@ -367,10 +367,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         for ha in assessment.actions:
             import time as _t
             _now = datetime.now(UTC)
+            # Cold start actions get reflex priority to avoid starvation by config audit
+            _cs_priority = ActionPriorityTier.reflex if (ha.reason or "").startswith("Cold start") else ActionPriorityTier.tactical
             proposal = ActionProposal(
                 action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
                 kind=ha.kind, command=ha.command or "ai auto",
-                priority_tier=ActionPriorityTier.tactical,
+                priority_tier=_cs_priority,
                 source="planner",
                 created_at=_now,
                 expires_at=_now + _td(seconds=30),

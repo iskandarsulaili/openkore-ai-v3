@@ -1059,22 +1059,13 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Disable attack + go to portal exit. Re-enable attack after arrival.
+                # Use portal coordinates (367 205) — bridge's route loop now allows
+                # when 0 potions. Reflex priority beats config audit starvation.
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 0",
+                        kind="command", command="move 367 205",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - disable attack to allow portal move",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prontera",
-                        confidence=0.99, domain="economy",
-                        reason="Cold start - set lockMap to Prontera for AI routing",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.99, domain="economy",
-                        reason="Cold start - restart AI to route to Prontera",
+                        reason="Cold start - go to Prontera portal to reach town",
                     ))
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon

@@ -565,13 +565,12 @@ sub on_mainLoop_post {
 
         
 
-	debug "[on_mainLoop_post] pre-bridge check\n", .aiSidecarBridge., 1;
+
 
         
 
 
 	return unless _bridge_enabled();
-	debug "[on_mainLoop_post] bridge_enabled check passed\n", 'aiSidecarBridge', 1;
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
 
