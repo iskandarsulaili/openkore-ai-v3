@@ -4392,13 +4392,13 @@ sub _check_bridge_reflexes {
 
 			# If NO healing items in inventory AND HP < 80%:
 			# Queue return-to-town command instead of spamming potion uses
-			# Use portal coordinates (Prontera portal from prt_fild05 is at 22, 203)
+			# Use portal coordinates (prt_fild05 portal to Prontera is at 367, 205)
 			if ($total_heal_items == 0 && $hp_ratio < 0.80 && $map !~ /^prontera/i) {
 				# Human-like delay before action
 				_random_action_delay();
 				# Move to portal that leads back to town
-				# prt_fild05 portal to Prontera is at (22, 203)
-				eval { Commands::run("move 22 203"); 1 };
+				# prt_fild05 portal to Prontera is at (367, 205)
+				eval { Commands::run("move 367 205"); 1 };
 				$_reflex_last_fired{heal} = _now_ms();
 				_post_event({
 					kind => 'bridge_reflex',
