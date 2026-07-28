@@ -421,8 +421,25 @@ sub on_mainLoop_pre {
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 	
-	# ── DISABLE useSelf_item ENTIRELY: handled in on_start3 ──
-	# (Deleted at startup to prevent "on cooldown" spam from server)
+	# ── DISABLE useSelf_item ENTIRELY: safety net in main loop ──
+	# Deleted at startup in on_start3, but OpenKore may re-read config.
+	# This safety net runs every cycle to catch any re-created entries.
+	if ($char) {
+		state $_last_useSelf_disable_ms = 0;
+		my $_now_ms = _now_ms();
+		if ($_now_ms - $_last_useSelf_disable_ms > 60000) {
+			$_last_useSelf_disable_ms = $_now_ms;
+			my $_usi_idx = 0;
+			while (exists $::config{"useSelf_item_$_usi_idx"}) {
+				delete $::config{"useSelf_item_$_usi_idx"};
+				delete $::config{"useSelf_item_${_usi_idx}_timeout"};
+				delete $::config{"useSelf_item_${_usi_idx}_cooldown"};
+				$_usi_idx++;
+			}
+			$timeout{ai_item_use_auto}{time} = time;
+			$timeout{ai_item_use_auto}{timeout} = 300;
+		}
+	}
 	
 	# ── PREVENT TELEPORT AT LOW HP: disable OpenKore internal teleport ──
 	if ($char) {

@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword shaicleb
+adminPassword rothutha
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1254,20 +1254,6 @@ sellAuto_npc_steps = c r1 n
 sellAuto_maxWeight 50
 sellAuto_distance = 25
 
-useAuto_Red_Potion {
-	hp_upper 80%
-	hp_lower 30%
-	sp_upper 100%
-	sp_lower 0%
-	inLockOnly 0
-	notWhileSitting 1
-	notWhileBusy 1
-	isSelfSkill 0
-	timeout 2
-	disabled 0
-	inInventory 0
-	manualAI 0
-}
 
 buyAuto_1 {
 	npc = prt_in 126 76
