@@ -795,6 +795,7 @@ class HeuristicService:
         self._last_buy_time: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
+        self._cold_start_step: dict[str, int] = {}
         self._load_towns()
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}
@@ -1025,7 +1026,93 @@ class HeuristicService:
         _leader_map = ""
         # _profile_to_char is accessed via self._profile_to_char throughout
 
-        # ── CONFIG AUDIT: detect and fix suboptimal configs retroactively ──
+        # ── COLD START SEQUENCE: task-completion-triggered, not time-based ──
+        # The OnboardingService exists but is disconnected from the heuristic.
+        # This sequence fires each step when the PREVIOUS step is confirmed via signals.
+        # Step 1: Buy Knife (item 1201) — confirmed when weapon in inventory_items
+        # Step 2: Buy Red Potions (item 501) — confirmed when potions in inventory_items
+        # Step 3: Set lockMap to prt_fild05 — confirmed when map changes
+        # Step 4: Hunt — bot is on hunting map with weapon + potions
+        # MUST run after config audit section (needs _audit_is_town, _audit_is_hunting)
+        _cold_start_step = self._cold_start_step.get(bot_id, 0)
+        _has_weapon = any(
+            "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
+            "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
+            for item in inventory
+        )
+        _has_potions = any(
+            "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
+            for item in inventory
+        )
+        if _cold_start_step == 0:
+            # Step 0: Check if we need cold start at all
+            if _has_weapon and _has_potions:
+                # Already equipped — skip cold start
+                self._cold_start_step[bot_id] = 4
+            else:
+                # Need cold start — ensure we're in Prontera
+                self._cold_start_step[bot_id] = 1
+                if not _audit_is_town:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start - return to Prontera to buy equipment",
+                    ))
+        if _cold_start_step == 1:
+            # Step 1: Buy Knife (item 1201) if no weapon
+            if not _has_weapon:
+                if zeny >= 50:
+                    actions.append(HeuristicAction(
+                        kind="command", command="buy 1201 1",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start - buy Knife (no weapon detected)",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="equip 1201",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start - equip Knife after purchase",
+                    ))
+                else:
+                    # 0 zeny — can't buy anything. Need to farm 50 zeny first.
+                    # Go to prt_fild01 (safe map with Porings) and farm with fists.
+                    if not _audit_is_hunting:
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prt_fild01",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
+                        ))
+            else:
+                # Weapon confirmed — move to step 2
+                self._cold_start_step[bot_id] = 2
+                logger.info(f"[cold_start] {bot_id}: weapon confirmed, step 1 -> 2")
+        if _cold_start_step == 2:
+            # Step 2: Buy Red Potions (item 501) if no potions
+            if not _has_potions:
+                if zeny >= 50:
+                    _potion_qty = min(int(zeny / 50), 10)
+                    if _potion_qty > 0:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"buy 501 {_potion_qty}",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start - buy {_potion_qty} Red Potions",
+                        ))
+            else:
+                # Potions confirmed — move to step 3
+                self._cold_start_step[bot_id] = 3
+                logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
+        if _cold_start_step == 3:
+            # Step 3: Set lockMap and return to hunt
+            if _audit_is_town:
+                actions.append(HeuristicAction(
+                    kind="command", command="move 367 205",
+                    confidence=0.99, domain="hunting",
+                    reason="Cold start - return to hunting map with weapon and potions",
+                ))
+            elif _audit_is_hunting:
+                # On hunting map with weapon + potions — cold start complete
+                self._cold_start_step[bot_id] = 4
+                logger.info(f"[cold_start] {bot_id}: on hunting map, cold start complete")
+        # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
         # Runs every cycle for ALL bots, not just COLD_START or hunting maps
         # Fixes: attackMaxDistance, attackDistance, attackAuto, avoidList settings
         # MUST run before state-specific returns to ensure config is always applied
