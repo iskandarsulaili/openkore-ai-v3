@@ -6,7 +6,7 @@ use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout);
 use IO::Socket::INET;
 use Globals qw($char);
 use Log qw(debug message warning);
@@ -2592,10 +2592,8 @@ sub _poll_next_action {
 
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
 	$::config{'sitAuto_hp_lower'} = 0;
-		$::config{'sitAuto_hp_upper'} = 0;
-		# Increase server timeout to prevent idle disconnects
-		$::config{'timeout'} = 60 unless $::config{'timeout'} && $::config{'timeout'} >= 60;
-		# Force-set attackAuto=0 when 0 potions on hunting map
+	$::config{'sitAuto_hp_upper'} = 0;
+	# Force-set attackAuto=0 when 0 potions on hunting map
 	# Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
 	# because OpenKore's getAttackAutoModeForContext returns 1 when
 	# attackAuto_inLockOnly==1 regardless of attackAuto value.
@@ -3889,41 +3887,41 @@ sub _rewrite_runtime_command {
 	    }
 	}
 	
-		# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
-		# EXCEPTION: allow ai manual when bot has 0 potions on hunting map (cold start portal walk)
-		# Also block ai auto when 0 potions on hunting map (game engine overrides ai manual)
-		if ($normalized eq 'ai manual' || $normalized eq 'ai auto') {
-		    if ($char && $char->{inventory}) {
-		        my $_am_has_potions = 0;
-		        for my $_ami (@{$char->{inventory}}) {
-		            next unless $_ami;
-		            my $_amn = $_ami->{name} || '';
-		            if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-		                $_am_has_potions = 1;
-		                last;
-		            }
-		        }
-		        if (!$_am_has_potions) {
-		            my $_amm = $field ? lc($field->name()) : '';
-		            $_amm =~ s/\.gat$//;
-		            if ($_amm =~ /_fild|_dun/i) {
-		                if ($normalized eq 'ai manual') {
-		                    # 0 potions on hunting map — allow ai manual for portal walk
-		                    debug "[ai_manual] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-		                    return ($trimmed, 'ai_manual_allowed');
-		                } else {
-		                    # 0 potions on hunting map — block ai auto (game engine overrides ai manual)
-		                    debug "[ai_auto] blocking ai auto on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-		                    return ('', 'ai_auto_blocked_cold_start');
-		                }
-		            }
-		        }
-		    }
-		    if ($normalized eq 'ai manual') {
-		        debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
-		        return ('', 'ai_manual_blocked');
-		    }
-		}
+	# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
+	# Also block ai auto when 0 potions on hunting map (game engine overrides ai manual)
+	# EXCEPTION: allow ai manual when bot has 0 potions on hunting map (cold start portal walk)
+	if ($normalized eq 'ai manual' || $normalized eq 'ai auto') {
+	    if ($char && $char->{inventory}) {
+	        my $_am_has_potions = 0;
+	        for my $_ami (@{$char->{inventory}}) {
+	            next unless $_ami;
+	            my $_amn = $_ami->{name} || '';
+	            if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+	                $_am_has_potions = 1;
+	                last;
+	            }
+	        }
+	        if (!$_am_has_potions) {
+	            my $_amm = $field ? lc($field->name()) : '';
+	            $_amm =~ s/\.gat$//;
+	            if ($_amm =~ /_fild|_dun/i) {
+	                if ($normalized eq 'ai manual') {
+	                    # 0 potions on hunting map — allow ai manual for portal walk
+	                    debug "[ai_manual] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
+	                    return ($trimmed, 'ai_manual_allowed');
+	                } else {
+	                    # 0 potions on hunting map — block ai auto
+	                    debug "[ai_auto] blocking ai auto on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
+	                    return ('', 'ai_auto_blocked_cold_start');
+	                }
+	            }
+	        }
+	    }
+	    if ($normalized eq 'ai manual') {
+	        debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
+	        return ('', 'ai_manual_blocked');
+	    }
+	}
 	
 	# SIT BLOCK: allow sit when HP is low (let bots regen)
 	if ($normalized eq 'sit') {
@@ -3997,72 +3995,43 @@ sub _rewrite_runtime_command {
 	# When lockMap is a hunting map -> IGNORE entirely (let bot walk/hunt)
 	# When on hunting map -> convert to sit (let bot rest)
 	# When in town -> convert to stand (allow autobuy/route)
-		# Throttled to 30s to prevent tight PDCA loop
-								if ($normalized eq 'ai manual' || $normalized eq 'ai auto') {
-									# EXCEPTION: allow ai manual when 0 potions on hunting map (cold start portal walk)
-									# Block ai auto when 0 potions (game engine overrides ai manual)
-									if ($char && $char->{inventory}) {
-										my $_am_has_potions = 0;
-										for my $_ami (@{$char->{inventory}}) {
-											next unless $_ami;
-											my $_amn = $_ami->{name} || '';
-											if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-												$_am_has_potions = 1;
-												last;
-											}
-										}
-										if (!$_am_has_potions) {
-											my $_amm = $field ? lc($field->name()) : '';
-											$_amm =~ s/\.gat$//;
-											if ($_amm =~ /_fild|_dun/i) {
-												if ($normalized eq 'ai manual') {
-													debug "[rewrite_runtime] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-													return ($normalized, 'ai_manual_allowed');
-												} else {
-													debug "[rewrite_runtime] blocking ai auto on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-													return ('', 'ai_auto_blocked_cold_start');
-												}
-											}
-										}
-									}
-									if ($normalized eq 'ai auto') {
-										# ai auto not blocked — continue to throttle/suppress logic
-										# (only ai manual goes through the rest)
-										return ($normalized, 'ai_auto_allowed');
-									}
-									my $_am_now = _now_ms();
-					my $_am_last = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
-					if ($_am_now - $_am_last < 30000) {
-						return ('', 'ai_manual_throttled');
-					}
-					$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_am_now;
-					my $_am_map = $field ? $field->name() : '';
-					$_am_map = lc($_am_map || '');
-					$_am_map =~ s/\.gat$//;
-					my $_am_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
-					my $_am_hunt = $_am_lock =~ /^[a-z]+_fild/;
-					my $_am_town = $_am_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|einbech|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-					if ($_am_hunt) {
-						warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
-						return ('', 'ai_manual_throttled');
-					}
-					if ($_am_map =~ /^[a-z]+_fild/) {
-						warning "[ai_manual] on $_am_map -> suppress (stay auto)\n", 'aiSidecarBridge', 1;
-						return ('', 'ai_manual_suppressed');
-					}
-					warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
-					my $_ab_last = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
-					if ($_am_now - $_ab_last > 60000) {
-						$_last_reflex_fire_ms{'autobuy_trigger'} = $_am_now;
-						warning "[ai_manual] autobuy\n", 'aiSidecarBridge', 1;
-						eval { Commands::run("autobuy"); 1; };
-					}
-					# Clear committed move so the move command isn't blocked
-					delete $_committed_actions{'move'};
-					warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
-					$::config{lockMap} = 'prt_fild05';
-					return ('move prt_fild05', 'coordinate_move_raw');
-				}
+	# Throttled to 30s to prevent tight PDCA loop
+	if ($normalized eq 'ai manual') {
+		my $_am_now = _now_ms();
+		my $_am_last = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
+		if ($_am_now - $_am_last < 30000) {
+			return ('', 'ai_manual_throttled');
+		}
+		$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_am_now;
+		my $_am_map = $field ? $field->name() : '';
+		$_am_map = lc($_am_map || '');
+		$_am_map =~ s/\.gat$//;
+		my $_am_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
+		my $_am_hunt = $_am_lock =~ /^[a-z]+_fild/;
+		my $_am_town = $_am_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+		if ($_am_hunt) {
+			warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
+			# Ensure auto mode so bot attacks monsters
+			# ai auto controlled by heuristic
+			return ('', 'ai_manual_throttled');
+		}
+		if ($_am_map =~ /^[a-z]+_fild/) {
+			warning "[ai_manual] on $_am_map -> suppress (stay auto)\n", 'aiSidecarBridge', 1;
+			return ('', 'ai_manual_suppressed');
+		}
+		warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
+		my $_ab_last = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
+		if ($_am_now - $_ab_last > 60000) {
+			$_last_reflex_fire_ms{'autobuy_trigger'} = $_am_now;
+			warning "[ai_manual] autobuy\n", 'aiSidecarBridge', 1;
+			eval { Commands::run("autobuy"); 1; };
+		}
+		my $_fh_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
+		if (($_am_lock eq '' || $_am_town) && $_am_now - $_fh_last > 120000) {
+			$_last_reflex_fire_ms{'forced_hunt_map'} = $_am_now;
+			# Clear committed action guard so the move command isn't blocked
+			delete $_committed_actions{'move'};
+			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
 			$::config{lockMap} = 'prt_fild05';
 			# $::config{attackAuto} = 3;
 			# attackAuto_inLockOnly controlled by heuristic
