@@ -152,32 +152,6 @@ class ActionQueue:
             self._expire_for_bot(bot_id, now)
             bot_queue = self._by_bot.get(bot_id)
             
-            # ── INLINE STALE DISPATCHED EXPIRY: clean before any selection ──
-            # _expire_for_bot should handle this, but ensure it's done before logging
-            if bot_queue:
-                _kept: deque[QueuedAction] = deque()
-                for _qe in bot_queue:
-                    if _qe.status == ActionStatus.dispatched:
-                        _da = self._normalize_datetime(getattr(_qe, 'dispatched_at', None))
-                        if _da and (now - _da).total_seconds() > 29:
-                            # Expire stale dispatched entry
-                            _expired = replace(_qe, status=ActionStatus.expired)
-                            self._actions_by_id[_expired.proposal.action_id] = _expired
-                            self._clear_idempotency_index(bot_id, _qe.proposal.idempotency_key, _qe.proposal.action_id)
-                            continue
-                    # Also check normal expiry
-                    _exp = self._normalize_datetime(_qe.proposal.expires_at)
-                    if _exp and now > _exp and _qe.status in {ActionStatus.queued, ActionStatus.dispatched}:
-                        _expired = replace(_qe, status=ActionStatus.expired)
-                        self._actions_by_id[_expired.proposal.action_id] = _expired
-                        self._clear_idempotency_index(bot_id, _qe.proposal.idempotency_key, _qe.proposal.action_id)
-                        continue
-                    _kept.append(_qe)
-                if len(_kept) != len(bot_queue):
-                    bot_queue.clear()
-                    bot_queue.extend(_kept)
-                    self._by_bot[bot_id] = bot_queue
-            
             # If no exact match, try finding by character name suffix
             if not bot_queue and ':' in bot_id:
                 _suffix = bot_id.split(':', 1)[1]
@@ -190,7 +164,7 @@ class ActionQueue:
                             _exp = self._normalize_datetime(_queued.proposal.expires_at)
                             if _queued.status == ActionStatus.dispatched:
                                 _da = self._normalize_datetime(getattr(_queued, 'dispatched_at', None))
-                                if _da and (now - _da).total_seconds() > 29:
+                                if _da and (now - _da).total_seconds() > 30:
                                     continue
                             if _exp and now > _exp:
                                 _queued.status = ActionStatus.expired
@@ -384,7 +358,7 @@ class ActionQueue:
             # Also expire dispatched actions that exceed max execution time (30s default)
             if queued.status == ActionStatus.dispatched:
                 dispatched_at = self._normalize_datetime(getattr(queued, 'dispatched_at', None))
-                if dispatched_at and (now - dispatched_at).total_seconds() > 29:
+                if dispatched_at and (now - dispatched_at).total_seconds() > 30:
                     expires = now - timedelta(seconds=1)  # Ensure expires < now
             if expires < now and queued.status in {
                 ActionStatus.queued,

@@ -2811,15 +2811,29 @@ sub _execute_action {
 		kind => $kind,
 	};
 
-	_emit_telemetry(
-		$success ? 'info' : 'warning',
-		$category,
-		$event_name,
-		$msg,
-		{ observed_latency_ms => $latency_ms + 0 },
-		{ result_code => $result_code, kind => $kind },
-	);
-}
+		_emit_telemetry(
+			$success ? 'info' : 'warning',
+			$category,
+			$event_name,
+			$msg,
+			{ observed_latency_ms => $latency_ms + 0 },
+			{ result_code => $result_code, kind => $kind },
+		);
+	
+		# ── ACKNOWLEDGE ACTION: tell sidecar this action is done ──
+		# Must be called after execution so the action queue removes this item.
+		# Without ack, the queue holds it in 'dispatched' state and blocks new actions.
+		if ($action_id && $action_id ne 'unknown_action') {
+		    _http_post_json('/v1/acknowledgements/action', {
+		        meta => _meta(_bot_id()),
+		        action_id => $action_id,
+		        poll_id => $poll_id,
+		        success => $success ? JSON::PP::true() : JSON::PP::false(),
+		        result_code => $result_code,
+		        message => $msg,
+		    });
+		}
+	}
 
 sub _party_leave_state_file {
 	my $_pl_dir = $::config{control} || '.';
