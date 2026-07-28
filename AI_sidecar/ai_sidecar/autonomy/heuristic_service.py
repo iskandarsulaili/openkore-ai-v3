@@ -1058,6 +1058,7 @@ class HeuristicService:
             else:
                 # Need cold start — ensure we're in Prontera
                 self._cold_start_step[bot_id] = 1
+                _cold_start_step = 1  # Sync local var
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
@@ -1090,6 +1091,7 @@ class HeuristicService:
             else:
                 # Weapon confirmed — move to step 2
                 self._cold_start_step[bot_id] = 2
+                _cold_start_step = 2
                 logger.info(f"[cold_start] {bot_id}: weapon confirmed, step 1 -> 2")
         if _cold_start_step == 2:
             # Step 2: Buy Red Potions (item 501) if no potions
