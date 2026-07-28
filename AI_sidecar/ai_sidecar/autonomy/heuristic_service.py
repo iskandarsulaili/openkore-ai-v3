@@ -1056,13 +1056,13 @@ class HeuristicService:
                 # Already equipped — skip cold start
                 self._cold_start_step[bot_id] = 4
             else:
-                # Need cold start — ensure we're in Prontera
+                # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Only queue move prontera if bot is NOT on a hunting map
-                # If already on hunting map, step 1's 'move prt_fild01' will
-                # route through Prontera automatically (covers same path).
-                if not _cs_in_hunting:
+                # Always queue move prontera if bot is NOT already in town
+                # This ensures the bot gets to Prontera FIRST before step 1
+                # sends it to the farming map (prt_fild01).
+                if not _cs_in_town:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
@@ -1070,6 +1070,7 @@ class HeuristicService:
                     ))
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon
+            # Only queue actions when bot is in town (Prontera)
             if not _has_weapon:
                 if zeny >= 50:
                     actions.append(HeuristicAction(
@@ -1085,12 +1086,14 @@ class HeuristicService:
                 else:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild01 (safe map with Porings) and farm with fists.
-                    # 'move prt_fild01' rewrite handles lockMap + routing.
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prt_fild01",
-                        confidence=0.99, domain="economy",
-                        reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
-                    ))
+                    # Only queue from Prontera — 'move prt_fild01' from Prontera
+                    # is a direct route via portal 22 203.
+                    if _cs_in_town:
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prt_fild01",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
+                        ))
             else:
                 # Weapon confirmed — move to step 2
                 self._cold_start_step[bot_id] = 2
