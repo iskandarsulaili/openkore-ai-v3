@@ -4370,11 +4370,14 @@ sub _check_bridge_reflexes {
 		# Novices without Basic Skill level 3 literally cannot sit.
 		# Every sit command silently fails. This causes infinite loops:
 		# low HP → try sit → fail → low HP → try sit → fail
-		# Detect once and cache the result.
+		# Default to can_sit=1 (assume can sit). Only set can_sit=0 when confirmed.
+		# Re-check every 60s regardless of current value (skills data may arrive late).
 		state $_can_sit_checked = 0;
 		state $_can_sit = 1;  # Assume can sit until proven otherwise
-		if (!$_can_sit_checked) {
+		state $_last_can_sit_recheck_ms = 0;
+		if (!$_can_sit_checked || $now - $_last_can_sit_recheck_ms > 60000) {
 			$_can_sit_checked = 1;
+			$_last_can_sit_recheck_ms = $now;
 			# Check if character has Basic Skill level 3+
 			my $_basic_skill_lv = 0;
 			if ($char && $char->{skills} && ref $char->{skills} eq 'ARRAY') {
@@ -4387,16 +4390,14 @@ sub _check_bridge_reflexes {
 					}
 				}
 			}
-			if ($_basic_skill_lv < 3) {
+			if ($_basic_skill_lv > 0 && $_basic_skill_lv < 3) {
 				$_can_sit = 0;
 				debug "[aiSidecarBridge] can't_sit: Basic Skill level $_basic_skill_lv < 3, suppressing sit reflexes\n", 'aiSidecarBridge', 1;
+			} elsif ($_basic_skill_lv >= 3) {
+				$_can_sit = 1;
+				debug "[aiSidecarBridge] can_sit: Basic Skill level $_basic_skill_lv >= 3, enabling sit reflexes\n", 'aiSidecarBridge', 1;
 			}
-		}
-		# Re-check every 60s in case bot levels up Basic Skill
-		state $_last_can_sit_recheck_ms = 0;
-		if (!$_can_sit && $now - $_last_can_sit_recheck_ms > 60000) {
-			$_last_can_sit_recheck_ms = $now;
-			$_can_sit_checked = 0;  # Force re-check next cycle
+			# If $_basic_skill_lv == 0, skills data not available yet — keep default (can_sit=1)
 		}
 
 		# ═══════════════════════════════════════════
@@ -5266,34 +5267,24 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# REFLEX #22 — SURVIVAL MODE ON HUNTING MAP
 		# ═══════════════════════════════════════════
-		# When bot has been on a hunting map for 60+ seconds with 0 potions,
-		# suppress ALL heal reflexes. The potion checks are wasting cycles.
+		# When bot is on a hunting map with 0 potions, suppress ALL heal reflexes
+		# immediately. The potion checks are wasting cycles.
 		# Uses persistent variables (not state) so it survives map changes.
+		# Re-evaluates every 60s to check if potions have been bought.
 		if ($_hunting_map && !$_in_town) {
-			# Use package-level persistent variables (not state — state resets on map change)
-			if ($now - $_last_survival_check_ms > 60000) {
-				$_last_survival_check_ms = $now;
-				# Check if we have any potions
-				my $_survival_has_potions = 0;
-				for my $item_name (@_heal_items) {
-					$item_name = _trim($item_name);
-					next if !$item_name;
-					my $item = eval { Actor::Item::get($item_name) };
-					if ($item && $item->{amount} && $item->{amount} > 0) {
-						$_survival_has_potions = 1;
-						last;
-					}
-				}
-				if (!$_survival_has_potions) {
-					# No potions — enter survival mode for 60s
-					# Suppress ALL heal reflexes during this time
-					$_survival_mode_until_ms = $now + 60000;
-					debug "[aiSidecarBridge] survival_mode: no potions on $map, suppressing heal reflexes for 60s\n", 'aiSidecarBridge', 1;
+			# Check EVERY cycle if we have potions — suppress immediately if 0
+			my $_survival_has_potions = 0;
+			for my $item_name (@_heal_items) {
+				$item_name = _trim($item_name);
+				next if !$item_name;
+				my $item = eval { Actor::Item::get($item_name) };
+				if ($item && $item->{amount} && $item->{amount} > 0) {
+					$_survival_has_potions = 1;
+					last;
 				}
 			}
-			# If in survival mode, suppress heal reflexes
-			if ($now < $_survival_mode_until_ms) {
-				# Override the heal_triggered flag to prevent heal reflex from firing
+			if (!$_survival_has_potions) {
+				# No potions — suppress ALL heal reflexes immediately
 				$heal_triggered = 1;
 			}
 		}

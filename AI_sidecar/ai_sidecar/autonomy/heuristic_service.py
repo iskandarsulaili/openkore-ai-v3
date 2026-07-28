@@ -6,6 +6,8 @@ from typing import Any, Optional
 from pathlib import Path
 import threading
 from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+from ai_sidecar.anti_detection import BehaviorEngine, get_behavior_engine
+from ai_sidecar.anti_detection.behavior_engine import BehaviorProfileType
 from ai_sidecar.autonomy.ro_mechanics import (
     get_monster_stats, calculate_aspd, calculate_flee, calculate_hit_rate,
     calculate_monster_hit_rate, calculate_damage, calculate_profit_per_kill,
@@ -1168,6 +1170,30 @@ class HeuristicService:
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
+            # CRITICAL: Disable avoidOutOfSight on hunting maps
+            # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
+            # instead of attacking them. This is the root cause of zero kills.
+            self._set_config_once(actions, bot_id, "avoidOutOfSight", "0", "hunting",
+                "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
+            self._set_config_once(actions, bot_id, "avoidOutOfSight_inLockOnly", "0", "hunting",
+                "Config audit - disable avoid system in lockMap (prevents running from monsters)")
+            # Anti-detection: randomize movement and command pacing per bot
+            # Use bot name as seed for deterministic but unique behavior per bot
+            _audit_seed = hash(bot_id) & 0xFFFFFFFF
+            _audit_rand = __import__("random").Random(_audit_seed)
+            _audit_route_step = _audit_rand.randint(2, 5)
+            _audit_route_walk = _audit_rand.choice(["1", "2"])
+            _audit_attackAuto_pause = _audit_rand.randint(0, 2)
+            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
+                "Config audit - enable random walk for human-like movement")
+            self._set_config_once(actions, bot_id, "route_randomWalk_inLockOnly", "1", "hunting",
+                "Config audit - random walk only in lockMap")
+            self._set_config_once(actions, bot_id, "route_randomWalk_maxRouteTime", str(_audit_route_step), "hunting",
+                f"Config audit - random walk step {_audit_route_step} (per-bot variation)")
+            self._set_config_once(actions, bot_id, "route_randomWalk_maxWalkTime", _audit_route_walk, "hunting",
+                f"Config audit - random walk time {_audit_route_walk}s (per-bot variation)")
+            self._set_config_once(actions, bot_id, "attackAuto_pause", str(_audit_attackAuto_pause), "hunting",
+                f"Config audit - attack pause {_audit_attackAuto_pause}s (per-bot variation)")
         elif _audit_is_town:
             # In town — ensure bot is in auto mode and ready to move
             self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
