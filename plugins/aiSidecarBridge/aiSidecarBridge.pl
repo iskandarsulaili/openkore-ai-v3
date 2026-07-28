@@ -270,6 +270,22 @@ sub on_start3 {
 	# Disable sitAuto at startup — OpenKore defaults enable it
 	$::config{'sitAuto_hp_lower'} = 0;
 	$::config{'sitAuto_hp_upper'} = 0;
+	# Disable useSelf_item at startup — delete ALL entries
+	# OpenKore's useSelf_item system calls $messageSender->sendItemUse() directly,
+	# bypassing Actor::Item::use(). The "on cooldown, skipping" message is from the server.
+	# Deleting entries at startup prevents the system from ever running.
+	{
+		my $_usi_idx = 0;
+		while (exists $::config{"useSelf_item_$_usi_idx"}) {
+			delete $::config{"useSelf_item_$_usi_idx"};
+			delete $::config{"useSelf_item_${_usi_idx}_timeout"};
+			delete $::config{"useSelf_item_${_usi_idx}_cooldown"};
+			$_usi_idx++;
+		}
+		# Also set the global timeout to prevent the system from running
+		$timeout{ai_item_use_auto}{time} = time;
+		$timeout{ai_item_use_auto}{timeout} = 300;
+	}
 	# sitAuto controlled by heuristic - not overridden here
 	# sitAuto_hp_upper controlled by heuristic
 	# sitAuto_sp controlled by heuristic
@@ -405,30 +421,8 @@ sub on_mainLoop_pre {
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 	
-	# ── DISABLE useSelf_item ENTIRELY: prevent "on cooldown" spam ──
-	# OpenKore's useSelf_item system calls $messageSender->sendItemUse() directly,
-	# bypassing Actor::Item::use(). The override never fires.
-	# The "on cooldown, skipping" message is from the server, not OpenKore.
-	# The fix is to DELETE ALL useSelf_item entries so the while loop finds none.
-	# The sidecar handles potion use via explicit commands.
-	if ($char) {
-		state $_last_useSelf_disable_ms = 0;
-		my $_now_ms = _now_ms();
-		if ($_now_ms - $_last_useSelf_disable_ms > 60000) {
-			$_last_useSelf_disable_ms = $_now_ms;
-			# Delete ALL useSelf_item entries
-			my $_usi_idx = 0;
-			while (exists $::config{"useSelf_item_$_usi_idx"}) {
-				delete $::config{"useSelf_item_$_usi_idx"};
-				delete $::config{"useSelf_item_${_usi_idx}_timeout"};
-				delete $::config{"useSelf_item_${_usi_idx}_cooldown"};
-				$_usi_idx++;
-			}
-			# Also set the global timeout to prevent the system from running
-			$timeout{ai_item_use_auto}{time} = time;
-			$timeout{ai_item_use_auto}{timeout} = 300;
-		}
-	}
+	# ── DISABLE useSelf_item ENTIRELY: handled in on_start3 ──
+	# (Deleted at startup to prevent "on cooldown" spam from server)
 	
 	# ── PREVENT TELEPORT AT LOW HP: disable OpenKore internal teleport ──
 	if ($char) {
