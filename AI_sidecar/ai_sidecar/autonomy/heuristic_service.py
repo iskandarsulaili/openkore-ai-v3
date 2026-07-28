@@ -1100,6 +1100,11 @@ class HeuristicService:
                             reason="Cold start - re-enable attack for farming",
                         ))
                         actions.append(HeuristicAction(
+                            kind="command", command="set lockMap prt_fild01",
+                            confidence=0.99, domain="economy",
+                            reason="Cold start - set lockMap to prt_fild01 for farming",
+                        ))
+                        actions.append(HeuristicAction(
                             kind="command", command="move prt_fild01",
                             confidence=0.99, domain="economy",
                             reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
@@ -1592,7 +1597,9 @@ class HeuristicService:
             _cs_portal_coords = "22 203"  # Portal from Prontera (156, 164) -> prt_fild05 (22, 203)
             # Set route_randomWalk and lockMap — skip during cold start step 0
             # (bot on hunting map, 0 potions, no weapon, routing to Prontera via bridge)
-            if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
+            # Also skip during pipeline step 1 (farming prt_fild01 for 50z)
+            _cs_pipeline_active = _cold_start_step == 1 and not _cs_has_weapon and _cs_z < 50
+            if (_cs_has_weapon or _cs_in_town_str or _cs_z >= 50) and not _cs_pipeline_active:
                 self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
                     "Cold start - route_randomWalk 1 (walk within bounds)")
                 self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
