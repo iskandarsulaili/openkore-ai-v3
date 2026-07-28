@@ -1580,16 +1580,18 @@ class HeuristicService:
             # Then progress to dungeon at level 10+
             _cs_hunt_map = "prt_fild05"
             _cs_portal_coords = "22 203"  # Portal from Prontera (156, 164) -> prt_fild05 (22, 203)
-            # Set route_randomWalk and lockMap
-            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
-                "Cold start - route_randomWalk 1 (walk within bounds)")
-            self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
-                "Cold start - random walk radius X")
-            self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
-                "Cold start - random walk radius Y")
-            self._last_lockmap[bot_id] = _cs_hunt_map
-            self._set_config_once(actions, bot_id, "lockMap", _cs_hunt_map, "hunting",
-                "Cold start - set hunting map lock")
+            # Set route_randomWalk and lockMap — skip during cold start step 0
+            # (bot on hunting map, 0 potions, no weapon, routing to Prontera via bridge)
+            if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
+                self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
+                    "Cold start - route_randomWalk 1 (walk within bounds)")
+                self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
+                    "Cold start - random walk radius X")
+                self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
+                    "Cold start - random walk radius Y")
+                self._last_lockmap[bot_id] = _cs_hunt_map
+                self._set_config_once(actions, bot_id, "lockMap", _cs_hunt_map, "hunting",
+                    "Cold start - set hunting map lock")
             # Economy: buy potions FIRST (before moving to hunting map)
             _cs_zeny = signals.get("zeny", 0) or 0
             if _cs_zeny >= 500:
