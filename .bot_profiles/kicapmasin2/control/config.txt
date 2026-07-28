@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword romeahoh
+adminPassword swaistel
 callSign
 commandPrefix ;
 callSignGM 0

@@ -1036,7 +1036,10 @@ class HeuristicService:
         # Step 2: Buy Red Potions (item 501) — confirmed when potions in inventory_items
         # Step 3: Set lockMap to prt_fild05 — confirmed when map changes
         # Step 4: Hunt — bot is on hunting map with weapon + potions
-        # MUST run after config audit section (needs _audit_is_town, _audit_is_hunting)
+        # Define map check vars before use (config audit section defines them later)
+        _cs_map = _audit_map
+        _cs_in_town = any(x in _cs_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+        _cs_in_hunting = any(x in _cs_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
         _cold_start_step = self._cold_start_step.get(bot_id, 0)
         _has_weapon = any(
             "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
@@ -1055,7 +1058,7 @@ class HeuristicService:
             else:
                 # Need cold start — ensure we're in Prontera
                 self._cold_start_step[bot_id] = 1
-                if not _audit_is_town:
+                if not _cs_in_town:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
@@ -1078,7 +1081,7 @@ class HeuristicService:
                 else:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild01 (safe map with Porings) and farm with fists.
-                    if not _audit_is_hunting:
+                    if not _cs_in_hunting:
                         actions.append(HeuristicAction(
                             kind="command", command="move prt_fild01",
                             confidence=0.99, domain="economy",
@@ -1105,13 +1108,13 @@ class HeuristicService:
                 logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
         if _cold_start_step == 3:
             # Step 3: Set lockMap and return to hunt
-            if _audit_is_town:
+            if _cs_in_town:
                 actions.append(HeuristicAction(
                     kind="command", command="move 367 205",
                     confidence=0.99, domain="hunting",
                     reason="Cold start - return to hunting map with weapon and potions",
                 ))
-            elif _audit_is_hunting:
+            elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete
                 self._cold_start_step[bot_id] = 4
                 logger.info(f"[cold_start] {bot_id}: on hunting map, cold start complete")
