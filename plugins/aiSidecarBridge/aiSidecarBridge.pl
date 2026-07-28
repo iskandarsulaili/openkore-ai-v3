@@ -4111,9 +4111,10 @@ sub _rewrite_runtime_command {
 		# HUNTING MAP GUARD: if bot is on a hunting map, block "move prontera"
 		# Heuristic handles all return-to-town logic - other modules should not override
 		# EXCEPTION: if bot has 0 potions, allow return to town to buy potions
+		my $_guard_has_potions = 0;
 		if ($_current_map =~ /^[a-z]+_fild/ && lc($target) eq 'prontera') {
-			# Check if bot has any potions
-			my $_guard_has_potions = 0;
+		        # Check if bot has any potions
+		        $_guard_has_potions = 0;
 			if ($char && $char->{inventory}) {
 				for my $_gi (@{$char->{inventory}}) {
 					next unless $_gi;
