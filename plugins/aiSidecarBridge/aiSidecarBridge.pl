@@ -6,7 +6,7 @@ use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout);
 use IO::Socket::INET;
 use Globals qw($char);
 use Log qw(debug message warning);
