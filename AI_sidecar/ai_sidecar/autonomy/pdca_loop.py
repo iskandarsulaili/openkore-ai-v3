@@ -4699,9 +4699,14 @@ class PDCALoop:
                         # If so, skip Pro RO agent's cold start — it overrides the
                         # proper cold start sequence with a hardcoded map move.
                         _hs = getattr(self, "_heuristic_service", None)
-                        if _hs and getattr(_hs, "_cold_start_step", {}).get(_cycle_bot_id, 0) < 4:
+                        _cs_step = 4  # default: complete
+                        if _hs is not None:
+                            _cs_step_dict = getattr(_hs, "_cold_start_step", None)
+                            if isinstance(_cs_step_dict, dict):
+                                _cs_step = _cs_step_dict.get(_cycle_bot_id, 4)
+                        if _cs_step < 4:
                             _pro_inline_fired = False
-                            logger.info(f"[pro_ro] {_cycle_bot_id}: skipping cold start (heuristic cold start active)")
+                            logger.info(f"[pro_ro] {_cycle_bot_id}: skipping cold start (heuristic cold start active, step={_cs_step})")
                     if _pro_inline_fired:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
                         _pro_inline = ProRoPlayerProfile()
