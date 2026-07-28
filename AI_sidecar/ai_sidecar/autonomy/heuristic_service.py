@@ -1059,13 +1059,11 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Disable attack + use portal coordinates. Both get reflex priority.
+                # Set attackAuto=0 via config dedup cache — prevents config audit
+                # from overriding it back to "3" every cycle.
                 if not _cs_in_town:
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 0",
-                        confidence=0.99, domain="economy",
-                        reason="Cold start - disable attack to allow portal move",
-                    ))
+                    self._set_config_once(actions, bot_id, "attackAuto", "0", "economy",
+                        "Cold start - disable attack to allow portal move", 0.99)
                     actions.append(HeuristicAction(
                         kind="command", command="move 367 205",
                         confidence=0.99, domain="economy",
@@ -1148,8 +1146,14 @@ class HeuristicService:
                 "Config audit - increase chase distance to 30 for Novice attack range")
             self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
                 "Config audit - attack from 5 cells away")
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Config audit - enable aggressive auto-attack")
+            # Skip attackAuto override during cold start pipeline (bot on hunting map, 0 zeny, no weapon)
+            _cfg_audit_map = str(signals.get("map", ""))
+            _cfg_audit_zeny = int(signals.get("zeny", 0) or 0)
+            _cfg_audit_weapon = bool(signals.get("weapon", {}).get("id", 0))
+            _cfg_audit_in_town = any(x in _cfg_audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+            if _cfg_audit_weapon or _cfg_audit_in_town or _cfg_audit_zeny >= 50:
+                self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                    "Config audit - enable aggressive auto-attack")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
@@ -1555,13 +1559,19 @@ class HeuristicService:
                 confidence=0.99, domain="hunting",
                 reason="Cold start - enable auto-attack before moving",
             ))
-            # Combat config (deduped)
+            # Combat config (deduped) — skip attackAuto during pipeline step 0
             self._set_config_once(actions, bot_id, "attackDistance", "7", "hunting",
                 "Cold start - set attack distance")
             self._set_config_once(actions, bot_id, "attackMaxDistance", "20", "hunting",
                 "Cold start - set chase distance")
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Enable aggressive auto-attack")
+            # Only enable attack if bot has a weapon OR is in town (not pipeline step 0)
+            _cs_map_str = str(signals.get("map", ""))
+            _cs_in_town_str = any(x in _cs_map_str for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+            _cs_z = int(signals.get("zeny", 0) or 0)
+            _cs_has_weapon = bool(signals.get("weapon", {}).get("id", 0))
+            if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
+                self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                    "Enable aggressive auto-attack")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
