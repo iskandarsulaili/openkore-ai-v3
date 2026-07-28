@@ -2,7 +2,7 @@
 import subprocess, time, re, json, sys
 from pathlib import Path
 
-LOG = Path("/home/lot399/openkore-ai-v3/logs")
+LOG = Path(__file__).resolve().parent / "logs"
 RESULTS = []
 OUT = LOG / "8h_checkpoints.log"
 

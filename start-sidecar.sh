@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /home/lot399/openkore-ai-v3
+cd "$(dirname "$0")"
 set -a
 source .env
 source AI_sidecar/.env

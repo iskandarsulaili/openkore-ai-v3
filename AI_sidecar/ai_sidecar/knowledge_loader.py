@@ -37,7 +37,7 @@ def _resolve_knowledge_path() -> str:
     candidates = [
         os.path.join(os.path.dirname(__file__), "..", "..", "knowledge", "knowledge.json"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "knowledge", "knowledge.json"),
-        "/home/lot399/openkore-ai-v3/knowledge/knowledge.json",
+        str(Path(__file__).resolve().parent.parent.parent / "knowledge" / "knowledge.json"),
     ]
     for c in candidates:
         resolved = os.path.abspath(c)

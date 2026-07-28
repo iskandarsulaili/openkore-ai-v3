@@ -1,12 +1,12 @@
 #!/bin/bash
-LOGFILE="/home/lot399/openkore-ai-v3/logs/8h_checkpoints.log"
+LOGFILE="$(cd "$(dirname "$0")/logs" && pwd)/8h_checkpoints.log"
 echo "8-hour endurance test started: $(date -u)" > "$LOGFILE"
 echo "Bots: kicapmasin, kicapmasin2, kicapmasin3" >> "$LOGFILE"
 echo "Sidecar: http://127.0.0.1:18081" >> "$LOGFILE"
 echo "Intervals: 10 minutes x 48 cycles" >> "$LOGFILE"
 echo "" >> "$LOGFILE"
 
-cd /home/lot399/openkore-ai-v3
+cd "$(dirname "$0")"
 
 for i in $(seq 1 48); do
     sleep 600

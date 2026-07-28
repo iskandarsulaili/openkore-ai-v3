@@ -9,7 +9,7 @@ This gives the AI a complete game encyclopedia so it can make
 informed strategic decisions without hardcoded config.
 
 Usage:
-    python rathena_ingest.py [--rathena-path /home/lot399/rathena] [--sidecar-url http://127.0.0.1:18081]
+    python rathena_ingest.py [--rathena-path ./data/rAthena] [--sidecar-url http://127.0.0.1:18081]
 """
 
 import argparse
@@ -246,7 +246,7 @@ def send_to_sidecar(url: str, knowledge: dict) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Ingest rAthena knowledge into AI sidecar")
-    parser.add_argument("--rathena-path", default="/home/lot399/rathena",
+    parser.add_argument("--rathena-path", default=str(Path(__file__).resolve().parent.parent / "data" / "rAthena"),
                         help="Path to rAthena git clone")
     parser.add_argument("--sidecar-url", default="http://127.0.0.1:18081",
                         help="AI sidecar base URL")

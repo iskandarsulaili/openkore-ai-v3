@@ -2,7 +2,7 @@
 # Start an OpenKore bot as a background process (no blocking tail)
 # Usage: ./start-bot-bg.sh <profile_name>
 
-cd /home/lot399/openkore-ai-v3
+cd "$(dirname "$0")"
 source .env 2>/dev/null
 
 NAME="$1"

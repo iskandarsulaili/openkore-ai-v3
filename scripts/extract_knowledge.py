@@ -240,9 +240,9 @@ def main():
 
     # Try to find rAthena
     rathena_candidates = [
-        Path("/home/lot399/rathena"),
+        Path(__file__).resolve().parent.parent / "data" / "rAthena",
         repo_root.parent / "rathena",
-        Path(os.environ.get("RATHENA_PATH", "/home/lot399/rathena")),
+        Path(os.environ.get("RATHENA_PATH", str(Path(__file__).resolve().parent.parent / "data" / "rAthena"))),
     ]
     rathena_path = None
     for p in rathena_candidates:

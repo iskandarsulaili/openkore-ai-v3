@@ -2,7 +2,7 @@
 # Phase 2 — 1-hour monitoring script (4 checkpoints at 0, 15, 30, 45, 60 min)
 # Logs to monitor_report.txt
 
-MONITOR_DIR="/home/lot399/openkore-ai-v3"
+MONITOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPORT="$MONITOR_DIR/logs/monitor_report.txt"
 
 echo "PHASE 2 — 1-HOUR MONITORING REPORT" > "$REPORT"

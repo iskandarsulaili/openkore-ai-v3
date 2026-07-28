@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /home/lot399/openkore-ai-v3
+cd "$(dirname "$0")"
 rm -f /tmp/sidecar.log
 set -a
 source .env 2>/dev/null

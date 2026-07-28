@@ -7,7 +7,7 @@ Hardcoded-check: scans for hardcoded map/item/NPC names.
 import subprocess, time, re, json, sys, os
 from pathlib import Path
 
-BASE = Path("/home/lot399/openkore-ai-v3")
+BASE = Path(__file__).resolve().parent
 LOG = BASE / "logs"
 OUT = LOG / "4h_loop.log"
 ALIVE = Path("/dev/shm/ro_4h_alive")

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase 2 — 1-hour monitoring script
 # 5 checkpoints: T+0, T+15, T+30, T+45, T+60
-LOG_DIR="/home/lot399/openkore-ai-v3/logs"
+LOG_DIR="$(cd "$(dirname "$0")/logs" && pwd)"
 REPORT="$LOG_DIR/phase2_report.txt"
 
 log_cp() {

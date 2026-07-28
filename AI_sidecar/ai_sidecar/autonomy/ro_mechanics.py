@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 # ── Configurable paths ──
-_MOB_DB_PATH = Path(os.environ.get("RATHENA_MOB_DB", "/home/lot399/rathena_mob_db.json"))
+_MOB_DB_PATH = Path(os.environ.get("RATHENA_MOB_DB", str(Path(__file__).resolve().parent.parent.parent.parent / "data" / "rAthena" / "mob_db.json")))
 
 # ── Load rAthena monster database ──
 FULL_MONSTER_DB: dict = {}

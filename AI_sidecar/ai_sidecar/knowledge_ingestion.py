@@ -483,5 +483,5 @@ def build_knowledge(rathena_path: str, output_path: str) -> dict[str, Any]:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     rathena = os.environ.get("RATHENA_PATH", str(Path(__file__).parent.parent.parent / "knowledge" / "rathena_db"))
-    output = os.environ.get("KNOWLEDGE_OUTPUT", "/home/lot399/openkore-ai-v3/knowledge/knowledge.json")
+    output = os.environ.get("KNOWLEDGE_OUTPUT", str(Path(__file__).resolve().parent.parent.parent / "knowledge" / "knowledge.json"))
     build_knowledge(rathena, output)
