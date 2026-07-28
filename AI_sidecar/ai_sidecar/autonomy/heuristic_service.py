@@ -1143,6 +1143,7 @@ class HeuristicService:
         # If bot is sitting on a hunting map with 0 potions and HP > 50%, force stand.
         # Also force stand if bot has been sitting for > 30s (stuck sitting).
         _audit_is_sitting = signals.get("is_sitting", False)
+        logger.info(f"[sit_detector_debug] {bot_id}: hunting={_audit_is_hunting} sitting={_audit_is_sitting} map={_audit_map} hp={signals.get('hp_ratio', 1.0):.2f}")
         if _audit_is_hunting and _audit_is_sitting:
             _audit_now = __import__("time").time()
             _audit_sit_start = self._sit_start_time.get(bot_id, _audit_now)
