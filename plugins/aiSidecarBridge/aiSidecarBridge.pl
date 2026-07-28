@@ -3635,14 +3635,15 @@ sub _rewrite_runtime_command {
 			}
 		}
 
-		my $old_val = $::config{$orig_key};
+		my $old_val = $::config{$normalized};
 		# Suppress no-op config_set log when value hasn't changed
+		# Use normalized (lowercase) key — OpenKore stores config keys lowercase internally
 		if (defined $old_val && $old_val eq $set_val) {
 			return ('', 'config_set_ok');
 		}
-		$::config{$orig_key} = $set_val;
-		$::config{"_sidecar_set_$orig_key"} = 1;
-		warning "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
+		$::config{$normalized} = $set_val;
+		$::config{"_sidecar_set_$normalized"} = 1;
+		warning "[aiSidecarBridge] config_set: $normalized = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
 		return ('', 'config_set_ok');
 	}
 

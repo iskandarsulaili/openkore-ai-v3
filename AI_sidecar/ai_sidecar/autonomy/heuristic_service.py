@@ -1460,20 +1460,34 @@ class HeuristicService:
 
         # ── STATE: BUY ──
         if state == "BUY":
+            # Cooldown: only buy every 60s to prevent tight loop blocking TOWN_HUNT
+            _buy_now = __import__("time").time()
+            _last_buy = self._last_buy_time.get(bot_id, 0)
+            if _buy_now - _last_buy < 60:
+                # Buy on cooldown - skip and let TOWN_HUNT handle movement
+                total_confidence = 0.85
+                top_domain = "hunting"
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
+            self._last_buy_time[bot_id] = _buy_now
             # Stand up first
             actions.append(HeuristicAction(
                 kind="command", command="stand",
                 confidence=0.95, domain="economy",
                 reason="Stand up before walking to Tool Dealer",
             ))
-            # Buy Red Potions from Tool Dealer (126, 76)
+            # Buy Red Potions from Tool Dealer (290, 221 in Prontera)
             actions.append(HeuristicAction(
-                kind="command", command="move 126 76",
+                kind="command", command="move 290 221",
                 confidence=0.95, domain="economy",
                 reason=f"Zeny {zeny} - walk to Tool Dealer to buy potions",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 126 76",
+                kind="command", command="talknpc 290 221",
                 confidence=0.90, domain="economy",
                 reason="Open Tool Dealer shop",
             ))
