@@ -513,37 +513,31 @@ sub on_mainLoop_post {
         # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
         # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         
-        # ── PORTAL EXIT POTION CHECK: if bot just arrived on hunting map with 0 potions, turn back ──
-        # This is the LAST LINE OF DEFENSE against 0-potion hunting.
-        # The sidecar's zero-potions detector sends 'move prontera', but the bot may
-        # arrive on the hunting map before the sidecar processes the next cycle.
-        # When bot steps through portal from Prontera to prt_fild05, check inventory.
+        # ── PORTAL EXIT POTION CHECK: fires on MAP CHANGE (portal exit detected), not on a timer ──
+        # When bot steps through portal from Prontera to a hunting map, check inventory.
         # If 0 potions, turn around and go back to Prontera immediately.
         # Only runs when bot is IN_GAME (not during STARTING phase).
-        # Cooldown: 30s between checks to let the route to Prontera complete.
         if ($char && $field && $net && $net->getState() == Network::IN_GAME) {
-            state $_last_portal_check_ms = 0;
-            my $_now_ms = _now_ms();
-            if ($_now_ms - $_last_portal_check_ms > 30000) {  # Every 30s
-                $_last_portal_check_ms = $_now_ms;
-                my $_cm = lc($field->name());
-                $_cm =~ s/\.gat$//;
-                if ($_cm =~ /_fild|_dun/i) {
-                    # On a hunting map — check if we have potions
-                    my $_has_potions = 0;
+            state $_last_portal_map = '';
+            my $_pm = lc($field->name());
+            $_pm =~ s/\.gat$//;
+            if ($_pm ne $_last_portal_map) {
+                $_last_portal_map = $_pm;
+                if ($_pm =~ /_fild|_dun/i) {
+                    # Just arrived on a hunting map — check potions
+                    my $_hp = 0;
                     if ($char->{inventory}) {
-                        for my $_gi (@{$char->{inventory}}) {
-                            next unless $_gi;
-                            my $_gn = $_gi->{name} || '';
-                            if ($_gn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-                                $_has_potions = 1;
+                        for my $_hi (@{$char->{inventory}}) {
+                            next unless $_hi;
+                            my $_hn = $_hi->{name} || '';
+                            if ($_hn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+                                $_hp = 1;
                                 last;
                             }
                         }
                     }
-                    if (!$_has_potions) {
-                        # 0 potions on hunting map — turn back to Prontera immediately
-                        warning "[portal_exit_check] 0 potions on $_cm, turning back to Prontera\n", 'aiSidecarBridge', 1;
+                    if (!$_hp) {
+                        warning "[portal_exit] 0 potions on $_pm, turning back\n", 'aiSidecarBridge', 1;
                         $::config{sitAuto_hp_lower} = 0;
                         $::config{sitAuto_hp_upper} = 0;
                         $::config{sitAuto_sp} = 0;
@@ -554,9 +548,6 @@ sub on_mainLoop_post {
                 }
             }
         }
-        
-
-        
 
         
 
