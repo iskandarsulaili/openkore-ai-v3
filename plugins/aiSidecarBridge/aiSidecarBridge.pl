@@ -5266,16 +5266,30 @@ sub _check_bridge_reflexes {
 		}
 
 		# ═══════════════════════════════════════════
-		# REFLEX #21 — STAND UP WHEN HP IS FULL
+		# REFLEX #21 — STAND UP WHEN HP IS FULL OR SITTING TOO LONG
 		# ═══════════════════════════════════════════
 		# If bot is sitting and HP > 90%, stand up and force ai auto.
 		# Prevents bots from sitting forever on hunting maps after regen.
-		if ($_hunting_map && !$_in_town && $hp_ratio > 0.90 && $hp > 0) {
+		# Also force stand if bot has been sitting for > 30s (stuck sitting).
+		if ($_hunting_map && !$_in_town && $hp > 0) {
+			state $_sit_start_ms = 0;
 			my $_ai_top = @ai_seq ? $ai_seq[0] : '';
 			if ($_ai_top eq 'sit') {
-				debug "[aiSidecarBridge] stand_up: HP=$hp/$hp_max > 90%, standing up\n", 'aiSidecarBridge', 1;
-				eval { Commands::run("stand"); 1 };
-				eval { Commands::run("ai auto"); 1 };
+				# Track when sitting started
+				if ($_sit_start_ms == 0) {
+					$_sit_start_ms = $now;
+				}
+				# Stand up if HP > 90% OR if been sitting > 30s
+				if ($hp_ratio > 0.90 || ($now - $_sit_start_ms > 30000)) {
+					my $_stand_reason = $hp_ratio > 0.90 ? "HP=$hp/$hp_max > 90%" : "sitting for " . int(($now - $_sit_start_ms)/1000) . "s";
+					debug "[aiSidecarBridge] stand_up: $_stand_reason, standing up\n", 'aiSidecarBridge', 1;
+					eval { Commands::run("stand"); 1 };
+					eval { Commands::run("ai auto"); 1 };
+					$_sit_start_ms = 0;  # Reset
+				}
+			} else {
+				# Reset sit timer when not sitting
+				$_sit_start_ms = 0;
 			}
 		}
 
