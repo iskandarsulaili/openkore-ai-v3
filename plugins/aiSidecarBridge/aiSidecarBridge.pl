@@ -1671,6 +1671,7 @@ sub _build_snapshot_payload {
 	my $raw = {
 		char_name  => _trim($char ? ($char->{name} || '') : '', $max_raw),
 		master     => _trim($config{master} || '', $max_raw),
+		map        => $map,
 		ai_sequence => _trim($ai_top || '', $max_raw),
 		ai_queue   => _trim(join(',', @ai_seq[0 .. ($#ai_seq < 4 ? $#ai_seq : 4)]), $max_raw),
 		in_game => ($net && $net->getState() == Network::IN_GAME) ? JSON::PP::true() : JSON::PP::false(),
