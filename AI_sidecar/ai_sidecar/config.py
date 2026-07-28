@@ -185,5 +185,12 @@ class SidecarSettings(BaseSettings):
     game_server_host: str = "asgardsglory.ddns.net"
     game_server_port: int = 6900
 
+    # ── Bridge Reflex Config (pushed to bridge plugin) ──────────
+    # These are read by the bridge plugin at runtime. The AI (conscious engine,
+    # PDCA loop, kaizen review) can adjust these dynamically to tune behavior.
+    aiSidecar_sitHpThreshold: float = Field(default=0.50, ge=0.0, le=1.0)
+    aiSidecar_sitPostCombatCooldownMs: int = Field(default=3000, ge=500, le=30000)
+    aiSidecar_sitFallbackEnabled: bool = True
+
 
 settings = SidecarSettings()

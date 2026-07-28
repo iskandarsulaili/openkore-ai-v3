@@ -4323,20 +4323,24 @@ sub _check_bridge_reflexes {
 			# If NO healing resources at all: trigger emergency survival immediately
 			# Sit to regen HP naturally — but ONLY if not in combat
 			# If in combat, let the bot fight — sitting mid-combat is a death sentence
-			if (!$heal_triggered && $hp_ratio < 0.50) {
+			# All thresholds are configurable via aiSidecar_* config keys pushed by sidecar
+			if (!$heal_triggered && $hp_ratio < _cfg_float('aiSidecar_sitHpThreshold', 0.50)) {
 				# Skip if HP has not dropped (reflex noise filter)
 				state $_last_hp = 0;
 				if ($hp >= $_last_hp && $_last_hp > 0) { return; }
 				$_last_hp = $hp;
 				# Only sit if NOT in combat — sitting mid-fight causes stand-sit loop
 				my $_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-				# Also check if we were recently in combat (within 3s) — prevents sit right after attack
+				# Also check if we were recently in combat — prevents sit right after attack
+				# Configurable via aiSidecar_sitPostCombatCooldownMs (default 3000ms)
 				state $_last_combat_ms = 0;
 				if ($_in_combat) {
 					$_last_combat_ms = _now_ms();
 				}
 				my $_since_combat = _now_ms() - $_last_combat_ms;
-				if (!$_in_combat && $_since_combat > 3000 && $aggro_count == 0 && $AI::AI != 2) {
+				my $_sit_cooldown = _cfg_int('aiSidecar_sitPostCombatCooldownMs', 3000);
+				my $_sit_enabled = _cfg_int('aiSidecar_sitFallbackEnabled', 1);
+				if ($_sit_enabled && !$_in_combat && $_since_combat > $_sit_cooldown && $aggro_count == 0 && $AI::AI != 2) {
 					eval { Commands::run("sit"); 1 };
 				}
 				# Post event to sidecar: "I need healing items"
