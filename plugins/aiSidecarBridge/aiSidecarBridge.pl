@@ -4068,8 +4068,27 @@ sub _rewrite_runtime_command {
 			my $_cm = $field ? lc($field->name()) : '';
 			$_cm =~ s/\.gat$//;
 			if ($_cm =~ /_fild|_dun/i && (($tx == 367 && $ty == 205) || ($tx == 22 && $ty == 203))) {
-				debug "[route_loop] already on hunting map $_cm, suppressing portal move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
-				return ('', 'route_loop_suppressed');
+			        # Check if bot has 0 potions — if so, allow portal move to reach town
+			        my $_rp_has_potions = 0;
+			        if ($char && $char->{inventory}) {
+			            for my $_rpi (@{$char->{inventory}}) {
+			                next unless $_rpi;
+			                my $_rpn = $_rpi->{name} || '';
+			                if ($_rpn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+			                    $_rp_has_potions = 1;
+			                    last;
+			                }
+			            }
+			        }
+			        if (!$_rp_has_potions) {
+			            # 0 potions on hunting map — allow portal exit to reach town
+			            # Set portal walk lock to block other commands while bot walks
+			            $_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
+			            debug "[route_loop] 0 potions on $_cm, allowing portal exit ($tx,$ty), lock=5s\n", 'aiSidecarBridge', 1;
+			            return ($trimmed, 'coordinate_move_raw');
+			        }
+			        debug "[route_loop] already on hunting map $_cm, has potions, suppressing portal move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
+			        return ('', 'route_loop_suppressed');
 			}
 			my $dist = sqrt(($cx - $tx)**2 + ($cy - $ty)**2);
 			if ($dist < 5) {

@@ -1060,8 +1060,7 @@ class HeuristicService:
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
                 # Use portal coordinates (367 205) instead of map name 'prontera'
-                # Map-name moves require portal data which OpenKore may not have.
-                # Coordinates work regardless of routing database.
+                # Bridge's route loop detection now allows this when 0 potions.
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
                         kind="command", command="move 367 205",
