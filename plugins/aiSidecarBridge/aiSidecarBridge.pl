@@ -5153,25 +5153,27 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# REFLEX #20 — STUCK ON HUNTING MAP DETECTOR
 		# ═══════════════════════════════════════════
-		# If bot has been on a hunting map for 60+ seconds with 0 attacks,
+		# If bot has been on a hunting map for 60+ seconds with 0 attack attempts,
 		# force ai auto and reset attack config.
-		# This catches bots that are standing still watching other players.
+		# Tracks "time since last attack attempt" not "time since last successful attack"
+		# so it catches bots that never enter combat (e.g. standing still watching).
 		my $_hunting_map = $map =~ /_fild|_dun/i ? 1 : 0;
 		if ($_hunting_map && !$_in_town) {
-			state $_last_attack_ms = 0;
+			state $_last_attack_attempt_ms = 0;
 			state $_last_stuck_check_ms = 0;
-			# Track last attack time
-			if ($in_combat && $_ai_seq_top =~ /^attack/) {
-				$_last_attack_ms = $now;
+			# Track last attack attempt — fires on ANY combat-related AI state
+			if ($_ai_seq_top =~ /^(?:attack|skill_use|route|follow)/) {
+				$_last_attack_attempt_ms = $now;
 			}
-			# Check every 30s if bot is stuck (no attacks for 60s)
+			# Check every 30s if bot is stuck (no attack attempts for 60s)
 			if ($now - $_last_stuck_check_ms > 30000) {
 				$_last_stuck_check_ms = $now;
-				if ($_last_attack_ms > 0 && $now - $_last_attack_ms > 60000) {
-					# No attacks for 60s — force ai auto
+				# If never attacked since being on this map, or last attack was >60s ago
+				if ($_last_attack_attempt_ms == 0 || $now - $_last_attack_attempt_ms > 60000) {
+					# No attack attempts for 60s — force ai auto
 					debug "[aiSidecarBridge] stuck_detector: bot stuck on $map (no attacks for 60s), forcing ai auto\n", 'aiSidecarBridge', 1;
 					eval { Commands::run("ai auto"); 1 };
-					$_last_attack_ms = $now;  # Reset to prevent spam
+					$_last_attack_attempt_ms = $now;  # Reset to prevent spam
 					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'stuck_on_hunting_map',
@@ -5181,6 +5183,56 @@ sub _check_bridge_reflexes {
 						timestamp => _now_ms(),
 					});
 				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #21 — STAND UP WHEN HP IS FULL
+		# ═══════════════════════════════════════════
+		# If bot is sitting and HP > 90%, stand up and force ai auto.
+		# Prevents bots from sitting forever on hunting maps after regen.
+		if ($_hunting_map && !$_in_town && $hp_ratio > 0.90 && $hp > 0) {
+			my $_ai_top = @ai_seq ? $ai_seq[0] : '';
+			if ($_ai_top eq 'sit') {
+				debug "[aiSidecarBridge] stand_up: HP=$hp/$hp_max > 90%, standing up\n", 'aiSidecarBridge', 1;
+				eval { Commands::run("stand"); 1 };
+				eval { Commands::run("ai auto"); 1 };
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #22 — SURVIVAL MODE ON HUNTING MAP
+		# ═══════════════════════════════════════════
+		# When bot has been on a hunting map for 60+ seconds with 0 potions and 0 kills,
+		# suppress ALL heal reflexes. The potion checks are wasting cycles.
+		# Only allow sit/stand/attack.
+		if ($_hunting_map && !$_in_town) {
+			state $_survival_mode_until_ms = 0;
+			state $_last_survival_check_ms = 0;
+			if ($now - $_last_survival_check_ms > 60000) {
+				$_last_survival_check_ms = $now;
+				# Check if we have any potions
+				my $_survival_has_potions = 0;
+				for my $item_name (@_heal_items) {
+					$item_name = _trim($item_name);
+					next if !$item_name;
+					my $item = eval { Actor::Item::get($item_name) };
+					if ($item && $item->{amount} && $item->{amount} > 0) {
+						$_survival_has_potions = 1;
+						last;
+					}
+				}
+				if (!$_survival_has_potions) {
+					# No potions — enter survival mode for 60s
+					# Suppress ALL heal reflexes during this time
+					$_survival_mode_until_ms = $now + 60000;
+					debug "[aiSidecarBridge] survival_mode: no potions on $map, suppressing heal reflexes for 60s\n", 'aiSidecarBridge', 1;
+				}
+			}
+			# If in survival mode, suppress heal reflexes
+			if ($now < $_survival_mode_until_ms) {
+				# Override the heal_triggered flag to prevent heal reflex from firing
+				$heal_triggered = 1;
 			}
 		}
 	}

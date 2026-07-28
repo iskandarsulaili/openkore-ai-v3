@@ -799,6 +799,7 @@ class HeuristicService:
         self._last_return_to_town: dict[str, float] = {}
         self._last_level: dict[str, int] = {}
         self._last_party_attempt: dict[str, float] = {}
+        self._last_party_leave: dict[str, float] = {}
         self._last_party_members: dict[str, list] = {}
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
@@ -1222,13 +1223,14 @@ class HeuristicService:
 
         # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
         # Force leave regardless of cached party state — the bridge may have stale data
-        # Cooldown gate: 30s between party leave attempts to prevent "Error in function 'party'" spam
+        # Uses separate _last_party_leave dict (not _last_party_attempt) to prevent
+        # cooldown reset from party creation code.
         _audit_base_level = signals.get("base_level", 1) or 1
         if _audit_base_level < 40 and state not in ("COLD_START", "DEAD"):
             _audit_now = __import__("time").time()
-            _audit_last_party_leave = self._last_party_attempt.get(bot_id, 0)
+            _audit_last_party_leave = self._last_party_leave.get(bot_id, 0)
             if _audit_now - _audit_last_party_leave > 30:
-                self._last_party_attempt[bot_id] = _audit_now
+                self._last_party_leave[bot_id] = _audit_now
                 actions.append(HeuristicAction(
                     kind="command", command="party leave",
                     confidence=0.99, domain="social",
