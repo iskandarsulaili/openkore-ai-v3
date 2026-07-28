@@ -1050,6 +1050,7 @@ class HeuristicService:
             "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
             for item in inventory
         )
+        logger.info(f"[cold_start_debug] {bot_id}: step={_cold_start_step} weapon={_has_weapon} pots={_has_potions} zeny={zeny} map={_cs_map} town={_cs_in_town} hunt={_cs_in_hunting}")
         if _cold_start_step == 0:
             # Step 0: Check if we need cold start at all
             if _has_weapon and _has_potions:
