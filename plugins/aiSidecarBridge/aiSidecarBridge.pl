@@ -2533,6 +2533,10 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'sit blocked: on hunting map');
 	} elsif ($rewrite_kind eq 'map_move_low_hp_no_toggle') {
 		($success, $result_code, $msg) = (1, 'ok', 'ai_manual suppressed: critically low HP');
+	} elsif ($rewrite_kind eq 'config_set_ok') {
+		($success, $result_code, $msg) = (1, 'ok', 'config_set_ok');
+	} elsif ($rewrite_kind eq 'party_leave' || $rewrite_kind eq 'party_leave_already_left' || $rewrite_kind eq 'party_leave_not_in_party' || $rewrite_kind eq 'party_leave_executed') {
+		($success, $result_code, $msg) = (1, 'ok', $rewrite_kind);
 	} elsif ($rewrite_kind =~ /^use_item_not_found_/) {
 		($success, $result_code, $msg) = (1, 'ok', "item not found in inventory: $rewrite_kind");
 	} elsif ($effective_command eq '') {
