@@ -1222,15 +1222,18 @@ class HeuristicService:
 
         # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
         # Force leave regardless of cached party state — the bridge may have stale data
+        # Cooldown gate: 30s between party leave attempts to prevent "Error in function 'party'" spam
         _audit_base_level = signals.get("base_level", 1) or 1
         if _audit_base_level < 40 and state not in ("COLD_START", "DEAD"):
-            # Always queue party leave for sub-40 bots, even if _party_in is False
-            # (cached state may be stale — the bridge might still be in a party)
-            actions.append(HeuristicAction(
-                kind="command", command="party leave",
-                confidence=0.99, domain="social",
-                reason=f"Level {_audit_base_level} < 40 - force leave party (solo is faster)",
-            ))
+            _audit_now = __import__("time").time()
+            _audit_last_party_leave = self._last_party_attempt.get(bot_id, 0)
+            if _audit_now - _audit_last_party_leave > 30:
+                self._last_party_attempt[bot_id] = _audit_now
+                actions.append(HeuristicAction(
+                    kind="command", command="party leave",
+                    confidence=0.99, domain="social",
+                    reason=f"Level {_audit_base_level} < 40 - force leave party (solo is faster)",
+                ))
 
         # ── FORCE RETURN TO TOWN: 0 potions + 0 weapon + 5+ min on same map ──
         # Detects bots stuck on hunting map with no supplies

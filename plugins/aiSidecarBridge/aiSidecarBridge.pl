@@ -2424,6 +2424,7 @@ sub _execute_action {
 	# ── ITEM 602 SUPPRESSION: block 'use 602' / 'use Butterfly Wing' at execution level ──
 	# The items_control.txt fix only works at startup. This catches it at runtime.
 	# Item 602 (Butterfly Wing) is managed by the AI system, not auto-use.
+	# Return success=1 so the sidecar doesn't retry the command every cycle.
 	if (lc($command || '') =~ /^(?:use\s+)?602$/ || lc($command || '') =~ /^use\s+butterfly\s+wing/i) {
 		($success, $result_code, $msg) = (1, 'ok', 'item_602_suppressed');
 		$rewrite_kind = 'item_602_suppressed';
@@ -3404,6 +3405,14 @@ my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
 	my ($command, $metadata) = @_;
+
+	# ── ITEM 602 SUPPRESSION: block 'use 602' / 'use Butterfly Wing' at rewrite level ──
+	# Must be FIRST before any cooldown/rewrite logic to prevent "on cooldown" log spam.
+	# Item 602 (Butterfly Wing) is managed by the AI system, not auto-use.
+	if (lc($command || '') =~ /^(?:use\s+)?602$/ || lc($command || '') =~ /^use\s+butterfly\s+wing/i) {
+		return ('', 'item_602_suppressed');
+	}
+
 	# ── MOVE REWRITE: context-aware map-name to coordinate conversion ──
 	if ($command =~ /^move\s+(\S+)$/i) {
 		my $_target = lc($1);
