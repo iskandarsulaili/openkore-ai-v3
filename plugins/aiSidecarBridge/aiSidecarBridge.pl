@@ -192,7 +192,9 @@ sub _cleanup_runtime {
 }
 
 sub on_start3 {
-	# Disable sitAuto at startup
+	# Disable sitAuto at startup — OpenKore defaults enable it
+	$::config{'sitAuto_hp'} = 0;
+	$::config{'sitAuto_hp_max'} = 0;
 	# sitAuto controlled by heuristic - not overridden here
 	# sitAuto_hp_upper controlled by heuristic
 	# sitAuto_sp controlled by heuristic
