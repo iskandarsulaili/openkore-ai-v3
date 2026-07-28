@@ -2559,6 +2559,25 @@ sub _poll_next_action {
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
 	$::config{'sitAuto_hp_lower'} = 0 unless $::config{'_sidecar_set_sitAuto_hp'};
 	$::config{'sitAuto_hp_upper'} = 0 unless $::config{'_sidecar_set_sitAuto_hp_max'};
+	# Force-set attackAuto=0 when 0 potions — AI keeps re-enabling it
+	if ($char && $char->{inventory}) {
+		my $_pa_has_potions = 0;
+		for my $_pai (@{$char->{inventory}}) {
+			next unless $_pai;
+			my $_pan = $_pai->{name} || '';
+			if ($_pan =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+				$_pa_has_potions = 1;
+				last;
+			}
+		}
+		if (!$_pa_has_potions) {
+			my $_pm = $field ? lc($field->name()) : '';
+			$_pm =~ s/\.gat$//;
+			if ($_pm =~ /_fild|_dun/i) {
+				$::config{'attackAuto'} = 0;
+			}
+		}
+	}
 
 	my $poll_id = _trace_id();
 	my $resp = _http_post_json('/v1/actions/next', {
