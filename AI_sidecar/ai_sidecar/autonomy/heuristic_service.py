@@ -811,6 +811,10 @@ class HeuristicService:
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
         self._last_config_set: dict[str, dict[str, str]] = {}
+        # Kills/hour tracking
+        self._last_kills_count: dict[str, int] = {}
+        self._last_kills_time: dict[str, float] = {}
+        self._last_kills_log: dict[str, float] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -927,6 +931,29 @@ class HeuristicService:
                 return True
         return False
 
+    def _track_kills_per_hour(self, signals: dict, bot_id: str) -> float:
+        """Track kills/hour and return the rate. Logs warning if 0 for 30+ minutes."""
+        _now_t = __import__("time").time()
+        _kills = int(signals.get("last_monster_kill", 0) or 0)
+        _last_kills = self._last_kills_count.get(bot_id, 0)
+        _last_kills_time = self._last_kills_time.get(bot_id, _now_t)
+        _elapsed = _now_t - _last_kills_time
+        if _elapsed < 60:
+            return 0.0  # Not enough data yet
+        _kills_gained = _kills - _last_kills
+        _rate = (_kills_gained / _elapsed) * 3600  # kills/hour
+        self._last_kills_count[bot_id] = _kills
+        self._last_kills_time[bot_id] = _now_t
+        # Log kills/hour every 5 minutes
+        _last_log = self._last_kills_log.get(bot_id, 0)
+        if _now_t - _last_log > 300:
+            self._last_kills_log[bot_id] = _now_t
+            logger.info(f"[kills_hour] {bot_id}: {_kills_gained} kills in {_elapsed:.0f}s = {_rate:.1f}/hour (total: {_kills})")
+        # Escalate if 0 kills for 30+ minutes
+        if _kills_gained == 0 and _elapsed > 1800:
+            logger.warning(f"[kills_hour] {bot_id}: ZERO kills in {_elapsed:.0f}s! Escalating.")
+        return _rate
+
     def set_domain_weights(self, weights: dict) -> None:
         pass
 
@@ -972,6 +999,8 @@ class HeuristicService:
         made_progress = self._check_progress(signals)
         state_duration = __import__("time").time() - self._state_since.get(bot_id, 0)
         is_stuck = not made_progress and state_duration > 120
+        # Track kills/hour for monitoring
+        self._track_kills_per_hour(signals, bot_id)
 
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
@@ -1079,11 +1108,30 @@ class HeuristicService:
                         confidence=0.99, domain="hunting",
                         reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.95, domain="hunting",
-                        reason="Enable auto-attack after returning to hunt",
-                    ))
+                    # ROUTE LOOP PREVENTION: only send move if bot isn't already at portal
+                    # Check if bot is already near the portal (367, 205)
+                    _audit_pos = signals.get("position", {}) or {}
+                    _audit_px = _audit_pos.get("x", 0) or 0
+                    _audit_py = _audit_pos.get("y", 0) or 0
+                    _audit_dist = ((_audit_px - 367)**2 + (_audit_py - 205)**2)**0.5
+                    if _audit_dist < 5:
+                        # Already at portal - just enable auto mode
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.99, domain="hunting",
+                            reason="Already at portal - enable auto-attack",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="move 367 205",
+                            confidence=0.99, domain="hunting",
+                            reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.95, domain="hunting",
+                            reason="Enable auto-attack after returning to hunt",
+                        ))
 
         # ── STATE: DEAD ──
         if state == "DEAD":

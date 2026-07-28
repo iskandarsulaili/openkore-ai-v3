@@ -895,6 +895,45 @@ sub on_post_bulk_config_modify {
 our @_heal_items;
 our @_heal_skills;
 
+# ── ACTOR::ITEM::USE OVERRIDE: block potion use when 0 potions on hunting map ──
+# OpenKore's built-in useSelf_item system calls Actor::Item::use() directly,
+# bypassing the Commands::run/pre hook. This override catches ALL potion use.
+# When the bot has 0 potions on a hunting map, block potion use to prevent
+# the "[use] item 'red potion' on cooldown, skipping" spam.
+my $_orig_item_use = \&Actor::Item::use;
+no warnings 'redefine';
+*Actor::Item::use = sub {
+	my $self = shift;
+	my $item_name = $self->{name} || '';
+	# Only intercept potion items
+	if ($item_name =~ /potion|herb|fruit|berry/i) {
+		my $_ic_map = '';
+		if ($field) { $_ic_map = lc($field->name()); $_ic_map =~ s/\.gat$//; }
+		elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
+		# Only block on hunting maps (not in town)
+		if ($_ic_map =~ /_fild|_dun/i) {
+			# Check if we have any potions in inventory
+			my $_ic_has_potions = 0;
+			for my $item_name2 (@_heal_items) {
+				$item_name2 = _trim($item_name2);
+				next if !$item_name2;
+				my $item = eval { Actor::Item::get($item_name2) };
+				if ($item && $item->{amount} && $item->{amount} > 0) {
+					$_ic_has_potions = 1;
+					last;
+				}
+			}
+			if (!$_ic_has_potions) {
+				# No potions — block silently
+				return;
+			}
+		}
+	}
+	# Call original with same arguments
+	unshift @_, $self;
+	goto &$_orig_item_use;
+};
+
 sub on_command_intercept {
 	# Pre-command hook: intercept ALL commands including OpenKore internal AI
 	# This is the LAST LINE OF DEFENSE against "move prontera" spam
@@ -3777,10 +3816,12 @@ sub _rewrite_runtime_command {
 	    return ('', 'lockmap_set');
 	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
-	if ($normalized =~ /^set\s+([a-z_][a-z0-9_]*)\s+(.+)$/) {
+	# Use $trimmed (original case) to preserve config key case
+	if ($trimmed =~ /^set\s+(\S+)\s+(.+)$/i) {
 		my $set_key = $1;
 		my $set_val = $2;
-		my $orig_key = (grep { lc($_) eq $set_key } keys %::config)[0];
+		# Find the original case from existing config keys, or use the original case from the command
+		my $orig_key = (grep { lc($_) eq lc($set_key) } keys %::config)[0];
 		$orig_key = $set_key unless defined $orig_key;
 
 		# STAY IN TOWN DISABLED: heuristic handles all routing decisions
@@ -3821,9 +3862,23 @@ sub _rewrite_runtime_command {
 		if ($target eq '22 203') {
 		    return ($trimmed, 'coordinate_move_raw');
 		}
-		# Coordinate moves (e.g. "move 150 150") - pass through
+		# Coordinate moves (e.g. "move 150 150") - pass through with route loop detection
 		if ($target =~ /^\d+\s+\d+$/) {
-		    return ($trimmed, 'coordinate_move_raw');
+			# ROUTE LOOP DETECTION: if bot is already at or near the target coordinates,
+			# suppress the move to prevent infinite route recalculation.
+			my ($tx, $ty) = split(/\s+/, $target);
+			my $cx = 0; my $cy = 0;
+			if ($char) {
+				if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') { $cx = $char->{pos_to}{x} || 0; $cy = $char->{pos_to}{y} || 0; }
+				elsif ($char->{pos} && ref $char->{pos} eq 'HASH') { $cx = $char->{pos}{x} || 0; $cy = $char->{pos}{y} || 0; }
+				elsif (defined $char->{x}) { $cx = $char->{x}; $cy = $char->{y}; }
+			}
+			my $dist = sqrt(($cx - $tx)**2 + ($cy - $ty)**2);
+			if ($dist < 5) {
+				debug "[route_loop] already at target ($tx,$ty), current=($cx,$cy) dist=$dist, suppressing\n", 'aiSidecarBridge', 1;
+				return ('', 'route_loop_suppressed');
+			}
+			return ($trimmed, 'coordinate_move_raw');
 		}
 		# If already on target map, "move <map>" is a no-op random walk
 		# BUT: if bot is in Prontera and target is Prontera, rewrite to portal coords

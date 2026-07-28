@@ -35,6 +35,7 @@ macro reflex_survival_escape {
 
 macro reflex_survival_heal {
     log reflex executing fallback macro for emergency_heal_potion
+    use Red Potion
     stop
 }
 
