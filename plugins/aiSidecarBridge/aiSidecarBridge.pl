@@ -5209,6 +5209,7 @@ sub _check_bridge_reflexes {
 		# Guard: skip if stand-up reflex recently forced a stand (60s cooldown)
 		# Guard: skip if bot has 0 potions on hunting map (sitting won't help)
 		state $_auto_sit_suppressed_until_ms = 0;
+		state $_tier5_autosit_done = 0;
 		if ($_can_sit && !$in_combat && $hp_ratio < 0.6 && $hp > 0) {
 			# Skip if stand-up reflex recently forced a stand
 			if ($now < $_auto_sit_suppressed_until_ms) {
