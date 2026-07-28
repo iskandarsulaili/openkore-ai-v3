@@ -6,7 +6,7 @@ use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList);
 use IO::Socket::INET;
 use Globals qw($char);
 use Log qw(debug message warning);
@@ -425,8 +425,8 @@ sub on_mainLoop_pre {
 				$_usi_idx++;
 			}
 			# Also set the global timeout to prevent the system from running
-			$timeout{ai_item_use_auto}{time} = time;
-			$timeout{ai_item_use_auto}{timeout} = 300;
+			$main::timeout{ai_item_use_auto}{time} = time;
+			$main::timeout{ai_item_use_auto}{timeout} = 300;
 		}
 	}
 	
