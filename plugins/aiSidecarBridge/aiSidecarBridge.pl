@@ -1014,10 +1014,26 @@ sub on_command_intercept {
 	        $args->{args} = "$_portal_x $_portal_y";
 	    }
 	} elsif ($_ic_map =~ /^[a-z]+_fild/ || $_ic_map =~ /_field/) {
-	    # On hunting map: block "move prontera" entirely
-	    warning "[command_intercept] blocking '$full_cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
-	    $args->{switch} = '';
-	    $args->{args} = '';
+	    # On hunting map: block "move prontera" unless bot has 0 potions
+	    # (0 potions = need to return to town to buy)
+	    my $_ic_has_potions = 0;
+	    if ($char && $char->{inventory}) {
+	        for my $_gi (@{$char->{inventory}}) {
+	            next unless $_gi;
+	            my $_gi_name = $_gi->{name} || '';
+	            if ($_gi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+	                $_ic_has_potions = 1;
+	                last;
+	            }
+	        }
+	    }
+	    if ($_ic_has_potions) {
+	        warning "[command_intercept] blocking '$full_cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
+	        $args->{switch} = '';
+	        $args->{args} = '';
+	    } else {
+	        warning "[command_intercept] allowing '$full_cmd' on hunting map $_ic_map (0 potions)\n", 'aiSidecarBridge', 1;
+	    }
 	}
 	# PvP/GvG/Turbo maps: allow through
 	return;
