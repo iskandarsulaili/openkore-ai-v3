@@ -193,8 +193,8 @@ sub _cleanup_runtime {
 
 sub on_start3 {
 	# Disable sitAuto at startup — OpenKore defaults enable it
-	$::config{'sitAuto_hp'} = 0;
-	$::config{'sitAuto_hp_max'} = 0;
+	$::config{'sitAuto_hp_lower'} = 0;
+	$::config{'sitAuto_hp_upper'} = 0;
 	# sitAuto controlled by heuristic - not overridden here
 	# sitAuto_hp_upper controlled by heuristic
 	# sitAuto_sp controlled by heuristic
@@ -4925,16 +4925,16 @@ sub _apply_bot_config {
 	my $new_itemsMaxWeight = _cfg('aiSidecar_itemsMaxWeight', '89');
 	if ($new_itemsMaxWeight ne $_last_itemsMaxWeight) { $::config{'itemsMaxWeight'} = $new_itemsMaxWeight unless $::config{'_sidecar_set_itemsMaxWeight'}; $_last_itemsMaxWeight = $new_itemsMaxWeight; }
 	my $new_sitAuto_hp = _cfg('aiSidecar_sitAutoHp', '0');
-	if ($new_sitAuto_hp ne $_last_sitAuto_hp) { $::config{'sitAuto_hp'} = $new_sitAuto_hp unless $::config{'_sidecar_set_sitAuto_hp'}; $_last_sitAuto_hp = $new_sitAuto_hp; }
-	# Force-set sitAuto_hp=0 every cycle when disabled — OpenKore's AI re-enables it
+	if ($new_sitAuto_hp ne $_last_sitAuto_hp) { $::config{'sitAuto_hp_lower'} = $new_sitAuto_hp unless $::config{'_sidecar_set_sitAuto_hp'}; $_last_sitAuto_hp = $new_sitAuto_hp; }
+	# Force-set sitAuto_hp_lower=0 every cycle when disabled — OpenKore's AI re-enables it
 	if ($new_sitAuto_hp eq '0' && !$::config{'_sidecar_set_sitAuto_hp'}) {
-		$::config{'sitAuto_hp'} = '0';
+		$::config{'sitAuto_hp_lower'} = '0';
 	}
 	my $new_sitAuto_hp_max = _cfg('aiSidecar_sitAutoHpMax', '0');
-	if ($new_sitAuto_hp_max ne $_last_sitAuto_hp_max) { $::config{'sitAuto_hp_max'} = $new_sitAuto_hp_max unless $::config{'_sidecar_set_sitAuto_hp_max'}; $_last_sitAuto_hp_max = $new_sitAuto_hp_max; }
-	# Force-set sitAuto_hp_max=0 every cycle when disabled
+	if ($new_sitAuto_hp_max ne $_last_sitAuto_hp_max) { $::config{'sitAuto_hp_upper'} = $new_sitAuto_hp_max unless $::config{'_sidecar_set_sitAuto_hp_max'}; $_last_sitAuto_hp_max = $new_sitAuto_hp_max; }
+	# Force-set sitAuto_hp_upper=0 every cycle when disabled
 	if ($new_sitAuto_hp_max eq '0' && !$::config{'_sidecar_set_sitAuto_hp_max'}) {
-		$::config{'sitAuto_hp_max'} = '0';
+		$::config{'sitAuto_hp_upper'} = '0';
 	}
 	my $new_sitAuto_sp = _cfg('aiSidecar_sitAutoSp', '0');
 	if ($new_sitAuto_sp ne $_last_sitAuto_sp) { $::config{'sitAuto_sp'} = $new_sitAuto_sp unless $::config{'_sidecar_set_sitAuto_sp'}; $_last_sitAuto_sp = $new_sitAuto_sp; }

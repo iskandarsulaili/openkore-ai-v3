@@ -1806,8 +1806,8 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "teleportAuto_portal", "0", "survival",
                 "Disable portal teleport")
             # Disable OpenKore's built-in sit logic — the bridge reflex handles sit
-            # OpenKore's AI re-enables sitAuto_hp between cycles.
-            # Push aiSidecar_sitAutoHp=0 so the bridge's cycle override sets sitAuto_hp=0 every cycle.
+            # OpenKore's AI re-enables sitAuto between cycles.
+            # Push aiSidecar_sitAutoHp=0 so the bridge's cycle override sets sitAuto_hp_lower=0 every cycle.
             self._set_config_once(actions, bot_id, "aiSidecar_sitAutoHp", "0", "survival",
                 "Disable built-in sit — bridge reflex handles it")
             self._set_config_once(actions, bot_id, "aiSidecar_sitAutoHpMax", "0", "survival",
