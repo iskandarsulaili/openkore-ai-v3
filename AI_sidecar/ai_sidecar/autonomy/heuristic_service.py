@@ -848,11 +848,9 @@ class HeuristicService:
         if _cold_fired and _prev_state not in ("UNKNOWN", "COLD_START") and hp <= 0:
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
-        # Weight: compute from actual inventory items count in snapshot
-        _inv_items = signals.get("inventory_items", []) or []
-        # Count non-equipment items (stuff you can sell)
-        _sellable = sum(1 for i in _inv_items if isinstance(i, dict) and not i.get("equipped", False))
-        weight = _sellable * 0.02  # Each sellable item ~2% weight
+        # Weight: use actual game weight ratio from snapshot
+        _inv_data = signals.get("inventory", {}) or {}
+        weight = _inv_data.get("weight_pressure", 0) or 0.0
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = signals.get("job_name", "novice").lower()
@@ -1359,12 +1357,11 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
-            # Cooldown: only sell every 30s to prevent tight loop
+            # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
-            if _sell_now - _last_sell < 30:
-                # Sell on cooldown - skip and let next state handle
-                pass
+            if _sell_now - _last_sell < 60:
+                # Sell on cooldown - skip and let TOWN_HUNT handle movement
                 total_confidence = 0.85
                 top_domain = "hunting"
                 assessment = HeuristicAssessment(
@@ -1380,16 +1377,16 @@ class HeuristicService:
                 confidence=0.95, domain="economy",
                 reason="Stand up before walking to Tool Dealer",
             ))
-            # Walk to Special Dealer (147, 175) and sell
+            # Walk to Tool Dealer (290, 221) and sell
             actions.append(HeuristicAction(
-                kind="command", command="move 147 175",
+                kind="command", command="move 290 221",
                 confidence=0.95, domain="economy",
-                reason=f"Weight {weight:.0f}% - walk to Special Dealer to sell junk",
+                reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="talknpc 147 175 c r1 n",
+                kind="command", command="talknpc 290 221 c r1 n",
                 confidence=0.90, domain="economy",
-                reason="Open Special Dealer and sell items (atomic dialog)",
+                reason="Open Tool Dealer and sell items (atomic dialog)",
             ))
             actions.append(HeuristicAction(
                 kind="command", command="talk cont",

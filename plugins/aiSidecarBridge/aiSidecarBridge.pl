@@ -4291,12 +4291,14 @@ sub _check_bridge_reflexes {
 					$skill_name = _trim($skill_name);
 					next if !$skill_name;
 					my $skill = eval { Skill::get($skill_name) };
-					if ($skill && $skill->{level} && $skill->{level} > 0 && $sp > 0) {
+					# Only use skill if it exists, has a level > 0, and we have SP
+					next if !$skill;
+					next if !$skill->{level} || $skill->{level} < 1;
+					next if $sp <= 0;
 # 						warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
-						eval { Commands::run("skill $skill_name 1"); 1 };
-						$heal_triggered = 1;
-						last;
-					}
+					eval { Commands::run("use_skill $skill_name"); 1 };
+					$heal_triggered = 1;
+					last;
 				}
 			}
 
