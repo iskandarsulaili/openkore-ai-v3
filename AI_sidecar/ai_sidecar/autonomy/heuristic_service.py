@@ -1054,6 +1054,31 @@ class HeuristicService:
                 "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
             self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "", "hunting",
                 "Config audit - disable avoid system in lockMap (prevents running from monsters)")
+            # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
+            # If bot is on a hunting map with 0 potions, force return to town to buy potions.
+            # This was previously handled by the bridge's Reflex #1, but that was stripped.
+            _audit_inv = signals.get("inventory", {}) or {}
+            _audit_items = _audit_inv.get("items", []) or []
+            _audit_has_potions = any(
+                "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
+                for item in _audit_items
+            )
+            if not _audit_has_potions:
+                _audit_now = __import__("time").time()
+                _audit_last_return = self._last_return_to_town.get(bot_id, 0)
+                if _audit_now - _audit_last_return > 60:  # Max once per minute
+                    self._last_return_to_town[bot_id] = _audit_now
+                    logger.info(f"[zero_potions] {bot_id}: 0 potions on {_audit_map}, forcing return to town")
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 367 205",
+                        confidence=0.99, domain="economy",
+                        reason="Zero potions on hunting map - return to town to buy potions",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="economy",
+                        reason="Enable auto-attack after returning to town",
+                    ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
             _audit_rand = __import__("random").Random(_audit_seed)
