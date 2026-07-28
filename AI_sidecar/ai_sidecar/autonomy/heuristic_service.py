@@ -1278,8 +1278,9 @@ class HeuristicService:
             for item in _audit_items
         )
         _audit_zeny = signals.get("zeny", 0) or 0
-        if _audit_is_hunting and not _audit_has_potions and not _audit_has_weapon and _audit_zeny > 0:
-            # Bot has zeny but no potions and no weapon — force return to town
+        if _audit_is_hunting and not _audit_has_potions and not _audit_has_weapon:
+            # Bot has no potions and no weapon on hunting map — force return to town
+            # Fires regardless of zeny (0-zeny bots need to go back and figure it out)
             _audit_now = __import__("time").time()
             _audit_last_force = self._last_force_return.get(bot_id, 0)
             if _audit_now - _audit_last_force > 120:  # 2 min cooldown
@@ -1289,6 +1290,17 @@ class HeuristicService:
                     confidence=0.99, domain="emergency",
                     reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
                 ))
+
+        # ── DISABLE OPENCORE'S BUILT-IN POTION USE when 0 potions ──
+        # OpenKore's useSelf_item system fires independently of the bridge.
+        # When the bot has 0 potions, set useSelf_item cooldowns to 300s to suppress spam.
+        if _audit_is_hunting and not _audit_has_potions:
+            self._set_config_once(actions, bot_id, "useSelf_item_Red_Potion_timeout", "300", "economy",
+                "Config audit - suppress built-in potion use (0 potions in inventory)")
+            self._set_config_once(actions, bot_id, "useSelf_item_Orange_Potion_timeout", "300", "economy",
+                "Config audit - suppress built-in potion use (0 potions in inventory)")
+            self._set_config_once(actions, bot_id, "useSelf_item_White_Potion_timeout", "300", "economy",
+                "Config audit - suppress built-in potion use (0 potions in inventory)")
 
         # ── JOB CHANGE: Novice with job_level >= 10 should job change ──
         # Force return to town and route to job change NPC

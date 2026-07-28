@@ -2416,6 +2416,31 @@ sub _execute_action {
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
 	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
 	
+	# ── PARTY LEAVE SUPPRESSION: one-time leave, then suppress forever ──
+	# Once a bot has left a party, it should never try again unless it somehow rejoins.
+	# The bridge tracks this independently of the sidecar's cooldown.
+	if (lc($command || '') eq 'party leave') {
+		state $_has_left_party = 0;
+		if ($_has_left_party) {
+			($success, $result_code, $msg) = (1, 'ok', 'party_leave_already_left');
+			$rewrite_kind = 'party_leave_already_left';
+			$effective_command = '';
+		} else {
+			# Execute the party leave command
+			my $ok = eval { Commands::run('party leave'); 1; };
+			if ($ok) {
+				$_has_left_party = 1;
+				($success, $result_code, $msg) = (1, 'ok', 'party_leave_executed');
+			} else {
+				# Command failed (not in party) — still mark as left to prevent retry
+				$_has_left_party = 1;
+				($success, $result_code, $msg) = (1, 'ok', 'party_leave_not_in_party');
+			}
+			$rewrite_kind = 'party_leave';
+			$effective_command = '';
+		}
+	}
+
 	# ── AI AUTO SUPPRESSION: if already in auto mode, skip 'ai auto' commands ──
 	# Prevents "AI is already set to auto mode" spam from sidecar pushing ai auto every cycle
 	if (($rewrite_kind eq 'ai_auto_already_auto' || lc($command || '') eq 'ai auto') && defined $AI::AI && $AI::AI == 2) {
@@ -5181,17 +5206,50 @@ sub _check_bridge_reflexes {
 		# Auto-sit when out of combat and HP/SP is low
 		# Pro players sit to regen between pulls, never fight at low HP
 		# Guard: only if bot can sit (Basic Skill >= 3)
+		# Guard: skip if stand-up reflex recently forced a stand (60s cooldown)
+		# Guard: skip if bot has 0 potions on hunting map (sitting won't help)
+		state $_auto_sit_suppressed_until_ms = 0;
 		if ($_can_sit && !$in_combat && $hp_ratio < 0.6 && $hp > 0) {
-			if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
-				$_reflex_last_fired{auto_sit} = _now_ms();
-				my $ai_top = @ai_seq ? $ai_seq[0] : '';
-				if ($ai_top ne 'sit') {
-					_random_action_delay();
-					eval { 1 };
+			# Skip if stand-up reflex recently forced a stand
+			if ($now < $_auto_sit_suppressed_until_ms) {
+				# Auto-sit is suppressed — skip
+			} elsif ($_hunting_map && !$_in_town) {
+				# Check if we have any potions — skip auto-sit if 0 potions
+				my $_sit_has_potions = 0;
+				for my $item_name (@_heal_items) {
+					$item_name = _trim($item_name);
+					next if !$item_name;
+					my $item = eval { Actor::Item::get($item_name) };
+					if ($item && $item->{amount} && $item->{amount} > 0) {
+						$_sit_has_potions = 1;
+						last;
+					}
+				}
+				if (!$_sit_has_potions) {
+					# No potions — skip auto-sit (sitting won't help, just stand and fight)
+				} else {
+					if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
+						$_reflex_last_fired{auto_sit} = _now_ms();
+						my $ai_top = @ai_seq ? $ai_seq[0] : '';
+						if ($ai_top ne 'sit') {
+							_random_action_delay();
+							eval { Commands::run("sit"); 1 };
+							$_tier5_autosit_done = 1;
+						}
+					}
+				}
+			} else {
+				if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
+					$_reflex_last_fired{auto_sit} = _now_ms();
+					my $ai_top = @ai_seq ? $ai_seq[0] : '';
+					if ($ai_top ne 'sit') {
+						_random_action_delay();
+						eval { Commands::run("sit"); 1 };
+						$_tier5_autosit_done = 1;
+					}
 				}
 			}
 		}
-
 		# ═══════════════════════════════════════════
 		# REFLEX #19 — PROACTIVE POTION TOP-OFF REFLEX
 		# ═══════════════════════════════════════════
@@ -5286,6 +5344,8 @@ sub _check_bridge_reflexes {
 					eval { Commands::run("stand"); 1 };
 					eval { Commands::run("ai auto"); 1 };
 					$_sit_start_ms = 0;  # Reset
+					# Suppress auto-sit for 60s to prevent infinite sit-stand loop
+					$_auto_sit_suppressed_until_ms = $now + 60000;
 				}
 			} else {
 				# Reset sit timer when not sitting
