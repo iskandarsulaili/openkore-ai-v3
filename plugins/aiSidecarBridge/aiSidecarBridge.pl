@@ -578,6 +578,7 @@ sub on_mainLoop_post {
 	}
 
 	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
+		debug "[on_mainLoop_post] polling (now=$now next=$next_poll_at_ms)\n", 'aiSidecarBridge', 1;
 	    my $poll_ok = _poll_next_action();
 	    my $base_delay_ms = _cfg_int('aiSidecar_pollIntervalMs', 100);
 	    my $jitter_pct = _cfg_int('aiSidecar_pollJitterPct', 30);
