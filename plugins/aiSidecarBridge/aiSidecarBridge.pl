@@ -3877,7 +3877,28 @@ sub _rewrite_runtime_command {
 	}
 	
 	# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
+	# EXCEPTION: allow ai manual when bot has 0 potions on hunting map (cold start portal walk)
 	if ($normalized eq 'ai manual') {
+	    if ($char && $char->{inventory}) {
+	        my $_am_has_potions = 0;
+	        for my $_ami (@{$char->{inventory}}) {
+	            next unless $_ami;
+	            my $_amn = $_ami->{name} || '';
+	            if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+	                $_am_has_potions = 1;
+	                last;
+	            }
+	        }
+	        if (!$_am_has_potions) {
+	            my $_amm = $field ? lc($field->name()) : '';
+	            $_amm =~ s/\.gat$//;
+	            if ($_amm =~ /_fild|_dun/i) {
+	                # 0 potions on hunting map — allow ai manual for portal walk
+	                debug "[ai_manual] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
+	                return ($trimmed, 'ai_manual_allowed');
+	            }
+	        }
+	    }
 	    debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
 	    return ('', 'ai_manual_blocked');
 	}
