@@ -4331,13 +4331,13 @@ sub _check_bridge_reflexes {
 				$_last_hp = $hp;
 				# Only sit if NOT in combat — sitting mid-fight causes stand-sit loop
 				my $_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-				# Also check if we were recently in combat — prevents sit right after attack
-				# Configurable via aiSidecar_sitPostCombatCooldownMs (default 5000ms)
-				state $_last_combat_ms = _now_ms();
+				# Track last combat END time — reset when combat sequence is active
+				# This prevents sitting immediately after a fast kill (<1s)
+				state $_last_combat_end_ms = _now_ms();
 				if ($_in_combat) {
-					$_last_combat_ms = _now_ms();
+					$_last_combat_end_ms = _now_ms() + 5000;  # 5s grace from now
 				}
-				my $_since_combat = _now_ms() - $_last_combat_ms;
+				my $_since_combat = _now_ms() - $_last_combat_end_ms;
 				my $_sit_cooldown = _cfg_int('aiSidecar_sitPostCombatCooldownMs', 5000);
 				my $_sit_enabled = _cfg_int('aiSidecar_sitFallbackEnabled', 1);
 				if ($_sit_enabled && !$_in_combat && $_since_combat > $_sit_cooldown && $aggro_count == 0 && $AI::AI != 2) {
