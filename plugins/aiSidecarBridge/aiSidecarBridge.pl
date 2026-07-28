@@ -460,15 +460,32 @@ sub on_mainLoop_post {
             my $_fs_hp_pct = $_fs_hp_max > 0 ? int($_fs_hp * 100 / $_fs_hp_max) : 0;
             if ($_fs_hp_pct >= 50) {
                 warning "[force_stand] bot sitting with HP=$_fs_hp_pct%, forcing stand\n", 'aiSidecarBridge', 1;
-                # AI sequence clearing controlled by heuristic
-                # attackAuto_inLockOnly controlled by heuristic
-                # sitAuto controlled by heuristic - not overridden here
-                # sitAuto_hp_upper controlled by heuristic
-                # sitAuto_sp controlled by heuristic
-                # sitAuto_sp_upper controlled by heuristic
-                # sitAuto_idle controlled by heuristic
-                # stand controlled by heuristic
-                # ai auto controlled by heuristic
+                eval { Commands::run("stand"); 1 };
+                eval { Commands::run("ai auto"); 1 };
+            }
+        }
+        
+        # ── DISABLE useSelf_item FOR POTIONS: set 300s timeout to prevent "on cooldown" spam ──
+        # OpenKore's useSelf_item system has its own cooldown (3s default) and logs
+        # "[use] item 'red potion' on cooldown, skipping" before calling Actor::Item::use().
+        # The Actor::Item::use() override blocks the actual use, but the log message
+        # is already printed. Setting timeout to 300s stops the spam at the source.
+        if ($char) {
+            state $_last_useSelf_override_ms = 0;
+            my $_now_ms = _now_ms();
+            if ($_now_ms - $_last_useSelf_override_ms > 60000) {
+                $_last_useSelf_override_ms = $_now_ms;
+                # Override useSelf_item timeout for all potion entries
+                # OpenKore stores useSelf_item as an array of hashrefs
+                if (defined $::config{useSelf_item} && ref $::config{useSelf_item} eq 'ARRAY') {
+                    for my $_usi (@{$::config{useSelf_item}}) {
+                        next unless ref $_usi eq 'HASH';
+                        my $_usi_name = $_usi->{name} || '';
+                        if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+                            $_usi->{timeout} = 300;
+                        }
+                    }
+                }
             }
         }
         
@@ -2492,8 +2509,20 @@ sub _execute_action {
 	# ── PARTY LEAVE SUPPRESSION: one-time leave, then suppress forever ──
 	# Once a bot has left a party, it should never try again unless it somehow rejoins.
 	# The bridge tracks this independently of the sidecar's cooldown.
+	# Uses a persistent file-based state to survive restarts.
 	if (lc($command || '') eq 'party leave') {
-		state $_has_left_party = 0;
+		# Read persistent state from file
+		my $_pl_file = _party_leave_state_file();
+		my $_has_left_party = 0;
+		if (-e $_pl_file) {
+			open my $_pl_fh, '<', $_pl_file or do { debug "[party_leave] cannot read $_pl_file: $!\n", 'aiSidecarBridge', 1 };
+			if ($_pl_fh) {
+				my $_pl_content = <$_pl_fh>;
+				chomp $_pl_content;
+				$_has_left_party = ($_pl_content eq '1') ? 1 : 0;
+				close $_pl_fh;
+			}
+		}
 		if ($_has_left_party) {
 			($success, $result_code, $msg) = (1, 'ok', 'party_leave_already_left');
 			$rewrite_kind = 'party_leave_already_left';
@@ -2511,6 +2540,12 @@ sub _execute_action {
 			}
 			$rewrite_kind = 'party_leave';
 			$effective_command = '';
+			# Write persistent state to file
+			open my $_pl_fh, '>', $_pl_file or do { debug "[party_leave] cannot write $_pl_file: $!\n", 'aiSidecarBridge', 1 };
+			if ($_pl_fh) {
+				print $_pl_fh "1\n";
+				close $_pl_fh;
+			}
 		}
 	}
 
@@ -2654,6 +2689,12 @@ sub _execute_action {
 		{ observed_latency_ms => $latency_ms + 0 },
 		{ result_code => $result_code, kind => $kind },
 	);
+}
+
+sub _party_leave_state_file {
+	my $_pl_dir = $::config{control} || '.';
+	$_pl_dir =~ s/\/control$//;
+	return "$_pl_dir/ai_sidecar_party_leave_state.txt";
 }
 
 sub _execute_config_reload_action {

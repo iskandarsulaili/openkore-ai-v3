@@ -815,6 +815,10 @@ class HeuristicService:
         self._last_kills_count: dict[str, int] = {}
         self._last_kills_time: dict[str, float] = {}
         self._last_kills_log: dict[str, float] = {}
+        # First-cycle flag: cleared on restart, forces re-send of critical configs
+        self._first_cycle_done: dict[str, bool] = {}
+        # Sitting detector: track when bot started sitting on hunting map
+        self._sit_start_time: dict[str, float] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -972,7 +976,8 @@ class HeuristicService:
 
     def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
         """Emit a 'set' command only if the value has changed since last set.
-        Prevents spamming 'set route_randomWalk 1' every cycle when it's already 1."""
+        Prevents spamming 'set route_randomWalk 1' every cycle when it's already 1.
+        On first cycle after restart, always sends (cache is empty)."""
         cache = self._last_config_set.setdefault(bot_id, {})
         last = cache.get(key)
         if last == value:
@@ -1132,6 +1137,36 @@ class HeuristicService:
                             confidence=0.95, domain="hunting",
                             reason="Enable auto-attack after returning to hunt",
                         ))
+
+        # ── SITTING ON HUNTING MAP DETECTOR: force stand when sitting with 0 potions and HP > 50% ──
+        # The bridge's stand-up reflex was stripped. The sidecar must handle this.
+        # If bot is sitting on a hunting map with 0 potions and HP > 50%, force stand.
+        # Also force stand if bot has been sitting for > 30s (stuck sitting).
+        _audit_is_sitting = signals.get("is_sitting", False)
+        if _audit_is_hunting and _audit_is_sitting:
+            _audit_now = __import__("time").time()
+            _audit_sit_start = self._sit_start_time.get(bot_id, _audit_now)
+            if not self._sit_start_time.get(bot_id):
+                self._sit_start_time[bot_id] = _audit_now
+            _audit_sit_duration = _audit_now - _audit_sit_start
+            _audit_hp = signals.get("hp_ratio", 1.0)
+            # Force stand if HP > 50% OR sitting > 30s
+            if _audit_hp > 0.50 or _audit_sit_duration > 30:
+                logger.info(f"[sit_detector] {bot_id}: sitting on {_audit_map} for {_audit_sit_duration:.0f}s, HP={_audit_hp:.0%}, forcing stand")
+                actions.append(HeuristicAction(
+                    kind="command", command="stand",
+                    confidence=0.99, domain="survival",
+                    reason=f"Sitting on hunting map for {_audit_sit_duration:.0f}s with HP={_audit_hp:.0%} - forcing stand",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.99, domain="survival",
+                    reason="Re-enable auto-attack after forced stand",
+                ))
+                self._sit_start_time[bot_id] = 0  # Reset
+        else:
+            # Reset sit timer when not sitting
+            self._sit_start_time[bot_id] = 0
 
         # ── STATE: DEAD ──
         if state == "DEAD":
