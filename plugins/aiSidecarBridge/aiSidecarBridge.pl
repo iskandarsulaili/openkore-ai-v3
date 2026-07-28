@@ -2273,6 +2273,10 @@ sub _poll_next_action {
 		return 1 if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
 	}
 
+	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
+	$::config{'sitAuto_hp_lower'} = 0 unless $::config{'_sidecar_set_sitAuto_hp'};
+	$::config{'sitAuto_hp_upper'} = 0 unless $::config{'_sidecar_set_sitAuto_hp_max'};
+
 	my $poll_id = _trace_id();
 	my $resp = _http_post_json('/v1/actions/next', {
 		meta => _meta(_bot_id()),
