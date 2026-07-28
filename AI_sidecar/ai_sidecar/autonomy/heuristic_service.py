@@ -1361,38 +1361,32 @@ class HeuristicService:
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
             if _sell_now - _last_sell < 60:
-                # Sell on cooldown - skip and let TOWN_HUNT handle movement
-                total_confidence = 0.85
-                top_domain = "hunting"
-                assessment = HeuristicAssessment(
-                    horizon=horizon, actions=actions, confidence=total_confidence,
-                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                )
-                self._last_assessment[bot_id] = assessment
-                return assessment
-            self._last_sell_time[bot_id] = _sell_now
-            # Stand up first
-            actions.append(HeuristicAction(
-                kind="command", command="stand",
-                confidence=0.95, domain="economy",
-                reason="Stand up before walking to Tool Dealer",
-            ))
-            # Walk to Tool Dealer (290, 221) and sell
-            actions.append(HeuristicAction(
-                kind="command", command="move 290 221",
-                confidence=0.95, domain="economy",
-                reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talknpc 290 221 c r1 n",
-                confidence=0.90, domain="economy",
-                reason="Open Tool Dealer and sell items (atomic dialog)",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk cont",
-                confidence=0.80, domain="economy",
-                reason="Complete sell transaction",
-            ))
+                # Sell on cooldown - fall through to TOWN_HUNT
+                pass
+            else:
+                self._last_sell_time[bot_id] = _sell_now
+                # Stand up first
+                actions.append(HeuristicAction(
+                    kind="command", command="stand",
+                    confidence=0.95, domain="economy",
+                    reason="Stand up before walking to Tool Dealer",
+                ))
+                # Walk to Tool Dealer (290, 221) and sell
+                actions.append(HeuristicAction(
+                    kind="command", command="move 290 221",
+                    confidence=0.95, domain="economy",
+                    reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talknpc 290 221 c r1 n",
+                    confidence=0.90, domain="economy",
+                    reason="Open Tool Dealer and sell items (atomic dialog)",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk cont",
+                    confidence=0.80, domain="economy",
+                    reason="Complete sell transaction",
+                ))
             total_confidence = 0.90
             top_domain = "economy"
             assessment = HeuristicAssessment(
@@ -1461,51 +1455,45 @@ class HeuristicService:
             _buy_now = __import__("time").time()
             _last_buy = self._last_buy_time.get(bot_id, 0)
             if _buy_now - _last_buy < 60:
-                # Buy on cooldown - skip and let TOWN_HUNT handle movement
-                total_confidence = 0.85
-                top_domain = "hunting"
-                assessment = HeuristicAssessment(
-                    horizon=horizon, actions=actions, confidence=total_confidence,
-                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-                )
-                self._last_assessment[bot_id] = assessment
-                return assessment
-            self._last_buy_time[bot_id] = _buy_now
-            # Stand up first
-            actions.append(HeuristicAction(
-                kind="command", command="stand",
-                confidence=0.95, domain="economy",
-                reason="Stand up before walking to Tool Dealer",
-            ))
-            # Buy Red Potions from Tool Dealer (290, 221 in Prontera)
-            actions.append(HeuristicAction(
-                kind="command", command="move 290 221",
-                confidence=0.95, domain="economy",
-                reason=f"Zeny {zeny} - walk to Tool Dealer to buy potions",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talknpc 290 221",
-                confidence=0.90, domain="economy",
-                reason="Open Tool Dealer shop",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk resp 1",
-                confidence=0.85, domain="economy",
-                reason="Select buy option",
-            ))
-            # Buy Red Potions (item 501) - as many as zeny allows
-            max_buy = min(int(zeny / 50), 30)  # 50z each, max 30
-            if max_buy > 0:
+                # Buy on cooldown - fall through to TOWN_HUNT instead of doing nothing
+                pass
+            else:
+                self._last_buy_time[bot_id] = _buy_now
+                # Stand up first
                 actions.append(HeuristicAction(
-                    kind="command", command=f"buy 501 {max_buy}",
-                    confidence=0.90, domain="economy",
-                    reason=f"Buy {max_buy} Red Potions (50z each)",
+                    kind="command", command="stand",
+                    confidence=0.95, domain="economy",
+                    reason="Stand up before walking to Tool Dealer",
                 ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk any",
-                confidence=0.80, domain="economy",
-                reason="Complete buy dialog",
-            ))
+                # Buy Red Potions from Tool Dealer (290, 221 in Prontera)
+                actions.append(HeuristicAction(
+                    kind="command", command="move 290 221",
+                    confidence=0.95, domain="economy",
+                    reason=f"Zeny {zeny} - walk to Tool Dealer to buy potions",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talknpc 290 221",
+                    confidence=0.90, domain="economy",
+                    reason="Open Tool Dealer shop",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk resp 1",
+                    confidence=0.85, domain="economy",
+                    reason="Select buy option",
+                ))
+                # Buy Red Potions (item 501) - as many as zeny allows
+                max_buy = min(int(zeny / 50), 30)  # 50z each, max 30
+                if max_buy > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy 501 {max_buy}",
+                        confidence=0.90, domain="economy",
+                        reason=f"Buy {max_buy} Red Potions (50z each)",
+                    ))
+                actions.append(HeuristicAction(
+                    kind="command", command="talk any",
+                    confidence=0.80, domain="economy",
+                    reason="Complete buy dialog",
+                ))
             total_confidence = 0.90
             top_domain = "economy"
             assessment = HeuristicAssessment(
