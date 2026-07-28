@@ -4700,7 +4700,7 @@ class PDCALoop:
                         # fires AFTER this Pro RO check. Initialize step to 0 for new bots
                         # so the suppression fires on the FIRST cycle.
                         _cs_step = getattr(
-                            getattr(self, "_heuristic_service", None), "_cold_start_step", {}
+                            getattr(self._runtime, "heuristic_service", None), "_cold_start_step", {}
                         ).get(_cycle_bot_id, 0)
                         if _cs_step < 4:
                             _pro_inline_fired = False
