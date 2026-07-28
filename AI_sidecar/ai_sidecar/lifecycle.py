@@ -1506,6 +1506,8 @@ class RuntimeState:
                         _subcategory = "no_zeny"
                     elif _reflex == "emergency_no_heal":
                         _category = "no_heal_items"
+                    elif _reflex == "no_heal_items_sitting":
+                        _category = "no_heal_items"
                     elif _reflex == "party_low_hp":
                         _category = "party_ghost"
                     if _category != "unknown":

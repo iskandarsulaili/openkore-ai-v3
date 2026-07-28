@@ -1778,11 +1778,15 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Don't give up mid-fight")
             # ai auto is not a config set — always emit (not deduped)
-            actions.append(HeuristicAction(
-                kind="command", command="stand",
-                confidence=0.95, domain="hunting",
-                reason="Stand up before enabling auto-attack",
-            ))
+            # Only force stand if HP is high enough to fight
+            # If HP < 40%, let the bot sit to regen — don't force it into combat
+            _hp_ratio_hunt = signals.get("hp_ratio", 1.0) or 1.0
+            if _hp_ratio_hunt >= 0.40:
+                actions.append(HeuristicAction(
+                    kind="command", command="stand",
+                    confidence=0.95, domain="hunting",
+                    reason="Stand up before enabling auto-attack",
+                ))
             actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="hunting",
@@ -1866,7 +1870,7 @@ class HeuristicService:
                 )
                 if _best_skill:
                     actions.append(HeuristicAction(
-                        kind="command", command=f"skill {_best_skill}",
+                        kind="command", command=f"attack_skill {_best_skill}",
                         confidence=0.90, domain="combat",
                         reason=f"DPS skill: {_best_skill} (best DPS vs {_monster_element} monster)",
                     ))

@@ -4321,14 +4321,16 @@ sub _check_bridge_reflexes {
 			}
 
 			# If NO healing resources at all: trigger emergency survival immediately
-			# Sit to regen HP naturally — this is the only reliable option for low-level chars
+			# Sit to regen HP naturally — but ONLY if not in combat
+			# If in combat, let the bot fight — sitting mid-combat is a death sentence
 			if (!$heal_triggered && $hp_ratio < 0.50) {
 				# Skip if HP has not dropped (reflex noise filter)
 				state $_last_hp = 0;
 				if ($hp >= $_last_hp && $_last_hp > 0) { return; }
 				$_last_hp = $hp;
-				# Sit to regen — always safe, always available
-				if ($AI::AI != 2) {
+				# Only sit if NOT in combat — sitting mid-fight causes stand-sit loop
+				my $_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
+				if (!$_in_combat && $aggro_count == 0 && $AI::AI != 2) {
 					eval { Commands::run("sit"); 1 };
 				}
 				# Post event to sidecar: "I need healing items"
