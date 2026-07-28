@@ -1059,9 +1059,13 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Use portal coordinates (367 205) instead of map name 'prontera'
-                # Bridge's route loop detection now allows this when 0 potions.
+                # Disable attack + go to portal exit. Re-enable attack after arrival.
                 if not _cs_in_town:
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 0",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start - disable attack to allow portal move",
+                    ))
                     actions.append(HeuristicAction(
                         kind="command", command="move 367 205",
                         confidence=0.99, domain="economy",
@@ -1088,6 +1092,11 @@ class HeuristicService:
                     # Only queue from Prontera — 'move prt_fild01' from Prontera
                     # is a direct route via portal 22 203.
                     if _cs_in_town:
+                        actions.append(HeuristicAction(
+                            kind="command", command="set attackAuto 3",
+                            confidence=0.99, domain="economy",
+                            reason="Cold start - re-enable attack for farming",
+                        ))
                         actions.append(HeuristicAction(
                             kind="command", command="move prt_fild01",
                             confidence=0.99, domain="economy",
