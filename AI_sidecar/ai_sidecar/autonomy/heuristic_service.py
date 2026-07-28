@@ -1065,7 +1065,7 @@ class HeuristicService:
                         reason="Cold start - disable AI for portal walk",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="move 22 203",
+                        kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
                         reason="Cold start - walk to Prontera portal",
                     ))
