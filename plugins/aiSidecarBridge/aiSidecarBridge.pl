@@ -5221,23 +5221,38 @@ sub _check_bridge_reflexes {
 		# force ai auto and reset attack config.
 		# Tracks "time since last attack attempt" not "time since last successful attack"
 		# so it catches bots that never enter combat (e.g. standing still watching).
+		# Also tracks "time since last AI activity" — if bot has been idle on a hunting
+		# map for 60s with zero AI state, force ai auto.
 		my $_hunting_map = $map =~ /_fild|_dun/i ? 1 : 0;
 		if ($_hunting_map && !$_in_town) {
 			state $_last_attack_attempt_ms = 0;
+			state $_last_ai_activity_ms = 0;
 			state $_last_stuck_check_ms = 0;
 			# Track last attack attempt — fires on ANY combat-related AI state
 			if ($_ai_seq_top =~ /^(?:attack|skill_use|route|follow)/) {
 				$_last_attack_attempt_ms = $now;
+				$_last_ai_activity_ms = $now;
+			}
+			# Track last AI activity — fires on ANY non-empty AI state
+			if ($_ai_seq_top ne '') {
+				$_last_ai_activity_ms = $now;
 			}
 			# Check every 30s if bot is stuck (no attack attempts for 60s)
 			if ($now - $_last_stuck_check_ms > 30000) {
 				$_last_stuck_check_ms = $now;
 				# If never attacked since being on this map, or last attack was >60s ago
+				# OR if no AI activity at all for 60s (bot standing still doing nothing)
+				my $_stuck_reason = '';
 				if ($_last_attack_attempt_ms == 0 || $now - $_last_attack_attempt_ms > 60000) {
-					# No attack attempts for 60s — force ai auto
-					debug "[aiSidecarBridge] stuck_detector: bot stuck on $map (no attacks for 60s), forcing ai auto\n", 'aiSidecarBridge', 1;
+					$_stuck_reason = 'no attacks for 60s';
+				} elsif ($_last_ai_activity_ms > 0 && $now - $_last_ai_activity_ms > 60000) {
+					$_stuck_reason = 'no AI activity for 60s';
+				}
+				if ($_stuck_reason) {
+					debug "[aiSidecarBridge] stuck_detector: bot stuck on $map ($_stuck_reason), forcing ai auto\n", 'aiSidecarBridge', 1;
 					eval { Commands::run("ai auto"); 1 };
 					$_last_attack_attempt_ms = $now;  # Reset to prevent spam
+					$_last_ai_activity_ms = $now;
 					_post_event({
 						kind => 'bridge_reflex',
 						reflex => 'stuck_on_hunting_map',
