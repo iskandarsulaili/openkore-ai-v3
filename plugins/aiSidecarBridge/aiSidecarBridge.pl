@@ -516,10 +516,11 @@ sub on_mainLoop_post {
         # When bot steps through portal from Prontera to prt_fild05, check inventory.
         # If 0 potions, turn around and go back to Prontera immediately.
         # Only runs when bot is IN_GAME (not during STARTING phase).
+        # Cooldown: 30s between checks to let the route to Prontera complete.
         if ($char && $field && $net && $net->getState() == Network::IN_GAME) {
             state $_last_portal_check_ms = 0;
             my $_now_ms = _now_ms();
-            if ($_now_ms - $_last_portal_check_ms > 5000) {  # Every 5s
+            if ($_now_ms - $_last_portal_check_ms > 30000) {  # Every 30s
                 $_last_portal_check_ms = $_now_ms;
                 my $_cm = lc($field->name());
                 $_cm =~ s/\.gat$//;
