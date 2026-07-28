@@ -1037,7 +1037,7 @@ class HeuristicService:
         # Step 3: Set lockMap to prt_fild05 — confirmed when map changes
         # Step 4: Hunt — bot is on hunting map with weapon + potions
         # Define map check vars before use (config audit section defines them later)
-        _cs_map = _audit_map
+        _cs_map = signals.get("map", "") or ""
         _cs_in_town = any(x in _cs_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
         _cs_in_hunting = any(x in _cs_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
         _cold_start_step = self._cold_start_step.get(bot_id, 0)
