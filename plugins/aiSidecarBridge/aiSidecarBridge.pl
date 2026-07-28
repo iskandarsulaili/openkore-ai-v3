@@ -2419,7 +2419,7 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'ai_auto_already_auto');
 		$rewrite_kind = 'ai_auto_already_auto';
 		$effective_command = '';
-	} else {
+	}
 
 	# ── Apply ML overrides (source="ml" actions carry learned recommendations) ──
 	my $action_source = lc($action->{source} || '');
@@ -2515,7 +2515,6 @@ sub _execute_action {
 			my $err = $@ || 'command execution failure';
 			($success, $result_code, $msg) = (0, 'dispatch_error', _trim($err, 220));
 		}
-	}
 	}
 	}
 
