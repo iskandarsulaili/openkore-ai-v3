@@ -804,6 +804,7 @@ class HeuristicService:
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
         self._last_force_return: dict[str, float] = {}
+        self._last_job_change_attempt: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
@@ -1171,7 +1172,7 @@ class HeuristicService:
             # In town — ensure bot is in auto mode and ready to move
             self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
                 "Config audit (town) - enable aggressive auto-attack for when we return to hunt")
-            # Force ai auto if bot has been in town > 30s with no potions
+            # Buy potions immediately if in town with 0 potions (no 30s wait)
             _audit_now = __import__("time").time()
             _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
             _audit_town_time = _audit_now - _audit_town_entry
@@ -1181,8 +1182,8 @@ class HeuristicService:
                 "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
                 for item in _audit_items
             )
-            if _audit_town_time > 30 and not _audit_has_potions:
-                # Bot has been in town > 30s with no potions — force buy and return to hunt
+            if not _audit_has_potions:
+                # Bot has 0 potions in town — buy immediately
                 _audit_zeny = signals.get("zeny", 0) or 0
                 if _audit_zeny >= 50:
                     _audit_potion_qty = min(int(_audit_zeny / 50), 10)
@@ -1190,7 +1191,7 @@ class HeuristicService:
                         actions.append(HeuristicAction(
                             kind="command", command=f"buy 501 {_audit_potion_qty}",
                             confidence=0.99, domain="economy",
-                            reason=f"Town stuck - buy {_audit_potion_qty} Red Potions after {_audit_town_time:.0f}s in town",
+                            reason=f"Town - buy {_audit_potion_qty} Red Potions (0 potions in inventory)",
                         ))
                     # Also buy weapon if we don't have one
                     _audit_has_weapon = any(
@@ -1262,11 +1263,33 @@ class HeuristicService:
                     confidence=0.99, domain="emergency",
                     reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
                 ))
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.95, domain="hunting",
-                    reason="Enable auto-attack after force return",
-                ))
+
+        # ── JOB CHANGE: Novice with job_level >= 10 should job change ──
+        # Force return to town and route to job change NPC
+        _audit_job_name = signals.get("job_name", "") or ""
+        _audit_job_level = signals.get("job_level", 0) or 0
+        if _audit_job_name == "novice" and _audit_job_level >= 10:
+            _audit_now = __import__("time").time()
+            _audit_last_job_change = self._last_job_change_attempt.get(bot_id, 0)
+            if _audit_now - _audit_last_job_change > 60:  # 1 min cooldown
+                self._last_job_change_attempt[bot_id] = _audit_now
+                # Route to job change NPC in Prontera
+                _audit_job_npc = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
+                _audit_job_map, _audit_job_x, _audit_job_y = _audit_job_npc
+                if _audit_map != _audit_job_map:
+                    # Not in Prontera — return to town first
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 367 205",
+                        confidence=0.99, domain="emergency",
+                        reason=f"Job change - Novice job level {_audit_job_level} >= 10, return to Prontera",
+                    ))
+                else:
+                    # In Prontera — walk to job change NPC
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_audit_job_x} {_audit_job_y}",
+                        confidence=0.99, domain="emergency",
+                        reason=f"Job change - Novice job level {_audit_job_level} >= 10, walk to job NPC",
+                    ))
 
         # ── STATE: COLD_START (fresh spawn - go hunt immediately) ──
         if state == "COLD_START":

@@ -4362,6 +4362,65 @@ sub _check_bridge_reflexes {
 		}
 
 		# ═══════════════════════════════════════════
+		# CAN'T-SIT DETECTION — suppress ALL sit-related reflexes if Basic Skill < 3
+		# ═══════════════════════════════════════════
+		# Novices without Basic Skill level 3 literally cannot sit.
+		# Every sit command silently fails. This causes infinite loops:
+		# low HP → try sit → fail → low HP → try sit → fail
+		# Detect once and cache the result.
+		state $_can_sit_checked = 0;
+		state $_can_sit = 1;  # Assume can sit until proven otherwise
+		if (!$_can_sit_checked) {
+			$_can_sit_checked = 1;
+			# Check if character has Basic Skill level 3+
+			my $_basic_skill_lv = 0;
+			if ($char && $char->{skills}) {
+				for my $_sk (@{$char->{skills}}) {
+					next if !$_sk;
+					my $_sk_name = $_sk->{name} || $_sk->{skillName} || '';
+					if ($_sk_name =~ /^basic_skill$/i || $_sk_name =~ /^basic skill$/i || $_sk_name eq 'NV_BASIC') {
+						$_basic_skill_lv = $_sk->{lv} || $_sk->{level} || 0;
+						last;
+					}
+				}
+			}
+			if ($_basic_skill_lv < 3) {
+				$_can_sit = 0;
+				debug "[aiSidecarBridge] can't_sit: Basic Skill level $_basic_skill_lv < 3, suppressing sit reflexes\n", 'aiSidecarBridge', 1;
+			}
+		}
+		# Re-check every 60s in case bot levels up Basic Skill
+		state $_last_can_sit_recheck_ms = 0;
+		if (!$_can_sit && $now - $_last_can_sit_recheck_ms > 60000) {
+			$_last_can_sit_recheck_ms = $now;
+			$_can_sit_checked = 0;  # Force re-check next cycle
+		}
+
+		# ═══════════════════════════════════════════
+		# RECONNECT COOLDOWN — suppress ALL commands for 10s after disconnect
+		# ═══════════════════════════════════════════
+		# After a disconnect, the bot reconnects and briefly enters IN_GAME state.
+		# The bridge fires a bunch of commands, which causes another disconnect.
+		# This cooldown gives the server time to stabilize.
+		my $_reconnect_cooldown_ms = 0;
+		if ($last_disconnect_at_ms > 0) {
+			my $_time_since_disconnect = $now - $last_disconnect_at_ms;
+			if ($_time_since_disconnect < 10000) {  # 10s cooldown
+				$_reconnect_cooldown_ms = 10000 - $_time_since_disconnect;
+				# Still allow emergency sit at <10% HP
+				my $_rc_hp = $char->{hp} || 0;
+				my $_rc_hp_max = $char->{hp_max} || 1;
+				my $_rc_hp_ratio = ($_rc_hp_max > 0) ? $_rc_hp / $_rc_hp_max : 1;
+				if ($_rc_hp_ratio < 0.10 && $_can_sit) {
+					if ($AI::AI != 2) {
+						eval { Commands::run("sit"); 1 };
+					}
+				}
+				return;  # Suppress ALL reflexes during reconnect cooldown
+			}
+		}
+
+		# ═══════════════════════════════════════════
 		# ITEM 602 SUPPRESSION — block 'use 602' / 'use Butterfly Wing' at reflex level
 		# ═══════════════════════════════════════════
 		# The items_control.txt fix only works at startup. This catches it at runtime.
@@ -5117,7 +5176,8 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# Auto-sit when out of combat and HP/SP is low
 		# Pro players sit to regen between pulls, never fight at low HP
-		if (!$in_combat && $hp_ratio < 0.6 && $hp > 0) {
+		# Guard: only if bot can sit (Basic Skill >= 3)
+		if ($_can_sit && !$in_combat && $hp_ratio < 0.6 && $hp > 0) {
 			if (_should_fire_reflex($_reflex_last_fired{auto_sit} || 0, _cfg_int('aiSidecar_reflexAutoSitCooldownMs', 5000))) {
 				$_reflex_last_fired{auto_sit} = _now_ms();
 				my $ai_top = @ai_seq ? $ai_seq[0] : '';
@@ -5203,12 +5263,13 @@ sub _check_bridge_reflexes {
 		# ═══════════════════════════════════════════
 		# REFLEX #22 — SURVIVAL MODE ON HUNTING MAP
 		# ═══════════════════════════════════════════
-		# When bot has been on a hunting map for 60+ seconds with 0 potions and 0 kills,
+		# When bot has been on a hunting map for 60+ seconds with 0 potions,
 		# suppress ALL heal reflexes. The potion checks are wasting cycles.
-		# Only allow sit/stand/attack.
+		# Uses persistent variables (not state) so it survives map changes.
 		if ($_hunting_map && !$_in_town) {
-			state $_survival_mode_until_ms = 0;
-			state $_last_survival_check_ms = 0;
+			# Use package-level persistent variables (not state — state resets on map change)
+			$_survival_mode_until_ms = 0 if !defined $_survival_mode_until_ms;
+			$_last_survival_check_ms = 0 if !defined $_last_survival_check_ms;
 			if ($now - $_last_survival_check_ms > 60000) {
 				$_last_survival_check_ms = $now;
 				# Check if we have any potions
