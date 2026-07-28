@@ -17,10 +17,82 @@ use Settings;
 use Time::HiRes qw(alarm time usleep);
 
 # Anti-detection: random delay to simulate human reaction time
-# Reduced for pro-level reaction speed: 10-50ms instead of 100-500ms
+# Each bot gets a unique behavior profile to avoid pattern detection
 my $ANTI_DETECTION_ENABLED = 1;
 my $ANTI_DETECTION_MIN_DELAY_MS = 200;
 my $ANTI_DETECTION_MAX_DELAY_MS = 600;
+
+# Behavior profile per bot — randomized at plugin load to give each bot
+# a unique "personality" that looks human. Config-driven via sidecar push.
+# Profile affects: command pacing, reaction time, movement patterns, heal timing
+our %_behavior_profile;
+sub _init_behavior_profile {
+	my $bot_id = _bot_id();
+	return if $_behavior_profile{$bot_id};
+	
+	# Seed from bot name for deterministic but unique profile per bot
+	my $seed = 0;
+	for my $c (split //, $bot_id) { $seed += ord($c); }
+	srand($seed);
+	
+	$_behavior_profile{$bot_id} = {
+		# Command pacing: base delay + random jitter (ms)
+		# Different per bot: Bot1=fast, Bot2=medium, Bot3=slow
+		cmd_min_delay_ms => 150 + int(rand(300)),
+		cmd_max_delay_ms => 400 + int(rand(400)),
+		
+		# Reaction time: how fast bot responds to events (ms)
+		# Human reaction: 200-500ms average
+		reaction_time_ms => 150 + int(rand(350)),
+		
+		# Heal timing: slight delay before using potion (ms)
+		# Humans don't heal instantly — they notice HP drop, then act
+		heal_reaction_ms => 100 + int(rand(300)),
+		
+		# Movement pattern: how often bot changes direction
+		# 0=straight line (bot-like), 1=some variation, 2=erratic (human-like)
+		movement_variation => int(rand(3)),
+		
+		# Sit duration: how long bot sits to regen (seconds)
+		# Humans don't sit for exactly the same time every time
+		sit_min_seconds => 3 + int(rand(5)),
+		sit_max_seconds => 8 + int(rand(10)),
+		
+		# Attack pattern: slight delay before attacking new target
+		attack_delay_ms => 50 + int(rand(200)),
+		
+		# Profile name for logging
+		profile_name => ('aggressive', 'cautious', 'balanced', 'lazy', 'twitchy')[int(rand(5))],
+	};
+	
+	my $p = $_behavior_profile{$bot_id};
+	debug "[aiSidecarBridge] behavior_profile: bot=$bot_id profile=$p->{profile_name} cmd_delay=$p->{cmd_min_delay_ms}-$p->{cmd_max_delay_ms}ms reaction=$p->{reaction_time_ms}ms heal_reaction=$p->{heal_reaction_ms}ms movement=$p->{movement_variation} sit=$p->{sit_min_seconds}-$p->{sit_max_seconds}s\n", 'aiSidecarBridge', 2;
+}
+
+# Get behavior profile for current bot
+sub _profile {
+	my $bot_id = _bot_id();
+	_init_behavior_profile() if !$_behavior_profile{$bot_id};
+	return $_behavior_profile{$bot_id};
+}
+
+# Human-like command delay with per-bot profile
+sub _human_cmd_delay_ms {
+	my $p = _profile();
+	return $p->{cmd_min_delay_ms} + int(rand($p->{cmd_max_delay_ms} - $p->{cmd_min_delay_ms} + 1));
+}
+
+# Human-like reaction delay before heal
+sub _human_heal_delay_ms {
+	my $p = _profile();
+	return $p->{heal_reaction_ms} + int(rand(200));
+}
+
+# Human-like reaction delay before attack
+sub _human_attack_delay_ms {
+	my $p = _profile();
+	return $p->{attack_delay_ms} + int(rand(150));
+}
 
 # Reflex cooldown tracking - prevent survival reflexes from firing every cycle
 our %_last_reflex_fire_ms = ();
@@ -2332,9 +2404,9 @@ sub _execute_action {
 	my $command = defined $action->{command} ? $action->{command} : '';
 	my $metadata = ref($action->{metadata}) eq 'HASH' ? $action->{metadata} : {};
 	my $started = _now_ms();
-	# Anti-detection: random delay before executing action
+	# Anti-detection: random delay before executing action (per-bot profile)
 	if ($ANTI_DETECTION_ENABLED) {
-		my $delay_ms = $ANTI_DETECTION_MIN_DELAY_MS + int(rand($ANTI_DETECTION_MAX_DELAY_MS - $ANTI_DETECTION_MIN_DELAY_MS + 1));
+		my $delay_ms = _human_cmd_delay_ms();
 		usleep($delay_ms * 1000) if $delay_ms > 0;
 	}
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
@@ -4213,8 +4285,8 @@ our $_last_prontera_recovery_ms = 0;
 	}
 
 	sub _random_action_delay {
-		# Add 50-200ms random delay before action to look human
-		my $delay_ms = int(rand(150)) + 50;
+		# Add per-bot profile-based random delay before action to look human
+		my $delay_ms = _human_heal_delay_ms();
 		select(undef, undef, undef, $delay_ms / 1000.0) if $delay_ms > 0;
 	}
 
@@ -4227,9 +4299,27 @@ our $_last_prontera_recovery_ms = 0;
 		$_heal_cache_last_update_ms = $now;
 
 		# Read from sidecar-pushed config (comma-separated lists)
+		# Format: "aegis:qty:heal_hp:heal_sp:weight,aegis2:qty:..."
+		# OR plain item names: "Red Potion,Orange Potion,White Potion"
 		my $items_str = _cfg('aiSidecar_healItems', 'Red Potion,Orange Potion,White Potion');
 		@_heal_items = split /,/, $items_str;
 		@_heal_items = grep { $_ ne '' } @_heal_items;
+		
+		# Parse aegis:qty:heal_hp:heal_sp:weight format → extract aegis name
+		# Also strip quantity suffix from plain names (e.g. "Red Potion:10" → "Red Potion")
+		@_heal_items = map {
+			my $entry = $_;
+			# If entry contains colons, it's aegis:qty:heal_hp:heal_sp:weight format
+			if ($entry =~ /:/) {
+				my @parts = split /:/, $entry;
+				# First part is aegis name (underscore-separated) — convert to display name
+				my $aegis = $parts[0];
+				$aegis =~ s/_/ /g;
+				$aegis;
+			} else {
+				$entry;
+			}
+		} @_heal_items;
 
 		my $skills_str = _cfg('aiSidecar_healSkills', '');
 		@_heal_skills = split /,/, $skills_str;
@@ -4271,14 +4361,54 @@ sub _check_bridge_reflexes {
 		# Threshold: 50% HP (preemptive) → bridge reflex fires at <50%
 		# Action: Use best available heal item/skill INSTANTLY
 		# Rules:
-		#   - No random delay on emergency heal (survival critical)
+		#   - Cooldown gate at entry: 3s minimum between heal attempts
+		#   - Inventory check before attempting: skip if no items available
 		#   - Dynamic selection from sidecar-pushed config
 		#   - Hardcoded White Potion fallback (absolute safety net)
-		#   - If nothing available: immediately trigger emergency survival
+		#   - If nothing available: sit to regen OR return to town
+		#   - Human-like random delay before action (150-400ms)
 		my $heal_triggered = 0;
 
 		if ($hp_ratio < 0.50 && $hp > 0) {
+			# COOLDOWN GATE: minimum 3s between heal attempts
+			if (!_should_fire_reflex($_reflex_last_fired{heal} || 0, 3000)) {
+				# Still within cooldown — skip this cycle entirely
+				# Don't waste CPU on inventory checks
+				return;
+			}
+
 			_update_heal_cache();
+
+			# INVENTORY CHECK: count available healing items first
+			my $total_heal_items = 0;
+			for my $item_name (@_heal_items) {
+				$item_name = _trim($item_name);
+				next if !$item_name;
+				my $item = eval { Actor::Item::get($item_name) };
+				if ($item && $item->{amount} && $item->{amount} > 0) {
+					$total_heal_items += $item->{amount};
+				}
+			}
+
+			# If NO healing items in inventory AND HP < 80%:
+			# Queue return-to-town command instead of spamming potion uses
+			if ($total_heal_items == 0 && $hp_ratio < 0.80 && $map !~ /^prontera/i) {
+				# Human-like delay before action
+				_random_action_delay();
+				eval { Commands::run("return"); 1 };
+				$_reflex_last_fired{heal} = _now_ms();
+				_post_event({
+					kind => 'bridge_reflex',
+					reflex => 'no_heal_items_returning',
+					hp_ratio => $hp_ratio,
+					hp => $hp,
+					max_hp => $hp_max,
+					map => $map,
+					base_level => $base_level,
+					timestamp => _now_ms(),
+				});
+				return;
+			}
 
 			# Try config-pushed items first (dynamic, class-aware)
 			for my $item_name (@_heal_items) {
@@ -4286,6 +4416,8 @@ sub _check_bridge_reflexes {
 				next if !$item_name;
 				my $item = eval { Actor::Item::get($item_name) };
 				if ($item && $item->{amount} && $item->{amount} > 0) {
+					# Human-like delay before using item
+					_random_action_delay();
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_heal (HP=$hp/$hp_max=$hp_ratio, item=$item_name qty=$item->{amount})\n";
 					eval { $item->use(); 1 };
 					$heal_triggered = 1;
@@ -4303,6 +4435,8 @@ sub _check_bridge_reflexes {
 					next if !$skill;
 					next if !$skill->{level} || $skill->{level} < 1;
 					next if $sp <= 0;
+					# Human-like delay before using skill
+					_random_action_delay();
 # 						warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
 					eval { Commands::run("use_skill $skill_name"); 1 };
 					$heal_triggered = 1;
@@ -4312,6 +4446,7 @@ sub _check_bridge_reflexes {
 
 			# If in town with low HP and no items found, trigger auto-buy
 			if (!$heal_triggered && $map =~ /^prontera/i && $hp_ratio < 0.50) {
+				_random_action_delay();
 # 				warning "[aiSidecarBridge] bridge_reflex:emergency_autobuy (HP=$hp/$hp_max, map=$map)\n";
 				eval { Commands::run("autobuy"); 1 };
 			}
@@ -4320,6 +4455,7 @@ sub _check_bridge_reflexes {
 			if (!$heal_triggered) {
 				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
 				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
+					_random_action_delay();
 # 					warning "[aiSidecarBridge] bridge_reflex:emergency_fallback_heal (HP=$hp/$hp_max, item=$HARDCODED_FALLBACK_ITEM)\n";
 					eval { $fallback->use(); 1 };
 					$heal_triggered = 1;
@@ -4347,6 +4483,7 @@ sub _check_bridge_reflexes {
 				my $_sit_cooldown = _cfg_int('aiSidecar_sitPostCombatCooldownMs', 5000);
 				my $_sit_enabled = _cfg_int('aiSidecar_sitFallbackEnabled', 1);
 				if ($_sit_enabled && !$_in_combat && $_since_combat > $_sit_cooldown && $aggro_count == 0 && $AI::AI != 2) {
+					_random_action_delay();
 					eval { Commands::run("sit"); 1 };
 				}
 				# Post event to sidecar: "I need healing items"
@@ -4370,10 +4507,8 @@ sub _check_bridge_reflexes {
 				});
 			}
 
-			# Cooldown for heal reflex
-			if ($heal_triggered) {
-				$_reflex_last_fired{heal} = _now_ms();
-			}
+			# Cooldown for heal reflex — always set after processing
+			$_reflex_last_fired{heal} = _now_ms();
 		}
 
 		# ═══════════════════════════════════════════

@@ -44,7 +44,7 @@ all 0 1 0
 ##### HEAL/SUPPORT ITEMS #####
 # Adjust these to your needs
 
-602 10 1 0 # Butterfly Wing
+602 10 0 0 # Butterfly Wing (auto-use disabled — AI system manages wings)
 601 100 1 0 # Fly Wing
 
 505 0 1 0 # Blue Potion

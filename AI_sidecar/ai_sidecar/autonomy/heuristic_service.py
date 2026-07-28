@@ -1214,7 +1214,8 @@ class HeuristicService:
             # Buy weapon if any zeny available
             _cs_job = signals.get("job_name", "novice") or "novice"
             if _cs_zeny >= 50:
-                _cs_weapon_id = "1301"  # Knife - cheapest weapon, all classes can equip
+                # Use rAthena-corrected weapon ID from equipment_progression
+                _cs_weapon_id = "1201"  # Knife (ATK 17, 3 slots) — cheapest weapon, all classes can equip
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_cs_weapon_id} 1",
                     confidence=0.99, domain="economy",
@@ -1292,6 +1293,22 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason=f"Death recovery - buy {_death_potion_qty} Red Potions",
                     ))
+            # Buy weapon if we don't have one (check inventory)
+            _death_job = signals.get("job_name", "novice") or "novice"
+            _death_inv = signals.get("inventory", {}) or {}
+            _death_has_weapon = any(
+                "knife" in str(item).lower() or "sword" in str(item).lower() or
+                "mace" in str(item).lower() or "bow" in str(item).lower() or
+                "dagger" in str(item).lower() or "rod" in str(item).lower()
+                for item in (_death_inv.get("items", []) or [])
+            )
+            if not _death_has_weapon and _death_zeny >= 50:
+                _death_weapon_id = "1201"  # Knife (ATK 17) — cheapest, all classes
+                actions.append(HeuristicAction(
+                    kind="command", command=f"buy {_death_weapon_id} 1",
+                    confidence=0.99, domain="economy",
+                    reason=f"Death recovery - buy weapon {_death_weapon_id} for {_death_job}",
+                ))
             # Return to hunt via portal after 15s in town
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
             if _town_time > 15:

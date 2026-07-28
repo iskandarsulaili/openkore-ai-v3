@@ -2362,8 +2362,17 @@ class PDCALoop:
                 # Initialize anti-detection if not present
                 _ad = getattr(self._runtime, "anti_detection", None)
                 if _ad is None:
-                    _ad = AntiDetection(enabled=getattr(_settings, "anti_detection_enabled", True))
+                    from ai_sidecar.reflex.anti_detection import get_anti_detection_system
+                    _ad = get_anti_detection_system()
                     self._runtime.anti_detection = _ad
+                    logger.info("anti_detection_initialized")
+                # Initialize heal resource loader if not present
+                _hrl = getattr(self._runtime, "heal_resource_loader", None)
+                if _hrl is None:
+                    from ai_sidecar.heal_resource_loader import get_heal_resource_loader
+                    _hrl = get_heal_resource_loader()
+                    self._runtime.heal_resource_loader = _hrl
+                    logger.info("heal_resource_loader_initialized")
                 # Initialize role discovery if not present
                 _role_disc = getattr(self._runtime, "role_discovery", None)
                 if _role_disc is None:
@@ -4960,6 +4969,53 @@ class PDCALoop:
                             self._runtime, horizon.value, bot_id=_bid
                         )
                         _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill + _actions_queued_combat
+                        
+                        # ── Config push: heal resources + anti-detection (every cycle) ──
+                        try:
+                            _hrl = getattr(self._runtime, "heal_resource_loader", None)
+                            _ad = getattr(self._runtime, "anti_detection", None)
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None and _bid:
+                                # Push heal resource config
+                                if _hrl is not None:
+                                    _snap = None
+                                    _sc = getattr(self._runtime, "snapshot_cache", None)
+                                    if _sc is not None and hasattr(_sc, 'get'):
+                                        _snap = _sc.get(_bid)
+                                    _heal_push = _hrl.get_config_push(_bid, _snap)
+                                    if _heal_push:
+                                        for _hk, _hv in _heal_push.items():
+                                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                            from datetime import UTC, datetime, timedelta
+                                            _aq.enqueue(_bid, ActionProposal(
+                                                action_id=f"cfg_push_{_hk}_{_bid}_{int(__import__('time').time()*1000)}",
+                                                kind="command", command=f"set {_hk} {_hv}",
+                                                priority_tier=ActionPriorityTier.reflex, source="heal_resource_loader",
+                                                created_at=datetime.now(UTC),
+                                                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                                conflict_key=f"cfg_push_{_hk}_{_bid}",
+                                                idempotency_key=f"cfg_push_{_hk}_{_hv}_{_bid}",
+                                                metadata={"source": "heal_resource_loader", "reason": "config_push", "bot_id": _bid},
+                                            ))
+                                # Push anti-detection config
+                                if _ad is not None:
+                                    _ad_push = _ad.get_config_push(_bid)
+                                    if _ad_push:
+                                        for _ak, _av in _ad_push.items():
+                                            from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                                            from datetime import UTC, datetime, timedelta
+                                            _aq.enqueue(_bid, ActionProposal(
+                                                action_id=f"cfg_push_{_ak}_{_bid}_{int(__import__('time').time()*1000)}",
+                                                kind="command", command=f"set {_ak} {_av}",
+                                                priority_tier=ActionPriorityTier.reflex, source="anti_detection",
+                                                created_at=datetime.now(UTC),
+                                                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                                                conflict_key=f"cfg_push_{_ak}_{_bid}",
+                                                idempotency_key=f"cfg_push_{_ak}_{_av}_{_bid}",
+                                                metadata={"source": "anti_detection", "reason": "config_push", "bot_id": _bid},
+                                            ))
+                        except Exception:
+                            pass
                     logger.info(
                         "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
                         horizon.value, _cost_mode.mode.value, _hc,

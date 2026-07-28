@@ -133,6 +133,7 @@ class HighFreqReflex:
         
         Returns 'use <Item Name>' or None if no suitable heal found.
         Falls back to reasonable defaults if optimizer isn't loaded.
+        Returns None when no potions are available — caller handles sit/return.
         """
         if self.healing_optimizer is not None:
             try:
@@ -147,6 +148,8 @@ class HighFreqReflex:
         
         # Fallback: use level-appropriate defaults
         # COLD_START buys Red Potion (501) — align fallback with what we actually buy
+        # NOTE: This returns a command even if the item isn't in inventory.
+        # The caller (check_and_act) gates on has_potions before calling this.
         if level < 30:
             return "use Red Potion"
         elif level < 60:
