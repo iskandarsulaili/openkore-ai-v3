@@ -602,12 +602,11 @@ sub on_mainLoop_post {
 		_probe_actor_post_parse($now);
 
 		# Keepalive ping to prevent server timeout (every 10s)
-		# rAthena drops idle connections after ~30-40s without packet activity
-		if ($messageSender && $now >= ($next_keepalive_at_ms || 0)) {
-		    $next_keepalive_at_ms = $now + 10000;  # Every 10 seconds
-		    $messageSender->sendPing();
-		}
-
+				# rAthena drops idle connections after ~30-40s without packet activity
+				if ($messageSender && $now >= ($next_keepalive_at_ms || 0)) {
+				    $next_keepalive_at_ms = $now + 10000;  # Every 10 seconds
+				    $messageSender->sendPing();
+				}
 		if (!$registered && $now >= $next_register_at_ms) {
 	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
 	    _attempt_register('retry');
