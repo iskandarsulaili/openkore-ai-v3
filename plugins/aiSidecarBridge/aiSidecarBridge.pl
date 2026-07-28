@@ -4128,11 +4128,12 @@ sub _rewrite_runtime_command {
 				warning "[hunting_guard] blocking 'move prontera' - bot is on $_current_map, heuristic handles routing\n", 'aiSidecarBridge', 1;
 				return ('ai auto', 'hunting_guard_blocked');
 			}
-			# No potions — allow return to town
-			warning "[hunting_guard] allowing 'move prontera' - bot has 0 potions on $_current_map\n", 'aiSidecarBridge', 1;
+			# No potions - allow return to town AND set lockMap so AI routes to town
+			$::config{'lockMap'} = 'prontera';
+			warning "[hunting_guard] allowing 'move prontera' - bot has 0 potions on $_current_map\\n", 'aiSidecarBridge', 1;
 			return ($trimmed, 'coordinate_move_raw');
-		}
-		# Set lockMap to target only for hunting maps (not towns)
+			}
+			# Set lockMap to target only for hunting maps (not towns)
 		# Heuristic handles town routing - bridge should not lock to town
 		my $_move_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
 		if (!$_move_target_is_town) {
@@ -4141,7 +4142,13 @@ sub _rewrite_runtime_command {
 		if (!_ai_already_auto_mode()) {
 			return ('ai auto', 'move_rewritten');
 		}
-		return ('', 'move_already_auto');
+		# Already in auto mode: only suppress if target has potions (AI handles routing)
+		# If bot has 0 potions on hunting map, allow the move through to override AI route.
+		if (($_current_map !~ /^[a-z]+_fild/ && $_current_map !~ /_dun/i) || $_guard_has_potions) {
+		    return ('', 'move_already_auto');
+		}
+		# Bot has 0 potions on hunting map — allow move to town despite auto mode
+		return ($trimmed, 'coordinate_move_raw');
 	}
 
 	# Handle 'use <item>' -> 'is <item>' with 30s cooldown
