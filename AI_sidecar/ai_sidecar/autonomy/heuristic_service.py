@@ -1261,59 +1261,62 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: DEATH (respawned - sell items, buy potions) ──
+        # ── STATE: DEATH (respawned - sell items, buy potions, return to hunt) ──
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
-            # Sell first (talknpc opens NPC dialog, sellAuto handles selling)
             _has_items = (signals.get("inventory_items", 0) or 0) > 0
             _total_kills = signals.get("kills", 0) or 0
-            # Sell if has items (starting gear or loot) - need to reduce weight to move
+            # Sell if has items
             if _has_items:
                 _sell_npc = self._get_npc("sell", map_name)
                 if _sell_npc:
                     _sell_cmd = f"talknpc {_sell_npc['x']} {_sell_npc['y']} {' '.join(eval(_sell_npc['steps']))}"
                 else:
-                    _sell_cmd = "talknpc 147 175 c r1 n"  # fallback
+                    _sell_cmd = "talknpc 147 175 c r1 n"
                 actions.append(HeuristicAction(
                     kind="command", command=_sell_cmd,
                     confidence=0.99, domain="economy",
                     reason="Death recovery - sell items",
                 ))
-            # Buy potions on next cycle (after sell dialog completes)
-            # Don't generate buy here - let next cycle handle it after sell
-            # (sellAuto handles the actual selling after talknpc opens dialog)
+            # Buy potions after selling (every death, no exceptions)
+            _death_zeny = signals.get("zeny", 0) or 0
+            if _death_zeny >= 500:
+                actions.append(HeuristicAction(
+                    kind="command", command="buy 501 10",
+                    confidence=0.99, domain="economy",
+                    reason="Death recovery - buy 10 Red Potions",
+                ))
+            elif _death_zeny >= 50:
+                _death_potion_qty = min(int(_death_zeny / 50), 10)
+                if _death_potion_qty > 0:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy 501 {_death_potion_qty}",
+                        confidence=0.99, domain="economy",
+                        reason=f"Death recovery - buy {_death_potion_qty} Red Potions",
+                    ))
             # Return to hunt via portal after 15s in town
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
             if _town_time > 15:
-                actions.append(HeuristicAction(
-                    kind="command", command="set lockMap prt_fild05",
-                    confidence=0.95, domain="hunting",
-                    reason="Lock to hunting map",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randX 30",
-                    confidence=0.95, domain="hunting",
-                    reason="Random walk radius X",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set lockMap_randY 30",
-                    confidence=0.95, domain="hunting",
-                    reason="Random walk radius Y",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set lockMap prt_fild05",
-                    confidence=0.95, domain="hunting",
-                    reason="Set hunting map lock before returning",
-                ))
+                self._set_config_once(actions, bot_id, "lockMap", "prt_fild05", "hunting",
+                    "Lock to hunting map")
+                self._set_config_once(actions, bot_id, "lockMap_randX", "30", "hunting",
+                    "Random walk radius X")
+                self._set_config_once(actions, bot_id, "lockMap_randY", "30", "hunting",
+                    "Random walk radius Y")
                 _portal = self._get_npc("portal_to_hunt", map_name)
                 if _portal:
                     _portal_cmd = f"move {_portal['x']} {_portal['y']}"
                 else:
-                    _portal_cmd = "move 22 203"  # fallback
+                    _portal_cmd = "move 22 203"
                 actions.append(HeuristicAction(
                     kind="command", command=_portal_cmd,
                     confidence=0.95, domain="hunting",
                     reason=f"In town {_town_time:.0f}s - return to hunt via portal",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.95, domain="hunting",
+                    reason="Enable auto-attack after returning to hunt",
                 ))
             total_confidence = 0.99
             top_domain = "economy"
@@ -1494,6 +1497,45 @@ class HeuristicService:
             ))
             total_confidence = 0.90
             top_domain = "economy"
+            assessment = HeuristicAssessment(
+                horizon=horizon, actions=actions, confidence=total_confidence,
+                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+            )
+            self._last_assessment[bot_id] = assessment
+            return assessment
+
+        # ── STATE: TOWN_HUNT (in town, ready to hunt — walk to hunting map every cycle) ──
+        if state == "TOWN_HUNT":
+            # Stand up and enable AI
+            actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.99, domain="hunting",
+                reason="Stand up before moving to hunting map",
+            ))
+            actions.append(HeuristicAction(
+                kind="command", command="ai auto",
+                confidence=0.99, domain="hunting",
+                reason="Enable auto-attack before moving to hunting map",
+            ))
+            # Set lockMap to hunting map
+            _th_hunt_map = self._adaptive.get_best_map(bot_id, base_level) or "prt_fild05"
+            self._set_config_once(actions, bot_id, "lockMap", _th_hunt_map, "hunting",
+                f"Lock to hunting map {_th_hunt_map}")
+            self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
+                "Random walk radius X")
+            self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
+                "Random walk radius Y")
+            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
+                "Walk within lockMap bounds")
+            # Move to hunting map
+            if map_name != _th_hunt_map:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_th_hunt_map}",
+                    confidence=0.99, domain="hunting",
+                    reason=f"Move to hunting map {_th_hunt_map}",
+                ))
+            total_confidence = 0.99
+            top_domain = "hunting"
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=actions, confidence=total_confidence,
                 actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),

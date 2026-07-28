@@ -3636,6 +3636,10 @@ sub _rewrite_runtime_command {
 		}
 
 		my $old_val = $::config{$orig_key};
+		# Suppress no-op config_set log when value hasn't changed
+		if (defined $old_val && $old_val eq $set_val) {
+			return ('', 'config_set_ok');
+		}
 		$::config{$orig_key} = $set_val;
 		$::config{"_sidecar_set_$orig_key"} = 1;
 		warning "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
