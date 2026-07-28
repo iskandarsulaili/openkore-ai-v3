@@ -4330,7 +4330,7 @@ sub _check_bridge_reflexes {
 			# Sit to regen HP naturally — but ONLY if not in combat
 			# If in combat, let the bot fight — sitting mid-combat is a death sentence
 			# All thresholds are configurable via aiSidecar_* config keys pushed by sidecar
-			if (!$heal_triggered && $hp_ratio < _cfg_float('aiSidecar_sitHpThreshold', 0.30)) {
+			if (!$heal_triggered && $hp_ratio < (_cfg('aiSidecar_sitHpThreshold', '0.30') + 0)) {
 				# Skip if HP has not dropped (reflex noise filter)
 				state $_last_hp = 0;
 				if ($hp >= $_last_hp && $_last_hp > 0) { return; }
