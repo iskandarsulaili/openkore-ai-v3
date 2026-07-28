@@ -2592,8 +2592,10 @@ sub _poll_next_action {
 
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
 	$::config{'sitAuto_hp_lower'} = 0;
-	$::config{'sitAuto_hp_upper'} = 0;
-	# Force-set attackAuto=0 when 0 potions on hunting map
+		$::config{'sitAuto_hp_upper'} = 0;
+		# Increase server timeout to prevent idle disconnects
+		$::config{'timeout'} = 60 unless $::config{'timeout'} && $::config{'timeout'} >= 60;
+		# Force-set attackAuto=0 when 0 potions on hunting map
 	# Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
 	# because OpenKore's getAttackAutoModeForContext returns 1 when
 	# attackAuto_inLockOnly==1 regardless of attackAuto value.
