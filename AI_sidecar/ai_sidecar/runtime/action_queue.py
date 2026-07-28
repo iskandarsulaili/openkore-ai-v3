@@ -159,7 +159,7 @@ class ActionQueue:
                 for _qe in bot_queue:
                     if _qe.status == ActionStatus.dispatched:
                         _da = self._normalize_datetime(getattr(_qe, 'dispatched_at', None))
-                        if _da and (now - _da).total_seconds() > 30:
+                        if _da and (now - _da).total_seconds() > 29:
                             # Expire stale dispatched entry
                             _expired = replace(_qe, status=ActionStatus.expired)
                             self._actions_by_id[_expired.proposal.action_id] = _expired
@@ -190,7 +190,7 @@ class ActionQueue:
                             _exp = self._normalize_datetime(_queued.proposal.expires_at)
                             if _queued.status == ActionStatus.dispatched:
                                 _da = self._normalize_datetime(getattr(_queued, 'dispatched_at', None))
-                                if _da and (now - _da).total_seconds() > 30:
+                                if _da and (now - _da).total_seconds() > 29:
                                     continue
                             if _exp and now > _exp:
                                 _queued.status = ActionStatus.expired
@@ -384,7 +384,7 @@ class ActionQueue:
             # Also expire dispatched actions that exceed max execution time (30s default)
             if queued.status == ActionStatus.dispatched:
                 dispatched_at = self._normalize_datetime(getattr(queued, 'dispatched_at', None))
-                if dispatched_at and (now - dispatched_at).total_seconds() > 30:
+                if dispatched_at and (now - dispatched_at).total_seconds() > 29:
                     expires = now - timedelta(seconds=1)  # Ensure expires < now
             if expires < now and queued.status in {
                 ActionStatus.queued,
