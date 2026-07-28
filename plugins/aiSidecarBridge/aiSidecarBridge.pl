@@ -4377,7 +4377,7 @@ sub _check_bridge_reflexes {
 			$_can_sit_checked = 1;
 			# Check if character has Basic Skill level 3+
 			my $_basic_skill_lv = 0;
-			if ($char && $char->{skills}) {
+			if ($char && $char->{skills} && ref $char->{skills} eq 'ARRAY') {
 				for my $_sk (@{$char->{skills}}) {
 					next if !$_sk;
 					my $_sk_name = $_sk->{name} || $_sk->{skillName} || '';
@@ -4534,7 +4534,7 @@ sub _check_bridge_reflexes {
 		my $weight = $char->{weight} || 0;
 		my $weight_max = $char->{weight_max} || 1;
 		my $weight_ratio = ($weight_max > 0) ? $weight / $weight_max : 0;
-		my $map = $char->{map} || ($field ? $field->baseName() : '');
+		$map = $char->{map} || ($field ? $field->baseName() : '');
 		my $job_name = ($char && $char->{jobName}) ? _trim(_scalarize($char->{jobName}), 64) : '';
 		my $base_level = $char->{level} || 1;
 		my $job_level = $char->{level_job} || 1;
