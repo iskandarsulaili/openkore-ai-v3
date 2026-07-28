@@ -5213,7 +5213,7 @@ sub _check_bridge_reflexes {
 			# Skip if stand-up reflex recently forced a stand
 			if ($now < $_auto_sit_suppressed_until_ms) {
 				# Auto-sit is suppressed — skip
-			} elsif ($_hunting_map && !$_in_town) {
+			} elsif ($map =~ /_fild|_dun/i && !$_in_town) {
 				# Check if we have any potions — skip auto-sit if 0 potions
 				my $_sit_has_potions = 0;
 				for my $item_name (@_heal_items) {
