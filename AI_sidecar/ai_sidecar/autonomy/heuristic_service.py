@@ -1065,7 +1065,7 @@ class HeuristicService:
                     self._set_config_once(actions, bot_id, "attackAuto", "0", "economy",
                         "Cold start - disable attack to allow portal move", 0.99)
                     actions.append(HeuristicAction(
-                        kind="command", command="move 373 205",
+                        kind="command", command="move 22 203",
                         confidence=0.99, domain="economy",
                         reason="Cold start - go to Prontera portal to reach town",
                     ))
