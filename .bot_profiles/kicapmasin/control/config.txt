@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword cabrieta
+adminPassword theavaib
 callSign
 commandPrefix ;
 callSignGM 0
@@ -1169,16 +1169,6 @@ whenStatusInactive
 sp
 whenStatusInactive
 }
-useSelf_item {
-	hp < 60%
-	sp
-	whenStatusInactive
-	notWhileSitting 0
-	timeout
-	disabled 0
-	inInventory "White Potion" > 0
-}
-
 
 # Buy potions automatically
 
