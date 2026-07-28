@@ -1149,10 +1149,11 @@ class HeuristicService:
             return assessment
 
         # ── CONFIG AUDIT: detect and fix suboptimal configs retroactively ──
-        # Runs every cycle for all bots, not just COLD_START
+        # Runs every cycle for ALL bots, not just COLD_START or hunting maps
         # Fixes: attackMaxDistance, attackDistance, attackAuto settings
         _audit_map = signals.get("map", "") or ""
         _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
+        _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
         if _audit_is_hunting:
             # Ensure attack config is optimal for Novice-level combat
             self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
@@ -1165,14 +1166,70 @@ class HeuristicService:
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
+        elif _audit_is_town:
+            # In town — ensure bot is in auto mode and ready to move
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Config audit (town) - enable aggressive auto-attack for when we return to hunt")
+            # Force ai auto if bot has been in town > 30s with no potions
+            _audit_now = __import__("time").time()
+            _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
+            _audit_town_time = _audit_now - _audit_town_entry
+            _audit_inv = signals.get("inventory", {}) or {}
+            _audit_items = _audit_inv.get("items", []) or []
+            _audit_has_potions = any(
+                "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
+                for item in _audit_items
+            )
+            if _audit_town_time > 30 and not _audit_has_potions:
+                # Bot has been in town > 30s with no potions — force buy and return to hunt
+                _audit_zeny = signals.get("zeny", 0) or 0
+                if _audit_zeny >= 50:
+                    _audit_potion_qty = min(int(_audit_zeny / 50), 10)
+                    if _audit_potion_qty > 0:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"buy 501 {_audit_potion_qty}",
+                            confidence=0.99, domain="economy",
+                            reason=f"Town stuck - buy {_audit_potion_qty} Red Potions after {_audit_town_time:.0f}s in town",
+                        ))
+                    # Also buy weapon if we don't have one
+                    _audit_has_weapon = any(
+                        "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
+                        "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
+                        for item in _audit_items
+                    )
+                    if not _audit_has_weapon and _audit_zeny >= 50:
+                        actions.append(HeuristicAction(
+                            kind="command", command="buy 1201 1",
+                            confidence=0.99, domain="economy",
+                            reason="Town stuck - buy Knife (no weapon detected)",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="equip 1201",
+                            confidence=0.99, domain="economy",
+                            reason="Town stuck - equip Knife after purchase",
+                        ))
+                    # Return to hunt
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 367 205",
+                        confidence=0.99, domain="hunting",
+                        reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Enable auto-attack after returning to hunt",
+                    ))
 
         # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
+        # Force leave regardless of cached party state — the bridge may have stale data
         _audit_base_level = signals.get("base_level", 1) or 1
-        if _party_in and _audit_base_level < 40 and state not in ("COLD_START", "DEAD"):
+        if _audit_base_level < 40 and state not in ("COLD_START", "DEAD"):
+            # Always queue party leave for sub-40 bots, even if _party_in is False
+            # (cached state may be stale — the bridge might still be in a party)
             actions.append(HeuristicAction(
                 kind="command", command="party leave",
                 confidence=0.99, domain="social",
-                reason=f"Level {_audit_base_level} < 40 - leave party (solo is faster)",
+                reason=f"Level {_audit_base_level} < 40 - force leave party (solo is faster)",
             ))
 
         # ── FORCE RETURN TO TOWN: 0 potions + 0 weapon + 5+ min on same map ──

@@ -2421,6 +2421,15 @@ sub _execute_action {
 		$effective_command = '';
 	}
 
+	# ── ITEM 602 SUPPRESSION: block 'use 602' / 'use Butterfly Wing' at execution level ──
+	# The items_control.txt fix only works at startup. This catches it at runtime.
+	# Item 602 (Butterfly Wing) is managed by the AI system, not auto-use.
+	if (lc($command || '') =~ /^(?:use\s+)?602$/ || lc($command || '') =~ /^use\s+butterfly\s+wing/i) {
+		($success, $result_code, $msg) = (1, 'ok', 'item_602_suppressed');
+		$rewrite_kind = 'item_602_suppressed';
+		$effective_command = '';
+	}
+
 	# ── Apply ML overrides (source="ml" actions carry learned recommendations) ──
 	my $action_source = lc($action->{source} || '');
 	if ($action_source eq 'ml' && defined $metadata->{ml_override}) {
@@ -4344,6 +4353,59 @@ sub _check_bridge_reflexes {
 		}
 
 		# ═══════════════════════════════════════════
+		# ITEM 602 SUPPRESSION — block 'use 602' / 'use Butterfly Wing' at reflex level
+		# ═══════════════════════════════════════════
+		# The items_control.txt fix only works at startup. This catches it at runtime.
+		# Item 602 (Butterfly Wing) is managed by the AI system, not auto-use.
+		state $_last_602_suppress_log_ms = 0;
+		if ($_last_602_suppress_log_ms == 0) {
+			$_last_602_suppress_log_ms = _now_ms();
+			debug "[aiSidecarBridge] item_602_suppression_active: Butterfly Wing auto-use blocked at reflex level\n", 'aiSidecarBridge', 2;
+		}
+
+		# ═══════════════════════════════════════════
+		# TOWN HEAL SUPPRESSION — no heal reflexes when in town with 0 potions
+		# ═══════════════════════════════════════════
+		# When bot is in Prontera with 0 healing items, suppress ALL heal reflexes.
+		# The bot should buy potions, not try to use non-existent ones.
+		my $map = $char->{map} || ($field ? $field->baseName() : '');
+		my $_in_town = $map =~ /^prontera/i;
+		my $_has_any_heal_items = 0;
+		if ($_in_town) {
+			# Quick inventory check — count healing items
+			for my $item_name (@_heal_items) {
+				$item_name = _trim($item_name);
+				next if !$item_name;
+				my $item = eval { Actor::Item::get($item_name) };
+				if ($item && $item->{amount} && $item->{amount} > 0) {
+					$_has_any_heal_items = 1;
+					last;
+				}
+			}
+			# Also check hardcoded fallback
+			if (!$_has_any_heal_items) {
+				my $fallback = eval { Actor::Item::get($HARDCODED_FALLBACK_ITEM) };
+				if ($fallback && $fallback->{amount} && $fallback->{amount} > 0) {
+					$_has_any_heal_items = 1;
+				}
+			}
+			if (!$_has_any_heal_items) {
+				# In town with 0 potions — suppress ALL heal reflexes
+				# The heuristic service will handle buying potions
+				# Only allow emergency sit at <10% HP
+				my $_town_hp = $char->{hp} || 0;
+				my $_town_hp_max = $char->{hp_max} || 1;
+				my $_town_hp_ratio = ($_town_hp_max > 0) ? $_town_hp / $_town_hp_max : 1;
+				if ($_town_hp_ratio < 0.10) {
+					if ($AI::AI != 2) {
+						eval { Commands::run("sit"); 1 };
+					}
+				}
+				# Still run the stuck detector and other non-heal reflexes below
+			}
+		}
+
+		# ═══════════════════════════════════════════
 		# TRAVEL MODE — suppress ALL reflexes when actively routing
 		# ═══════════════════════════════════════════
 		# When the bot has an active route (walking to a destination),
@@ -5075,6 +5137,40 @@ sub _check_bridge_reflexes {
 						eval { Commands::run("is $item_name"); 1 };
 						last;
 					}
+				}
+			}
+		}
+
+		# ═══════════════════════════════════════════
+		# REFLEX #20 — STUCK ON HUNTING MAP DETECTOR
+		# ═══════════════════════════════════════════
+		# If bot has been on a hunting map for 60+ seconds with 0 attacks,
+		# force ai auto and reset attack config.
+		# This catches bots that are standing still watching other players.
+		my $_hunting_map = $map =~ /_fild|_dun/i ? 1 : 0;
+		if ($_hunting_map && !$_in_town) {
+			state $_last_attack_ms = 0;
+			state $_last_stuck_check_ms = 0;
+			# Track last attack time
+			if ($in_combat && $_ai_seq_top =~ /^attack/) {
+				$_last_attack_ms = $now;
+			}
+			# Check every 30s if bot is stuck (no attacks for 60s)
+			if ($now - $_last_stuck_check_ms > 30000) {
+				$_last_stuck_check_ms = $now;
+				if ($_last_attack_ms > 0 && $now - $_last_attack_ms > 60000) {
+					# No attacks for 60s — force ai auto
+					debug "[aiSidecarBridge] stuck_detector: bot stuck on $map (no attacks for 60s), forcing ai auto\n", 'aiSidecarBridge', 1;
+					eval { Commands::run("ai auto"); 1 };
+					$_last_attack_ms = $now;  # Reset to prevent spam
+					_post_event({
+						kind => 'bridge_reflex',
+						reflex => 'stuck_on_hunting_map',
+						hp_ratio => $hp_ratio,
+						map => $map,
+						base_level => $base_level,
+						timestamp => _now_ms(),
+					});
 				}
 			}
 		}
