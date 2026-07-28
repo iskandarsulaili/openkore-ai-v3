@@ -891,6 +891,10 @@ sub on_post_bulk_config_modify {
 	);
 }
 
+# Package-level shared state for potion interception
+our @_heal_items;
+our @_heal_skills;
+
 sub on_command_intercept {
 	# Pre-command hook: intercept ALL commands including OpenKore internal AI
 	# This is the LAST LINE OF DEFENSE against "move prontera" spam
