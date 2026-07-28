@@ -1090,9 +1090,9 @@ class HeuristicService:
                             reason="Cold start - set lockMap to prt_fild01 for farming",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="move prt_fild01",
+                            kind="command", command="ai auto",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
+                            reason="Cold start - restart AI to route to farming map",
                         ))
             else:
                 # Weapon confirmed — move to step 2
@@ -1123,9 +1123,9 @@ class HeuristicService:
                     reason="Cold start - restore lockMap to prt_fild05",
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="move 367 205",
+                    kind="command", command="ai auto",
                     confidence=0.99, domain="hunting",
-                    reason="Cold start - return to hunting map with weapon and potions",
+                    reason="Cold start - restart AI to return to hunting map",
                 ))
             elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete
