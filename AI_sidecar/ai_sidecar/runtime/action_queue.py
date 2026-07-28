@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
@@ -359,7 +359,7 @@ class ActionQueue:
             if queued.status == ActionStatus.dispatched:
                 dispatched_at = self._normalize_datetime(getattr(queued, 'dispatched_at', None))
                 if dispatched_at and (now - dispatched_at).total_seconds() > 30:
-                    expires = now
+                    expires = now - timedelta(seconds=1)  # Ensure expires < now
             if expires < now and queued.status in {
                 ActionStatus.queued,
                 ActionStatus.dispatched,
