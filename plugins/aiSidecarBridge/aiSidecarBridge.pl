@@ -4110,7 +4110,7 @@ sub _rewrite_runtime_command {
 			# Bot2 got "move 22 203" while on prt_fild05 — those coords don't exist on hunting maps.
 			my $_cm = $field ? lc($field->name()) : '';
 			$_cm =~ s/\.gat$//;
-			if ($_cm =~ /_fild|_dun/i && (($tx == 367 && $ty == 205) || ($tx == 22 && $ty == 203))) {
+			if ($_cm =~ /_fild|_dun/i && (($tx == 373 && $ty == 205) || ($tx == 22 && $ty == 203))) {
 			        # Check if bot has 0 potions — if so, allow portal move to reach town
 			        my $_rp_has_potions = 0;
 			        if ($char && $char->{inventory}) {
