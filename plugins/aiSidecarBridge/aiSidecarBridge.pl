@@ -485,6 +485,11 @@ sub on_mainLoop_post {
             my $_fs_hp_pct = $_fs_hp_max > 0 ? int($_fs_hp * 100 / $_fs_hp_max) : 0;
             if ($_fs_hp_pct >= 50) {
                 warning "[force_stand] bot sitting with HP=$_fs_hp_pct%, forcing stand\n", 'aiSidecarBridge', 1;
+                # Disable OpenKore's internal sit AI to prevent immediate re-sit
+                $::config{sitAuto_hp_lower} = 0;
+                $::config{sitAuto_hp_upper} = 0;
+                $::config{sitAuto_sp} = 0;
+                $::config{sitAuto_sp_max} = 0;
                 eval { Commands::run("stand"); 1 };
                 eval { Commands::run("ai auto"); 1 };
             }
