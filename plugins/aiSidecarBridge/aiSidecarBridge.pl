@@ -4373,7 +4373,6 @@ sub _check_bridge_reflexes {
 			# COOLDOWN GATE: minimum 3s between heal attempts
 			if (!_should_fire_reflex($_reflex_last_fired{heal} || 0, 3000)) {
 				# Still within cooldown — skip this cycle entirely
-				# Don't waste CPU on inventory checks
 				return;
 			}
 
@@ -4390,14 +4389,22 @@ sub _check_bridge_reflexes {
 				}
 			}
 
+			# If NO healing items in inventory AND already routing to town:
+			# Skip entire reflex — bot is already handling the situation
+			my $_is_routing = @ai_seq && $ai_seq[0] =~ /^route/ ? 1 : 0;
+			if ($total_heal_items == 0 && $_is_routing && $map !~ /^prontera/i) {
+				# Bot is already walking to the portal — don't interfere
+				$_reflex_last_fired{heal} = _now_ms();
+				return;
+			}
+
 			# If NO healing items in inventory AND HP < 80%:
 			# Queue return-to-town command instead of spamming potion uses
 			# Use portal coordinates (prt_fild05 portal to Prontera is at 367, 205)
 			# Long cooldown (30s) to avoid resetting route calculation
 			if ($total_heal_items == 0 && $hp_ratio < 0.80 && $map !~ /^prontera/i) {
 				# Check if we already have a route to the portal — don't re-issue
-				my $_already_routing = @ai_seq && $ai_seq[0] =~ /^route/ ? 1 : 0;
-				if (!$_already_routing && _should_fire_reflex($_reflex_last_fired{return_town} || 0, 30000)) {
+				if (!$_is_routing && _should_fire_reflex($_reflex_last_fired{return_town} || 0, 30000)) {
 					$_reflex_last_fired{return_town} = _now_ms();
 					# Human-like delay before action
 					_random_action_delay();
