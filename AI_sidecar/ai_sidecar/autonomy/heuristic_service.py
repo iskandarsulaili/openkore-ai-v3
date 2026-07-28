@@ -1057,8 +1057,8 @@ class HeuristicService:
             # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
             # If bot is on a hunting map with 0 potions, force return to town to buy potions.
             # This was previously handled by the bridge's Reflex #1, but that was stripped.
-            _audit_inv = signals.get("inventory", {}) or {}
-            _audit_items = _audit_inv.get("items", []) or []
+            # NOTE: inventory data is stored as 'inventory_items' in signals (from pdca_loop.py)
+            _audit_items = signals.get("inventory_items", []) or []
             _audit_has_potions = any(
                 "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
                 for item in _audit_items
@@ -1103,8 +1103,8 @@ class HeuristicService:
             _audit_now = __import__("time").time()
             _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
             _audit_town_time = _audit_now - _audit_town_entry
-            _audit_inv = signals.get("inventory", {}) or {}
-            _audit_items = _audit_inv.get("items", []) or []
+            # NOTE: inventory data is stored as 'inventory_items' in signals (from pdca_loop.py)
+            _audit_items = signals.get("inventory_items", []) or []
             _audit_has_potions = any(
                 "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
                 for item in _audit_items
