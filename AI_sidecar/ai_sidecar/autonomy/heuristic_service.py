@@ -1557,11 +1557,17 @@ class HeuristicService:
                 reason="Cold start - stand up",
             ))
             # Set ai auto FIRST so the bot starts moving immediately
-            actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="hunting",
-                reason="Cold start - enable auto-attack before moving",
-            ))
+            # Skip during cold start step 0 — pipeline uses ai manual + move for portal walk
+            _cs_map_str = str(signals.get("map", ""))
+            _cs_in_town_str = any(x in _cs_map_str for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+            _cs_z = int(signals.get("zeny", 0) or 0)
+            _cs_has_weapon = bool(signals.get("weapon", {}).get("id", 0))
+            if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.99, domain="hunting",
+                    reason="Cold start - enable auto-attack before moving",
+                ))
             # Combat config (deduped) — skip attackAuto during pipeline step 0
             self._set_config_once(actions, bot_id, "attackDistance", "7", "hunting",
                 "Cold start - set attack distance")
