@@ -1069,11 +1069,16 @@ class HeuristicService:
             if not _audit_has_potions:
                 # Only queue move prontera — bridge auto-stand handles sitting bots
                 # Don't queue 'stand' or 'ai auto' as separate actions (bridge does both)
-                actions.append(HeuristicAction(
-                    kind="command", command="move prontera",
-                    confidence=0.99, domain="economy",
-                    reason="Zero potions on hunting map - return to town to buy potions",
-                ))
+                # Rate limit: 30s between sends to let route to Prontera complete
+                _audit_now = __import__("time").time()
+                _audit_last_return = self._last_return_to_town.get(bot_id, 0)
+                if _audit_now - _audit_last_return > 30:
+                    self._last_return_to_town[bot_id] = _audit_now
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="economy",
+                        reason="Zero potions on hunting map - return to town to buy potions",
+                    ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
             _audit_rand = __import__("random").Random(_audit_seed)
