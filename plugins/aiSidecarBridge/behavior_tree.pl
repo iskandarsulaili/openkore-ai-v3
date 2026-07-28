@@ -109,7 +109,7 @@ if (!$in_combat || 1) {
                 if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, 1500)) {
                     $_reflex_last_fired{interrupt_cast} = _now_ms();
                     warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
-                    eval { Commands::run("skill Bash 10"); 1 };
+                    eval { Commands::run("use_skill Bash"); 1 };
                     $_tier1_interrupt_done = 1;
                     last;
                 }
@@ -236,7 +236,7 @@ if ($hp_ratio < 0.50 && $hp > 0 && !$_tier3_surround_done && !$_tier3_tele_done)
             my $skill = eval { Skill::get($skill_name) };
             if ($skill && $skill->{level} && $skill->{level} > 0 && $sp > 0) {
                 warning "[aiSidecarBridge] bridge_reflex:emergency_heal_skill (HP=$hp/$hp_max, skill=$skill_name lv=$skill->{level}, SP=$sp)\n";
-                eval { Commands::run("skill $skill_name 1"); 1 };
+                eval { Commands::run("use_skill $skill_name"); 1 };
                 $heal_triggered = 1;
                 _mark_cooldown('buff');  # Skills use the buff cooldown category
                 $_tier3_heal_done = 1;
@@ -504,19 +504,19 @@ if (!$in_combat && $hp_ratio > 0.8 && $sp_ratio > 0.3 && !$aggro_count) {
         $_reflex_last_fired{pre_buff} = _now_ms();
         _mark_cooldown('buff');
         my @buffs = (
-            "skill Twohand Quicken 1",    # Knight ASPD buff
-            "skill Increase AGI 10",      # Acolyte/Priest
-            "skill Blessing 10",          # Acolyte/Priest
-            "skill Magnificat 5",         # Priest SP regen
-            "skill Kyrie Eleison 10",     # Priest shield
-            "skill Improve Concentration 10", # Swordsman
-            "skill Enchant Poison 5",     # Assassin
-            "skill Owl's Eye 10",         # Archer
-            "skill Vulture's Eye 10",     # Archer
-            "skill Energy Coat 5",        # Mage
+            "use_skill Twohand Quicken",    # Knight ASPD buff
+            "use_skill Increase AGI",      # Acolyte/Priest
+            "use_skill Blessing",          # Acolyte/Priest
+            "use_skill Magnificat",         # Priest SP regen
+            "use_skill Kyrie Eleison",     # Priest shield
+            "use_skill Improve Concentration", # Swordsman
+            "use_skill Enchant Poison",     # Assassin
+            "use_skill Owl's Eye",         # Archer
+            "use_skill Vulture's Eye",     # Archer
+            "use_skill Energy Coat",        # Mage
         );
         for my $buff (@buffs) {
-            my ($cmd, $skill_name) = $buff =~ /^skill\s+(.+?)\s+\d+$/;
+            my ($cmd, $skill_name) = $buff =~ /^use_skill\s+(.+)$/;
             next if !$skill_name;
             my $skill = eval { Skill::get($skill_name) };
             if ($skill && $skill->{level} && $skill->{level} > 0) {

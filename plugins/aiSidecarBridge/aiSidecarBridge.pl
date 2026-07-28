@@ -4742,19 +4742,19 @@ sub _check_bridge_reflexes {
 				$_reflex_last_fired{pre_buff} = _now_ms();
 				# Try common self-buffs based on class
 				my @buffs = (
-					"skill Twohand Quicken 1",   # Knight ASPD buff
-					"skill Increase AGI 10",     # Acolyte/Priest
-					"skill Blessing 10",          # Acolyte/Priest
-					"skill Magnificat 5",         # Priest SP regen
-					"skill Kyrie Eleison 10",     # Priest shield
-					"skill Improve Concentration 10", # Swordsman
-					"skill Enchant Poison 5",     # Assassin
-					"skill Owl's Eye 10",         # Archer
-					"skill Vulture's Eye 10",     # Archer
-					"skill Energy Coat 5",        # Mage
+					"use_skill Twohand Quicken",   # Knight ASPD buff
+					"use_skill Increase AGI",     # Acolyte/Priest
+					"use_skill Blessing",          # Acolyte/Priest
+					"use_skill Magnificat",         # Priest SP regen
+					"use_skill Kyrie Eleison",     # Priest shield
+					"use_skill Improve Concentration", # Swordsman
+					"use_skill Enchant Poison",     # Assassin
+					"use_skill Owl's Eye",         # Archer
+					"use_skill Vulture's Eye",     # Archer
+					"use_skill Energy Coat",        # Mage
 				);
 				for my $buff (@buffs) {
-					my ($cmd, $skill_name) = $buff =~ /^skill\s+(.+?)\s+\d+$/;
+					my ($cmd, $skill_name) = $buff =~ /^use_skill\s+(.+)$/;
 					next if !$skill_name;
 					my $skill = eval { Skill::get($skill_name) };
 					if ($skill && $skill->{level} && $skill->{level} > 0) {

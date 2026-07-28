@@ -68,9 +68,9 @@ class SkillChainExecutor:
         self._chains["mage_fire_combo"] = SkillChain(
             name="mage_fire_combo",
             steps=[
-                SkillChainStep("Fire Bolt", "skill Fire Bolt 3", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
-                SkillChainStep("Cold Bolt", "skill Cold Bolt 5", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
-                SkillChainStep("Lightning Bolt", "skill Lightning Bolt 5", cooldown_ms=500, sp_cost=20, cast_time_ms=1500, delay_ms=500),
+                SkillChainStep("Fire Bolt", "use_skill Fire Bolt", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
+                SkillChainStep("Cold Bolt", "use_skill Cold Bolt", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
+                SkillChainStep("Lightning Bolt", "use_skill Lightning Bolt", cooldown_ms=500, sp_cost=20, cast_time_ms=1500, delay_ms=500),
             ],
             priority=80,
             loop=True,
@@ -82,9 +82,9 @@ class SkillChainExecutor:
         self._chains["mage_aoe_chain"] = SkillChain(
             name="mage_aoe_chain",
             steps=[
-                SkillChainStep("Fire Ball", "skill Fire Ball 5", cooldown_ms=2000, sp_cost=25, cast_time_ms=2000, delay_ms=1000),
-                SkillChainStep("Thunderstorm", "skill Thunderstorm 5", cooldown_ms=3000, sp_cost=35, cast_time_ms=3000, delay_ms=1500),
-                SkillChainStep("Lord of Vermilion", "skill Lord of Vermilion 5", cooldown_ms=5000, sp_cost=85, cast_time_ms=5000, delay_ms=3000),
+                SkillChainStep("Fire Ball", "use_skill Fire Ball", cooldown_ms=2000, sp_cost=25, cast_time_ms=2000, delay_ms=1000),
+                SkillChainStep("Thunderstorm", "use_skill Thunderstorm", cooldown_ms=3000, sp_cost=35, cast_time_ms=3000, delay_ms=1500),
+                SkillChainStep("Lord of Vermilion", "use_skill Lord of Vermilion", cooldown_ms=5000, sp_cost=85, cast_time_ms=5000, delay_ms=3000),
             ],
             priority=70,
             loop=True,
@@ -96,9 +96,9 @@ class SkillChainExecutor:
         self._chains["mage_boss_chain"] = SkillChain(
             name="mage_boss_chain",
             steps=[
-                SkillChainStep("Storm Gust", "skill Storm Gust 10", cooldown_ms=5000, sp_cost=80, cast_time_ms=5000, delay_ms=3000),
-                SkillChainStep("Meteor Storm", "skill Meteor Storm 10", cooldown_ms=5000, sp_cost=90, cast_time_ms=6000, delay_ms=3000),
-                SkillChainStep("Heaven's Drive", "skill Heaven's Drive 5", cooldown_ms=5000, sp_cost=45, cast_time_ms=4000, delay_ms=2000),
+                SkillChainStep("Storm Gust", "use_skill Storm Gust", cooldown_ms=5000, sp_cost=80, cast_time_ms=5000, delay_ms=3000),
+                SkillChainStep("Meteor Storm", "use_skill Meteor Storm", cooldown_ms=5000, sp_cost=90, cast_time_ms=6000, delay_ms=3000),
+                SkillChainStep("Heaven's Drive", "use_skill Heaven's Drive", cooldown_ms=5000, sp_cost=45, cast_time_ms=4000, delay_ms=2000),
             ],
             priority=90,
             loop=True,
@@ -110,9 +110,9 @@ class SkillChainExecutor:
         self._chains["archer_dps_chain"] = SkillChain(
             name="archer_dps_chain",
             steps=[
-                SkillChainStep("Double Strafe", "skill Double Strafe 10", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
-                SkillChainStep("Double Strafe", "skill Double Strafe 10", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
-                SkillChainStep("Double Strafe", "skill Double Strafe 10", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
+                SkillChainStep("Double Strafe", "use_skill Double Strafe", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
+                SkillChainStep("Double Strafe", "use_skill Double Strafe", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
+                SkillChainStep("Double Strafe", "use_skill Double Strafe", cooldown_ms=200, sp_cost=8, cast_time_ms=0, delay_ms=200),
             ],
             priority=80,
             loop=True,
@@ -124,8 +124,8 @@ class SkillChainExecutor:
         self._chains["archer_aoe_chain"] = SkillChain(
             name="archer_aoe_chain",
             steps=[
-                SkillChainStep("Arrow Shower", "skill Arrow Shower 5", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
-                SkillChainStep("Arrow Shower", "skill Arrow Shower 5", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Arrow Shower", "use_skill Arrow Shower", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Arrow Shower", "use_skill Arrow Shower", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
             ],
             priority=70,
             loop=True,
@@ -137,9 +137,9 @@ class SkillChainExecutor:
         self._chains["swordman_melee_chain"] = SkillChain(
             name="swordman_melee_chain",
             steps=[
-                SkillChainStep("Bash", "skill Bash 10", cooldown_ms=500, sp_cost=5, cast_time_ms=0, delay_ms=500),
-                SkillChainStep("Magnum Break", "skill Magnum Break 5", cooldown_ms=3000, sp_cost=12, cast_time_ms=0, delay_ms=1000),
-                SkillChainStep("Bowling Bash", "skill Bowling Bash 5", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Bash", "use_skill Bash", cooldown_ms=500, sp_cost=5, cast_time_ms=0, delay_ms=500),
+                SkillChainStep("Magnum Break", "use_skill Magnum Break", cooldown_ms=3000, sp_cost=12, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Bowling Bash", "use_skill Bowling Bash", cooldown_ms=2000, sp_cost=15, cast_time_ms=0, delay_ms=1000),
             ],
             priority=80,
             loop=True,
@@ -151,9 +151,9 @@ class SkillChainExecutor:
         self._chains["thief_burst_chain"] = SkillChain(
             name="thief_burst_chain",
             steps=[
-                SkillChainStep("Sonic Blow", "skill Sonic Blow 10", cooldown_ms=2000, sp_cost=20, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Sonic Blow", "use_skill Sonic Blow", cooldown_ms=2000, sp_cost=20, cast_time_ms=0, delay_ms=1000),
                 SkillChainStep("Double Attack", "attack", cooldown_ms=0, sp_cost=0, cast_time_ms=0, delay_ms=0),
-                SkillChainStep("Sonic Blow", "skill Sonic Blow 10", cooldown_ms=2000, sp_cost=20, cast_time_ms=0, delay_ms=1000),
+                SkillChainStep("Sonic Blow", "use_skill Sonic Blow", cooldown_ms=2000, sp_cost=20, cast_time_ms=0, delay_ms=1000),
             ],
             priority=80,
             loop=True,
@@ -165,9 +165,9 @@ class SkillChainExecutor:
         self._chains["acolyte_undead_chain"] = SkillChain(
             name="acolyte_undead_chain",
             steps=[
-                SkillChainStep("Holy Light", "skill Holy Light 5", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
-                SkillChainStep("Turn Undead", "skill Turn Undead 5", cooldown_ms=3000, sp_cost=20, cast_time_ms=2000, delay_ms=1000),
-                SkillChainStep("Holy Light", "skill Holy Light 5", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
+                SkillChainStep("Holy Light", "use_skill Holy Light", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
+                SkillChainStep("Turn Undead", "use_skill Turn Undead", cooldown_ms=3000, sp_cost=20, cast_time_ms=2000, delay_ms=1000),
+                SkillChainStep("Holy Light", "use_skill Holy Light", cooldown_ms=500, sp_cost=15, cast_time_ms=1500, delay_ms=500),
             ],
             priority=85,
             loop=True,
