@@ -405,6 +405,32 @@ sub on_mainLoop_pre {
 	_track_lifecycle_transitions();
 	_track_ai_sequence_transition();
 	
+	# ── DISABLE useSelf_item FOR POTIONS: set 300s timeout to prevent "on cooldown" spam ──
+	# OpenKore's useSelf_item system has its own cooldown (3s default) and logs
+	# "[use] item 'red potion' on cooldown, skipping" before calling Actor::Item::use().
+	# The Actor::Item::use() override blocks the actual use, but the log message
+	# is already printed. Setting timeout to 300s stops the spam at the source.
+	# Must run in on_mainLoop_pre (before the main loop processes useSelf_item).
+	if ($char) {
+		state $_last_useSelf_override_ms = 0;
+		my $_now_ms = _now_ms();
+		if ($_now_ms - $_last_useSelf_override_ms > 60000) {
+			$_last_useSelf_override_ms = $_now_ms;
+			# Override useSelf_item timeout for all potion entries
+			# OpenKore stores useSelf_item as an array of hashrefs
+			if (defined $::config{useSelf_item} && ref $::config{useSelf_item} eq 'ARRAY') {
+				for my $_usi (@{$::config{useSelf_item}}) {
+					next unless ref $_usi eq 'HASH';
+					my $_usi_name = $_usi->{name} || '';
+					if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+						$_usi->{timeout} = 300;
+						$_usi->{cooldown} = 300;
+					}
+				}
+			}
+		}
+	}
+	
 	# ── PREVENT TELEPORT AT LOW HP: disable OpenKore internal teleport ──
 	if ($char) {
 	    # Disable OpenKore's internal teleport at 30% HP - heuristic handles HP management
@@ -465,29 +491,8 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── DISABLE useSelf_item FOR POTIONS: set 300s timeout to prevent "on cooldown" spam ──
-        # OpenKore's useSelf_item system has its own cooldown (3s default) and logs
-        # "[use] item 'red potion' on cooldown, skipping" before calling Actor::Item::use().
-        # The Actor::Item::use() override blocks the actual use, but the log message
-        # is already printed. Setting timeout to 300s stops the spam at the source.
-        if ($char) {
-            state $_last_useSelf_override_ms = 0;
-            my $_now_ms = _now_ms();
-            if ($_now_ms - $_last_useSelf_override_ms > 60000) {
-                $_last_useSelf_override_ms = $_now_ms;
-                # Override useSelf_item timeout for all potion entries
-                # OpenKore stores useSelf_item as an array of hashrefs
-                if (defined $::config{useSelf_item} && ref $::config{useSelf_item} eq 'ARRAY') {
-                    for my $_usi (@{$::config{useSelf_item}}) {
-                        next unless ref $_usi eq 'HASH';
-                        my $_usi_name = $_usi->{name} || '';
-                        if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-                            $_usi->{timeout} = 300;
-                        }
-                    }
-                }
-            }
-        }
+        # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
+        # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         
 
         
