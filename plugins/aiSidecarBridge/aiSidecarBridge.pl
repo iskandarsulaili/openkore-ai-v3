@@ -189,6 +189,9 @@ my $last_disconnect_at_ms = 0;
 my $last_hp;
 my $death_count = 0;
 my $respawn_state = 'unknown';
+# Survival mode persistent variables (not state — state resets on map change)
+our $_survival_mode_until_ms = 0;
+our $_last_survival_check_ms = 0;
 my $last_map_name = '';
 my $last_route_signature = '';
 my $_last_ai_toggle_ms = 0;
@@ -5268,8 +5271,6 @@ sub _check_bridge_reflexes {
 		# Uses persistent variables (not state) so it survives map changes.
 		if ($_hunting_map && !$_in_town) {
 			# Use package-level persistent variables (not state — state resets on map change)
-			$_survival_mode_until_ms = 0 if !defined $_survival_mode_until_ms;
-			$_last_survival_check_ms = 0 if !defined $_last_survival_check_ms;
 			if ($now - $_last_survival_check_ms > 60000) {
 				$_last_survival_check_ms = $now;
 				# Check if we have any potions
