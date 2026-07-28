@@ -3911,12 +3911,22 @@ sub _rewrite_runtime_command {
 		if ($target =~ /^\d+\s+\d+$/) {
 			# ROUTE LOOP DETECTION: if bot is already at or near the target coordinates,
 			# suppress the move to prevent infinite route recalculation.
+			# Also suppress if bot is already on a hunting map and target is a portal
+			# (the bot is already on the hunting map, no need to go to portal)
 			my ($tx, $ty) = split(/\s+/, $target);
 			my $cx = 0; my $cy = 0;
 			if ($char) {
 				if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') { $cx = $char->{pos_to}{x} || 0; $cy = $char->{pos_to}{y} || 0; }
 				elsif ($char->{pos} && ref $char->{pos} eq 'HASH') { $cx = $char->{pos}{x} || 0; $cy = $char->{pos}{y} || 0; }
 				elsif (defined $char->{x}) { $cx = $char->{x}; $cy = $char->{y}; }
+			}
+			# Map-level check: if bot is on a hunting map and target is portal (367,205),
+			# suppress the move entirely - bot is already on the hunting map
+			my $_cm = $field ? lc($field->name()) : '';
+			$_cm =~ s/\.gat$//;
+			if ($_cm =~ /_fild|_dun/i && $tx == 367 && $ty == 205) {
+				debug "[route_loop] already on hunting map $_cm, suppressing portal move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
+				return ('', 'route_loop_suppressed');
 			}
 			my $dist = sqrt(($cx - $tx)**2 + ($cy - $ty)**2);
 			if ($dist < 5) {
