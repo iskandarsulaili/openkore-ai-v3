@@ -2577,7 +2577,12 @@ sub _execute_action {
 	# The sidecar may queue 'stand' and 'move prontera' as separate actions.
 	# The bridge only processes ONE action per poll, so 'move prontera' arrives
 	# while the bot is still sitting. Auto-stand ensures the bot can actually move.
+	# Also disable sitAuto temporarily to prevent immediate re-sit (especially at low HP).
 	if ($char && $char->{sitting} && $effective_command =~ /^move\s+/i) {
+		$::config{sitAuto_hp_lower} = 0;
+		$::config{sitAuto_hp_upper} = 0;
+		$::config{sitAuto_sp} = 0;
+		$::config{sitAuto_sp_max} = 0;
 		Commands::run("stand");
 		debug "[auto_stand] bot was sitting, auto-stand before move command\n", 'aiSidecarBridge', 1;
 	}
