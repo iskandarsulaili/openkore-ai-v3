@@ -4316,85 +4316,35 @@ sub _check_bridge_reflexes {
 			}
 
 			# If NO healing resources at all: trigger emergency survival immediately
-			# Let conscious engine handle the rest (buy potions, retreat to town, request help)
+			# Sit to regen HP naturally — this is the only reliable option for low-level chars
 			if (!$heal_triggered && $hp_ratio < 0.50) {
-			# Skip if HP has not dropped (reflex noise filter)
-			state $_last_hp = 0;
-			if ($hp >= $_last_hp && $_last_hp > 0) { return; }
-			$_last_hp = $hp;
-				# ── Recovery city config (dynamic, set via aiSidecar_recoveryCity) ──
-	if (_should_fire_reflex($_reflex_last_fired{no_heal} || 0, _cfg_int('aiSidecar_reflexNoHealCooldownMs', 10000))) {
-					$_reflex_last_fired{no_heal} = _now_ms();
-# 					warning "[aiSidecarBridge] bridge_reflex:emergency_no_heal (HP=$hp/$hp_max, map=$map, job=$job_name, lvl=$base_level/$job_level)\n";
-
-					# POST EVENT TO SIDECAR (let conscious handle rest)
-					_post_event({
-						kind => 'bridge_reflex',
-						reflex => 'emergency_no_heal',
-						hp_ratio => $hp_ratio,
-						hp => $hp,
-						max_hp => $hp_max,
-						sp_ratio => $sp_ratio,
-						sp => $sp,
-						aggro_count => $aggro_count,
-						weight_ratio => $weight_ratio,
-						map => $map,
-						job_name => $job_name,
-						base_level => $base_level,
-						job_level => $job_level,
-						heal_items_cached => scalar(@_heal_items),
-						heal_skills_cached => scalar(@_heal_skills),
-						timestamp => _now_ms(),
-					});
-
-					# SIT FALLBACK: if no healing items in inventory and low zeny, sit to regen HP naturally
-					my $_has_heal_item = 0;
-					for my $_hitem (@_heal_items) {
-						my $_inv = eval { Actor::Item::get($_hitem) };
-						if ($_inv && ref($_inv) eq 'HASH' && ($_inv->{amount} || 0) > 0) {
-							$_has_heal_item = 1;
-							last;
-						}
-					}
-					my $_zeny = $char->{zeny} || 0;
-					my $ai_state = $AI::AI || '';
-					# Debug: log sit condition values
-# 					warning "[aiSidecarBridge] emergency_sit_debug: has_heal=$_has_heal_item zeny=$_zeny hp=$hp max=$hp_max ai=$ai_state\n";
-					if (!$_has_heal_item) {
-						if ($ai_state ne 'sit' && $hp < $hp_max * 0.5) {
-							## SIT REMOVED — reflex should never sit. Let survival_check handle it.
-							# warning "[aiSidecarBridge] emergency_sit_regen (HP=$hp/$hp_max, zeny=$char->{zeny})\n";
-						}
-					} elsif ($hp > $hp_max * 0.8 && ($AI::AI == 2)) {
-						# Stand up if HP is healthy and we were sitting
-						Commands::run('stand');
-# 						warning "[aiSidecarBridge] emergency_stand (HP=$hp/$hp_max)\n";
-					}
-
-					# Force stand if sitting too long on a non-town map with lockMap set
-					if (($AI::AI == 2) && $char->{map} && $char->{map} !~ /^prontera|prt_in/i && defined $::config{"lockMap"} && $::config{"lockMap"} ne '') {
-						Commands::run('stand');
-					}
-
-					# IMMEDIATE EMERGENCY SURVIVAL: move to town when critically low
-					my $_now_ms = _now_ms();
-					my $_reflex_map = $char->{map} || '';
-					# Pro RO survival check: let the bot hunt unless critically threatened
-					# Grace period after Pro RO set lockMap — give bot time to hunt (300s for job change routes)
-					my $_grace_ms = 300000;
-					my $_pro_ro_set = defined $_last_pro_ro_lockmap_ms && $_last_pro_ro_lockmap_ms > 0;
-					my $_since_pro_ro = $_pro_ro_set ? ($_now_ms - $_last_pro_ro_lockmap_ms) : 999999;
-					if ($_since_pro_ro < $_grace_ms) {
-						# Pro RO recently set lockMap — only override in CRITICAL danger
-						if ($hp_ratio < 0.15 && $aggro_count > 2) {
-							$_last_prontera_recovery_ms = $_now_ms;
-							eval { 1 };
-						}
-					} else {
-						# No recent Pro RO command — heuristic handles HP management
-						# Bridge should NOT set lockMap to Prontera - that overrides heuristic
-					}
+				# Skip if HP has not dropped (reflex noise filter)
+				state $_last_hp = 0;
+				if ($hp >= $_last_hp && $_last_hp > 0) { return; }
+				$_last_hp = $hp;
+				# Sit to regen — always safe, always available
+				if ($AI::AI != 2) {
+					eval { Commands::run("sit"); 1 };
 				}
+				# Post event to sidecar: "I need healing items"
+				_post_event({
+					kind => 'bridge_reflex',
+					reflex => 'no_heal_items_sitting',
+					hp_ratio => $hp_ratio,
+					hp => $hp,
+					max_hp => $hp_max,
+					sp_ratio => $sp_ratio,
+					sp => $sp,
+					aggro_count => $aggro_count,
+					weight_ratio => $weight_ratio,
+					map => $map,
+					job_name => $job_name,
+					base_level => $base_level,
+					job_level => $job_level,
+					heal_items_cached => scalar(@_heal_items),
+					heal_skills_cached => scalar(@_heal_skills),
+					timestamp => _now_ms(),
+				});
 			}
 
 			# Cooldown for heal reflex

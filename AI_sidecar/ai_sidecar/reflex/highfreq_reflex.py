@@ -146,6 +146,7 @@ class HighFreqReflex:
                 logger.warning("highfreq_reflex_heal_opt_failed: %s", e)
         
         # Fallback: use level-appropriate defaults
+        # COLD_START buys Red Potion (501) — align fallback with what we actually buy
         if level < 30:
             return "use Red Potion"
         elif level < 60:
@@ -253,16 +254,28 @@ class HighFreqReflex:
             return cmd
         
         # ── SURVIVAL: Healing item at 50% HP ──
-        if hp_pct <= thresholds.get("heal_potion_hp_pct", 0.50) and has_potions:
-            with self._lock:
-                self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
-                self._stats["actions"] += 1
-            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level)  # returns None if no heal available — don't toggle AI mode
-            logger.info("highfreq_reflex: bot=%s heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
-            if reflex_pipeline is not None:
-                reflex_pipeline.emit_direct(bot_id, cmd)
-                return None
-            return cmd
+        if hp_pct <= thresholds.get("heal_potion_hp_pct", 0.50):
+            if has_potions:
+                with self._lock:
+                    self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
+                    self._stats["actions"] += 1
+                cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level)
+                logger.info("highfreq_reflex: bot=%s heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
+                if reflex_pipeline is not None:
+                    reflex_pipeline.emit_direct(bot_id, cmd)
+                    return None
+                return cmd
+            else:
+                # No potions available — sit to regen instead of spamming
+                with self._lock:
+                    self._cooldown_until[bot_id] = now + self.SIT_COOLDOWN
+                    self._stats["actions"] += 1
+                logger.info("highfreq_reflex: bot=%s no_potions_sit hp=%.0f%%", bot_id, hp_pct * 100)
+                cmd = "sit"
+                if reflex_pipeline is not None:
+                    reflex_pipeline.emit_direct(bot_id, cmd)
+                    return None
+                return cmd
         
         # ── SURVIVAL: Sit to rest (out of combat) ──
         if aggro_count == 0 and not is_town:
