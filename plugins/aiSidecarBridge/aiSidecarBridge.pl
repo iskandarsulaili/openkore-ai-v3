@@ -5018,7 +5018,13 @@ sub _survival_check {
 	    my $_hp_map = $field ? lc($field->name()) : '';
 	    $_hp_map =~ s/\.gat$//;
 	    my $_hp_is_town = $_hp_map =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-	    if ($hp_pct < 15 && !$_hp_is_town) { eval { Commands::run('sit'); 1 }; }
+	    if ($hp_pct < 15 && !$_hp_is_town) {
+	        # Only sit if NOT in combat — prevents stand-sit loop
+	        my $_sc_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
+	        if (!$_sc_in_combat) {
+	            eval { Commands::run('sit'); 1 };
+	        }
+	    }
 	    return;
 	}
 	# ── Economy DISABLED: heuristic handles all routing decisions ──
