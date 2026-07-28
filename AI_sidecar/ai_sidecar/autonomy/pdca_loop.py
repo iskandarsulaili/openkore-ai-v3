@@ -251,6 +251,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
                         c = latest.get("combat") or {}
                         signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                        signals["is_sitting"] = bool(c.get("is_sitting", False))
                         signals["map_known"] = bool(latest.get("map_known", False))
                         inv = latest.get("inventory") or {}
                         signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
