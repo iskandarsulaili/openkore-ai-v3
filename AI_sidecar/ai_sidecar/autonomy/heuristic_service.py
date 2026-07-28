@@ -1070,7 +1070,7 @@ class HeuristicService:
                     self._last_return_to_town[bot_id] = _audit_now
                     logger.info(f"[zero_potions] {bot_id}: 0 potions on {_audit_map}, forcing return to town")
                     actions.append(HeuristicAction(
-                        kind="command", command="move 367 205",
+                        kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
                         reason="Zero potions on hunting map - return to town to buy potions",
                     ))
