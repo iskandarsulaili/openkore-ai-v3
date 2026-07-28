@@ -509,7 +509,45 @@ sub on_mainLoop_post {
         # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
         # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         
-
+        # ── PORTAL EXIT POTION CHECK: if bot just arrived on hunting map with 0 potions, turn back ──
+        # This is the LAST LINE OF DEFENSE against 0-potion hunting.
+        # The sidecar's zero-potions detector sends 'move prontera', but the bot may
+        # arrive on the hunting map before the sidecar processes the next cycle.
+        # When bot steps through portal from Prontera to prt_fild05, check inventory.
+        # If 0 potions, turn around and go back to Prontera immediately.
+        if ($char && $field) {
+            state $_last_portal_check_ms = 0;
+            my $_now_ms = _now_ms();
+            if ($_now_ms - $_last_portal_check_ms > 5000) {  # Every 5s
+                $_last_portal_check_ms = $_now_ms;
+                my $_cm = lc($field->name());
+                $_cm =~ s/\.gat$//;
+                if ($_cm =~ /_fild|_dun/i) {
+                    # On a hunting map — check if we have potions
+                    my $_has_potions = 0;
+                    if ($char->{inventory}) {
+                        for my $_gi (@{$char->{inventory}}) {
+                            next unless $_gi;
+                            my $_gn = $_gi->{name} || '';
+                            if ($_gn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+                                $_has_potions = 1;
+                                last;
+                            }
+                        }
+                    }
+                    if (!$_has_potions) {
+                        # 0 potions on hunting map — turn back to Prontera immediately
+                        warning "[portal_exit_check] 0 potions on $_cm, turning back to Prontera\n", 'aiSidecarBridge', 1;
+                        $::config{sitAuto_hp_lower} = 0;
+                        $::config{sitAuto_hp_upper} = 0;
+                        $::config{sitAuto_sp} = 0;
+                        $::config{sitAuto_sp_max} = 0;
+                        eval { Commands::run("stand"); 1 };
+                        eval { Commands::run("move prontera"); 1 };
+                    }
+                }
+            }
+        }
         
 
         

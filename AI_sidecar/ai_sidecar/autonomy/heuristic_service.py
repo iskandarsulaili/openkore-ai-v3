@@ -1058,48 +1058,22 @@ class HeuristicService:
             # If bot is on a hunting map with 0 potions, force return to town to buy potions.
             # This was previously handled by the bridge's Reflex #1, but that was stripped.
             # NOTE: inventory data is stored as 'inventory_items' in signals (from pdca_loop.py)
+            # NOTE: No rate limit on emergency return — 0 potions on hunting map = return NOW
+            # The bridge's auto-stand handles sitting bots before executing 'move prontera'.
+            # The portal exit check (in bridge) breaks the loop if bot arrives and turns back.
             _audit_items = signals.get("inventory_items", []) or []
             _audit_has_potions = any(
                 "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
                 for item in _audit_items
             )
             if not _audit_has_potions:
-                _audit_now = __import__("time").time()
-                _audit_last_return = self._last_return_to_town.get(bot_id, 0)
-                # Rate limit: 300s (5 min) to let the bot actually COMPLETE the route
-                # Previous 60s caused route loop — bot would start routing, then
-                # get interrupted by another 'move prontera' before reaching the portal.
-                if _audit_now - _audit_last_return > 300:
-                    # ── INTEGRATED POTION LOOP STATE MACHINE ──
-                    # State 1: Hunting map, 0 potions — force return to town
-                    # State 2: Map change to prontera — auto-triggers potion buy (town branch)
-                    # State 3: Potions bought — auto-triggers return to hunt (town branch)
-                    # State 4: Map change to hunting map — resume hunting (hunting branch)
-                    # The rate limit ensures each phase completes before the next trigger.
-                    self._last_return_to_town[bot_id] = _audit_now
-                    logger.info(f"[potion_loop] {bot_id}: 0 potions on {_audit_map}, forcing return to town (rate_limit=300s)")
-                    # Check if bot is ALREADY sitting — if so, force stand first
-                    _audit_sitting = signals.get("is_sitting", False)
-                    if _audit_sitting:
-                        actions.append(HeuristicAction(
-                            kind="command", command="stand",
-                            confidence=0.99, domain="economy",
-                            reason="Zero potions on hunting map - stand before returning to town",
-                        ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
-                        confidence=0.99, domain="economy",
-                        reason="Zero potions on hunting map - return to town to buy potions",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.95, domain="economy",
-                        reason="Enable auto-attack after returning to town",
-                    ))
-                else:
-                    # Bot is en route to Prontera — don't send another move
-                    _audit_remain = int(300 - (_audit_now - _audit_last_return))
-                    logger.debug(f"[potion_loop] {bot_id}: already en route to town ({_audit_remain}s remaining)")
+                # Only queue move prontera — bridge auto-stand handles sitting bots
+                # Don't queue 'stand' or 'ai auto' as separate actions (bridge does both)
+                actions.append(HeuristicAction(
+                    kind="command", command="move prontera",
+                    confidence=0.99, domain="economy",
+                    reason="Zero potions on hunting map - return to town to buy potions",
+                ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
             _audit_rand = __import__("random").Random(_audit_seed)
@@ -1156,35 +1130,33 @@ class HeuristicService:
                             confidence=0.99, domain="economy",
                             reason="Town stuck - equip Knife after purchase",
                         ))
+                    # DO NOT queue move 367 205 here — bot must wait until potions confirmed
+                    # Only queue portal exit when potions are actually in inventory
+            if _audit_has_potions and _audit_zeny >= 50:
+                # Have potions — return to hunt
+                # ROUTE LOOP PREVENTION: only send move if bot isn't already at portal
+                _audit_pos = signals.get("position", {}) or {}
+                _audit_px = _audit_pos.get("x", 0) or 0
+                _audit_py = _audit_pos.get("y", 0) or 0
+                _audit_dist = ((_audit_px - 367)**2 + (_audit_py - 205)**2)**0.5
+                if _audit_dist < 5:
+                    # Already at portal - just enable auto mode
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="hunting",
+                        reason="Already at portal - enable auto-attack",
+                    ))
+                else:
                     actions.append(HeuristicAction(
                         kind="command", command="move 367 205",
                         confidence=0.99, domain="hunting",
                         reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
                     ))
-                    # ROUTE LOOP PREVENTION: only send move if bot isn't already at portal
-                    # Check if bot is already near the portal (367, 205)
-                    _audit_pos = signals.get("position", {}) or {}
-                    _audit_px = _audit_pos.get("x", 0) or 0
-                    _audit_py = _audit_pos.get("y", 0) or 0
-                    _audit_dist = ((_audit_px - 367)**2 + (_audit_py - 205)**2)**0.5
-                    if _audit_dist < 5:
-                        # Already at portal - just enable auto mode
-                        actions.append(HeuristicAction(
-                            kind="command", command="ai auto",
-                            confidence=0.99, domain="hunting",
-                            reason="Already at portal - enable auto-attack",
-                        ))
-                    else:
-                        actions.append(HeuristicAction(
-                            kind="command", command="move 367 205",
-                            confidence=0.99, domain="hunting",
-                            reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="ai auto",
-                            confidence=0.95, domain="hunting",
-                            reason="Enable auto-attack after returning to hunt",
-                        ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Enable auto-attack after returning to hunt",
+                    ))
 
         # ── SITTING ON HUNTING MAP DETECTOR: force stand when sitting with 0 potions and HP > 50% ──
         # The bridge's stand-up reflex was stripped. The sidecar must handle this.
