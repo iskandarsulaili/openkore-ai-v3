@@ -1221,6 +1221,23 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
                 ))
+                # Equip the weapon after buying — bare fists do 1-5 damage
+                actions.append(HeuristicAction(
+                    kind="command", command="equip 1201",
+                    confidence=0.99, domain="economy",
+                    reason="Cold start - equip weapon after purchase",
+                ))
+            # Attack config: increase chase distance, disable avoid system
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
+                "Cold start - increase chase distance to 30 for Novice attack range")
+            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
+                "Cold start - attack from 5 cells away")
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Enable aggressive auto-attack")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
+                "Attack monsters as soon as they appear")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Cold start - don't give up mid-fight")
             # Teleport config
             self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", "8", "hunting",
                 "Only teleport at 8+ mobs")
@@ -1235,12 +1252,13 @@ class HeuristicService:
                     confidence=0.99, domain="hunting",
                     reason=f"Cold start - move to {_cs_hunt_map}",
                 ))
-            # Party creation for leader
+            # Party creation for leader — only at level 40+ (solo before 40 is faster)
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
             _cs_sorted = sorted(_cs_all_bots)
             _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
-            if _cs_is_leader:
+            _cs_base_level = signals.get("base_level", 1) or 1
+            if _cs_is_leader and _cs_base_level >= 40:
                 actions.append(HeuristicAction(
                     kind="command", command=f"party create AI{int(_now_t)}",
                     confidence=0.99, domain="social",
