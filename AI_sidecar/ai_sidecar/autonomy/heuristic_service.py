@@ -795,7 +795,7 @@ class HeuristicService:
         self._last_buy_time: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
-        self._cold_start_step: dict[str, int] = {}
+        self._cold_start_step: dict[str, int] = {}  # default 0 = needs cold start
         self._load_towns()
         self._town_entry_time: dict[str, float] = {}
         self._last_hunt_move: dict[str, float] = {}

@@ -5043,7 +5043,7 @@ class PDCALoop:
                         # Check if heuristic cold start is active — if so, skip Pro RO cold start
                         _hcs_step = getattr(
                             getattr(self._runtime, "heuristic_service", None), "_cold_start_step", {}
-                        ).get(_cycle_bot_id, 4)
+                        ).get(_cycle_bot_id, 0)
                         if _hcs_step >= 4 and (_cs_now - _cs_last) >= 60.0:
                             from ai_sidecar.game_knowledge import game_knowledge
                             gk = game_knowledge()
