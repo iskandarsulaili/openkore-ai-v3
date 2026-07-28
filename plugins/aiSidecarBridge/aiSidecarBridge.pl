@@ -4552,7 +4552,7 @@ sub _check_bridge_reflexes {
 				if (_should_fire_reflex($_reflex_last_fired{interrupt_cast} || 0, _cfg_int('aiSidecar_reflexInterruptCastCooldownMs', 1500))) {
 					$_reflex_last_fired{interrupt_cast} = _now_ms();
 # 					warning "[aiSidecarBridge] bridge_reflex:interrupt_cast (monster casting within 10 tiles)\n";
-					eval { Commands::run("skill Bash 10"); 1 };
+					eval { Commands::run("use_skill Bash"); 1 };
 				}
 			}
 		}
