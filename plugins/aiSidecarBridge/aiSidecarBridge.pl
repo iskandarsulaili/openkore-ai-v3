@@ -405,6 +405,7 @@ sub _check_reregister {
 }
 sub on_mainLoop_pre {
 	return unless _bridge_enabled();
+	debug "[on_mainLoop_post] bridge_enabled check passed\n", 'aiSidecarBridge', 1;
 	my $now = _now_ms();
 
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
@@ -569,6 +570,7 @@ sub on_mainLoop_post {
 
 
 	return unless _bridge_enabled();
+	debug "[on_mainLoop_post] bridge_enabled check passed\n", 'aiSidecarBridge', 1;
 	my $now = _now_ms();
 	_probe_actor_post_parse($now);
 
