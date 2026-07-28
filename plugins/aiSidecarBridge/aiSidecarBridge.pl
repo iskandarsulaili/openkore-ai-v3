@@ -408,6 +408,9 @@ sub on_mainLoop_pre {
     debug "[on_mainLoop_pre] bridge enabled check\n", 'aiSidecarBridge', 1;
     # Force-set attackAuto=0 and route_randomWalk=0 when 0 potions on hunting map
     # Runs BEFORE AI, preventing AI from attacking/routing away from portal.
+    # Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
+    # because OpenKore's getAttackAutoModeForContext returns 1 when
+    # attackAuto_inLockOnly==1 regardless of attackAuto value.
     if ($char && $char->{inventory}) {
         my $_ph_had_potions = 0;
         for my $_phi (@{$char->{inventory}}) {
@@ -423,6 +426,8 @@ sub on_mainLoop_pre {
             $_pmh =~ s/\.gat$//;
             if ($_pmh =~ /_fild|_dun/i) {
                 $::config{'attackAuto'} = 0;
+                $::config{'attackAuto_inLockOnly'} = 0;
+                $::config{'attackAuto_routeToLock'} = 0;
                 $::config{'route_randomWalk'} = 0;
             }
         }
@@ -2581,6 +2586,9 @@ sub _poll_next_action {
 	$::config{'sitAuto_hp_lower'} = 0;
 	$::config{'sitAuto_hp_upper'} = 0;
 	# Force-set attackAuto=0 when 0 potions on hunting map
+	# Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
+	# because OpenKore's getAttackAutoModeForContext returns 1 when
+	# attackAuto_inLockOnly==1 regardless of attackAuto value.
 	if ($char && $char->{inventory}) {
 		my $_pa_has_potions = 0;
 		for my $_pai (@{$char->{inventory}}) {
@@ -2596,6 +2604,8 @@ sub _poll_next_action {
 			$_pm =~ s/\.gat$//;
 			if ($_pm =~ /_fild|_dun/i) {
 				$::config{'attackAuto'} = 0;
+				$::config{'attackAuto_inLockOnly'} = 0;
+				$::config{'attackAuto_routeToLock'} = 0;
 				$::config{'route_randomWalk'} = 0;
 			}
 		}
