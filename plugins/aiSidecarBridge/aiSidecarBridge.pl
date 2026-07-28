@@ -3758,9 +3758,11 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle raw 'skill <name>' -> rewrite to 'use_skill <name>'
+	# Handle raw 'skill <name>' -> rewrite to 'use_skill <name>' (strip level)
 	if ($normalized =~ /^skill\s+(.+)$/) {
 		my $_skill_name = $1;
+		# Strip trailing level number if present (e.g. "Bash 10" -> "Bash")
+		$_skill_name =~ s/\s+\d+$//;
 		$normalized = "use_skill $_skill_name";
 		$rewrite_kind = 'skill_rewritten';
 		return ($normalized, $rewrite_kind);
