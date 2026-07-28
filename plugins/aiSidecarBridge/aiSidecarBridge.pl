@@ -411,22 +411,21 @@ sub on_mainLoop_pre {
 	# The Actor::Item::use() override blocks the actual use, but the log message
 	# is already printed. Setting timeout to 300s stops the spam at the source.
 	# Must run in on_mainLoop_pre (before the main loop processes useSelf_item).
+	# OpenKore stores useSelf_item as flat config keys: useSelf_item_0, useSelf_item_0_timeout, etc.
 	if ($char) {
 		state $_last_useSelf_override_ms = 0;
 		my $_now_ms = _now_ms();
 		if ($_now_ms - $_last_useSelf_override_ms > 60000) {
 			$_last_useSelf_override_ms = $_now_ms;
-			# Override useSelf_item timeout for all potion entries
-			# OpenKore stores useSelf_item as an array of hashrefs
-			if (defined $::config{useSelf_item} && ref $::config{useSelf_item} eq 'ARRAY') {
-				for my $_usi (@{$::config{useSelf_item}}) {
-					next unless ref $_usi eq 'HASH';
-					my $_usi_name = $_usi->{name} || '';
-					if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-						$_usi->{timeout} = 300;
-						$_usi->{cooldown} = 300;
-					}
+			# Iterate over useSelf_item_N entries
+			my $_usi_idx = 0;
+			while (defined $::config{"useSelf_item_$_usi_idx"}) {
+				my $_usi_name = $::config{"useSelf_item_$_usi_idx"} || '';
+				if ($_usi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+					$::config{"useSelf_item_${_usi_idx}_timeout"} = 300;
+					$::config{"useSelf_item_${_usi_idx}_cooldown"} = 300;
 				}
+				$_usi_idx++;
 			}
 		}
 	}
