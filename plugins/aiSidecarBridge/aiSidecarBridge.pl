@@ -1051,6 +1051,35 @@ sub on_command_intercept {
 	    } else {
 	        warning "[command_intercept] allowing '$full_cmd' on hunting map $_ic_map (0 potions)\n", 'aiSidecarBridge', 1;
 	    }
+	} elsif ($_ic_map eq 'prontera' && $full_cmd =~ /^move\s+(?:prontera|22\s+203)$/i) {
+	    # In Prontera: if bot has 0 potions, DO NOT redirect to portal
+	    # Bot needs to buy potions first. Only redirect if bot has potions.
+	    my $_ic_has_potions = 0;
+	    if ($char && $char->{inventory}) {
+	        for my $_gi (@{$char->{inventory}}) {
+	            next unless $_gi;
+	            my $_gi_name = $_gi->{name} || '';
+	            if ($_gi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+	                $_ic_has_potions = 1;
+	                last;
+	            }
+	        }
+	    }
+	    if (!$_ic_has_potions) {
+	        warning "[command_intercept] blocking 'move prontera/22 203' in town (0 potions, need to buy first)\n", 'aiSidecarBridge', 1;
+	        $args->{switch} = '';
+	        $args->{args} = '';
+	    } else {
+	        # Have potions — redirect to portal
+	        my $_portal_x = _cfg('aiSidecar_portalX', '22') || '22';
+	        my $_portal_y = _cfg('aiSidecar_portalY', '203') || '203';
+	        my $_lm = $::config{lockMap} || '';
+	        if ($_lm =~ /^[a-z]+_fild/ || $_lm =~ /_field/) {
+	            warning "[command_intercept] 'move prontera' in town (has potions, lockMap=$_lm) -> portal\n", 'aiSidecarBridge', 1;
+	            $args->{switch} = 'move';
+	            $args->{args} = "$_portal_x $_portal_y";
+	        }
+	    }
 	}
 	# PvP/GvG/Turbo maps: allow through
 	return;
@@ -3990,9 +4019,26 @@ sub _rewrite_runtime_command {
 		$_current_map =~ s/\.gat$//;
 		if ($_current_map eq lc($target)) {
 		    # In Prontera, "move prontera" should go to portal (22 203) to reach lockMap
+		    # BUT: if bot has 0 potions, block the redirect — bot needs to buy potions first
 		    if ($_current_map eq 'prontera') {
-		        warning "[portal_rewrite] bot in Prontera, rewriting 'move prontera' to 'move 22 203'\n", 'aiSidecarBridge', 1;
-		        return ('move 22 203', 'portal_rewrite');
+		        my $_pr_has_potions = 0;
+		        if ($char && $char->{inventory}) {
+		            for my $_pr_gi (@{$char->{inventory}}) {
+		                next unless $_pr_gi;
+		                my $_pr_name = $_pr_gi->{name} || '';
+		                if ($_pr_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+		                    $_pr_has_potions = 1;
+		                    last;
+		                }
+		            }
+		        }
+		        if ($_pr_has_potions) {
+		            warning "[portal_rewrite] bot in Prontera, rewriting 'move prontera' to 'move 22 203'\n", 'aiSidecarBridge', 1;
+		            return ('move 22 203', 'portal_rewrite');
+		        } else {
+		            warning "[portal_rewrite] bot in Prontera with 0 potions, blocking portal redirect\n", 'aiSidecarBridge', 1;
+		            return ('', 'portal_rewrite_blocked_no_potions');
+		        }
 		    }
 		    return ($trimmed, 'coordinate_move_raw');
 		}
