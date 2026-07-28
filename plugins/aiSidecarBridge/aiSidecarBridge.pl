@@ -2815,7 +2815,10 @@ sub _execute_action {
 	    ($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
-	} elsif ($rewrite_kind eq 'ai_manual_throttled') {
+		} elsif ($rewrite_kind eq 'ai_manual_allowed') {
+		    my $ok = eval { Commands::run($effective_command); 1; };
+		    ($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai_manual') : (0, 'dispatch_error', $@);
+		} elsif ($rewrite_kind eq 'ai_manual_throttled') {
 		($success, $result_code, $msg) = (1, 'ok', 'ai manual throttled (30s cooldown)');
 	} elsif ($rewrite_kind eq 'macro_potion_cooldown') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: potion cooldown');
