@@ -1066,9 +1066,26 @@ class HeuristicService:
             if not _audit_has_potions:
                 _audit_now = __import__("time").time()
                 _audit_last_return = self._last_return_to_town.get(bot_id, 0)
-                if _audit_now - _audit_last_return > 60:  # Max once per minute
+                # Rate limit: 300s (5 min) to let the bot actually COMPLETE the route
+                # Previous 60s caused route loop — bot would start routing, then
+                # get interrupted by another 'move prontera' before reaching the portal.
+                if _audit_now - _audit_last_return > 300:
+                    # ── INTEGRATED POTION LOOP STATE MACHINE ──
+                    # State 1: Hunting map, 0 potions — force return to town
+                    # State 2: Map change to prontera — auto-triggers potion buy (town branch)
+                    # State 3: Potions bought — auto-triggers return to hunt (town branch)
+                    # State 4: Map change to hunting map — resume hunting (hunting branch)
+                    # The rate limit ensures each phase completes before the next trigger.
                     self._last_return_to_town[bot_id] = _audit_now
-                    logger.info(f"[zero_potions] {bot_id}: 0 potions on {_audit_map}, forcing return to town")
+                    logger.info(f"[potion_loop] {bot_id}: 0 potions on {_audit_map}, forcing return to town (rate_limit=300s)")
+                    # Check if bot is ALREADY sitting — if so, force stand first
+                    _audit_sitting = signals.get("is_sitting", False)
+                    if _audit_sitting:
+                        actions.append(HeuristicAction(
+                            kind="command", command="stand",
+                            confidence=0.99, domain="economy",
+                            reason="Zero potions on hunting map - stand before returning to town",
+                        ))
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
@@ -1079,6 +1096,10 @@ class HeuristicService:
                         confidence=0.95, domain="economy",
                         reason="Enable auto-attack after returning to town",
                     ))
+                else:
+                    # Bot is en route to Prontera — don't send another move
+                    _audit_remain = int(300 - (_audit_now - _audit_last_return))
+                    logger.debug(f"[potion_loop] {bot_id}: already en route to town ({_audit_remain}s remaining)")
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
             _audit_rand = __import__("random").Random(_audit_seed)

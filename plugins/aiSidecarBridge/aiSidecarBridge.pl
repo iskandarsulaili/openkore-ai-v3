@@ -3956,11 +3956,13 @@ sub _rewrite_runtime_command {
 				elsif ($char->{pos} && ref $char->{pos} eq 'HASH') { $cx = $char->{pos}{x} || 0; $cy = $char->{pos}{y} || 0; }
 				elsif (defined $char->{x}) { $cx = $char->{x}; $cy = $char->{y}; }
 			}
-			# Map-level check: if bot is on a hunting map and target is portal (367,205),
-			# suppress the move entirely - bot is already on the hunting map
+			# Map-level check: if bot is on a hunting map and target is a portal
+			# coordinate, suppress the move — bot is already on the hunting map.
+			# Covers BOTH portal exit (367,205 on prt_fild05) AND portal entry (22,203 on prontera).
+			# Bot2 got "move 22 203" while on prt_fild05 — those coords don't exist on hunting maps.
 			my $_cm = $field ? lc($field->name()) : '';
 			$_cm =~ s/\.gat$//;
-			if ($_cm =~ /_fild|_dun/i && $tx == 367 && $ty == 205) {
+			if ($_cm =~ /_fild|_dun/i && (($tx == 367 && $ty == 205) || ($tx == 22 && $ty == 203))) {
 				debug "[route_loop] already on hunting map $_cm, suppressing portal move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
 				return ('', 'route_loop_suppressed');
 			}
