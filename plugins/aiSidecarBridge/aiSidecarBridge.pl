@@ -515,7 +515,8 @@ sub on_mainLoop_post {
         # arrive on the hunting map before the sidecar processes the next cycle.
         # When bot steps through portal from Prontera to prt_fild05, check inventory.
         # If 0 potions, turn around and go back to Prontera immediately.
-        if ($char && $field) {
+        # Only runs when bot is IN_GAME (not during STARTING phase).
+        if ($char && $field && $net && $net->getState() == Network::IN_GAME) {
             state $_last_portal_check_ms = 0;
             my $_now_ms = _now_ms();
             if ($_now_ms - $_last_portal_check_ms > 5000) {  # Every 5s
