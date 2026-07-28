@@ -4690,21 +4690,10 @@ class PDCALoop:
             # ═══════════════════════════════════════════════════════
             try:
                 try:
-                    # 1. Cold start advice (first 3 cycles)
-                    if not hasattr(self._runtime, "_pro_ro_player_cold_start_count"):
-                        object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 0)
-                    _pro_inline_fired = self._runtime._pro_ro_player_cold_start_count < 3
-                    if _pro_inline_fired:
-                        # Check if heuristic's cold start has completed (step >= 4)
-                        # The heuristic's cold start sequence runs in _assess_impl which
-                        # fires AFTER this Pro RO check. Initialize step to 0 for new bots
-                        # so the suppression fires on the FIRST cycle.
-                        _cs_step = getattr(
-                            getattr(self._runtime, "heuristic_service", None), "_cold_start_step", {}
-                        ).get(_cycle_bot_id, 0)
-                        if _cs_step < 4:
-                            _pro_inline_fired = False
-                            logger.info(f"[pro_ro] {_cycle_bot_id}: skipping cold start (heuristic cold start active, step={_cs_step})")
+                    # 1. Cold start advice (first 3 cycles) — DISABLED
+                    # Heuristic cold start handles this properly (task-completion-triggered).
+                    # Pro RO agent's cold start overrides with hardcoded 'move prt_fild05'.
+                    _pro_inline_fired = False
                     if _pro_inline_fired:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
                         _pro_inline = ProRoPlayerProfile()
