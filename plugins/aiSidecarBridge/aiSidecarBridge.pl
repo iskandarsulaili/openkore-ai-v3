@@ -3988,9 +3988,29 @@ sub _rewrite_runtime_command {
 	# When lockMap is a hunting map -> IGNORE entirely (let bot walk/hunt)
 	# When on hunting map -> convert to sit (let bot rest)
 	# When in town -> convert to stand (allow autobuy/route)
-	# Throttled to 30s to prevent tight PDCA loop
-	if ($normalized eq 'ai manual') {
-		my $_am_now = _now_ms();
+		# Throttled to 30s to prevent tight PDCA loop
+		if ($normalized eq 'ai manual') {
+			# EXCEPTION: allow ai manual when 0 potions on hunting map (cold start portal walk)
+			if ($char && $char->{inventory}) {
+				my $_am_has_potions = 0;
+				for my $_ami (@{$char->{inventory}}) {
+					next unless $_ami;
+					my $_amn = $_ami->{name} || '';
+					if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
+						$_am_has_potions = 1;
+						last;
+					}
+				}
+				if (!$_am_has_potions) {
+					my $_amm = $field ? lc($field->name()) : '';
+					$_amm =~ s/\.gat$//;
+					if ($_amm =~ /_fild|_dun/i) {
+						debug "[rewrite_runtime] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
+						return ($normalized, 'ai_manual_allowed');
+					}
+				}
+			}
+			my $_am_now = _now_ms();
 		my $_am_last = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
 		if ($_am_now - $_am_last < 30000) {
 			return ('', 'ai_manual_throttled');
