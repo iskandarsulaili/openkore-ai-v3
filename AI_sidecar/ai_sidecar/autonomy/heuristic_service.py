@@ -1779,6 +1779,11 @@ class HeuristicService:
                 "Don't give up mid-fight")
             # ai auto is not a config set — always emit (not deduped)
             actions.append(HeuristicAction(
+                kind="command", command="stand",
+                confidence=0.95, domain="hunting",
+                reason="Stand up before enabling auto-attack",
+            ))
+            actions.append(HeuristicAction(
                 kind="command", command="ai auto",
                 confidence=0.95, domain="hunting",
                 reason="Ensure auto-attack mode is active",
