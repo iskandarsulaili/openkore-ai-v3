@@ -1059,14 +1059,14 @@ class HeuristicService:
                 # Need cold start — ensure we're in Prontera first
                 self._cold_start_step[bot_id] = 1
                 _cold_start_step = 1  # Sync local var
-                # Always queue move prontera if bot is NOT already in town
-                # This ensures the bot gets to Prontera FIRST before step 1
-                # sends it to the farming map (prt_fild01).
+                # Use portal coordinates (367 205) instead of map name 'prontera'
+                # Map-name moves require portal data which OpenKore may not have.
+                # Coordinates work regardless of routing database.
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
+                        kind="command", command="move 367 205",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - return to Prontera to buy equipment",
+                        reason="Cold start - go to Prontera portal to reach town",
                     ))
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon
