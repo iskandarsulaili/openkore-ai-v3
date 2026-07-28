@@ -991,6 +991,100 @@ class HeuristicService:
         _leader_map = ""
         # _profile_to_char is accessed via self._profile_to_char throughout
 
+        # ── CONFIG AUDIT: detect and fix suboptimal configs retroactively ──
+        # Runs every cycle for ALL bots, not just COLD_START or hunting maps
+        # Fixes: attackMaxDistance, attackDistance, attackAuto, avoidList settings
+        # MUST run before state-specific returns to ensure config is always applied
+        _audit_map = signals.get("map", "") or ""
+        _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
+        _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+        if _audit_is_hunting:
+            # Ensure attack config is optimal for Novice-level combat
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
+                "Config audit - increase chase distance to 30 for Novice attack range")
+            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
+                "Config audit - attack from 5 cells away")
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Config audit - enable aggressive auto-attack")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
+                "Config audit - attack monsters as soon as they appear")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Config audit - don't give up mid-fight")
+            # CRITICAL: Disable avoidList on hunting maps
+            # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
+            # instead of attacking them. This is the root cause of zero kills.
+            # OpenKore uses 'avoidList' not 'avoidOutOfSight' for monster avoidance.
+            self._set_config_once(actions, bot_id, "avoidList", "0", "hunting",
+                "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
+            self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "0", "hunting",
+                "Config audit - disable avoid system in lockMap (prevents running from monsters)")
+            # Anti-detection: randomize movement and command pacing per bot
+            _audit_seed = hash(bot_id) & 0xFFFFFFFF
+            _audit_rand = __import__("random").Random(_audit_seed)
+            _audit_route_step = _audit_rand.randint(2, 5)
+            _audit_route_walk = _audit_rand.choice(["1", "2"])
+            _audit_attackAuto_pause = _audit_rand.randint(0, 2)
+            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
+                "Config audit - enable random walk for human-like movement")
+            self._set_config_once(actions, bot_id, "route_randomWalk_inLockOnly", "1", "hunting",
+                "Config audit - random walk only in lockMap")
+            self._set_config_once(actions, bot_id, "route_randomWalk_maxRouteTime", str(_audit_route_step), "hunting",
+                f"Config audit - random walk step {_audit_route_step} (per-bot variation)")
+            self._set_config_once(actions, bot_id, "route_randomWalk_maxWalkTime", _audit_route_walk, "hunting",
+                f"Config audit - random walk time {_audit_route_walk}s (per-bot variation)")
+            self._set_config_once(actions, bot_id, "attackAuto_pause", str(_audit_attackAuto_pause), "hunting",
+                f"Config audit - attack pause {_audit_attackAuto_pause}s (per-bot variation)")
+        elif _audit_is_town:
+            # In town — ensure bot is in auto mode and ready to move
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Config audit (town) - enable aggressive auto-attack for when we return to hunt")
+            # Buy potions immediately if in town with 0 potions (no 30s wait)
+            _audit_now = __import__("time").time()
+            _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
+            _audit_town_time = _audit_now - _audit_town_entry
+            _audit_inv = signals.get("inventory", {}) or {}
+            _audit_items = _audit_inv.get("items", []) or []
+            _audit_has_potions = any(
+                "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
+                for item in _audit_items
+            )
+            if not _audit_has_potions:
+                _audit_zeny = signals.get("zeny", 0) or 0
+                if _audit_zeny >= 50:
+                    _audit_potion_qty = min(int(_audit_zeny / 50), 10)
+                    if _audit_potion_qty > 0:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"buy 501 {_audit_potion_qty}",
+                            confidence=0.99, domain="economy",
+                            reason=f"Town - buy {_audit_potion_qty} Red Potions (0 potions in inventory)",
+                        ))
+                    _audit_has_weapon = any(
+                        "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
+                        "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
+                        for item in _audit_items
+                    )
+                    if not _audit_has_weapon and _audit_zeny >= 50:
+                        actions.append(HeuristicAction(
+                            kind="command", command="buy 1201 1",
+                            confidence=0.99, domain="economy",
+                            reason="Town stuck - buy Knife (no weapon detected)",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="equip 1201",
+                            confidence=0.99, domain="economy",
+                            reason="Town stuck - equip Knife after purchase",
+                        ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="move 367 205",
+                        confidence=0.99, domain="hunting",
+                        reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Enable auto-attack after returning to hunt",
+                    ))
+
         # ── STATE: DEAD ──
         if state == "DEAD":
             actions.append(HeuristicAction(
@@ -1151,103 +1245,6 @@ class HeuristicService:
             )
             self._last_assessment[bot_id] = assessment
             return assessment
-
-        # ── CONFIG AUDIT: detect and fix suboptimal configs retroactively ──
-        # Runs every cycle for ALL bots, not just COLD_START or hunting maps
-        # Fixes: attackMaxDistance, attackDistance, attackAuto settings
-        _audit_map = signals.get("map", "") or ""
-        _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
-        _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
-        if _audit_is_hunting:
-            # Ensure attack config is optimal for Novice-level combat
-            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
-                "Config audit - increase chase distance to 30 for Novice attack range")
-            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
-                "Config audit - attack from 5 cells away")
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Config audit - enable aggressive auto-attack")
-            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
-                "Config audit - attack monsters as soon as they appear")
-            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
-                "Config audit - don't give up mid-fight")
-            # CRITICAL: Disable avoidList on hunting maps
-            # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
-            # instead of attacking them. This is the root cause of zero kills.
-            # OpenKore uses 'avoidList' not 'avoidOutOfSight' for monster avoidance.
-            self._set_config_once(actions, bot_id, "avoidList", "0", "hunting",
-                "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
-            self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "0", "hunting",
-                "Config audit - disable avoid system in lockMap (prevents running from monsters)")
-            # Anti-detection: randomize movement and command pacing per bot
-            # Use bot name as seed for deterministic but unique behavior per bot
-            _audit_seed = hash(bot_id) & 0xFFFFFFFF
-            _audit_rand = __import__("random").Random(_audit_seed)
-            _audit_route_step = _audit_rand.randint(2, 5)
-            _audit_route_walk = _audit_rand.choice(["1", "2"])
-            _audit_attackAuto_pause = _audit_rand.randint(0, 2)
-            self._set_config_once(actions, bot_id, "route_randomWalk", "1", "hunting",
-                "Config audit - enable random walk for human-like movement")
-            self._set_config_once(actions, bot_id, "route_randomWalk_inLockOnly", "1", "hunting",
-                "Config audit - random walk only in lockMap")
-            self._set_config_once(actions, bot_id, "route_randomWalk_maxRouteTime", str(_audit_route_step), "hunting",
-                f"Config audit - random walk step {_audit_route_step} (per-bot variation)")
-            self._set_config_once(actions, bot_id, "route_randomWalk_maxWalkTime", _audit_route_walk, "hunting",
-                f"Config audit - random walk time {_audit_route_walk}s (per-bot variation)")
-            self._set_config_once(actions, bot_id, "attackAuto_pause", str(_audit_attackAuto_pause), "hunting",
-                f"Config audit - attack pause {_audit_attackAuto_pause}s (per-bot variation)")
-        elif _audit_is_town:
-            # In town — ensure bot is in auto mode and ready to move
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Config audit (town) - enable aggressive auto-attack for when we return to hunt")
-            # Buy potions immediately if in town with 0 potions (no 30s wait)
-            _audit_now = __import__("time").time()
-            _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
-            _audit_town_time = _audit_now - _audit_town_entry
-            _audit_inv = signals.get("inventory", {}) or {}
-            _audit_items = _audit_inv.get("items", []) or []
-            _audit_has_potions = any(
-                "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
-                for item in _audit_items
-            )
-            if not _audit_has_potions:
-                # Bot has 0 potions in town — buy immediately
-                _audit_zeny = signals.get("zeny", 0) or 0
-                if _audit_zeny >= 50:
-                    _audit_potion_qty = min(int(_audit_zeny / 50), 10)
-                    if _audit_potion_qty > 0:
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"buy 501 {_audit_potion_qty}",
-                            confidence=0.99, domain="economy",
-                            reason=f"Town - buy {_audit_potion_qty} Red Potions (0 potions in inventory)",
-                        ))
-                    # Also buy weapon if we don't have one
-                    _audit_has_weapon = any(
-                        "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
-                        "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
-                        for item in _audit_items
-                    )
-                    if not _audit_has_weapon and _audit_zeny >= 50:
-                        actions.append(HeuristicAction(
-                            kind="command", command="buy 1201 1",
-                            confidence=0.99, domain="economy",
-                            reason="Town stuck - buy Knife (no weapon detected)",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="equip 1201",
-                            confidence=0.99, domain="economy",
-                            reason="Town stuck - equip Knife after purchase",
-                        ))
-                    # Return to hunt
-                    actions.append(HeuristicAction(
-                        kind="command", command="move 367 205",
-                        confidence=0.99, domain="hunting",
-                        reason=f"Town stuck - return to hunt after {_audit_town_time:.0f}s in town",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
-                        confidence=0.95, domain="hunting",
-                        reason="Enable auto-attack after returning to hunt",
-                    ))
 
         # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
         # Force leave regardless of cached party state — the bridge may have stale data
