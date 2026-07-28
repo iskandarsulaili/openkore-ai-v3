@@ -4330,7 +4330,13 @@ sub _check_bridge_reflexes {
 				$_last_hp = $hp;
 				# Only sit if NOT in combat — sitting mid-fight causes stand-sit loop
 				my $_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-				if (!$_in_combat && $aggro_count == 0 && $AI::AI != 2) {
+				# Also check if we were recently in combat (within 3s) — prevents sit right after attack
+				state $_last_combat_ms = 0;
+				if ($_in_combat) {
+					$_last_combat_ms = _now_ms();
+				}
+				my $_since_combat = _now_ms() - $_last_combat_ms;
+				if (!$_in_combat && $_since_combat > 3000 && $aggro_count == 0 && $AI::AI != 2) {
 					eval { Commands::run("sit"); 1 };
 				}
 				# Post event to sidecar: "I need healing items"
