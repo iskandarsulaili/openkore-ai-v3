@@ -4049,10 +4049,9 @@ sub _rewrite_runtime_command {
 	if ($normalized =~ /^set\s+lockMap\s+(.+)$/i) {
 	    my $_lm_target = $1;
 	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
-	    $::config{'lockMap'} = $_lm_target;
-	    $::config{'_sidecar_set_lockMap'} = 1;
-	    $::config{'attackAuto_inLockOnly'} = 1;
-	    return ('', 'lockmap_set');
+	    	    $::config{'lockMap'} = $_lm_target;
+	    	    $::config{'_sidecar_set_lockMap'} = 1;
+	    	    return ('', 'lockmap_set');
 	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
 	# Use $trimmed (original case) to preserve config key case
