@@ -4695,6 +4695,14 @@ class PDCALoop:
                         object.__setattr__(self._runtime, "_pro_ro_player_cold_start_count", 0)
                     _pro_inline_fired = self._runtime._pro_ro_player_cold_start_count < 3
                     if _pro_inline_fired:
+                        # Check if heuristic's cold start is still in progress (step < 4)
+                        # If so, skip Pro RO agent's cold start — it overrides the
+                        # proper cold start sequence with a hardcoded map move.
+                        _hs = getattr(self, "_heuristic_service", None)
+                        if _hs and getattr(_hs, "_cold_start_step", {}).get(_cycle_bot_id, 0) < 4:
+                            _pro_inline_fired = False
+                            logger.info(f"[pro_ro] {_cycle_bot_id}: skipping cold start (heuristic cold start active)")
+                    if _pro_inline_fired:
                         from ai_sidecar.crewai.agents.pro_ro_player_agent import ProRoPlayerProfile
                         _pro_inline = ProRoPlayerProfile()
                         _pro_inline_snap = self._get_latest_snapshot()
