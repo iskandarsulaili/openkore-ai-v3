@@ -2447,7 +2447,6 @@ sub _execute_action {
 			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
-		warning "[move] execute: $effective_command\n", 'aiSidecarBridge', 1;
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'chat_sent') {
@@ -2470,11 +2469,9 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'ai_manual_to_sit') {
 	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
-	    # Suppressed - do nothing, bot stays in auto mode
 	    ($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
 	    ($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'sit_blocked_on_hunting_map') {
-	    # Blocked - bot should fight, not rest
 	    ($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
@@ -2518,6 +2515,8 @@ sub _execute_action {
 			my $err = $@ || 'command execution failure';
 			($success, $result_code, $msg) = (0, 'dispatch_error', _trim($err, 220));
 		}
+	}
+	}
 	}
 
 	my $latency_ms = _now_ms() - $started;
