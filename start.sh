@@ -191,6 +191,10 @@ stop_all() {
         done < "$PID_FILE"
         rm -f "$PID_FILE"
     fi
+    # Kill watchdog
+    local wpid=$(cat "$SCRIPT_DIR/.watchdog_pid" 2>/dev/null || echo "")
+    [ -n "$wpid" ] && kill "$wpid" 2>/dev/null || true
+    rm -f "$SCRIPT_DIR/.watchdog_pid"
     # Force-kill any remaining processes
     pkill -9 -f "openkore.pl" 2>/dev/null || true
     pkill -9 -f "ai_sidecar.app" 2>/dev/null || true

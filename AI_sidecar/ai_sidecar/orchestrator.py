@@ -20,6 +20,7 @@ from ai_sidecar.runtime.scheduler import OutOfCombatScheduler
 from ai_sidecar.runtime.action_filter import filter_actions, get_filter_logger, BridgeActionLogger, BatchActionQueue
 from ai_sidecar.runtime.latency import get_latency_tracker
 from ai_sidecar.runtime.cruise import CruiseController
+from ai_sidecar.runtime.efficiency import EfficiencyTracker, get_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class BotRuntime:
         self._cruise = CruiseController()
         self._latency = get_latency_tracker()
         self._batch_queue = BatchActionQueue()
+        self._efficiency = get_tracker()
 
     def initialize(self) -> None:
         if self._initialized:
@@ -149,7 +151,16 @@ class BotRuntime:
         except Exception as e:
             logger.error(f"[{bot_id}] OutOfCombatScheduler failed: {e}")
 
-        # 5. Save bot state to persistence
+        # 5. Efficiency tracking
+        try:
+            zeny = int(signals.get("zeny", 0) or 0)
+            rate = self._efficiency.sample(zeny)
+            if rate:
+                logger.info(f"[{bot_id}] Efficiency: {rate['zeny_per_hour_5min']:.0f}z/hr (AI mode)")
+        except Exception:
+            pass
+
+        # 6. Save bot state to persistence
         try:
             PersistentState.save_bot_state(bot_id, "last_signals", {
                 "map": map_name,
