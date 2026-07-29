@@ -2606,17 +2606,20 @@ sub _poll_next_action {
 				last;
 			}
 		}
-		if (!$_pa_has_potions) {
-			my $_pm = $field ? lc($field->name()) : '';
-			$_pm =~ s/\.gat$//;
-			if ($_pm =~ /_fild|_dun/i) {
-				$::config{'attackAuto'} = 0;
-				$::config{'attackAuto_inLockOnly'} = 0;
-				$::config{'attackAuto_routeToLock'} = 0;
-				$::config{'route_randomWalk'} = 0;
+				if (!$_pa_has_potions) {
+					my $_pm = $field ? lc($field->name()) : '';
+					$_pm =~ s/\.gat$//;
+					if ($_pm =~ /_fild|_dun/i) {
+						$::config{'attackAuto'} = 0;
+						$::config{'attackAuto_inLockOnly'} = 0;
+						$::config{'attackAuto_routeToLock'} = 0;
+						$::config{'route_randomWalk'} = 0;
+					}
+				} elsif ($::config{'route_randomWalk'} == 0) {
+					# Has potions or not on hunting map — restore route_randomWalk
+					$::config{'route_randomWalk'} = 1;
+				}
 			}
-		}
-	}
 
 	my $poll_id = _trace_id();
 	my $resp = _http_post_json('/v1/actions/next', {
