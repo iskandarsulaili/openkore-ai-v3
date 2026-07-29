@@ -31,6 +31,37 @@ from ai_sidecar.autonomy.ro_mechanics import (
     PER_MAP_MON_CONTROL, CLASS_SKILL_TRAINING,
 )
 from ai_sidecar.autonomy.domains import DomainRegistry
+from ai_sidecar.domains.combat.dispatcher import TacticsDispatcher
+from ai_sidecar.domains.npc.shop import NPCShop
+from ai_sidecar.domains.npc.dialogue import NPCDialogueEngine
+from ai_sidecar.domains.npc.storage import NPCStorage
+from ai_sidecar.domains.quests.tracker import QuestTracker
+from ai_sidecar.domains.quests.automation import QuestAutomation
+from ai_sidecar.domains.equipment.manager import EquipmentManager
+from ai_sidecar.domains.equipment.swapper import WeaponSwapper
+from ai_sidecar.domains.crafting.alchemy import AlchemyCrafting
+from ai_sidecar.domains.crafting.cooking import CookingCrafting
+from ai_sidecar.domains.crafting.forging import ForgingCrafting
+from ai_sidecar.domains.instances.registry import InstanceRegistry
+from ai_sidecar.domains.instances.coordinator import InstanceCoordinator
+from ai_sidecar.domains.consumables.buffs import AutoBuffManager
+from ai_sidecar.domains.consumables.recovery import RecoveryManager
+from ai_sidecar.domains.companions.pets import PetManager
+from ai_sidecar.domains.companions.homunculus import HomunculusManager
+from ai_sidecar.domains.companions.mercenary import MercenaryManager
+from ai_sidecar.domains.environment.time import GameTimeTracker
+from ai_sidecar.domains.navigation.portals import PortalDB
+from ai_sidecar.domains.navigation.pathfinding import Pathfinder
+from ai_sidecar.domains.progression.lifecycle import LifecycleStateMachine
+from ai_sidecar.domains.progression.advancement import AdvancementDomain
+from ai_sidecar.domains.pvp.arenas import ArenaTactics
+from ai_sidecar.domains.pvp.woe import WoETactics
+from ai_sidecar.domains.learning.experience import ExperienceTracker
+from ai_sidecar.domains.learning.adaptation import StrategyAdapter
+from ai_sidecar.domains.planning.goals import GoalManager
+from ai_sidecar.domains.planning.scheduler import TaskScheduler
+from ai_sidecar.domains.social.swarm import SwarmCoordinator
+from ai_sidecar.state.collector import StateCollector
 
 logger = logging.getLogger(__name__)
 
@@ -976,6 +1007,17 @@ class HeuristicService:
         self._load_state()
         # ── Domain registry: loaded once, runs supplementary domains ──
         self._domain_registry: DomainRegistry | None = None
+        self._state_collector: StateCollector | None = None
+        self._new_domains_initialized: bool = False
+        self._portal_db: PortalDB | None = None
+        self._pathfinder: Pathfinder | None = None
+        self._quest_tracker: QuestTracker | None = None
+        self._equipment_manager: EquipmentManager | None = None
+        self._swarm_coordinator: SwarmCoordinator | None = None
+        self._lifecycle: LifecycleStateMachine | None = None
+        self._experience_tracker: ExperienceTracker | None = None
+        self._goal_manager: GoalManager | None = None
+        self._task_scheduler: TaskScheduler | None = None
 
     # ── State persistence ──────────────────────────────────────────────
 
