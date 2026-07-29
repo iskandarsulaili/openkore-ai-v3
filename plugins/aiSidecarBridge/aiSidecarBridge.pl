@@ -3991,21 +3991,24 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-	# Handle 'mon_control <entry>' - write to control/mon_control.txt and reload
-	if ($normalized =~ /^mon_control\s+(.+)$/) {
-		my $_mc_entry = $1;
-		my $_mc_file = 'control/mon_control.txt';
-		if (open my $_mc_fh, '>>', $_mc_file) {
-			print $_mc_fh "$_mc_entry\n";
-			close $_mc_fh;
-			debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+		# Handle 'mon_control <entry>' - write to mon_control.txt and reload
+		# Writes to ALL bot profiles so the setting takes effect for all bots
+		if ($normalized =~ /^mon_control\s+(.+)$/) {
+			my $_mc_entry = $1;
+			my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
+			push @_mc_files, 'control/mon_control.txt';
+			for my $_mc_file (@_mc_files) {
+				if (open my $_mc_fh, '>>', $_mc_file) {
+					print $_mc_fh "$_mc_entry\n";
+					close $_mc_fh;
+					debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+				} else {
+					warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+				}
+			}
 			eval { Commands::run("reload mon_control"); 1; };
 			return ('', 'mon_control_applied');
-		} else {
-			warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
-			return ('', 'mon_control_write_failed');
 		}
-	}
 
 	# Handle 'set lockMap' - set lockMap to hunting map
 	if ($normalized =~ /^set\s+lockMap\s+(.+)$/i) {
