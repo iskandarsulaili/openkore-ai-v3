@@ -21,6 +21,8 @@ from ai_sidecar.autonomy.ro_mechanics import (
     CARD_VALUES, STAT_BREAKPOINTS, SCALING_STAT_TARGETS,
     POTION_COST, POTION_HEAL, BLUE_POTION_COST, BLUE_POTION_SP, ARROW_COST,
     MVP_MONSTERS, ELEMENTAL_WEAPONS, JOB_CHANGE_TALK,
+    JOB_CHANGE_2_1, JOB_2_1_CLASSES,
+    PER_MAP_MON_CONTROL, CLASS_SKILL_TRAINING,
 )
 
 logger = logging.getLogger(__name__)
@@ -366,10 +368,14 @@ class AdaptiveDataStore:
 
     Tracks map performance, NPC locations, economy patterns.
     All public methods use RLock for concurrent bot access.
+    Auto-persists state to disk via JSON for restart survival.
     """
 
-    def __init__(self):
+    PERSISTENCE_DIR: str = "data/adaptive"
+
+    def __init__(self, persistence_path: str | None = None):
         self._lock = threading.RLock()
+        self._persistence_path = persistence_path or AdaptiveDataStore.PERSISTENCE_DIR
         self.map_performance: dict[str, dict[str, float]] = {}
         self.stat_effectiveness: dict[str, dict[str, float]] = {}
         self.skill_priority: dict[str, dict[str, float]] = {}
@@ -463,6 +469,84 @@ class AdaptiveDataStore:
         self.skill_damage = SKILL_DAMAGE
         self.food_items = FOOD_ITEMS
         self.card_values = CARD_VALUES
+
+        # Load persisted state on startup
+        self._load_state()
+
+    # ── State persistence ──────────────────────────────────────────────
+
+    def _persistence_file(self, name: str) -> str:
+        """Return the full path for a persistence file."""
+        p = Path(self._persistence_path)
+        p.mkdir(parents=True, exist_ok=True)
+        return str(p / name)
+
+    def save_state(self) -> None:
+        """Save adaptive data to disk so learning survives restarts."""
+        try:
+            import json, time
+            with self._lock:
+                data = {
+                    "map_performance": self.map_performance,
+                    "stat_effectiveness": self.stat_effectiveness,
+                    "skill_priority": self.skill_priority,
+                    "economy_data": self.economy_data,
+                    "death_analysis": self.death_analysis,
+                    # spawn_heatmap has tuple keys — convert to strings
+                    "spawn_heatmap": {
+                        m: {f"{x},{y}": c for (x, y), c in cells.items()}
+                        for m, cells in self.spawn_heatmap.items()
+                    },
+                    # npc_locations: service -> map_name -> list of (x, y, name)
+                    "npc_locations": self.npc_locations,
+                    "_saved_at": time.time(),
+                }
+            path = self._persistence_file("adaptive_state.json")
+            # Atomic write: write to temp, then rename
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            Path(tmp).rename(path)
+        except Exception as exc:
+            logger.warning("AdaptiveDataStore.save_state failed: %s", exc)
+
+    def load_state(self) -> None:
+        """Load previously-saved adaptive state from disk."""
+        self._load_state()
+
+    def _load_state(self) -> None:
+        """Internal: load state from disk on construction."""
+        try:
+            import json
+            path = self._persistence_file("adaptive_state.json")
+            if not Path(path).exists():
+                return
+            with open(path) as f:
+                data = json.load(f)
+            with self._lock:
+                self.map_performance.update(data.get("map_performance", {}))
+                self.stat_effectiveness.update(data.get("stat_effectiveness", {}))
+                self.skill_priority.update(data.get("skill_priority", {}))
+                self.economy_data.update(data.get("economy_data", {}))
+                self.death_analysis.update(data.get("death_analysis", {}))
+                # Restore spawn_heatmap from string keys back to tuples
+                for m, cells in data.get("spawn_heatmap", {}).items():
+                    self.spawn_heatmap.setdefault(m, {})
+                    for skey, count in cells.items():
+                        parts = skey.split(",")
+                        if len(parts) == 2:
+                            self.spawn_heatmap[m][(int(parts[0]), int(parts[1]))] = count
+                # Restore npc_locations
+                for service, maps in data.get("npc_locations", {}).items():
+                    self.npc_locations.setdefault(service, {})
+                    for map_name, npcs in maps.items():
+                        self.npc_locations[service].setdefault(map_name, [])
+                        for npc in npcs:
+                            if isinstance(npc, list) and len(npc) >= 3:
+                                self.npc_locations[service][map_name].append((npc[0], npc[1], npc[2]))
+            logger.info("AdaptiveDataStore loaded from %s", path)
+        except Exception as exc:
+            logger.warning("AdaptiveDataStore._load_state failed: %s", exc)
 
     def record_kill(self, map_name: str, exp_gained: float, x: int = 0, y: int = 0, monster_name: str = "") -> None:
         with self._lock:
@@ -819,8 +903,11 @@ class HeuristicService:
       8. FLEE: Low HP -> teleport or use potion
     """
 
-    def __init__(self):
-        self._adaptive = AdaptiveDataStore()
+    PERSISTENCE_DIR: str = "data/heuristic"
+
+    def __init__(self, adaptive: AdaptiveDataStore | None = None, persistence_path: str | None = None):
+        self._adaptive = adaptive or AdaptiveDataStore()
+        self._persistence_path = persistence_path or HeuristicService.PERSISTENCE_DIR
         self._last_assessment: dict[str, HeuristicAssessment] = {}
         self._bot_state: dict[str, str] = {}
         self._state_since: dict[str, float] = {}
@@ -861,6 +948,138 @@ class HeuristicService:
         self._sold_items: dict[str, dict[str, float]] = {}
         # Potion tier cache: bot_id -> current potion item_id being bought
         self._potion_tier: dict[str, int] = {}
+        # Per-map mon_control tracking: bot_id -> {map_name: [(monster, attack, lvl, aggr)]}
+        # Used to avoid re-sending mon_control for the same map
+        self._last_mon_control_map: dict[str, str] = {}  # bot_id -> map_name
+        # Job change tracking: detect when job actually changes
+        self._last_job_name: dict[str, str] = {}  # bot_id -> previous job_name
+        # Post-job-change: track if we need to reset maps after job change
+        self._post_job_change_reset: dict[str, bool] = {}  # bot_id -> True if job just changed
+        # Mon_control dedup: bot_id -> set of (map, monster_tuple) already sent
+        self._mon_control_sent: dict[str, set] = {}
+        # Load persisted state on startup
+        self._load_state()
+
+    # ── State persistence ──────────────────────────────────────────────
+
+    def _persistence_file(self, name: str) -> str:
+        """Return the full path for a persistence file."""
+        p = Path(self._persistence_path)
+        p.mkdir(parents=True, exist_ok=True)
+        return str(p / name)
+
+    def _serializable_dict(self, d: dict) -> dict:
+        """Convert a dict with tuple values to JSON-safe format.
+        Handles _last_position: str -> tuple[int, int, float] by
+        serializing tuple values as lists.
+        """
+        result = {}
+        for k, v in d.items():
+            if isinstance(v, tuple):
+                result[k] = list(v)
+            elif isinstance(v, dict):
+                result[k] = self._serializable_dict(v)
+            else:
+                result[k] = v
+        return result
+
+    def _deserialize_dict(self, d: dict) -> dict:
+        """Reverse of _serializable_dict — restore tuples where needed."""
+        result = {}
+        for k, v in d.items():
+            if isinstance(v, list) and k in ("_last_position",):
+                result[k] = tuple(v)
+            elif isinstance(v, dict):
+                result[k] = self._deserialize_dict(v)
+            else:
+                result[k] = v
+        return result
+
+    def save_state(self) -> None:
+        """Persist heuristic service state to disk so it survives restarts."""
+        try:
+            import json, time
+            state = {
+                "_bot_state": dict(self._bot_state),
+                "_state_since": dict(self._state_since),
+                "_last_progress": dict(self._last_progress),
+                "_last_sell_time": dict(self._last_sell_time),
+                "_last_buy_time": dict(self._last_buy_time),
+                "_bot_deaths": dict(self._bot_deaths),
+                "_cold_start_fired": dict(self._cold_start_fired),
+                "_cold_start_step": dict(self._cold_start_step),
+                "_town_entry_time": dict(self._town_entry_time),
+                "_last_hunt_move": dict(self._last_hunt_move),
+                "_last_return_to_town": dict(self._last_return_to_town),
+                "_last_level": dict(self._last_level),
+                "_last_party_attempt": dict(self._last_party_attempt),
+                "_last_party_leave": dict(self._last_party_leave),
+                "_last_party_seen": dict(self._last_party_seen),
+                "_all_bots_cache": dict(self._all_bots_cache),
+                "_last_force_return": dict(self._last_force_return),
+                "_last_job_change_attempt": dict(self._last_job_change_attempt),
+                "_last_lockmap": dict(self._last_lockmap),
+                "_last_kills_count": dict(self._last_kills_count),
+                "_last_kills_time": dict(self._last_kills_time),
+                "_last_kills_log": dict(self._last_kills_log),
+                "_first_cycle_done": dict(self._first_cycle_done),
+                "_sit_start_time": dict(self._sit_start_time),
+                "_last_position": self._serializable_dict(self._last_position),
+                "_last_move_time": dict(self._last_move_time),
+                "_potion_tier": dict(self._potion_tier),
+                "_last_mon_control_map": dict(self._last_mon_control_map),
+                "_last_job_name": dict(self._last_job_name),
+                "_post_job_change_reset": dict(self._post_job_change_reset),
+                "_saved_at": time.time(),
+            }
+            # Also persist the adaptive data store
+            self._adaptive.save_state()
+            path = self._persistence_file("heuristic_state.json")
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(state, f, indent=2, default=str)
+            Path(tmp).rename(path)
+        except Exception as exc:
+            logger.warning("HeuristicService.save_state failed: %s", exc)
+
+    def load_state(self) -> None:
+        """Load previously-saved heuristic state from disk."""
+        self._load_state()
+
+    def _load_state(self) -> None:
+        """Internal: load state from disk on construction."""
+        try:
+            import json
+            path = self._persistence_file("heuristic_state.json")
+            if not Path(path).exists():
+                return
+            with open(path) as f:
+                data = json.load(f)
+            mappings = [
+                ("_bot_state",), ("_state_since",), ("_last_progress",),
+                ("_last_sell_time",), ("_last_buy_time",), ("_bot_deaths",),
+                ("_cold_start_fired",), ("_cold_start_step",),
+                ("_town_entry_time",), ("_last_hunt_move",),
+                ("_last_return_to_town",), ("_last_level",),
+                ("_last_party_attempt",), ("_last_party_leave",),
+                ("_last_party_seen",), ("_all_bots_cache",),
+                ("_last_force_return",), ("_last_job_change_attempt",),
+                ("_last_lockmap",), ("_last_kills_count",),
+                ("_last_kills_time",), ("_last_kills_log",),
+                ("_first_cycle_done",), ("_sit_start_time",),
+                ("_last_move_time",), ("_potion_tier",),
+                ("_last_mon_control_map",), ("_last_job_name",),
+                ("_post_job_change_reset",),
+            ]
+            for key in [m[0] for m in mappings]:
+                if key in data:
+                    setattr(self, key, dict(data[key]))
+            # Restore _last_position (lists -> tuples)
+            if "_last_position" in data:
+                self._last_position = self._deserialize_dict(data["_last_position"])
+            logger.info("HeuristicService loaded state from %s", path)
+        except Exception as exc:
+            logger.warning("HeuristicService._load_state failed: %s", exc)
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -921,6 +1140,14 @@ class HeuristicService:
         if hp <= 0:
             return "DEAD"
 
+        # JOB CHANGE DETECTION: track job transitions for post-job-change reset
+        _prev_job = self._last_job_name.get(bot_id, "")
+        if _prev_job and _prev_job != job_name:
+            # Job changed! Set post-job-change flag so HUNT/JOB_CHANGE states can reset maps
+            self._post_job_change_reset[bot_id] = True
+            logger.info(f"[job_change_detect] {bot_id}: {_prev_job} -> {job_name} (post-job-change reset queued)")
+        self._last_job_name[bot_id] = job_name
+
         # TOWN maps
         if is_town:
             # STUCK DETECTION: if in town > 120s with 0 kills, force hunting
@@ -945,6 +1172,10 @@ class HeuristicService:
                     return "WEAPON_BUY"
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
+                return "JOB_CHANGE"
+            # 2-1 JOB CHANGE: first class with job_level >= 50 => change to 2nd class
+            _first_classes = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
+            if job_name in _first_classes and job_level >= 50 and base_level >= 50:
                 return "JOB_CHANGE"
             if stat_points > 0:
                 return "STATS"
@@ -1005,6 +1236,31 @@ class HeuristicService:
         _max_by_weight = int(_remaining_weight_units // POTION_WEIGHT)
         _max_buy = min(_max_by_zeny, _max_by_weight, 30)  # Cap at 30 total
         return max(0, _max_buy)
+
+    def _emit_mon_control_for_map(self, actions: list, bot_id: str, map_name: str) -> None:
+        """Emit mon_control commands for the current map.
+        
+        Uses PER_MAP_MON_CONTROL table to set per-monster attack/ignore behavior.
+        Only emits for maps that have entries in the table.
+        Dedup: only emits when map changes, not every cycle.
+        """
+        _map = map_name.lower().replace(".gat", "")
+        controls = PER_MAP_MON_CONTROL.get(_map)
+        if not controls:
+            return
+        # Check if we already sent mon_control for this map
+        _last_map = self._last_mon_control_map.get(bot_id, "")
+        if _last_map == _map:
+            return  # Already sent for this map
+        self._last_mon_control_map[bot_id] = _map
+        logger.info(f"[mon_control] {bot_id}: applying {len(controls)} entries for {_map}")
+        for _monster, _attack, _lvl, _aggr in controls:
+            actions.append(HeuristicAction(
+                kind="command",
+                command=f"mon_control {_monster}\t{_attack} {_lvl} {_aggr}",
+                confidence=0.95, domain="hunting",
+                reason=f"Per-map mon_control: {_monster} -> attack={_attack} on {_map}",
+            ))
 
     def _track_kills_per_hour(self, signals: dict, bot_id: str) -> float:
         """Track kills/hour and return the rate. Logs warning if 0 for 30+ minutes."""
@@ -1278,12 +1534,18 @@ class HeuristicService:
                 _cs_potion_cost = self._get_potion_cost(_cs_potion_id)
                 _cs_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_cs_potion_id, "Red")
                 if zeny >= _cs_potion_cost:
-                    _potion_qty = min(int(zeny / _cs_potion_cost), 10)
-                    if _potion_qty > 0:
+                    # WEIGHT-AWARE BUYING: consider remaining weight capacity
+                    _cs_weight_cap = NOVICE_WEIGHT_CAPACITY
+                    _cs_max_by_weight = self._get_potion_max_buy(_cs_potion_id, zeny, weight, _cs_weight_cap)
+                    _cs_max_by_zeny = int(zeny / _cs_potion_cost)
+                    _cs_potion_qty = min(_cs_max_by_weight, _cs_max_by_zeny, 10)
+                    if _cs_potion_qty > 0:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"buy {_cs_potion_id} {_potion_qty}",
+                            kind="command", command=f"buy {_cs_potion_id} {_cs_potion_qty}",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - buy {_potion_qty} {_cs_potion_name} Potions (level {base_level}, tier item {_cs_potion_id})",
+                            reason=f"Cold start - buy {_cs_potion_qty} {_cs_potion_name} Potions "
+                                   f"(level {base_level}, tier item {_cs_potion_id}, "
+                                   f"weight={weight:.0%}, cap={_cs_weight_cap})",
                         ))
             else:
                 # Potions confirmed — move to step 4
@@ -1310,6 +1572,9 @@ class HeuristicService:
         _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
         _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
         if _audit_is_hunting:
+            # ── PER-MAP MON_CONTROL (config audit) ──
+            # Apply mon_control for hunting maps when bot is on a new map
+            self._emit_mon_control_for_map(actions, bot_id, _audit_map)
             # Ensure attack config is optimal for Novice-level combat
             self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
                 "Config audit - increase chase distance to 30 for Novice attack range")
@@ -2205,31 +2470,77 @@ class HeuristicService:
 
         # ── STATE: JOB_CHANGE ──
         if state == "JOB_CHANGE":
+            # Determine which job change: Novice -> class, or class -> 2-1
+            _jc_job = signals.get("job_name", "novice") or "novice"
+            _jc_job_lower = _jc_job.lower()
+            _jc_base_level = signals.get("base_level", 1) or 1
+            _jc_job_level = signals.get("job_level", 1) or 1
+            # Find the target class for each type
+            _jc_target_class = ""
+            _jc_npc_map = "prontera"
+            _jc_npc_x = 160
+            _jc_npc_y = 191
+            _jc_talk_seq: list[str] = []
+            _jc_is_2_1 = False
+            if _jc_job_lower == "novice":
+                # First job change: Novice -> first class
+                # Default to Archer (most classes can be reached from Prontera)
+                # The user can change this per-bot via job selection config
+                _jc_target_class = "archer"
+                _jc_npc = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
+                _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc
+                _jc_talk_seq = JOB_CHANGE_TALK.get("archer", [
+                    "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"
+                ])
+                logger.info(f"[job_change] {bot_id}: Novice job Lv{_jc_job_level} -> {_jc_target_class}")
+            else:
+                # 2-1 job change: first class -> second class
+                _jc_is_2_1 = True
+                _jc_2_1_data = JOB_CHANGE_2_1.get(_jc_job_lower)
+                if _jc_2_1_data:
+                    _jc_npc_map, _jc_npc_x, _jc_npc_y, _jc_talk_seq = _jc_2_1_data
+                else:
+                    # Fallback if 2-1 data not found
+                    _jc_npc_map, _jc_npc_x, _jc_npc_y = ("prontera", 160, 191)
+                    _jc_talk_seq = ["talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]
+                _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
+                logger.info(f"[job_change] {bot_id}: {_jc_job_lower} job Lv{_jc_job_level} -> {_jc_target_class} (2-1)")
             actions.append(HeuristicAction(
                 kind="command", command="stand",
                 confidence=0.95, domain="progression",
-                reason="Stand up before walking to Archer Guild",
+                reason="Stand up before walking to job change NPC",
             ))
-            actions.append(HeuristicAction(
-                kind="command", command="move 160 191",
-                confidence=0.95, domain="progression",
-                reason=f"Level {base_level}/{job_level} Novice - walk to Archer Guild",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talknpc 160 191",
-                confidence=0.90, domain="progression",
-                reason="Start job change dialog with Archer Guild NPC",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk continue",
-                confidence=0.85, domain="progression",
-                reason="Continue through job change dialog",
-            ))
-            actions.append(HeuristicAction(
-                kind="command", command="talk resp 0",
-                confidence=0.80, domain="progression",
-                reason="Select Archer job option",
-            ))
+            if map_name != _jc_npc_map:
+                # Not on correct town map — move there first
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_jc_npc_map}",
+                    confidence=0.95, domain="progression",
+                    reason=f"Move to {_jc_npc_map} for job change to {_jc_target_class}",
+                ))
+            else:
+                # On correct map — walk to NPC and talk
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_jc_npc_x} {_jc_npc_y}",
+                    confidence=0.95, domain="progression",
+                    reason=f"Walk to job change NPC for {_jc_target_class}",
+                ))
+                # Use JOB_CHANGE_TALK sequence
+                for _step_idx, _step_cmd in enumerate(_jc_talk_seq):
+                    _jc_confidence = max(0.70, 0.95 - (_step_idx * 0.03))
+                    actions.append(HeuristicAction(
+                        kind="command", command=_step_cmd,
+                        confidence=_jc_confidence, domain="progression",
+                        reason=f"Job change dialog step {_step_idx+1}/{len(_jc_talk_seq)}: {_jc_target_class}",
+                    ))
+                # After job change, reset mon_control tracking so new class gets fresh settings
+                self._last_mon_control_map[bot_id] = ""
+                # Clear lockmap cache so new class gets proper maps
+                self._last_lockmap[bot_id] = ""
+                # Clear cold start step for this bot (force re-evaluation with new class)
+                self._cold_start_step[bot_id] = 4  # Mark as complete so we go to HUNT
+                # Set post-job-change flag for HUNT state to reset maps on next cycle
+                self._post_job_change_reset[bot_id] = True
+                logger.info(f"[job_change] {bot_id}: change sequence sent for {_jc_target_class}, resetting map tracking")
             total_confidence = 0.90
             top_domain = "progression"
             assessment = HeuristicAssessment(
@@ -2288,18 +2599,45 @@ class HeuristicService:
 
         # ── STATE: SKILLS ──
         if state == "SKILLS":
-            if "NV_BASIC" not in skills:
-                actions.append(HeuristicAction(
-                    kind="command", command="add 1",
-                    confidence=0.90, domain="progression",
-                    reason="Learn Basic Skill to sit and regen",
-                ))
-            elif "NV_FIRSTAID" not in skills:
-                actions.append(HeuristicAction(
-                    kind="command", command="add 2",
-                    confidence=0.85, domain="progression",
-                    reason="Learn First Aid for emergency healing",
-                ))
+            # Novice skills: Basic + First Aid (universal)
+            _sk_job = signals.get("job_name", "novice") or "novice"
+            _sk_job_lower = _sk_job.lower()
+            _sk_known_skills = set(skills if isinstance(skills, list) else [])
+            _sk_skill_points = signals.get("skill_points", 0) or 0
+            _sk_skill_levels = signals.get("skill_levels", {}) or {}
+            # Check CLASS_SKILL_TRAINING for the current job
+            _sk_training = CLASS_SKILL_TRAINING.get(_sk_job_lower, CLASS_SKILL_TRAINING["novice"])
+            _sk_found_skill = False
+            for _sk_skill_id, _sk_target_level, _sk_desc in _sk_training:
+                if _sk_skill_points <= 0:
+                    break  # No more skill points
+                # Check if we already have this skill at target level
+                _sk_current_level = _sk_skill_levels.get(_sk_skill_id, 0) if isinstance(_sk_skill_levels, dict) else 0
+                if _sk_current_level >= _sk_target_level:
+                    continue  # Already at target level
+                if _sk_skill_id in _sk_known_skills:
+                    # Already have skill, level it up
+                    _sk_next_level = _sk_current_level + 1
+                    if _sk_next_level <= _sk_target_level:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"add {_sk_skill_id}",
+                            confidence=0.90, domain="progression",
+                            reason=f"Level up {_sk_skill_id} ({_sk_desc}) to Lv{_sk_next_level}/{_sk_target_level}",
+                        ))
+                        _sk_found_skill = True
+                        _sk_skill_points -= 1
+                else:
+                    # Don't have skill yet - learn it
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"add {_sk_skill_id}",
+                        confidence=0.90, domain="progression",
+                        reason=f"Learn {_sk_skill_id} ({_sk_desc}) Lv1/{_sk_target_level}",
+                    ))
+                    _sk_found_skill = True
+                    _sk_skill_points -= 1
+            if not _sk_found_skill:
+                # All skills at target level or no skill points - nothing to do
+                pass
             total_confidence = 0.90
             top_domain = "progression"
             assessment = HeuristicAssessment(
@@ -2409,6 +2747,18 @@ class HeuristicService:
 
         # ── STATE: HUNT ──
         if state == "HUNT":
+            # ── POST-JOB-CHANGE RESET ──
+            # If we just changed job, clear lockmap and mon_control caches
+            # so the bot re-evaluates maps and gets fresh mon_control for the new class
+            if self._post_job_change_reset.pop(bot_id, False):
+                self._last_lockmap[bot_id] = ""
+                self._last_mon_control_map[bot_id] = ""
+                logger.info(f"[hunt] {bot_id}: post-job-change reset applied (lockmap + mon_control cleared)")
+
+            # ── PER-MAP MON_CONTROL ──
+            # Emit mon_control commands when entering a new map
+            self._emit_mon_control_for_map(actions, bot_id, map_name)
+
             # ── COMBAT CONFIG: Set once per value change (dedup via _set_config_once) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()

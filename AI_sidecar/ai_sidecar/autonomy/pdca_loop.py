@@ -2139,6 +2139,9 @@ class PDCALoop:
         self._hunting_config_applied: dict[str, bool] = {}
         self._wall_start_ts: float = 0.0  # wall-clock startup time for force-open bypass
         self._memory_pool: Any = None  # ThreadPoolExecutor for memory searches
+        # LLM bottleneck fix: once all sub-services are initialized, skip the
+        # massive init block on subsequent cycles to reduce per-cycle overhead.
+        self._services_initialized: bool = False
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -2315,77 +2318,79 @@ class PDCALoop:
         
         # ── Ensure all sub-services are initialized before any path ──
         if self._runtime is not None:
-            try:
-                from ai_sidecar.config import settings as _settings
-                # Initialize committed action tracker if not present
-                _cat = getattr(self._runtime, "committed_action_tracker", None)
-                if _cat is None:
-                    _cat = CommittedActionTracker()
-                    self._runtime.committed_action_tracker = _cat
-                    logger.info("committed_action_tracker_initialized")
-                # Initialize hunting zone manager if not present
-                _hzm = getattr(self._runtime, "hunting_zone_manager", None)
-                if _hzm is None:
-                    _hzm = HuntingZoneManager(
-                        getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
-                    )
-                    self._runtime.hunting_zone_manager = _hzm
-                # Initialize game engine if not present
-                _ge = getattr(self._runtime, "game_engine", None)
-                if _ge is None:
-                    try:
-                        _rathena_path = getattr(_settings, "rathena_path", None)
-                        if not _rathena_path:
-                            _rathena_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")
-                        _ge = GameIntelligenceEngine(
-                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
-                            rathena_path=_rathena_path,
-                        )
-                        self._runtime.game_engine = _ge
-                        logger.info("game_engine_initialized: %d monsters, %d mob skills",
-                                    len(_ge._monsters), len(_ge._mob_skills))
-                    except Exception as e:
-                        logger.warning("game_engine_init_failed: %s", e)
-                # Initialize swarm tactics if not present
-                _swarm = getattr(self._runtime, "swarm_tactics", None)
-                if _swarm is None:
-                    try:
-                        _swarm = SwarmTacticsEngine()
-                        self._runtime.swarm_tactics = _swarm
-                    except Exception:
-                        pass
-                # ── Combat monitor: runs EVERY cycle, checks all bots ──
+            if not self._services_initialized:
                 try:
-                    _all_bot_ids = getattr(self._runtime, 'snapshot_cache', None)
-                    if _all_bot_ids is not None and hasattr(_all_bot_ids, 'bot_ids'):
-                        for _cm_bot_id in _all_bot_ids.bot_ids():
-                            logger.info("combat_monitor_enter: calling _emit_combat_monitor for bots=%s", list(_all_bot_ids.bot_ids()) if _all_bot_ids is not None and hasattr(_all_bot_ids, "bot_ids") else "none")
-                            _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cm_bot_id)
+                    from ai_sidecar.config import settings as _settings
+                    # Initialize committed action tracker if not present
+                    _cat = getattr(self._runtime, "committed_action_tracker", None)
+                    if _cat is None:
+                        _cat = CommittedActionTracker()
+                        self._runtime.committed_action_tracker = _cat
+                        logger.info("committed_action_tracker_initialized")
+                    # Initialize hunting zone manager if not present
+                    _hzm = getattr(self._runtime, "hunting_zone_manager", None)
+                    if _hzm is None:
+                        _hzm = HuntingZoneManager(
+                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                        )
+                        self._runtime.hunting_zone_manager = _hzm
+                    # Initialize game engine if not present
+                    _ge = getattr(self._runtime, "game_engine", None)
+                    if _ge is None:
+                        try:
+                            _rathena_path = getattr(_settings, "rathena_path", None)
+                            if not _rathena_path:
+                                _rathena_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "rathena_db")
+                            _ge = GameIntelligenceEngine(
+                                getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json"),
+                                rathena_path=_rathena_path,
+                            )
+                            self._runtime.game_engine = _ge
+                            logger.info("game_engine_initialized: %d monsters, %d mob skills",
+                                        len(_ge._monsters), len(_ge._mob_skills))
+                        except Exception as e:
+                            logger.warning("game_engine_init_failed: %s", e)
+                    # Initialize swarm tactics if not present
+                    _swarm = getattr(self._runtime, "swarm_tactics", None)
+                    if _swarm is None:
+                        try:
+                            _swarm = SwarmTacticsEngine()
+                            self._runtime.swarm_tactics = _swarm
+                        except Exception:
+                            pass
+                    # Initialize anti-detection if not present
+                    _ad = getattr(self._runtime, "anti_detection", None)
+                    if _ad is None:
+                        from ai_sidecar.reflex.anti_detection import get_anti_detection_system
+                        _ad = get_anti_detection_system()
+                        self._runtime.anti_detection = _ad
+                        logger.info("anti_detection_initialized")
+                    # Initialize heal resource loader if not present
+                    _hrl = getattr(self._runtime, "heal_resource_loader", None)
+                    if _hrl is None:
+                        from ai_sidecar.heal_resource_loader import get_heal_resource_loader
+                        _hrl = get_heal_resource_loader()
+                        self._runtime.heal_resource_loader = _hrl
+                        logger.info("heal_resource_loader_initialized")
+                    # Initialize role discovery if not present
+                    _role_disc = getattr(self._runtime, "role_discovery", None)
+                    if _role_disc is None:
+                        try:
+                            from ai_sidecar.fleet.swarm_ai import RoleDiscoveryEngine
+                            _role_disc = RoleDiscoveryEngine()
+                            self._runtime.role_discovery = _role_disc
+                        except Exception:
+                            pass
+                    self._services_initialized = True
                 except Exception:
                     pass
-                # Initialize anti-detection if not present
-                _ad = getattr(self._runtime, "anti_detection", None)
-                if _ad is None:
-                    from ai_sidecar.reflex.anti_detection import get_anti_detection_system
-                    _ad = get_anti_detection_system()
-                    self._runtime.anti_detection = _ad
-                    logger.info("anti_detection_initialized")
-                # Initialize heal resource loader if not present
-                _hrl = getattr(self._runtime, "heal_resource_loader", None)
-                if _hrl is None:
-                    from ai_sidecar.heal_resource_loader import get_heal_resource_loader
-                    _hrl = get_heal_resource_loader()
-                    self._runtime.heal_resource_loader = _hrl
-                    logger.info("heal_resource_loader_initialized")
-                # Initialize role discovery if not present
-                _role_disc = getattr(self._runtime, "role_discovery", None)
-                if _role_disc is None:
-                    try:
-                        from ai_sidecar.fleet.swarm_ai import RoleDiscoveryEngine
-                        _role_disc = RoleDiscoveryEngine()
-                        self._runtime.role_discovery = _role_disc
-                    except Exception:
-                        pass
+            # ── Combat monitor: runs EVERY cycle, checks all bots ──
+            try:
+                _all_bot_ids = getattr(self._runtime, 'snapshot_cache', None)
+                if _all_bot_ids is not None and hasattr(_all_bot_ids, 'bot_ids'):
+                    for _cm_bot_id in _all_bot_ids.bot_ids():
+                        logger.info("combat_monitor_enter: calling _emit_combat_monitor for bots=%s", list(_all_bot_ids.bot_ids()) if _all_bot_ids is not None and hasattr(_all_bot_ids, "bot_ids") else "none")
+                        _emit_combat_monitor(self._runtime, horizon.value, bot_id=_cm_bot_id)
             except Exception:
                 pass
         
@@ -2398,19 +2403,25 @@ class PDCALoop:
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
                 _cost_mode_str = getattr(_settings, "cost_mode", "standard")
                 
-                # Initialize cost mode manager if not present
-                _cost_mode = getattr(self._runtime, "cost_mode_manager", None)
-                if _cost_mode is None:
-                    _cost_mode = CostModeManager(_cost_mode_str)
-                    self._runtime.cost_mode_manager = _cost_mode
-                    try:
-                        _role_disc = RoleDiscoveryEngine()
-                        self._runtime.role_discovery = _role_disc
-                    except Exception:
-                        pass
-                
-                # Initialize goal decomposer if not present
-                _gd = getattr(self._runtime, "goal_decomposer", None)
+                # ── LLM bottleneck fix: skip re-initialization of services ──
+                # On first cycle all 40+ services initialize. On subsequent cycles
+                # the `if X is None` guards make each check cheap (~µs), but
+                # the combined overhead is measurable over thousands of cycles.
+                # We skip the entire block once services are initialized.
+                if not self._services_initialized:
+                    # Initialize cost mode manager if not present
+                    _cost_mode = getattr(self._runtime, "cost_mode_manager", None)
+                    if _cost_mode is None:
+                        _cost_mode = CostModeManager(_cost_mode_str)
+                        self._runtime.cost_mode_manager = _cost_mode
+                        try:
+                            _role_disc = RoleDiscoveryEngine()
+                            self._runtime.role_discovery = _role_disc
+                        except Exception:
+                            pass
+
+                    # Initialize goal decomposer if not present
+                    _gd = getattr(self._runtime, "goal_decomposer", None)
                 if _gd is None:
                     try:
                         _gd = GoalDecomposer()
@@ -4019,6 +4030,7 @@ class PDCALoop:
                         logger.info("opportunity_cost_engine_initialized")
                     except Exception as e:
                         logger.warning("opportunity_cost_engine_init_failed: %s", e)
+                        self._services_initialized = True
 
                 # Get heuristic confidence
                 _hc = 0.0

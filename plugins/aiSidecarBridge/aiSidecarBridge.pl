@@ -173,6 +173,7 @@ my $next_event_ingest_at_ms = 0;
 my $next_chat_ingest_at_ms = 0;
 my $next_config_ingest_at_ms = 0;
 my $next_keepalive_at_ms = 0;
+my $next_party_status_at_ms = 0;
 
 my @ack_queue;
 my @telemetry_queue;
@@ -350,6 +351,7 @@ sub on_start3 {
 	$next_event_ingest_at_ms = $now;
 	$next_chat_ingest_at_ms = $now;
 	$next_config_ingest_at_ms = $now;
+	$next_party_status_at_ms = $now;
 
 	_attempt_register('start3');
 	my $_reg_char_name = $char ? ($char->{name} || '') : '';
@@ -607,12 +609,18 @@ sub on_mainLoop_post {
 		my $now = _now_ms();
 		_probe_actor_post_parse($now);
 
-		# Keepalive ping to prevent server timeout (every 10s)
-				# rAthena drops idle connections after ~30-40s without packet activity
-				if ($messageSender && $now >= ($next_keepalive_at_ms || 0)) {
-				    $next_keepalive_at_ms = $now + 10000;  # Every 10 seconds
-				    $messageSender->sendPing();
-				}
+		# Keepalive ping to prevent server timeout (every 5s)
+		# rAthena drops idle connections after ~30-40s without packet activity
+		# 5s gives a safety margin before the 30s idle-drop threshold
+		if ($messageSender && $now >= ($next_keepalive_at_ms || 0)) {
+		    $next_keepalive_at_ms = $now + 5000;  # Every 5 seconds
+		    $messageSender->sendPing();
+		}
+		# Periodic party status relay (every 30s) to keep sidecar informed
+		if ($registered && $now >= $next_party_status_at_ms) {
+		    $next_party_status_at_ms = $now + 30000;
+		    _send_party_status('periodic');
+		}
 		if (!$registered && $now >= $next_register_at_ms) {
 	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
 	    _attempt_register('retry');
@@ -1277,6 +1285,7 @@ sub _track_lifecycle_transitions {
 				{ reconnect_age_s => $age_s + 0.0 },
 				'info',
 			);
+			_send_party_status('reconnect');
 		} else {
 			$last_disconnect_at_ms = $now_ms;
 			_enqueue_normalized_event(
@@ -1309,6 +1318,7 @@ sub _track_lifecycle_transitions {
 					{ death_count => 0 + $death_count },
 					'warning',
 				);
+				_send_party_status('death');
 			} elsif ($last_hp <= 0 && $hp > 0) {
 				$respawn_state = 'respawned';
 				_enqueue_normalized_event(
@@ -1321,6 +1331,7 @@ sub _track_lifecycle_transitions {
 					{ death_count => 0 + $death_count },
 					'info',
 				);
+				_send_party_status('respawn');
 			}
 		}
 		$last_hp = 0 + $hp;
@@ -1338,6 +1349,7 @@ sub _track_lifecycle_transitions {
 			{},
 			'info',
 		);
+		_send_party_status('map_change');
 	}
 	$last_map_name = $map if defined $map && $map ne '';
 
@@ -1466,6 +1478,8 @@ sub _load_bridge_config {
 		aiSidecar_reflexAutoSitCooldownMs => 5000,
 		aiSidecar_reflexTopOffCooldownMs => 10000,
 		aiSidecar_reflexEmergencyMoveCooldownMs => 60000,
+		aiSidecar_reflexEscapeCooldownMs => 5000,
+		aiSidecar_reflexEscapeSpikeCooldownMs => 30000,
 		aiSidecar_huntingMap => '',              # Default hunting map (auto-detected from knowledge DB)
 		aiSidecar_sellNpc => '',                 # Sell NPC "map x y" or empty for auto-detect
 		aiSidecar_storageNpc => '',              # Storage NPC "map x y" or empty for auto-detect
@@ -2776,6 +2790,41 @@ sub _execute_action {
 		$effective_command = '';
 	}
 
+	# ── ESCAPE COMMAND: sidecar pushes "escape" → fire escape reflex ──
+	# When the sidecar tells the bot to escape (teleport or flee),
+	# immediately execute and fire the escape reflex event.
+	if (lc($command || '') =~ /^(?:escape|teleport|flee)\s*$/i) {
+		my $_escape_now = _now_ms();
+		# Execute the escape command
+		my $_escape_ok = eval { Commands::run($effective_command); 1; };
+		($success, $result_code, $msg) = (1, 'ok', 'escape_command_executed');
+
+		# Post escape event to sidecar
+		_post_event({
+			kind => 'bridge_reflex',
+			reflex => 'escape',
+			severity => 'warning',
+			text => "escape reflex triggered by sidecar command: $command",
+			command => $command,
+			run_ok => $_escape_ok ? '1' : '0',
+			hp => ($char ? $char->{hp} : 0) || 0,
+			hp_max => ($char ? $char->{hp_max} : 1) || 1,
+			map => _safe_field_map() || '',
+		});
+		debug "[aiSidecarBridge] escape_command: executing '$command' ok=$_escape_ok\n", 'aiSidecarBridge', 1;
+
+		# Force AI to manual to prevent re-engagement
+		if (defined $AI::AI && $AI::AI == 2) {
+			eval { require AI; AI::state(1); 1; };
+		}
+
+		# Set survival mode cooldown
+		$_survival_mode_until_ms = $_escape_now + 60000 if $_survival_mode_until_ms < $_escape_now;
+
+		$rewrite_kind = 'escape_command';
+		$effective_command = '';
+	}
+
 	# ── Apply ML overrides (source="ml" actions carry learned recommendations) ──
 	my $action_source = lc($action->{source} || '');
 	if ($action_source eq 'ml' && defined $metadata->{ml_override}) {
@@ -2921,6 +2970,180 @@ sub _party_leave_state_file {
 	my $_pl_dir = $::config{control} || '.';
 	$_pl_dir =~ s/\/control$//;
 	return "$_pl_dir/ai_sidecar_party_leave_state.txt";
+}
+
+# ── Party status relay ──
+# Sends party status to the sidecar when char info changes (HP, level, map).
+# The sidecar uses this data for party coordination (leader assignment,
+# member tracking, party reform after death/respawn).
+# Called from _track_lifecycle_transitions on state changes.
+
+sub _send_party_status {
+	my ($reason) = @_;
+	$reason ||= 'periodic';
+	return if !_bridge_enabled();
+	return if !$registered;
+	return if !$char;
+
+	my $_party_status = {
+		bot_id => _bot_id(),
+		char_name => $char->{name} || '',
+		base_level => $char->{lv} || $char->{level} || 0,
+		job_level => $char->{level_job} || 0,
+		hp => $char->{hp} || 0,
+		hp_max => $char->{hp_max} || 1,
+		map => _safe_field_map() || '',
+		in_party => 0,
+		party_members => [],
+		reason => $reason,
+		timestamp => _now_ms(),
+	};
+
+	if (defined $char->{party}) {
+		$_party_status->{in_party} = 1;
+		my $pu = $char->{party}{users} || {};
+		my @members;
+		for my $_pk (keys %$pu) {
+			my $_pm = $pu->{$_pk};
+			my $_pn = '';
+			if (UNIVERSAL::can($_pm, 'name')) {
+				$_pn = eval { $_pm->name() } || '';
+			}
+			if (!$_pn) {
+				$_pn = eval { $_pm->{name} } || '';
+			}
+			push @members, lc($_pn) if $_pn;
+		}
+		$_party_status->{party_members} = \@members;
+
+		# Cache party state to survive death/disconnect
+		my $_cache_key = _bot_id();
+		$::aiSidecar_cached_party{$_cache_key} = {
+			in_party => 1,
+			members => [@members],
+		};
+
+		# Party leader detection (first bot in all_bots)
+		if ($::aiSidecar_all_bots && $::config{username}) {
+			my @_all = split(',', $::aiSidecar_all_bots);
+			$_party_status->{is_party_leader} = (@_all && $::config{username} eq $_all[0]) ? 1 : 0;
+		}
+	} else {
+		# Not in party — check cache for stale party state
+		my $_cache_key = _bot_id();
+		if (defined $::aiSidecar_cached_party{$_cache_key}) {
+			my $cache = $::aiSidecar_cached_party{$_cache_key};
+			$_party_status->{cached_party} = {
+				in_party => $cache->{in_party},
+				members => [@{$cache->{members}}],
+			};
+		}
+	}
+
+	# POST to sidecar
+	my $resp = _http_post_json('/v2/party/status', $_party_status);
+	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+		debug "[party_status] failed to send party status (reason=$reason)\n", 'aiSidecarBridge', 1;
+	} else {
+		debug "[party_status] sent party status (reason=$reason, in_party=$_party_status->{in_party})\n", 'aiSidecarBridge', 2;
+	}
+
+	# If leader and in party, also check for missing members
+	if ($_party_status->{is_party_leader} && $_party_status->{in_party}) {
+		my %_mn;
+		for my $_m (@{$_party_status->{party_members}}) {
+			$_mn{$_} = 1;
+		}
+		$_mn{lc($char->{name} || '')} = 1;
+
+		my @_all_bots = split(',', $::aiSidecar_all_bots || '');
+		for my $_pn (@_all_bots) {
+			next if $_pn eq ($::config{username} || '');
+			my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;
+			if (!$_mn{lc($_cn)}) {
+				debug "[party_status] leader inviting missing member: $_cn\n", 'aiSidecarBridge', 1;
+				eval { Commands::run("party request $_cn"); 1; };
+			}
+		}
+	}
+}
+
+# ── State persistence relay ──
+# Relays key-value state between the sidecar's PersistenceManager and
+# the local filesystem. The sidecar pushes state updates via "set" commands
+# and reads state via HTTP GET. This bridge layer persists to a JSON file
+# so state survives process restarts.
+# API:
+#   _state_set(key, value) -> persist a key-value pair
+#   _state_get(key) -> retrieve a value (undef if not found)
+#   _state_clear() -> remove all persisted state
+
+sub _state_file {
+	my $_sf_dir = $::config{control} || '.';
+	$_sf_dir =~ s/\/control$//;
+	return "$_sf_dir/ai_sidecar_bridge_state.json";
+}
+
+sub _state_set {
+	my ($key, $value) = @_;
+	return if !defined $key || $key eq '';
+
+	my $_sf = _state_file();
+	my %state = ();
+
+	# Read existing state
+	if (-e $_sf) {
+		if (open my $_fh, '<', $_sf) {
+			local $/;
+			my $_raw = <$_fh>;
+			close $_fh;
+			if (defined $_raw && $_raw ne '') {
+				eval { %state = %{ JSON::PP::decode_json($_raw) }; 1; };
+			}
+		}
+	}
+
+	# Set the new value
+	$state{$key} = defined $value ? $value : '';
+
+	# Write back atomically
+	if (open my $_fh, '>', $_sf) {
+		print $_fh JSON::PP::encode_json(\%state);
+		close $_fh;
+		debug "[state_persistence] set key='$key' file=$_sf\n", 'aiSidecarBridge', 2;
+	} else {
+		debug "[state_persistence] cannot write $_sf: $!\n", 'aiSidecarBridge', 1;
+	}
+}
+
+sub _state_get {
+	my ($key) = @_;
+	return undef if !defined $key || $key eq '';
+
+	my $_sf = _state_file();
+	return undef if !-e $_sf;
+
+	my %state = ();
+	if (open my $_fh, '<', $_sf) {
+		local $/;
+		my $_raw = <$_fh>;
+		close $_fh;
+		if (defined $_raw && $_raw ne '') {
+			eval { %state = %{ JSON::PP::decode_json($_raw) }; 1; };
+		}
+	}
+
+	my $value = $state{$key};
+	return $value if defined $value && $value ne '';
+	return undef;
+}
+
+sub _state_clear {
+	my $_sf = _state_file();
+	if (-e $_sf) {
+		unlink $_sf or debug "[state_persistence] cannot unlink $_sf: $!\n", 'aiSidecarBridge', 1;
+	}
+	debug "[state_persistence] cleared all state from $_sf\n", 'aiSidecarBridge', 2;
 }
 
 sub _execute_config_reload_action {
@@ -4855,6 +5078,94 @@ sub _check_bridge_reflexes {
 			eval { Commands::run("sit"); 1 };
 		}
 	}
+
+	# ── ESCAPE REFLEX: detect escape conditions ──
+	# Detects teleport/escape from AI sequence transitions, HP spike recovery,
+	# or sidecar "escape" commands. Posts an event and sets survival mode.
+	my $_ai_top_reflex = @ai_seq ? $ai_seq[0] : '';
+	my $_is_escape_ai = $_ai_top_reflex =~ /^(?:teleport|escape|skill_use\s+teleport)/i ? 1 : 0;
+
+	# Track previous AI top to detect transition into escape
+	state $_last_escape_ai_top = '';
+	state $_last_escape_fire_ms = 0;
+
+	if ($_is_escape_ai && $_last_escape_ai_top ne $_ai_top_reflex) {
+		# Entering escape state — fire once per transition
+		my $_escape_cooldown_ms = _cfg_int('aiSidecar_reflexEscapeCooldownMs', 5000);
+		if ($now - $_last_escape_fire_ms > $_escape_cooldown_ms) {
+			$_last_escape_fire_ms = $now;
+			$_last_escape_ai_top = $_ai_top_reflex;
+
+			# Post escape event to sidecar
+			_post_event({
+				kind => 'bridge_reflex',
+				reflex => 'escape',
+				severity => 'warning',
+				text => "escape reflex triggered: AI sequence $_ai_top_reflex",
+				ai_seq => $_ai_top_reflex,
+				hp => $hp,
+				hp_max => $hp_max,
+				map => _safe_field_map() || '',
+			});
+			debug "[aiSidecarBridge] escape_reflex: detected escape via AI seq=$_ai_top_reflex\n", 'aiSidecarBridge', 1;
+
+			# Force AI to manual to prevent re-engagement during escape
+			if (defined $AI::AI && $AI::AI == 2) {
+				eval { require AI; AI::state(1); 1; };
+			}
+
+			# Set survival mode cooldown (60s) to prevent immediate re-hunt
+			$_survival_mode_until_ms = $now + 60000 if $_survival_mode_until_ms < $now;
+		}
+	} elsif (!$_is_escape_ai) {
+		# Reset tracking when no longer in escape state
+		$_last_escape_ai_top = '';
+	}
+
+	# ── HP SPIKE ESCAPE DETECTION ──
+	# Detect when HP drops from >30% to <10% then recovers to >30% within 5s.
+	# This pattern strongly suggests the bot used an escape teleport.
+	state $_escape_spike_hp = -1;
+	state $_escape_spike_t_ms = 0;
+	my $_hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 100;
+
+	if ($_hp_pct < 10 && $hp > 0) {
+		# Entered danger zone
+		if ($_escape_spike_hp < 0) {
+			$_escape_spike_hp = $_hp_pct;
+			$_escape_spike_t_ms = $now;
+		}
+	} elsif ($_hp_pct >= 30 && $_escape_spike_hp >= 0 && $_escape_spike_hp < 10) {
+		# Recovered from danger zone — likely escape teleport
+		my $_spike_age = $now - $_escape_spike_t_ms;
+		if ($_spike_age > 0 && $_spike_age < 15000) {
+			my $_spike_cooldown_ms = _cfg_int('aiSidecar_reflexEscapeSpikeCooldownMs', 30000);
+			if ($now - $_last_escape_fire_ms > $_spike_cooldown_ms) {
+				$_last_escape_fire_ms = $now;
+				_post_event({
+					kind => 'bridge_reflex',
+					reflex => 'escape_hp_spike',
+					severity => 'warning',
+					text => "escape reflex triggered: HP spike recovery ($_escape_spike_hp% -> $_hp_pct% in ${_spike_age}ms)",
+					hp => $hp,
+					hp_max => $hp_max,
+					spike_age_ms => $_spike_age,
+					map => _safe_field_map() || '',
+				});
+				debug "[aiSidecarBridge] escape_reflex: HP spike escape detected ($_escape_spike_hp% -> $_hp_pct% in ${_spike_age}ms)\n", 'aiSidecarBridge', 1;
+
+				# Set survival mode to prevent re-engagement
+				$_survival_mode_until_ms = $now + 60000 if $_survival_mode_until_ms < $now;
+			}
+		}
+		$_escape_spike_hp = -1;
+		$_escape_spike_t_ms = 0;
+	} elsif ($_hp_pct >= 30 && $_escape_spike_hp >= 0) {
+		# Gradual recovery (not a spike) — reset
+		$_escape_spike_hp = -1;
+		$_escape_spike_t_ms = 0;
+	}
+}
 }
 
 # ── STRIPPED: _apply_bot_config removed — all config is handled by sidecar heuristic ──

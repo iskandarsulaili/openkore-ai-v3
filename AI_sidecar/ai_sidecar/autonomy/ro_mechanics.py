@@ -253,6 +253,209 @@ JOB_CHANGE_TALK = {
     "merchant":["talk @npc@ (120, 200)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"],
 }
 
+# ── Second class job change (2-1) ──
+# Keyed by first class name. Same NPC approach as first job change.
+JOB_CHANGE_2_1: dict[str, tuple[str, int, int, list[str]]] = {
+    "archer":    ("prontera", 160, 191, ["talk @npc@ (160, 191)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+    "thief":     ("prontera", 231, 38,  ["talk @npc@ (231, 38)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+    "acolyte":   ("prontera", 200, 170, ["talk @npc@ (200, 170)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+    "mage":      ("prontera", 180, 150, ["talk @npc@ (180, 150)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+    "swordman":  ("prontera", 140, 120, ["talk @npc@ (140, 120)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+    "merchant":  ("prontera", 120, 200, ["talk @npc@ (120, 200)", "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]),
+}
+
+# ── Second class names (2-1) keyed by first class ──
+JOB_2_1_CLASSES: dict[str, str] = {
+    "swordman":  "knight",
+    "mage":      "wizard",
+    "archer":    "hunter",
+    "acolyte":   "priest",
+    "merchant":  "blacksmith",
+    "thief":     "assassin",
+    "taekwon":   "star_gladiator",
+    "gunslinger": "gunslinger_2",
+    "ninja":     "ninja_2",
+    "soul_linker": "soul_linker_2",
+}
+
+# ── Per-map monster control settings ──
+# Each entry: map_name -> [(monster_name, attack_auto, attack_lvl, aggresive)]
+# See OpenKore mon_control.txt format:
+#   <monster name/id>\t<attack_auto (0=never, 1=always, -1=teleport)>\t<attack_lvl (0-3)>\t<aggressive (0=ignore, 1=attack)>
+# -1 0 0 = teleport on sight
+#  0 0 0 = ignore completely
+#  1 0 0 = attack (forces attack even outside lockMap)
+#  2 0 0 = attack (only if in attack range)
+#  3 0 0 = attack from any distance
+PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
+    # ── Novice / Low-level maps ──
+    "prt_fild05": [
+        ("Poring",             1, 0, 0),  # Farm Porings
+        ("Lunatic",            0, 0, 0),  # Ignore (low exp, annoying)
+        ("Pupa",               0, 0, 0),  # Ignore (0-exp, HP sponge)
+        ("Thief Bug Egg",      0, 0, 0),  # Ignore (0-exp, HP sponge)
+        ("Thief Bug",          0, 0, 0),  # Ignore (annoying)
+        ("Fabre",              0, 0, 0),  # Ignore (0-exp)
+        ("Condor",             0, 0, 0),  # Ignore (0-exp)
+    ],
+    "prt_fild04": [
+        ("Poring",             1, 0, 0),
+        ("Rocker",             1, 0, 0),  # Good exp for level range
+        ("Creamy",             1, 0, 0),  # Fast kill, decent exp
+        ("Pupa",               0, 0, 0),
+        ("Thief Bug Egg",      0, 0, 0),
+        ("Lunatic",            0, 0, 0),
+    ],
+    "prt_fild08": [
+        ("Familiar",           1, 0, 0),  # Decent exp at level 15+
+        ("Rocker",             1, 0, 0),
+        ("Creamy",             1, 0, 0),
+        ("Poporing",           1, 0, 0),  # Better Poring
+        ("Poring",             1, 0, 0),
+        ("Thief Bug",          0, 0, 0),
+        ("Pupa",               0, 0, 0),
+    ],
+    "pay_fild01": [
+        ("Steel Chonchon",     1, 0, 0),  # Good exp, drops
+        ("Poporing",           1, 0, 0),
+        ("Familiar",           1, 0, 0),
+        ("Wolf",               0, 0, 0),  # Tough for low level
+        ("Thief Bug",          0, 0, 0),
+    ],
+    # ── Payon Cave 1F ──
+    "pay_dun00": [
+        ("Skeleton",           1, 0, 0),  # Good exp, undead
+        ("Zombie",             1, 0, 0),  # Good exp
+        ("Familiar",           1, 0, 0),
+        ("Poporing",           1, 0, 0),  # Drops poison spores
+    ],
+    # ── Payon Cave 2F ──
+    "pay_dun01": [
+        ("Munak",              1, 0, 0),  # Top priority
+        ("Bongun",             1, 0, 0),  # Top priority
+        ("Ghoul",              1, 0, 0),  # Good exp but dangerous
+        ("Skeleton",           1, 0, 0),
+        ("Zombie",             0, 0, 0),  # Waste of SP at this level
+    ],
+    # ── Geffen Dungeon 1F ──
+    "gef_dun00": [
+        ("Drainliar",          1, 0, 0),  # Easy, good exp
+        ("Creamy",             1, 0, 0),  # Easy, fast kill
+        ("Poporing",           1, 0, 0),
+        ("Poison Spore",       1, 0, 0),
+        ("Flora",              1, 0, 0),
+        ("Hunter Fly",         1, 0, 0),  # Dangerous but good exp
+    ],
+    # ── Geffen Dungeon 2F ──
+    "gef_dun01": [
+        ("Anacondaq",          1, 0, 0),  # Good exp
+        ("Stapo",              1, 0, 0),  # Good exp, drops
+        ("Alligator",          1, 0, 0),  # Good exp
+        ("Drainliar",          0, 0, 0),
+        ("Poporing",           0, 0, 0),
+    ],
+    # ── Orc Dungeon ──
+    "orcsdun01": [
+        ("Orc Warrior",        1, 0, 0),  # Top exp, drops Orcish Voucher
+        ("Orc Archer",         1, 0, 0),  # Dangerous but high exp
+        ("Orc Zombie",         1, 0, 0),  # Good exp
+        ("Steel Chonchon",     0, 0, 0),
+        ("Familiar",           0, 0, 0),
+    ],
+    # ── Byalan Dungeon 1F ──
+    "iz_dun00": [
+        ("Marina",             1, 0, 0),
+        ("Plankton",           1, 0, 0),
+        ("Kukre",              1, 0, 0),
+        ("Hydra",              1, 0, 0),
+        ("Vadon",              1, 0, 0),
+        ("Marc",               1, 0, 0),
+    ],
+    # ── Magma Dungeon 1F ──
+    "mag_dun01": [
+        ("Kaho",               1, 0, 0),
+        ("Lava Golem",         1, 0, 0),
+        ("Fire Elemental",     1, 0, 0),
+        ("Mole",               1, 0, 0),
+    ],
+}
+
+# ── Class skill training sequences ──
+# After job change, the SKILLS state follows this priority to learn skills.
+# Each entry: class_name -> [(skill_id, target_level, description)]
+CLASS_SKILL_TRAINING: dict[str, list[tuple[str, int, str]]] = {
+    "novice": [
+        ("NV_BASIC", 1, "Basic Skill — sit to regen"),
+        ("NV_FIRSTAID", 1, "First Aid — self-healing"),
+    ],
+    "swordman": [
+        ("SM_BASH", 10, "Bash — core damage skill (100% hit rate)"),
+        ("SM_RECOVERY", 5, "Increase HP Recovery"),
+        ("SM_MAGNUM", 5, "Magnum Break — AoE fire damage"),
+    ],
+    "mage": [
+        ("MG_SRECOVERY", 10, "SP Recovery — sustain for casting"),
+        ("MG_FIREBOLT", 10, "Fire Bolt — main nuke"),
+        ("MG_NAPALMBEAT", 5, "Napalm Beat — Ghost damage, stun"),
+        ("MG_COLD", 5, "Cold Bolt — water element nuke"),
+    ],
+    "archer": [
+        ("AC_OWL", 10, "Owl's Eye — DEX boost (+10 DEX at Lv10)"),
+        ("AC_DOUBLE", 10, "Double Strafe — burst DPS"),
+        ("AC_VULTURE", 5, "Vulture's Eye — range boost"),
+    ],
+    "acolyte": [
+        ("AL_HEAL", 10, "Heal — primary heal AND one-shot undead"),
+        ("AL_DEMONBANE", 10, "Demon Bane — ATK vs Undead/Demon (+24 at Lv10)"),
+        ("AL_BLESSING", 10, "Blessing — stat buff"),
+        ("AL_INCAGI", 10, "Increase AGI — ASPD buff"),
+        ("AL_TELEPORT", 2, "Teleport — escape skill"),
+    ],
+    "merchant": [
+        ("MC_DISCOUNT", 10, "Discount — cheaper buying"),
+        ("MC_OVERCHARGE", 10, "Overcharge — better selling"),
+        ("MC_VENDING", 1, "Vending — auto-sell items"),
+        ("MC_PUSHCART", 5, "Pushcart — extra weight capacity"),
+    ],
+    "thief": [
+        ("TF_DOUBLE", 10, "Double Attack — ASPD burst, huge DPS boost"),
+        ("TF_HIDING", 5, "Hiding — escape/stealth"),
+        ("TF_MISS", 5, "Improve Dodge — AGI synergy"),
+        ("TF_POISON", 5, "Envenom — poison damage over time"),
+    ],
+    # 2-1 class training
+    "knight": [
+        ("KN_SPEARMASTERY", 10, "Spear Mastery — spear damage boost"),
+        ("KN_BRANDISHSPEAR", 10, "Brandish Spear — AoE spear"),
+        ("KN_PIERCE", 10, "Pierce — single-target spear damage"),
+    ],
+    "wizard": [
+        ("WZ_FIREPILLAR", 5, "Fire Pillar — AoE fire"),
+        ("WZ_FROSTNOVA", 5, "Frost Nova — AoE water"),
+        ("WZ_HEAVENDRIVE", 10, "Heaven's Drive — AoE earth"),
+    ],
+    "hunter": [
+        ("HT_BEASTBANE", 5, "Beast Bane — damage vs Brute"),
+        ("HT_FALCON", 1, "Falcon — bird assist"),
+        ("HT_STEELCROW", 5, "Steel Crow — falcon damage"),
+    ],
+    "priest": [
+        ("PR_BENEDICTIO", 5, "Benedictio — holy weapon buff"),
+        ("PR_SLOWPOISON", 1, "Slow Poison — poison resist"),
+        ("PR_GLORIA", 5, "Gloria — LUK buff"),
+    ],
+    "blacksmith": [
+        ("BS_IRON", 5, "Iron Tempering — weapon crafting"),
+        ("BS_STEEL", 5, "Steel Tempering — advanced crafting"),
+        ("BS_HAMMERFALL", 10, "Hammerfall — AoE earth damage"),
+    ],
+    "assassin": [
+        ("AS_RIGHT", 10, "Right Hand Mastery — dual wield"),
+        ("AS_LEFT", 10, "Left Hand Mastery — dual wield"),
+        ("AS_KATAR", 10, "Katar Mastery — katar damage"),
+    ],
+}
+
 
 # ═══════════════════════════════════════════════════════════════
 # RO FORMULA FUNCTIONS
