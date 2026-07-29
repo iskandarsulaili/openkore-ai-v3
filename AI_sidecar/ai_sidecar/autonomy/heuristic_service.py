@@ -1380,6 +1380,14 @@ class HeuristicService:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
         _now_t = __import__("time").time()
+        # Auto-save state every 60 seconds
+        try:
+            _last_save = getattr(self, "_last_save_time", 0)
+            if _now_t - _last_save > 60:
+                self.save_state()
+                object.__setattr__(self, "_last_save_time", _now_t)
+        except Exception:
+            pass
         state = self._get_state(signals, bot_id)
         prev_state = self._bot_state.get(bot_id, "UNKNOWN")
 

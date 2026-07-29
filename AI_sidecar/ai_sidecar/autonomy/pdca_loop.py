@@ -2402,13 +2402,13 @@ class PDCALoop:
                 from ai_sidecar.config import settings as _settings
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
                 _cost_mode_str = getattr(_settings, "cost_mode", "standard")
-                
-                # ── LLM bottleneck fix: skip re-initialization of services ──
-                # On first cycle all 40+ services initialize. On subsequent cycles
-                # the `if X is None` guards make each check cheap (~µs), but
-                # the combined overhead is measurable over thousands of cycles.
-                # We skip the entire block once services are initialized.
                 if not self._services_initialized:
+                
+                    # ── LLM bottleneck fix: skip re-initialization of services ──
+                    # On first cycle all 40+ services initialize. On subsequent cycles
+                    # the `if X is None` guards make each check cheap (~µs), but
+                    # the combined overhead is measurable over thousands of cycles.
+                    # We skip the entire block once services are initialized.
                     # Initialize cost mode manager if not present
                     _cost_mode = getattr(self._runtime, "cost_mode_manager", None)
                     if _cost_mode is None:
@@ -2422,1615 +2422,1617 @@ class PDCALoop:
 
                     # Initialize goal decomposer if not present
                     _gd = getattr(self._runtime, "goal_decomposer", None)
-                if _gd is None:
-                    try:
-                        _gd = GoalDecomposer()
-                        self._runtime.goal_decomposer = _gd
-                    except Exception:
-                        pass
-                
-                # Initialize NPC discovery if not present
-                _nd = getattr(self._runtime, "npc_discovery", None)
-                if _nd is None:
-                    try:
-                        _nd = NPCDiscoveryEngine()
-                        self._runtime.npc_discovery = _nd
-                    except Exception:
-                        pass
-                
-                # Initialize server adaptation if not present
-                _sa = getattr(self._runtime, "server_adaptation", None)
-                if _sa is None:
-                    try:
-                        _sa = ServerAdaptationEngine(
-                            getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
-                        )
-                        self._runtime.server_adaptation = _sa
-                    except Exception:
-                        pass
-                
-                # Initialize P2P knowledge node if not present
-                _p2p = getattr(self._runtime, "p2p_node", None)
-                if _p2p is None:
-                    try:
-                        _p2p = P2PKnowledgeNode(
-                            bot_id=_cycle_bot_id,
-                            listen_port=18090 + abs(hash(_cycle_bot_id)) % 1000,
-                            server_id=_cycle_bot_id.split(":")[0] if ":" in _cycle_bot_id else "default",
-                        )
-                        # Wire to experience DB
-                        _exp_db = getattr(self._runtime, "experience_db", None)
-                        if _exp_db is not None:
-                            _p2p.set_experience_db(_exp_db)
-                        _p2p_npc = getattr(self._runtime, "npc_discovery", None)
-                        if _p2p_npc is not None:
-                            _p2p.set_npc_discovery(_p2p_npc)
-                        _p2p_sa = getattr(self._runtime, "server_adaptation", None)
-                        if _p2p_sa is not None:
-                            _p2p.set_server_adaptation(_p2p_sa)
-                        self._runtime.p2p_node = _p2p
-                        # Start P2P HTTP server to receive messages from peers
-                        _p2p_started = _p2p.start_server()
-                        if _p2p_started:
-                            logger.info("p2p_node_ready: bot=%s port=%d server_id=%s",
-                                       _cycle_bot_id, _p2p._listen_port, _p2p._server_id)
-                        # Register with P2P network manager
-                        _p2p_mgr = getattr(self._runtime, "p2p_manager", None)
-                        if _p2p_mgr is None:
-                            _p2p_mgr = P2PNetworkManager()
-                            self._runtime.p2p_manager = _p2p_mgr
-                        _p2p_mgr.register_node(_cycle_bot_id, _p2p)
-                        # Connect to all known peers
-                        _p2p_mgr.connect_all()
-                    except Exception:
-                        pass
-                
-                # Initialize swarm reflex if not present
-                _sr = getattr(self._runtime, "swarm_reflex", None)
-                if _sr is None:
-                    try:
-                        from ai_sidecar.fleet.swarm_ai import SwarmReflexSystem
-                        _sr = SwarmReflexSystem()
-                        self._runtime.swarm_reflex = _sr
-                    except Exception:
-                        pass
-                
-                # Initialize synergy engine if not present
-                _se = getattr(self._runtime, "synergy_engine", None)
-                if _se is None:
-                    try:
-                        _se = CrossHorizonSynergy()
-                        self._runtime.synergy_engine = _se
-                    except Exception:
-                        pass
-                
-                # Initialize swarm goal coordinator if not present
-                _sgc = getattr(self._runtime, "swarm_coordinator", None)
-                if _sgc is None:
-                    try:
-                        from ai_sidecar.autonomy.goal_decomposer import SwarmGoalCoordinator
-                        _sgc = SwarmGoalCoordinator()
-                        self._runtime.swarm_coordinator = _sgc
-                        # Wire into HZM for multi-bot zone coordination
-                        _hzm_existing = getattr(self._runtime, "hunting_zone_manager", None)
-                        if _hzm_existing is not None:
-                            _hzm_existing.set_coordinator(_sgc)
-                        # Wire into goal decomposer
-                        _gd_existing = getattr(self._runtime, "goal_decomposer", None)
-                        if _gd_existing is not None:
-                            _gd_existing.set_swarm_coordinator(_sgc)
-                    except Exception:
-                        pass
-                
-                # ── NEW: Initialize Role Manager ──
-                _role_mgr = getattr(self._runtime, "role_manager", None)
-                if _role_mgr is None:
-                    try:
-                        from ai_sidecar.fleet.role_manager import RoleManager
-                        _role_mgr = RoleManager()
-                        self._runtime.role_manager = _role_mgr
-                        logger.info("role_manager_initialized")
-                    except Exception as e:
-                        logger.warning("role_manager_init_failed: %s", e)
-                
-                # ── NEW: Initialize Experience DB ──
-                _exp_db = getattr(self._runtime, "experience_db", None)
-                if _exp_db is None:
-                    try:
-                        from ai_sidecar.experience_db import ExperienceDB
-                        _db_path = getattr(_settings, "experience_db_path", "data/experience.db")
-                        _exp_db = ExperienceDB(db_path=_db_path)
-                        self._runtime.experience_db = _exp_db
-                        logger.info("experience_db_initialized: path=%s", _db_path)
-                    except Exception as e:
-                        logger.warning("experience_db_init_failed: %s", e)
-                
-                # ── NEW: Initialize Fleet Learning System ──
-                _fleet_learn = getattr(self._runtime, "fleet_learning", None)
-                if _fleet_learn is None:
-                    try:
-                        from ai_sidecar.fleet.self_learning import FleetLearningSystem
-                        _fleet_learn = FleetLearningSystem()
-                        self._runtime.fleet_learning = _fleet_learn
-                        logger.info("fleet_learning_initialized")
-                    except Exception as e:
-                        logger.warning("fleet_learning_init_failed: %s", e)
-                
-                # ── NEW: Initialize Goal Stack ──
-                _goal_stack = getattr(self._runtime, "goal_stack", None)
-                if _goal_stack is None:
-                    try:
-                        from ai_sidecar.autonomy.goal_stack import GoalStackComputation
-                        _goal_stack = GoalStackComputation()
-                        self._runtime.goal_stack = _goal_stack
-                        logger.info("goal_stack_initialized")
-                    except Exception as e:
-                        logger.warning("goal_stack_init_failed: %s", e)
-                
-                # ── NEW: Initialize Memory Retrieval ──
-                _mem = getattr(self._runtime, "memory_retrieval", None)
-                if _mem is None:
-                    try:
-                        from ai_sidecar.memory.retrieval import MemoryRetrievalService, InMemoryMemoryProvider
-                        _mem = MemoryRetrievalService(
-                            provider=InMemoryMemoryProvider(max_entries=5000)
-                        )
-                        self._runtime.memory_retrieval = _mem
-                        logger.info("memory_retrieval_initialized: provider=InMemoryMemoryProvider")
-                    except Exception as e:
-                        logger.debug("memory_init_skipped: %s", e)
-                
-                # ── NEW: Initialize Reflex Rule Engine ──
-                _reflex_engine = getattr(self._runtime, "reflex_engine", None)
-                if _reflex_engine is None:
-                    try:
-                        from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
-                        _reflex_engine = ReflexRuleEngine(
-                            workspace_root=_PathModule("."),
-                            contract_version="v1",
-                            action_ttl_seconds=60,
-                        )
-                        self._runtime.reflex_engine = _reflex_engine
-                        # Load reflex rules from YAML — use __file__-relative path for portability
-                        _here = _PathModule(__file__).resolve().parent.parent
-                        _yaml_path = _here / "reflex" / "reflex_rules.yaml"
-                        _rules_loaded = _reflex_engine.load_rules_from_yaml(_yaml_path)
-                        logger.info("reflex_engine_initialized: %d rules loaded", _rules_loaded)
-                    except Exception as e:
-                        logger.warning("reflex_engine_init_failed: %s", e)
-                
-                # ── NEW: Initialize Reflex Action Emitter ──
-                _reflex_emitter = getattr(self._runtime, "reflex_emitter", None)
-                if _reflex_emitter is None:
-                    try:
-                        from ai_sidecar.reflex.action_emitter import ActionEmitter
-                        _reflex_emitter = ActionEmitter(
-                            workspace_root=_PathModule("."),
-                            contract_version="v1",
-                            action_ttl_seconds=60,
-                        )
-                        self._runtime.reflex_emitter = _reflex_emitter
-                        logger.info("reflex_emitter_initialized")
-                    except Exception as e:
-                        logger.warning("reflex_emitter_init_failed: %s", e)
-                
-                # ── NEW: Initialize NPC Dialog ──
-                _npc_dialog = getattr(self._runtime, "npc_dialog", None)
-                if _npc_dialog is None:
-                    try:
-                        from ai_sidecar.npc_dialog import NPCDialogEngine
-                        # Wire LLM adapter for NPC response decisions
-                        _llm_adapter = None
-                        _mr = getattr(self._runtime, "model_router", None)
-                        if _mr is not None and hasattr(_mr, 'generate_text'):
-                            _llm_adapter = _mr.generate_text
-                        _npc_dialog = NPCDialogEngine(llm_adapter=_llm_adapter)
-                        self._runtime.npc_dialog = _npc_dialog
-                        logger.info("npc_dialog_initialized: llm=%s", "wired" if _llm_adapter else "none")
-                    except Exception as e:
-                        logger.warning("npc_dialog_init_failed: %s", e)
-                
-                # ── NEW: Initialize Macro Intelligence ──
-                _macro_ai = getattr(self._runtime, "macro_intelligence", None)
-                if _macro_ai is None:
-                    try:
-                        from ai_sidecar.autonomy.macro_intelligence import MacroIntelligence
-                        _knowledge_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json")
-                        _macro_ai = MacroIntelligence(knowledge_path=_knowledge_path)
-                        self._runtime.macro_intelligence = _macro_ai
-                        _pattern_count = len(_macro_ai.get_all_patterns())
-                        logger.info("macro_intelligence_initialized: %d patterns loaded", _pattern_count)
-                    except Exception as e:
-                        logger.warning("macro_intelligence_init_failed: %s", e)
-                
-                # ── NEW: Initialize Combat Optimizer ──
-                _combat_opt = getattr(self._runtime, "combat_optimizer", None)
-                if _combat_opt is None:
-                    try:
-                        from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
-                        _knowledge_path = _PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
-                        _combat_opt = CombatOptimizer(knowledge_path=_knowledge_path)
-                        self._runtime.combat_optimizer = _combat_opt
-                        logger.info("combat_optimizer_initialized")
-                    except Exception as e:
-                        logger.warning("combat_opt_init_failed: %s", e)
-                
-                # ── NEW: Initialize Quest Automation ──
-                _quest_auto = getattr(self._runtime, "quest_automation", None)
-                if _quest_auto is None:
-                    try:
-                        from ai_sidecar.autonomy.quest_automation import QuestAutomation
-                        _quest_auto = QuestAutomation()
-                        self._runtime.quest_automation = _quest_auto
-                        logger.info("quest_automation_initialized")
-                    except Exception as e:
-                        logger.warning("quest_auto_init_failed: %s", e)
-                
-                # ── NEW: Initialize High-Frequency Reflex ──
-                _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
-                if _hf_reflex is None:
-                    try:
-                        from ai_sidecar.reflex.highfreq_reflex import HighFreqReflex
-                        _hf_reflex = HighFreqReflex()
-                        # Wire healing optimizer for dynamic potion selection
+                    if _gd is None:
                         try:
-                            from ai_sidecar.reflex.healing_optimizer import HealingOptimizer
-                            _ho = HealingOptimizer()
-                            _ho.load()
-                            _hf_reflex.healing_optimizer = _ho
-                            logger.info("healing_optimizer_wired")
+                            _gd = GoalDecomposer()
+                            self._runtime.goal_decomposer = _gd
+                        except Exception:
+                            pass
+                
+                    # Initialize NPC discovery if not present
+                    _nd = getattr(self._runtime, "npc_discovery", None)
+                    if _nd is None:
+                        try:
+                            _nd = NPCDiscoveryEngine()
+                            self._runtime.npc_discovery = _nd
+                        except Exception:
+                            pass
+                
+                    # Initialize server adaptation if not present
+                    _sa = getattr(self._runtime, "server_adaptation", None)
+                    if _sa is None:
+                        try:
+                            _sa = ServerAdaptationEngine(
+                                getattr(_settings, "game_engine_knowledge_path", "knowledge/knowledge.json")
+                            )
+                            self._runtime.server_adaptation = _sa
+                        except Exception:
+                            pass
+                
+                    # Initialize P2P knowledge node if not present
+                    _p2p = getattr(self._runtime, "p2p_node", None)
+                    if _p2p is None:
+                        try:
+                            _p2p = P2PKnowledgeNode(
+                                bot_id=_cycle_bot_id,
+                                listen_port=18090 + abs(hash(_cycle_bot_id)) % 1000,
+                                server_id=_cycle_bot_id.split(":")[0] if ":" in _cycle_bot_id else "default",
+                            )
+                            # Wire to experience DB
+                            _exp_db = getattr(self._runtime, "experience_db", None)
+                            if _exp_db is not None:
+                                _p2p.set_experience_db(_exp_db)
+                            _p2p_npc = getattr(self._runtime, "npc_discovery", None)
+                            if _p2p_npc is not None:
+                                _p2p.set_npc_discovery(_p2p_npc)
+                            _p2p_sa = getattr(self._runtime, "server_adaptation", None)
+                            if _p2p_sa is not None:
+                                _p2p.set_server_adaptation(_p2p_sa)
+                            self._runtime.p2p_node = _p2p
+                            # Start P2P HTTP server to receive messages from peers
+                            _p2p_started = _p2p.start_server()
+                            if _p2p_started:
+                                logger.info("p2p_node_ready: bot=%s port=%d server_id=%s",
+                                           _cycle_bot_id, _p2p._listen_port, _p2p._server_id)
+                            # Register with P2P network manager
+                            _p2p_mgr = getattr(self._runtime, "p2p_manager", None)
+                            if _p2p_mgr is None:
+                                _p2p_mgr = P2PNetworkManager()
+                                self._runtime.p2p_manager = _p2p_mgr
+                            _p2p_mgr.register_node(_cycle_bot_id, _p2p)
+                            # Connect to all known peers
+                            _p2p_mgr.connect_all()
+                        except Exception:
+                            pass
+                
+                    # Initialize swarm reflex if not present
+                    _sr = getattr(self._runtime, "swarm_reflex", None)
+                    if _sr is None:
+                        try:
+                            from ai_sidecar.fleet.swarm_ai import SwarmReflexSystem
+                            _sr = SwarmReflexSystem()
+                            self._runtime.swarm_reflex = _sr
+                        except Exception:
+                            pass
+                
+                    # Initialize synergy engine if not present
+                    _se = getattr(self._runtime, "synergy_engine", None)
+                    if _se is None:
+                        try:
+                            _se = CrossHorizonSynergy()
+                            self._runtime.synergy_engine = _se
+                        except Exception:
+                            pass
+                
+                    # Initialize swarm goal coordinator if not present
+                    _sgc = getattr(self._runtime, "swarm_coordinator", None)
+                    if _sgc is None:
+                        try:
+                            from ai_sidecar.autonomy.goal_decomposer import SwarmGoalCoordinator
+                            _sgc = SwarmGoalCoordinator()
+                            self._runtime.swarm_coordinator = _sgc
+                            # Wire into HZM for multi-bot zone coordination
+                            _hzm_existing = getattr(self._runtime, "hunting_zone_manager", None)
+                            if _hzm_existing is not None:
+                                _hzm_existing.set_coordinator(_sgc)
+                            # Wire into goal decomposer
+                            _gd_existing = getattr(self._runtime, "goal_decomposer", None)
+                            if _gd_existing is not None:
+                                _gd_existing.set_swarm_coordinator(_sgc)
+                        except Exception:
+                            pass
+                
+                    # ── NEW: Initialize Role Manager ──
+                    _role_mgr = getattr(self._runtime, "role_manager", None)
+                    if _role_mgr is None:
+                        try:
+                            from ai_sidecar.fleet.role_manager import RoleManager
+                            _role_mgr = RoleManager()
+                            self._runtime.role_manager = _role_mgr
+                            logger.info("role_manager_initialized")
                         except Exception as e:
-                            logger.warning("healing_optimizer_wire_failed: %s", e)
-                        self._runtime.highfreq_reflex = _hf_reflex
-                        logger.info("highfreq_reflex_initialized")
-                    except Exception as e:
-                        logger.warning("highfreq_reflex_init_failed: %s", e)
+                            logger.warning("role_manager_init_failed: %s", e)
                 
-                # ── NEW: Initialize Map Knowledge ──
-                _map_know = getattr(self._runtime, "map_knowledge", None)
-                if _map_know is None:
-                    try:
-                        from ai_sidecar.map_knowledge import MapKnowledge
-                        _map_know = MapKnowledge(
-                            knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
-                        )
-                        self._runtime.map_knowledge = _map_know
-                        logger.info("map_knowledge_initialized: %d maps", _map_know.counters()["maps"])
-                    except Exception as e:
-                        logger.warning("map_knowledge_init_failed: %s", e)
+                    # ── NEW: Initialize Experience DB ──
+                    _exp_db = getattr(self._runtime, "experience_db", None)
+                    if _exp_db is None:
+                        try:
+                            from ai_sidecar.experience_db import ExperienceDB
+                            _db_path = getattr(_settings, "experience_db_path", "data/experience.db")
+                            _exp_db = ExperienceDB(db_path=_db_path)
+                            self._runtime.experience_db = _exp_db
+                            logger.info("experience_db_initialized: path=%s", _db_path)
+                        except Exception as e:
+                            logger.warning("experience_db_init_failed: %s", e)
                 
-                # ── NEW: Initialize Movement Optimizer ──
-                _mov_opt = getattr(self._runtime, "movement_optimizer", None)
-                if _mov_opt is None:
-                    try:
-                        from ai_sidecar.movement_optimizer import MovementOptimizer
-                        _mov_opt = MovementOptimizer()
-                        self._runtime.movement_optimizer = _mov_opt
-                        logger.info("movement_optimizer_initialized")
-                    except Exception as e:
-                        logger.warning("movement_opt_init_failed: %s", e)
+                    # ── NEW: Initialize Fleet Learning System ──
+                    _fleet_learn = getattr(self._runtime, "fleet_learning", None)
+                    if _fleet_learn is None:
+                        try:
+                            from ai_sidecar.fleet.self_learning import FleetLearningSystem
+                            _fleet_learn = FleetLearningSystem()
+                            self._runtime.fleet_learning = _fleet_learn
+                            logger.info("fleet_learning_initialized")
+                        except Exception as e:
+                            logger.warning("fleet_learning_init_failed: %s", e)
                 
-                # ── NEW: Initialize Combat Tactics ──
-                _combat_tac = getattr(self._runtime, "combat_tactics", None)
-                if _combat_tac is None:
-                    try:
-                        from ai_sidecar.combat_tactics import CombatTactics
-                        _combat_tac = CombatTactics()
-                        self._runtime.combat_tactics = _combat_tac
-                        logger.info("combat_tactics_initialized")
-                    except Exception as e:
-                        logger.warning("combat_tactics_init_failed: %s", e)
+                    # ── NEW: Initialize Goal Stack ──
+                    _goal_stack = getattr(self._runtime, "goal_stack", None)
+                    if _goal_stack is None:
+                        try:
+                            from ai_sidecar.autonomy.goal_stack import GoalStackComputation
+                            _goal_stack = GoalStackComputation()
+                            self._runtime.goal_stack = _goal_stack
+                            logger.info("goal_stack_initialized")
+                        except Exception as e:
+                            logger.warning("goal_stack_init_failed: %s", e)
                 
-                # ── NEW: Initialize Party Skill Coordinator ──
-                _party_skill = getattr(self._runtime, "party_skill_coordinator", None)
-                if _party_skill is None:
-                    try:
-                        from ai_sidecar.party_skill_coordinator import PartySkillCoordinator
-                        _party_skill = PartySkillCoordinator()
-                        self._runtime.party_skill_coordinator = _party_skill
-                        logger.info("party_skill_coordinator_initialized")
-                    except Exception as e:
-                        logger.warning("party_skill_init_failed: %s", e)
+                    # ── NEW: Initialize Memory Retrieval ──
+                    _mem = getattr(self._runtime, "memory_retrieval", None)
+                    if _mem is None:
+                        try:
+                            from ai_sidecar.memory.retrieval import MemoryRetrievalService, InMemoryMemoryProvider
+                            _mem = MemoryRetrievalService(
+                                provider=InMemoryMemoryProvider(max_entries=5000)
+                            )
+                            self._runtime.memory_retrieval = _mem
+                            logger.info("memory_retrieval_initialized: provider=InMemoryMemoryProvider")
+                        except Exception as e:
+                            logger.debug("memory_init_skipped: %s", e)
                 
-                # ── NEW: Initialize Economy Optimizer ──
-                _econ_opt = getattr(self._runtime, "economy_optimizer", None)
-                if _econ_opt is None:
-                    try:
-                        from ai_sidecar.economy_optimizer import EconomyOptimizer
-                        _econ_opt = EconomyOptimizer()
-                        self._runtime.economy_optimizer = _econ_opt
-                        logger.info("economy_optimizer_initialized")
-                    except Exception as e:
-                        logger.warning("economy_opt_init_failed: %s", e)
+                    # ── NEW: Initialize Reflex Rule Engine ──
+                    _reflex_engine = getattr(self._runtime, "reflex_engine", None)
+                    if _reflex_engine is None:
+                        try:
+                            from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
+                            _reflex_engine = ReflexRuleEngine(
+                                workspace_root=_PathModule("."),
+                                contract_version="v1",
+                                action_ttl_seconds=60,
+                            )
+                            self._runtime.reflex_engine = _reflex_engine
+                            # Load reflex rules from YAML — use __file__-relative path for portability
+                            _here = _PathModule(__file__).resolve().parent.parent
+                            _yaml_path = _here / "reflex" / "reflex_rules.yaml"
+                            _rules_loaded = _reflex_engine.load_rules_from_yaml(_yaml_path)
+                            logger.info("reflex_engine_initialized: %d rules loaded", _rules_loaded)
+                        except Exception as e:
+                            logger.warning("reflex_engine_init_failed: %s", e)
                 
-                # ── NEW: Initialize Gear Progression ──
-                _gear_prog = getattr(self._runtime, "gear_progression", None)
-                if _gear_prog is None:
-                    try:
-                        from ai_sidecar.gear_progression import GearProgression
-                        _gear_prog = GearProgression()
-                        self._runtime.gear_progression = _gear_prog
-                        logger.info("gear_progression_initialized")
-                    except Exception as e:
-                        logger.warning("gear_progression_init_failed: %s", e)
+                    # ── NEW: Initialize Reflex Action Emitter ──
+                    _reflex_emitter = getattr(self._runtime, "reflex_emitter", None)
+                    if _reflex_emitter is None:
+                        try:
+                            from ai_sidecar.reflex.action_emitter import ActionEmitter
+                            _reflex_emitter = ActionEmitter(
+                                workspace_root=_PathModule("."),
+                                contract_version="v1",
+                                action_ttl_seconds=60,
+                            )
+                            self._runtime.reflex_emitter = _reflex_emitter
+                            logger.info("reflex_emitter_initialized")
+                        except Exception as e:
+                            logger.warning("reflex_emitter_init_failed: %s", e)
                 
-                # ── NEW: Initialize MVP Tactics ──
-                _mvp_tac = getattr(self._runtime, "mvp_tactics", None)
-                if _mvp_tac is None:
-                    try:
-                        from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
-                        _mvp_tac = CombatOptimizer(knowledge_path=None)
-                        self._runtime.mvp_tactics = _mvp_tac
-                        logger.info("mvp_tactics_initialized")
-                    except Exception as e:
-                        logger.warning("mvp_tactics_init_failed: %s", e)
+                    # ── NEW: Initialize NPC Dialog ──
+                    _npc_dialog = getattr(self._runtime, "npc_dialog", None)
+                    if _npc_dialog is None:
+                        try:
+                            from ai_sidecar.npc_dialog import NPCDialogEngine
+                            # Wire LLM adapter for NPC response decisions
+                            _llm_adapter = None
+                            _mr = getattr(self._runtime, "model_router", None)
+                            if _mr is not None and hasattr(_mr, 'generate_text'):
+                                _llm_adapter = _mr.generate_text
+                            _npc_dialog = NPCDialogEngine(llm_adapter=_llm_adapter)
+                            self._runtime.npc_dialog = _npc_dialog
+                            logger.info("npc_dialog_initialized: llm=%s", "wired" if _llm_adapter else "none")
+                        except Exception as e:
+                            logger.warning("npc_dialog_init_failed: %s", e)
                 
-                # ── NEW: Initialize Server Awareness ──
-                _srv_aware = getattr(self._runtime, "server_awareness", None)
-                if _srv_aware is None:
-                    try:
-                        from ai_sidecar.server_awareness import ServerAwareness
-                        _srv_aware = ServerAwareness()
-                        self._runtime.server_awareness = _srv_aware
-                        logger.info("server_awareness_initialized")
-                    except Exception as e:
-                        logger.warning("server_awareness_init_failed: %s", e)
+                    # ── NEW: Initialize Macro Intelligence ──
+                    _macro_ai = getattr(self._runtime, "macro_intelligence", None)
+                    if _macro_ai is None:
+                        try:
+                            from ai_sidecar.autonomy.macro_intelligence import MacroIntelligence
+                            _knowledge_path = str(_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json")
+                            _macro_ai = MacroIntelligence(knowledge_path=_knowledge_path)
+                            self._runtime.macro_intelligence = _macro_ai
+                            _pattern_count = len(_macro_ai.get_all_patterns())
+                            logger.info("macro_intelligence_initialized: %d patterns loaded", _pattern_count)
+                        except Exception as e:
+                            logger.warning("macro_intelligence_init_failed: %s", e)
                 
-                # ── NEW: Initialize Social Intelligence ──
-                _soc_intel = getattr(self._runtime, "social_intelligence", None)
-                if _soc_intel is None:
-                    try:
-                        from ai_sidecar.social_intelligence import SocialIntelligenceV2 as SocialIntelligence
-                        _soc_intel = SocialIntelligence()
-                        self._runtime.social_intelligence = _soc_intel
-                        logger.info("social_intelligence_initialized")
-                    except Exception as e:
-                        logger.warning("social_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize Combat Optimizer ──
+                    _combat_opt = getattr(self._runtime, "combat_optimizer", None)
+                    if _combat_opt is None:
+                        try:
+                            from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
+                            _knowledge_path = _PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                            _combat_opt = CombatOptimizer(knowledge_path=_knowledge_path)
+                            self._runtime.combat_optimizer = _combat_opt
+                            logger.info("combat_optimizer_initialized")
+                        except Exception as e:
+                            logger.warning("combat_opt_init_failed: %s", e)
                 
-                # ── NEW: Initialize Predictive Planner ──
-                _pred_plan = getattr(self._runtime, "predictive_planner", None)
-                if _pred_plan is None:
-                    try:
-                        from ai_sidecar.predictive_planner import PredictivePlanner
-                        _pred_plan = PredictivePlanner()
-                        self._runtime.predictive_planner = _pred_plan
-                        logger.info("predictive_planner_initialized")
-                    except Exception as e:
-                        logger.warning("predictive_planner_init_failed: %s", e)
+                    # ── NEW: Initialize Quest Automation ──
+                    _quest_auto = getattr(self._runtime, "quest_automation", None)
+                    if _quest_auto is None:
+                        try:
+                            from ai_sidecar.autonomy.quest_automation import QuestAutomation
+                            _quest_auto = QuestAutomation()
+                            self._runtime.quest_automation = _quest_auto
+                            logger.info("quest_automation_initialized")
+                        except Exception as e:
+                            logger.warning("quest_auto_init_failed: %s", e)
                 
-                # ── NEW: Initialize Build Manager ──
-                _build_mgr = getattr(self._runtime, "build_manager", None)
-                if _build_mgr is None:
-                    try:
-                        from ai_sidecar.build_manager import BuildManager
-                        _build_mgr = BuildManager()
-                        self._runtime.build_manager = _build_mgr
-                        logger.info("build_manager_initialized")
-                    except Exception as e:
-                        logger.warning("build_manager_init_failed: %s", e)
+                    # ── NEW: Initialize High-Frequency Reflex ──
+                    _hf_reflex = getattr(self._runtime, "highfreq_reflex", None)
+                    if _hf_reflex is None:
+                        try:
+                            from ai_sidecar.reflex.highfreq_reflex import HighFreqReflex
+                            _hf_reflex = HighFreqReflex()
+                            # Wire healing optimizer for dynamic potion selection
+                            try:
+                                from ai_sidecar.reflex.healing_optimizer import HealingOptimizer
+                                _ho = HealingOptimizer()
+                                _ho.load()
+                                _hf_reflex.healing_optimizer = _ho
+                                logger.info("healing_optimizer_wired")
+                            except Exception as e:
+                                logger.warning("healing_optimizer_wire_failed: %s", e)
+                            self._runtime.highfreq_reflex = _hf_reflex
+                            logger.info("highfreq_reflex_initialized")
+                        except Exception as e:
+                            logger.warning("highfreq_reflex_init_failed: %s", e)
                 
-                # ── NEW: Initialize Risk Assessment ──
-                _risk = getattr(self._runtime, "risk_assessment", None)
-                if _risk is None:
-                    try:
-                        from ai_sidecar.risk_assessment import RiskAssessment
-                        _risk = RiskAssessment()
-                        self._runtime.risk_assessment = _risk
-                        logger.info("risk_assessment_initialized")
-                    except Exception as e:
-                        logger.warning("risk_assessment_init_failed: %s", e)
+                    # ── NEW: Initialize Map Knowledge ──
+                    _map_know = getattr(self._runtime, "map_knowledge", None)
+                    if _map_know is None:
+                        try:
+                            from ai_sidecar.map_knowledge import MapKnowledge
+                            _map_know = MapKnowledge(
+                                knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                            )
+                            self._runtime.map_knowledge = _map_know
+                            logger.info("map_knowledge_initialized: %d maps", _map_know.counters()["maps"])
+                        except Exception as e:
+                            logger.warning("map_knowledge_init_failed: %s", e)
                 
-                # ── NEW: Initialize Server Profiler ──
-                _srv_prof = getattr(self._runtime, "server_profiler", None)
-                if _srv_prof is None:
-                    try:
-                        from ai_sidecar.server_profiler import ServerProfiler
-                        _srv_prof = ServerProfiler()
-                        self._runtime.server_profiler = _srv_prof
-                        logger.info("server_profiler_initialized")
-                    except Exception as e:
-                        logger.warning("server_profiler_init_failed: %s", e)
+                    # ── NEW: Initialize Movement Optimizer ──
+                    _mov_opt = getattr(self._runtime, "movement_optimizer", None)
+                    if _mov_opt is None:
+                        try:
+                            from ai_sidecar.movement_optimizer import MovementOptimizer
+                            _mov_opt = MovementOptimizer()
+                            self._runtime.movement_optimizer = _mov_opt
+                            logger.info("movement_optimizer_initialized")
+                        except Exception as e:
+                            logger.warning("movement_opt_init_failed: %s", e)
                 
-                # ── NEW: Initialize Knowledge Graph ──
-                _kg = getattr(self._runtime, "knowledge_graph", None)
-                if _kg is None:
-                    try:
-                        from ai_sidecar.knowledge_graph import KnowledgeGraph
-                        _kg = KnowledgeGraph(
-                            knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
-                        )
-                        self._runtime.knowledge_graph = _kg
-                        logger.info("knowledge_graph_initialized: %s", _kg.counters())
-                    except Exception as e:
-                        logger.warning("knowledge_graph_init_failed: %s", e)
+                    # ── NEW: Initialize Combat Tactics ──
+                    _combat_tac = getattr(self._runtime, "combat_tactics", None)
+                    if _combat_tac is None:
+                        try:
+                            from ai_sidecar.combat_tactics import CombatTactics
+                            _combat_tac = CombatTactics()
+                            self._runtime.combat_tactics = _combat_tac
+                            logger.info("combat_tactics_initialized")
+                        except Exception as e:
+                            logger.warning("combat_tactics_init_failed: %s", e)
                 
-                # ── NEW: Initialize Combat Instinct ──
-                _ci = getattr(self._runtime, "combat_instinct", None)
-                if _ci is None:
-                    try:
-                        from ai_sidecar.combat_instinct import CombatInstinctEngine
-                        _ci = CombatInstinctEngine()
-                        self._runtime.combat_instinct = _ci
-                        logger.info("combat_instinct_initialized")
-                    except Exception as e:
-                        logger.warning("combat_instinct_init_failed: %s", e)
+                    # ── NEW: Initialize Party Skill Coordinator ──
+                    _party_skill = getattr(self._runtime, "party_skill_coordinator", None)
+                    if _party_skill is None:
+                        try:
+                            from ai_sidecar.party_skill_coordinator import PartySkillCoordinator
+                            _party_skill = PartySkillCoordinator()
+                            self._runtime.party_skill_coordinator = _party_skill
+                            logger.info("party_skill_coordinator_initialized")
+                        except Exception as e:
+                            logger.warning("party_skill_init_failed: %s", e)
                 
-                # ── NEW: Initialize Party Intelligence ──
-                _pi = getattr(self._runtime, "party_intelligence", None)
-                if _pi is None:
-                    try:
-                        from ai_sidecar.party_intelligence import PartyIntelligence
-                        _pi = PartyIntelligence()
-                        self._runtime.party_intelligence = _pi
-                        logger.info("party_intelligence_initialized")
-                    except Exception as e:
-                        logger.warning("party_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize Economy Optimizer ──
+                    _econ_opt = getattr(self._runtime, "economy_optimizer", None)
+                    if _econ_opt is None:
+                        try:
+                            from ai_sidecar.economy_optimizer import EconomyOptimizer
+                            _econ_opt = EconomyOptimizer()
+                            self._runtime.economy_optimizer = _econ_opt
+                            logger.info("economy_optimizer_initialized")
+                        except Exception as e:
+                            logger.warning("economy_opt_init_failed: %s", e)
                 
-                # ── NEW: Initialize Market Intelligence ──
-                _mi = getattr(self._runtime, "market_intelligence", None)
-                if _mi is None:
-                    try:
-                        from ai_sidecar.market_intelligence import MarketIntelligence
-                        _mi = MarketIntelligence()
-                        self._runtime.market_intelligence = _mi
-                        logger.info("market_intelligence_initialized")
-                    except Exception as e:
-                        logger.warning("market_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize Gear Progression ──
+                    _gear_prog = getattr(self._runtime, "gear_progression", None)
+                    if _gear_prog is None:
+                        try:
+                            from ai_sidecar.gear_progression import GearProgression
+                            _gear_prog = GearProgression()
+                            self._runtime.gear_progression = _gear_prog
+                            logger.info("gear_progression_initialized")
+                        except Exception as e:
+                            logger.warning("gear_progression_init_failed: %s", e)
                 
-                # ── NEW: Initialize WoE Intelligence ──
-                _wi = getattr(self._runtime, "woe_intelligence", None)
-                if _wi is None:
-                    try:
-                        from ai_sidecar.woe_intelligence import WoEIntelligence
-                        _wi = WoEIntelligence()
-                        self._runtime.woe_intelligence = _wi
-                        logger.info("woe_intelligence_initialized")
-                    except Exception as e:
-                        logger.warning("woe_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize MVP Tactics ──
+                    _mvp_tac = getattr(self._runtime, "mvp_tactics", None)
+                    if _mvp_tac is None:
+                        try:
+                            from ai_sidecar.crewai.agents.combat_agent import CombatOptimizer
+                            _mvp_tac = CombatOptimizer(knowledge_path=None)
+                            self._runtime.mvp_tactics = _mvp_tac
+                            logger.info("mvp_tactics_initialized")
+                        except Exception as e:
+                            logger.warning("mvp_tactics_init_failed: %s", e)
                 
-                # ── NEW: Initialize Navigation Intuition ──
-                _ni = getattr(self._runtime, "navigation_intuition", None)
-                if _ni is None:
-                    try:
-                        from ai_sidecar.navigation_intuition import NavigationIntuition
-                        _ni = NavigationIntuition()
-                        self._runtime.navigation_intuition = _ni
-                        logger.info("navigation_intuition_initialized")
-                    except Exception as e:
-                        logger.warning("navigation_intuition_init_failed: %s", e)
+                    # ── NEW: Initialize Server Awareness ──
+                    _srv_aware = getattr(self._runtime, "server_awareness", None)
+                    if _srv_aware is None:
+                        try:
+                            from ai_sidecar.server_awareness import ServerAwareness
+                            _srv_aware = ServerAwareness()
+                            self._runtime.server_awareness = _srv_aware
+                            logger.info("server_awareness_initialized")
+                        except Exception as e:
+                            logger.warning("server_awareness_init_failed: %s", e)
                 
-                # ── NEW: Initialize Mechanical Intuition ──
-                _mech = getattr(self._runtime, "mechanical_intuition", None)
-                if _mech is None:
-                    try:
-                        from ai_sidecar.mechanical_intuition import MechanicalIntuition
-                        _mech = MechanicalIntuition()
-                        self._runtime.mechanical_intuition = _mech
-                        logger.info("mechanical_intuition_initialized")
-                    except Exception as e:
-                        logger.warning("mechanical_intuition_init_failed: %s", e)
+                    # ── NEW: Initialize Social Intelligence ──
+                    _soc_intel = getattr(self._runtime, "social_intelligence", None)
+                    if _soc_intel is None:
+                        try:
+                            from ai_sidecar.social_intelligence import SocialIntelligenceV2 as SocialIntelligence
+                            _soc_intel = SocialIntelligence()
+                            self._runtime.social_intelligence = _soc_intel
+                            logger.info("social_intelligence_initialized")
+                        except Exception as e:
+                            logger.warning("social_intelligence_init_failed: %s", e)
                 
-                # ── NEW: Initialize Opportunity Cost Optimizer ──
-                _oc = getattr(self._runtime, "opportunity_cost", None)
-                if _oc is None:
-                    try:
-                        from ai_sidecar.opportunity_cost import OpportunityCostOptimizer
-                        _oc = OpportunityCostOptimizer()
-                        self._runtime.opportunity_cost = _oc
-                        logger.info("opportunity_cost_initialized")
-                    except Exception as e:
-                        logger.warning("opportunity_cost_init_failed: %s", e)
+                    # ── NEW: Initialize Predictive Planner ──
+                    _pred_plan = getattr(self._runtime, "predictive_planner", None)
+                    if _pred_plan is None:
+                        try:
+                            from ai_sidecar.predictive_planner import PredictivePlanner
+                            _pred_plan = PredictivePlanner()
+                            self._runtime.predictive_planner = _pred_plan
+                            logger.info("predictive_planner_initialized")
+                        except Exception as e:
+                            logger.warning("predictive_planner_init_failed: %s", e)
                 
-                # ── NEW: Initialize Meta Prediction ──
-                _mp = getattr(self._runtime, "meta_prediction", None)
-                if _mp is None:
-                    try:
-                        from ai_sidecar.meta_prediction import MetaPrediction
-                        _mp = MetaPrediction()
-                        self._runtime.meta_prediction = _mp
-                        logger.info("meta_prediction_initialized")
-                    except Exception as e:
-                        logger.warning("meta_prediction_init_failed: %s", e)
+                    # ── NEW: Initialize Build Manager ──
+                    _build_mgr = getattr(self._runtime, "build_manager", None)
+                    if _build_mgr is None:
+                        try:
+                            from ai_sidecar.build_manager import BuildManager
+                            _build_mgr = BuildManager()
+                            self._runtime.build_manager = _build_mgr
+                            logger.info("build_manager_initialized")
+                        except Exception as e:
+                            logger.warning("build_manager_init_failed: %s", e)
                 
-                # ── NEW: Initialize Reflex Pipeline ──
-                _rp = getattr(self._runtime, "reflex_pipeline", None)
-                if _rp is None:
-                    try:
-                        from ai_sidecar.reflex.reflex_pipeline import ReflexPipeline
-                        _rp = ReflexPipeline()
-                        self._runtime.reflex_pipeline = _rp
-                        logger.info("reflex_pipeline_initialized")
-                    except Exception as e:
-                        logger.warning("reflex_pipeline_init_failed: %s", e)
+                    # ── NEW: Initialize Risk Assessment ──
+                    _risk = getattr(self._runtime, "risk_assessment", None)
+                    if _risk is None:
+                        try:
+                            from ai_sidecar.risk_assessment import RiskAssessment
+                            _risk = RiskAssessment()
+                            self._runtime.risk_assessment = _risk
+                            logger.info("risk_assessment_initialized")
+                        except Exception as e:
+                            logger.warning("risk_assessment_init_failed: %s", e)
                 
-                # Wire action queue into reflex pipeline for direct emissions
-                _rp = getattr(self._runtime, "reflex_pipeline", None)
-                if _rp is not None:
-                    _aq = getattr(self._runtime, "action_queue", None)
-                    if _aq is not None:
-                        _rp.set_action_queue(_aq)
+                    # ── NEW: Initialize Server Profiler ──
+                    _srv_prof = getattr(self._runtime, "server_profiler", None)
+                    if _srv_prof is None:
+                        try:
+                            from ai_sidecar.server_profiler import ServerProfiler
+                            _srv_prof = ServerProfiler()
+                            self._runtime.server_profiler = _srv_prof
+                            logger.info("server_profiler_initialized")
+                        except Exception as e:
+                            logger.warning("server_profiler_init_failed: %s", e)
                 
-                # ── NEW: Initialize Long-Term Memory ──
-                _ltm = getattr(self._runtime, "long_term_memory", None)
-                if _ltm is None:
-                    try:
-                        from ai_sidecar.memory.long_term_memory import LongTermMemory
-                        _ltm = LongTermMemory()
-                        self._runtime.long_term_memory = _ltm
-                        logger.info("long_term_memory_initialized")
-                    except Exception as e:
-                        logger.warning("long_term_memory_init_failed: %s", e)
+                    # ── NEW: Initialize Knowledge Graph ──
+                    _kg = getattr(self._runtime, "knowledge_graph", None)
+                    if _kg is None:
+                        try:
+                            from ai_sidecar.knowledge_graph import KnowledgeGraph
+                            _kg = KnowledgeGraph(
+                                knowledge_path=_PathModule(__file__).parent.parent.parent.parent / "knowledge" / "knowledge.json"
+                            )
+                            self._runtime.knowledge_graph = _kg
+                            logger.info("knowledge_graph_initialized: %s", _kg.counters())
+                        except Exception as e:
+                            logger.warning("knowledge_graph_init_failed: %s", e)
                 
-                # ── NEW: Initialize Fleet Coordinator ──
-                _fleet = getattr(self._runtime, "fleet_coordinator", None)
-                if _fleet is None:
-                    try:
-                        from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
-                        _fleet = FleetCoordinator()
-                        # Wire enqueue function for issuing orders
+                    # ── NEW: Initialize Combat Instinct ──
+                    _ci = getattr(self._runtime, "combat_instinct", None)
+                    if _ci is None:
+                        try:
+                            from ai_sidecar.combat_instinct import CombatInstinctEngine
+                            _ci = CombatInstinctEngine()
+                            self._runtime.combat_instinct = _ci
+                            logger.info("combat_instinct_initialized")
+                        except Exception as e:
+                            logger.warning("combat_instinct_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Party Intelligence ──
+                    _pi = getattr(self._runtime, "party_intelligence", None)
+                    if _pi is None:
+                        try:
+                            from ai_sidecar.party_intelligence import PartyIntelligence
+                            _pi = PartyIntelligence()
+                            self._runtime.party_intelligence = _pi
+                            logger.info("party_intelligence_initialized")
+                        except Exception as e:
+                            logger.warning("party_intelligence_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Market Intelligence ──
+                    _mi = getattr(self._runtime, "market_intelligence", None)
+                    if _mi is None:
+                        try:
+                            from ai_sidecar.market_intelligence import MarketIntelligence
+                            _mi = MarketIntelligence()
+                            self._runtime.market_intelligence = _mi
+                            logger.info("market_intelligence_initialized")
+                        except Exception as e:
+                            logger.warning("market_intelligence_init_failed: %s", e)
+                
+                    # ── NEW: Initialize WoE Intelligence ──
+                    _wi = getattr(self._runtime, "woe_intelligence", None)
+                    if _wi is None:
+                        try:
+                            from ai_sidecar.woe_intelligence import WoEIntelligence
+                            _wi = WoEIntelligence()
+                            self._runtime.woe_intelligence = _wi
+                            logger.info("woe_intelligence_initialized")
+                        except Exception as e:
+                            logger.warning("woe_intelligence_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Navigation Intuition ──
+                    _ni = getattr(self._runtime, "navigation_intuition", None)
+                    if _ni is None:
+                        try:
+                            from ai_sidecar.navigation_intuition import NavigationIntuition
+                            _ni = NavigationIntuition()
+                            self._runtime.navigation_intuition = _ni
+                            logger.info("navigation_intuition_initialized")
+                        except Exception as e:
+                            logger.warning("navigation_intuition_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Mechanical Intuition ──
+                    _mech = getattr(self._runtime, "mechanical_intuition", None)
+                    if _mech is None:
+                        try:
+                            from ai_sidecar.mechanical_intuition import MechanicalIntuition
+                            _mech = MechanicalIntuition()
+                            self._runtime.mechanical_intuition = _mech
+                            logger.info("mechanical_intuition_initialized")
+                        except Exception as e:
+                            logger.warning("mechanical_intuition_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Opportunity Cost Optimizer ──
+                    _oc = getattr(self._runtime, "opportunity_cost", None)
+                    if _oc is None:
+                        try:
+                            from ai_sidecar.opportunity_cost import OpportunityCostOptimizer
+                            _oc = OpportunityCostOptimizer()
+                            self._runtime.opportunity_cost = _oc
+                            logger.info("opportunity_cost_initialized")
+                        except Exception as e:
+                            logger.warning("opportunity_cost_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Meta Prediction ──
+                    _mp = getattr(self._runtime, "meta_prediction", None)
+                    if _mp is None:
+                        try:
+                            from ai_sidecar.meta_prediction import MetaPrediction
+                            _mp = MetaPrediction()
+                            self._runtime.meta_prediction = _mp
+                            logger.info("meta_prediction_initialized")
+                        except Exception as e:
+                            logger.warning("meta_prediction_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Reflex Pipeline ──
+                    _rp = getattr(self._runtime, "reflex_pipeline", None)
+                    if _rp is None:
+                        try:
+                            from ai_sidecar.reflex.reflex_pipeline import ReflexPipeline
+                            _rp = ReflexPipeline()
+                            self._runtime.reflex_pipeline = _rp
+                            logger.info("reflex_pipeline_initialized")
+                        except Exception as e:
+                            logger.warning("reflex_pipeline_init_failed: %s", e)
+                
+                    # Wire action queue into reflex pipeline for direct emissions
+                    _rp = getattr(self._runtime, "reflex_pipeline", None)
+                    if _rp is not None:
                         _aq = getattr(self._runtime, "action_queue", None)
                         if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"fleet-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"fleet-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.fleet_coordinator = _fleet
-                        logger.info("fleet_coordinator_initialized")
-                    except Exception as e:
-                        logger.warning("fleet_coordinator_init_failed: %s", e)
+                            _rp.set_action_queue(_aq)
                 
-                # ── NEW: Initialize Timing Awareness ──
-                _timing = getattr(self._runtime, "timing_awareness", None)
-                if _timing is None:
-                    try:
-                        from ai_sidecar.timing.timing_awareness import TimingAwareness
-                        _timing = TimingAwareness()
-                        self._runtime.timing_awareness = _timing
-                        logger.info("timing_awareness_initialized")
-                    except Exception as e:
-                        logger.warning("timing_awareness_init_failed: %s", e)
+                    # ── NEW: Initialize Long-Term Memory ──
+                    _ltm = getattr(self._runtime, "long_term_memory", None)
+                    if _ltm is None:
+                        try:
+                            from ai_sidecar.memory.long_term_memory import LongTermMemory
+                            _ltm = LongTermMemory()
+                            self._runtime.long_term_memory = _ltm
+                            logger.info("long_term_memory_initialized")
+                        except Exception as e:
+                            logger.warning("long_term_memory_init_failed: %s", e)
                 
-                # ── NEW: Initialize Social Manipulator ──
-                _social = getattr(self._runtime, "social_manipulator", None)
-                if _social is None:
-                    try:
-                        from ai_sidecar.social.social_manipulator import SocialManipulator
-                        _social = SocialManipulator()
-                        # Wire enqueue function for sending chat messages
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"social-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"social-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.social_manipulator = _social
-                        logger.info("social_manipulator_initialized")
-                    except Exception as e:
-                        logger.warning("social_manipulator_init_failed: %s", e)
+                    # ── NEW: Initialize Fleet Coordinator ──
+                    _fleet = getattr(self._runtime, "fleet_coordinator", None)
+                    if _fleet is None:
+                        try:
+                            from ai_sidecar.fleet.fleet_coordinator import FleetCoordinator
+                            _fleet = FleetCoordinator()
+                            # Wire enqueue function for issuing orders
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _fleet._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"fleet-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"fleet-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            self._runtime.fleet_coordinator = _fleet
+                            logger.info("fleet_coordinator_initialized")
+                        except Exception as e:
+                            logger.warning("fleet_coordinator_init_failed: %s", e)
                 
-                # ── NEW: Initialize WoE Predictor ──
-                _woe = getattr(self._runtime, "woe_predictor", None)
-                if _woe is None:
-                    try:
-                        from ai_sidecar.woe.woe_predictor import WoEPredictor
-                        _woe = WoEPredictor()
-                        self._runtime.woe_predictor = _woe
-                        logger.info("woe_predictor_initialized")
-                    except Exception as e:
-                        logger.warning("woe_predictor_init_failed: %s", e)
+                    # ── NEW: Initialize Timing Awareness ──
+                    _timing = getattr(self._runtime, "timing_awareness", None)
+                    if _timing is None:
+                        try:
+                            from ai_sidecar.timing.timing_awareness import TimingAwareness
+                            _timing = TimingAwareness()
+                            self._runtime.timing_awareness = _timing
+                            logger.info("timing_awareness_initialized")
+                        except Exception as e:
+                            logger.warning("timing_awareness_init_failed: %s", e)
                 
-                # ── NEW: Initialize Opportunity Cost Engine ──
-                _opp = getattr(self._runtime, "opportunity_cost", None)
-                if _opp is None:
-                    try:
-                        from ai_sidecar.economy.opportunity_cost import OpportunityCostEngine
-                        _opp = OpportunityCostEngine()
-                        self._runtime.opportunity_cost = _opp
-                        logger.info("opportunity_cost_initialized")
-                    except Exception as e:
-                        logger.warning("opportunity_cost_init_failed: %s", e)
+                    # ── NEW: Initialize Social Manipulator ──
+                    _social = getattr(self._runtime, "social_manipulator", None)
+                    if _social is None:
+                        try:
+                            from ai_sidecar.social.social_manipulator import SocialManipulator
+                            _social = SocialManipulator()
+                            # Wire enqueue function for sending chat messages
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _social._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"social-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"social-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            self._runtime.social_manipulator = _social
+                            logger.info("social_manipulator_initialized")
+                        except Exception as e:
+                            logger.warning("social_manipulator_init_failed: %s", e)
                 
-                # ── NEW: Initialize Innovation Engine ──
-                _innov = getattr(self._runtime, "innovation_engine", None)
-                if _innov is None:
-                    try:
-                        from ai_sidecar.innovation.innovation_engine import InnovationEngine
-                        _innov = InnovationEngine()
-                        self._runtime.innovation_engine = _innov
-                        logger.info("innovation_engine_initialized")
-                    except Exception as e:
-                        logger.warning("innovation_engine_init_failed: %s", e)
+                    # ── NEW: Initialize WoE Predictor ──
+                    _woe = getattr(self._runtime, "woe_predictor", None)
+                    if _woe is None:
+                        try:
+                            from ai_sidecar.woe.woe_predictor import WoEPredictor
+                            _woe = WoEPredictor()
+                            self._runtime.woe_predictor = _woe
+                            logger.info("woe_predictor_initialized")
+                        except Exception as e:
+                            logger.warning("woe_predictor_init_failed: %s", e)
                 
-                # ── NEW: Initialize Edge Case Handler ──
-                _edge = getattr(self._runtime, "edge_case_handler", None)
-                if _edge is None:
-                    try:
-                        from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
-                        _edge = EdgeCaseHandler()
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"edge-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.reflex,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"edge-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.edge_case_handler = _edge
-                        logger.info("edge_case_handler_initialized")
-                    except Exception as e:
-                        logger.warning("edge_case_handler_init_failed: %s", e)
+                    # ── NEW: Initialize Opportunity Cost Engine ──
+                    _opp = getattr(self._runtime, "opportunity_cost", None)
+                    if _opp is None:
+                        try:
+                            from ai_sidecar.economy.opportunity_cost import OpportunityCostEngine
+                            _opp = OpportunityCostEngine()
+                            self._runtime.opportunity_cost = _opp
+                            logger.info("opportunity_cost_initialized")
+                        except Exception as e:
+                            logger.warning("opportunity_cost_init_failed: %s", e)
                 
-                # ── NEW: Initialize Server Personality ──
-                _sp = getattr(self._runtime, "server_personality", None)
-                if _sp is None:
-                    try:
-                        from ai_sidecar.social.server_personality import ServerPersonalityEngine
-                        _sp = ServerPersonalityEngine()
-                        self._runtime.server_personality = _sp
-                        logger.info("server_personality_initialized")
-                    except Exception as e:
-                        logger.warning("server_personality_init_failed: %s", e)
+                    # ── NEW: Initialize Innovation Engine ──
+                    _innov = getattr(self._runtime, "innovation_engine", None)
+                    if _innov is None:
+                        try:
+                            from ai_sidecar.innovation.innovation_engine import InnovationEngine
+                            _innov = InnovationEngine()
+                            self._runtime.innovation_engine = _innov
+                            logger.info("innovation_engine_initialized")
+                        except Exception as e:
+                            logger.warning("innovation_engine_init_failed: %s", e)
                 
-                # ── NEW: Initialize Ambition Engine ──
-                _amb = getattr(self._runtime, "ambition_engine", None)
-                if _amb is None:
-                    try:
-                        from ai_sidecar.ambition.ambition_engine import AmbitionEngine
-                        _amb = AmbitionEngine()
-                        self._runtime.ambition_engine = _amb
-                        logger.info("ambition_engine_initialized")
-                    except Exception as e:
-                        logger.warning("ambition_engine_init_failed: %s", e)
+                    # ── NEW: Initialize Edge Case Handler ──
+                    _edge = getattr(self._runtime, "edge_case_handler", None)
+                    if _edge is None:
+                        try:
+                            from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
+                            _edge = EdgeCaseHandler()
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _edge._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"edge-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.reflex,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"edge-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            self._runtime.edge_case_handler = _edge
+                            logger.info("edge_case_handler_initialized")
+                        except Exception as e:
+                            logger.warning("edge_case_handler_init_failed: %s", e)
                 
-                # ── NEW: Initialize Conversation Engine ──
-                _conv = getattr(self._runtime, "conversation_engine", None)
-                if _conv is None:
-                    try:
-                        from ai_sidecar.social.conversation_engine import ConversationEngine
-                        _conv = ConversationEngine()
-                        # Wire LLM call function for generating responses
-                        # Uses model_router's route method wrapped as sync
-                        _mr = getattr(self._runtime, "model_router", None)
-                        if _mr is not None:
-                            _conv._llm_call = lambda prompt: self._sync_llm_call(_mr, prompt)
-                        self._runtime.conversation_engine = _conv
-                        logger.info("conversation_engine_initialized")
-                    except Exception as e:
-                        logger.warning("conversation_engine_init_failed: %s", e)
+                    # ── NEW: Initialize Server Personality ──
+                    _sp = getattr(self._runtime, "server_personality", None)
+                    if _sp is None:
+                        try:
+                            from ai_sidecar.social.server_personality import ServerPersonalityEngine
+                            _sp = ServerPersonalityEngine()
+                            self._runtime.server_personality = _sp
+                            logger.info("server_personality_initialized")
+                        except Exception as e:
+                            logger.warning("server_personality_init_failed: %s", e)
                 
-                # ── NEW: Initialize Situational Awareness ──
-                _sit = getattr(self._runtime, "situational_awareness", None)
-                if _sit is None:
-                    try:
-                        from ai_sidecar.social.situational_awareness import SituationalAwareness
-                        _sit = SituationalAwareness()
-                        self._runtime.situational_awareness = _sit
-                        logger.info("situational_awareness_initialized")
-                    except Exception as e:
-                        logger.warning("situational_awareness_init_failed: %s", e)
+                    # ── NEW: Initialize Ambition Engine ──
+                    _amb = getattr(self._runtime, "ambition_engine", None)
+                    if _amb is None:
+                        try:
+                            from ai_sidecar.ambition.ambition_engine import AmbitionEngine
+                            _amb = AmbitionEngine()
+                            self._runtime.ambition_engine = _amb
+                            logger.info("ambition_engine_initialized")
+                        except Exception as e:
+                            logger.warning("ambition_engine_init_failed: %s", e)
                 
-                # ── NEW: Initialize Social Participation ──
-                _spart = getattr(self._runtime, "social_participation", None)
-                if _spart is None:
-                    try:
-                        from ai_sidecar.social.social_participation import SocialParticipation
-                        _spart = SocialParticipation()
-                        # Wire enqueue function
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"spart-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"spart-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.social_participation = _spart
-                        logger.info("social_participation_initialized")
-                    except Exception as e:
-                        logger.warning("social_participation_init_failed: %s", e)
+                    # ── NEW: Initialize Conversation Engine ──
+                    _conv = getattr(self._runtime, "conversation_engine", None)
+                    if _conv is None:
+                        try:
+                            from ai_sidecar.social.conversation_engine import ConversationEngine
+                            _conv = ConversationEngine()
+                            # Wire LLM call function for generating responses
+                            # Uses model_router's route method wrapped as sync
+                            _mr = getattr(self._runtime, "model_router", None)
+                            if _mr is not None:
+                                _conv._llm_call = lambda prompt: self._sync_llm_call(_mr, prompt)
+                            self._runtime.conversation_engine = _conv
+                            logger.info("conversation_engine_initialized")
+                        except Exception as e:
+                            logger.warning("conversation_engine_init_failed: %s", e)
                 
-                # ── NEW: Initialize Competitive Evaluator ──
-                _ce = getattr(self._runtime, "competitive_evaluator", None)
-                if _ce is None:
-                    try:
-                        from ai_sidecar.social.competitive_evaluator import CompetitiveEvaluator
-                        _ce = CompetitiveEvaluator()
-                        self._runtime.competitive_evaluator = _ce
-                        logger.info("competitive_evaluator_initialized")
-                    except Exception as e:
-                        logger.warning("competitive_evaluator_init_failed: %s", e)
+                    # ── NEW: Initialize Situational Awareness ──
+                    _sit = getattr(self._runtime, "situational_awareness", None)
+                    if _sit is None:
+                        try:
+                            from ai_sidecar.social.situational_awareness import SituationalAwareness
+                            _sit = SituationalAwareness()
+                            self._runtime.situational_awareness = _sit
+                            logger.info("situational_awareness_initialized")
+                        except Exception as e:
+                            logger.warning("situational_awareness_init_failed: %s", e)
                 
-                # ── NEW: Initialize Timing Optimizer ──
-                _to = getattr(self._runtime, "timing_optimizer", None)
-                if _to is None:
-                    try:
-                        from ai_sidecar.timing.timing_optimizer import TimingOptimizer
-                        _to = TimingOptimizer()
-                        self._runtime.timing_optimizer = _to
-                        logger.info("timing_optimizer_initialized")
-                    except Exception as e:
-                        logger.warning("timing_optimizer_init_failed: %s", e)
+                    # ── NEW: Initialize Social Participation ──
+                    _spart = getattr(self._runtime, "social_participation", None)
+                    if _spart is None:
+                        try:
+                            from ai_sidecar.social.social_participation import SocialParticipation
+                            _spart = SocialParticipation()
+                            # Wire enqueue function
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _spart._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"spart-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"spart-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            self._runtime.social_participation = _spart
+                            logger.info("social_participation_initialized")
+                        except Exception as e:
+                            logger.warning("social_participation_init_failed: %s", e)
                 
-                # ── NEW: Initialize Patch Adapter ──
-                _pa = getattr(self._runtime, "patch_adapter", None)
-                if _pa is None:
-                    try:
-                        from ai_sidecar.innovation.patch_adapter import PatchAdapter
-                        _pa = PatchAdapter()
-                        self._runtime.patch_adapter = _pa
-                        logger.info("patch_adapter_initialized")
-                    except Exception as e:
-                        logger.warning("patch_adapter_init_failed: %s", e)
+                    # ── NEW: Initialize Competitive Evaluator ──
+                    _ce = getattr(self._runtime, "competitive_evaluator", None)
+                    if _ce is None:
+                        try:
+                            from ai_sidecar.social.competitive_evaluator import CompetitiveEvaluator
+                            _ce = CompetitiveEvaluator()
+                            self._runtime.competitive_evaluator = _ce
+                            logger.info("competitive_evaluator_initialized")
+                        except Exception as e:
+                            logger.warning("competitive_evaluator_init_failed: %s", e)
                 
-                # ── NEW: Initialize Multi-Account Synergy ──
-                _mas = getattr(self._runtime, "multi_account_synergy", None)
-                if _mas is None:
-                    try:
-                        from ai_sidecar.fleet.multi_account_synergy import MultiAccountSynergy
-                        _mas = MultiAccountSynergy()
-                        # Wire enqueue function
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"mas-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"mas-{int(_dt.now(UTC).timestamp())}",
-                            ))
-                        self._runtime.multi_account_synergy = _mas
-                        logger.info("multi_account_synergy_initialized")
-                    except Exception as e:
-                        logger.warning("multi_account_synergy_init_failed: %s", e)
+                    # ── NEW: Initialize Timing Optimizer ──
+                    _to = getattr(self._runtime, "timing_optimizer", None)
+                    if _to is None:
+                        try:
+                            from ai_sidecar.timing.timing_optimizer import TimingOptimizer
+                            _to = TimingOptimizer()
+                            self._runtime.timing_optimizer = _to
+                            logger.info("timing_optimizer_initialized")
+                        except Exception as e:
+                            logger.warning("timing_optimizer_init_failed: %s", e)
                 
-                # ── NEW: Initialize Threat-Based Targeting ──
-                _tt = getattr(self._runtime, "threat_targeting", None)
-                if _tt is None:
-                    try:
-                        from ai_sidecar.combat.threat_targeting import ThreatBasedTargeting
-                        _tt = ThreatBasedTargeting()
-                        self._runtime.threat_targeting = _tt
-                        logger.info("threat_targeting_initialized")
-                    except Exception as e:
-                        logger.warning("threat_targeting_init_failed: %s", e)
+                    # ── NEW: Initialize Patch Adapter ──
+                    _pa = getattr(self._runtime, "patch_adapter", None)
+                    if _pa is None:
+                        try:
+                            from ai_sidecar.innovation.patch_adapter import PatchAdapter
+                            _pa = PatchAdapter()
+                            self._runtime.patch_adapter = _pa
+                            logger.info("patch_adapter_initialized")
+                        except Exception as e:
+                            logger.warning("patch_adapter_init_failed: %s", e)
                 
-                # ── NEW: Initialize Party Follow Positioning ──
-                _pf = getattr(self._runtime, "party_follow", None)
-                if _pf is None:
-                    try:
-                        from ai_sidecar.party.party_follow import PartyFollowPositioning
-                        _pf = PartyFollowPositioning()
-                        self._runtime.party_follow = _pf
-                        logger.info("party_follow_initialized")
-                    except Exception as e:
-                        logger.warning("party_follow_init_failed: %s", e)
+                    # ── NEW: Initialize Multi-Account Synergy ──
+                    _mas = getattr(self._runtime, "multi_account_synergy", None)
+                    if _mas is None:
+                        try:
+                            from ai_sidecar.fleet.multi_account_synergy import MultiAccountSynergy
+                            _mas = MultiAccountSynergy()
+                            # Wire enqueue function
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _mas._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"mas-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"mas-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            self._runtime.multi_account_synergy = _mas
+                            logger.info("multi_account_synergy_initialized")
+                        except Exception as e:
+                            logger.warning("multi_account_synergy_init_failed: %s", e)
                 
-                # ── NEW: Initialize Party Leader Coordinator ──
-                _pl = getattr(self._runtime, "party_leader", None)
-                if _pl is None:
-                    try:
-                        from ai_sidecar.party.party_leader import PartyLeaderCoordinator
-                        _pl = PartyLeaderCoordinator()
-                        self._runtime.party_leader = _pl
-                        logger.info("party_leader_initialized")
-                    except Exception as e:
-                        logger.warning("party_leader_init_failed: %s", e)
+                    # ── NEW: Initialize Threat-Based Targeting ──
+                    _tt = getattr(self._runtime, "threat_targeting", None)
+                    if _tt is None:
+                        try:
+                            from ai_sidecar.combat.threat_targeting import ThreatBasedTargeting
+                            _tt = ThreatBasedTargeting()
+                            self._runtime.threat_targeting = _tt
+                            logger.info("threat_targeting_initialized")
+                        except Exception as e:
+                            logger.warning("threat_targeting_init_failed: %s", e)
                 
-                # ── NEW: Initialize Gather-and-Kill ──
-                _gk = getattr(self._runtime, "gather_and_kill", None)
-                if _gk is None:
-                    try:
-                        from ai_sidecar.combat.gather_and_kill import GatherAndKill
-                        _gk = GatherAndKill()
-                        self._runtime.gather_and_kill = _gk
-                        logger.info("gather_and_kill_initialized")
-                    except Exception as e:
-                        logger.warning("gather_and_kill_init_failed: %s", e)
+                    # ── NEW: Initialize Party Follow Positioning ──
+                    _pf = getattr(self._runtime, "party_follow", None)
+                    if _pf is None:
+                        try:
+                            from ai_sidecar.party.party_follow import PartyFollowPositioning
+                            _pf = PartyFollowPositioning()
+                            self._runtime.party_follow = _pf
+                            logger.info("party_follow_initialized")
+                        except Exception as e:
+                            logger.warning("party_follow_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Party Leader Coordinator ──
+                    _pl = getattr(self._runtime, "party_leader", None)
+                    if _pl is None:
+                        try:
+                            from ai_sidecar.party.party_leader import PartyLeaderCoordinator
+                            _pl = PartyLeaderCoordinator()
+                            self._runtime.party_leader = _pl
+                            logger.info("party_leader_initialized")
+                        except Exception as e:
+                            logger.warning("party_leader_init_failed: %s", e)
+                
+                    # ── NEW: Initialize Gather-and-Kill ──
+                    _gk = getattr(self._runtime, "gather_and_kill", None)
+                    if _gk is None:
+                        try:
+                            from ai_sidecar.combat.gather_and_kill import GatherAndKill
+                            _gk = GatherAndKill()
+                            self._runtime.gather_and_kill = _gk
+                            logger.info("gather_and_kill_initialized")
+                        except Exception as e:
+                            logger.warning("gather_and_kill_init_failed: %s", e)
 
-                # ── NEW: Initialize Elemental Combat Matrix ──
-                _em = getattr(self._runtime, "elemental_matrix", None)
-                if _em is None:
-                    try:
-                        from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
-                        _em = get_elemental_matrix()
-                        self._runtime.elemental_matrix = _em
-                        logger.info("elemental_matrix_initialized")
-                    except Exception as e:
-                        logger.warning("elemental_matrix_init_failed: %s", e)
+                    # ── NEW: Initialize Elemental Combat Matrix ──
+                    _em = getattr(self._runtime, "elemental_matrix", None)
+                    if _em is None:
+                        try:
+                            from ai_sidecar.combat.elemental_matrix import get_elemental_matrix
+                            _em = get_elemental_matrix()
+                            self._runtime.elemental_matrix = _em
+                            logger.info("elemental_matrix_initialized")
+                        except Exception as e:
+                            logger.warning("elemental_matrix_init_failed: %s", e)
 
-                # ── NEW: Initialize Skill Rotation System ──
-                _srs = getattr(self._runtime, "skill_rotation", None)
-                if _srs is None:
-                    try:
-                        from ai_sidecar.combat.skill_rotation import get_skill_rotation_system
-                        _srs = get_skill_rotation_system()
-                        self._runtime.skill_rotation = _srs
-                        logger.info("skill_rotation_initialized: %d skills, %d rotations",
-                                    len(_srs.get_all_skills()), len(_srs.get_all_rotations()))
-                    except Exception as e:
-                        logger.warning("skill_rotation_init_failed: %s", e)
+                    # ── NEW: Initialize Skill Rotation System ──
+                    _srs = getattr(self._runtime, "skill_rotation", None)
+                    if _srs is None:
+                        try:
+                            from ai_sidecar.combat.skill_rotation import get_skill_rotation_system
+                            _srs = get_skill_rotation_system()
+                            self._runtime.skill_rotation = _srs
+                            logger.info("skill_rotation_initialized: %d skills, %d rotations",
+                                        len(_srs.get_all_skills()), len(_srs.get_all_rotations()))
+                        except Exception as e:
+                            logger.warning("skill_rotation_init_failed: %s", e)
 
-                # ── NEW: Initialize Map Intelligence ──
-                _mi = getattr(self._runtime, "map_intelligence", None)
-                if _mi is None:
-                    try:
-                        from ai_sidecar.map_intelligence import get_map_intelligence
-                        _mi = get_map_intelligence()
-                        self._runtime.map_intelligence = _mi
-                        logger.info("map_intelligence_initialized: %d maps", len(_mi.get_all_maps()))
-                    except Exception as e:
-                        logger.warning("map_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize Map Intelligence ──
+                    _mi = getattr(self._runtime, "map_intelligence", None)
+                    if _mi is None:
+                        try:
+                            from ai_sidecar.map_intelligence import get_map_intelligence
+                            _mi = get_map_intelligence()
+                            self._runtime.map_intelligence = _mi
+                            logger.info("map_intelligence_initialized: %d maps", len(_mi.get_all_maps()))
+                        except Exception as e:
+                            logger.warning("map_intelligence_init_failed: %s", e)
 
-                # ── NEW: Initialize MVP Mechanics ──
-                _mvp = getattr(self._runtime, "mvp_mechanics", None)
-                if _mvp is None:
-                    try:
-                        from ai_sidecar.combat.mvp_mechanics import get_mvp_mechanics_db
-                        _mvp = get_mvp_mechanics_db()
-                        self._runtime.mvp_mechanics = _mvp
-                        logger.info("mvp_mechanics_initialized: %d MVPs", len(_mvp.get_all_mvps()))
-                    except Exception as e:
-                        logger.warning("mvp_mechanics_init_failed: %s", e)
+                    # ── NEW: Initialize MVP Mechanics ──
+                    _mvp = getattr(self._runtime, "mvp_mechanics", None)
+                    if _mvp is None:
+                        try:
+                            from ai_sidecar.combat.mvp_mechanics import get_mvp_mechanics_db
+                            _mvp = get_mvp_mechanics_db()
+                            self._runtime.mvp_mechanics = _mvp
+                            logger.info("mvp_mechanics_initialized: %d MVPs", len(_mvp.get_all_mvps()))
+                        except Exception as e:
+                            logger.warning("mvp_mechanics_init_failed: %s", e)
 
-                # ── NEW: Initialize Gear Swapper ──
-                _gs = getattr(self._runtime, "gear_swapper", None)
-                if _gs is None:
-                    try:
-                        from ai_sidecar.combat.gear_swapper import get_gear_swapper
-                        _gs = get_gear_swapper()
-                        self._runtime.gear_swapper = _gs
-                        logger.info("gear_swapper_initialized: %d gear sets", len(_gs.get_all_gear_sets()))
-                    except Exception as e:
-                        logger.warning("gear_swapper_init_failed: %s", e)
+                    # ── NEW: Initialize Gear Swapper ──
+                    _gs = getattr(self._runtime, "gear_swapper", None)
+                    if _gs is None:
+                        try:
+                            from ai_sidecar.combat.gear_swapper import get_gear_swapper
+                            _gs = get_gear_swapper()
+                            self._runtime.gear_swapper = _gs
+                            logger.info("gear_swapper_initialized: %d gear sets", len(_gs.get_all_gear_sets()))
+                        except Exception as e:
+                            logger.warning("gear_swapper_init_failed: %s", e)
 
-                # ── NEW: Initialize Buff Maintenance ──
-                _bm = getattr(self._runtime, "buff_maintenance", None)
-                if _bm is None:
-                    try:
-                        from ai_sidecar.combat.buff_maintenance import get_buff_maintenance
-                        _bm = get_buff_maintenance()
-                        self._runtime.buff_maintenance = _bm
-                        logger.info("buff_maintenance_initialized: %d buffs", len(_bm.get_all_buffs()))
-                    except Exception as e:
-                        logger.warning("buff_maintenance_init_failed: %s", e)
+                    # ── NEW: Initialize Buff Maintenance ──
+                    _bm = getattr(self._runtime, "buff_maintenance", None)
+                    if _bm is None:
+                        try:
+                            from ai_sidecar.combat.buff_maintenance import get_buff_maintenance
+                            _bm = get_buff_maintenance()
+                            self._runtime.buff_maintenance = _bm
+                            logger.info("buff_maintenance_initialized: %d buffs", len(_bm.get_all_buffs()))
+                        except Exception as e:
+                            logger.warning("buff_maintenance_init_failed: %s", e)
 
-                # ── NEW: Initialize Economic Engine ──
-                _ee = getattr(self._runtime, "economic_engine", None)
-                if _ee is None:
-                    try:
-                        from ai_sidecar.economy.economic_engine import get_economic_engine
-                        _ee = get_economic_engine()
-                        self._runtime.economic_engine = _ee
-                        logger.info("economic_engine_initialized")
-                    except Exception as e:
-                        logger.warning("economic_engine_init_failed: %s", e)
+                    # ── NEW: Initialize Economic Engine ──
+                    _ee = getattr(self._runtime, "economic_engine", None)
+                    if _ee is None:
+                        try:
+                            from ai_sidecar.economy.economic_engine import get_economic_engine
+                            _ee = get_economic_engine()
+                            self._runtime.economic_engine = _ee
+                            logger.info("economic_engine_initialized")
+                        except Exception as e:
+                            logger.warning("economic_engine_init_failed: %s", e)
 
-                # ── NEW: Initialize Economy Orchestrator ──
-                _eo = getattr(self._runtime, "economy_orchestrator", None)
-                if _eo is None:
-                    try:
-                        from ai_sidecar.economy.orchestrator import get_economy_orchestrator
-                        _eo = get_economy_orchestrator()
-                        self._runtime.economy_orchestrator = _eo
-                        logger.info("economy_orchestrator_initialized")
-                    except Exception as e:
-                        logger.warning("economy_orchestrator_init_failed: %s", e)
+                    # ── NEW: Initialize Economy Orchestrator ──
+                    _eo = getattr(self._runtime, "economy_orchestrator", None)
+                    if _eo is None:
+                        try:
+                            from ai_sidecar.economy.orchestrator import get_economy_orchestrator
+                            _eo = get_economy_orchestrator()
+                            self._runtime.economy_orchestrator = _eo
+                            logger.info("economy_orchestrator_initialized")
+                        except Exception as e:
+                            logger.warning("economy_orchestrator_init_failed: %s", e)
 
-                # ── NEW: Initialize Death Analysis ──
-                _da = getattr(self._runtime, "death_analysis", None)
-                if _da is None:
-                    try:
-                        from ai_sidecar.learning.death_analysis import get_death_analyzer
-                        _da = get_death_analyzer()
-                        self._runtime.death_analysis = _da
-                        logger.info("death_analysis_initialized")
-                    except Exception as e:
-                        logger.warning("death_analysis_init_failed: %s", e)
+                    # ── NEW: Initialize Death Analysis ──
+                    _da = getattr(self._runtime, "death_analysis", None)
+                    if _da is None:
+                        try:
+                            from ai_sidecar.learning.death_analysis import get_death_analyzer
+                            _da = get_death_analyzer()
+                            self._runtime.death_analysis = _da
+                            logger.info("death_analysis_initialized")
+                        except Exception as e:
+                            logger.warning("death_analysis_init_failed: %s", e)
 
-                # ── NEW: Initialize Leveling Planner ──
-                _lp = getattr(self._runtime, "leveling_planner", None)
-                if _lp is None:
-                    try:
-                        from ai_sidecar.learning.leveling_planner import get_leveling_planner
-                        _lp = get_leveling_planner()
-                        self._runtime.leveling_planner = _lp
-                        logger.info("leveling_planner_initialized")
-                    except Exception as e:
-                        logger.warning("leveling_planner_init_failed: %s", e)
+                    # ── NEW: Initialize Leveling Planner ──
+                    _lp = getattr(self._runtime, "leveling_planner", None)
+                    if _lp is None:
+                        try:
+                            from ai_sidecar.learning.leveling_planner import get_leveling_planner
+                            _lp = get_leveling_planner()
+                            self._runtime.leveling_planner = _lp
+                            logger.info("leveling_planner_initialized")
+                        except Exception as e:
+                            logger.warning("leveling_planner_init_failed: %s", e)
 
-                # ── NEW: Initialize Humanizer ──
-                _hz = getattr(self._runtime, "humanizer", None)
-                if _hz is None:
-                    try:
-                        from ai_sidecar.combat.humanizer import get_humanizer
-                        _hz = get_humanizer()
-                        self._runtime.humanizer = _hz
-                        logger.info("humanizer_initialized")
-                    except Exception as e:
-                        logger.warning("humanizer_init_failed: %s", e)
+                    # ── NEW: Initialize Humanizer ──
+                    _hz = getattr(self._runtime, "humanizer", None)
+                    if _hz is None:
+                        try:
+                            from ai_sidecar.combat.humanizer import get_humanizer
+                            _hz = get_humanizer()
+                            self._runtime.humanizer = _hz
+                            logger.info("humanizer_initialized")
+                        except Exception as e:
+                            logger.warning("humanizer_init_failed: %s", e)
 
-                # ── NEW: Initialize WoE Manager ──
-                _wm = getattr(self._runtime, "woe_manager", None)
-                if _wm is None:
-                    try:
-                        from ai_sidecar.combat.woe_manager import get_woe_manager
-                        _wm = get_woe_manager()
-                        self._runtime.woe_manager = _wm
-                        logger.info("woe_manager_initialized")
-                    except Exception as e:
-                        logger.warning("woe_manager_init_failed: %s", e)
+                    # ── NEW: Initialize WoE Manager ──
+                    _wm = getattr(self._runtime, "woe_manager", None)
+                    if _wm is None:
+                        try:
+                            from ai_sidecar.combat.woe_manager import get_woe_manager
+                            _wm = get_woe_manager()
+                            self._runtime.woe_manager = _wm
+                            logger.info("woe_manager_initialized")
+                        except Exception as e:
+                            logger.warning("woe_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Reflex Combat Layer ──
-                _rc = getattr(self._runtime, "reflex_combat", None)
-                if _rc is None:
-                    try:
-                        from ai_sidecar.combat.reflex_combat import get_reflex_combat
-                        _rc = get_reflex_combat()
-                        self._runtime.reflex_combat = _rc
-                        logger.info("reflex_combat_initialized: %d reflexes", len(_rc.get_all_reflexes()))
-                    except Exception as e:
-                        logger.warning("reflex_combat_init_failed: %s", e)
+                    # ── NEW: Initialize Reflex Combat Layer ──
+                    _rc = getattr(self._runtime, "reflex_combat", None)
+                    if _rc is None:
+                        try:
+                            from ai_sidecar.combat.reflex_combat import get_reflex_combat
+                            _rc = get_reflex_combat()
+                            self._runtime.reflex_combat = _rc
+                            logger.info("reflex_combat_initialized: %d reflexes", len(_rc.get_all_reflexes()))
+                        except Exception as e:
+                            logger.warning("reflex_combat_init_failed: %s", e)
 
-                # ── NEW: Initialize Predictive Threat Assessment ──
-                _pt = getattr(self._runtime, "predictive_threat", None)
-                if _pt is None:
-                    try:
-                        from ai_sidecar.combat.predictive_threat import get_predictive_threat_engine
-                        _pt = get_predictive_threat_engine()
-                        self._runtime.predictive_threat = _pt
-                        logger.info("predictive_threat_initialized")
-                    except Exception as e:
-                        logger.warning("predictive_threat_init_failed: %s", e)
+                    # ── NEW: Initialize Predictive Threat Assessment ──
+                    _pt = getattr(self._runtime, "predictive_threat", None)
+                    if _pt is None:
+                        try:
+                            from ai_sidecar.combat.predictive_threat import get_predictive_threat_engine
+                            _pt = get_predictive_threat_engine()
+                            self._runtime.predictive_threat = _pt
+                            logger.info("predictive_threat_initialized")
+                        except Exception as e:
+                            logger.warning("predictive_threat_init_failed: %s", e)
 
-                # ── NEW: Initialize Anti-Killsteal ──
-                _aks = getattr(self._runtime, "anti_killsteal", None)
-                if _aks is None:
-                    try:
-                        from ai_sidecar.combat.anti_killsteal import get_anti_killsteal
-                        _aks = get_anti_killsteal()
-                        self._runtime.anti_killsteal = _aks
-                        logger.info("anti_killsteal_initialized")
-                    except Exception as e:
-                        logger.warning("anti_killsteal_init_failed: %s", e)
+                    # ── NEW: Initialize Anti-Killsteal ──
+                    _aks = getattr(self._runtime, "anti_killsteal", None)
+                    if _aks is None:
+                        try:
+                            from ai_sidecar.combat.anti_killsteal import get_anti_killsteal
+                            _aks = get_anti_killsteal()
+                            self._runtime.anti_killsteal = _aks
+                            logger.info("anti_killsteal_initialized")
+                        except Exception as e:
+                            logger.warning("anti_killsteal_init_failed: %s", e)
 
-                # ── NEW: Initialize Social Intelligence ──
-                _si = getattr(self._runtime, "social_intelligence", None)
-                if _si is None:
-                    try:
-                        from ai_sidecar.social.social_intelligence import get_social_intelligence
-                        _si = get_social_intelligence()
-                        # Wire enqueue function for chat messages
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _si.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"si-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"si-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.social_intelligence = _si
-                        logger.info("social_intelligence_initialized")
-                    except Exception as e:
-                        logger.warning("social_intelligence_init_failed: %s", e)
+                    # ── NEW: Initialize Social Intelligence ──
+                    _si = getattr(self._runtime, "social_intelligence", None)
+                    if _si is None:
+                        try:
+                            from ai_sidecar.social.social_intelligence import get_social_intelligence
+                            _si = get_social_intelligence()
+                            # Wire enqueue function for chat messages
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _si.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"si-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"si-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.social_intelligence = _si
+                            logger.info("social_intelligence_initialized")
+                        except Exception as e:
+                            logger.warning("social_intelligence_init_failed: %s", e)
 
-                # ── NEW: Initialize Action Executor ──
-                _ae = getattr(self._runtime, "action_executor", None)
-                if _ae is None:
-                    try:
-                        from ai_sidecar.combat.action_executor import ActionExecutor
-                        _ae = ActionExecutor()
-                        self._runtime.action_executor = _ae
-                        logger.info("action_executor_initialized: %d mappings", len(_ae.get_all_mappings()))
-                    except Exception as e:
-                        logger.warning("action_executor_init_failed: %s", e)
+                    # ── NEW: Initialize Action Executor ──
+                    _ae = getattr(self._runtime, "action_executor", None)
+                    if _ae is None:
+                        try:
+                            from ai_sidecar.combat.action_executor import ActionExecutor
+                            _ae = ActionExecutor()
+                            self._runtime.action_executor = _ae
+                            logger.info("action_executor_initialized: %d mappings", len(_ae.get_all_mappings()))
+                        except Exception as e:
+                            logger.warning("action_executor_init_failed: %s", e)
 
-                # ── NEW: Initialize Safe Position Computer ──
-                _spc = getattr(self._runtime, "safe_position", None)
-                if _spc is None:
-                    try:
-                        from ai_sidecar.combat.safe_position import get_safe_position_computer
-                        _spc = get_safe_position_computer()
-                        self._runtime.safe_position = _spc
-                        logger.info("safe_position_initialized")
-                    except Exception as e:
-                        logger.warning("safe_position_init_failed: %s", e)
+                    # ── NEW: Initialize Safe Position Computer ──
+                    _spc = getattr(self._runtime, "safe_position", None)
+                    if _spc is None:
+                        try:
+                            from ai_sidecar.combat.safe_position import get_safe_position_computer
+                            _spc = get_safe_position_computer()
+                            self._runtime.safe_position = _spc
+                            logger.info("safe_position_initialized")
+                        except Exception as e:
+                            logger.warning("safe_position_init_failed: %s", e)
 
-                # ── NEW: Initialize GM Detector ──
-                _gmd = getattr(self._runtime, "gm_detector", None)
-                if _gmd is None:
-                    try:
-                        from ai_sidecar.combat.gm_detector import get_gm_detector
-                        _gmd = get_gm_detector()
-                        # Wire enqueue function for evasion actions
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _gmd.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"gmd-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.reflex,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"gmd-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.gm_detector = _gmd
-                        logger.info("gm_detector_initialized")
-                    except Exception as e:
-                        logger.warning("gm_detector_init_failed: %s", e)
+                    # ── NEW: Initialize GM Detector ──
+                    _gmd = getattr(self._runtime, "gm_detector", None)
+                    if _gmd is None:
+                        try:
+                            from ai_sidecar.combat.gm_detector import get_gm_detector
+                            _gmd = get_gm_detector()
+                            # Wire enqueue function for evasion actions
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _gmd.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"gmd-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.reflex,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"gmd-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.gm_detector = _gmd
+                            logger.info("gm_detector_initialized")
+                        except Exception as e:
+                            logger.warning("gm_detector_init_failed: %s", e)
 
-                # ── NEW: Initialize Market Arbitrage ──
-                _ma = getattr(self._runtime, "market_arbitrage", None)
-                if _ma is None:
-                    try:
-                        from ai_sidecar.economy.market_arbitrage import get_market_arbitrage
-                        _ma = get_market_arbitrage()
-                        self._runtime.market_arbitrage = _ma
-                        logger.info("market_arbitrage_initialized")
-                    except Exception as e:
-                        logger.warning("market_arbitrage_init_failed: %s", e)
+                    # ── NEW: Initialize Market Arbitrage ──
+                    _ma = getattr(self._runtime, "market_arbitrage", None)
+                    if _ma is None:
+                        try:
+                            from ai_sidecar.economy.market_arbitrage import get_market_arbitrage
+                            _ma = get_market_arbitrage()
+                            self._runtime.market_arbitrage = _ma
+                            logger.info("market_arbitrage_initialized")
+                        except Exception as e:
+                            logger.warning("market_arbitrage_init_failed: %s", e)
 
-                # ── NEW: Initialize Party Skill Protocol ──
-                _psp = getattr(self._runtime, "party_skill_protocol", None)
-                if _psp is None:
-                    try:
-                        from ai_sidecar.party.party_skill_protocol import get_party_skill_protocol
-                        _psp = get_party_skill_protocol()
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _psp.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"psp-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"psp-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.party_skill_protocol = _psp
-                        logger.info("party_skill_protocol_initialized")
-                    except Exception as e:
-                        logger.warning("party_skill_protocol_init_failed: %s", e)
+                    # ── NEW: Initialize Party Skill Protocol ──
+                    _psp = getattr(self._runtime, "party_skill_protocol", None)
+                    if _psp is None:
+                        try:
+                            from ai_sidecar.party.party_skill_protocol import get_party_skill_protocol
+                            _psp = get_party_skill_protocol()
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _psp.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"psp-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"psp-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.party_skill_protocol = _psp
+                            logger.info("party_skill_protocol_initialized")
+                        except Exception as e:
+                            logger.warning("party_skill_protocol_init_failed: %s", e)
 
-                # ── NEW: Initialize Resource Manager ──
-                _rm = getattr(self._runtime, "resource_manager", None)
-                if _rm is None:
-                    try:
-                        from ai_sidecar.combat.resource_manager import get_resource_manager
-                        _rm = get_resource_manager()
-                        self._runtime.resource_manager = _rm
-                        logger.info("resource_manager_initialized")
-                    except Exception as e:
-                        logger.warning("resource_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Resource Manager ──
+                    _rm = getattr(self._runtime, "resource_manager", None)
+                    if _rm is None:
+                        try:
+                            from ai_sidecar.combat.resource_manager import get_resource_manager
+                            _rm = get_resource_manager()
+                            self._runtime.resource_manager = _rm
+                            logger.info("resource_manager_initialized")
+                        except Exception as e:
+                            logger.warning("resource_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Vending Automation ──
-                _va = getattr(self._runtime, "vending_automation", None)
-                if _va is None:
-                    try:
-                        from ai_sidecar.economy.vending_automation import get_vending_automation
-                        _va = get_vending_automation()
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _va.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"va-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"va-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.vending_automation = _va
-                        logger.info("vending_automation_initialized")
-                    except Exception as e:
-                        logger.warning("vending_automation_init_failed: %s", e)
+                    # ── NEW: Initialize Vending Automation ──
+                    _va = getattr(self._runtime, "vending_automation", None)
+                    if _va is None:
+                        try:
+                            from ai_sidecar.economy.vending_automation import get_vending_automation
+                            _va = get_vending_automation()
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _va.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"va-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"va-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.vending_automation = _va
+                            logger.info("vending_automation_initialized")
+                        except Exception as e:
+                            logger.warning("vending_automation_init_failed: %s", e)
 
-                # ── NEW: Initialize Server Population Tracker ──
-                _st = getattr(self._runtime, "server_tracker", None)
-                if _st is None:
-                    try:
-                        from ai_sidecar.server_tracker import get_server_tracker
-                        _st = get_server_tracker()
-                        self._runtime.server_tracker = _st
-                        logger.info("server_tracker_initialized")
-                    except Exception as e:
-                        logger.warning("server_tracker_init_failed: %s", e)
+                    # ── NEW: Initialize Server Population Tracker ──
+                    _st = getattr(self._runtime, "server_tracker", None)
+                    if _st is None:
+                        try:
+                            from ai_sidecar.server_tracker import get_server_tracker
+                            _st = get_server_tracker()
+                            self._runtime.server_tracker = _st
+                            logger.info("server_tracker_initialized")
+                        except Exception as e:
+                            logger.warning("server_tracker_init_failed: %s", e)
 
-                # ── NEW: Initialize Shared Learning DB ──
-                _sldb = getattr(self._runtime, "shared_learning_db", None)
-                if _sldb is None:
-                    try:
-                        from ai_sidecar.learning.shared_learning_db import get_shared_learning_db
-                        _sldb = get_shared_learning_db()
-                        self._runtime.shared_learning_db = _sldb
-                        logger.info("shared_learning_db_initialized")
-                    except Exception as e:
-                        logger.warning("shared_learning_db_init_failed: %s", e)
+                    # ── NEW: Initialize Shared Learning DB ──
+                    _sldb = getattr(self._runtime, "shared_learning_db", None)
+                    if _sldb is None:
+                        try:
+                            from ai_sidecar.learning.shared_learning_db import get_shared_learning_db
+                            _sldb = get_shared_learning_db()
+                            self._runtime.shared_learning_db = _sldb
+                            logger.info("shared_learning_db_initialized")
+                        except Exception as e:
+                            logger.warning("shared_learning_db_init_failed: %s", e)
 
-                # ── NEW: Initialize WoE Castle Tactics ──
-                _wct = getattr(self._runtime, "woe_castle_tactics", None)
-                if _wct is None:
-                    try:
-                        from ai_sidecar.combat.woe_castle_tactics import get_woe_castle_tactics
-                        _wct = get_woe_castle_tactics()
-                        self._runtime.woe_castle_tactics = _wct
-                        logger.info("woe_castle_tactics_initialized: %d castles", len(_wct.get_all_castles()))
-                    except Exception as e:
-                        logger.warning("woe_castle_tactics_init_failed: %s", e)
+                    # ── NEW: Initialize WoE Castle Tactics ──
+                    _wct = getattr(self._runtime, "woe_castle_tactics", None)
+                    if _wct is None:
+                        try:
+                            from ai_sidecar.combat.woe_castle_tactics import get_woe_castle_tactics
+                            _wct = get_woe_castle_tactics()
+                            self._runtime.woe_castle_tactics = _wct
+                            logger.info("woe_castle_tactics_initialized: %d castles", len(_wct.get_all_castles()))
+                        except Exception as e:
+                            logger.warning("woe_castle_tactics_init_failed: %s", e)
 
-                # ── NEW: Initialize Skill Chain Executor ──
-                _sce = getattr(self._runtime, "skill_chain_executor", None)
-                if _sce is None:
-                    try:
-                        from ai_sidecar.combat.skill_chain_executor import get_skill_chain_executor
-                        _sce = get_skill_chain_executor()
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _sce.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"sce-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"sce-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.skill_chain_executor = _sce
-                        logger.info("skill_chain_executor_initialized: %d chains", len(_sce.get_all_chains()))
-                    except Exception as e:
-                        logger.warning("skill_chain_executor_init_failed: %s", e)
+                    # ── NEW: Initialize Skill Chain Executor ──
+                    _sce = getattr(self._runtime, "skill_chain_executor", None)
+                    if _sce is None:
+                        try:
+                            from ai_sidecar.combat.skill_chain_executor import get_skill_chain_executor
+                            _sce = get_skill_chain_executor()
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _sce.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"sce-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"sce-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.skill_chain_executor = _sce
+                            logger.info("skill_chain_executor_initialized: %d chains", len(_sce.get_all_chains()))
+                        except Exception as e:
+                            logger.warning("skill_chain_executor_init_failed: %s", e)
 
-                # ── NEW: Initialize Aggro Pathfinder ──
-                _ap = getattr(self._runtime, "aggro_pathfinder", None)
-                if _ap is None:
-                    try:
-                        from ai_sidecar.aggro_pathfinder import get_aggro_pathfinder
-                        _ap = get_aggro_pathfinder()
-                        self._runtime.aggro_pathfinder = _ap
-                        logger.info("aggro_pathfinder_initialized")
-                    except Exception as e:
-                        logger.warning("aggro_pathfinder_init_failed: %s", e)
+                    # ── NEW: Initialize Aggro Pathfinder ──
+                    _ap = getattr(self._runtime, "aggro_pathfinder", None)
+                    if _ap is None:
+                        try:
+                            from ai_sidecar.aggro_pathfinder import get_aggro_pathfinder
+                            _ap = get_aggro_pathfinder()
+                            self._runtime.aggro_pathfinder = _ap
+                            logger.info("aggro_pathfinder_initialized")
+                        except Exception as e:
+                            logger.warning("aggro_pathfinder_init_failed: %s", e)
 
-                # ── NEW: Initialize Portal Knowledge ──
-                _pk = getattr(self._runtime, "portal_knowledge", None)
-                if _pk is None:
-                    try:
-                        from ai_sidecar.portal_knowledge import get_portal_knowledge
-                        _pk = get_portal_knowledge()
-                        self._runtime.portal_knowledge = _pk
-                        logger.info("portal_knowledge_initialized: %d portals, %d maps",
-                                    _pk.portal_count(), _pk.map_count())
-                    except Exception as e:
-                        logger.warning("portal_knowledge_init_failed: %s", e)
+                    # ── NEW: Initialize Portal Knowledge ──
+                    _pk = getattr(self._runtime, "portal_knowledge", None)
+                    if _pk is None:
+                        try:
+                            from ai_sidecar.portal_knowledge import get_portal_knowledge
+                            _pk = get_portal_knowledge()
+                            self._runtime.portal_knowledge = _pk
+                            logger.info("portal_knowledge_initialized: %d portals, %d maps",
+                                        _pk.portal_count(), _pk.map_count())
+                        except Exception as e:
+                            logger.warning("portal_knowledge_init_failed: %s", e)
 
-                # ── NEW: Initialize Pathfinding Engine ──
-                _pfe = getattr(self._runtime, "pathfinding_engine", None)
-                if _pfe is None:
-                    try:
-                        from ai_sidecar.pathfinding_engine import get_pathfinding_engine
-                        _pfe = get_pathfinding_engine()
-                        self._runtime.pathfinding_engine = _pfe
-                        logger.info("pathfinding_engine_initialized")
-                    except Exception as e:
-                        logger.warning("pathfinding_engine_init_failed: %s", e)
+                    # ── NEW: Initialize Pathfinding Engine ──
+                    _pfe = getattr(self._runtime, "pathfinding_engine", None)
+                    if _pfe is None:
+                        try:
+                            from ai_sidecar.pathfinding_engine import get_pathfinding_engine
+                            _pfe = get_pathfinding_engine()
+                            self._runtime.pathfinding_engine = _pfe
+                            logger.info("pathfinding_engine_initialized")
+                        except Exception as e:
+                            logger.warning("pathfinding_engine_init_failed: %s", e)
 
-                # ── NEW: Initialize Safe Position Manager ──
-                _spm = getattr(self._runtime, "safe_position_manager", None)
-                if _spm is None:
-                    try:
-                        from ai_sidecar.safe_position import get_safe_position_manager
-                        _spm = get_safe_position_manager()
-                        self._runtime.safe_position_manager = _spm
-                        logger.info("safe_position_manager_initialized: %d maps",
-                                    len(_spm.get_all_safe_maps()))
-                    except Exception as e:
-                        logger.warning("safe_position_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Safe Position Manager ──
+                    _spm = getattr(self._runtime, "safe_position_manager", None)
+                    if _spm is None:
+                        try:
+                            from ai_sidecar.safe_position import get_safe_position_manager
+                            _spm = get_safe_position_manager()
+                            self._runtime.safe_position_manager = _spm
+                            logger.info("safe_position_manager_initialized: %d maps",
+                                        len(_spm.get_all_safe_maps()))
+                        except Exception as e:
+                            logger.warning("safe_position_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Fly Wing Manager ──
-                _fwm = getattr(self._runtime, "fly_wing_manager", None)
-                if _fwm is None:
-                    try:
-                        from ai_sidecar.fly_wing_manager import get_fly_wing_manager
-                        _fwm = get_fly_wing_manager()
-                        self._runtime.fly_wing_manager = _fwm
-                        logger.info("fly_wing_manager_initialized")
-                    except Exception as e:
-                        logger.warning("fly_wing_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Fly Wing Manager ──
+                    _fwm = getattr(self._runtime, "fly_wing_manager", None)
+                    if _fwm is None:
+                        try:
+                            from ai_sidecar.fly_wing_manager import get_fly_wing_manager
+                            _fwm = get_fly_wing_manager()
+                            self._runtime.fly_wing_manager = _fwm
+                            logger.info("fly_wing_manager_initialized")
+                        except Exception as e:
+                            logger.warning("fly_wing_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Map Server Knowledge ──
-                _msk = getattr(self._runtime, "map_server_knowledge", None)
-                if _msk is None:
-                    try:
-                        from ai_sidecar.map_server_knowledge import get_map_server_knowledge
-                        _msk = get_map_server_knowledge()
-                        self._runtime.map_server_knowledge = _msk
-                        logger.info("map_server_knowledge_initialized")
-                    except Exception as e:
-                        logger.warning("map_server_knowledge_init_failed: %s", e)
+                    # ── NEW: Initialize Map Server Knowledge ──
+                    _msk = getattr(self._runtime, "map_server_knowledge", None)
+                    if _msk is None:
+                        try:
+                            from ai_sidecar.map_server_knowledge import get_map_server_knowledge
+                            _msk = get_map_server_knowledge()
+                            self._runtime.map_server_knowledge = _msk
+                            logger.info("map_server_knowledge_initialized")
+                        except Exception as e:
+                            logger.warning("map_server_knowledge_init_failed: %s", e)
 
-                # ── NEW: Initialize Dynamic Portal Discovery ──
-                _dpd = getattr(self._runtime, "dynamic_portal_discovery", None)
-                if _dpd is None:
-                    try:
-                        from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
-                        _dpd = get_dynamic_portal_discovery()
-                        self._runtime.dynamic_portal_discovery = _dpd
-                        logger.info("dynamic_portal_discovery_initialized")
-                    except Exception as e:
-                        logger.warning("dynamic_portal_discovery_init_failed: %s", e)
+                    # ── NEW: Initialize Dynamic Portal Discovery ──
+                    _dpd = getattr(self._runtime, "dynamic_portal_discovery", None)
+                    if _dpd is None:
+                        try:
+                            from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
+                            _dpd = get_dynamic_portal_discovery()
+                            self._runtime.dynamic_portal_discovery = _dpd
+                            logger.info("dynamic_portal_discovery_initialized")
+                        except Exception as e:
+                            logger.warning("dynamic_portal_discovery_init_failed: %s", e)
 
-                # ── NEW: Initialize Kafra Teleport ──
-                _kt = getattr(self._runtime, "kafra_teleport", None)
-                if _kt is None:
-                    try:
-                        from ai_sidecar.kafra_teleport import get_kafra_teleport
-                        _kt = get_kafra_teleport()
-                        self._runtime.kafra_teleport = _kt
-                        logger.info("kafra_teleport_initialized")
-                    except Exception as e:
-                        logger.warning("kafra_teleport_init_failed: %s", e)
+                    # ── NEW: Initialize Kafra Teleport ──
+                    _kt = getattr(self._runtime, "kafra_teleport", None)
+                    if _kt is None:
+                        try:
+                            from ai_sidecar.kafra_teleport import get_kafra_teleport
+                            _kt = get_kafra_teleport()
+                            self._runtime.kafra_teleport = _kt
+                            logger.info("kafra_teleport_initialized")
+                        except Exception as e:
+                            logger.warning("kafra_teleport_init_failed: %s", e)
 
-                # ── NEW: Initialize Predictive Aggro ──
-                _pa = getattr(self._runtime, "predictive_aggro", None)
-                if _pa is None:
-                    try:
-                        from ai_sidecar.predictive_aggro import get_predictive_aggro
-                        _pa = get_predictive_aggro()
-                        self._runtime.predictive_aggro = _pa
-                        logger.info("predictive_aggro_initialized")
-                    except Exception as e:
-                        logger.warning("predictive_aggro_init_failed: %s", e)
+                    # ── NEW: Initialize Predictive Aggro ──
+                    _pa = getattr(self._runtime, "predictive_aggro", None)
+                    if _pa is None:
+                        try:
+                            from ai_sidecar.predictive_aggro import get_predictive_aggro
+                            _pa = get_predictive_aggro()
+                            self._runtime.predictive_aggro = _pa
+                            logger.info("predictive_aggro_initialized")
+                        except Exception as e:
+                            logger.warning("predictive_aggro_init_failed: %s", e)
 
-                # ── NEW: Initialize Guild Manager ──
-                _gm = getattr(self._runtime, "guild_manager", None)
-                if _gm is None:
-                    try:
-                        from ai_sidecar.guild_manager import get_guild_manager
-                        _gm = get_guild_manager()
-                        self._runtime.guild_manager = _gm
-                        logger.info("guild_manager_initialized")
-                    except Exception as e:
-                        logger.warning("guild_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Guild Manager ──
+                    _gm = getattr(self._runtime, "guild_manager", None)
+                    if _gm is None:
+                        try:
+                            from ai_sidecar.guild_manager import get_guild_manager
+                            _gm = get_guild_manager()
+                            self._runtime.guild_manager = _gm
+                            logger.info("guild_manager_initialized")
+                        except Exception as e:
+                            logger.warning("guild_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Market Manipulator ──
-                _mm = getattr(self._runtime, "market_manipulator", None)
-                if _mm is None:
-                    try:
-                        from ai_sidecar.economy.market_manipulator import get_market_manipulator
-                        _mm = get_market_manipulator()
-                        self._runtime.market_manipulator = _mm
-                        logger.info("market_manipulator_initialized")
-                    except Exception as e:
-                        logger.warning("market_manipulator_init_failed: %s", e)
+                    # ── NEW: Initialize Market Manipulator ──
+                    _mm = getattr(self._runtime, "market_manipulator", None)
+                    if _mm is None:
+                        try:
+                            from ai_sidecar.economy.market_manipulator import get_market_manipulator
+                            _mm = get_market_manipulator()
+                            self._runtime.market_manipulator = _mm
+                            logger.info("market_manipulator_initialized")
+                        except Exception as e:
+                            logger.warning("market_manipulator_init_failed: %s", e)
 
-                # ── NEW: Initialize MVP Tracker ──
-                _mt = getattr(self._runtime, "mvp_tracker", None)
-                if _mt is None:
-                    try:
-                        from ai_sidecar.combat.mvp_tracker import get_mvp_tracker
-                        _mt = get_mvp_tracker()
-                        self._runtime.mvp_tracker = _mt
-                        logger.info("mvp_tracker_initialized: %d MVPs", len(_mt.KNOWN_MVPS))
-                    except Exception as e:
-                        logger.warning("mvp_tracker_init_failed: %s", e)
+                    # ── NEW: Initialize MVP Tracker ──
+                    _mt = getattr(self._runtime, "mvp_tracker", None)
+                    if _mt is None:
+                        try:
+                            from ai_sidecar.combat.mvp_tracker import get_mvp_tracker
+                            _mt = get_mvp_tracker()
+                            self._runtime.mvp_tracker = _mt
+                            logger.info("mvp_tracker_initialized: %d MVPs", len(_mt.KNOWN_MVPS))
+                        except Exception as e:
+                            logger.warning("mvp_tracker_init_failed: %s", e)
 
-                # ── NEW: Initialize Player Profiler ──
-                _pp = getattr(self._runtime, "player_profiler", None)
-                if _pp is None:
-                    try:
-                        from ai_sidecar.player_profiler import get_player_profiler
-                        _pp = get_player_profiler()
-                        self._runtime.player_profiler = _pp
-                        logger.info("player_profiler_initialized")
-                    except Exception as e:
-                        logger.warning("player_profiler_init_failed: %s", e)
+                    # ── NEW: Initialize Player Profiler ──
+                    _pp = getattr(self._runtime, "player_profiler", None)
+                    if _pp is None:
+                        try:
+                            from ai_sidecar.player_profiler import get_player_profiler
+                            _pp = get_player_profiler()
+                            self._runtime.player_profiler = _pp
+                            logger.info("player_profiler_initialized")
+                        except Exception as e:
+                            logger.warning("player_profiler_init_failed: %s", e)
 
-                # ── NEW: Initialize Strategy Optimizer ──
-                _so = getattr(self._runtime, "strategy_optimizer", None)
-                if _so is None:
-                    try:
-                        from ai_sidecar.learning.strategy_optimizer import get_strategy_optimizer
-                        _so = get_strategy_optimizer()
-                        self._runtime.strategy_optimizer = _so
-                        logger.info("strategy_optimizer_initialized")
-                    except Exception as e:
-                        logger.warning("strategy_optimizer_init_failed: %s", e)
+                    # ── NEW: Initialize Strategy Optimizer ──
+                    _so = getattr(self._runtime, "strategy_optimizer", None)
+                    if _so is None:
+                        try:
+                            from ai_sidecar.learning.strategy_optimizer import get_strategy_optimizer
+                            _so = get_strategy_optimizer()
+                            self._runtime.strategy_optimizer = _so
+                            logger.info("strategy_optimizer_initialized")
+                        except Exception as e:
+                            logger.warning("strategy_optimizer_init_failed: %s", e)
 
-                # ── NEW: Initialize Cross-Bot Resource Manager ──
-                _cbr = getattr(self._runtime, "cross_bot_resource_manager", None)
-                if _cbr is None:
-                    try:
-                        from ai_sidecar.fleet.cross_bot_resource_manager import get_cross_bot_resource_manager
-                        _cbr = get_cross_bot_resource_manager()
-                        self._runtime.cross_bot_resource_manager = _cbr
-                        logger.info("cross_bot_resource_manager_initialized")
-                    except Exception as e:
-                        logger.warning("cross_bot_resource_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Cross-Bot Resource Manager ──
+                    _cbr = getattr(self._runtime, "cross_bot_resource_manager", None)
+                    if _cbr is None:
+                        try:
+                            from ai_sidecar.fleet.cross_bot_resource_manager import get_cross_bot_resource_manager
+                            _cbr = get_cross_bot_resource_manager()
+                            self._runtime.cross_bot_resource_manager = _cbr
+                            logger.info("cross_bot_resource_manager_initialized")
+                        except Exception as e:
+                            logger.warning("cross_bot_resource_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Party Formation AI ──
-                _pfa = getattr(self._runtime, "party_formation_ai", None)
-                if _pfa is None:
-                    try:
-                        from ai_sidecar.party.party_formation_ai import get_party_formation_ai
-                        _pfa = get_party_formation_ai()
-                        self._runtime.party_formation_ai = _pfa
-                        logger.info("party_formation_ai_initialized")
-                    except Exception as e:
-                        logger.warning("party_formation_ai_init_failed: %s", e)
+                    # ── NEW: Initialize Party Formation AI ──
+                    _pfa = getattr(self._runtime, "party_formation_ai", None)
+                    if _pfa is None:
+                        try:
+                            from ai_sidecar.party.party_formation_ai import get_party_formation_ai
+                            _pfa = get_party_formation_ai()
+                            self._runtime.party_formation_ai = _pfa
+                            logger.info("party_formation_ai_initialized")
+                        except Exception as e:
+                            logger.warning("party_formation_ai_init_failed: %s", e)
 
-                # ── NEW: Initialize Quest Automation ──
-                _qa = getattr(self._runtime, "quest_automation", None)
-                if _qa is None:
-                    try:
-                        from ai_sidecar.quest_automation import get_quest_automation
-                        _qa = get_quest_automation()
-                        self._runtime.quest_automation = _qa
-                        logger.info("quest_automation_initialized")
-                    except Exception as e:
-                        logger.warning("quest_automation_init_failed: %s", e)
+                    # ── NEW: Initialize Quest Automation ──
+                    _qa = getattr(self._runtime, "quest_automation", None)
+                    if _qa is None:
+                        try:
+                            from ai_sidecar.quest_automation import get_quest_automation
+                            _qa = get_quest_automation()
+                            self._runtime.quest_automation = _qa
+                            logger.info("quest_automation_initialized")
+                        except Exception as e:
+                            logger.warning("quest_automation_init_failed: %s", e)
 
-                # ── NEW: Initialize Multi-Client Combat Coordinator ──
-                _mcc = getattr(self._runtime, "multi_client_coordinator", None)
-                if _mcc is None:
-                    try:
-                        from ai_sidecar.fleet.multi_client_coordinator import get_multi_client_coordinator
-                        _mcc = get_multi_client_coordinator()
-                        self._runtime.multi_client_coordinator = _mcc
-                        logger.info("multi_client_coordinator_initialized")
-                    except Exception as e:
-                        logger.warning("multi_client_coordinator_init_failed: %s", e)
+                    # ── NEW: Initialize Multi-Client Combat Coordinator ──
+                    _mcc = getattr(self._runtime, "multi_client_coordinator", None)
+                    if _mcc is None:
+                        try:
+                            from ai_sidecar.fleet.multi_client_coordinator import get_multi_client_coordinator
+                            _mcc = get_multi_client_coordinator()
+                            self._runtime.multi_client_coordinator = _mcc
+                            logger.info("multi_client_coordinator_initialized")
+                        except Exception as e:
+                            logger.warning("multi_client_coordinator_init_failed: %s", e)
 
-                # ── NEW: Initialize Market Executor ──
-                _mex = getattr(self._runtime, "market_executor", None)
-                if _mex is None:
-                    try:
-                        from ai_sidecar.economy.market_executor import get_market_executor
-                        _mex = get_market_executor()
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            from datetime import UTC, datetime as _dt, timedelta
-                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                            _mex.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
-                                action_id=f"mex-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=cmd,
-                                conflict_key="",
-                                priority_tier=_APT.tactical,
-                                source="manual",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"mex-{int(_dt.now(UTC).timestamp())}",
-                            )))
-                        self._runtime.market_executor = _mex
-                        logger.info("market_executor_initialized")
-                    except Exception as e:
-                        logger.warning("market_executor_init_failed: %s", e)
+                    # ── NEW: Initialize Market Executor ──
+                    _mex = getattr(self._runtime, "market_executor", None)
+                    if _mex is None:
+                        try:
+                            from ai_sidecar.economy.market_executor import get_market_executor
+                            _mex = get_market_executor()
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _mex.set_enqueue_fn(lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"mex-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"mex-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                            self._runtime.market_executor = _mex
+                            logger.info("market_executor_initialized")
+                        except Exception as e:
+                            logger.warning("market_executor_init_failed: %s", e)
 
-                # ── NEW: Initialize WoE Combat AI ──
-                _wca = getattr(self._runtime, "woe_combat_ai", None)
-                if _wca is None:
-                    try:
-                        from ai_sidecar.combat.woe_combat_ai import get_woe_combat_ai
-                        _wca = get_woe_combat_ai()
-                        self._runtime.woe_combat_ai = _wca
-                        logger.info("woe_combat_ai_initialized")
-                    except Exception as e:
-                        logger.warning("woe_combat_ai_init_failed: %s", e)
+                    # ── NEW: Initialize WoE Combat AI ──
+                    _wca = getattr(self._runtime, "woe_combat_ai", None)
+                    if _wca is None:
+                        try:
+                            from ai_sidecar.combat.woe_combat_ai import get_woe_combat_ai
+                            _wca = get_woe_combat_ai()
+                            self._runtime.woe_combat_ai = _wca
+                            logger.info("woe_combat_ai_initialized")
+                        except Exception as e:
+                            logger.warning("woe_combat_ai_init_failed: %s", e)
 
-                # ── NEW: Initialize Quest Step Executor ──
-                _qse = getattr(self._runtime, "quest_step_executor", None)
-                if _qse is None:
-                    try:
-                        from ai_sidecar.quest_step_executor import get_quest_step_executor
-                        _qse = get_quest_step_executor()
-                        self._runtime.quest_step_executor = _qse
-                        logger.info("quest_step_executor_initialized")
-                    except Exception as e:
-                        logger.warning("quest_step_executor_init_failed: %s", e)
+                    # ── NEW: Initialize Quest Step Executor ──
+                    _qse = getattr(self._runtime, "quest_step_executor", None)
+                    if _qse is None:
+                        try:
+                            from ai_sidecar.quest_step_executor import get_quest_step_executor
+                            _qse = get_quest_step_executor()
+                            self._runtime.quest_step_executor = _qse
+                            logger.info("quest_step_executor_initialized")
+                        except Exception as e:
+                            logger.warning("quest_step_executor_init_failed: %s", e)
 
-                # ── NEW: Initialize PK Avoidance ──
-                _pka = getattr(self._runtime, "pk_avoidance", None)
-                if _pka is None:
-                    try:
-                        from ai_sidecar.pk_avoidance import get_pk_avoidance
-                        _pka = get_pk_avoidance()
-                        self._runtime.pk_avoidance = _pka
-                        logger.info("pk_avoidance_initialized")
-                    except Exception as e:
-                        logger.warning("pk_avoidance_init_failed: %s", e)
+                    # ── NEW: Initialize PK Avoidance ──
+                    _pka = getattr(self._runtime, "pk_avoidance", None)
+                    if _pka is None:
+                        try:
+                            from ai_sidecar.pk_avoidance import get_pk_avoidance
+                            _pka = get_pk_avoidance()
+                            self._runtime.pk_avoidance = _pka
+                            logger.info("pk_avoidance_initialized")
+                        except Exception as e:
+                            logger.warning("pk_avoidance_init_failed: %s", e)
 
-                # ── NEW: Initialize Server Calibration ──
-                _sc = getattr(self._runtime, "server_calibration", None)
-                if _sc is None:
-                    try:
-                        from ai_sidecar.server_calibration import get_server_calibration
-                        _sc = get_server_calibration()
-                        self._runtime.server_calibration = _sc
-                        logger.info("server_calibration_initialized")
-                    except Exception as e:
-                        logger.warning("server_calibration_init_failed: %s", e)
+                    # ── NEW: Initialize Server Calibration ──
+                    _sc = getattr(self._runtime, "server_calibration", None)
+                    if _sc is None:
+                        try:
+                            from ai_sidecar.server_calibration import get_server_calibration
+                            _sc = get_server_calibration()
+                            self._runtime.server_calibration = _sc
+                            logger.info("server_calibration_initialized")
+                        except Exception as e:
+                            logger.warning("server_calibration_init_failed: %s", e)
 
-                # ── NEW: Initialize Gear Progression Planner ──
-                _gpp = getattr(self._runtime, "gear_progression_planner", None)
-                if _gpp is None:
-                    try:
-                        from ai_sidecar.gear_progression_planner import get_gear_progression_planner
-                        _gpp = get_gear_progression_planner()
-                        self._runtime.gear_progression_planner = _gpp
-                        logger.info("gear_progression_planner_initialized")
-                    except Exception as e:
-                        logger.warning("gear_progression_planner_init_failed: %s", e)
+                    # ── NEW: Initialize Gear Progression Planner ──
+                    _gpp = getattr(self._runtime, "gear_progression_planner", None)
+                    if _gpp is None:
+                        try:
+                            from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                            _gpp = get_gear_progression_planner()
+                            self._runtime.gear_progression_planner = _gpp
+                            logger.info("gear_progression_planner_initialized")
+                        except Exception as e:
+                            logger.warning("gear_progression_planner_init_failed: %s", e)
 
-                # ── NEW: Initialize Exploration Driver ──
-                _ed = getattr(self._runtime, "exploration_driver", None)
-                if _ed is None:
-                    try:
-                        from ai_sidecar.exploration_driver import get_exploration_driver
-                        _ed = get_exploration_driver()
-                        self._runtime.exploration_driver = _ed
-                        logger.info("exploration_driver_initialized")
-                    except Exception as e:
-                        logger.warning("exploration_driver_init_failed: %s", e)
+                    # ── NEW: Initialize Exploration Driver ──
+                    _ed = getattr(self._runtime, "exploration_driver", None)
+                    if _ed is None:
+                        try:
+                            from ai_sidecar.exploration_driver import get_exploration_driver
+                            _ed = get_exploration_driver()
+                            self._runtime.exploration_driver = _ed
+                            logger.info("exploration_driver_initialized")
+                        except Exception as e:
+                            logger.warning("exploration_driver_init_failed: %s", e)
 
-                # ── NEW: Initialize Combat Loop with all subsystems ──
-                _cl = getattr(self._runtime, "combat_loop", None)
-                if _cl is None:
-                    try:
-                        from ai_sidecar.combat.combat_loop import get_combat_loop
-                        _cl = get_combat_loop()
-                        self._runtime.combat_loop = _cl
+                    # ── NEW: Initialize Combat Loop with all subsystems ──
+                    _cl = getattr(self._runtime, "combat_loop", None)
+                    if _cl is None:
+                        try:
+                            from ai_sidecar.combat.combat_loop import get_combat_loop
+                            _cl = get_combat_loop()
+                            self._runtime.combat_loop = _cl
 
-                        # Wire all combat subsystems into the combat loop
-                        _subsystems = {
-                            "threat_targeting": "ai_sidecar.combat.threat_targeting",
-                            "skill_rotation": "ai_sidecar.combat.skill_rotation",
-                            "elemental_matrix": "ai_sidecar.combat.elemental_matrix",
-                            "buff_maintenance": "ai_sidecar.combat.buff_maintenance",
-                            "gear_swapper": "ai_sidecar.combat.gear_swapper",
-                            "resource_manager": "ai_sidecar.combat.resource_manager",
-                            "reflex_combat": "ai_sidecar.combat.reflex_combat",
-                            "action_executor": "ai_sidecar.combat.action_executor",
-                            "gather_and_kill": "ai_sidecar.combat.gather_and_kill",
-                        }
-                        for _attr, _module_path in _subsystems.items():
-                            _existing = getattr(self._runtime, _attr, None)
-                            if _existing is not None:
-                                _setter = getattr(_cl, f"set_{_attr}", None)
-                                if _setter:
-                                    _setter(_existing)
-                                    logger.debug("combat_loop_wired: %s", _attr)
+                            # Wire all combat subsystems into the combat loop
+                            _subsystems = {
+                                "threat_targeting": "ai_sidecar.combat.threat_targeting",
+                                "skill_rotation": "ai_sidecar.combat.skill_rotation",
+                                "elemental_matrix": "ai_sidecar.combat.elemental_matrix",
+                                "buff_maintenance": "ai_sidecar.combat.buff_maintenance",
+                                "gear_swapper": "ai_sidecar.combat.gear_swapper",
+                                "resource_manager": "ai_sidecar.combat.resource_manager",
+                                "reflex_combat": "ai_sidecar.combat.reflex_combat",
+                                "action_executor": "ai_sidecar.combat.action_executor",
+                                "gather_and_kill": "ai_sidecar.combat.gather_and_kill",
+                            }
+                            for _attr, _module_path in _subsystems.items():
+                                _existing = getattr(self._runtime, _attr, None)
+                                if _existing is not None:
+                                    _setter = getattr(_cl, f"set_{_attr}", None)
+                                    if _setter:
+                                        _setter(_existing)
+                                        logger.debug("combat_loop_wired: %s", _attr)
 
-                        # Wire build manager separately
-                        _bm = getattr(self._runtime, "build_manager", None)
-                        if _bm is not None:
-                            _cl.set_build_manager(_bm)
-                            logger.debug("combat_loop_wired: build_manager")
+                            # Wire build manager separately
+                            _bm = getattr(self._runtime, "build_manager", None)
+                            if _bm is not None:
+                                _cl.set_build_manager(_bm)
+                                logger.debug("combat_loop_wired: build_manager")
 
-                        # Wire action queue
-                        _aq = getattr(self._runtime, "action_queue", None)
-                        if _aq is not None:
-                            _cl.set_action_queue(_aq)
-                            logger.debug("combat_loop_wired: action_queue")
+                            # Wire action queue
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                _cl.set_action_queue(_aq)
+                                logger.debug("combat_loop_wired: action_queue")
 
-                        logger.info("combat_loop_initialized_with_subsystems")
-                    except Exception as e:
-                        logger.warning("combat_loop_init_failed: %s", e)
+                            logger.info("combat_loop_initialized_with_subsystems")
+                        except Exception as e:
+                            logger.warning("combat_loop_init_failed: %s", e)
 
-                # ── NEW: Initialize Degradation Manager ──
-                _dm = getattr(self._runtime, "degradation_manager", None)
-                if _dm is None:
-                    try:
-                        from ai_sidecar.degradation_manager import get_degradation_manager
-                        _dm = get_degradation_manager()
-                        self._runtime.degradation_manager = _dm
-                        logger.info("degradation_manager_initialized")
-                    except Exception as e:
-                        logger.warning("degradation_manager_init_failed: %s", e)
+                    # ── NEW: Initialize Degradation Manager ──
+                    _dm = getattr(self._runtime, "degradation_manager", None)
+                    if _dm is None:
+                        try:
+                            from ai_sidecar.degradation_manager import get_degradation_manager
+                            _dm = get_degradation_manager()
+                            self._runtime.degradation_manager = _dm
+                            logger.info("degradation_manager_initialized")
+                        except Exception as e:
+                            logger.warning("degradation_manager_init_failed: %s", e)
 
-                # ── NEW: Initialize Self Healer ──
-                _sh = getattr(self._runtime, "self_healer", None)
-                if _sh is None:
-                    try:
-                        from ai_sidecar.self_healer import get_self_healer
-                        _sh = get_self_healer()
-                        self._runtime.self_healer = _sh
-                        logger.info("self_healer_initialized")
-                    except Exception as e:
-                        logger.warning("self_healer_init_failed: %s", e)
+                    # ── NEW: Initialize Self Healer ──
+                    _sh = getattr(self._runtime, "self_healer", None)
+                    if _sh is None:
+                        try:
+                            from ai_sidecar.self_healer import get_self_healer
+                            _sh = get_self_healer()
+                            self._runtime.self_healer = _sh
+                            logger.info("self_healer_initialized")
+                        except Exception as e:
+                            logger.warning("self_healer_init_failed: %s", e)
 
-                # ── NEW: Initialize Time Scheduler ──
-                _ts = getattr(self._runtime, "time_scheduler", None)
-                if _ts is None:
-                    try:
-                        from ai_sidecar.time_scheduler import get_time_scheduler
-                        _ts = get_time_scheduler()
-                        self._runtime.time_scheduler = _ts
-                        logger.info("time_scheduler_initialized")
-                    except Exception as e:
-                        logger.warning("time_scheduler_init_failed: %s", e)
+                    # ── NEW: Initialize Time Scheduler ──
+                    _ts = getattr(self._runtime, "time_scheduler", None)
+                    if _ts is None:
+                        try:
+                            from ai_sidecar.time_scheduler import get_time_scheduler
+                            _ts = get_time_scheduler()
+                            self._runtime.time_scheduler = _ts
+                            logger.info("time_scheduler_initialized")
+                        except Exception as e:
+                            logger.warning("time_scheduler_init_failed: %s", e)
 
-                # ── NEW: Initialize Goal Planner ──
-                _gp = getattr(self._runtime, "goal_planner", None)
-                if _gp is None:
-                    try:
-                        from ai_sidecar.goal_planner import get_goal_planner
-                        _gp = get_goal_planner()
-                        self._runtime.goal_planner = _gp
-                        logger.info("goal_planner_initialized")
-                    except Exception as e:
-                        logger.warning("goal_planner_init_failed: %s", e)
+                    # ── NEW: Initialize Goal Planner ──
+                    _gp = getattr(self._runtime, "goal_planner", None)
+                    if _gp is None:
+                        try:
+                            from ai_sidecar.goal_planner import get_goal_planner
+                            _gp = get_goal_planner()
+                            self._runtime.goal_planner = _gp
+                            logger.info("goal_planner_initialized")
+                        except Exception as e:
+                            logger.warning("goal_planner_init_failed: %s", e)
 
-                # ── NEW: Initialize Opportunity Cost Engine ──
-                _oc = getattr(self._runtime, "opportunity_cost_engine", None)
-                if _oc is None:
-                    try:
-                        from ai_sidecar.opportunity_cost_engine import get_opportunity_cost_engine
-                        _oc = get_opportunity_cost_engine()
-                        self._runtime.opportunity_cost_engine = _oc
-                        logger.info("opportunity_cost_engine_initialized")
-                    except Exception as e:
-                        logger.warning("opportunity_cost_engine_init_failed: %s", e)
-                        self._services_initialized = True
+                    # ── NEW: Initialize Opportunity Cost Engine ──
+                    _oc = getattr(self._runtime, "opportunity_cost_engine", None)
+                    if _oc is None:
+                        try:
+                            from ai_sidecar.opportunity_cost_engine import get_opportunity_cost_engine
+                            _oc = get_opportunity_cost_engine()
+                            self._runtime.opportunity_cost_engine = _oc
+                            logger.info("opportunity_cost_engine_initialized")
+                        except Exception as e:
+                            logger.warning("opportunity_cost_engine_init_failed: %s", e)
+    
+                    self._services_initialized = True
+
 
                 # Get heuristic confidence
                 _hc = 0.0

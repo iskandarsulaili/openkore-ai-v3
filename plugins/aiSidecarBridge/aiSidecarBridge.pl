@@ -5328,10 +5328,10 @@ sub _survival_check {
 	# ── Progression: Apply optimal configs if not already set ──
 	_apply_bot_config();
 
-	# ── Auto-mode: Enable if disabled and conditions safe ──
-	# IMPORTANT: Only set AI to auto if it's currently manual AND we're not in combat
-	# This prevents the toggle war between sidecar PDCA and bridge reflexes
-	if ($hp_pct > 50 && $AI::AI != 2 && !$in_combat) {
+		# ── Auto-mode: Enable if disabled and conditions safe ──
+		# IMPORTANT: Only set AI to auto if it's currently manual AND we're not in combat
+		# This prevents the toggle war between sidecar PDCA and bridge reflexes
+		my $ai_val = $AI::AI;
 		my $ai_val = $AI::AI;
 		if (defined $ai_val && $ai_val == 1) {  # Only toggle from manual(1) to auto(2)
 			eval { require AI; AI::state(2); 1 };
@@ -5369,7 +5369,6 @@ my %sell_items = map { $_ => 1 } @sell_list;
 	}
 }
 
-}
 1;
 sub _discover_shops {
 	my $now = _now_ms();
