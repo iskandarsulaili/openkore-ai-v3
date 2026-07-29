@@ -1092,21 +1092,11 @@ class HeuristicService:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild05 (safe map with Porings) via portal and farm with fists.
                     if _cs_in_town:
-                        # In Prontera — set lockMap+attack, let AI route through portal
+                        # In Prontera — force direct walk to portal (bypass AI routing)
                         actions.append(HeuristicAction(
-                            kind="command", command="set lockMap prt_fild05",
+                            kind="command", command="move 22 203",
                             confidence=0.99, domain="economy",
-                            reason="Cold start - set lockMap to prt_fild05 for routing",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="set attackAuto 3",
-                            confidence=0.99, domain="economy",
-                            reason="Cold start - enable attack for farming",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="move 156 164",
-                            confidence=0.99, domain="economy",
-                            reason=f"Cold start - walk to Prontera center, then route to prt_fild05",
+                            reason=f"Cold start - force walk to portal, farm {50 - zeny}z on prt_fild05",
                         ))
                     elif _cs_in_hunting:
                         # On prt_fild05 — enable AI and attack for farming (should be ready)

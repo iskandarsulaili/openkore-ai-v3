@@ -4258,11 +4258,13 @@ sub _rewrite_runtime_command {
 		if (!_ai_already_auto_mode()) {
 			return ('ai auto', 'move_rewritten');
 		}
-		# Already in auto mode: only suppress if target has potions (AI handles routing)
-		# If bot has 0 potions on hunting map, allow the move through to override AI route.
-		if (($_current_map !~ /^[a-z]+_fild/ && $_current_map !~ /_dun/i) || $_guard_has_potions) {
-		    return ('', 'move_already_auto');
-		}
+				# Already in auto mode: only suppress if target has potions (AI handles routing)
+				# If bot has 0 potions on hunting map, allow the move through to override AI route.
+				# If target is direct coordinates (contains space), allow through for portal walk.
+				my $_move_is_coords = $target =~ /^\d+\s+\d+$/;
+				if (!$_move_is_coords && (($_current_map !~ /^[a-z]+_fild/ && $_current_map !~ /_dun/i) || $_guard_has_potions)) {
+				    return ('', 'move_already_auto');
+				}
 		# Bot has 0 potions on hunting map — allow move to town despite auto mode
 		return ($trimmed, 'coordinate_move_raw');
 	}
