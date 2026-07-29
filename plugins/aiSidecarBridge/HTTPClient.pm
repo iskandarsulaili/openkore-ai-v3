@@ -151,13 +151,13 @@ sub send_json {
 
 =head2 send_state (convenience)
 
-Shortcut for C<send_json('/v1/state', $state)>.
+Shortcut for C<send_json('/v1/ingest/snapshot', $state)>.
 
 =cut
 
 sub send_state {
     my ($self, $state) = @_;
-    return $self->send_json('/v1/state', $state);
+    return $self->send_json('/v1/ingest/snapshot', $state);
 }
 
 =head2 active_transport
