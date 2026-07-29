@@ -85,7 +85,7 @@ class LLMManager:
             if name in self._providers:
                 continue  # already loaded (override)
 
-            endpoint = provider_configs.get_provider(name)
+            endpoint = self._config.get_provider_endpoint(name)
             if endpoint is None or not endpoint.enabled:
                 logger.info("Provider '%s' not configured or disabled, skipping", name)
                 continue

@@ -584,6 +584,7 @@ class RuntimeState:
     action_arbiter: ActionArbiter | None = None
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
+    llm_manager: Any = None  # LLMManager — multi-provider LLM system
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -5648,6 +5649,32 @@ def create_runtime() -> RuntimeState:
         initial_rules=policy_rules,
     )
 
+    # ── LLMManager — multi-provider LLM system with fallback ──
+    try:
+        from ai_sidecar.llm import LLMConfig, LLMManager
+
+        llm_config = LLMConfig.from_env()
+        llm_manager = LLMManager(config=llm_config)
+        if not llm_manager.is_available():
+            logger.warning(
+                "llm_manager_startup_warning",
+                extra={
+                    "event": "llm_manager_startup_warning",
+                    "reason": "no_providers_available",
+                },
+            )
+        else:
+            logger.info(
+                "llm_manager_startup_ok",
+                extra={
+                    "event": "llm_manager_startup_ok",
+                    "provider_chain": llm_manager.provider_chain,
+                },
+            )
+    except Exception:
+        logger.exception("llm_manager_startup_failed", extra={"event": "llm_manager_startup_failed"})
+        llm_manager = None
+
     ml_registry = ModelRegistry(workspace_root=workspace_root)
     ml_registry.prune_orphaned_artifacts()
     ml_observer = ObservationCapture(workspace_root=workspace_root)
@@ -5776,6 +5803,7 @@ def create_runtime() -> RuntimeState:
         autonomy_scheduler_degraded_reason=autonomy_scheduler_degraded_reason,
         planner_stale_threshold_s=float(settings.autonomy_stale_plan_threshold_s),
         control_domain=control_domain,
+        llm_manager=llm_manager,
     )
 
     # ── Initialize efficiency tracker (zero-config, works on any server) ──

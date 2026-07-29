@@ -219,6 +219,15 @@ _PORTAL_DATA: list[tuple[str, int, int, str, int, int]] = [
     # Geffen <-> Morocc (southern desert)
     ("gef_fild08", 273, 28, "moc_fild08", 324, 362),
 
+    # Prontera fields -> Aldebaran/Alberta (eastern path)
+    ("prt_fild11", 206, 73, "alde_fild01", 332, 367),
+
+    # Aldebaran -> Alberta (adjacent towns)
+    ("aldebaran", 75, 226, "alberta", 170, 56),
+
+    # Morocc -> Aldebaran desert connection
+    ("moc_fild07", 368, 145, "alde_fild02", 382, 20),
+
     # ═════════════════════════════════════════════════════════════════════
     # ALBERTA — Port Town (boat travel hub)
     # ═════════════════════════════════════════════════════════════════════
@@ -226,6 +235,8 @@ _PORTAL_DATA: list[tuple[str, int, int, str, int, int]] = [
     ("alberta", 51, 264, "izlude", 41, 83),  # Boat dock -> Izlude
     ("alberta", 37, 140, "cmd_fild01", 305, 366),  # Alberta -> Comodo fields
     ("alberta", 174, 274, "ama_fild01", 308, 371),  # Alberta -> Amatsu fields
+    ("alberta", 145, 130, "yuno", 214, 254),  # Airship dock -> Yuno airport
+    ("alberta", 130, 160, "einbroch", 198, 296),  # Airship dock -> Einbroch airport
 
     # ═════════════════════════════════════════════════════════════════════
     # YUNO — Scholar Town (high level, level 50+)
@@ -238,6 +249,9 @@ _PORTAL_DATA: list[tuple[str, int, int, str, int, int]] = [
     ("yuno_fild01", 301, 37, "yuno_fild02", 183, 379),
     ("yuno_fild02", 225, 29, "yuno_fild03", 54, 380),
     ("yuno_fild03", 192, 201, "yuno_fild04", 332, 19),
+
+    # Yuno -> Einbroch field connection (mountain pass)
+    ("yuno_fild04", 14, 189, "ein_fild09", 371, 19),
 
     # ═════════════════════════════════════════════════════════════════════
     # EINBROCH — Industrial City (level 70+)
@@ -254,6 +268,11 @@ _PORTAL_DATA: list[tuple[str, int, int, str, int, int]] = [
     ("ein_fild06", 40, 38, "ein_fild07", 326, 372),
     ("ein_fild07", 381, 128, "ein_fild08", 27, 331),
     ("ein_fild08", 282, 317, "ein_fild09", 10, 174),
+
+    # Einbroch <-> Lighthalzen (contiguous fields)
+    ("ein_fild07", 261, 122, "lhz_fild01", 13, 375),
+    ("ein_fild09", 248, 355, "lhz_fild03", 312, 20),
+    ("einbroch", 50, 130, "lighthalzen", 195, 244),  # Train/airship between cities
 
     # ═════════════════════════════════════════════════════════════════════
     # CULVERT / EIN_DUN (level 70-85 progression)
@@ -441,25 +460,15 @@ class PortalDB:
         """Get all neighboring maps with edge weight=1 (portal hop count).
 
         Returns list of (map_name, weight) tuples.
-        Includes town shortcuts with their respective weights.
+        Every neighbor has a real portal connection with coordinates.
         """
         neighbors: dict[str, int] = {}
 
-        # Portal connections have weight 1 (one map boundary crossing)
         with self._lock:
             for conn in self._graph.get(map_name, []):
                 other = conn.other_side(map_name)
                 if other:
                     neighbors[other[0]] = 1
-
-        # Town shortcuts with their specific weights
-        for (a, b), weight in self._town_paths.items():
-            if a == map_name:
-                if b not in neighbors or weight < neighbors[b]:
-                    neighbors[b] = weight
-            elif b == map_name:
-                if a not in neighbors or weight < neighbors[a]:
-                    neighbors[a] = weight
 
         return list(neighbors.items())
 

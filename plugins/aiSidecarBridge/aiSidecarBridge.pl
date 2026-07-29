@@ -15,6 +15,13 @@ use Plugins;
 use Scalar::Util qw(reftype);
 use Settings;
 use Time::HiRes qw(alarm time usleep);
+use Cwd;
+use File::Basename;
+use lib dirname(__FILE__);
+use aiSidecarBridge::CircuitBreaker;
+use aiSidecarBridge::ConnectionMetrics;
+use aiSidecarBridge::HTTPClient;
+use aiSidecarBridge::StateBuilders;
 
 # Anti-detection: random delay to simulate human reaction time
 # Each bot gets a unique behavior profile to avoid pattern detection
@@ -175,6 +182,15 @@ my $next_config_ingest_at_ms = 0;
 my $next_keepalive_at_ms = 0;
 my $next_party_status_at_ms = 0;
 
+# ── New module instances (upgraded IPC, state builders, circuit breaker) ──
+my $_circuit_breaker;
+my $_connection_metrics;
+my $_http_client;
+my $_state_builders;
+
+# Pre-existing state variables (undeclared in original)
+my $_last_emergency_move = 0;
+
 my @ack_queue;
 my @telemetry_queue;
 my @event_queue;
@@ -266,6 +282,23 @@ sub _cleanup_runtime {
 	%actor_add_probe_count = ();
 	%actor_add_probe_last_log_ms = ();
 	$consecutive_empty_actor_snapshots = 0;
+
+	# Cleanup upgraded IPC modules
+	if ($_http_client) {
+		$_http_client->close();
+		undef $_http_client;
+	}
+	if ($_circuit_breaker) {
+		$_circuit_breaker->reset();
+		undef $_circuit_breaker;
+	}
+	if ($_connection_metrics) {
+		$_connection_metrics->reset();
+		undef $_connection_metrics;
+	}
+	if ($_state_builders) {
+		undef $_state_builders;
+	}
 }
 
 sub on_start3 {
@@ -361,12 +394,36 @@ sub on_start3 {
 		$registered = 0;
 		$next_register_at_ms = _now_ms();
 	}
+
+	# ── Initialize upgraded IPC modules ──
+	$_circuit_breaker = aiSidecarBridge::CircuitBreaker->new(
+		threshold => 10,
+		name      => 'zmq_push',
+	);
+	$_connection_metrics = aiSidecarBridge::ConnectionMetrics->new(
+		max_latency_samples => 100,
+		window_seconds      => 300,
+	);
+	$_http_client = aiSidecarBridge::HTTPClient->new(
+		zmq_address       => $ENV{SIDECAR_ZMQ_ADDR} || 'tcp://127.0.0.1:5559',
+		http_base_url     => _cfg('aiSidecar_baseUrl', 'http://127.0.0.1:18081'),
+		zmq_connect_ms    => 500,
+		zmq_linger_ms     => 100,
+		http_connect_ms   => _cfg_int('aiSidecar_connectTimeoutMs', 2000),
+		http_io_ms        => _cfg_int('aiSidecar_ioTimeoutMs', 5000),
+		json_encode_cb    => sub { JSON::PP::encode_json($_[0]) },
+		debug_log_cb      => sub { debug($_[0], 'HTTPClient', 2) },
+		warn_log_cb       => sub { warning($_[0]) },
+		circuit_breaker   => $_circuit_breaker,
+		metrics           => $_connection_metrics,
+	);
+	$_state_builders = aiSidecarBridge::StateBuilders->new(
+		debug_log_cb => sub { debug($_[0], 'StateBuilders', 2) },
+		max_items    => _cfg_int('aiSidecar_maxItems', 200),
+		max_actors   => _cfg_int('aiSidecar_maxActors', 24),
+	);
+	debug "[aiSidecarBridge] upgraded IPC modules initialized (ZMQ + HTTP fallback, circuit breaker, metrics, state builders)\n", 'aiSidecarBridge', 1;
 }
-
-
-# Track char name for re-registration (checked every cycle)
-my $_registered_char_name = '';
-
 
 sub _load_profile_to_char {
 	my $resp = _http_get_json('/v1/fleet/bots');
@@ -1574,6 +1631,11 @@ sub _load_bridge_config {
 		aiSidecar_routeChurnThreshold => 8,
 		aiSidecar_routeFailureEvery => 16,
 		aiSidecar_verbose => 1,
+
+		# ── Upgraded IPC modules ──
+		aiSidecar_stateBuildersEnabled => 1,
+		aiSidecar_maxItems => 200,
+		aiSidecar_zmqAddress => 'tcp://127.0.0.1:5559',
 	);
 
 	foreach my $key (keys %defaults) {
@@ -1750,10 +1812,25 @@ sub _send_snapshot {
     }
 
     my $snapshot = _build_snapshot_payload();
-    my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
-    if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
-        _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
-        _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
+    # Send via upgraded HTTPClient (ZMQ + HTTP fallback) if available
+    if ($_http_client) {
+        $_http_client->send_state($snapshot);
+    } else {
+        my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
+        if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+            _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
+            _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
+        }
+    }
+
+    # ── Send 17 specialized state builder snapshots ──
+    if ($_state_builders && _cfg_bool('aiSidecar_stateBuildersEnabled', 1)) {
+        my $states = $_state_builders->build_all_states();
+        if ($_http_client) {
+            $_http_client->send_json('/v1/state/builders', $states);
+        } else {
+            _http_post_json('/v1/state/builders', $states);
+        }
     }
 
     if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_actorsEnabled', 1)) {

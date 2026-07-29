@@ -1,8 +1,13 @@
-"""Conscious decision engine API — LLM-driven team composition, build planning, and progression advice."""
+"""Conscious decision engine API — LLM-driven team composition, build planning, and progression advice.
+
+Uses the new LLMManager multi-provider system as the primary LLM layer,
+falls back to the legacy model_router, and ultimately to knowledge rules.
+"""
 from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -35,6 +40,7 @@ class TeamSynergyRequest(BaseModel):
     """Request to evaluate optimal team composition for a group of bots."""
     bots: list[BotProfile] = Field(..., min_length=1, max_length=12)
     skip_llm: bool = Field(default=False, description="Skip LLM call, use knowledge rules only")
+    use_llm_manager: bool = Field(default=False, description="Use new LLMManager instead of legacy model_router")
 
 
 class JobAssignment(BaseModel):
@@ -53,94 +59,12 @@ class TeamSynergyResponse(BaseModel):
     message: str = "ok"
     assignments: list[JobAssignment] = Field(default_factory=list)
     team_synergy_note: str = Field(default="", max_length=1024)
-    source: str = Field(default="llm")  # llm or knowledge
+    source: str = Field(default="llm")  # llm, llm_manager, or knowledge
 
 
+# ── LLM Manager prompts ──
 
-# ── Knowledge-driven fallback team compositions ──
-
-# Synergy templates: (bot_count, [jobs]) -> roles
-_SYNERGY_TEMPLATES: dict[str, list[str]] = {
-    # 3-bot teams
-    "3_magic": ["Mage", "Acolyte", "Swordsman"],
-    "3_physical": ["Swordsman", "Hunter", "Acolyte"],
-    "3_balanced": ["Acolyte", "Mage", "Hunter"],
-    "3_ranged": ["Hunter", "Hunter", "Acolyte"],
-    "3_melee": ["Swordsman", "Thief", "Acolyte"],
-    # 2-bot teams
-    "2_duo": ["Acolyte", "Mage"],
-    "2_grind": ["Swordsman", "Acolyte"],
-}
-
-# Profile templates for each build (stat allocation)
-_BUILD_PROFILES: dict[str, dict[str, str]] = {
-    "Acolyte": {"build_focus": "INT > DEX. Max Heal, increase SP recovery. Support build with Blessing + Increase AGI."},
-    "Mage": {"build_focus": "INT > DEX. Max Fire Bolt/Cold Bolt, then Safety Wall. INT 40 -> DEX 30 -> rest INT."},
-    "Swordsman": {"build_focus": "STR > VIT > DEX. STR 40 -> VIT 30 -> DEX 20. Use Sword + Shield."},
-    "Hunter": {"build_focus": "AGI > DEX. AGI 40 -> DEX 40. Use Bow + Arrows. Train Falcon for auto-attack."},
-    "Thief": {"build_focus": "AGI > DEX. AGI 50 -> DEX 30. Dual daggers for Double Attack proc."},
-    "Merchant": {"build_focus": "STR > VIT > DEX. STR 40 -> VIT 30. Pushcart for weight, Overcharge for profits."},
-}
-
-
-def _knowledge_team_synergy(bots: list[BotProfile]) -> TeamSynergyResponse:
-    """Determine team composition using RO game knowledge (non-LLM fallback)."""
-    n = len(bots)
-    best_key = None
-    best_overlap = -1
-
-    for key, jobs in _SYNERGY_TEMPLATES.items():
-        key_count = int(key.split("_")[0])
-        if key_count != n:
-            continue
-        # Count overlap with current jobs (Novice = no preference)
-        overlap = sum(
-            1 for i, bot in enumerate(bots)
-            if i < len(jobs) and (bot.current_job == "Novice" or bot.current_job == jobs[i])
-        )
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_key = key
-
-    if best_key is None:
-        # Fallback: assign based on position
-        recommended_roles = ["Acolyte", "Mage", "Hunter", "Swordsman", "Thief", "Merchant"][:n]
-    else:
-        recommended_roles = _SYNERGY_TEMPLATES[best_key]
-
-    role_labels = {
-        "Acolyte": "healer",
-        "Mage": "aoe_dps",
-        "Swordsman": "tank",
-        "Hunter": "ranged_dps",
-        "Thief": "melee_dps",
-        "Merchant": "economy",
-    }
-
-    assignments = []
-    for i, bot in enumerate(bots):
-        job = recommended_roles[i] if i < len(recommended_roles) else "Acolyte"
-        profile = _BUILD_PROFILES.get(job, {})
-        role = role_labels.get(job, "unknown")
-        assignments.append(JobAssignment(
-            profile_name=bot.profile_name,
-            bot_id=bot.bot_id,
-            recommended_job=job,
-            role=role,
-            reason=f"{job} fills {role} role for balanced team synergy",
-            build_focus=profile.get("build_focus", ""),
-        ))
-
-    return TeamSynergyResponse(
-        assignments=assignments,
-        team_synergy_note=f"Knowledge-based {n}-bot team composition",
-        source="knowledge",
-    )
-
-
-# ── LLM team synergy prompt ──
-
-_TEAM_SYNERGY_SYSTEM_PROMPT = """You are an expert Ragnarok Online player (20+ years, 50+ max-level characters). You design optimal team compositions for bot automation.
+_TEAM_SYNERGY_LLM_SYSTEM_PROMPT = """You are an expert Ragnarok Online player (20+ years, 50+ max-level characters). You design optimal team compositions for bot automation.
 
 RULES:
 1. Each bot must get a DIFFERENT first class (no duplicates for first job change).
@@ -181,6 +105,128 @@ def _build_team_synergy_user_prompt(bots: list[BotProfile]) -> str:
     return "\n".join(parts)
 
 
+# ── Knowledge-driven fallback team compositions ──
+
+_SYNERGY_TEMPLATES: dict[str, list[str]] = {
+    "3_magic": ["Mage", "Acolyte", "Swordsman"],
+    "3_physical": ["Swordsman", "Hunter", "Acolyte"],
+    "3_balanced": ["Acolyte", "Mage", "Hunter"],
+    "3_ranged": ["Hunter", "Hunter", "Acolyte"],
+    "3_melee": ["Swordsman", "Thief", "Acolyte"],
+    "2_duo": ["Acolyte", "Mage"],
+    "2_grind": ["Swordsman", "Acolyte"],
+}
+
+_BUILD_PROFILES: dict[str, dict[str, str]] = {
+    "Acolyte": {"build_focus": "INT > DEX. Max Heal, increase SP recovery. Support build with Blessing + Increase AGI."},
+    "Mage": {"build_focus": "INT > DEX. Max Fire Bolt/Cold Bolt, then Safety Wall. INT 40 -> DEX 30 -> rest INT."},
+    "Swordsman": {"build_focus": "STR > VIT > DEX. STR 40 -> VIT 30 -> DEX 20. Use Sword + Shield."},
+    "Hunter": {"build_focus": "AGI > DEX. AGI 40 -> DEX 40. Use Bow + Arrows. Train Falcon for auto-attack."},
+    "Thief": {"build_focus": "AGI > DEX. AGI 50 -> DEX 30. Dual daggers for Double Attack proc."},
+    "Merchant": {"build_focus": "STR > VIT > DEX. STR 40 -> VIT 30. Pushcart for weight, Overcharge for profits."},
+}
+
+
+def _knowledge_team_synergy(bots: list[BotProfile]) -> TeamSynergyResponse:
+    """Determine team composition using RO game knowledge (non-LLM fallback)."""
+    n = len(bots)
+    best_key = None
+    best_overlap = -1
+
+    for key, jobs in _SYNERGY_TEMPLATES.items():
+        key_count = int(key.split("_")[0])
+        if key_count != n:
+            continue
+        overlap = sum(
+            1 for i, bot in enumerate(bots)
+            if i < len(jobs) and (bot.current_job == "Novice" or bot.current_job == jobs[i])
+        )
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_key = key
+
+    if best_key is None:
+        recommended_roles = ["Acolyte", "Mage", "Hunter", "Swordsman", "Thief", "Merchant"][:n]
+    else:
+        recommended_roles = _SYNERGY_TEMPLATES[best_key]
+
+    role_labels = {
+        "Acolyte": "healer",
+        "Mage": "aoe_dps",
+        "Swordsman": "tank",
+        "Hunter": "ranged_dps",
+        "Thief": "melee_dps",
+        "Merchant": "economy",
+    }
+
+    assignments = []
+    for i, bot in enumerate(bots):
+        job = recommended_roles[i] if i < len(recommended_roles) else "Acolyte"
+        profile = _BUILD_PROFILES.get(job, {})
+        role = role_labels.get(job, "unknown")
+        assignments.append(JobAssignment(
+            profile_name=bot.profile_name,
+            bot_id=bot.bot_id,
+            recommended_job=job,
+            role=role,
+            reason=f"{job} fills {role} role for balanced team synergy",
+            build_focus=profile.get("build_focus", ""),
+        ))
+
+    return TeamSynergyResponse(
+        assignments=assignments,
+        team_synergy_note=f"Knowledge-based {n}-bot team composition",
+        source="knowledge",
+    )
+
+
+# ── LLM-via-LLMManager handler ──
+
+async def _llm_manager_team_synergy(
+    bots: list[BotProfile],
+    llm_manager: Any,
+) -> TeamSynergyResponse | None:
+    """Attempt team synergy via the new LLMManager. Returns None on failure."""
+    try:
+        user_prompt = _build_team_synergy_user_prompt(bots)
+        data = await llm_manager.complete_json(
+            prompt=user_prompt,
+            system_prompt=_TEAM_SYNERGY_LLM_SYSTEM_PROMPT,
+            temperature=0.3,
+            max_tokens=4096,
+        )
+        if not data or not isinstance(data, dict):
+            return None
+
+        assignments_data = data.get("assignments", [])
+        if not assignments_data:
+            return None
+
+        assignments = []
+        for a in assignments_data:
+            assignments.append(JobAssignment(
+                profile_name=str(a.get("profile_name", "")),
+                bot_id=str(a.get("bot_id", "")),
+                recommended_job=str(a.get("recommended_job", "Acolyte")),
+                role=str(a.get("role", "unknown")),
+                reason=str(a.get("reason", ""))[:256],
+                build_focus=str(a.get("build_focus", ""))[:256],
+            ))
+
+        return TeamSynergyResponse(
+            assignments=assignments,
+            team_synergy_note=str(data.get("team_synergy_note", ""))[:1024],
+            source="llm_manager",
+        )
+    except Exception as e:
+        logger.warning("LLMManager team_synergy failed: %s", e)
+        return None
+
+
+# ── Legacy model_router prompt ──
+
+_TEAM_SYNERGY_SYSTEM_PROMPT = _TEAM_SYNERGY_LLM_SYSTEM_PROMPT  # same prompt, reused
+
 _TEAM_SYNERGY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -211,6 +257,9 @@ _TEAM_SYNERGY_SCHEMA = {
 }
 
 
+# ── Endpoints ──
+
+
 @router.post("/team-synergy", response_model=TeamSynergyResponse)
 async def team_synergy(
     payload: TeamSynergyRequest,
@@ -218,63 +267,256 @@ async def team_synergy(
 ) -> TeamSynergyResponse:
     """Evaluate optimal team composition for a group of bots.
 
-    Uses LLM (via model_router) by default, falls back to knowledge rules.
-    The leader bot calls this to decide job change assignments for all bots.
+    LLM capability priority:
+      1. LLMManager (new — multi-provider, fallback chain)  [if use_llm_manager=True]
+      2. Legacy model_router                                [default]
+      3. Knowledge rules                                    [fallback]
     """
     if not payload.bots:
         raise HTTPException(status_code=400, detail="At least one bot required")
 
-    if payload.skip_llm or runtime.model_router is None:
-        logger.info("team_synergy: using knowledge fallback (%d bots)", len(payload.bots))
+    if payload.skip_llm:
+        logger.info("team_synergy: LLM skipped, using knowledge fallback (%d bots)", len(payload.bots))
         return _knowledge_team_synergy(payload.bots)
 
-    # Build LLM request
-    system_prompt = _TEAM_SYNERGY_SYSTEM_PROMPT
-    user_prompt = _build_team_synergy_user_prompt(payload.bots)
+    # ── Path 1: LLMManager (new multi-provider system) ──
+    if payload.use_llm_manager and runtime.llm_manager is not None:
+        if runtime.llm_manager.is_available():
+            result = await _llm_manager_team_synergy(payload.bots, runtime.llm_manager)
+            if result is not None:
+                logger.info("team_synergy: LLMManager succeeded (%d bots)", len(payload.bots))
+                return result
+            logger.warning("team_synergy: LLMManager failed, falling back")
+        else:
+            logger.warning("team_synergy: LLMManager not available, falling back")
 
-    req = PlannerModelRequest(
-        bot_id=payload.bots[0].bot_id,
-        trace_id=f"team_synergy_{payload.bots[0].profile_name}",
-        task="team_synergy_evaluation",
-        model="gpt-4o-mini",
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        schema=_TEAM_SYNERGY_SCHEMA,
-        timeout_seconds=30.0,
-        max_retries=1,
-    )
+    # ── Path 2: Legacy model_router ──
+    if runtime.model_router is not None:
+        system_prompt = _TEAM_SYNERGY_SYSTEM_PROMPT
+        user_prompt = _build_team_synergy_user_prompt(payload.bots)
 
-    try:
-        resp, _decision = await runtime.model_router.generate_with_fallback(request=req)
-    except Exception as e:
-        logger.warning("team_synergy: LLM call failed (%s), falling back to knowledge", e)
-        return _knowledge_team_synergy(payload.bots)
-
-    if not resp.ok or resp.content is None:
-        logger.warning("team_synergy: LLM returned error (%s), falling back", resp.error)
-        return _knowledge_team_synergy(payload.bots)
-
-    try:
-        data = resp.content
-        assignments_data = data.get("assignments", [])
-        assignments = []
-        for a in assignments_data:
-            assignments.append(JobAssignment(
-                profile_name=a.get("profile_name", ""),
-                bot_id=a.get("bot_id", ""),
-                recommended_job=a.get("recommended_job", "Acolyte"),
-                role=a.get("role", "unknown"),
-                reason=a.get("reason", "")[:256],
-                build_focus=a.get("build_focus", "")[:256],
-            ))
-        return TeamSynergyResponse(
-            assignments=assignments,
-            team_synergy_note=data.get("team_synergy_note", "")[:1024],
-            source="llm",
+        req = PlannerModelRequest(
+            bot_id=payload.bots[0].bot_id,
+            trace_id=f"team_synergy_{payload.bots[0].profile_name}",
+            task="team_synergy_evaluation",
+            model="gpt-4o-mini",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema=_TEAM_SYNERGY_SCHEMA,
+            timeout_seconds=30.0,
+            max_retries=1,
         )
-    except Exception as e:
-        logger.warning("team_synergy: failed to parse LLM response (%s), falling back", e)
-        return _knowledge_team_synergy(payload.bots)
+
+        try:
+            resp, _decision = await runtime.model_router.generate_with_fallback(request=req)
+        except Exception as e:
+            logger.warning("team_synergy: model_router failed (%s), falling back to knowledge", e)
+            return _knowledge_team_synergy(payload.bots)
+
+        if not resp.ok or resp.content is None:
+            logger.warning("team_synergy: model_router returned error (%s), falling back", resp.error)
+            return _knowledge_team_synergy(payload.bots)
+
+        try:
+            data = resp.content
+            assignments_data = data.get("assignments", [])
+            assignments = []
+            for a in assignments_data:
+                assignments.append(JobAssignment(
+                    profile_name=a.get("profile_name", ""),
+                    bot_id=a.get("bot_id", ""),
+                    recommended_job=a.get("recommended_job", "Acolyte"),
+                    role=a.get("role", "unknown"),
+                    reason=a.get("reason", "")[:256],
+                    build_focus=a.get("build_focus", "")[:256],
+                ))
+            return TeamSynergyResponse(
+                assignments=assignments,
+                team_synergy_note=data.get("team_synergy_note", "")[:1024],
+                source="llm",
+            )
+        except Exception as e:
+            logger.warning("team_synergy: failed to parse model_router response (%s), falling back", e)
+            return _knowledge_team_synergy(payload.bots)
+
+    # ── Path 3: Knowledge fallback ──
+    logger.info("team_synergy: no LLM available, using knowledge rules (%d bots)", len(payload.bots))
+    return _knowledge_team_synergy(payload.bots)
+
+
+# ── LLM-powered NPC dialogue decision ──
+
+_NPC_DIALOGUE_SYSTEM_PROMPT = """You are an AI playing Ragnarok Online. Given an NPC dialogue situation,
+choose the optimal response option. Consider quest progression, rewards, and class-specific benefits.
+
+Return JSON:
+{
+  "choice_index": <0-based index of chosen option>,
+  "reason": "<why this choice>"
+}"""
+
+
+@router.post("/npc-decide", response_model=dict)
+async def npc_dialogue_decision(
+    payload: dict,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """Use LLM to decide NPC dialogue choices."""
+    npc_name = payload.get("npc_name", "unknown")
+    dialogue_text = payload.get("dialogue_text", "")
+    options = payload.get("options", [])
+
+    if not options:
+        return {"ok": True, "choice_index": 0, "source": "fallback"}
+
+    # Try LLMManager first
+    if runtime.llm_manager is not None and runtime.llm_manager.is_available():
+        prompt = (
+            f"NPC: {npc_name}\n"
+            f"Dialogue: {dialogue_text}\n\n"
+            f"Options:\n" + "\n".join(f"[{i}] {opt}" for i, opt in enumerate(options)) + "\n\n"
+            "Choose the best option index."
+        )
+        try:
+            data = await runtime.llm_manager.complete_json(
+                prompt=prompt,
+                system_prompt=_NPC_DIALOGUE_SYSTEM_PROMPT,
+                temperature=0.2,
+                max_tokens=512,
+            )
+            choice = int(data.get("choice_index", 0))
+            if 0 <= choice < len(options):
+                return {
+                    "ok": True,
+                    "choice_index": choice,
+                    "reason": data.get("reason", ""),
+                    "source": "llm_manager",
+                }
+        except Exception as e:
+            logger.warning("LLMManager NPC decide failed: %s", e)
+
+    # Fallback: first non-repeat option
+    return {"ok": True, "choice_index": 0, "source": "fallback"}
+
+
+# ── Strategic planning ──
+
+_STRATEGIC_PLAN_SYSTEM_PROMPT = """You are a strategic planner for Ragnarok Online bot automation.
+Given the current game state, plan the next actions for the bot.
+
+Return JSON:
+{
+  "plan": [
+    {
+      "action": "<action name>",
+      "target": "<target or location>",
+      "priority": <1-10>,
+      "reason": "<why this action>"
+    }
+  ],
+  "overall_strategy": "<one-sentence strategy summary>"
+}"""
+
+
+@router.post("/strategize", response_model=dict)
+async def strategic_planning(
+    payload: dict,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """Use LLM for high-level strategic planning decisions."""
+    context = payload.get("context", {})
+
+    if runtime.llm_manager is not None and runtime.llm_manager.is_available():
+        prompt = (
+            f"Current state:\n"
+            f"  Level: {context.get('base_level', '?')}/{context.get('job_level', '?')}\n"
+            f"  Job: {context.get('current_job', 'Novice')}\n"
+            f"  Map: {context.get('map', 'unknown')}\n"
+            f"  HP: {context.get('hp', 0)}/{context.get('max_hp', 0)}\n"
+            f"  SP: {context.get('sp', 0)}/{context.get('max_sp', 0)}\n"
+            f"  Zenny: {context.get('zenny', 0)}\n"
+            f"  Weight: {context.get('weight', 0)}/{context.get('max_weight', 0)}\n"
+            f"  Party size: {context.get('party_size', 1)}\n"
+            f"  Current objective: {context.get('current_objective', 'grind')}\n"
+            f"\n"
+            f"Recent events:\n" + "\n".join(
+                f"  - {ev}" for ev in (context.get("recent_events", []) or [])
+            ) + "\n\n"
+            "What should the bot do next?"
+        )
+        try:
+            data = await runtime.llm_manager.complete_json(
+                prompt=prompt,
+                system_prompt=_STRATEGIC_PLAN_SYSTEM_PROMPT,
+                temperature=0.4,
+                max_tokens=2048,
+            )
+            return {
+                "ok": True,
+                "plan": data.get("plan", []),
+                "overall_strategy": data.get("overall_strategy", ""),
+                "source": "llm_manager",
+            }
+        except Exception as e:
+            logger.warning("LLMManager strategize failed: %s", e)
+
+    return {"ok": True, "plan": [], "overall_strategy": "continue current objective", "source": "fallback"}
+
+
+# ── Quest choice ──
+
+_QUEST_DECISION_SYSTEM_PROMPT = """You are a quest advisor for Ragnarok Online.
+Given the available quests and the bot's current state, recommend which quests to prioritize.
+
+Return JSON:
+{
+  "recommended_quests": [
+    {
+      "quest_name": "<quest name>",
+      "priority": <1-10>,
+      "reason": "<why this quest>"
+    }
+  ],
+  "explanation": "<brief reasoning>"
+}"""
+
+
+@router.post("/quest-decide", response_model=dict)
+async def quest_decision(
+    payload: dict,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """Use LLM to decide which quests to pursue."""
+    available_quests = payload.get("available_quests", [])
+    bot_state = payload.get("bot_state", {})
+
+    if runtime.llm_manager is not None and runtime.llm_manager.is_available() and available_quests:
+        quest_list = "\n".join(
+            f"  - {q.get('name', '?')} (level {q.get('level', '?')}, reward: {q.get('reward', '?')})"
+            for q in available_quests[:10]
+        )
+        prompt = (
+            f"Bot: Level {bot_state.get('base_level', '?')} {bot_state.get('current_job', 'Novice')}\n"
+            f"Available quests:\n{quest_list}\n\n"
+            "Which quests should this bot prioritize?"
+        )
+        try:
+            data = await runtime.llm_manager.complete_json(
+                prompt=prompt,
+                system_prompt=_QUEST_DECISION_SYSTEM_PROMPT,
+                temperature=0.3,
+                max_tokens=2048,
+            )
+            return {
+                "ok": True,
+                "recommended_quests": data.get("recommended_quests", []),
+                "explanation": data.get("explanation", ""),
+                "source": "llm_manager",
+            }
+        except Exception as e:
+            logger.warning("LLMManager quest decide failed: %s", e)
+
+    return {"ok": True, "recommended_quests": [], "explanation": "No quest recommendations", "source": "fallback"}
 
 
 @router.get("/health", response_model=dict)
@@ -283,8 +525,15 @@ async def conscious_health(
 ) -> dict:
     """Health check for the conscious engine API."""
     llm_available = runtime.model_router is not None
+    llm_manager_available = (
+        runtime.llm_manager is not None and runtime.llm_manager.is_available()
+    )
     return {
         "ok": True,
         "llm_available": llm_available,
+        "llm_manager_available": llm_manager_available,
+        "llm_manager_providers": (
+            runtime.llm_manager.available_providers if runtime.llm_manager else []
+        ),
         "template_count": len(_SYNERGY_TEMPLATES),
     }

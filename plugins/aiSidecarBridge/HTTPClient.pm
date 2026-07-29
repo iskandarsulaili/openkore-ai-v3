@@ -396,7 +396,7 @@ sub _send_via_http {
         $self->{debug_log_cb}->("[HTTPClient] HTTP POST $request_path failed: $err");
     }
 
-    close($sock);
+    CORE::close($sock);
     return $ok ? 1 : 0;
 }
 

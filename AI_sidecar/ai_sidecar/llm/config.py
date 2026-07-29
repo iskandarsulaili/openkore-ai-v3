@@ -141,13 +141,18 @@ class LLMConfig(BaseModel):
         default=int(os.getenv("LLM_MAX_CALLS_PER_HOUR", "100")), ge=0
     )
 
+    def get_provider_endpoint(self, name: str) -> ProviderEndpoint | None:
+        """Get a provider endpoint config by name (acts as dict-like access)."""
+        key = name.lower()
+        for field_name in self.providers.model_fields_set:
+            if field_name.lower() == key:
+                return getattr(self.providers, field_name, None)
+        # Fallback to getattr for dynamic fields
+        return getattr(self.providers, key, None)
+
     @classmethod
     def from_env(cls) -> "LLMConfig":
         return cls()
-
-    def get_provider(self, name: str) -> ProviderEndpoint | None:
-        """Get a provider endpoint config by name."""
-        return getattr(self.providers, name.lower(), None)
 
 
 # Singleton config (lazy-loaded)
