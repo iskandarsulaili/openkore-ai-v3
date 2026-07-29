@@ -71,6 +71,9 @@ from ai_sidecar.domains.social.combo_protocol import ComboHandshakeProtocol
 from ai_sidecar.domains.navigation.danger_pathfinding import DangerAwarePathfinder
 from ai_sidecar.domains.equipment.loadout import ConsumableLoadoutPlanner, DurabilityMonitor, PostMortemAnalyzer
 from ai_sidecar.domains.social.loot import LootDisciplineEngine, EventDetector, LiveMarketScanner
+from ai_sidecar.domains.social.reputation import SocialReputationDomain
+from ai_sidecar.domains.social.swarm.shm_ipc import SharedMemoryIPC, SharedMemoryCoordination
+from ai_sidecar.domains.economy.farming_loop import FarmingLoopOptimizer
 from ai_sidecar.domains.planning.rotation import MapRotationPlanner
 
 logger = logging.getLogger(__name__)
@@ -1410,6 +1413,8 @@ class HeuristicService:
             self._loot_discipline = LootDisciplineEngine()
             self._event_detector = EventDetector()
             self._live_market = LiveMarketScanner()
+            self._social_reputation = SocialReputationDomain()
+            self._farming_loop = FarmingLoopOptimizer()
             self._new_domains_initialized = True
             logger.info("New domain modules initialized")
         except Exception as e:
@@ -1534,6 +1539,10 @@ class HeuristicService:
                         self._live_market.assess(signals, _actions, _bot_id)
                     if self._danger_pathfinder:
                         self._danger_pathfinder.assess(signals, _actions, _bot_id)
+                    if self._social_reputation:
+                        self._social_reputation.assess(signals, _actions, _bot_id)
+                    if self._farming_loop:
+                        self._farming_loop.assess(signals, _actions, _bot_id)
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))

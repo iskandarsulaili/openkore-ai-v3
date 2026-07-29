@@ -30,6 +30,11 @@ from ai_sidecar.domains.planning.build_planner import (
 from ai_sidecar.domains.planning.stat_planner import (
     StatBreakpointPlanner,
 )
+from ai_sidecar.domains.planning.team_planner import (
+    Role,
+    TeamComposition,
+    TeamPlanner,
+)
 from ai_sidecar.domains.planning.rotation import (
     MapRotationPlanner,
     RotationRecommendation,
