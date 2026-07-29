@@ -1501,6 +1501,9 @@ class HeuristicService:
                         _actions.extend(_sa)
                     if self._cold_start_planner:
                         _bl = int(signals.get("base_level", 1) or 1)
+                        if _bl <= 10:
+                            # Ensure Basic Skill is learned (level 1 = ability to sit/regen)
+                            _actions.append(HeuristicAction(kind="command", command="skills add Basic_Skill 1", confidence=0.9, reason="Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 25:
                             self._cold_start_planner.assess(signals, _actions, _bot_id)
                     if self._npc_lookup and _bl >= 9:
