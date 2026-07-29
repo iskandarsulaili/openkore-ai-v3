@@ -532,6 +532,23 @@ sub on_mainLoop_post {
             }
         }
         
+        # ── OVERWEIGHT HANDLER: force stand if overweight and sitting ──
+        # Being overweight slows movement but doesn't prevent attacking.
+        # The bot should still stand and fight even when overweight.
+        if ($char && $char->{sitting}) {
+            my $_ow_weight = 0;
+            if ($char->{inventory}) {
+                my $_ow_max = $char->{weight_max} || 1;
+                my $_ow_cur = $char->{weight} || 0;
+                $_ow_weight = $_ow_cur / $_ow_max if $_ow_max > 0;
+            }
+            if ($_ow_weight > 0.7) {
+                warning "[overweight] bot sitting with weight=$_ow_weight% — forcing stand\n", 'aiSidecarBridge', 1;
+                eval { Commands::run("stand"); 1 };
+                eval { Commands::run("ai auto"); 1 };
+            }
+        }
+
         # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
         # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         
