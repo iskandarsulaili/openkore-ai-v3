@@ -46,17 +46,15 @@ sub on_char_screen {
         return;
     }
     
-    # No valid characters - create one in the first empty slot
-    my $target_slot = -1;
-    if (@empty_slots) {
-        # Check if empty slots have real charID (broken ones don't free the slot)
-        # Just use slot 1 which is always free on a new account
-        $target_slot = 1;
-    } else {
-        $target_slot = 1;
-    }
+    # No valid characters - create one using slot progression
+    # Store attempt counter in custom config key
+    my $attempt = $config{auto_fix_slot_attempt} || 0;
+    $attempt++;
+    # Slot progression: 1, 2, 3, 4, 5, 6, 7, 8, 9, then cycle back
+    my $target_slot = (($attempt - 1) % 9) + 1;
+    configModify("auto_fix_slot_attempt", $attempt);
     
-    message "[auto_fix] Creating character '$username' in slot $target_slot...\n", 'system';
+    message "[auto_fix] Creating character '$username' in slot $target_slot (attempt #$attempt)...\n", 'system';
     $messageSender->sendCharCreate($target_slot, $username, 1, 9, 1, 1, 9, 1, 0, 0);
     $ran = 1;
     
