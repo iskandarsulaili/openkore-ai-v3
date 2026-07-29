@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword busteswo
+adminPassword wecliwru
 callSign
 commandPrefix ;
 callSignGM 0
@@ -51,7 +51,7 @@ inGameAuth 0
 
 macAddress
 
-pauseCharLogin 10
+pauseCharLogin 60
 pauseCharServer 0
 pauseMapServer 0
 ignoreInvalidLogin 0
