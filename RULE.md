@@ -52,9 +52,13 @@ The bridge has ONE additional reflex beyond portal handling: the **Emergency Sur
 - **Trigger**: HP < 20% AND weight > 70% AND NOT in town
 - **Action**: Walk to nearest Kafra (prt_fild05: 290,224) — free storage deposit to reduce weight
 - **Mechanism**: Commands only (`stand`, `move 290 224`, `ai auto`). Uses `AI::dequeue()` to clear conflicting AI states so move takes effect. NO config overrides.
-- **Priority**: Emergency reflex ALWAYS wins over heuristic strategy. Survival > economy > routing > combat.
+- **Kafra interaction**: Allowed ONLY as commands (`talknpc 290 224 c r1 c` to open storage, then `storage auto`). This is a survival command, not NPC interaction for economy purposes. Survival > rule restrictions.
+- **Priority**: Survival reflexes ALWAYS win over heuristic strategy. Full priority hierarchy:
+  ```
+  Survival (emergency reflex) > Hygiene (sitAuto, sellAuto) > Economy (buy/sell) > Routing (map decisions) > Combat (target selection)
+  ```
 - **Cooldown**: 10 seconds between triggers to prevent spam while bot walks to Kafra.
-- **MUST NOT**: Set configs, change lockMap, issue buy/sell commands, or interact with NPCs directly. The heuristic handles recovery after the bot reaches safety.
+- **MUST NOT**: Set configs, change lockMap, issue buy/sell/economy commands, or interact with non-Kafra NPCs.
 
 ### 2. REFLEXES Cannot Override lockMap (Critical)
 Discovered through debugging: bridge reflexes that set `lockMap = prontera` override the heuristic's lockMap and create an endless "move prontera" loop. All 5 such reflexes have been disabled.

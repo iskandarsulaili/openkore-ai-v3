@@ -562,6 +562,9 @@ sub on_mainLoop_post {
                 eval { Commands::run("stand"); 1 };
                 # Walk to Kafra Employee on prt_fild05 — free storage deposit
                 eval { Commands::run("move 290 224"); 1 };
+                # Open Kafra storage and deposit heavy items (survival command per RULE.md 1a)
+                eval { Commands::run("talknpc 290 224 c r1 c"); 1 };
+                eval { Commands::run("storage auto"); 1 };
                 eval { Commands::run("ai auto"); 1 };
             }
         }
@@ -1827,11 +1830,11 @@ sub _build_snapshot_payload {
 		my $_leader_lv = defined($char) ? ($char->{lv} || $char->{level} || 0) : 0;
 		if ($_leader_lv >= 40) {
 		# ── Party join auto-accept: non-leader bots accept invites ──
-		# Non-leader: set partyAuto=2 to auto-accept invites
-		# Leader is determined by all_bots order from sidecar
-		if (defined($char) && !defined($char->{party})) {
-			$::config{partyAuto} = 2;
-		}
+				# Non-leader: set partyAuto=2 to auto-accept invites
+				# Leader is determined by all_bots order from sidecar
+				if (defined($char) && !defined($char->{party})) {
+					# partyAuto controlled by heuristic — bridge must NOT override
+				}
 		# ── Direct party invite: leader invites missing members ──
 		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && $_leader_lv >= 40) {
 			if (!defined($char->{party})) {
@@ -5313,25 +5316,11 @@ sub _check_bridge_reflexes {
 	my $new_sellAuto = _cfg('aiSidecar_sellAuto', '0');
 	if ($new_sellAuto ne $_last_sellAuto) { $::config{'sellAuto'} = $new_sellAuto unless $::config{'_sidecar_set_sellAuto'}; $_last_sellAuto = $new_sellAuto; }
 	$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
-	$::config{'sellAuto_distance'} = '25';
-	my $new_storageAuto = _cfg('aiSidecar_storageAuto', '0');
+		my $new_storageAuto = _cfg('aiSidecar_storageAuto', '0');
 	if ($new_storageAuto ne $_last_storageAuto) { $::config{'storageAuto'} = $new_storageAuto unless $::config{'_sidecar_set_storageAuto'}; $_last_storageAuto = $new_storageAuto; }
 	$::config{'storageAuto_npc'} = $_stor_npc if $_stor_npc;
-	$::config{'storageAuto_distance'} = '5';
-	$::config{'storageAuto_npc_type'} = '1';
-	$::config{'storageAuto_npc_steps'} = 'c r1 c';
-	$::config{'relogAfterStorage'} = '0';
-	$::config{'minStorageZeny'} = '0';
-	$::config{'dcOnDeath'} = '0';
-	$::config{'dcOnDualLogin'} = '0';
-	$::config{'dcOnDisconnect'} = '0';
-	$::config{'dcOnEmptyArrow'} = '0';
-	$::config{'dcOnMaxWeight'} = '0';
-	$::config{'dcOnPlayer'} = '0';
-	$::config{'dcOnTeleport'} = '0';
-	$::config{'dcOnChangeMap'} = '0';
-    # Pro RO: disable auto-sit, let sidecar handle healing
-    $::config{sitAuto_hp_lower} = 0;
+													    # Pro RO: disable auto-sit, let sidecar handle healing
+    # sitAuto_hp_lower controlled by heuristic — bridge must NOT override
     # sitAuto_hp_upper controlled by heuristic
     # $::config{attackAuto} = 3;
     # attackAuto_inLockOnly controlled by heuristic
@@ -5593,18 +5582,15 @@ sub _apply_ml_override {
 		my $profile = lc($rec->{encounter_profile});
 		if ($profile eq 'aggressive') {
 			# $::config{attackAuto} = 3;
-			$::config{autoMove} = 2;
-			# $::config{attackDistance} = 5;  # heuristic controls this
+
 			warning("ml_override applied: encounter_classifier=aggressive (attackAuto = 3, autoMove=2)");
 		} elsif ($profile eq 'safe') {
 			# $::config{attackAuto} = 1;  # heuristic controls this
-			$::config{autoMove} = 0;
-			# $::config{attackDistance} = 3;  # heuristic controls this
+
 			warning("ml_override applied: encounter_classifier=safe (attackAuto = 3, autoMove=0)");
 		} else {
 			# $::config{attackAuto} = 3;
-			$::config{autoMove} = 1;
-			$::config{attackDistance} = 7;
+			# autoMove + attackDistance controlled by heuristic
 			warning("ml_override applied: encounter_classifier=balanced (attackAuto = 3, autoMove=1)");
 		}
 	} elsif ($family eq 'route_recovery_classifier' && defined $rec->{stuck_strategy}) {
