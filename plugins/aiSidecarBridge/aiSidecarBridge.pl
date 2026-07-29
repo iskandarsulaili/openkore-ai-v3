@@ -1162,8 +1162,8 @@ sub on_command_intercept {
 		# Handle mon_control command - write to mon_control.txt and reload
 	if ($full_cmd =~ /^mon_control\s+(.+)$/i) {
 	    my $_mc_entry = $1;
-	    my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
-	    push @_mc_files, 'control/mon_control.txt';
+	    my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
+	    push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
 	    for my $_mc_file (@_mc_files) {
 	        if (open my $_mc_fh, '>>', $_mc_file) {
 	            print $_mc_fh "$_mc_entry\n";
@@ -4014,8 +4014,8 @@ sub _rewrite_runtime_command {
 		# Writes to ALL bot profiles so the setting takes effect for all bots
 		if ($normalized =~ /^mon_control\s+(.+)$/) {
 			my $_mc_entry = $1;
-			my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
-			push @_mc_files, 'control/mon_control.txt';
+			my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
+			push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
 			for my $_mc_file (@_mc_files) {
 				if (open my $_mc_fh, '>>', $_mc_file) {
 					print $_mc_fh "$_mc_entry\n";
