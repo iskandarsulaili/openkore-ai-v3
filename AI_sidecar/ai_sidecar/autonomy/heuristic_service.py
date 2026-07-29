@@ -2439,11 +2439,9 @@ class HeuristicService:
                 "Attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Cold start - don't give up mid-fight")
-            # Teleport config
+            # Teleport config — use config audit defaults (teleportAuto_hp=10)
             self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", "8", "hunting",
                 "Only teleport at 8+ mobs")
-            self._set_config_once(actions, bot_id, "teleportAuto_hp", "0", "hunting",
-                "Never teleport due to HP - use sit instead")
             self._set_config_once(actions, bot_id, "teleportAuto_deadly", "0", "hunting",
                 "Disable deadly teleport")
             # Only send move if on a different map
@@ -3167,19 +3165,10 @@ class HeuristicService:
                 "No teleport in dungeons (density is 3-5x field maps)", confidence=0.99)
             self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", "8", "survival",
                 "Only teleport when 8+ mobs")
-            self._set_config_once(actions, bot_id, "teleportAuto_hp", "0", "survival",
-                "Never teleport due to HP")
-            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "0", "survival",
-                "Disable deadly teleport")
-            self._set_config_once(actions, bot_id, "teleportAuto_search", "0", "survival",
-                "Disable search teleport")
-            self._set_config_once(actions, bot_id, "teleportAuto_portal", "0", "survival",
-                "Disable portal teleport")
-            # Disable OpenKore's built-in sit logic — the bridge reflex handles sit
-            # OpenKore's AI re-enables sitAuto between cycles.
-            # Push aiSidecar_sitAutoHp=0 so the bridge's cycle override sets sitAuto_hp_lower=0 every cycle.
-            self._set_config_once(actions, bot_id, "aiSidecar_sitAutoHp", "0", "survival",
-                "Disable built-in sit — bridge reflex handles it")
+            # Per RULE.md: use config audit defaults for teleportAuto_hp=10 and sitAuto=20
+            # Don't override — the config audit sets these properly every cycle
+            # sitAuto controlled by heuristic config audit (sitAuto_hp_lower=20)
+            # aiSidecar_sitAutoHp is NOT set here — bridge uses _sidecar_set flag
             self._set_config_once(actions, bot_id, "aiSidecar_sitAutoHpMax", "0", "survival",
                 "Disable built-in sit — bridge reflex handles it")
             # Loot config

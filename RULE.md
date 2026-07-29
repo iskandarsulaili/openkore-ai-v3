@@ -51,11 +51,14 @@ Discovered through debugging: bridge reflexes that set `lockMap = prontera` over
 - The bridge enforces lockMap consistency (always set to hunting map)
 - No bridge code may change lockMap to a town
 
-### 3. attackAuto MUST Be 3 (Aggressive)
-The Pro RO agent and health monitor previously set attackAuto=2 (passive) which prevented bots from killing. Both have been fixed to attackAuto=3.
-- Heuristic sets attackAuto=3 every cycle
-- Bridge must NOT override attackAuto
-- No component may set attackAuto < 3
+### 3. attackAuto MUST Be 3 (Aggressive) — Exclusively via Heuristic Config Audit
+The heuristic sets attackAuto=3, sitAuto_hp_lower=20, itemsTakeAuto=2, sellAuto=1, etc.
+via the config audit in `_assess_impl`. The bridge must NEVER set these configs.
+- Heuristic config audit sets ALL critical configs every cycle
+- Bridge fallback profile only activates when heuristic hasn't set a value
+- Fallback profile defaults now match heuristic: sitAuto_hp_lower=20, teleportAuto_hp=10
+- No component may override heuristic's config once set (`_sidecar_set_` flag)
+- Bridge's role is enforcement (lockMap consistency, spam prevention), NOT config control
 
 ### 4. AI Sidecar Handles ALL Decisions
 The sidecar (`AI_sidecar/`) handles:
