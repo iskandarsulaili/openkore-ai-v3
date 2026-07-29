@@ -1241,11 +1241,13 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start step 1 - enable attack for farming",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="mon_control Thief Bug Egg 0 0 0",
-                        confidence=0.95, domain="economy",
-                        reason="Cold start step 1 - ignore Thief Bug Eggs while farming Porings",
-                    ))
+                    # Monsters to ignore while farming Porings (too tough or 0 value)
+                    for _cs_ignore in ["Thief Bug Egg", "Pupa", "Thief Bug", "Lunatic", "Fabre", "Condor"]:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"mon_control {_cs_ignore} 0 0 0",
+                            confidence=0.95, domain="economy",
+                            reason=f"Cold start step 1 - ignore {_cs_ignore} while farming Porings",
+                        ))
         if _cold_start_step == 2:
             # Step 2: Buy Knife (item 1201) if no weapon and zeny >= 50
             if not _has_weapon:
@@ -2134,12 +2136,12 @@ class HeuristicService:
                         kind="command", command=f"buy {_potion_id} {_max_buy}",
                         confidence=0.90, domain="economy",
                         reason=f"Buy {_max_buy} {_potion_name} Potions (item {_potion_id}, {_potion_cost}z each, "
-                               f"level={base_level}, weight={_weight_pressure:.0%})",
+                               f"level={base_level}, weight={weight:.0%})",
                     ))
                 else:
                     # Can't afford any potions or weight full — log it
                     logger.info(f"[economy] {bot_id}: can't buy potions at level {base_level} — "
-                               f"zeny={zeny}, cost={_potion_cost}, weight={_weight_pressure:.0%}, "
+                               f"zeny={zeny}, cost={_potion_cost}, weight={weight:.0%}, "
                                f"weight_cap={_weight_cap}")
                 actions.append(HeuristicAction(
                     kind="command", command="talk any",
