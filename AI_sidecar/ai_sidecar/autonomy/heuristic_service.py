@@ -68,6 +68,9 @@ from ai_sidecar.domains.combat.pressure import CombatPressureDomain
 from ai_sidecar.domains.combat.tactics.kiting_v2 import TickBasedKiting
 from ai_sidecar.domains.economy.map_policies import InventoryPolicies, SpawnNavigator
 from ai_sidecar.domains.social.combo_protocol import ComboHandshakeProtocol
+from ai_sidecar.domains.navigation.danger_pathfinding import DangerAwarePathfinder
+from ai_sidecar.domains.equipment.loadout import ConsumableLoadoutPlanner, DurabilityMonitor, PostMortemAnalyzer
+from ai_sidecar.domains.social.loot import LootDisciplineEngine, EventDetector, LiveMarketScanner
 from ai_sidecar.domains.planning.rotation import MapRotationPlanner
 
 logger = logging.getLogger(__name__)
@@ -1400,6 +1403,13 @@ class HeuristicService:
             self._inventory_policies = InventoryPolicies()
             self._spawn_navigator = SpawnNavigator()
             self._combo_protocol = ComboHandshakeProtocol()
+            self._danger_pathfinder = DangerAwarePathfinder()
+            self._loadout_planner = ConsumableLoadoutPlanner()
+            self._durability_monitor = DurabilityMonitor()
+            self._post_mortem = PostMortemAnalyzer()
+            self._loot_discipline = LootDisciplineEngine()
+            self._event_detector = EventDetector()
+            self._live_market = LiveMarketScanner()
             self._new_domains_initialized = True
             logger.info("New domain modules initialized")
         except Exception as e:
@@ -1510,6 +1520,20 @@ class HeuristicService:
                         self._spawn_navigator.assess(signals, _actions, _bot_id)
                     if self._combo_protocol:
                         self._combo_protocol.assess(signals, _actions, _bot_id)
+                    if self._loadout_planner:
+                        self._loadout_planner.assess(signals, _actions, _bot_id)
+                    if self._durability_monitor:
+                        self._durability_monitor.assess(signals, _actions, _bot_id)
+                    if self._post_mortem:
+                        self._post_mortem.assess(signals, _actions, _bot_id)
+                    if self._loot_discipline:
+                        self._loot_discipline.assess(signals, _actions, _bot_id)
+                    if self._event_detector:
+                        self._event_detector.assess(signals, _actions, _bot_id)
+                    if self._live_market:
+                        self._live_market.assess(signals, _actions, _bot_id)
+                    if self._danger_pathfinder:
+                        self._danger_pathfinder.assess(signals, _actions, _bot_id)
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))
