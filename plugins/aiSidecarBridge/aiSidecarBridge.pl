@@ -4267,7 +4267,7 @@ sub _rewrite_runtime_command {
 		    FileParsers::parseMonControl($_mc_file, \%::mon_control);
 		    1;
 		};
-		warning "[mon_control] applied %d entries from %s\n", scalar(keys %::mon_control), $_mc_entry // '?', 'aiSidecarBridge', 1;
+		warning "[mon_control] applied " . scalar(keys %::mon_control) . " entries (last='$_mc_entry')\n", 'aiSidecarBridge', 1;
 		# After applying mon_control, force AI target reselection
 		# OpenKore only checks mon_control BEFORE starting an attack, not during.
 		# If the bot is currently attacking a now-ignored monster, it must be

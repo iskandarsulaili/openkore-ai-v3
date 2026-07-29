@@ -460,3 +460,9 @@ lunatic	-1 0 0
 thief bug egg	-1 0 0
 thief bug egg	-1 0 0
 thief bug egg	-1 0 0
+thief bug egg	-1 0 0
+thief bug egg	-1 0 0
+pupa	-1 0 0
+pupa	-1 0 0
+thief bug	-1 0 0
+lunatic	-1 0 0
