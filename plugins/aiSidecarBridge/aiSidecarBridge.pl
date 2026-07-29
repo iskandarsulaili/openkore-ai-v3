@@ -533,6 +533,31 @@ sub on_mainLoop_post {
             }
         }
         
+        # ── EMERGENCY REFLEX: HP critically low + overweight + not in town → teleport home ──
+        # Deadlock state: can't regen (overweight), can't attack (low HP), can't farm (low HP)
+        # Teleport to Prontera to recover in safety
+        if ($char && $char->{sitting} && $field) {
+            my $_er_hp = 0;
+            if ($char->{hp_max} && $char->{hp} > 0) {
+                $_er_hp = $char->{hp} / ($char->{hp_max} || 1);
+            }
+            my $_er_weight = 0;
+            if ($char->{weight_max} && $char->{weight} > 0) {
+                $_er_weight = $char->{weight} / ($char->{weight_max} || 1);
+            }
+            my $_er_map = lc($field->baseName() || '');
+            $_er_map =~ s/\.gat$//;
+            my $_er_is_town = ($_er_map =~ /^prontera|^morocc|^geffen|^payon|^alberta|^aldebaran|^izlude|^comodo$/i);
+            if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7) {
+                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — teleporting to Prontera\n", 'aiSidecarBridge', 1;
+                eval { Commands::run("teleport prontera"); 1 };
+                # Also enable sitAuto for recovery
+                $::config{sitAuto_hp_lower} = 30;
+                $::config{sitAuto_hp_upper} = 60;
+                eval { Commands::run("ai auto"); 1 };
+            }
+        }
+
         # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
         # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         

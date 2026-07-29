@@ -441,7 +441,7 @@ sub sendGameLogin {
 sub sendCharLogin {
 	my ($self, $char) = @_;
 	$self->sendToServer($self->reconstruct({switch => 'char_login', slot => $char}));
-	debug "Sent sendCharLogin\n", "sendPacket", 2;
+	debug "Sent sendCharLogin (slot=$char)\n", "sendPacket", 2;
 }
 
 sub sendMapLogin {
