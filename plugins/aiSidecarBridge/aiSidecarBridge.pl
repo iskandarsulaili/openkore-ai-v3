@@ -1823,8 +1823,8 @@ sub _send_snapshot {
         }
     }
 
-    # ── Send 17 specialized state builder snapshots ──
-    if ($_state_builders && _cfg_bool('aiSidecar_stateBuildersEnabled', 1)) {
+    # ── Send 17 specialized state builder snapshots (disabled — sidecar uses ingest/snapshot) ──
+    if (0 && $_state_builders && _cfg_bool('aiSidecar_stateBuildersEnabled', 1)) {
         my $states = $_state_builders->build_all_states();
         if ($_http_client) {
             $_http_client->send_json('/v1/state/builders', $states);
@@ -2837,6 +2837,20 @@ sub _execute_action {
 	# AI action log — proves decisions reach OpenKore
 	if ($effective_command ne '' && $rewrite_kind ne 'committed_action_blocked' && $rewrite_kind ne 'empty_command') {
 		warning "[ai_action] id=$action_id kind=$kind cmd=$command effective=$effective_command rewrite=$rewrite_kind\n", 'aiSidecarBridge', 1;
+	}
+
+	# ── LATENCY-ADAPTIVE TIMING ──
+	# RO combat runs on 1-second ticks. Client-server latency affects:
+	# - When to stand before moving (anti-sit delay)
+	# - When to interrupt a skill cast (cast time vs ping)
+	# This adapts the bridge's reaction timing based on observed latency.
+	my $latency_ms = $_connection_metrics ? $_connection_metrics->avg_latency_ms() : 200;
+	$latency_ms = ($latency_ms < 50) ? 50 : ($latency_ms > 1000) ? 1000 : $latency_ms;
+	my $tick_buffer = int($latency_ms / 150) + 1;  # 1-8 ticks buffer based on latency
+	if ($effective_command =~ /^move\s+/i && $rewrite_kind ne 'committed_action_blocked') {
+		# Movement commands: need extra buffer for position sync
+		Commands::run("stand") if $char && $char->{sitting};
+		warning "[ai_timing] move cmd=$effective_command latency=${latency_ms}ms buffer=${tick_buffer}tick\n", 'aiSidecarBridge', 2;
 	}
 
 	# ── PRE-EXECUTION AUTO-STAND ──

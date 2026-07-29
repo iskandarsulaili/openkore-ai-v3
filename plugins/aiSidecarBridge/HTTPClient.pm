@@ -17,8 +17,8 @@ aiSidecarBridge::HTTPClient - ZMQ push socket with HTTP/1.1 fallback IPC
     my $metrics = ConnectionMetrics->new();
 
     my $client = HTTPClient->new(
-        zmq_address       => 'tcp://127.0.0.1:5559',
-        http_base_url     => 'http://127.0.0.1:8000',
+         zmq_enabled      => 0,  # Sidecar is HTTP-only
+         http_base_url     => 'http://127.0.0.1:18081',
         json_encode_cb    => sub { JSON::PP::encode_json($_[0]) },
         circuit_breaker   => $cb,
         metrics           => $metrics,
