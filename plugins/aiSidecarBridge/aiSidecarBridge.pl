@@ -2833,8 +2833,13 @@ sub _execute_action {
 	}
 	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
-	
-	# ── PRE-EXECUTION AUTO-STAND: if bot is sitting and command is a move, stand first ──
+
+	# AI action log — proves decisions reach OpenKore
+	if ($effective_command ne '' && $rewrite_kind ne 'committed_action_blocked' && $rewrite_kind ne 'empty_command') {
+		warning "[ai_action] id=$action_id kind=$kind cmd=$command effective=$effective_command rewrite=$rewrite_kind\n", 'aiSidecarBridge', 1;
+	}
+
+	# ── PRE-EXECUTION AUTO-STAND ──
 	# The sidecar may queue 'stand' and 'move prontera' as separate actions.
 	# The bridge only processes ONE action per poll, so 'move prontera' arrives
 	# while the bot is still sitting. Auto-stand ensures the bot can actually move.

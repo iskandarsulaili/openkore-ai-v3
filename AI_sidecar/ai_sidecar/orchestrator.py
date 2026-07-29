@@ -17,6 +17,7 @@ from ai_sidecar.runtime.event_bus import EventBus
 from ai_sidecar.runtime.persistence import PersistentState
 from ai_sidecar.runtime.pool import ResourcePool
 from ai_sidecar.runtime.scheduler import OutOfCombatScheduler
+from ai_sidecar.runtime.action_filter import filter_actions, get_filter_logger, BridgeActionLogger
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,16 @@ class BotRuntime:
         try:
             assessment = self._hs.assess(signals)
             if assessment and assessment.actions:
-                actions.extend(assessment.actions)
+                # Apply action filter: reduce 72+ actions to top real commands
+                filtered = filter_actions(assessment.actions, max_commands=5)
+                actions.extend(filtered)
+                # Log bridge actions for verification
+                _logger = get_filter_logger()
+                for a in filtered:
+                    if a.kind == "command" and a.command and not a.command.startswith("goal="):
+                        _logger.log_action(a, source="heuristic")
+            else:
+                logger.warning(f"[{bot_id}] HeuristicService returned no actions")
         except Exception as e:
             logger.error(f"[{bot_id}] HeuristicService.assess() failed: {e}")
             self._last_error = str(e)
@@ -147,6 +157,7 @@ class BotRuntime:
             "error_count": self._error_count,
             "last_error": self._last_error,
             "persistence": PersistentState.get_stats(),
+            "bridge_actions": get_filter_logger().get_stats(),
         }
 
     def get_event_summary(self) -> dict:
