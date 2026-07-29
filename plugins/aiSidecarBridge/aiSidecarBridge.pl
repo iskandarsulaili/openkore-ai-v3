@@ -25,7 +25,7 @@ use StateBuilders;
 
 # Anti-detection: random delay to simulate human reaction time
 # Each bot gets a unique behavior profile to avoid pattern detection
-my $ANTI_DETECTION_ENABLED = 1;
+my $ANTI_DETECTION_ENABLED = 0;
 my $ANTI_DETECTION_MIN_DELAY_MS = 200;
 my $ANTI_DETECTION_MAX_DELAY_MS = 600;
 

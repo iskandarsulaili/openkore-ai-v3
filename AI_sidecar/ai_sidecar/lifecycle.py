@@ -2552,10 +2552,29 @@ class RuntimeState:
         proposal = self.action_queue.fetch_next(bot_id)
         if proposal is not None:
             # Validate through situational awareness before serving to bridge
-            if hasattr(self, '_situational'):
-                validated = self._situational.validate_action_proposal(proposal, self.snapshot_cache.get(bot_id, {}), bot_id)
-                if validated:
-                    proposal = validated
+            if hasattr(self, '_situational') and self._situational:
+                snapshot_obj = self.snapshot_cache.get(bot_id)
+                if snapshot_obj:
+                    # Convert BotStateSnapshot to flat dict for situational awareness
+                    signals = {
+                        "hp": getattr(snapshot_obj.vitals, 'hp', 100) if snapshot_obj.vitals else 100,
+                        "hp_max": getattr(snapshot_obj.vitals, 'hp_max', 1) if snapshot_obj.vitals else 1,
+                        "sp": getattr(snapshot_obj.vitals, 'sp', 50) if snapshot_obj.vitals else 50,
+                        "sp_max": getattr(snapshot_obj.vitals, 'sp_max', 80) if snapshot_obj.vitals else 80,
+                        "base_level": getattr(snapshot_obj.progression, 'base_level', 1) if snapshot_obj.progression else 1,
+                        "job": getattr(snapshot_obj.progression, 'job_name', 'novice') if snapshot_obj.progression else 'novice',
+                        "jobID": getattr(snapshot_obj.progression, 'job_id', 0) if snapshot_obj.progression else 0,
+                        "zeny": getattr(snapshot_obj.inventory, 'zeny', 0) if snapshot_obj.inventory else 0,
+                        "inventory": {
+                            "items": [
+                                {"name": getattr(i, 'name', ''), "quantity": getattr(i, 'quantity', 0), "id": getattr(i, 'item_id', '')}
+                                for i in (snapshot_obj.inventory_items or [])
+                            ],
+                        },
+                    }
+                    validated = self._situational.validate_action_proposal(proposal, signals, bot_id)
+                    if validated:
+                        proposal = validated
         if proposal is not None:
             op_row = self._safe_persist(
                 "find_sidecar_operation_by_action",
