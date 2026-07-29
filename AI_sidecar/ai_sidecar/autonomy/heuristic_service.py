@@ -1368,11 +1368,11 @@ class HeuristicService:
         try:
             self._portal_db = PortalDB()
             self._pathfinder = Pathfinder()
-            self._quest_tracker = QuestTracker()
+            self._quest_tracker = QuestTracker(db_path="data/quests.db")
             self._equipment_manager = EquipmentManager()
             self._lifecycle = LifecycleStateMachine()
-            self._experience_tracker = ExperienceTracker()
-            self._goal_manager = GoalManager()
+            self._experience_tracker = ExperienceTracker(db_path="data/learning.db")
+            self._goal_manager = GoalManager(bot_id="default")
             self._task_scheduler = TaskScheduler()
             self._swarm_coordinator = SwarmCoordinator(
                 bot_names=["kicapmasin", "kicapmasin2", "kicapmasin3"],
@@ -3852,6 +3852,9 @@ class HeuristicService:
                     _phase = self._lifecycle.get_phase(bot_id)
                     if _phase:
                         actions.append(HeuristicAction(kind="log", command=f"lifecycle_phase={_phase}", confidence=0.5, reason=f"Phase: {_phase}", domain="progression"))
+                if self._swarm_coordinator:
+                    _sa = self._swarm_coordinator.tick(bot_id, signals)
+                    actions.extend(_sa)
                 if self._goal_manager and self._task_scheduler:
                     for _g in self._goal_manager.get_active_goals()[:2]:
                         actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))
