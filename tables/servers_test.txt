@@ -1,9 +1,18 @@
-[openkore-ai-v3-test]
+# This file contains information about master servers.
+
+# To change displayed string in server list, use "title" option.
+
+# Do not change server identifiers (in []),
+# except for when subservers were changed or reordered
+# in such a way it requires user confirmation to correctly select a subserver
+
+[Asgards Glory]
 ip asgardsglory.ddns.net
 port 6900
+private 1
 master_version 0
 version 128
-serverType kRO_RagexeRE_2020_04_01b
-serverEncoding Western
 charBlockSize 155
-addTableFolders kRO/RagexeRE_2020_04_01b;translated/kRO_english;kRO
+serverType kRO_Ragexe_2021_11_03
+serverEncoding Western
+addTableFolders kRO/Ragexe_2021_11_03;translated/kRO_english;kRO
