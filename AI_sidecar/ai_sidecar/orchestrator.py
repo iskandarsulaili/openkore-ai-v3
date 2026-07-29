@@ -21,6 +21,7 @@ from ai_sidecar.runtime.action_filter import filter_actions, get_filter_logger, 
 from ai_sidecar.runtime.latency import get_latency_tracker
 from ai_sidecar.runtime.cruise import CruiseController
 from ai_sidecar.runtime.efficiency import EfficiencyTracker, get_tracker
+from ai_sidecar.runtime.situational import SituationalAwareness, get_awareness
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class BotRuntime:
         self._latency = get_latency_tracker()
         self._batch_queue = BatchActionQueue()
         self._efficiency = get_tracker()
+        self._situational = SituationalAwareness()
 
     def initialize(self) -> None:
         if self._initialized:
@@ -104,6 +106,9 @@ class BotRuntime:
                 # Apply action filter: reduce 72+ actions to top real commands
                 filtered = filter_actions(assessment.actions, max_commands=5)
                 actions.extend(filtered)
+                # Validate actions through situational awareness
+                validated = self._situational.validate(filtered, signals, bot_id)
+                actions = validated
                 # Cache for cruise control
                 self._cruise.cache_decisions(actions)
                 # Add to batch queue for multi-action polling
