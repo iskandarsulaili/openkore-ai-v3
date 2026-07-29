@@ -1090,24 +1090,30 @@ class HeuristicService:
                     ))
                 else:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
-                    # Go to prt_fild01 (safe map with Porings) and farm with fists.
-                    # Only queue from Prontera — 'move prt_fild01' from Prontera
-                    # is a direct route via portal 22 203.
+                    # Go to prt_fild05 (safe map with Porings) via portal and farm with fists.
                     if _cs_in_town:
+                        # In Prontera — use ai manual + portal walk (AI lockMap routing is unreliable)
                         actions.append(HeuristicAction(
-                            kind="command", command="set attackAuto 3",
+                            kind="command", command="ai manual",
                             confidence=0.99, domain="economy",
-                            reason="Cold start - re-enable attack for farming",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="set lockMap prt_fild05",
-                            confidence=0.99, domain="economy",
-                            reason="Cold start - set lockMap to prt_fild05 for farming",
+                            reason="Cold start - disable AI for portal walk to prt_fild05",
                         ))
                         actions.append(HeuristicAction(
                             kind="command", command="move 22 203",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - farm {50 - zeny}z on prt_fild05 (0 zeny, no weapon)",
+                            reason=f"Cold start - walk to portal, farm {50 - zeny}z on prt_fild05",
+                        ))
+                    elif _cs_in_hunting:
+                        # On prt_fild05 — enable AI and attack for farming
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.99, domain="economy",
+                            reason="Cold start - enable AI for farming on prt_fild05",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="set attackAuto 3",
+                            confidence=0.99, domain="economy",
+                            reason="Cold start - enable attack for farming",
                         ))
             else:
                 # Weapon confirmed — move to step 2
