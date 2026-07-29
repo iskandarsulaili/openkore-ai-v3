@@ -468,7 +468,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
                 kind=ha.kind, command=ha.command or "ai auto",
                 priority_tier=_cs_priority,
-                source="planner",
+                source="bridge",  # bridge source = source_boost=-1, same as reflex
                 created_at=_now,
                 expires_at=_now + _td(seconds=30),
                 idempotency_key=f"heuristic_{horizon}_{ha.domain}_{ha.command}_{_t.monotonic_ns()}",
