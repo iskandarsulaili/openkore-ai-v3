@@ -735,8 +735,8 @@ sub on_mainLoop_post {
             }
             # Ensure attack config on hunting maps
             if ($_sm_map =~ /^[a-z]+_fild/) {
-                # attackAuto_inLockOnly controlled by heuristic
-                $::config{attackDistanceAuto} = 0;
+                # attackAuto_inLockOnly + attackDistance controlled by heuristic
+                # Per RULE.md: bridge must NOT override attack configs
             }
         }
         }
@@ -5270,11 +5270,11 @@ sub _check_bridge_reflexes {
 
 	my $new_attackAuto = _cfg('aiSidecar_attackAuto', '3');
 	if ($new_attackAuto ne $_last_attackAuto) { $::config{'attackAuto'} = $new_attackAuto unless $::config{'_sidecar_set_attackAuto'}; $_last_attackAuto = $new_attackAuto; }
-	my $new_teleportAuto = _cfg('aiSidecar_teleportAuto', '0');
+	my $new_teleportAuto = _cfg('aiSidecar_teleportAuto', '1');
 	if ($new_teleportAuto ne $_last_teleportAuto) { $::config{'teleportAuto'} = $new_teleportAuto unless $::config{'_sidecar_set_teleportAuto'}; $_last_teleportAuto = $new_teleportAuto; }
-	my $new_teleportAutoHp = _cfg('aiSidecar_teleportAutoHp', '0');
+	my $new_teleportAutoHp = _cfg('aiSidecar_teleportAutoHp', '10');
 	if ($new_teleportAutoHp ne $_last_teleportAutoHp) { $::config{'teleportAuto_hp'} = $new_teleportAutoHp unless $::config{'_sidecar_set_teleportAuto_hp'}; $_last_teleportAutoHp = $new_teleportAutoHp; }
-	my $new_teleportAutoMinAgg = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '8');
+	my $new_teleportAutoMinAgg = _cfg('aiSidecar_teleportAutoMinAggressivesInLock', '5');
 	if ($new_teleportAutoMinAgg ne $_last_teleportAutoMinAgg) { $::config{'teleportAuto_minAggressivesInLock'} = $new_teleportAutoMinAgg unless $::config{'_sidecar_set_teleportAuto_minAggressivesInLock'}; $_last_teleportAutoMinAgg = $new_teleportAutoMinAgg; }
 	my $new_itemsTakeAuto = _cfg('aiSidecar_itemsTakeAuto', '2');
 	if ($new_itemsTakeAuto ne $_last_itemsTakeAuto) { $::config{'itemsTakeAuto'} = $new_itemsTakeAuto unless $::config{'_sidecar_set_itemsTakeAuto'}; $_last_itemsTakeAuto = $new_itemsTakeAuto; }
@@ -5282,11 +5282,11 @@ sub _check_bridge_reflexes {
 	if ($new_itemsGatherAuto ne $_last_itemsGatherAuto) { $::config{'itemsGatherAuto'} = $new_itemsGatherAuto unless $::config{'_sidecar_set_itemsGatherAuto'}; $_last_itemsGatherAuto = $new_itemsGatherAuto; }
 	my $new_itemsMaxWeight = _cfg('aiSidecar_itemsMaxWeight', '89');
 	if ($new_itemsMaxWeight ne $_last_itemsMaxWeight) { $::config{'itemsMaxWeight'} = $new_itemsMaxWeight unless $::config{'_sidecar_set_itemsMaxWeight'}; $_last_itemsMaxWeight = $new_itemsMaxWeight; }
-	my $new_sitAuto_hp = _cfg('aiSidecar_sitAutoHp', '0');
+	my $new_sitAuto_hp = _cfg('aiSidecar_sitAutoHp', '20');
 	if ($new_sitAuto_hp ne $_last_sitAuto_hp) { $::config{'sitAuto_hp_lower'} = $new_sitAuto_hp unless $::config{'_sidecar_set_sitAuto_hp'}; $_last_sitAuto_hp = $new_sitAuto_hp; }
-	# Force-set sitAuto_hp_lower=0 every cycle when disabled — OpenKore's AI re-enables it
-	if ($new_sitAuto_hp eq '0' && !$::config{'_sidecar_set_sitAuto_hp'}) {
-		$::config{'sitAuto_hp_lower'} = '0';
+	# When hi-sidecar fallback is active (heuristic hasn't set it), let sitAuto work
+	if (!$::config{'_sidecar_set_sitAuto_hp'} && $new_sitAuto_hp > 0) {
+		# sitAuto_hp_lower already set above — don't override
 	}
 	my $new_sitAuto_hp_max = _cfg('aiSidecar_sitAutoHpMax', '0');
 	if ($new_sitAuto_hp_max ne $_last_sitAuto_hp_max) { $::config{'sitAuto_hp_upper'} = $new_sitAuto_hp_max unless $::config{'_sidecar_set_sitAuto_hp_max'}; $_last_sitAuto_hp_max = $new_sitAuto_hp_max; }
