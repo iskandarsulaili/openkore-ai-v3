@@ -198,6 +198,14 @@ When the game server is unreachable or timing out:
   - When connection restores, exits degraded mode automatically
 - The bridge never crashes or blocks the main loop during connection issues
 
+### 17. God-Tier AI Philosophy (No Mimicry)
+This system is a God-Tier AI, NOT a human mimicry bot:
+- **Deterministic optimal decisions**: Every action is the mathematically best choice for the given state. No randomized delays, no "human-like" imperfections.
+- **Perfect execution**: When the optimal action is to attack a Poring, attack immediately — don't wait a random 300-800ms to look human.
+- **No anti-detection**: Detection avoidance is a losing game. Instead, operate at speeds and efficiencies that no human can match. If a GM investigates, the bot's perfect execution is the point.
+- **Speed is a feature**: The fastest kill rate, the shortest downtime, the most efficient routing. God-tier means optimal, not invisible.
+- **However**: Respect server rules. Don't flood commands faster than the server can process them (use rate limiting, not randomized delays).
+
 ## Config Management
 - **All config adjustments must go through the AI system (heuristic / Pro RO agent)** — never manually edit .bot_profiles/*/control/config.txt
 - The heuristic uses `set <key> <value>` commands to change config at runtime

@@ -279,26 +279,13 @@
   - `scheduler.py`: Task scheduling (when to grind, quest, craft)
   - `optimizer.py`: Efficiency optimization (best exp/hour, zeny/hour)
 
-## Phase 7: Human Mimicry & Anti-Detection
-
-### 7.1 Behavior Mimicry
-**Pro has:** `mimicry/` (7 modules) — timing, movement, patterns
-**Plan:**
-- Create `domains/mimicry/` with:
-  - `timing.py`: Human-like delays (randomized, statistical distribution)
-  - `movement.py`: Natural movement patterns (not straight lines)
-  - `patterns.py`: Session patterns (gaming sessions, breaks)
-  - `randomization.py`: Randomize all actions slightly to avoid detection
-- Wrap all action queue commands with mimicry layer
-- Human delay distribution: log-normal, mean=500ms, std=300ms
-
-### 7.2 Anti-Detection
-**Plan:**
-- Add to mimicry module:
-  - GM detection: check for GM characters in area, log out if detected
-  - Report avoidance: randomize behavior when player count is high
-  - Session length randomization: log out after random intervals (30-90 min)
-  - Multi-account staggering: don't move all bots at same time
+## Phase 7: God-Tier AI (No Mimicry)
+This is a God-Tier AI, not a human mimicry bot:
+- Deterministic optimal decisions — every action is mathematically optimal
+- Perfect execution — immediate response, no randomized delays
+- Speed is a feature — fastest kill rate, shortest downtime
+- No anti-detection — operate at speeds no human can match
+- Respect server rate limits (not for hiding, for stability)
 
 ## Implementation Order
 
@@ -329,11 +316,13 @@ Phases 2-7 can be implemented in parallel using subagents.
 3. Environment system
 4. Navigation system
 
-### Week 5: PvP, Progression, Mimicry
+### Week 5: PvP, Progression, Learning
 1. PvP/WoE
 2. Character progression
 3. Adaptive learning
-4. Human mimicry + anti-detection
+4. Planning/goal engine
+
+Everything then integrated, tested, and verified.
 
 ## File Structure (to be created)
 
@@ -438,15 +427,10 @@ openkore-ai-v3/
 │   │   │   ├── __init__.py
 │   │   │   ├── arenas.py
 │   │   │   └── woe.py
-│   │   ├── environment/
-│   │   │   ├── __init__.py
-│   │   │   └── time.py
-│   │   ├── mimicry/
-│   │   │   ├── __init__.py
-│   │   │   ├── timing.py
-│   │   │   ├── movement.py
-│   │   │   └── anti_detection.py
-│   │   └── learning/
+│   ├── environment/
+│   │   ├── __init__.py
+│   │   └── time.py
+│   └── learning/
 │   │       ├── __init__.py
 │   │       ├── experience.py
 │   │       └── adaptation.py
