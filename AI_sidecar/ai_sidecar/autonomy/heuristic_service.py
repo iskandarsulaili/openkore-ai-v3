@@ -1837,8 +1837,9 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
                 "Config audit - attack from 5 cells away")
             # Always enable attackAuto on hunting maps (includes cold start farming)
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Config audit - enable aggressive auto-attack")
+            _aa_val = "2" if base_level < 10 else "3"
+            self._set_config_once(actions, bot_id, "attackAuto", _aa_val, "hunting",
+                f"Config audit - attackAuto={_aa_val} (level {base_level})")
             # Proper attack targeting: only attack in lockMap, only when safe
             self._set_config_once(actions, bot_id, "attackAuto_inLockOnly", "1", "hunting",
                 "Config audit - only attack monsters inside lockMap")
@@ -1992,8 +1993,9 @@ class HeuristicService:
                 f"Config audit - attack pause {_audit_attackAuto_pause}s (per-bot variation)")
         elif _audit_is_town:
             # In town — ensure bot is in auto mode and ready to move
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Config audit (town) - enable aggressive auto-attack for when we return to hunt")
+            _aa_val_t = "2" if base_level < 10 else "3"
+            self._set_config_once(actions, bot_id, "attackAuto", _aa_val_t, "hunting",
+                f"Config audit (town) - attackAuto={_aa_val_t} (level {base_level})")
             # Buy potions immediately if in town with 0 potions (no 30s wait)
             _audit_now = __import__("time").time()
             _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
@@ -2360,8 +2362,9 @@ class HeuristicService:
             _cs_z = int(signals.get("zeny", 0) or 0)
             _cs_has_weapon = bool(signals.get("weapon", {}).get("id", 0))
             if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
-                self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                    "Enable aggressive auto-attack")
+                _aa_val_h = "2" if base_level < 10 else "3"
+                self._set_config_once(actions, bot_id, "attackAuto", _aa_val_h, "hunting",
+                    f"attackAuto={_aa_val_h} (level {base_level})")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
@@ -2433,8 +2436,9 @@ class HeuristicService:
                 "Cold start - increase chase distance to 30 for Novice attack range")
             self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
                 "Cold start - attack from 5 cells away")
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Enable aggressive auto-attack")
+            _aa_val4 = "2" if base_level < 10 else "3"
+            self._set_config_once(actions, bot_id, "attackAuto", _aa_val4, "hunting",
+                f"attackAuto={_aa_val4} (level {base_level})")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
@@ -3112,8 +3116,19 @@ class HeuristicService:
             # ── COMBAT CONFIG: Set once per value change (dedup via _set_config_once) ──
             _job_name = signals.get("job_name", "novice") or "novice"
             _class_lc = _job_name.lower()
-            _atk_dist = 7
-            _atk_max = 20
+            # ── PER-CLASS CONFIG ──
+            if _class_lc == "swordman" or _class_lc == "knight":
+                _atk_dist = 5; _atk_max = 20; _tele_min_agg = 8
+            elif _class_lc == "thief" or _class_lc == "assassin":
+                _atk_dist = 3; _atk_max = 15; _tele_min_agg = 6
+            elif _class_lc == "acolyte" or _class_lc == "priest":
+                _atk_dist = 7; _atk_max = 25; _tele_min_agg = 4
+            elif _class_lc == "archer" or _class_lc == "hunter":
+                _atk_dist = 10; _atk_max = 30; _tele_min_agg = 3
+            elif _class_lc == "mage" or _class_lc == "wizard":
+                _atk_dist = 8; _atk_max = 25; _tele_min_agg = 2
+            else:  # novice or unknown
+                _atk_dist = 3; _atk_max = 15; _tele_min_agg = 8
             _rw = 1
             self._set_config_once(actions, bot_id, "route_randomWalk", str(_rw), "hunting",
                 "Walk within lockMap bounds (doesn't block AI, attacks anything it passes)")
@@ -3125,8 +3140,9 @@ class HeuristicService:
                 f"Class-appropriate attack distance for {_job_name}")
             self._set_config_once(actions, bot_id, "attackMaxDistance", str(_atk_max), "hunting",
                 "Set max chase distance")
-            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                "Enable aggressive auto-attack")
+            _aa_val4 = "2" if base_level < 10 else "3"
+            self._set_config_once(actions, bot_id, "attackAuto", _aa_val4, "hunting",
+                f"attackAuto={_aa_val4} (level {base_level})")
             self._set_config_once(actions, bot_id, "attackAuto_followTarget", "1", "hunting",
                 "Chase fleeing monsters")
             self._set_config_once(actions, bot_id, "attackAuto_noMove", "0", "hunting",
@@ -3145,6 +3161,9 @@ class HeuristicService:
                 "Keep attacking even if target moves")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Don't give up mid-fight")
+            # Per-class teleport threshold
+            self._set_config_once(actions, bot_id, "teleportAuto_minAggressives", str(_tele_min_agg), "hunting",
+                f"Per-class teleport at {_tele_min_agg}+ mobs ({_job_name})")
             # ai auto is not a config set — always emit (not deduped)
             # Only force stand if HP is high enough to fight
             # If HP < 40%, let the bot sit to regen — don't force it into combat

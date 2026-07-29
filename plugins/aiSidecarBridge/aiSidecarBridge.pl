@@ -555,16 +555,15 @@ sub on_mainLoop_post {
             my $_em_cooldown = 10;
             if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7 && (time - $_last_emergency_move) >= $_em_cooldown) {
                 $_last_emergency_move = time;
-                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Kafra (290,224)\n", 'aiSidecarBridge', 1;
+                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Prontera portal (373,205)\n", 'aiSidecarBridge', 1;
                 # Dequeue conflicting AI states — OpenKore ignores move commands when AI is
                 # in attack/route/follow states. Clear the queue so move takes effect.
                 eval { AI::dequeue(); 1 };
                 eval { Commands::run("stand"); 1 };
-                # Walk to Kafra Employee on prt_fild05 — free storage deposit
-                eval { Commands::run("move 290 224"); 1 };
-                # Open Kafra storage and deposit heavy items (survival command per RULE.md 1a)
-                eval { Commands::run("talknpc 290 224 c r1 c"); 1 };
-                eval { Commands::run("storage auto"); 1 };
+                # Walk to Prontera portal (373, 205) — once in town, OpenKore's built-in
+                # sellAuto/storageAuto trigger naturally. The bridge must NOT issue NPC
+                # commands (talknpc) — OpenKore's AI ignores them from idle state.
+                eval { Commands::run("move 373 205"); 1 };
                 eval { Commands::run("ai auto"); 1 };
             }
         }
