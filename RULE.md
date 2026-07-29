@@ -38,12 +38,23 @@ The bridge (`plugins/aiSidecarBridge/aiSidecarBridge.pl`) ONLY does:
   - Bot in Prontera: "move prontera" → "move 22 203" (portal redirect)
   - Bot on hunting map: "move prontera" → BLOCKED (hunting guard)
   - Bot in PvP/GvG: allow through (player needs to leave)
+- **Attack interception**: Block attack commands for monsters with mon_control attack_auto <= 0 (ignored). Cannot block Porings (attack_auto=1) or any farm target.
 - **Portal exit reflex**: Bot at prt_fild05 (367, 205) → move to center (200, 200)
 - **Portal route redirect**: Bot in Prontera with lockMap set → issue "move 22 203" every 30s
 - **Town mode**: route_randomWalk=0 in Prontera prevents "move prontera" spam from OpenKore AI
 - **Config enforcement**: lockMap always set to hunting map, attackAuto never overridden
 - **Execute commands**: Receive and execute `set <key> <value>` from sidecar
 - **NEVER**: Hardcoded config overrides (attackAuto, attackDistance), routing decisions, economy logic
+- **ALLOWED commands in reflexes**: `stand`, `move <x> <y>`, `ai auto`, `AI::dequeue()`, `AI::clear()` — commands only, no config overrides
+
+### 1a. Emergency Survival Reflex (Priority Override)
+The bridge has ONE additional reflex beyond portal handling: the **Emergency Survival Reflex**.
+- **Trigger**: HP < 20% AND weight > 70% AND NOT in town
+- **Action**: Walk to nearest Kafra (prt_fild05: 290,224) — free storage deposit to reduce weight
+- **Mechanism**: Commands only (`stand`, `move 290 224`, `ai auto`). Uses `AI::dequeue()` to clear conflicting AI states so move takes effect. NO config overrides.
+- **Priority**: Emergency reflex ALWAYS wins over heuristic strategy. Survival > economy > routing > combat.
+- **Cooldown**: 10 seconds between triggers to prevent spam while bot walks to Kafra.
+- **MUST NOT**: Set configs, change lockMap, issue buy/sell commands, or interact with NPCs directly. The heuristic handles recovery after the bot reaches safety.
 
 ### 2. REFLEXES Cannot Override lockMap (Critical)
 Discovered through debugging: bridge reflexes that set `lockMap = prontera` override the heuristic's lockMap and create an endless "move prontera" loop. All 5 such reflexes have been disabled.
@@ -119,6 +130,25 @@ Only ONE system decides where the bot goes: the heuristic service.
 - Bridge enforces lockMap consistency
 - Pro RO agent may RECOMMEND routes but must NOT override lockMap via direct commands
 - No bridge reflex may change lockMap
+
+### 11. Testing & Verification Required
+Every change to the bridge, heuristic, or config audit must pass the test harness before deployment:
+- Run `python3 test_harness.py` before committing
+- Test harness checks: config audit values, bridge reflex correctness, attack block logic, pipeline flexibility, RULE.md compliance, config override count
+- A failing test harness is a BLOCKER — no commit may fail the harness unless the test itself is wrong
+- The test harness runs offline (no server connection needed) and verifies code logic only
+
+### 12. Server Failure Handling
+When the game server is unreachable or timing out:
+- Bots auto-reconnect with exponential backoff (2s, 4s, 8s, 16s, max 30s)
+- All in-memory state is preserved during reconnection attempts
+- State persistence saves every 60s to survive process restarts
+- After 5 consecutive reconnect failures, the sidecar enters "degraded mode":
+  - PDCA loop continues running (processes snapshots from last known state)
+  - Heuristic emits survival-mode configs to prepare for reconnection
+  - No strategic decisions (routing, economy, job change)
+  - When connection restores, exits degraded mode automatically
+- The bridge never crashes or blocks the main loop during connection issues
 
 ## Config Management
 - **All config adjustments must go through the AI system (heuristic / Pro RO agent)** — never manually edit .bot_profiles/*/control/config.txt

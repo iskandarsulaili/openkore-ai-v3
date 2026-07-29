@@ -533,10 +533,13 @@ sub on_mainLoop_post {
             }
         }
         
-        # ── EMERGENCY REFLEX: HP critically low + overweight + not in town → teleport home ──
-        # Deadlock state: can't regen (overweight), can't attack (low HP), can't farm (low HP)
-        # Teleport to Prontera to recover in safety
-        if ($char && $char->{sitting} && $field) {
+        # ── EMERGENCY REFLEX: HP critically low + overweight + not in town → walk to Kafra ──
+        # Deadlock: can't regen (overweight blocks HP regen), can't attack (low HP), can't farm.
+        # Walk to Kafra Employee (290, 224) on same map — deposit heavy items for FREE.
+        # Kafra is ~20 steps from spawn on prt_fild05, safe and immediate.
+        # Per RULE.md: reflex uses commands only, NEVER config overrides.
+        # State variable $_last_emergency_move is declared in the FORE STAND section above.
+        if ($char && $field) {
             my $_er_hp = 0;
             if ($char->{hp_max} && $char->{hp} > 0) {
                 $_er_hp = $char->{hp} / ($char->{hp_max} || 1);
@@ -552,13 +555,14 @@ sub on_mainLoop_post {
             my $_em_cooldown = 10;
             if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7 && (time - $_last_emergency_move) >= $_em_cooldown) {
                 $_last_emergency_move = time;
-                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Prontera portal\n", 'aiSidecarBridge', 1;
-                # Per RULE.md: reflex uses commands only, NEVER config overrides.
-                # Walk to Kafra (290, 224) on same map — deposit heavy items for free.
-                # Kafra is ~20 steps from spawn, safer than walking to Prontera portal.
+                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Kafra (290,224)\n", 'aiSidecarBridge', 1;
+                # Dequeue conflicting AI states — OpenKore ignores move commands when AI is
+                # in attack/route/follow states. Clear the queue so move takes effect.
+                eval { AI::dequeue(); 1 };
                 eval { Commands::run("stand"); 1 };
-                # Walk to Kafra Employee on prt_fild05
+                # Walk to Kafra Employee on prt_fild05 — free storage deposit
                 eval { Commands::run("move 290 224"); 1 };
+                eval { Commands::run("ai auto"); 1 };
             }
         }
 
@@ -5284,10 +5288,8 @@ sub _check_bridge_reflexes {
 	if ($new_itemsMaxWeight ne $_last_itemsMaxWeight) { $::config{'itemsMaxWeight'} = $new_itemsMaxWeight unless $::config{'_sidecar_set_itemsMaxWeight'}; $_last_itemsMaxWeight = $new_itemsMaxWeight; }
 	my $new_sitAuto_hp = _cfg('aiSidecar_sitAutoHp', '20');
 	if ($new_sitAuto_hp ne $_last_sitAuto_hp) { $::config{'sitAuto_hp_lower'} = $new_sitAuto_hp unless $::config{'_sidecar_set_sitAuto_hp'}; $_last_sitAuto_hp = $new_sitAuto_hp; }
-	# When hi-sidecar fallback is active (heuristic hasn't set it), let sitAuto work
-	if (!$::config{'_sidecar_set_sitAuto_hp'} && $new_sitAuto_hp > 0) {
-		# sitAuto_hp_lower already set above — don't override
-	}
+	# sitAuto controlled by heuristic through config audit
+	# Bridge fallback uses aiSidecar_sitAutoHp default=20
 	my $new_sitAuto_hp_max = _cfg('aiSidecar_sitAutoHpMax', '0');
 	if ($new_sitAuto_hp_max ne $_last_sitAuto_hp_max) { $::config{'sitAuto_hp_upper'} = $new_sitAuto_hp_max unless $::config{'_sidecar_set_sitAuto_hp_max'}; $_last_sitAuto_hp_max = $new_sitAuto_hp_max; }
 	# Force-set sitAuto_hp_upper=0 every cycle when disabled
