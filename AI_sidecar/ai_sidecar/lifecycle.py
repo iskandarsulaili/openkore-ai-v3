@@ -991,6 +991,46 @@ class RuntimeState:
                 extra={"event": "keep_alive_restart_bots_failed", "error": str(exc)},
             )
 
+    def start_highfreq_reflex(self) -> None:
+        """Start the 50ms reflex monitor. Safe to call multiple times — redundant."""
+        if self.highfreq_reflex is None:
+            from ai_sidecar.reflex.highfreq_reflex import HighFreqReflex
+            self.highfreq_reflex = HighFreqReflex()
+        if getattr(self.highfreq_reflex, '_running', False):
+            return
+        # Wire snapshot cache and bot registry
+        self.highfreq_reflex.snapshot_cache = self.snapshot_cache
+        self.highfreq_reflex.bot_registry = self.bot_registry
+        self.highfreq_reflex.reflex_pipeline = getattr(self, 'reflex_pipeline', None)
+        self.highfreq_reflex.enqueue_fn = lambda bid, action_data: self.queue_action(
+            ActionProposal(
+                action_id=f"hfr_{bid}_{int(time.time()*1000)}",
+                kind="command",
+                command=action_data.get("action", ""),
+                priority_tier=ActionPriorityTier.reflex,
+                source="reflex",
+                conflict_key="",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=5),
+                idempotency_key=f"hfr:{bid}:{int(time.time())}",
+                metadata={"source": "highfreq_reflex"},
+            ),
+            bid,
+        ) if action_data.get("action") else None
+        # Start on background loop
+        try:
+            loop = self._ensure_background_loop(label="highfreq_reflex", bot_id=None, tick_id=None)
+            if loop is not None and not loop.is_closed():
+                asyncio.run_coroutine_threadsafe(self._start_hfr_inner(), loop)
+        except Exception:
+            pass
+    
+    async def _start_hfr_inner(self) -> None:
+        """Inner coroutine to start HighFreqReflex on the background loop."""
+        if self.highfreq_reflex is not None:
+            self.highfreq_reflex.start()
+            logger.info("highfreq_reflex_wired: interval=50ms")
+    
     def start_keep_alive(self) -> None:
         """Start the keep-alive background loop if enabled."""
         if not self.keep_alive_enabled:

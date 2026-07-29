@@ -93,6 +93,13 @@ async def lifespan(app: FastAPI):
     # Auto-start the PDCA loop
     pdca_loop.start()
     logger.info("PDCA autonomy loop started (auto)")
+    
+    # Initialize and start HighFreqReflex (50ms vital reflex)
+    try:
+        runtime.start_highfreq_reflex()
+        logger.info("highfreq_reflex started (50ms interval)")
+    except Exception as e:
+        logger.warning("highfreq_reflex_start_failed: %s", e)
 
     # Initialize Failure Reasoning Pipeline
     try:

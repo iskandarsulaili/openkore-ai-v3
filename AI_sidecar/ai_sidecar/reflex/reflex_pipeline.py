@@ -73,6 +73,7 @@ class ReflexPipeline:
             kind="command",
             command=command,
             priority_tier=ActionPriorityTier.reflex,
+            source="reflex",
             conflict_key="",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(seconds=5),

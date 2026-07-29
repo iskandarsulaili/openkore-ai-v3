@@ -376,6 +376,7 @@ class ActionEmitter:
             kind=kind,
             command=command,
             priority_tier=ActionPriorityTier.reflex,
+            source="reflex",
             conflict_key=resolved_conflict_key,
             created_at=now,
             expires_at=now + timedelta(seconds=self._action_ttl_seconds),

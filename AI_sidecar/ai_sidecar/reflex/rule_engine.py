@@ -748,7 +748,7 @@ class ReflexRuleEngine:
                 priority=1,
                 trigger=ReflexTriggerClause(
                     all=[
-                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.15),
+                        ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.30),
                     ]
                 ),
                 guards=[],

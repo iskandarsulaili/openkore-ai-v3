@@ -25,21 +25,30 @@ logger = logging.getLogger(__name__)
 
 # Default reflex thresholds (LLM can override these via kaizen review)
 DEFAULT_THRESHOLDS: dict[str, float] = {
-    "heal_potion_hp_pct": 0.50,      # Use healing item at 50% HP
-    "emergency_potion_hp_pct": 0.30, # Use emergency heal at 30% HP
-    "escape_teleport_hp_pct": 0.15,  # Teleport at 15% HP
-    "sit_rest_hp_pct": 0.40,         # Sit to rest at 40% HP (out of combat)
-    "sit_rest_sp_pct": 0.20,         # Sit to rest at 20% SP (out of combat)
-    "aggro_escape_count": 3,         # Escape if 3+ mobs aggro
-    "mvp_escape_hp_pct": 0.40,      # Escape from MVP at 40% HP
+    "heal_potion_hp_pct": 0.70,         # Pro RO: heal at 70% HP (not 50%)
+    "emergency_potion_hp_pct": 0.50,    # Pro RO: emergency heal at 50% (not 30%)
+    "escape_teleport_hp_pct": 0.30,     # Pro RO: flee at 30% HP (not 15% — 15% is obituary)
+    "sit_rest_hp_pct": 0.60,            # Sit to rest at 60% HP (out of combat)
+    "sit_rest_sp_pct": 0.30,            # Sit to rest at 30% SP (out of combat)
+    "aggro_escape_count": 2,            # Pro RO: flee when 2+ mobs aggro (not 3+)
+    "mvp_escape_hp_pct": 0.50,          # Escape MVP at 50% HP
 }
 
 
 @dataclass(slots=True)
 class HighFreqReflex:
-    """High-frequency (50ms) vital sign monitor with direct action injection."""
+    """High-frequency (50ms) vital sign monitor with direct action injection.
+    
+    Runs as an independent async task alongside PDCA, not inside it.
+    Accesses snapshot cache to get per-bot vitals every 50ms and injects
+    survival actions (heal, escape, sit) directly into the action queue
+    — no 5-second PDCA wait.
+    """
     
     enqueue_fn: Callable[[str, dict[str, Any]], bool] | None = None
+    snapshot_cache: Any = None
+    bot_registry: Any = None
+    reflex_pipeline: Any = None
     _lock: RLock = field(default_factory=RLock)
     _running: bool = False
     _task: asyncio.Task | None = None
@@ -116,16 +125,137 @@ class HighFreqReflex:
     
     def get_adjustments(self) -> list[dict[str, Any]]:
         with self._lock:
-            return list(self._llm_adjustments[-20:])
+            return list(self._llm_adjustments)
     
-    def get_stats(self) -> dict[str, int]:
+    def stats(self) -> dict[str, int]:
         with self._lock:
             return dict(self._stats)
     
     async def _tick(self) -> None:
-        """Single tick of the high-frequency monitor."""
+        """Single tick of the high-frequency monitor.
+        
+        Reads all active bots' snapshots from cache and injects
+        survival actions via check_and_act if thresholds are exceeded.
+        """
         with self._lock:
             self._stats["checks"] += 1
+        
+        # Get active bot IDs from registry or fallback to known IDs
+        bot_ids: list[str] = []
+        _registry = self.bot_registry
+        if _registry is not None and hasattr(_registry, 'active_bots'):
+            try:
+                bot_ids = _registry.active_bots()
+            except Exception:
+                pass
+        elif _registry is not None and hasattr(_registry, '_get_active_bots'):
+            try:
+                bot_ids = _registry._get_active_bots()
+            except Exception:
+                pass
+        elif _registry is not None and hasattr(_registry, 'get_all'):
+            try:
+                bot_ids = _registry.get_all()
+            except Exception:
+                pass
+        
+        if not bot_ids:
+            return
+        
+        _snap_cache = self.snapshot_cache
+        _rflx_pipe = self.reflex_pipeline
+        _enqueue = self.enqueue_fn
+        
+        for bot_id in bot_ids:
+            try:
+                # Get latest snapshot
+                snapshot = None
+                if _snap_cache is not None:
+                    if hasattr(_snap_cache, 'get'):
+                        snapshot = _snap_cache.get(bot_id) if hasattr(_snap_cache, '__call__') else \
+                                   getattr(_snap_cache, 'get', lambda x: None)(bot_id)
+                    elif hasattr(_snap_cache, '__getitem__'):
+                        try:
+                            snapshot = _snap_cache[bot_id]
+                        except (KeyError, IndexError):
+                            pass
+                
+                if snapshot is None:
+                    continue
+                
+                # Extract vitals from snapshot
+                hp = 100; max_hp = 100; sp = 50; max_sp = 80
+                is_dead = False; is_town = False; has_potions = False
+                zeny = 0; level = 1; aggro_count = 0; current_map = ""
+                
+                if isinstance(snapshot, dict):
+                    hp = int(snapshot.get("hp", snapshot.get("vitals", {}).get("hp", 100)) or 100)
+                    max_hp = int(snapshot.get("hp_max", snapshot.get("vitals", {}).get("hp_max", 1)) or 1)
+                    sp = int(snapshot.get("sp", snapshot.get("vitals", {}).get("sp", 50)) or 50)
+                    max_sp = int(snapshot.get("max_sp", snapshot.get("vitals", {}).get("max_sp", 80)) or 80)
+                    is_dead = bool(snapshot.get("is_dead", snapshot.get("vitals", {}).get("is_dead", False)))
+                    is_town = bool(snapshot.get("is_town", snapshot.get("vitals", {}).get("is_town", True)))
+                    zeny = int(snapshot.get("zeny", snapshot.get("inventory", {}).get("zeny", 0)) or 0)
+                    level = int(snapshot.get("base_level", snapshot.get("progression", {}).get("base_level", 1)) or 1)
+                    aggro_count = int(snapshot.get("combat", {}).get("aggro_count", snapshot.get("aggro_count", 0)))
+                    current_map = str(snapshot.get("map", snapshot.get("position", {}).get("map", "")) or "")
+                    inv_items = snapshot.get("inventory_items", snapshot.get("inventory", {}).get("items", []))
+                    if isinstance(inv_items, list):
+                        for item in inv_items:
+                            if isinstance(item, dict) and item.get("name", "") and "potion" in str(item.get("name", "")).lower():
+                                has_potions = True
+                                break
+                else:
+                    # BotStateSnapshot object
+                    v = getattr(snapshot, "vitals", None)
+                    if v:
+                        hp = int(getattr(v, "hp", 100) or 100)
+                        max_hp = int(getattr(v, "hp_max", 1) or 1)
+                        sp = int(getattr(v, "sp", 50) or 50)
+                        max_sp = int(getattr(v, "max_sp", 80) or 80)
+                    prog = getattr(snapshot, "progression", None)
+                    if prog:
+                        level = int(getattr(prog, "base_level", 1) or 1)
+                    inv_items = getattr(snapshot, "inventory_items", []) or []
+                    for item in inv_items:
+                        name = getattr(item, "name", "") if not isinstance(item, dict) else item.get("name", "")
+                        if name and "potion" in name.lower():
+                            has_potions = True
+                            break
+                    pos = getattr(snapshot, "position", None) or {}
+                    if hasattr(pos, "map"):
+                        current_map = str(pos.map)
+                hp_pct = hp / max_hp if max_hp > 0 else 1.0
+                
+                # Check if in town (safe zones)
+                _town_maps = ["prontera", "izlude", "morocc", "geffen", "payon", 
+                             "alberta", "aldebaran", "comodo", "yuno", "amatsu",
+                             "gonryun", "umbala", "niflheim", "lighthalzen",
+                             "einbroch", "einbech", "hugel", "rachel", "veins"]
+                _is_town = any(m in current_map.lower() for m in _town_maps) if current_map else True
+                
+                # Call check_and_act with extracted data
+                action = self.check_and_act(
+                    bot_id=bot_id,
+                    hp=hp, max_hp=max_hp,
+                    sp=sp, max_sp=max_sp,
+                    aggro_count=aggro_count,
+                    is_dead=is_dead,
+                    is_town=_is_town,
+                    has_potions=has_potions,
+                    current_map=current_map,
+                    zeny=zeny, level=level,
+                    reflex_pipeline=_rflx_pipe,
+                )
+                
+                if action and _enqueue:
+                    _enqueue(bot_id, {
+                        "action": action,
+                        "source": "highfreq_reflex",
+                        "bot_id": bot_id,
+                    })
+            except Exception:
+                continue
     
     def _get_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
                           zeny: int, level: int) -> str | None:
