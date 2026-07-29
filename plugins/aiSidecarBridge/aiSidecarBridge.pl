@@ -396,15 +396,15 @@ sub on_start3 {
 	}
 
 	# ── Initialize upgraded IPC modules ──
-	$_circuit_breaker = aiSidecarBridge::CircuitBreaker->new(
+	$_circuit_breaker = CircuitBreaker->new(
 		threshold => 10,
 		name      => 'zmq_push',
 	);
-	$_connection_metrics = aiSidecarBridge::ConnectionMetrics->new(
+	$_connection_metrics = ConnectionMetrics->new(
 		max_latency_samples => 100,
 		window_seconds      => 300,
 	);
-	$_http_client = aiSidecarBridge::HTTPClient->new(
+	$_http_client = HTTPClient->new(
 		zmq_address       => $ENV{SIDECAR_ZMQ_ADDR} || 'tcp://127.0.0.1:5559',
 		http_base_url     => _cfg('aiSidecar_baseUrl', 'http://127.0.0.1:18081'),
 		zmq_connect_ms    => 500,
@@ -417,7 +417,7 @@ sub on_start3 {
 		circuit_breaker   => $_circuit_breaker,
 		metrics           => $_connection_metrics,
 	);
-	$_state_builders = aiSidecarBridge::StateBuilders->new(
+	$_state_builders = StateBuilders->new(
 		debug_log_cb => sub { debug($_[0], 'StateBuilders', 2) },
 		max_items    => _cfg_int('aiSidecar_maxItems', 200),
 		max_actors   => _cfg_int('aiSidecar_maxActors', 24),

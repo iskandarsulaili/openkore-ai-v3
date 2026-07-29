@@ -9,9 +9,9 @@ aiSidecarBridge::ConnectionMetrics - Track ZMQ/HTTP connection quality
 
 =head1 SYNOPSIS
 
-    use aiSidecarBridge::ConnectionMetrics;
+    use ConnectionMetrics;
 
-    my $m = aiSidecarBridge::ConnectionMetrics->new(
+    my $m = ConnectionMetrics->new(
         max_latency_samples => 100,
     );
 

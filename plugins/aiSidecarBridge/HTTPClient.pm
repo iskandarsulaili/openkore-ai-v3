@@ -9,14 +9,14 @@ aiSidecarBridge::HTTPClient - ZMQ push socket with HTTP/1.1 fallback IPC
 
 =head1 SYNOPSIS
 
-    use aiSidecarBridge::HTTPClient;
-    use aiSidecarBridge::CircuitBreaker;
-    use aiSidecarBridge::ConnectionMetrics;
+    use HTTPClient;
+    use CircuitBreaker;
+    use ConnectionMetrics;
 
-    my $cb = aiSidecarBridge::CircuitBreaker->new(threshold => 10);
-    my $metrics = aiSidecarBridge::ConnectionMetrics->new();
+    my $cb = CircuitBreaker->new(threshold => 10);
+    my $metrics = ConnectionMetrics->new();
 
-    my $client = aiSidecarBridge::HTTPClient->new(
+    my $client = HTTPClient->new(
         zmq_address       => 'tcp://127.0.0.1:5559',
         http_base_url     => 'http://127.0.0.1:8000',
         json_encode_cb    => sub { JSON::PP::encode_json($_[0]) },

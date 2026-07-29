@@ -9,9 +9,9 @@ aiSidecarBridge::CircuitBreaker - Circuit breaker for ZMQ IPC connections
 
 =head1 SYNOPSIS
 
-    use aiSidecarBridge::CircuitBreaker;
+    use CircuitBreaker;
 
-    my $cb = aiSidecarBridge::CircuitBreaker->new(
+    my $cb = CircuitBreaker->new(
         threshold => 10,
         name      => 'zmq_main',
     );

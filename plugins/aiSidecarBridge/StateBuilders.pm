@@ -12,9 +12,9 @@ aiSidecarBridge::StateBuilders - 17 specialized state builders for OpenKore
 
 =head1 SYNOPSIS
 
-    use aiSidecarBridge::StateBuilders;
+    use StateBuilders;
 
-    my $builders = aiSidecarBridge::StateBuilders->new();
+    my $builders = StateBuilders->new();
 
     my $char_state    = $builders->build_character_state();
     my $inventory     = $builders->build_inventory_state();
