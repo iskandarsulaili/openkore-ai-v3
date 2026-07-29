@@ -1799,6 +1799,29 @@ class HeuristicService:
             # Always enable attackAuto on hunting maps (includes cold start farming)
             self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
                 "Config audit - enable aggressive auto-attack")
+            # Proper attack targeting: only attack in lockMap, only when safe
+            self._set_config_once(actions, bot_id, "attackAuto_inLockOnly", "1", "hunting",
+                "Config audit - only attack monsters inside lockMap")
+            self._set_config_once(actions, bot_id, "attackAuto_onlyWhenSafe", "1", "hunting",
+                "Config audit - only attack when no aggressive monsters nearby")
+            self._set_config_once(actions, bot_id, "attackAuto_onlyInSearch", "1", "hunting",
+                "Config audit - only attack monsters in search area")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "0", "hunting",
+                "Config audit - don't auto-start on sight (wait for search")
+            # Ensure avoidList is disabled so we don't run from Porings
+            self._set_config_once(actions, bot_id, "avoidList", "", "hunting",
+                "Config audit - disable avoidList (prevents running from farm targets)")
+            self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "", "hunting",
+                "Config audit - disable inLockOnly avoidList")
+            # Enable aggressive attack on monsters within distance
+            self._set_config_once(actions, bot_id, "attackDistanceAuto", "1", "hunting",
+                "Config audit - auto-adjust attack distance")
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
+                "Config audit - chase distance 30 cells")
+            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
+                "Config audit - start attacking from 5 cells away")
+            self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
+                "Config audit - don't give up mid-fight")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",

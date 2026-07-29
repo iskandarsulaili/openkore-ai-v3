@@ -292,18 +292,18 @@ PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
     "prt_fild05": [
         ("Poring",             1, 0, 0),  # Farm Porings
         ("Lunatic",            0, 0, 0),  # Ignore (low exp, annoying)
-        ("Pupa",               0, 0, 0),  # Ignore (0-exp, HP sponge)
-        ("Thief Bug Egg",      0, 0, 0),  # Ignore (0-exp, HP sponge)
-        ("Thief Bug",          0, 0, 0),  # Ignore (annoying)
-        ("Fabre",              0, 0, 0),  # Ignore (0-exp)
-        ("Condor",             0, 0, 0),  # Ignore (0-exp)
+        ("Pupa",               -1, 0, 0),  # Ignore (0-exp, HP sponge)
+        ("Thief Bug Egg",      -1, 0, 0),  # Ignore (0-exp, HP sponge)
+        ("Thief Bug",          -1, 0, 0),  # Ignore (annoying)
+        ("Fabre",              -1, 0, 0),  # Ignore (0-exp)
+        ("Condor",             -1, 0, 0),  # Ignore (0-exp)
     ],
     "prt_fild04": [
         ("Poring",             1, 0, 0),
         ("Rocker",             1, 0, 0),  # Good exp for level range
         ("Creamy",             1, 0, 0),  # Fast kill, decent exp
-        ("Pupa",               0, 0, 0),
-        ("Thief Bug Egg",      0, 0, 0),
+        ("Pupa",               -1, 0, 0),
+        ("Thief Bug Egg",      -1, 0, 0),
         ("Lunatic",            0, 0, 0),
     ],
     "prt_fild08": [
@@ -312,15 +312,15 @@ PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
         ("Creamy",             1, 0, 0),
         ("Poporing",           1, 0, 0),  # Better Poring
         ("Poring",             1, 0, 0),
-        ("Thief Bug",          0, 0, 0),
-        ("Pupa",               0, 0, 0),
+        ("Thief Bug",          -1, 0, 0),
+        ("Pupa",               -1, 0, 0),
     ],
     "pay_fild01": [
         ("Steel Chonchon",     1, 0, 0),  # Good exp, drops
         ("Poporing",           1, 0, 0),
         ("Familiar",           1, 0, 0),
         ("Wolf",               0, 0, 0),  # Tough for low level
-        ("Thief Bug",          0, 0, 0),
+        ("Thief Bug",          -1, 0, 0),
     ],
     # ── Payon Cave 1F ──
     "pay_dun00": [

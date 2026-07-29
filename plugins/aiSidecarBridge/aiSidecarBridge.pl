@@ -4260,8 +4260,23 @@ sub _rewrite_runtime_command {
 					warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
 				}
 			}
-			eval { Commands::run("reload mon_control"); 1; };
-			return ('', 'mon_control_applied');
+			# Force reload of mon_control via internal parser (not Commands::run which is unreliable)
+		eval {
+		    require FileParsers;
+		    my $_mc_file = Settings::getMonControlFilename();
+		    FileParsers::parseMonControl($_mc_file, \%mon_control);
+		    1;
+		};
+		warning "[mon_control] applied %d entries from %s\n", scalar(keys %mon_control), $_mc_entry // '?', 'aiSidecarBridge', 1;
+		# After applying mon_control, force AI target reselection
+		# OpenKore only checks mon_control BEFORE starting an attack, not during.
+		# If the bot is currently attacking a now-ignored monster, it must be
+		# stopped so the AI re-evaluates targets.
+		if (defined $AI::AI && $AI::AI == 2) {
+		    eval { AI::state(2); 1; };  # Restart AI to force target re-evaluation
+		    warning "[mon_control] AI restarted to force target reselection\n", 'aiSidecarBridge', 1;
+		}
+		return ('', 'mon_control_applied');
 		}
 
 	# Handle 'set lockMap' - set lockMap to hunting map
