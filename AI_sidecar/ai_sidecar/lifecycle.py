@@ -1237,8 +1237,8 @@ class RuntimeState:
         # Emit heuristic actions immediately on first snapshot so the
         # bot gets actionable commands before the server kicks it.
         try:
-            if hasattr(self, 'pdca_loop') and self.pdca_loop is not None:
-                self.pdca_loop._emit_heuristic_actions(self, horizon="immediate", bot_id=snapshot.meta.bot_id)
+            from ai_sidecar.autonomy.pdca_loop import _emit_heuristic_actions
+            _emit_heuristic_actions(self, horizon="immediate", bot_id=bot_id)
         except Exception:
             pass
         self.incr("snapshots_ingested", bot_id=bot_id)
