@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword twedrivo
+adminPassword dricheal
 callSign
 commandPrefix ;
 callSignGM 0
@@ -255,7 +255,7 @@ runFromTarget_noAttackMethodFallback_minStep 8
 saveMap prontera
 saveMap_x 156
 saveMap_y 129
-saveMap_warp 0
+saveMap_warp 1
 memo3
 memo4
 destMap prontera
