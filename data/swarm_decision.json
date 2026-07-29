@@ -1,0 +1,26 @@
+{
+  "decision_id": "",
+  "leader_name": "test",
+  "timestamp": 1785323206.4629352,
+  "formation": "line",
+  "hunt_map": "",
+  "target_monster": "",
+  "retreat": false,
+  "focus_fire_monster_id": "",
+  "spread_targets": false,
+  "kite_mode": false,
+  "formation_positions": {
+    "test": {
+      "x": 0,
+      "y": 3
+    }
+  },
+  "member_range": 15,
+  "party_auto_share": true,
+  "acolyte_buffs": false,
+  "buff_targets": [],
+  "migration_order": [],
+  "consensus_threshold": 0.66,
+  "reason": "Formation=line, Hunt=, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
+  "version": 2
+}
