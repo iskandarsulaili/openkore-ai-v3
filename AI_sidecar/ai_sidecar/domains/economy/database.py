@@ -44,6 +44,36 @@ CLASSIFICATION_PRIORITY: dict[str, int] = {
 }
 
 
+class MarketPriceDB:
+    """Player-market price database."""
+    _DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "market_prices.yaml")
+    _db: dict = {}
+    
+    @classmethod
+    def load(cls) -> dict:
+        if not cls._db:
+            import yaml
+            if os.path.exists(cls._DATA_PATH):
+                with open(cls._DATA_PATH) as f:
+                    cls._db = yaml.safe_load(f) or {}
+        return cls._db
+    
+    @classmethod
+    def get_market_price(cls, item_name: str) -> dict:
+        db = cls.load()
+        for key, data in db.items():
+            if item_name.lower().replace(' ', '_') in key.lower():
+                return data
+        return {}
+    
+    @classmethod
+    def is_profitable(cls, item_name: str, npc_price: int) -> bool:
+        """Check if selling on player market is better than NPC."""
+        market = cls.get_market_price(item_name)
+        if market:
+            return market.get("market_buy", 0) > npc_price
+        return False
+
 class ItemValueDB:
     """Thread-safe (read-only) item value database.
 

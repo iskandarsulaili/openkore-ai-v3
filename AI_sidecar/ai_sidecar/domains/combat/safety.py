@@ -11,6 +11,7 @@ Core components:
 from __future__ import annotations
 
 import logging
+import os
 import math
 import time
 from collections import deque
@@ -86,6 +87,28 @@ class KillRecord:
 # ═══════════════════════════════════════════════════════════════
 # DangerPredictor
 # ═══════════════════════════════════════════════════════════════
+
+class MonsterSkillsDB:
+    """Monster special abilities database."""
+    _DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "monster_skills.yaml")
+    _db: dict = {}
+    
+    @classmethod
+    def load(cls) -> dict:
+        if not cls._db:
+            import yaml
+            if os.path.exists(cls._DATA_PATH):
+                with open(cls._DATA_PATH) as f:
+                    cls._db = yaml.safe_load(f) or {}
+        return cls._db
+    
+    @classmethod
+    def get_monster_skills(cls, monster_name: str) -> list:
+        db = cls.load()
+        for key, data in db.items():
+            if monster_name.lower() in key.lower():
+                return data.get("skills", [])
+        return []
 
 class DangerPredictor:
     """Predicts danger level per map and recommends proactive escape.
