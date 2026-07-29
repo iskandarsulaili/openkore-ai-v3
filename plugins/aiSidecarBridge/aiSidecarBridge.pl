@@ -1167,7 +1167,41 @@ sub on_command_intercept {
 	        }
 	    }
 	}
-		# Handle mon_control command - write to mon_control.txt and reload
+		# ── ATTACK BLOCK: intercept attack commands for ignored monsters ──
+	# OpenKore's internal mon_control doesn't reliably prevent attacks for
+	# monsters with ignore=-1 when attackAuto=3 is active. This bridge-level
+	# intercept catches ALL attack commands and blocks them for monsters
+	# that the heuristic has marked as ignore via mon_control entries.
+	if ($full_cmd =~ /^attack\s+(.+)$/i) {
+	    my $_atk_id = $1;
+	    # Try direct monster lookup by ID
+	    my $_atk_monster = $monsters{$_atk_id};
+	    my $_atk_name = '';
+	    if ($_atk_monster) {
+	        $_atk_name = lc($_atk_monster->{name} || '');
+	    } else {
+	        # Fallback: search all monsters by nameID or position
+	        for my $_atk_mid (keys %monsters) {
+	            my $_atk_m = $monsters{$_atk_mid};
+	            if ($_atk_m && ($_atk_m->{nameID} eq $_atk_id || $_atk_m->{binID} eq $_atk_id)) {
+	                $_atk_monster = $_atk_m;
+	                $_atk_name = lc($_atk_m->{name} || '');
+	                last;
+	            }
+	        }
+	    }
+	    if ($_atk_name) {
+	        my $_atk_control = main::mon_control($_atk_name, ($_atk_monster->{nameID} || ''));
+	        if ($_atk_control && defined $_atk_control->{attack_auto} && $_atk_control->{attack_auto} <= 0) {
+	            debug "[attack_block] blocking attack on $_atk_name (attack_auto=$_atk_control->{attack_auto})\n", 'aiSidecarBridge', 1;
+	            $args->{switch} = '';
+	            $args->{args} = '';
+	            return;
+	        }
+	    }
+	}
+
+	# Handle mon_control command - write to mon_control.txt and reload
 	if ($full_cmd =~ /^mon_control\s+(.+)$/i) {
 	    my $_mc_entry = $1;
 	    my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
@@ -4272,10 +4306,10 @@ sub _rewrite_runtime_command {
 		# OpenKore only checks mon_control BEFORE starting an attack, not during.
 		# If the bot is currently attacking a now-ignored monster, it must be
 		# stopped so the AI re-evaluates targets.
-		if (defined $AI::AI && $AI::AI == 2) {
-		    eval { AI::state(2); 1; };  # Restart AI to force target re-evaluation
-		    warning "[mon_control] AI restarted to force target reselection\n", 'aiSidecarBridge', 1;
-		}
+		# Force AI target reselection: clear current attacks and restart AI
+		eval { AI::clear(); 1; };
+		eval { AI::state(2); 1; };
+		warning "[mon_control] AI cleared+restarted for target reselection\n", 'aiSidecarBridge', 1;
 		return ('', 'mon_control_applied');
 		}
 
