@@ -49,11 +49,13 @@ class HighFreqReflex:
     snapshot_cache: Any = None
     bot_registry: Any = None
     reflex_pipeline: Any = None
+    integration_bus: Any = None
     _lock: RLock = field(default_factory=RLock)
     _running: bool = False
     _task: asyncio.Task | None = None
     _thresholds: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_THRESHOLDS))
     _last_hp: dict[str, int] = field(default_factory=dict)
+    _hp_history: dict[str, list[tuple[float, int]]] = field(default_factory=dict)  # (timestamp, hp) pairs for trend
     _last_action_time: dict[str, float] = field(default_factory=dict)
     _cooldown_until: dict[str, float] = field(default_factory=dict)
     _stats: dict[str, int] = field(default_factory=lambda: {"checks": 0, "actions": 0, "misses": 0})
@@ -345,18 +347,42 @@ class HighFreqReflex:
         prev_hp = self._last_hp.get(bot_id, hp)
         self._last_hp[bot_id] = hp
         
-        # ── EMERGENCY: Escape at 15% HP ──
+        # ── PREDICTIVE DANGER: HP trend analysis across 50ms ticks ──
+        # Track HP changes over recent ticks to detect rapid drops
+        _now_ts = now
+        _history = self._hp_history.setdefault(bot_id, [])
+        _history.append((_now_ts, hp))
+        # Keep last 20 ticks (1 second of 50ms data)
+        if len(_history) > 20:
+            _history.pop(0)
+        
+        _predictive_flee = False
+        _predictive_reason = ""
+        if len(_history) >= 5:
+            # Calculate HP slope over last 5 ticks (250ms window)
+            _h5 = _history[-5:]
+            _hp_deltas = [_h5[i+1][1] - _h5[i][1] for i in range(len(_h5)-1)]
+            _avg_drop_per_tick = -sum(d for d in _hp_deltas if d < 0) / len(_hp_deltas)
+            _drop_rate_per_second = _avg_drop_per_tick * 20  # 20 ticks/sec = 50ms
+            # If dropping faster than 25% HP/sec, flee predictively
+            if _avg_drop_per_tick > 0 and hp_pct < 0.70:
+                _time_to_30pct = ((hp_pct - 0.30) * max_hp) / max(_avg_drop_per_tick * 20, 1)
+                if _time_to_30pct < 2.0:  # Will hit 30% in under 2 seconds
+                    _predictive_flee = True
+                    _predictive_reason = f"HP dropping {_drop_rate_per_second:.0f}%/sec, will hit 30% in {_time_to_30pct:.1f}s"
+        
+        # ── EMERGENCY: Escape at threshold ──
         # Multi-tier escape for all character levels:
         # TIER 1: Sit to regen (works for everyone, no items needed)
         # TIER 2: Run away (move in random direction)
         # TIER 3: Accept death (don't spam teleport that will fail)
         # NOTE: Level 1 novices don't have Teleport or Fly Wings.
         # Sending "ai manual" as escape was causing 100% failure rate.
-        if hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.15) and not is_town:
+        if (hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.30) or _predictive_flee) and not is_town:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.TELEPORT_COOLDOWN
                 self._stats["actions"] += 1
-            logger.info("highfreq_reflex: bot=%s escape hp=%.0f%% aggro=%d", bot_id, hp_pct * 100, aggro_count)
+            logger.info("highfreq_reflex: bot=%s escape hp=%.0f%% aggro=%d%s", bot_id, hp_pct * 100, aggro_count, f' PREDICTIVE:{_predictive_reason}' if _predictive_flee else '')
             # TIER 1: Sit to regen (always available, no items needed)
             if aggro_count <= 2:
                 cmd = "sit"

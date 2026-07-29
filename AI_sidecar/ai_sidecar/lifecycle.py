@@ -998,6 +998,21 @@ class RuntimeState:
             self.highfreq_reflex = HighFreqReflex()
         if getattr(self.highfreq_reflex, '_running', False):
             return
+        # Create and wire integration bus (connects all subsystems)
+        try:
+            from ai_sidecar.integration.bus import IntegrationBus
+            self._integration_bus = IntegrationBus(
+                highfreq_reflex=self.highfreq_reflex,
+                learning_loop=getattr(self, 'learning_loop', None) or getattr(self, '_learning_loop', None),
+                combat_intel=getattr(self, 'combat_intel', None) or getattr(self, '_combat_intel', None),
+                economy_engine=getattr(self, 'economy_engine', None) or getattr(self, '_economy_engine', None),
+                map_intel=getattr(self, 'map_intel', None) or getattr(self, '_map_intel', None),
+                edge_handler=getattr(self, 'edge_handler', None) or getattr(self, '_edge_handler', None),
+            )
+            self.highfreq_reflex.integration_bus = self._integration_bus
+        except Exception as e:
+            logger.warning("integration_bus_creation_failed: %s", e)
+        
         # Wire snapshot cache and bot registry
         self.highfreq_reflex.snapshot_cache = self.snapshot_cache
         self.highfreq_reflex.bot_registry = self.bot_registry
@@ -5867,6 +5882,7 @@ def create_runtime() -> RuntimeState:
         fleet_conflict_resolver=fleet_conflict_resolver,
         fleet_coordinator=fleet_coordinator,
         self_learning_system=self_learning_system,
+        _integration_bus=None,  # Initialized in start_highfreq_reflex
         observability_audit=observability_audit,
         slo_metrics=slo_metrics,
         trace_store=trace_store,
