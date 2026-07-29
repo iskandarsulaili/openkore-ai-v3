@@ -1158,6 +1158,24 @@ sub on_command_intercept {
 	            $args->{args} = "$_portal_x $_portal_y";
 	        }
 	    }
+	}
+		# Handle mon_control command - write to mon_control.txt and reload
+	if ($full_cmd =~ /^mon_control\s+(.+)$/i) {
+	    my $_mc_entry = $1;
+	    my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
+	    push @_mc_files, 'control/mon_control.txt';
+	    for my $_mc_file (@_mc_files) {
+	        if (open my $_mc_fh, '>>', $_mc_file) {
+	            print $_mc_fh "$_mc_entry\n";
+	            close $_mc_fh;
+	            debug "[command_intercept] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+	        } else {
+	            warning "[command_intercept] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+	        }
+	    }
+	    eval { Commands::run("reload mon_control"); 1; };
+	    $args->{switch} = '';
+	    $args->{args} = '';
 	    return;
 	}
 # PvP/GvG/Turbo maps: allow through
@@ -3767,29 +3785,6 @@ sub _rewrite_runtime_command {
 		return ('', 'item_602_suppressed');
 	}
 
-	# Handle 'mon_control <entry>' - write to mon_control.txt and reload
-	# Writes to ALL bot profiles so the setting takes effect for all bots
-	my $_mc_trimmed = _trim(_scalarize($command), 256);
-	my $_mc_lc = lc($_mc_trimmed || '');
-	if ($_mc_lc =~ /^mon_control\s+(.+)$/) {
-		my $_mc_entry = $1;
-		my $_mc_base = $0 ? (($0 =~ /^(.*)\//)[0] || '.') : '.';
-		my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
-		push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
-		for my $_mc_file (@_mc_files) {
-			if (open my $_mc_fh, '>>', $_mc_file) {
-				print $_mc_fh "$_mc_entry\n";
-				close $_mc_fh;
-				debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
-			} else {
-				warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
-			}
-		}
-		eval { Commands::run("reload mon_control"); 1; };
-		return ('', 'mon_control_applied');
-	}
-
-
 	# ── MOVE REWRITE: context-aware map-name to coordinate conversion ──
 	if ($command =~ /^move\s+(\S+)$/i) {
 		my $_target = lc($1);
@@ -4015,7 +4010,71 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-\n", 'aiSidecarBridge', 1;
+		# Handle 'mon_control <entry>' - write to mon_control.txt and reload
+		# Writes to ALL bot profiles so the setting takes effect for all bots
+		if ($normalized =~ /^mon_control\s+(.+)$/) {
+			my $_mc_entry = $1;
+			my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
+			push @_mc_files, 'control/mon_control.txt';
+			for my $_mc_file (@_mc_files) {
+				if (open my $_mc_fh, '>>', $_mc_file) {
+					print $_mc_fh "$_mc_entry\n";
+					close $_mc_fh;
+					debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+				} else {
+					warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+				}
+			}
+			eval { Commands::run("reload mon_control"); 1; };
+			return ('', 'mon_control_applied');
+		}
+
+	# Handle 'set lockMap' - set lockMap to hunting map
+	if ($normalized =~ /^set\s+lockMap\s+(.+)$/i) {
+	    my $_lm_target = $1;
+	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
+	    	    $::config{'lockMap'} = $_lm_target;
+	    	    $::config{'_sidecar_set_lockMap'} = 1;
+	    	    return ('', 'lockmap_set');
+	}
+	# Handle set commands: "set <config_key> <value>" -> modify config directly
+	# Use $trimmed (original case) to preserve config key case
+	# Value can be empty (e.g. "set avoidList " to disable)
+	if ($trimmed =~ /^set\s+(\S+)\s*(.*)$/i) {
+		my $set_key = $1;
+		my $set_val = $2 || '';
+		# Find the original case from existing config keys, or use the original case from the command
+		my $orig_key = (grep { lc($_) eq lc($set_key) } keys %::config)[0];
+		$orig_key = $set_key unless defined $orig_key;
+
+		# STAY IN TOWN DISABLED: heuristic handles all routing decisions
+		# HUNTING MAP STICKINESS: heuristic handles all routing decisions
+		if (lc($orig_key) eq 'lockmap') {
+			my $_target_is_town = $set_val =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
+			if ($_target_is_town) {
+				my $_actual_map = $field ? $field->name() : '';
+				$_actual_map = lc($_actual_map || '');
+				$_actual_map =~ s/\.gat$//;
+				if ($_actual_map =~ /^[a-z]+_fild/) {
+					# Allow town move - heuristic handles economy timing
+					$::config{lockMap} = $set_val;
+					$_pro_ro_last_lock_set = $set_val;
+					$_pro_ro_respawn_ms = _now_ms();
+					# AI sequence clearing controlled by heuristic
+					return ('', 'config_set_ok');
+				}
+			}
+		}
+
+		my $old_val = $::config{$orig_key};
+		# Suppress no-op config_set log when value hasn't changed
+		# Use orig_key (lowercase) — OpenKore stores config keys lowercase internally
+		if (defined $old_val && $old_val eq $set_val) {
+			return ('', 'config_set_ok');
+		}
+		$::config{$orig_key} = $set_val;
+		$::config{"_sidecar_set_$orig_key"} = 1;
+		warning "[aiSidecarBridge] config_set: $orig_key = '$set_val' (was " . (defined $old_val ? "'$old_val'" : 'undef') . ")\n", 'aiSidecarBridge', 1;
 		return ('', 'config_set_ok');
 	}
 
