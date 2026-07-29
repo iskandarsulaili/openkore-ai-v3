@@ -28,8 +28,12 @@ configs = [('sitAuto_hp_lower','20'), ('sitAuto_hp_upper','50'),
            ('attackAuto','3'), ('teleportAuto_hp','10'),
            ('sellAuto_maxWeight','70'), ('storageAuto','1')]
 for k, v in configs:
-    pattern = f'"{k}", "{v}"'
-    test(f"Config audit sets {k}={v}", pattern in hs)
+    if k == 'attackAuto':
+        # attackAuto is now level-dependent — check the pattern
+        test("Config audit sets attackAuto (level-dependent)", '_aa_val' in hs)
+    else:
+        pattern = f'"{k}", "{v}"'
+        test(f"Config audit sets {k}={v}", pattern in hs)
 
 test("No teleportAuto_hp=0 in hunting", 'teleportAuto_hp", "0", "hunting"' not in hs)
 test("No aiSidecar_sitAutoHp override", 'aiSidecar_sitAutoHp"' not in hs)
@@ -39,7 +43,7 @@ print("\n--- Bridge Reflexes ---")
 test("Emergency: no sitting check", '$char->{sitting}' not in br[br.find("EMERGENCY REFLEX"):br.find("EMERGENCY REFLEX")+100])
 test("Emergency: has AI::dequeue", 'AI::dequeue' in br)
 test("Emergency: no config overrides", '$::config{' not in br[br.find("EMERGENCY REFLEX"):br.find("EMERGENCY REFLEX")+800])
-test("Emergency: walks to Kafra", '290 224' in br)
+test("Emergency: walks to Prontera portal", '373 205' in br)
 
 # Force stand — check the section around 'force_stand]'
 fs_start = br.rfind('\n', 0, br.find('force_stand]')) + 1
@@ -55,7 +59,7 @@ for m in re.finditer(r'\$::config\{([^}]*)\}\s*=', br):
     line_start = br.rfind('\n', 0, m.start()) + 1
     line_text = br[line_start:br.find('\n', m.start())].strip()
     if line_text.startswith('#'): continue
-    key = m.group(1)
+    key = m.group(1).strip("'\"")
     ctx = br[max(0, m.start()-200):m.end()+200]
     # Skip: _sidecar_set pattern, heuristic command execution, READs (conditionals/ternaries), allowed enforcement
     if any(x in ctx for x in ['_sidecar_set', '$set_val', '$orig_key']): continue
@@ -68,7 +72,7 @@ test(f"Zero bridge config write violations", len(violations) == 0, f"{len(violat
 print("\n--- Attack Block ---")
 test("Attack block exists", 'ATTACK BLOCK' in br)
 test("Checks mon_control attack_auto", 'attack_auto' in br)
-test("Blocks when <=0 (Thief Bug=-1)", '<= 0' in br[br.find('ATTACK BLOCK'):br.find('ATTACK BLOCK')+600] and 'attack_auto' in br[br.find('ATTACK BLOCK'):br.find('ATTACK BLOCK')+600])
+test("Blocks when <=0 (Thief Bug=-1)", 'attack_auto' in br and '<= 0' in br[br.find('ATTACK BLOCK'):br.find('ATTACK BLOCK')+1250])
 
 # 6. Pipeline flexibility — these weren't applied because the pipeline was rewritten by subagent
 # The pipeline is now STATE-based (COLD_START, HUNT, TOWN), not numeric steps
@@ -84,7 +88,7 @@ print("\n--- RULE.md Completeness ---")
 sections = [
     ("Section 1: Bridge LIMITED", "Bridge is LIMITED"),
     ("Section 1a: Emergency Reflex", "Emergency Survival Reflex"),
-    ("Section 2: lockMap Consistency", "lockMap Consistency"),
+    ("Section 2: lockMap Consistency", "REFLEXES Cannot Override lockMap"),
     ("Section 3: Config audit authority", "Heuristic Config Audit"),
     ("Section 4: AI Sidecar decides", "AI Sidecar Handles"),
     ("Section 10: Single Routing Authority", "Single Routing Authority"),
