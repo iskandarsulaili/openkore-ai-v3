@@ -106,6 +106,7 @@ our %_last_reflex_fire_ms = ();
 
 # Committed action guard - prevents conflicting commands within 30s window
 our %_committed_actions = ();
+our %_pending_batch_actions = ();
 our $COMMITTED_ACTION_COOLDOWN_MS = 30000;
 
 # ── Hardcoded safety net: White Potion ──
