@@ -99,3 +99,4 @@ fix_chars.pl
 fix_chars_direct.pl
 char_cmds_*.txt
 fix_chars_plugin.pl
+test_rijndael.pl
