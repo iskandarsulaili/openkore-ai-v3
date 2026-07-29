@@ -962,6 +962,8 @@ class HeuristicService:
         self._post_job_change_reset: dict[str, bool] = {}  # bot_id -> True if job just changed
         # Mon_control dedup: bot_id -> set of (map, monster_tuple) already sent
         self._mon_control_sent: dict[str, set] = {}
+        # Step timeout tracking: stable_key -> timestamp when step started
+        self._cold_start_step_since: dict[str, float] = {}
         # Leader-decided team job assignments (persisted for crash recovery)
         self._team_levels: dict[str, int] = {}
         self._team_jobs_assigned: dict[str, bool] = {}
@@ -1206,7 +1208,8 @@ class HeuristicService:
 
     def _check_progress(self, signals: dict) -> bool:
         bot_id = signals.get("bot_id", "default")
-        last = self._last_progress.get(bot_id, {})
+        _stable = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        last = self._last_progress.get(_stable, {})
         # Track kills separately - increment when monster dies
         _kills_sig = int(signals.get("last_monster_kill", 0) or 0)
         now = {
@@ -1217,7 +1220,7 @@ class HeuristicService:
             "job_level": signals.get("job_level", 1) or 1,
             "items": len(signals.get("inventory_items", []) or []),
         }
-        self._last_progress[bot_id] = now
+        self._last_progress[_stable] = now
         if not last:
             return True
         # Check multiple progress indicators
@@ -1319,8 +1322,10 @@ class HeuristicService:
     def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
         """Emit a 'set' command only if the value has changed since last set.
         Prevents spamming 'set route_randomWalk 1' every cycle when it's already 1.
-        On first cycle after restart, always sends (cache is empty)."""
-        cache = self._last_config_set.setdefault(bot_id, {})
+        On first cycle after restart, always sends (cache is empty).
+        Uses stable key (character name only) to handle bot_id prefix changes."""
+        _stable = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        cache = self._last_config_set.setdefault(_stable, {})
         last = cache.get(key)
         if last == value:
             return  # Already set to this value, skip
@@ -1394,6 +1399,9 @@ class HeuristicService:
     def _assess_impl(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
+        # Normalize to stable key (character name only) — bridge sends different
+        # account prefixes per cycle (openkoreai: vs Asgards Glory:)
+        _track_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
         _now_t = __import__("time").time()
         # Auto-save state every 60 seconds
         try:
@@ -1404,15 +1412,15 @@ class HeuristicService:
         except Exception:
             pass
         state = self._get_state(signals, bot_id)
-        prev_state = self._bot_state.get(bot_id, "UNKNOWN")
+        prev_state = self._bot_state.get(_track_key, "UNKNOWN")
 
         if state != prev_state:
-            self._bot_state[bot_id] = state
-            self._state_since[bot_id] = __import__("time").time()
-            logger.info(f"[heuristic] {bot_id} state: {prev_state} -> {state}")
+            self._bot_state[_track_key] = state
+            self._state_since[_track_key] = __import__("time").time()
+            logger.info(f"[heuristic] {_track_key} state: {prev_state} -> {state}")
 
         made_progress = self._check_progress(signals)
-        state_duration = __import__("time").time() - self._state_since.get(bot_id, 0)
+        state_duration = __import__("time").time() - self._state_since.get(_track_key, 0)
         is_stuck = not made_progress and state_duration > 120
         # Track kills/hour for monitoring
         self._track_kills_per_hour(signals, bot_id)
@@ -1422,6 +1430,8 @@ class HeuristicService:
             # Prepend stuck-detection actions so they execute immediately
             actions.extend(_stuck_actions)
             # Don't return early — let the state handler add its own actions too
+
+
 
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
@@ -1435,6 +1445,36 @@ class HeuristicService:
         skill_points = signals.get("skill_points", 0) or 0
         in_party = signals.get("in_party", False)
         inventory = signals.get("inventory_items", []) or []
+
+        # ── STEP TIMEOUT ESCALATION: if cold start step stuck >5min, diagnose ──
+        _cs_step = self._cold_start_step.get(_track_key, 0)
+        _cs_since = self._cold_start_step_since.get(_track_key, 0)
+        if _cs_since == 0:
+            self._cold_start_step_since[_track_key] = _now_t
+        elif _cs_step > 0 and _now_t - _cs_since > 300:
+            # Step stuck for 5+ minutes — diagnose and recover
+            logger.warning(f"[heuristic] {_track_key} step {_cs_step} stuck >5min — diagnosing")
+            # Check what's blocking
+            _blockers = []
+            if hp < 0.3:
+                _blockers.append("low_hp")
+            if zeny < 50 and _cs_step >= 1:
+                _blockers.append("no_zeny")
+            if not any("knife" in str(i).lower() for i in inventory) and _cs_step >= 2:
+                _blockers.append("no_weapon")
+            if not any("potion" in str(i).lower() for i in inventory) and _cs_step >= 3:
+                _blockers.append("no_potions")
+            if _blockers:
+                logger.warning(f"[heuristic] {_track_key} step {_cs_step} blockers: {_blockers}")
+                # Emit diagnostic action
+                actions.append(HeuristicAction(
+                    kind="log",
+                    command=f"Step {_cs_step} stuck: {', '.join(_blockers)}",
+                    confidence=0.9,
+                    reason=f"Step {_cs_step} stuck diagnosis: {', '.join(_blockers)}",
+                ))
+            # Reset timer to avoid spamming every cycle
+            self._cold_start_step_since[_track_key] = _now_t
         skills = signals.get("skills", []) or []
         bot_name = signals.get("bot_name", bot_id)
         horizon = signals.get("horizon", "short_term")
