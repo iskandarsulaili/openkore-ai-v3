@@ -1,4 +1,4 @@
-package aiSidecarBridge::ConnectionMetrics;
+package ConnectionMetrics;
 
 use strict;
 use warnings;

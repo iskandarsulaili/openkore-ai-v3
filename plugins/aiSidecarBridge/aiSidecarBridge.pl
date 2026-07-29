@@ -18,10 +18,10 @@ use Time::HiRes qw(alarm time usleep);
 use Cwd;
 use File::Basename;
 use lib dirname(__FILE__);
-use aiSidecarBridge::CircuitBreaker;
-use aiSidecarBridge::ConnectionMetrics;
-use aiSidecarBridge::HTTPClient;
-use aiSidecarBridge::StateBuilders;
+use CircuitBreaker;
+use ConnectionMetrics;
+use HTTPClient;
+use StateBuilders;
 
 # Anti-detection: random delay to simulate human reaction time
 # Each bot gets a unique behavior profile to avoid pattern detection

@@ -1,4 +1,4 @@
-package aiSidecarBridge::HTTPClient;
+package HTTPClient;
 
 use strict;
 use warnings;

@@ -1,4 +1,4 @@
-package aiSidecarBridge::CircuitBreaker;
+package CircuitBreaker;
 
 use strict;
 use warnings;

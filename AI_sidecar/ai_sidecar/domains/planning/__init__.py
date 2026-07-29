@@ -84,8 +84,7 @@ class PlanningDomain:
         # Ensure initialized
         if not self._scheduler:
             self.initialize()
-
-        if not self._goal_manager:
+        if not self._scheduler or not self._goal_manager:
             return
 
         # Evaluate goal progress
@@ -103,7 +102,7 @@ class PlanningDomain:
         active_goals = self._goal_manager.get_active_goals()
         if active_goals:
             top = active_goals[0]
-            # Update scheduler with goal context
+            # Log current top goal
             actions.append(HeuristicAction(
                 kind="log",
                 command="",
