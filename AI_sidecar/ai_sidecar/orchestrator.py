@@ -112,10 +112,10 @@ class BotRuntime:
                 # Cache for cruise control
                 self._cruise.cache_decisions(actions)
                 # Add to batch queue for multi-action polling
-                self._batch_queue.add_actions(filtered)
+                self._batch_queue.add_actions(validated)
                 # Log bridge actions for verification
                 _logger = get_filter_logger()
-                for a in filtered:
+                for a in validated:
                     if a.kind == "command" and a.command and not a.command.startswith("goal="):
                         _logger.log_action(a, source="heuristic")
             else:
