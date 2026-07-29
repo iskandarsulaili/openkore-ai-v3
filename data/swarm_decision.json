@@ -1,17 +1,21 @@
 {
   "decision_id": "",
-  "leader_name": "test",
-  "timestamp": 1785335362.3061721,
-  "formation": "line",
-  "hunt_map": "prt_fild05",
+  "leader_name": "Asgards Glory:kicapmasin10",
+  "timestamp": 1785353321.4969172,
+  "formation": "wedge",
+  "hunt_map": "",
   "target_monster": "",
   "retreat": false,
   "focus_fire_monster_id": "",
   "spread_targets": false,
   "kite_mode": false,
   "formation_positions": {
-    "test": {
+    "Asgards Glory:kicapmasin10": {
       "x": 0,
+      "y": 4
+    },
+    "Asgards Glory:kicapmasin5": {
+      "x": -2,
       "y": 3
     }
   },
@@ -21,6 +25,6 @@
   "buff_targets": [],
   "migration_order": [],
   "consensus_threshold": 0.66,
-  "reason": "Formation=line, Hunt=prt_fild05, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
+  "reason": "Formation=wedge, Hunt=, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
   "version": 2
 }

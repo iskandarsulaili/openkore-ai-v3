@@ -95,3 +95,9 @@ Thumbs.db
 .venv/
 *.weight
 *.xpm
+
+fix_chars.pl
+fix_chars_direct.pl
+char_cmds_*.txt
+fix_chars_plugin.pl
+plugins/auto_fix_char.pl

@@ -1003,7 +1003,7 @@ class RuntimeState:
             from ai_sidecar.integration.bus import IntegrationBus
             self._integration_bus = IntegrationBus(
                 highfreq_reflex=self.highfreq_reflex,
-                learning_loop=getattr(self, 'learning_loop', None) or getattr(self, '_learning_loop', None),
+                learning_loop=getattr(self, 'learning_feedback', None) or getattr(self, '_learning_loop', None),
                 combat_intel=getattr(self, 'combat_intel', None) or getattr(self, '_combat_intel', None),
                 economy_engine=getattr(self, 'economy_engine', None) or getattr(self, '_economy_engine', None),
                 map_intel=getattr(self, 'map_intel', None) or getattr(self, '_map_intel', None),
@@ -5882,7 +5882,6 @@ def create_runtime() -> RuntimeState:
         fleet_conflict_resolver=fleet_conflict_resolver,
         fleet_coordinator=fleet_coordinator,
         self_learning_system=self_learning_system,
-        _integration_bus=None,  # Initialized in start_highfreq_reflex
         observability_audit=observability_audit,
         slo_metrics=slo_metrics,
         trace_store=trace_store,
