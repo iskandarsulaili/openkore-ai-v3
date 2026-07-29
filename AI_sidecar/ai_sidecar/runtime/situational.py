@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from ai_sidecar.actions import HeuristicAction
+from ai_sidecar.contracts.actions import ActionProposal
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,47 @@ class SituationalAwareness:
         
         self._last_validated[bot_id] = validated
         return validated
+    
+    def validate_action_proposal(self, proposal: ActionProposal, snapshot: dict[str, Any], bot_id: str) -> ActionProposal | None:
+        """Validate an ActionProposal against actual game state."""
+        if not proposal.command:
+            return proposal
+        
+        cmd = proposal.command.lower().strip()
+        
+        # ── HEALING ADAPTATION ──
+        if cmd.startswith("use ") and ("potion" in cmd or "item" in cmd):
+            return self._adapt_proposal_heal(proposal, snapshot, bot_id)
+        
+        # ── SIT ADAPTATION ──
+        if cmd == "sit":
+            return self._adapt_proposal_sit(proposal, snapshot, bot_id)
+        
+        return proposal
+    
+    def _adapt_proposal_heal(self, proposal: ActionProposal, snapshot: dict, bot_id: str) -> ActionProposal | None:
+        best = self._get_best_heal_item(snapshot)
+        if best:
+            item_id, name = best
+            logger.info(f"[situational] {bot_id}: {proposal.command} -> {item_id} (best: {name})")
+            # Mutate the proposal in place (ActionProposal is mutable via setattr)
+            proposal.command = f"use {item_id}"
+            return proposal
+        return None  # Can't heal — block action
+    
+    def _adapt_proposal_sit(self, proposal: ActionProposal, snapshot: dict, bot_id: str) -> ActionProposal | None:
+        job = str(snapshot.get("job", "novice") or "").lower()
+        if job == "novice":
+            # Can't sit — use potion instead
+            logger.info(f"[situational] {bot_id}: Can't sit ({job}), using potion instead")
+            best = self._get_best_heal_item(snapshot)
+            if best:
+                item_id, name = best
+                proposal.command = f"use {item_id}"
+                proposal.kind = "command"
+                return proposal
+            return None  # Can't sit and no potions — block action
+        return proposal
     
     def _adapt_command(self, action: HeuristicAction, signals: dict[str, Any], bot_id: str) -> HeuristicAction | None:
         """Adapt a single command to actual game state."""

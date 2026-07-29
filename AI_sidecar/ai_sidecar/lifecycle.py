@@ -594,6 +594,7 @@ class RuntimeState:
     ml_labeling: LabelingPipeline | None = None
     ml_registry: ModelRegistry | None = None
     efficiency_tracker: "EfficiencyTracker | None" = None
+    _situational: SituationalAwareness | None = None
     _pro_ro_player_cold_start_count: int = 0
     _llm_warmup_cycles: int = 0
     pro_ro_player_advice: dict = field(default_factory=dict)
@@ -2549,6 +2550,12 @@ class RuntimeState:
         )
 
         proposal = self.action_queue.fetch_next(bot_id)
+        if proposal is not None:
+            # Validate through situational awareness before serving to bridge
+            if hasattr(self, '_situational'):
+                validated = self._situational.validate_action_proposal(proposal, self.snapshot_cache.get(bot_id, {}), bot_id)
+                if validated:
+                    proposal = validated
         if proposal is not None:
             op_row = self._safe_persist(
                 "find_sidecar_operation_by_action",
