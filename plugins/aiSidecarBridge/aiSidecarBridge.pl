@@ -2845,6 +2845,15 @@ sub _execute_action {
 	$latency_ms = ($latency_ms < 50) ? 50 : ($latency_ms > 1000) ? 1000 : $latency_ms;
 	my $tick_buffer = int($latency_ms / 150) + 1;
 
+	# ── NOVICE HEALING: convert 'sit' to 'use Red Potion' for characters without Basic Skill ──
+	if (lc($command || '') eq 'sit' && (!defined $char->{jobID} || $char->{jobID} == 0)) {
+		# Novice class (jobID 0) can't sit without Basic Skill
+		# Use Red Potion (item 501) instead — better use of time
+		$effective_command = 'use 501';
+		$rewrite_kind = 'heal_via_potion';
+		warning "[ai_heal] Novice cannot sit — healing via Red Potion instead\n", 'aiSidecarBridge', 1;
+	}
+
 	# ── ACTION BATCH COORDINATION ──
 	# The sidecar can send up to 5 actions per poll. We track which
 	# batch this belongs to and log batch completion.

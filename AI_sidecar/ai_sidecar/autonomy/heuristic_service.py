@@ -1504,7 +1504,7 @@ class HeuristicService:
                         _job = str(signals.get("job", "") or "").lower()
                         # Basic Skill: needed by ALL Novices to sit/regen (any level)
                         if _job == "novice":
-                            _actions.append(HeuristicAction(kind="command", command="skills add Basic_Skill 1", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
+                            _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 15:
                             if _bl <= 5:
                                 # Level 1-5: Prontera town only, attack Porings only
