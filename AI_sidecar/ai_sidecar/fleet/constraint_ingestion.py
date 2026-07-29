@@ -5,13 +5,13 @@ from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any
 
-import structlog
+import logging as structlog_module
 
 from ai_sidecar.config import settings
 
 from .blackboard_types import DoctrineDirective, FleetObjective, TaskLease, ThreatBulletin, ZoneClaim
 
-logger = structlog.get_logger(__name__)
+logger = __import__("logging").getLogger(__name__)
 
 
 @dataclass(slots=True)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from ai_sidecar.actions import HeuristicAction as _HeuristicAction
 from pathlib import Path
 import threading
 from ai_sidecar.game_knowledge_db import GameKnowledgeDB
@@ -29,12 +30,14 @@ from ai_sidecar.autonomy.ro_mechanics import (
     JOB_CHANGE_2_1, JOB_2_1_CLASSES,
     PER_MAP_MON_CONTROL, CLASS_SKILL_TRAINING,
 )
+from ai_sidecar.autonomy.domains import DomainRegistry
 
 logger = logging.getLogger(__name__)
 
 
+# Note: HeuristicAction is also defined in ai_sidecar.actions
 @dataclass
-class HeuristicAction:
+class HeuristicAction(_HeuristicAction):
     kind: str  # "command" | "macro" | "reflex_override"
     command: str
     confidence: float
@@ -971,6 +974,8 @@ class HeuristicService:
         self._assigned_jobs: dict[str, str] = {}  # profile -> assigned job class
         # Auto-save timer
         self._load_state()
+        # ── Domain registry: loaded once, runs supplementary domains ──
+        self._domain_registry: DomainRegistry | None = None
 
     # ── State persistence ──────────────────────────────────────────────
 
@@ -1306,9 +1311,44 @@ class HeuristicService:
     def set_domain_weights(self, weights: dict) -> None:
         pass
 
+    @property
+    def domain_registry(self) -> DomainRegistry:
+        """Lazy-load the domain registry on first access."""
+        if self._domain_registry is None:
+            self._domain_registry = DomainRegistry()
+            self._domain_registry.load_all()
+        return self._domain_registry
+
+    def _resolve_bot_id(self, signals: dict[str, Any]) -> str:
+        """Extract a stable bot identifier from signals.
+        
+        Used by domain modules to access service state dicts.
+        Strips account prefixes for stable cross-cycle tracking.
+        """
+        bot_id = signals.get("bot_id", "default")
+        if ":" in bot_id:
+            return bot_id.split(":")[-1].split("/")[-1]
+        return bot_id
+
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         try:
-            return self._assess_impl(signals, bot_id_override)
+            assessment = self._assess_impl(signals, bot_id_override)
+            # ── SUPPLEMENTARY DOMAINS: run cross-cutting domains for all states ──
+            # Learning, mimicry, environment, quests, consumables, equipment
+            # These add actions on top of the state machine's decisions.
+            supplementary: list[HeuristicAction] = []
+            self.domain_registry.assess_all(signals, supplementary, self)
+            if supplementary:
+                if not assessment.actions:
+                    assessment.actions = supplementary
+                else:
+                    assessment.actions.extend(supplementary)
+                assessment.actionable = True
+                # Boost confidence from supplementary actions if higher
+                sup_conf = max(a.confidence for a in supplementary)
+                if sup_conf > assessment.confidence:
+                    assessment.confidence = sup_conf
+            return assessment
         except Exception as e:
             logger.error(f"assess() crashed for {bot_id_override or 'unknown'}: {type(e).__name__}: {e}")
             import traceback
@@ -2484,7 +2524,11 @@ class HeuristicService:
         # ── STATE: DEATH (respawned - sell items, buy potions, return to hunt) ──
         if state == "DEATH":
             # Try to sell items (NPC handles empty inventory gracefully)
-            _has_items = (signals.get("inventory_items", 0) or 0) > 0
+            _inv_count = signals.get("inventory_items", [])
+            if isinstance(_inv_count, list):
+                _has_items = len(_inv_count) > 0
+            else:
+                _has_items = int(_inv_count or 0) > 0
             _total_kills = signals.get("kills", 0) or 0
             # Sell if has items
             if _has_items:
@@ -3209,7 +3253,11 @@ class HeuristicService:
                 _str = signals.get("str", 1) or 1
                 _player_hp = signals.get("hp", 100) or 100
                 _attack_power = signals.get("attack_power", 25) or 25
-                _has_items = (signals.get("inventory_items", 0) or 0) > 0
+                _inv_count = signals.get("inventory_items", [])
+                if isinstance(_inv_count, list):
+                    _has_items = len(_inv_count) > 0
+                else:
+                    _has_items = int(_inv_count or 0) > 0
                 _total_kills = signals.get("kills", 0) or 0
                 _zeny = signals.get("zeny", 0) or 0
                 # ── FLY WING ESCAPE: If surrounded by 3+ mobs, use Fly Wing ──
@@ -3632,7 +3680,11 @@ class HeuristicService:
             # In town: sell items, buy potions
             # IMPORTANT: ONLY generate shop commands, NOT "move" 
             # "move" interrupts NPC dialog - it comes on next cycle
-            _has_items = (signals.get("inventory_items", 0) or 0) > 0
+            _inv_count = signals.get("inventory_items", [])
+            if isinstance(_inv_count, list):
+                _has_items = len(_inv_count) > 0
+            else:
+                _has_items = int(_inv_count or 0) > 0
             if _has_items:
                 # Sell first - talknpc opens NPC dialog, sellAuto handles the rest
                 # Look up sell NPC from database
