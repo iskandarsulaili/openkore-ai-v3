@@ -857,7 +857,7 @@ class HeuristicService:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
         # Stay in COLD_START until cold start sequence completes (step >= 4)
-        if _prev_state == "COLD_START" and self._cold_start_step.get(bot_id, 0) < 4:
+        if _prev_state == "COLD_START" and self._cold_start_step.get(_cs_stable_key, 0) < 4:
             return "COLD_START"
         # DEATH: if bot just died and respawned
         # Only trigger DEATH if bot actually died (HP was 0 or very low)
@@ -1040,7 +1040,9 @@ class HeuristicService:
         _cs_map = signals.get("map", "") or ""
         _cs_in_town = any(x in _cs_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
         _cs_in_hunting = any(x in _cs_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
-        _cold_start_step = self._cold_start_step.get(bot_id, 0)
+        # Use stable key based on character name only (not account prefix)
+        _cs_stable_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        _cold_start_step = self._cold_start_step.get(_cs_stable_key, 0)
         _has_weapon = any(
             "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
             "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
@@ -1054,7 +1056,7 @@ class HeuristicService:
             # Step 0: Check if we need cold start at all
             if _has_weapon and _has_potions:
                 # Already equipped — skip cold start
-                self._cold_start_step[bot_id] = 4
+                self._cold_start_step[_cs_stable_key] = 4
             else:
                 # Need cold start — keep re-emitting portal commands until in Prontera
                 # Stay at step 0 (don't advance to 1) until bot reaches town
@@ -1071,7 +1073,7 @@ class HeuristicService:
                     ))
                 else:
                     # In Prontera — advance to next step based on inventory
-                    self._cold_start_step[bot_id] = 1
+                    self._cold_start_step[_cs_stable_key] = 1
                     _cold_start_step = 1
         if _cold_start_step == 1:
             # Step 1: Buy Knife (item 1201) if no weapon
@@ -1112,7 +1114,7 @@ class HeuristicService:
                         ))
             else:
                 # Weapon confirmed — move to step 2
-                self._cold_start_step[bot_id] = 2
+                self._cold_start_step[_cs_stable_key] = 2
                 _cold_start_step = 2
                 logger.info(f"[cold_start] {bot_id}: weapon confirmed, step 1 -> 2")
         if _cold_start_step == 2:
@@ -1128,7 +1130,7 @@ class HeuristicService:
                         ))
             else:
                 # Potions confirmed — move to step 3
-                self._cold_start_step[bot_id] = 3
+                self._cold_start_step[_cs_stable_key] = 3
                 logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
         if _cold_start_step == 3:
             # Step 3: Return to hunting map with weapon and potions
@@ -1141,7 +1143,7 @@ class HeuristicService:
                 ))
             elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete
-                self._cold_start_step[bot_id] = 4
+                self._cold_start_step[_cs_stable_key] = 4
                 logger.info(f"[cold_start] {bot_id}: on hunting map, cold start complete")
         # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
         # Runs every cycle for ALL bots, not just COLD_START or hunting maps
@@ -1754,7 +1756,7 @@ class HeuristicService:
                 ))
             # Return to hunt via portal after 15s in town
             # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
-            _rth_step = self._cold_start_step.get(bot_id, 0)
+            _rth_step = self._cold_start_step.get(_cs_stable_key, 0)
             _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
             if not _rth_skip and _town_time > 15:
@@ -1982,7 +1984,7 @@ class HeuristicService:
             # Set lockMap to hunting map
             _th_hunt_map = self._adaptive.get_best_map(bot_id, base_level) or "prt_fild05"
             # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
-            _th_cs_step = self._cold_start_step.get(bot_id, 0)
+            _th_cs_step = self._cold_start_step.get(_cs_stable_key, 0)
             if not (_th_cs_step == 1 and not _has_weapon and zeny < 50):
                 self._set_config_once(actions, bot_id, "lockMap", _th_hunt_map, "hunting",
                     f"Lock to hunting map {_th_hunt_map}")
