@@ -549,8 +549,12 @@ sub on_mainLoop_post {
             $_er_map =~ s/\.gat$//;
             my $_er_is_town = ($_er_map =~ /^prontera|^morocc|^geffen|^payon|^alberta|^aldebaran|^izlude|^comodo$/i);
             if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7) {
-                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — teleporting to Prontera\n", 'aiSidecarBridge', 1;
-                eval { Commands::run("teleport prontera"); 1 };
+                warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Prontera portal\n", 'aiSidecarBridge', 1;
+                # Can't teleport (no Fly Wings, no skill). Walk to Prontera portal instead.
+                # Portal at prt_fild05 (373, 205) -> Prontera (26, 203)
+                # Fallback: just go to 373 205 on current map to find the portal
+                eval { Commands::run("move 373 205"); 1 };
+                eval { Commands::run("ai auto"); 1 };
                 # Also enable sitAuto for recovery
                 $::config{sitAuto_hp_lower} = 30;
                 $::config{sitAuto_hp_upper} = 60;
