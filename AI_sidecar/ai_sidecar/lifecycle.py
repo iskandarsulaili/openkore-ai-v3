@@ -1231,6 +1231,16 @@ class RuntimeState:
         self.bot_registry.upsert(bot_id, snapshot.tick_id)
         previous_snapshot = self.snapshot_cache.get(bot_id)
         self.snapshot_cache.set(snapshot)
+        
+        # ── IMMEDIATE HEURISTIC ACTIONS: don't wait for PDCA cycle ──
+        # The PDCA loop runs every 5s, but bots disconnect in 3s.
+        # Emit heuristic actions immediately on first snapshot so the
+        # bot gets actionable commands before the server kicks it.
+        try:
+            if hasattr(self, 'pdca_loop') and self.pdca_loop is not None:
+                self.pdca_loop._emit_heuristic_actions(self, horizon="immediate", bot_id=snapshot.meta.bot_id)
+        except Exception:
+            pass
         self.incr("snapshots_ingested", bot_id=bot_id)
 
         if self.slo_metrics is not None:
