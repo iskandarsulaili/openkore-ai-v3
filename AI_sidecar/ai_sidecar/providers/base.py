@@ -125,7 +125,8 @@ class LLMProvider:
         for attempt in range(retries + 1):
             started = datetime.now(UTC)
             try:
-                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                capped_timeout = min(timeout_seconds, 10.0)
+                async with httpx.AsyncClient(timeout=capped_timeout) as client:
                     logger.info("_post_json calling: url=%s model=%s headers_count=%d", 
                                url, payload.get("model", "?"), len(headers))
                     response = await client.post(url, headers=headers, json=payload)
@@ -271,7 +272,8 @@ class LLMProvider:
         for attempt in range(retries + 1):
             started = datetime.now(UTC)
             try:
-                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                capped_timeout = min(timeout_seconds, 10.0)
+                async with httpx.AsyncClient(timeout=capped_timeout) as client:
                     response = await client.get(url, headers=headers)
                     elapsed = (datetime.now(UTC) - started).total_seconds() * 1000.0
                     last_latency = elapsed
