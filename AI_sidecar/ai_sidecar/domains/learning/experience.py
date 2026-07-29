@@ -122,7 +122,7 @@ class ExperienceTracker:
         """Get a thread-local connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
             os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-            conn = sqlite3.connect(self._db_path, timeout=10)
+            conn = sqlite3.connect(self._db_path, timeout=10, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
