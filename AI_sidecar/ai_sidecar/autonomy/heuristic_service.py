@@ -1092,16 +1092,11 @@ class HeuristicService:
                     # 0 zeny — can't buy anything. Need to farm 50 zeny first.
                     # Go to prt_fild05 (safe map with Porings) via portal and farm with fists.
                     if _cs_in_town:
-                        # In Prontera — set lockMap+route_randomWalk, let AI route through portal
+                        # In Prontera — set lockMap+attack, let AI route through portal
                         actions.append(HeuristicAction(
                             kind="command", command="set lockMap prt_fild05",
                             confidence=0.99, domain="economy",
-                            reason="Cold start - set lockMap to prt_fild05 for portal walk",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="set route_randomWalk 1",
-                            confidence=0.99, domain="economy",
-                            reason="Cold start - allow routing to lockMap",
+                            reason="Cold start - set lockMap to prt_fild05 for routing",
                         ))
                         actions.append(HeuristicAction(
                             kind="command", command="set attackAuto 3",
@@ -1109,9 +1104,9 @@ class HeuristicService:
                             reason="Cold start - enable attack for farming",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="move prt_fild05",
+                            kind="command", command="move 156 164",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - route to prt_fild05 portal, farm {50 - zeny}z",
+                            reason=f"Cold start - walk to Prontera center, then route to prt_fild05",
                         ))
                     elif _cs_in_hunting:
                         # On prt_fild05 — enable AI and attack for farming (should be ready)
