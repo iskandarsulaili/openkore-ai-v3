@@ -76,14 +76,14 @@ sub new {
 		'0075' => ['changeToInGameState'], # -1
 		'0076' => ['update_char', 'a4 v C', [qw(ID style item)]], # 9
 		'0077' => ['changeToInGameState'], # 5
-		'0078' => ($rpackets{'0078'}{length} == 54) # or 55
+		'0078' => ($rpackets{'0078'} == 54) # or 55
 			? ['actor_exists',	'a4 v14 a4 a2 v2 C2 a3 C3 v', [qw(ID walk_speed opt1 opt2 option type hair_style weapon lowhead shield tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize act lv)]] #standing # 54
 			: ['actor_exists', 'C a4 v14 a4 a2 v2 C2 a3 C3 v', [qw(object_type ID walk_speed opt1 opt2 option type hair_style weapon lowhead shield tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize act lv)]] # 55 #standing
 		,
 		'0079' => ['actor_connected',	'a4 v14 a4 a2 v2 C2 a3 C2 v',		[qw(ID walk_speed opt1 opt2 option type hair_style weapon lowhead shield tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize lv)]], #spawning # 53
 		'007A' => ['changeToInGameState'], # 58
 		'007B' => ['actor_moved',	'a4 v8 V v6 a4 a2 v2 C2 a6 C2 v',	[qw(ID walk_speed opt1 opt2 option type hair_style weapon lowhead tick shield tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize lv)]], #walking # 60
-		'007C' => ($rpackets{'007C'}{length} == 41 )# or 42
+		'007C' => ($rpackets{'007C'} == 41 )# or 42
 			? ['actor_connected',	'a4 v14 C2 a3 C2', [qw(ID walk_speed opt1 opt2 option hair_style weapon lowhead type shield tophead midhead hair_color clothes_color head_dir stance sex coords xSize ySize)]] #spawning (eA does not send this for players) # 41
 			: ['actor_connected', 'C a4 v14 C2 a3 C2', [qw(object_type ID walk_speed opt1 opt2 option hair_style weapon lowhead type shield tophead midhead hair_color clothes_color head_dir stance sex coords xSize ySize)]] #spawning (eA does not send this for players) # 42
 		,
@@ -273,7 +273,7 @@ sub new {
 		'019B' => ['unit_levelup', 'a4 V', [qw(ID type)]],
 		'019E' => ['pet_capture_process'], # 2
 		'01A0' => ['pet_capture_result', 'C', [qw(success)]], # 3
-		'01A2' => ($rpackets{'01A2'}{length} == 35) # or 37
+		'01A2' => ($rpackets{'01A2'} == 35) # or 37
 			? ['pet_info', 'Z24 C v4', [qw(name renameflag level hungry friendly accessory)]]
 			: ['pet_info', 'Z24 C v5', [qw(name renameflag level hungry friendly accessory type)]]
 		,
@@ -365,7 +365,7 @@ sub new {
 		'0229' => ['character_status', 'a4 v2 V C', [qw(ID opt1 opt2 option stance)]], # 15
 		'022A' => ['actor_exists', 'a4 v3 V v10 a4 a2 v V C2 a3 C3 v', [qw(ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize act lv)]], # 58 # standing
 		'022B' => ['actor_connected', 'a4 v3 V v10 a4 a2 v V C2 a3 C2 v', [qw(ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize lv)]], # 57 # spawning
-		'022C' => ($rpackets{'022C'}{length} == 64) # or 65
+		'022C' => ($rpackets{'022C'} == 64) # or 65
 			? ['actor_moved', 'a4 v3 V v5 V v5 a4 a2 v V C2 a6 C2 v', [qw(ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tick tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize lv)]] # 64 # walking
 			: ['actor_moved', 'C a4 v3 V v5 V v5 a4 a2 v V C2 a6 C2 v', [qw(object_type ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tick tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords xSize ySize lv)]] # walking # 65 # TODO: figure out what eA does here (shield is in GEmblemVer?): # v5 => v2 V v
 		,
@@ -416,7 +416,7 @@ sub new {
 		'0298' => ['rental_time', 'v V', [qw(nameID seconds)]], # 8
 		'0299' => ['rental_expired', 'a2 v', [qw(ID nameID)]], # 6
 		'029A' => ['inventory_item_added', 'a2 v2 C3 a8 v C2 a4', [qw(ID amount nameID identified broken upgrade cards type_equip type fail cards_ext)]], # 27
-		'029B' => ($rpackets{'029B'}{length} == 72) # or 80
+		'029B' => ($rpackets{'029B'} == 72) # or 80
 			? ['mercenary_init', 'a4 v8 Z24 v5 V v2', [qw(ID atk matk hit critical def mdef flee aspd name level hp hp_max sp sp_max contract_end faith summons)]] # 72
 			: ['mercenary_init', 'a4 v8 Z24 v V5 v V2 v',	[qw(ID atk matk hit critical def mdef flee aspd name level hp hp_max sp sp_max contract_end faith summons kills attack_range)]] # 80
 		,
@@ -631,7 +631,6 @@ sub new {
 		'0A12' => ['rodex_open_write', 'Z24 C', [qw(name result)]],   # 27
 		'0A14' => ['rodex_check_player', 'V v2', [qw(char_id class base_level)]],
 		'0A15' => ['gold_pc_cafe_point', 'C2 V2', [qw(isActive mode point playedTime)]], # 12
-		'0A17' => ['dynamicnpc_create_result', 'V', [qw(result)]], # 6
 		'0A18' => ['map_loaded', 'V a3 C2 v C', [qw(syncMapSync coords xSize ySize font sex)]], # 14
 		'0A1A' => ['roulette_window', 'C V C2 v V3', [qw(result serial stage price additional_item gold silver bronze)]],
 		'0A1C' => ['roulette_info', 'v V a*', [qw(len serial roulette_info)]],
@@ -749,7 +748,6 @@ sub new {
 		'0B47' => ['char_emblem_update', 'a4 a4', [qw(guildID emblemID accountID)]], # 14 TODO
 		'0B5F' => ['rodex_mail_list', 'v C a*', [qw(len isEnd mailList)]], #-1
 		'0B60' => ['account_server_info', 'v a4 a4 a4 a4 a26 C x17 a*', [qw(len sessionID accountID sessionID2 lastLoginIP lastLoginTime accountSex serverInfo)]],
-        '0B62' => ['vender_items_list', 'v a4 a4 C V a*', [qw(len venderID venderCID flag expireDate itemList)]], #-1
 		'0B6F' => ['character_creation_successful', 'a*', [qw(charInfo)]],
 		'0B72' => ['received_characters', 'v a*', [qw(len charInfo)]],
 		'0B73' => ['revolving_entity', 'a4 v', [qw(sourceID entity)]],
@@ -1381,9 +1379,10 @@ sub skill_used_no_damage {
 		my $pos = calcPosFromPathfinding($field, $char);
 		%{$char->{pos}} = %{$pos};
 		%{$char->{pos_to}} = %{$pos};
-		$char->{time_move} = time;
+		$char->{time_move} = 0;
 		$char->{time_move_calc} = 0;
 		$char->{solution} = [];
+		push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 	}
 
 	# Resolve source and target names
@@ -1417,7 +1416,7 @@ sub skill_used_no_damage {
 		$timeout{ai_teleport_delay}{time} = time;
 	}
 
-	if (AI::state() == AI::AUTO() && $config{'autoResponseOnHeal'}) {
+	if (AI::state == AI::AUTO && $config{'autoResponseOnHeal'}) {
 		# Handle auto-response on heal
 		my $player = $playersList->getByID($args->{sourceID});
 		if ($player && ($args->{skillID} == 28 || $args->{skillID} == 29 || $args->{skillID} == 34)) {
@@ -1521,5 +1520,3 @@ sub inventory_expansion_info {
 *changeToInGameState = *Network::Receive::changeToInGameState;
 
 1;
-
-
