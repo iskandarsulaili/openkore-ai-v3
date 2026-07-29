@@ -229,3 +229,15 @@ condor 0 0 0
 thief bug egg 0 0 0
 thief bug egg 0 0 0
 thief bug egg 0 0 0
+thief bug egg 0 0 0
+thief bug egg 0 0 0
+pupa 0 0 0
+pupa 0 0 0
+thief bug 0 0 0
+thief bug 0 0 0
+lunatic 0 0 0
+fabre 0 0 0
+lunatic 0 0 0
+condor 0 0 0
+thief bug egg 0 0 0
+pupa 0 0 0

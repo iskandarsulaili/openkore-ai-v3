@@ -1248,7 +1248,7 @@ class HeuristicService:
                     # Monsters to ignore while farming Porings (too tough or 0 value)
                     for _cs_ignore in ["Thief Bug Egg", "Pupa", "Thief Bug", "Lunatic", "Fabre", "Condor"]:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"mon_control {_cs_ignore} 0 0 0",
+                            kind="command", command=f"mon_control {_cs_ignore} -1 0 0",
                             confidence=0.95, domain="economy",
                             reason=f"Cold start step 1 - ignore {_cs_ignore} while farming Porings",
                         ))
