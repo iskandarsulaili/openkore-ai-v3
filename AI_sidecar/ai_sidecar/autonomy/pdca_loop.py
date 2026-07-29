@@ -441,6 +441,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["leader_map"] = str(getattr(latest, "leader_map", "") or "")
                         signals["_last_stat_points"] = int(getattr(prog, "stat_points", 0) or 0)
                         signals["_last_exp"] = int(getattr(prog, "base_exp", 0) or 0)
+                        # ── ENRICH BOTSTATESNAPSHOT BRANCH ──
+                        signals["hp"] = int(getattr(v, "hp", 100) or 100)
+                        signals["sp"] = int(getattr(v, "sp", 50) or 50)
+                        signals["hp_max"] = int(getattr(v, "hp_max", 1) or 1)
+                        signals["job"] = str(getattr(prog, "job_name", "novice") or "novice")
+                        signals["level"] = int(getattr(prog, "base_level", 1) or 1)
             except Exception:
                 pass
         assessment = hs.assess(signals, bot_id_override=bot_id)

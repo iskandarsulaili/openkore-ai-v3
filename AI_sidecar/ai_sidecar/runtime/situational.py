@@ -82,24 +82,23 @@ class SituationalAwareness:
         best = self._get_best_heal_item(snapshot)
         if best:
             item_id, name = best
-            logger.info(f"[situational] {bot_id}: {proposal.command} -> {item_id} (best: {name})")
-            # Mutate the proposal in place (ActionProposal is mutable via setattr)
-            proposal.command = f"use {item_id}"
+            logger.info(f"[situational] {bot_id}: {proposal.command} -> use {name} (best available)")
+            proposal.command = f"use {name}"
+            proposal.kind = "command"
             return proposal
-        return None  # Can't heal — block action
+        return None
     
     def _adapt_proposal_sit(self, proposal: ActionProposal, snapshot: dict, bot_id: str) -> ActionProposal | None:
         job = str(snapshot.get("job", "novice") or "").lower()
         if job == "novice":
-            # Can't sit — use potion instead
             logger.info(f"[situational] {bot_id}: Can't sit ({job}), using potion instead")
             best = self._get_best_heal_item(snapshot)
             if best:
                 item_id, name = best
-                proposal.command = f"use {item_id}"
+                proposal.command = f"use {name}"
                 proposal.kind = "command"
                 return proposal
-            return None  # Can't sit and no potions — block action
+            return None
         return proposal
     
     def _adapt_command(self, action: HeuristicAction, signals: dict[str, Any], bot_id: str) -> HeuristicAction | None:
