@@ -53,6 +53,40 @@ _HUNT_TOWNS = ("prontera", "izlude", "morocc", "payon", "geffen",
                "juno", "hugel", "yuno", "amatsu", "gonryun",
                "louyang", "ayothaya")
 
+# ── Sellable junk items (name keyword -> item_id) ──
+# Used by auto-sell system to identify and sell junk in town.
+# Keys are lowercase substrings matched against inventory item names.
+SELLABLE_JUNK: dict[str, str] = {
+    "jellopy": "909",
+    "sticky mucus": "938",
+    "memento": "938",
+    "green herb": "511",
+    "apple": "512",
+    "banana": "513",
+    "grape": "514",
+    "carrot": "515",
+    "potato": "516",
+    "meat": "517",
+    "honey": "518",
+    "empty bottle": "713",
+    "feather": "715",
+    "shell": "957",
+    "dewdrop": "725",
+    "sap": "948",
+}
+
+# ── Potion tier thresholds (min_level -> item_id, name, heal_amount) ──
+POTION_TIERS: list[tuple[int, int, str, int]] = [
+    (1,  501, "Red Potion", 45),
+    (15, 502, "Orange Potion", 105),
+    (30, 504, "White Potion", 250),
+]
+
+# ── Weight constants ──
+NOVICE_WEIGHT_CAPACITY = 2000
+POTION_WEIGHT = 1  # Each potion weighs 1
+KNIFE_WEIGHT = 70
+
 # ── Class-aware stat builds ──
 # Each entry: (stat_priority_list, description)
 CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
@@ -820,6 +854,13 @@ class HeuristicService:
         self._first_cycle_done: dict[str, bool] = {}
         # Sitting detector: track when bot started sitting on hunting map
         self._sit_start_time: dict[str, float] = {}
+        # Stuck detector: track last known position and last move time per bot
+        self._last_position: dict[str, tuple[int, int, float]] = {}
+        self._last_move_time: dict[str, float] = {}
+        # Sell tracking: bot_id -> {item_id: last_sell_timestamp}
+        self._sold_items: dict[str, dict[str, float]] = {}
+        # Potion tier cache: bot_id -> current potion item_id being bought
+        self._potion_tier: dict[str, int] = {}
 
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
@@ -939,6 +980,32 @@ class HeuristicService:
                 return True
         return False
 
+    def _get_potion_id(self, base_level: int) -> int:
+        """Return the best potion item ID for a given base level.
+        Scales from Red (501) -> Orange (502) -> White (504) as level increases."""
+        if base_level < 15:
+            return 501  # Red Potion (heals 45 HP)
+        elif base_level < 30:
+            return 502  # Orange Potion (heals 105 HP)
+        else:
+            return 504  # White Potion (heals 250 HP)
+
+    def _get_potion_cost(self, potion_id: int) -> int:
+        """Return the cost of a potion by item ID."""
+        costs = {501: 50, 502: 200, 504: 500}
+        return costs.get(potion_id, 50)
+
+    def _get_potion_max_buy(self, potion_id: int, zeny: int, weight: float, weight_capacity: int) -> int:
+        """Calculate max potions to buy considering zeny and remaining weight capacity.
+        weight is a ratio 0.0-1.0. weight_capacity is in raw units."""
+        _cost_each = self._get_potion_cost(potion_id)
+        _max_by_zeny = zeny // _cost_each if _cost_each > 0 else 0
+        _remaining_weight_ratio = max(0.0, 1.0 - weight)
+        _remaining_weight_units = _remaining_weight_ratio * weight_capacity
+        _max_by_weight = int(_remaining_weight_units // POTION_WEIGHT)
+        _max_buy = min(_max_by_zeny, _max_by_weight, 30)  # Cap at 30 total
+        return max(0, _max_buy)
+
     def _track_kills_per_hour(self, signals: dict, bot_id: str) -> float:
         """Track kills/hour and return the rate. Logs warning if 0 for 30+ minutes."""
         _now_t = __import__("time").time()
@@ -993,6 +1060,66 @@ class HeuristicService:
             reason=reason,
         ))
 
+    def _sell_config_once(self, bot_id: str, item_id: str, cooldown: float = 60.0) -> bool:
+        """Rate-limited sell command tracker.
+        Returns True if the sell command for this item should be queued
+        (not recently sent within cooldown seconds).
+        Similar to _set_config_once but for sell commands with a cooldown period."""
+        cache = self._sold_items.setdefault(bot_id, {})
+        _now = __import__("time").time()
+        last = cache.get(item_id, 0.0)
+        if _now - last < cooldown:
+            return False
+        cache[item_id] = _now
+        return True
+
+    def _check_stuck(self, signals: dict, bot_id: str) -> list[HeuristicAction]:
+        """Detect if bot is stuck (hasn't moved >5 tiles in 30 seconds).
+        Returns a list of unstuck actions if stuck is detected.
+        Tracks position from signals 'x', 'y' and compares to last known position."""
+        stuck_actions: list[HeuristicAction] = []
+        _now = __import__("time").time()
+        _x = signals.get("x", 0) or 0
+        _y = signals.get("y", 0) or 0
+        _last_pos = self._last_position.get(bot_id)
+        if _last_pos is not None:
+            _lx, _ly, _ltime = _last_pos
+            _dx = abs(_x - _lx)
+            _dy = abs(_y - _ly)
+            _dist = max(_dx, _dy)  # Chebyshev distance
+            _elapsed = _now - _ltime
+            if _dist <= 5 and _elapsed >= 30:
+                # Bot hasn't moved significantly — queue unstuck actions
+                logger.info(f"[stuck_detector] {bot_id}: position ({_lx},{_ly}) -> ({_x},{_y}) "
+                           f"dist={_dist} over {_elapsed:.0f}s — sending unstuck")
+                # Random target within ~20 tiles to break stuck
+                _rand = __import__("random").Random(hash(bot_id + str(_now)) & 0xFFFFFFFF)
+                _tx = _x + _rand.randint(-15, 15)
+                _ty = _y + _rand.randint(-15, 15)
+                stuck_actions.append(HeuristicAction(
+                    kind="command", command="ai manual",
+                    confidence=0.90, domain="survival",
+                    reason=f"Stuck: position ({_x},{_y}) unchanged for {_elapsed:.0f}s — manual mode to unstick",
+                ))
+                stuck_actions.append(HeuristicAction(
+                    kind="command", command=f"move {_tx} {_ty}",
+                    confidence=0.90, domain="survival",
+                    reason=f"Random move to ({_tx},{_ty}) to break stuck",
+                ))
+                stuck_actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.90, domain="survival",
+                    reason="Re-enable auto after unstuck move",
+                ))
+                self._last_position[bot_id] = (_tx, _ty, _now)
+            else:
+                # Position changed or not enough time — update record
+                self._last_position[bot_id] = (_x, _y, _now)
+        else:
+            # First observation — set initial position
+            self._last_position[bot_id] = (_x, _y, _now)
+        return stuck_actions
+
     def _assess_impl(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
@@ -1010,6 +1137,12 @@ class HeuristicService:
         is_stuck = not made_progress and state_duration > 120
         # Track kills/hour for monitoring
         self._track_kills_per_hour(signals, bot_id)
+        # ── STUCK DETECTOR: check if bot hasn't moved in 30s ──
+        _stuck_actions = self._check_stuck(signals, bot_id)
+        if _stuck_actions:
+            # Prepend stuck-detection actions so they execute immediately
+            actions.extend(_stuck_actions)
+            # Don't return early — let the state handler add its own actions too
 
         hp = signals.get("hp_ratio", 1.0)
         map_name = signals.get("map", "").lower()
@@ -1032,10 +1165,10 @@ class HeuristicService:
         # ── COLD START SEQUENCE: task-completion-triggered, not time-based ──
         # The OnboardingService exists but is disconnected from the heuristic.
         # This sequence fires each step when the PREVIOUS step is confirmed via signals.
-        # Step 1: Buy Knife (item 1201) — confirmed when weapon in inventory_items
-        # Step 2: Buy Red Potions (item 501) — confirmed when potions in inventory_items
-        # Step 3: Set lockMap to prt_fild05 — confirmed when map changes
-        # Step 4: Hunt — bot is on hunting map with weapon + potions
+        # Step 1: Farm 50z on prt_fild05 — confirmed when zeny >= 50
+        # Step 2: Buy Knife (item 1201) — confirmed when weapon in inventory_items
+        # Step 3: Buy Red Potions (item 501) — confirmed when potions in inventory_items
+        # Step 4: Return to hunting map with weapon + potions — cold start complete
         # Define map check vars before use (config audit section defines them later)
         _cs_map = signals.get("map", "") or ""
         _cs_in_town = any(x in _cs_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
@@ -1076,64 +1209,82 @@ class HeuristicService:
                     self._cold_start_step[_cs_stable_key] = 1
                     _cold_start_step = 1
         if _cold_start_step == 1:
-            # Step 1: Buy Knife (item 1201) if no weapon
-            # Only queue actions when bot is in town (Prontera)
+            # Step 1: Farm 50z on prt_fild05 (no weapon, need zeny for knife)
+            # Stay at step 1 until zeny >= 50
+            if zeny >= 50:
+                # Farmed enough — advance to step 2 (buy knife)
+                self._cold_start_step[_cs_stable_key] = 2
+                _cold_start_step = 2
+                logger.info(f"[cold_start] {bot_id}: farmed 50z on prt_fild05, step 1 -> 2")
+            else:
+                if _cs_in_town:
+                    # In Prontera — walk to prt_fild05 via map-name move (AI handles portal routing)
+                    actions.append(HeuristicAction(
+                        kind="command", command="set lockMap prt_fild05",
+                        confidence=0.99, domain="economy",
+                        reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prt_fild05",
+                        confidence=0.99, domain="economy",
+                        reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
+                    ))
+                elif _cs_in_hunting:
+                    # On prt_fild05 — enable AI and attack for farming
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start step 1 - enable AI for farming Porings",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 3",
+                        confidence=0.99, domain="economy",
+                        reason="Cold start step 1 - enable attack for farming",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="mon_control Thief Bug Egg 0 0 0",
+                        confidence=0.95, domain="economy",
+                        reason="Cold start step 1 - ignore Thief Bug Eggs while farming Porings",
+                    ))
+        if _cold_start_step == 2:
+            # Step 2: Buy Knife (item 1201) if no weapon and zeny >= 50
             if not _has_weapon:
                 if zeny >= 50:
                     actions.append(HeuristicAction(
                         kind="command", command="buy 1201 1",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - buy Knife (no weapon detected)",
+                        reason="Cold start step 2 - buy Knife (no weapon detected)",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="equip 1201",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - equip Knife after purchase",
+                        reason="Cold start step 2 - equip Knife after purchase",
                     ))
-                else:
-                    # 0 zeny — can't buy anything. Need to farm 50 zeny first.
-                    # Go to prt_fild05 (safe map with Porings) via portal and farm with fists.
-                    if _cs_in_town:
-                        # In Prontera — force direct walk to portal (bypass AI routing)
-                        actions.append(HeuristicAction(
-                            kind="command", command="move 22 203",
-                            confidence=0.99, domain="economy",
-                            reason=f"Cold start - force walk to portal, farm {50 - zeny}z on prt_fild05",
-                        ))
-                    elif _cs_in_hunting:
-                        # On prt_fild05 — enable AI and attack for farming (should be ready)
-                        actions.append(HeuristicAction(
-                            kind="command", command="ai auto",
-                            confidence=0.99, domain="economy",
-                            reason="Cold start - enable AI for farming on prt_fild05",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="set attackAuto 3",
-                            confidence=0.99, domain="economy",
-                            reason="Cold start - enable attack for farming",
-                        ))
             else:
-                # Weapon confirmed — move to step 2
-                self._cold_start_step[_cs_stable_key] = 2
-                _cold_start_step = 2
-                logger.info(f"[cold_start] {bot_id}: weapon confirmed, step 1 -> 2")
-        if _cold_start_step == 2:
-            # Step 2: Buy Red Potions (item 501) if no potions
+                # Weapon confirmed — move to step 3 (buy potions)
+                self._cold_start_step[_cs_stable_key] = 3
+                _cold_start_step = 3
+                logger.info(f"[cold_start] {bot_id}: weapon confirmed, step 2 -> 3")
+        if _cold_start_step == 3:
+            # Step 3: Buy potions (tiered by level) if no potions
             if not _has_potions:
-                if zeny >= 50:
-                    _potion_qty = min(int(zeny / 50), 10)
+                _cs_potion_id = self._get_potion_id(base_level)
+                _cs_potion_cost = self._get_potion_cost(_cs_potion_id)
+                _cs_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_cs_potion_id, "Red")
+                if zeny >= _cs_potion_cost:
+                    _potion_qty = min(int(zeny / _cs_potion_cost), 10)
                     if _potion_qty > 0:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"buy 501 {_potion_qty}",
+                            kind="command", command=f"buy {_cs_potion_id} {_potion_qty}",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - buy {_potion_qty} Red Potions",
+                            reason=f"Cold start - buy {_potion_qty} {_cs_potion_name} Potions (level {base_level}, tier item {_cs_potion_id})",
                         ))
             else:
-                # Potions confirmed — move to step 3
-                self._cold_start_step[_cs_stable_key] = 3
-                logger.info(f"[cold_start] {bot_id}: potions confirmed, step 2 -> 3")
-        if _cold_start_step == 3:
-            # Step 3: Return to hunting map with weapon and potions
+                # Potions confirmed — move to step 4
+                self._cold_start_step[_cs_stable_key] = 4
+                logger.info(f"[cold_start] {bot_id}: potions confirmed, step 3 -> 4")
+        if _cold_start_step == 4:
+            # Step 4: Return to hunting map with weapon and potions
             # 'move prt_fild05' rewrite handles lockMap + routing.
             if not _cs_in_hunting or _cs_map == "prt_fild01":
                 actions.append(HeuristicAction(
@@ -1158,14 +1309,9 @@ class HeuristicService:
                 "Config audit - increase chase distance to 30 for Novice attack range")
             self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
                 "Config audit - attack from 5 cells away")
-            # Skip attackAuto override during cold start pipeline (bot on hunting map, 0 zeny, no weapon)
-            _cfg_audit_map = str(signals.get("map", ""))
-            _cfg_audit_zeny = int(signals.get("zeny", 0) or 0)
-            _cfg_audit_weapon = bool(signals.get("weapon", {}).get("id", 0))
-            _cfg_audit_in_town = any(x in _cfg_audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
-            if _cfg_audit_weapon or _cfg_audit_in_town or _cfg_audit_zeny >= 50:
-                self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
-                    "Config audit - enable aggressive auto-attack")
+            # Always enable attackAuto on hunting maps (includes cold start farming)
+            self._set_config_once(actions, bot_id, "attackAuto", "3", "hunting",
+                "Config audit - enable aggressive auto-attack")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
@@ -1237,13 +1383,16 @@ class HeuristicService:
             )
             if not _audit_has_potions:
                 _audit_zeny = signals.get("zeny", 0) or 0
-                if _audit_zeny >= 50:
-                    _audit_potion_qty = min(int(_audit_zeny / 50), 10)
+                _audit_potion_id = self._get_potion_id(base_level)
+                _audit_potion_cost = self._get_potion_cost(_audit_potion_id)
+                _audit_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_audit_potion_id, "Red")
+                if _audit_zeny >= _audit_potion_cost:
+                    _audit_potion_qty = min(int(_audit_zeny / _audit_potion_cost), 10)
                     if _audit_potion_qty > 0:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"buy 501 {_audit_potion_qty}",
+                            kind="command", command=f"buy {_audit_potion_id} {_audit_potion_qty}",
                             confidence=0.99, domain="economy",
-                            reason=f"Town - buy {_audit_potion_qty} Red Potions (0 potions in inventory)",
+                            reason=f"Town - buy {_audit_potion_qty} {_audit_potion_name} Potions (0 potions in inventory, level {base_level})",
                         ))
                     _audit_has_weapon = any(
                         "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
@@ -1614,22 +1763,24 @@ class HeuristicService:
                     "Cold start - set hunting map lock")
             # Economy: buy potions FIRST (before moving to hunting map)
             _cs_zeny = signals.get("zeny", 0) or 0
-            if _cs_zeny >= 500:
-                # Buy 10 Red Potions (item 501) for survival
+            _cs_potion_id = self._get_potion_id(base_level)
+            _cs_potion_cost = self._get_potion_cost(_cs_potion_id)
+            _cs_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_cs_potion_id, "Red")
+            if _cs_zeny >= _cs_potion_cost * 10:
+                # Buy 10 potions for survival
                 actions.append(HeuristicAction(
-                    kind="command", command="buy 501 10",
+                    kind="command", command=f"buy {_cs_potion_id} 10",
                     confidence=0.99, domain="economy",
-                    reason="Cold start - buy 10 Red Potions for survival",
+                    reason=f"Cold start - buy 10 {_cs_potion_name} Potions (item {_cs_potion_id}, level {base_level})",
                 ))
-            elif _cs_zeny >= 50:
+            elif _cs_zeny >= _cs_potion_cost:
                 # Buy at least 1 potion if we can afford it
-                _cs_potion_qty = int(_cs_zeny / 50)
-                _cs_potion_qty = min(_cs_potion_qty, 10)
+                _cs_potion_qty = min(int(_cs_zeny / _cs_potion_cost), 10)
                 if _cs_potion_qty > 0:
                     actions.append(HeuristicAction(
-                        kind="command", command=f"buy 501 {_cs_potion_qty}",
+                        kind="command", command=f"buy {_cs_potion_id} {_cs_potion_qty}",
                         confidence=0.99, domain="economy",
-                        reason=f"Cold start - buy {_cs_potion_qty} Red Potions",
+                        reason=f"Cold start - buy {_cs_potion_qty} {_cs_potion_name} Potions (item {_cs_potion_id}, level {base_level})",
                     ))
             # Buy arrows if enough zeny
             if _cs_zeny >= 200:
@@ -1724,19 +1875,22 @@ class HeuristicService:
                 ))
             # Buy potions after selling (every death, no exceptions)
             _death_zeny = signals.get("zeny", 0) or 0
-            if _death_zeny >= 500:
+            _death_potion_id = self._get_potion_id(base_level)
+            _death_potion_cost = self._get_potion_cost(_death_potion_id)
+            _death_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_death_potion_id, "Red")
+            if _death_zeny >= _death_potion_cost * 10:
                 actions.append(HeuristicAction(
-                    kind="command", command="buy 501 10",
+                    kind="command", command=f"buy {_death_potion_id} 10",
                     confidence=0.99, domain="economy",
-                    reason="Death recovery - buy 10 Red Potions",
+                    reason=f"Death recovery - buy 10 {_death_potion_name} Potions (item {_death_potion_id}, level {base_level})",
                 ))
-            elif _death_zeny >= 50:
-                _death_potion_qty = min(int(_death_zeny / 50), 10)
+            elif _death_zeny >= _death_potion_cost:
+                _death_potion_qty = min(int(_death_zeny / _death_potion_cost), 10)
                 if _death_potion_qty > 0:
                     actions.append(HeuristicAction(
-                        kind="command", command=f"buy 501 {_death_potion_qty}",
+                        kind="command", command=f"buy {_death_potion_id} {_death_potion_qty}",
                         confidence=0.99, domain="economy",
-                        reason=f"Death recovery - buy {_death_potion_qty} Red Potions",
+                        reason=f"Death recovery - buy {_death_potion_qty} {_death_potion_name} Potions (item {_death_potion_id}, level {base_level})",
                     ))
             # Buy weapon if we don't have one (check inventory)
             _death_job = signals.get("job_name", "novice") or "novice"
@@ -1847,6 +2001,25 @@ class HeuristicService:
                     confidence=0.90, domain="economy",
                     reason="Open Tool Dealer and sell items (atomic dialog)",
                 ))
+                # ── AUTO-SELL KNOWN JUNK ITEMS ──
+                # Search inventory for known sellable junk items and queue sell commands.
+                # Uses _sell_config_once to avoid re-selling the same item within cooldown.
+                _inv_items = signals.get("inventory_items", []) or []
+                _junk_found = False
+                for _item_entry in _inv_items:
+                    _item_str = str(_item_entry).lower().strip()
+                    for _junk_name, _junk_id in SELLABLE_JUNK.items():
+                        if _junk_name in _item_str:
+                            if self._sell_config_once(bot_id, _junk_id, cooldown=120.0):
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"sell {_junk_id} 0",
+                                    confidence=0.85, domain="economy",
+                                    reason=f"Sell {_junk_name} (item {_junk_id}) — junk from inventory",
+                                ))
+                                _junk_found = True
+                            break  # Only match one junk name per item entry
+                if _junk_found:
+                    logger.info(f"[auto_sell] {bot_id}: queued sell commands for junk items in inventory")
                 actions.append(HeuristicAction(
                     kind="command", command="talk cont",
                     confidence=0.80, domain="economy",
@@ -1924,13 +2097,23 @@ class HeuristicService:
                 pass
             else:
                 self._last_buy_time[bot_id] = _buy_now
+                # ── POTION TIER SCALING ──
+                _potion_id = self._get_potion_id(base_level)
+                _potion_cost = self._get_potion_cost(_potion_id)
+                _potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_potion_id, "Red")
+                # ── WEIGHT MANAGEMENT ──
+                _weight_cap = NOVICE_WEIGHT_CAPACITY
+                _max_buy_weight = self._get_potion_max_buy(_potion_id, zeny, weight, _weight_cap)
+                # Also cap by zeny and quantity
+                _max_by_zeny = zeny // _potion_cost if _potion_cost > 0 else 0
+                _max_buy = min(_max_buy_weight, _max_by_zeny, 30)
                 # Stand up first
                 actions.append(HeuristicAction(
                     kind="command", command="stand",
                     confidence=0.95, domain="economy",
                     reason="Stand up before walking to Tool Dealer",
                 ))
-                # Buy Red Potions from Tool Dealer (290, 221 in Prontera)
+                # Buy potions from Tool Dealer (290, 221 in Prontera)
                 actions.append(HeuristicAction(
                     kind="command", command="move 290 221",
                     confidence=0.95, domain="economy",
@@ -1946,14 +2129,18 @@ class HeuristicService:
                     confidence=0.85, domain="economy",
                     reason="Select buy option",
                 ))
-                # Buy Red Potions (item 501) - as many as zeny allows
-                max_buy = min(int(zeny / 50), 30)  # 50z each, max 30
-                if max_buy > 0:
+                if _max_buy > 0:
                     actions.append(HeuristicAction(
-                        kind="command", command=f"buy 501 {max_buy}",
+                        kind="command", command=f"buy {_potion_id} {_max_buy}",
                         confidence=0.90, domain="economy",
-                        reason=f"Buy {max_buy} Red Potions (50z each)",
+                        reason=f"Buy {_max_buy} {_potion_name} Potions (item {_potion_id}, {_potion_cost}z each, "
+                               f"level={base_level}, weight={_weight_pressure:.0%})",
                     ))
+                else:
+                    # Can't afford any potions or weight full — log it
+                    logger.info(f"[economy] {bot_id}: can't buy potions at level {base_level} — "
+                               f"zeny={zeny}, cost={_potion_cost}, weight={_weight_pressure:.0%}, "
+                               f"weight_cap={_weight_cap}")
                 actions.append(HeuristicAction(
                     kind="command", command="talk any",
                     confidence=0.80, domain="economy",
@@ -2116,50 +2303,57 @@ class HeuristicService:
             self._last_assessment[bot_id] = assessment
             return assessment
 
-        # ── STATE: PARTY ──
+        # ── STATE: PARTY (step 0.5 between portal walk and farming) ──
         if state == "PARTY":
-            # Differentiate: leader creates, others join by leader name
+            # ── Map check: party ops only work on same town map ──
+            _party_map = str(signals.get("map", "") or "").lower().replace(".gat", "")
+            _party_in_town = _party_map in _HUNT_TOWNS
             _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # Dynamic leader detection: first bot alphabetically is leader
             _all_bots = signals.get("all_bots", []) or []
             _sorted_bots = sorted(_all_bots)
             _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
-            # Leader sends party commands with 30s cooldown (party request only works on same map)
-            if _is_leader:
-                _now = __import__("time").time()
-                _last_party = self._last_party_attempt.get(bot_id, 0)
-                if _now - _last_party > 30:
-                    self._last_party_attempt[bot_id] = _now
+            if _party_in_town:
+                # In town — safe to do party operations
+                if _is_leader:
+                    _now = __import__("time").time()
+                    _last_party = self._last_party_attempt.get(bot_id, 0)
+                    if _now - _last_party > 30:
+                        self._last_party_attempt[bot_id] = _now
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"party create AI{int(_now_t)}",
+                            confidence=0.90, domain="social",
+                            reason="Leader - create party with unique name (all in town)",
+                        ))
+                        # Request all known bots to join while ALL in town (same map)
+                        for _other_bot in _all_bots:
+                            if _other_bot != _bot_profile:
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"party request {_other_bot}",
+                                    confidence=0.90, domain="social",
+                                    reason=f"Leader - request {_other_bot} to join party (same town map)",
+                                ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="party share exp",
+                            confidence=0.85, domain="social",
+                            reason="Share experience in party",
+                        ))
+                else:
+                    # Joiners: STAY in town — do NOT move to hunting map
+                    # Party request only works on same map, so joiners must remain in Prontera
                     actions.append(HeuristicAction(
-                        kind="command", command=f"party create AI{int(_now_t)}",
+                        kind="command", command="ai auto",
                         confidence=0.90, domain="social",
-                        reason="Leader - create party with unique name",
-                    ))
-                    # Request all known bots to join (dynamically detected)
-                    _all_bots = signals.get("all_bots", []) or []
-                    for _other_bot in _all_bots:
-                        if _other_bot != _bot_profile:
-                            actions.append(HeuristicAction(
-                                kind="command", command=f"party request {_other_bot}",
-                                confidence=0.90, domain="social",
-                                reason=f"Leader - request {_other_bot} to join party",
-                            ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="party share exp",
-                        confidence=0.85, domain="social",
-                        reason="Share experience in party",
+                        reason="Joiners - stay in town and wait for party invitation",
                     ))
             else:
-                # Joiners: move to hunting map so leader can request them (same map required)
-                actions.append(HeuristicAction(
-                    kind="command", command="move 22 203",
-                    confidence=0.90, domain="social",
-                    reason="Joiners - move to hunting map to be on same map as leader",
-                ))
+                # Not in town — skip party formation (party request requires same map)
+                # Bot should return to town first (TOWN_STUCK or TOWN_HUNT will handle this)
+                logger.info("[party] bot=%s not in town (map=%s), skipping party formation", bot_id, _party_map)
                 actions.append(HeuristicAction(
                     kind="command", command="ai auto",
-                    confidence=0.90, domain="hunting",
-                    reason="Continue after moving to hunting map",
+                    confidence=0.90, domain="social",
+                    reason="Not in town - skip party formation, continue via town/hunt state",
                 ))
             total_confidence = 0.85
             top_domain = "social"
@@ -2737,8 +2931,11 @@ class HeuristicService:
                     reason=f"In town - sell items",
                 ))
             elif zeny >= 50:
-                # No items to sell, but have zeny - buy potions
-                _potions_to_buy = min(10, zeny // 50)
+                # No items to sell, but have zeny - buy potions (tiered by level)
+                _buy_potion_id = self._get_potion_id(base_level)
+                _buy_potion_cost = self._get_potion_cost(_buy_potion_id)
+                _buy_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_buy_potion_id, "Red")
+                _potions_to_buy = min(10, zeny // _buy_potion_cost)
                 if _potions_to_buy > 0:
                     # Check if near NPC - if so, buy directly. Otherwise walk to NPC first
                     _x = signals.get("x", 0) or 0
@@ -2749,9 +2946,9 @@ class HeuristicService:
                     _dist_to_npc = abs(_x - _buy_x) + abs(_y - _buy_y)
                     if _dist_to_npc < 10:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"buy 501 {_potions_to_buy}",
+                            kind="command", command=f"buy {_buy_potion_id} {_potions_to_buy}",
                             confidence=0.99, domain="economy",
-                            reason=f"In town - buy {_potions_to_buy} potions (zeny={zeny})",
+                            reason=f"In town - buy {_potions_to_buy} {_buy_potion_name} Potions (item {_buy_potion_id}, zeny={zeny}, level={base_level})",
                         ))
                     else:
                         _buy_npc = self._get_npc("buy_potion", map_name)

@@ -660,16 +660,6 @@ sub on_mainLoop_post {
 			# All config management and survival logic is handled by the sidecar heuristic service.
 			# Bridge only does: snapshot forwarding, command execution, emergency sit.
 
-        # Force AI to AUTO mode only when on hunting map and not executing a move
-        # Don't force unconditionally - it cancels manual move commands like "move 22 203"
-        if ($char) {
-            my $_ai_map = lc($char->{map} || '');
-            $_ai_map =~ s/\.gat$//;
-            if ($_ai_map =~ /^[a-z]+_fild/ && AI::state() != 2) {
-                AI::state(2);
-            }
-        }
-        
         # Keep lockMap set to hunting map at ALL times (not just when on one)
         # This prevents OpenKore's internal AI from generating "move prontera" endlessly
         if ($char) {
@@ -3895,42 +3885,6 @@ sub _rewrite_runtime_command {
 	    }
 	}
 	
-	# AI MANUAL BLOCK: block ai manual for ALL bots (we want auto mode)
-	# Also block ai auto when 0 potions on hunting map (game engine overrides ai manual)
-	# EXCEPTION: allow ai manual when bot has 0 potions on hunting map (cold start portal walk)
-	if ($normalized eq 'ai manual' || $normalized eq 'ai auto') {
-	    if ($char && $char->{inventory}) {
-	        my $_am_has_potions = 0;
-	        for my $_ami (@{$char->{inventory}}) {
-	            next unless $_ami;
-	            my $_amn = $_ami->{name} || '';
-	            if ($_amn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-	                $_am_has_potions = 1;
-	                last;
-	            }
-	        }
-	        if (!$_am_has_potions) {
-	            my $_amm = $field ? lc($field->name()) : '';
-	            $_amm =~ s/\.gat$//;
-	            if ($_amm =~ /_fild|_dun/i) {
-	                if ($normalized eq 'ai manual') {
-	                    # 0 potions on hunting map — allow ai manual for portal walk
-	                    debug "[ai_manual] allowing ai manual on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-	                    return ($trimmed, 'ai_manual_allowed');
-	                } else {
-	                    # 0 potions on hunting map — block ai auto
-	                    debug "[ai_auto] blocking ai auto on $_amm (0 potions, cold start)\n", 'aiSidecarBridge', 1;
-	                    return ('', 'ai_auto_blocked_cold_start');
-	                }
-	            }
-	        }
-	    }
-	    if ($normalized eq 'ai manual') {
-	        debug "[ai_manual_block] blocking ai manual - forcing auto mode\n", 'aiSidecarBridge', 1;
-	        return ('', 'ai_manual_blocked');
-	    }
-	}
-	
 	# SIT BLOCK: allow sit when HP is low (let bots regen)
 	if ($normalized eq 'sit') {
 	    my $_sit_hp = _safe_hp_ratio();
@@ -3982,7 +3936,7 @@ sub _rewrite_runtime_command {
 	    }
 		return ($trimmed, 'sit_allowed');
 	}
-	# NPC DIALOG AUTO-COMPLETION}
+	# NPC DIALOG AUTO-COMPLETION
 
 	# MACRO POTION SPAM FIX: add 5-minute cooldown to emergency potion macros
 	if ($normalized =~ /^macro\s+reflex_survival_(red|orange|white)(?:_potion)?$/) {
@@ -3994,63 +3948,6 @@ sub _rewrite_runtime_command {
 			return ('', 'macro_potion_cooldown');
 		}
 		$_last_reflex_fire_ms{"macro_$_potion_type"} = $_now;
-	}
-
-
-
-		# AI MANUAL BLOCK: prevent 'ai manual' from disabling auto-attack mode
-	# Root cause: PDCA sends 'ai manual' every 2s (compat layer rewrites 'sit' -> 'ai manual')
-	# When lockMap is a hunting map -> IGNORE entirely (let bot walk/hunt)
-	# When on hunting map -> convert to sit (let bot rest)
-	# When in town -> convert to stand (allow autobuy/route)
-	# Throttled to 30s to prevent tight PDCA loop
-	if ($normalized eq 'ai manual') {
-		my $_am_now = _now_ms();
-		my $_am_last = $_last_reflex_fire_ms{'ai_manual_rewrite'} || 0;
-		if ($_am_now - $_am_last < 30000) {
-			return ('', 'ai_manual_throttled');
-		}
-		$_last_reflex_fire_ms{'ai_manual_rewrite'} = $_am_now;
-		my $_am_map = $field ? $field->name() : '';
-		$_am_map = lc($_am_map || '');
-		$_am_map =~ s/\.gat$//;
-		my $_am_lock = defined $::config{lockMap} ? $::config{lockMap} : '';
-		my $_am_hunt = $_am_lock =~ /^[a-z]+_fild/;
-		my $_am_town = $_am_lock =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-		if ($_am_hunt) {
-			warning "[ai_manual] suppress (lockMap=$_am_lock)\n", 'aiSidecarBridge', 1;
-			# Ensure auto mode so bot attacks monsters
-			# ai auto controlled by heuristic
-			return ('', 'ai_manual_throttled');
-		}
-		if ($_am_map =~ /^[a-z]+_fild/) {
-			warning "[ai_manual] on $_am_map -> suppress (stay auto)\n", 'aiSidecarBridge', 1;
-			return ('', 'ai_manual_suppressed');
-		}
-		warning "[ai_manual] in town -> stand\n", 'aiSidecarBridge', 1;
-		my $_ab_last = $_last_reflex_fire_ms{'autobuy_trigger'} || 0;
-		if ($_am_now - $_ab_last > 60000) {
-			$_last_reflex_fire_ms{'autobuy_trigger'} = $_am_now;
-			warning "[ai_manual] autobuy\n", 'aiSidecarBridge', 1;
-			eval { Commands::run("autobuy"); 1; };
-		}
-		my $_fh_last = $_last_reflex_fire_ms{'forced_hunt_map'} || 0;
-		if (($_am_lock eq '' || $_am_town) && $_am_now - $_fh_last > 120000) {
-			$_last_reflex_fire_ms{'forced_hunt_map'} = $_am_now;
-			# Clear committed action guard so the move command isn't blocked
-			delete $_committed_actions{'move'};
-			warning "[ai_manual] force prt_fild05\n", 'aiSidecarBridge', 1;
-			$::config{lockMap} = 'prt_fild05';
-			# $::config{attackAuto} = 3;
-			# attackAuto_inLockOnly controlled by heuristic
-			$::config{route_randomWalk_avoidInLock} = 0;
-			$::config{route_randomWalk_inTown} = 0;
-			# Trigger move to hunting map (this gets executed at top level by _execute_action)
-			# Clear committed action guard so the move isn't blocked
-			delete $_committed_actions{'move:prt_fild05'};
-			return ('move prt_fild05', 'coordinate_move_raw');
-		}
-		return ('stand', 'ai_manual_to_sit');
 	}
 
 	# STALE NPC TELEPORT BLOCK: prevent attempts to teleport via non-existent NPCs
@@ -4092,6 +3989,22 @@ sub _rewrite_runtime_command {
 			return ('', 'bare_move_already_auto');
 		}
 		return ('ai auto', 'bare_move_rewritten');
+	}
+
+	# Handle 'mon_control <entry>' - write to control/mon_control.txt and reload
+	if ($normalized =~ /^mon_control\s+(.+)$/) {
+		my $_mc_entry = $1;
+		my $_mc_file = 'control/mon_control.txt';
+		if (open my $_mc_fh, '>>', $_mc_file) {
+			print $_mc_fh "$_mc_entry\n";
+			close $_mc_fh;
+			debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+			eval { Commands::run("reload mon_control"); 1; };
+			return ('', 'mon_control_applied');
+		} else {
+			warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+			return ('', 'mon_control_write_failed');
+		}
 	}
 
 	# Handle 'set lockMap' - set lockMap to hunting map

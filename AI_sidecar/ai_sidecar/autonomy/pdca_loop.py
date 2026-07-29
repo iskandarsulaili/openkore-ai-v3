@@ -5499,6 +5499,10 @@ class PDCALoop:
                         if _eff_tracker is not None:
                             _eff_metrics = _eff_tracker.get_metrics(decision_meta.bot_id)
                         
+                        # Read zeny and kills from snapshot for gating
+                        _cs_zeny = int(getattr(getattr(latest_snapshot, "progression", None), "zeny", 0) or 0)
+                        _cs_kills = int(_eff_metrics.get("kills_total", 0) or 0)
+                        
                         _signals = {
                             "situation": "cold_start",
                             "class": str(getattr(getattr(latest_snapshot, "progression", None), "job_name", "novice") or "novice"),
@@ -5507,8 +5511,23 @@ class PDCALoop:
                             "has_plan": False,
                             "death_count": 0,
                             "efficiency": _eff_metrics,
+                            "zeny": _cs_zeny,
+                            "kills": _cs_kills,
                         }
-                        _advice = _pro.get_action(_signals)
+                        
+                        # ── Gate: only fire pro_ro advice when bot has earned zeny AND killed something ──
+                        # Prevents spamming advice on stuck/empty bots that haven't started playing
+                        _advice = None
+                        if not hasattr(self._runtime, "_last_pro_ro_gate"):
+                            self._runtime._last_pro_ro_gate = {}
+                        _last_gate = self._runtime._last_pro_ro_gate
+                        _gate_key = f"{decision_meta.bot_id}:zeny={_cs_zeny > 0}:kills={_cs_kills > 0}"
+                        _gate_changed = _last_gate.get(decision_meta.bot_id) != _gate_key
+                        
+                        if _cs_zeny > 0 and _cs_kills > 0 and _gate_changed:
+                            _last_gate[decision_meta.bot_id] = _gate_key
+                            logger.info("pro_ro_advice_gate_passed: bot=%s zeny=%d kills=%d", decision_meta.bot_id, _cs_zeny, _cs_kills)
+                            _advice = _pro.get_action(_signals)
                         if _advice is not None:
                             logger.info(
                                 "pro_ro_player_cold_start_advice[%s]: build=%s map=%s milestone=%s",

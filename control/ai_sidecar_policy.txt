@@ -29,6 +29,9 @@ aiSidecarPolicy_allow_14 sell
 aiSidecarPolicy_allow_15 buy
 aiSidecarPolicy_allow_16 relog
 
+# Cold start / farming: mon_control to ignore non-target monsters
+aiSidecarPolicy_allow_17 mon_control
+
 # Always blocked (even in denylist mode) for safety.
 aiSidecarPolicy_deny_0 quit
 aiSidecarPolicy_deny_1 plugin
