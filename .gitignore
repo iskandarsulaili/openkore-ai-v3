@@ -94,6 +94,7 @@ Thumbs.db
 .venv/
 *.weight
 *.xpm
+.watchdog_pid
 fix_chars.pl
 fix_chars_direct.pl
 char_cmds_*.txt

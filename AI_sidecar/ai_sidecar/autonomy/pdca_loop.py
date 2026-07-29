@@ -4776,8 +4776,9 @@ class PDCALoop:
                 
                 # Update budget limits from cost mode (used as cap, not gate)
                 if _ct is not None:
-                    _daily_budget = _cost_mode.get_daily_budget_tokens()
-                    _hourly_limit = _cost_mode.get_llm_calls_per_hour_limit()
+                    _cm = getattr(self._runtime, 'cost_mode_manager', None) or _cost_mode
+                    _daily_budget = _cm.get_daily_budget_tokens()
+                    _hourly_limit = _cm.get_llm_calls_per_hour_limit()
                     _allowed, _reason = _ct.check(
                         daily_budget_tokens=_daily_budget,
                         max_calls_per_hour=_hourly_limit,

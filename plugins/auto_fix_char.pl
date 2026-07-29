@@ -4,6 +4,7 @@ use strict;
 use Plugins;
 use Globals;
 use Network;
+use Misc qw(configModify relog);
 use Log qw(message warning error debug);
 use Translation qw(T TF);
 
@@ -19,58 +20,65 @@ sub on_char_screen {
     my $username = $config{username} || '';
     message "[auto_fix] Checking characters for $username...\n", 'system';
     
-    my @broken;
+    # Find which slots have valid characters and which are empty/broken
+    my @valid_slots;
+    my @empty_slots;
     for (my $i = 0; $i < @chars; $i++) {
         next unless $chars[$i];
         my $name = $chars[$i]->{name} || '';
-        if ($name eq '') {
-            push @broken, $i;
-            message "[auto_fix] Empty character in slot $i\n", 'warning';
+        if ($name ne '') {
+            push @valid_slots, $i;
+            message "[auto_fix] Slot $i: '$name'\n", 'system';
+        } else {
+            push @empty_slots, $i;
+            message "[auto_fix] Slot $i: EMPTY (broken)\n", 'warning';
         }
     }
     
-    if (@broken) {
-        # Set char to empty so OpenKore doesn't auto-select before we fix
-        configModify("char","");
-        message "[auto_fix] Char auto-select disabled for fixing\n", 'system';
-        
-        # Send delete2 packet for each broken char (no email needed for newer servers)
-        foreach my $slot (@broken) {
-            my $charID = $chars[$slot]->{charID};
-            message "[auto_fix] Deleting broken char in slot $slot (ID: " . unpack("H*", $charID) . ")\n", 'system';
-            $messageSender->sendCharDelete2($charID);
-        }
-        $ran = 1;
-        Plugins::addTimer(\&create_char, 5, 0, 1);
-    } elsif (scalar(grep { $_ && $_->{name} } @chars) == 0) {
-        # No valid chars - create one
-        configModify("char","");
-        message "[auto_fix] No characters exist, creating...\n", 'system';
-        $ran = 1;
-        Plugins::addTimer(\&create_char, 1, 0, 1);
-    } else {
-        message "[auto_fix] Account has valid characters, no fix needed\n", 'system';
+    if (@valid_slots) {
+        # Use the first valid character
+        my $slot = $valid_slots[0];
+        message "[auto_fix] Using slot $slot (already has character)\n", 'system';
+        configModify("char", $slot);
         $ran = 1;
         Plugins::delHook('charSelectScreen', $hook) if $hook;
+        $args->{return} = \"";
+        return;
     }
-}
-
-sub create_char {
-    my $timer = shift;
-    return unless $net && $net->getState() == Network::CONNECTED_TO_LOGIN_SERVER;
     
-    my $username = $config{username} || 'bot';
-    message "[auto_fix] Creating character '$username'\n", 'system';
+    # No valid characters - create one in the first empty slot
+    my $target_slot = -1;
+    if (@empty_slots) {
+        # Check if empty slots have real charID (broken ones don't free the slot)
+        # Just use slot 1 which is always free on a new account
+        $target_slot = 1;
+    } else {
+        $target_slot = 1;
+    }
     
-    $messageSender->sendCharCreate(0, $username, 1, 9, 1, 1, 9, 1, 0, 0);
+    message "[auto_fix] Creating character '$username' in slot $target_slot...\n", 'system';
+    $messageSender->sendCharCreate($target_slot, $username, 1, 9, 1, 1, 9, 1, 0, 0);
     $ran = 1;
     
-    Plugins::addTimer(sub {
-        message "[auto_fix] Character created! Reconnecting...\n", 'system';
-        configModify("char","0");
-        Plugins::delHook('charSelectScreen', $hook) if $hook;
-        relog(1);
-    }, 3, 0, 1);
+    # Set char to target slot and schedule relog
+    configModify("char", $target_slot);
+    
+    # Use mainLoop hook to relog after character creation
+    my $count = 0;
+    my $relog_hook;
+    $relog_hook = sub {
+        $count++;
+        if ($count > 30) {
+            message "[auto_fix] Relogging to pick up new character...\n", 'system';
+            Plugins::delHook('mainLoop', $relog_hook) if $relog_hook;
+            Plugins::delHook('charSelectScreen', $hook) if $hook;
+            relog(1);
+        }
+    };
+    Plugins::addHook('mainLoop', $relog_hook);
+    
+    # Tell charSelectScreen to return and skip the menu
+    $args->{return} = \"";
 }
 
 sub unload {
