@@ -520,9 +520,9 @@ sub on_mainLoop_post {
                     }
                 }
             }
-            # Only force stand when HP is healthy enough to fight OR in town (safe)
-            # NEVER force stand when HP is critically low (<30%) — bot needs to regen
-            if (($_fs_hp_pct >= 50 || $_fs_is_town) && $_fs_hp_pct >= 30) {
+            # Per RULE.md: reflex uses commands only, config changes through heuristic.
+            # Force stand when HP >= 20% (healthy enough to fight) AND (HP >= 50% OR in town).
+            if (($_fs_hp_pct >= 50 || $_fs_is_town) && $_fs_hp_pct >= 20) {
                 warning "[force_stand] bot sitting (HP=$_fs_hp_pct% town=$_fs_is_town pots=$_fs_has_potions), forcing stand\n", 'aiSidecarBridge', 1;
                 # Let bot use OpenKore's internal sit AI for HP regen
                 # sitAuto_hp_lower = default (30%) — bot will sit when HP < 30%
@@ -553,15 +553,12 @@ sub on_mainLoop_post {
             if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7 && (time - $_last_emergency_move) >= $_em_cooldown) {
                 $_last_emergency_move = time;
                 warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Prontera portal\n", 'aiSidecarBridge', 1;
-                # Force stand first — move command doesn't work while sitting
+                # Per RULE.md: reflex uses commands only, NEVER config overrides.
+                # Walk to Kafra (290, 224) on same map — deposit heavy items for free.
+                # Kafra is ~20 steps from spawn, safer than walking to Prontera portal.
                 eval { Commands::run("stand"); 1 };
-                # Enable sitAuto for recovery when we reach town
-                $::config{sitAuto_hp_lower} = 30;
-                $::config{sitAuto_hp_upper} = 60;
-                $::config{route_randomWalk} = 1;  # Need route to move to portal
-                # Walk to Prontera portal at (373, 205)
-                eval { Commands::run("move 373 205"); 1 };
-                eval { Commands::run("ai auto"); 1 };
+                # Walk to Kafra Employee on prt_fild05
+                eval { Commands::run("move 290 224"); 1 };
             }
         }
 
@@ -598,10 +595,7 @@ sub on_mainLoop_post {
                             debug "[portal_exit] 0 potions on $_pm but lockMap=$_pe_lockmap - staying (heuristic override)\n", 'aiSidecarBridge', 1;
                         } else {
                             warning "[portal_exit] 0 potions on $_pm, turning back\n", 'aiSidecarBridge', 1;
-                            $::config{sitAuto_hp_lower} = 0;
-                            $::config{sitAuto_hp_upper} = 0;
-                            $::config{sitAuto_sp} = 0;
-                            $::config{sitAuto_sp_max} = 0;
+                            # sitAuto NOT disabled — let heuristic control it per RULE.md
                             eval { Commands::run("stand"); 1 };
                             eval { Commands::run("move prontera"); 1 };
                         }
@@ -2667,8 +2661,7 @@ sub _poll_next_action {
 	}
 
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
-	$::config{'sitAuto_hp_lower'} = 0;
-	$::config{'sitAuto_hp_upper'} = 0;
+	# sitAuto NOT disabled — heuristic controls it per RULE.md
 	# Force-set attackAuto=0 when 0 potions on hunting map
 	# Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
 	# because OpenKore's getAttackAutoModeForContext returns 1 when
@@ -2687,10 +2680,7 @@ sub _poll_next_action {
 					my $_pm = $field ? lc($field->name()) : '';
 					$_pm =~ s/\.gat$//;
 					if ($_pm =~ /_fild|_dun/i) {
-						$::config{'attackAuto'} = 0;
-						$::config{'attackAuto_inLockOnly'} = 0;
-						$::config{'attackAuto_routeToLock'} = 0;
-						$::config{'route_randomWalk'} = 0;
+						# attackAuto NOT overridden — heuristic controls it per RULE.md
 					}
 				} elsif ($::config{'route_randomWalk'} == 0) {
 					# Has potions or not on hunting map — restore route_randomWalk
@@ -2767,10 +2757,7 @@ sub _execute_action {
 	# while the bot is still sitting. Auto-stand ensures the bot can actually move.
 	# Also disable sitAuto temporarily to prevent immediate re-sit (especially at low HP).
 	if ($char && $char->{sitting} && $effective_command =~ /^move\s+/i) {
-		$::config{sitAuto_hp_lower} = 0;
-		$::config{sitAuto_hp_upper} = 0;
-		$::config{sitAuto_sp} = 0;
-		$::config{sitAuto_sp_max} = 0;
+		# sitAuto NOT disabled — heuristic controls it per RULE.md
 		Commands::run("stand");
 		debug "[auto_stand] bot was sitting, auto-stand before move command\n", 'aiSidecarBridge', 1;
 	}

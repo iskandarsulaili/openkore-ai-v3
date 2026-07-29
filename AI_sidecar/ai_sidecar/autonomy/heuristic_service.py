@@ -1870,14 +1870,34 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "itemsTakeAuto_party", "0", "hunting",
                 "Config audit - don't take party members' drops")
             # ── SITTING CONFIG: let bot use sitAuto for HP regen ──
-            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "30", "hunting",
-                "Config audit - sit when HP < 30%")
-            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "60", "hunting",
-                "Config audit - stand when HP > 60%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "20", "hunting",
+                "Config audit - sit when HP < 20%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "50", "hunting",
+                "Config audit - stand when HP > 50%")
             self._set_config_once(actions, bot_id, "sitAuto_over_50", "0", "hunting",
                 "Config audit - never sit due to weight")
             self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
                 "Config audit - never sit idle")
+            # ── SELL CONFIG: auto-sell when overweight ──
+            self._set_config_once(actions, bot_id, "sellAuto", "1", "hunting",
+                "Config audit - auto-sell loot when inventory full")
+            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
+                "Config audit - Tool Dealer in Prontera")
+            self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
+                "Config audit - walk up to 25 cells to sell")
+            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "70", "hunting",
+                "Config audit - sell when weight > 70%")
+            self._set_config_once(actions, bot_id, "sellAuto_minZen", "0", "hunting",
+                "Config audit - sell even with 0 zeny")
+            # ── STORAGE CONFIG: deposit heavy items at Kafra for free ──
+            self._set_config_once(actions, bot_id, "storageAuto", "1", "hunting",
+                "Config audit - auto-deposit at Kafra")
+            self._set_config_once(actions, bot_id, "storageAuto_distance", "5", "hunting",
+                "Config audit - stand next to Kafra")
+            self._set_config_once(actions, bot_id, "relogAfterStorage", "0", "hunting",
+                "Config audit - don't relog after storage")
+            self._set_config_once(actions, bot_id, "minStorageZeny", "0", "hunting",
+                "Config audit - 0 zeny needed to use storage")
             # ── TELEPORT CONFIG: escape from danger ──
             self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
                 "Config audit - teleport when HP < 10%")
@@ -1895,14 +1915,25 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "itemsTakeAuto_party", "0", "hunting",
                 "Config audit - don't take party members' drops")
             # ── SITTING CONFIG: let bot use sitAuto for HP regen ──
-            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "30", "hunting",
-                "Config audit - sit when HP < 30%")
-            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "60", "hunting",
-                "Config audit - stand when HP > 60%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "20", "hunting",
+                "Config audit - sit when HP < 20%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "50", "hunting",
+                "Config audit - stand when HP > 50%")
             self._set_config_once(actions, bot_id, "sitAuto_over_50", "0", "hunting",
                 "Config audit - never sit due to weight")
             self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
                 "Config audit - never sit idle")
+            # ── SELL CONFIG: auto-sell when overweight ──
+            self._set_config_once(actions, bot_id, "sellAuto", "1", "hunting",
+                "Config audit - auto-sell loot when inventory full")
+            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
+                "Config audit - Tool Dealer in Prontera")
+            self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
+                "Config audit - walk up to 25 cells to sell")
+            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "70", "hunting",
+                "Config audit - sell when weight > 70%")
+            self._set_config_once(actions, bot_id, "sellAuto_minZen", "0", "hunting",
+                "Config audit - sell even with 0 zeny")
             # ── TELEPORT CONFIG: escape from danger ──
             self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
                 "Config audit - teleport when HP < 10%")
