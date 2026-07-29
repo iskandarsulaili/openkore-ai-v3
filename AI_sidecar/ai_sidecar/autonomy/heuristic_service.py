@@ -1980,8 +1980,11 @@ class HeuristicService:
             ))
             # Set lockMap to hunting map
             _th_hunt_map = self._adaptive.get_best_map(bot_id, base_level) or "prt_fild05"
-            self._set_config_once(actions, bot_id, "lockMap", _th_hunt_map, "hunting",
-                f"Lock to hunting map {_th_hunt_map}")
+            # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
+            _th_cs_step = self._cold_start_step.get(bot_id, 0)
+            if not (_th_cs_step == 1 and not _has_weapon and zeny < 50):
+                self._set_config_once(actions, bot_id, "lockMap", _th_hunt_map, "hunting",
+                    f"Lock to hunting map {_th_hunt_map}")
             self._set_config_once(actions, bot_id, "lockMap_randX", "100", "hunting",
                 "Random walk radius X")
             self._set_config_once(actions, bot_id, "lockMap_randY", "100", "hunting",
