@@ -5337,7 +5337,6 @@ sub _survival_check {
 			eval { require AI; AI::state(2); 1 };
 		}
 	}
-}
 
 # ── Economy / Sell loop (auto-sell junk items for zeny) ──
 # This is called by the survival_check when zeny is needed.
