@@ -69,6 +69,7 @@ from ai_sidecar.domains.combat.tactics.kiting_v2 import TickBasedKiting
 from ai_sidecar.domains.economy.map_policies import InventoryPolicies, SpawnNavigator
 from ai_sidecar.domains.social.combo_protocol import ComboHandshakeProtocol
 from ai_sidecar.runtime.event_bus import EventBus, post_death_event
+from ai_sidecar.runtime.degradation import safe_assess, get_registry
 from ai_sidecar.runtime.persistence import PersistentState
 from ai_sidecar.domains.navigation.danger_pathfinding import DangerAwarePathfinder
 from ai_sidecar.domains.equipment.loadout import ConsumableLoadoutPlanner, DurabilityMonitor, PostMortemAnalyzer
@@ -1418,6 +1419,12 @@ class HeuristicService:
             self._social_reputation = SocialReputationDomain()
             self._farming_loop = FarmingLoopOptimizer()
             self._new_domains_initialized = True
+            # Initialize competition planner (gracefully degraded)
+            try:
+                from ai_sidecar.domains.farming.competition import CompetitionAwareFarming
+                self._competition_planner = CompetitionAwareFarming()
+            except Exception:
+                self._competition_planner = None
             logger.info("New domain modules initialized")
         except Exception as e:
             logger.warning(f"New domain init failed (non-fatal): {e}")
@@ -1505,50 +1512,25 @@ class HeuristicService:
                                 _cmd = self._npc_lookup.get_talk_command(_jc)
                                 if _cmd:
                                     _actions.append(HeuristicAction(kind="command", command=_cmd, confidence=0.8, reason=f"Job change: {_job} -> {_nj}", domain="progression"))
-                    if self._party_engine:
-                        self._party_engine.assess(signals, _actions, _bot_id)
-                    if self._danger_predictor:
-                        self._danger_predictor.assess(signals, _actions, _bot_id)
-                    if self._map_rotation:
-                        self._map_rotation.assess(signals, _actions, _bot_id)
-                    if self._kiting:
-                        _ka = self._kiting.select_target(signals, None)
-                        if _ka:
-                            _actions.append(HeuristicAction(kind="command", command=_ka.get("command", ""), confidence=0.7, reason="Kiting reposition", domain="combat"))
-                    if self._world_state:
-                        self._world_state.assess(signals, _actions, _bot_id)
-                    if self._combat_pressure:
-                        self._combat_pressure.assess(signals, _actions, _bot_id)
-                    if self._kiting_v2:
-                        self._kiting_v2.assess(signals, _actions, _bot_id)
-                    if self._inventory_policies:
-                        self._inventory_policies.assess(signals, _actions, _bot_id)
-                    if self._spawn_navigator:
-                        self._spawn_navigator.assess(signals, _actions, _bot_id)
-                    if self._combo_protocol:
-                        self._combo_protocol.assess(signals, _actions, _bot_id)
-                    if self._loadout_planner:
-                        self._loadout_planner.assess(signals, _actions, _bot_id)
-                    if self._durability_monitor:
-                        self._durability_monitor.assess(signals, _actions, _bot_id)
-                    if self._post_mortem:
-                        self._post_mortem.assess(signals, _actions, _bot_id)
-                    if bool(signals.get("dead", False) or signals.get("is_dead", False)):
-                        _lm = signals.get("last_attacked_monster", signals.get("last_monster", "unknown"))
-                        PersistentState.record_death(str(signals.get("map", "unknown")), str(_lm), f"died to {_lm}")
-                        post_death_event(str(signals.get("map", "unknown")), str(_lm))
-                    if self._loot_discipline:
-                        self._loot_discipline.assess(signals, _actions, _bot_id)
-                    if self._event_detector:
-                        self._event_detector.assess(signals, _actions, _bot_id)
-                    if self._live_market:
-                        self._live_market.assess(signals, _actions, _bot_id)
-                    if self._danger_pathfinder:
-                        self._danger_pathfinder.assess(signals, _actions, _bot_id)
-                    if self._social_reputation:
-                        self._social_reputation.assess(signals, _actions, _bot_id)
-                    if self._farming_loop:
-                        self._farming_loop.assess(signals, _actions, _bot_id)
+                    safe_assess(self._party_engine, "party_engine", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._danger_predictor, "danger_predictor", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._map_rotation, "map_rotation", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._world_state, "world_state", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._combat_pressure, "combat_pressure", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._kiting_v2, "kiting_v2", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._inventory_policies, "inventory_policies", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._spawn_navigator, "spawn_navigator", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._combo_protocol, "combo_protocol", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._loadout_planner, "loadout_planner", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._durability_monitor, "durability_monitor", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._post_mortem, "post_mortem", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._loot_discipline, "loot_discipline", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._event_detector, "event_detector", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._live_market, "live_market", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._danger_pathfinder, "danger_pathfinder", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._social_reputation, "social_reputation", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._farming_loop, "farming_loop", signals, _actions, _bot_id, get_registry())
+                    safe_assess(self._competition_planner, "competition_planner", signals, _actions, _bot_id, get_registry())
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))

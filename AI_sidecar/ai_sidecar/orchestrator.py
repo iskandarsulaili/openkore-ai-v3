@@ -17,7 +17,9 @@ from ai_sidecar.runtime.event_bus import EventBus
 from ai_sidecar.runtime.persistence import PersistentState
 from ai_sidecar.runtime.pool import ResourcePool
 from ai_sidecar.runtime.scheduler import OutOfCombatScheduler
-from ai_sidecar.runtime.action_filter import filter_actions, get_filter_logger, BridgeActionLogger
+from ai_sidecar.runtime.action_filter import filter_actions, get_filter_logger, BridgeActionLogger, BatchActionQueue
+from ai_sidecar.runtime.latency import get_latency_tracker
+from ai_sidecar.runtime.cruise import CruiseController
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,9 @@ class BotRuntime:
         self._out_of_combat = OutOfCombatScheduler()
         self._last_error: str | None = None
         self._error_count = 0
+        self._cruise = CruiseController()
+        self._latency = get_latency_tracker()
+        self._batch_queue = BatchActionQueue()
 
     def initialize(self) -> None:
         if self._initialized:
@@ -77,13 +82,30 @@ class BotRuntime:
 
         bot_id = signals.get("bot_id", str(signals.get("id", "unknown")))
 
+        # Track snapshot sent for latency measurement
+        self._latency.record_snapshot_sent()
+
+        # Check cruise control (steady state decision caching)
+        if self._cruise.is_steady_state(signals):
+            cached = self._cruise.get_cached()
+            if cached:
+                logger.debug(f"[{bot_id}] Steady state: reusing {len(cached)} cached actions")
+                return cached
+
         # 1. Main AI decision engine
         try:
             assessment = self._hs.assess(signals)
             if assessment and assessment.actions:
+                # Record latency from snapshot to action
+                self._latency.record_action_received()
+
                 # Apply action filter: reduce 72+ actions to top real commands
                 filtered = filter_actions(assessment.actions, max_commands=5)
                 actions.extend(filtered)
+                # Cache for cruise control
+                self._cruise.cache_decisions(actions)
+                # Add to batch queue for multi-action polling
+                self._batch_queue.add_actions(filtered)
                 # Log bridge actions for verification
                 _logger = get_filter_logger()
                 for a in filtered:
@@ -158,6 +180,9 @@ class BotRuntime:
             "last_error": self._last_error,
             "persistence": PersistentState.get_stats(),
             "bridge_actions": get_filter_logger().get_stats(),
+            "cruise": self._cruise.get_stats() if hasattr(self, '_cruise') else {},
+            "latency": self._latency.get_stats() if hasattr(self, '_latency') else {},
+            "action_batch": {"queue_size": self._batch_queue.queue_size()} if hasattr(self, '_batch_queue') else {},
         }
 
     def get_event_summary(self) -> dict:

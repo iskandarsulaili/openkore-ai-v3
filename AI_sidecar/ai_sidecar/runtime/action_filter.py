@@ -97,6 +97,48 @@ def filter_actions(actions: list[HeuristicAction], max_commands: int = 5) -> lis
     return logs + top_commands
 
 
+class BatchActionQueue:
+    """Batches multiple actions into a single poll response.
+    
+    Instead of returning 1 action per poll, we now return up to 5.
+    Each action gets a batch_id so the bridge can track progress.
+    """
+    
+    def __init__(self):
+        self._batch_counter = 0
+        self._pending: list[dict] = []
+    
+    def add_actions(self, actions: list[HeuristicAction]) -> None:
+        """Add filtered actions to the batch queue."""
+        self._batch_counter += 1
+        batch_id = self._batch_counter
+        for i, action in enumerate(actions):
+            if action.kind == "command" and action.command:
+                self._pending.append({
+                    "action_id": f"{batch_id}_{i}",
+                    "kind": action.kind,
+                    "command": action.command,
+                    "confidence": action.confidence,
+                    "domain": action.domain,
+                    "reason": action.reason,
+                    "batch_id": batch_id,
+                    "batch_index": i,
+                    "batch_total": len(actions),
+                })
+    
+    def pop_next(self) -> dict | None:
+        """Get the next action from the queue. Returns None if empty."""
+        if not self._pending:
+            return None
+        return self._pending.pop(0)
+    
+    def has_actions(self) -> bool:
+        return len(self._pending) > 0
+    
+    def queue_size(self) -> int:
+        return len(self._pending)
+
+
 class BridgeActionLogger:
     """Logs every action sent to the bridge for verification.
     

@@ -3,9 +3,9 @@
   "map_name": "prt_fild05",
   "x": 0,
   "y": 0,
-  "level": 1,
+  "level": 10,
   "job_level": 1,
-  "job": "novice",
+  "job": "Novice",
   "hp": 80,
   "hp_max": 100,
   "sp": 50,
@@ -19,7 +19,7 @@
   "hp_pct": 0.8,
   "sp_pct": 0.625,
   "weight_pct": 0.0,
-  "zeny": 0,
+  "zeny": 500,
   "party_member_count": 0,
   "status": "idle",
   "current_hunt_map": "",
@@ -32,6 +32,6 @@
   "vote_confidence": 0.0,
   "wants_to_leave_party": false,
   "acolyte_can_buff": false,
-  "timestamp": 1785333686.788073,
+  "timestamp": 1785335362.3047922,
   "bot_id": "test"
 }
