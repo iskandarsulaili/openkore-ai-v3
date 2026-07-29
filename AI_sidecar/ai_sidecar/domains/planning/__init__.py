@@ -24,6 +24,11 @@ from ai_sidecar.domains.planning.scheduler import (
     TaskCategory,
     TaskScheduler,
 )
+from ai_sidecar.domains.planning.rotation import (
+    MapRotationPlanner,
+    RotationRecommendation,
+    ZoneInfo,
+)
 
 logger = logging.getLogger(__name__)
 

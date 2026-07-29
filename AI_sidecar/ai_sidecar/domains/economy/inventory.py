@@ -23,6 +23,7 @@ from ai_sidecar.domains.economy.database import (
     DISCARD, CRAFTING, QUEST, POTION_FOOD, MATERIAL,
 )
 from ai_sidecar.domains.economy.calculator import ItemWorthCalculator
+from ai_sidecar.domains.economy.quest_items import QuestItemsDB, get_quest_items_db
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +74,11 @@ class InventoryManager:
         self,
         db: ItemValueDB | None = None,
         calculator: ItemWorthCalculator | None = None,
+        quest_db: QuestItemsDB | None = None,
     ) -> None:
         self._db = db or ItemValueDB()
         self._calc = calculator or ItemWorthCalculator(self._db)
+        self._quest_db = quest_db or get_quest_items_db()
         self._auto_sell_enabled = True
 
     # ── Core assessment ───────────────────────────────────────────
@@ -173,7 +176,7 @@ class InventoryManager:
                 zeny_value=best_price * quantity,
             )
 
-        # 2. Quest items — keep
+        # 2. Quest items — keep (from item_values.yaml)
         if cls == QUEST:
             return InventoryAction(
                 item_name=name,
@@ -181,6 +184,21 @@ class InventoryManager:
                 quantity=quantity,
                 action="keep",
                 reason=f"Quest item — keep for turn-ins ({best_price}z/value)",
+                priority=2,
+                zeny_value=best_price * quantity,
+            )
+
+        # 2b. Quest items from quest_items.yaml — NEVER sell
+        quest_info = self._quest_db.get_quest_info(name)
+        if quest_info is not None:
+            quest_name = quest_info.get("quest_name", "Unknown Quest")
+            quest_loc = quest_info.get("quest_location", "")
+            return InventoryAction(
+                item_name=name,
+                item_id=item_id,
+                quantity=quantity,
+                action="keep",
+                reason=f"Quest item — needed for '{quest_name}' ({quest_loc})",
                 priority=2,
                 zeny_value=best_price * quantity,
             )

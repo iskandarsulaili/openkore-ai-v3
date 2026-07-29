@@ -6,6 +6,7 @@ from ai_sidecar.domains.combat.tactics.ranged_dps import RangedDPSTactics
 from ai_sidecar.domains.combat.tactics.magic_dps import MagicDPSTactics
 from ai_sidecar.domains.combat.tactics.support import SupportTactics
 from ai_sidecar.domains.combat.tactics.hybrid import HybridTactics
+from ai_sidecar.domains.combat.tactics.kiting import KitingTactics
 
 __all__ = [
     "BaseTactics", "TacticsContext", "TargetInfo",
@@ -15,4 +16,5 @@ __all__ = [
     "MagicDPSTactics",
     "SupportTactics",
     "HybridTactics",
+    "KitingTactics",
 ]

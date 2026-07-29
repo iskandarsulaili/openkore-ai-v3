@@ -57,6 +57,13 @@ from ai_sidecar.domains.combat.jobs import (
     JobRegistry,
     get_job_registry, get_tactics_for_job,
 )
+from ai_sidecar.domains.combat.safety import (
+    DangerPredictor,
+    SafetyEvaluator,
+    SafetyDomain,
+    DangerAssessment,
+    SafetyRecommendation,
+)
 
 __all__ = [
     # Core
@@ -94,4 +101,11 @@ __all__ = [
     # Job registry
     "JobRegistry",
     "get_job_registry", "get_tactics_for_job",
+
+    # Safety
+    "DangerPredictor",
+    "SafetyEvaluator",
+    "SafetyDomain",
+    "DangerAssessment",
+    "SafetyRecommendation",
 ]

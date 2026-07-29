@@ -62,6 +62,8 @@ from ai_sidecar.domains.planning.goals import GoalManager
 from ai_sidecar.domains.planning.scheduler import TaskScheduler
 from ai_sidecar.domains.social.swarm import SwarmCoordinator
 from ai_sidecar.state.collector import StateCollector
+from ai_sidecar.domains.combat.safety import DangerPredictor, SafetyEvaluator, SafetyDomain
+from ai_sidecar.domains.planning.rotation import MapRotationPlanner
 
 logger = logging.getLogger(__name__)
 
@@ -1018,6 +1020,10 @@ class HeuristicService:
         self._experience_tracker: ExperienceTracker | None = None
         self._goal_manager: GoalManager | None = None
         self._task_scheduler: TaskScheduler | None = None
+        # ── Map rotation planner ──
+        self._map_rotation: MapRotationPlanner | None = None
+        # ── Danger predictor and safety evaluator ──
+        self._danger_predictor: DangerPredictor | None = None
 
     # ── State persistence ──────────────────────────────────────────────
 
@@ -1379,6 +1385,10 @@ class HeuristicService:
                 data_dir="data",
             )
             self._state_collector = StateCollector()
+            # ── Map rotation planner ──
+            self._map_rotation = MapRotationPlanner()
+            # ── Danger predictor / safety domain ──
+            self._danger_predictor = DangerPredictor()
             self._new_domains_initialized = True
             logger.info("New domain modules initialized")
         except Exception as e:
