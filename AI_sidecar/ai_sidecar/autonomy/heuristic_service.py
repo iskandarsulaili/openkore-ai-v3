@@ -1503,7 +1503,16 @@ class HeuristicService:
                         _bl = int(signals.get("base_level", 1) or 1)
                         if _bl <= 10:
                             # Ensure Basic Skill is learned (level 1 = ability to sit/regen)
-                            _actions.append(HeuristicAction(kind="command", command="skills add Basic_Skill 1", confidence=0.9, reason="Cold start: learn Basic Skill for sit/regen", domain="progression"))
+                            _actions.append(HeuristicAction(kind="command", command="skills add Basic_Skill 1", confidence=0.9, reason="Cold start: learn Basic Skill", domain="progression"))
+                            # Stay in Prontera town until level 5+ — prt_fild05 is too dangerous for naked Novice
+                            _actions.append(HeuristicAction(kind="command", command="lockMap prontera", confidence=0.8, reason=f"Cold start: stay in town until lvl 5 (current: {_bl})", domain="progression"))
+                            # Attack only easy monsters near town: Poring, Lunatic, Fabre, Picky
+                            _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 1 0 0", confidence=0.7, reason="Cold start: avoid Pupa (too strong for lvl 1)", domain="progression"))
+                            _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Cold start: attack Porings only", domain="progression"))
+                        if _bl >= 5 and _bl <= 15:
+                            # Level 5+: move to prt_fild05 but only attack easy mobs
+                            _actions.append(HeuristicAction(kind="command", command="lockMap prt_fild05", confidence=0.7, reason=f"Cold start: move to field at lvl {_bl}", domain="progression"))
+                            _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 1 0 0", confidence=0.6, reason="Cold start: avoid Pupa", domain="progression"))
                         if _bl <= 25:
                             self._cold_start_planner.assess(signals, _actions, _bot_id)
                     if self._npc_lookup and _bl >= 9:

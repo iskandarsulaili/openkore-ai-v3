@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 # Add project root to path
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
 class BotProcess:
