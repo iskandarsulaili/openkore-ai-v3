@@ -1417,6 +1417,7 @@ class HeuristicService:
             # ── NEW DOMAIN MODULE DELEGATION (runs for ALL states) ──
             _bot_id = bot_id_override or signals.get("bot_id", "default")
             _actions = assessment.actions
+            _bl = int(signals.get("base_level", 1) or 1)
             self._init_new_domains()
             if self._new_domains_initialized and self._state_collector:
                 try:
@@ -1453,6 +1454,29 @@ class HeuristicService:
                     if self._swarm_coordinator:
                         _sa = self._swarm_coordinator.tick(_bot_id, signals)
                         _actions.extend(_sa)
+                    if self._cold_start_planner:
+                        _bl = int(signals.get("base_level", 1) or 1)
+                        if _bl <= 25:
+                            self._cold_start_planner.assess(signals, _actions, _bot_id)
+                    if self._npc_lookup and _bl >= 9:
+                        _job = str(signals.get("job", "") or "").lower()
+                        if _job in ["novice"] and _bl >= 9:
+                            _nj = "swordman" if int(signals.get("str", 0) or 0) > int(signals.get("int", 0) or 0) else "mage"
+                            _jc = self._npc_lookup.get_job_change_dialogue(_job, _nj)
+                            if _jc:
+                                _cmd = self._npc_lookup.get_talk_command(_jc)
+                                if _cmd:
+                                    _actions.append(HeuristicAction(kind="command", command=_cmd, confidence=0.8, reason=f"Job change: {_job} -> {_nj}", domain="progression"))
+                    if self._party_engine:
+                        self._party_engine.assess(signals, _actions, _bot_id)
+                    if self._danger_predictor:
+                        self._danger_predictor.assess(signals, _actions, _bot_id)
+                    if self._map_rotation:
+                        self._map_rotation.assess(signals, _actions, _bot_id)
+                    if self._kiting:
+                        _ka = self._kiting.select_target(signals, None)
+                        if _ka:
+                            _actions.append(HeuristicAction(kind="command", command=_ka.get("command", ""), confidence=0.7, reason="Kiting reposition", domain="combat"))
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))

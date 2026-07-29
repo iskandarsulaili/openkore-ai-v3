@@ -1,9 +1,12 @@
-"""Navigation domain — portal database, Dijkstra pathfinding, and route actions.
+"""Navigation domain — portal database, Dijkstra pathfinding, route actions,
+and RO fast-travel (Kafra, Fly Wing, Butterfly Wing, Airship).
 
 Provides:
   - PortalDB: Thread-safe database of 115+ real RO portal connections
   - Pathfinder: Dijkstra shortest-path with LRU caching
   - NavigationDomain: Domain integration with the PDCA assessment loop
+  - TravelRecommender: Optimal travel method selection (walk, Kafra, wings, airship)
+  - KafraDestination / AirshipRoute: Data classes for fast-travel systems
   - Convenience functions: find_path(), path_to_move_commands(), route_to()
 """
 from __future__ import annotations
@@ -21,6 +24,13 @@ from ai_sidecar.domains.navigation.actions import (
     build_navigation_route,
     path_to_move_commands,
     nearest_portal,
+)
+from ai_sidecar.domains.navigation.travel_recommender import (
+    TravelRecommender,
+    TravelRecommendation,
+    KafraDestination,
+    AirshipRoute,
+    get_travel_recommender,
 )
 
 __all__ = [
@@ -40,4 +50,10 @@ __all__ = [
     "build_navigation_route",
     "path_to_move_commands",
     "nearest_portal",
+    # Travel recommender
+    "TravelRecommender",
+    "TravelRecommendation",
+    "KafraDestination",
+    "AirshipRoute",
+    "get_travel_recommender",
 ]

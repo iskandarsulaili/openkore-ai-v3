@@ -32,6 +32,10 @@ from ai_sidecar.domains.combat.tactics import (
     TankTactics, MeleeDPSTactics, RangedDPSTactics,
     MagicDPSTactics, SupportTactics, HybridTactics,
 )
+from ai_sidecar.domains.combat.engine import (
+    ROCombatEngine, ROMechanicsLoader, SkillInfo, SkillScore,
+    CastState, get_combat_engine, get_mechanics_loader, assess_combat_engine,
+)
 from ai_sidecar.domains.combat.dispatcher import (
     TacticsDispatcher, get_tactics_dispatcher, assess_combat_tactics,
 )
@@ -59,6 +63,11 @@ __all__ = [
     "BaseTactics", "TacticsContext", "TargetInfo",
     "TacticsDispatcher", "get_tactics_dispatcher",
     "assess_combat_tactics",
+
+    # Engine
+    "ROCombatEngine", "ROMechanicsLoader", "SkillInfo", "SkillScore",
+    "CastState", "get_combat_engine", "get_mechanics_loader",
+    "assess_combat_engine",
 
     # Tactics modules
     "TankTactics",

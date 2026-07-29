@@ -1,18 +1,18 @@
 {
   "decision_id": "",
-  "leader_name": "test_bot",
-  "timestamp": 1785323901.296077,
+  "leader_name": "test",
+  "timestamp": 1785327160.0996811,
   "formation": "line",
-  "hunt_map": "prt_fild05",
+  "hunt_map": "",
   "target_monster": "",
   "retreat": false,
   "focus_fire_monster_id": "",
   "spread_targets": false,
   "kite_mode": false,
   "formation_positions": {
-    "test_bot": {
-      "x": 100,
-      "y": 203
+    "test": {
+      "x": 0,
+      "y": 3
     }
   },
   "member_range": 15,
@@ -21,6 +21,6 @@
   "buff_targets": [],
   "migration_order": [],
   "consensus_threshold": 0.66,
-  "reason": "Formation=line, Hunt=prt_fild05, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
+  "reason": "Formation=line, Hunt=, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
   "version": 2
 }
