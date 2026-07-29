@@ -5,9 +5,9 @@
 
 # Server connection timeouts
 # Wait x seconds for each login-stage reply before treating the connection as stalled.
-master 12
-gamelogin 12
-charlogin 12
+master 30
+gamelogin 30
+charlogin 30
 maplogin 12
 play 40
 # When disconnected, wait x seconds before reconnecting again
