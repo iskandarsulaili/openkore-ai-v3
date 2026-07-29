@@ -67,18 +67,6 @@ class DomainRegistry:
         ``Domain`` that can be instantiated.
         """
         domain_module_names = [
-            "combat",
-            "economy",
-            "routing",
-            "social",
-            "progression",
-            "npc",
-            "quests",
-            "equipment",
-            "consumables",
-            "mimicry",
-            "environment",
-            "learning",
         ]
         for mod_name in domain_module_names:
             try:
