@@ -105,14 +105,14 @@
   "_last_level": {},
   "_last_party_attempt": {},
   "_last_party_leave": {
-    "Asgards Glory:kicapmasin10": 1785353248.7629092,
-    "Asgards Glory:kicapmasin5": 1785353249.8648229,
-    "Asgards Glory:kicapmasin6": 1785353249.8689857,
-    "Asgards Glory:kicapmasin9": 1785353249.8719895,
-    "Asgards Glory:kicapmasin7": 1785353249.8780599,
-    "Asgards Glory:kicapmasin11": 1785353249.8811338,
-    "Asgards Glory:kicapmasin4": 1785353249.8840775,
-    "Asgards Glory:kicapmasin8": 1785353249.8870134
+    "Asgards Glory:kicapmasin10": 1785353409.5767412,
+    "Asgards Glory:kicapmasin5": 1785353410.6795337,
+    "Asgards Glory:kicapmasin6": 1785353410.6826146,
+    "Asgards Glory:kicapmasin9": 1785353410.6854446,
+    "Asgards Glory:kicapmasin7": 1785353410.6880805,
+    "Asgards Glory:kicapmasin11": 1785353410.692489,
+    "Asgards Glory:kicapmasin4": 1785353410.6951191,
+    "Asgards Glory:kicapmasin8": 1785353410.6978781
   },
   "_last_party_seen": {},
   "_all_bots_cache": {},
@@ -146,42 +146,42 @@
     "Asgards Glory:kicapmasin5": [
       0,
       0,
-      1785353276.2656279
+      1785353437.7869406
     ],
     "Asgards Glory:kicapmasin6": [
       0,
       0,
-      1785353276.2748384
+      1785353437.7910655
     ],
     "Asgards Glory:kicapmasin9": [
       0,
       0,
-      1785353276.281016
+      1785353437.7950697
     ],
     "Asgards Glory:kicapmasin7": [
       0,
       0,
-      1785353276.2871604
+      1785353437.7989998
     ],
     "Asgards Glory:kicapmasin11": [
       0,
       0,
-      1785353276.2967114
+      1785353437.8031719
     ],
     "Asgards Glory:kicapmasin4": [
       0,
       0,
-      1785353276.303077
+      1785353437.806996
     ],
     "Asgards Glory:kicapmasin8": [
       0,
       0,
-      1785353276.3093581
+      1785353437.8108158
     ],
     "Asgards Glory:kicapmasin10": [
       0,
       0,
-      1785353276.3155684
+      1785353437.8147945
     ]
   },
   "_last_move_time": {},
@@ -202,5 +202,5 @@
   "_team_jobs_assigned": {},
   "_last_job_change_time": {},
   "_assigned_jobs": {},
-  "_saved_at": 1785353321.4928274
+  "_saved_at": 1785353565.7056797
 }
