@@ -4306,10 +4306,11 @@ sub _rewrite_runtime_command {
 		# OpenKore only checks mon_control BEFORE starting an attack, not during.
 		# If the bot is currently attacking a now-ignored monster, it must be
 		# stopped so the AI re-evaluates targets.
-		# Force AI target reselection: clear current attacks and restart AI
-		eval { AI::clear(); 1; };
+		# Restart AI state machine to force target re-evaluation
+		# AI::state(2) restarts the auto-attack system without clearing
+		# other AI queues (movement, loot, etc.)
 		eval { AI::state(2); 1; };
-		warning "[mon_control] AI cleared+restarted for target reselection\n", 'aiSidecarBridge', 1;
+		warning "[mon_control] AI restarted (state 2) for target reselection\n", 'aiSidecarBridge', 1;
 		return ('', 'mon_control_applied');
 		}
 
