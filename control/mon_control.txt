@@ -220,3 +220,12 @@ Yellow Plant 0 0 0
 1648 -1 1 0 #Whitesmith Harword
 1917 -1 1 0 #Wounded Morroc
 1658 -1 1 0 #Ygnizem
+thief bug egg 0 0 0
+pupa 0 0 0
+thief bug 0 0 0
+lunatic 0 0 0
+fabre 0 0 0
+condor 0 0 0
+thief bug egg 0 0 0
+thief bug egg 0 0 0
+thief bug egg 0 0 0

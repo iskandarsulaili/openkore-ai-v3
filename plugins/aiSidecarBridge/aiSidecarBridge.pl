@@ -1159,7 +1159,26 @@ sub on_command_intercept {
 	        }
 	    }
 	}
-	# PvP/GvG/Turbo maps: allow through
+		# Handle mon_control command - write to mon_control.txt and reload
+	if ($full_cmd =~ /^mon_control\s+(.+)$/i) {
+	    my $_mc_entry = $1;
+	    my @_mc_files = glob('.bot_profiles/*/control/mon_control.txt');
+	    push @_mc_files, 'control/mon_control.txt';
+	    for my $_mc_file (@_mc_files) {
+	        if (open my $_mc_fh, '>>', $_mc_file) {
+	            print $_mc_fh "$_mc_entry\n";
+	            close $_mc_fh;
+	            debug "[command_intercept] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+	        } else {
+	            warning "[command_intercept] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+	        }
+	    }
+	    eval { Commands::run("reload mon_control"); 1; };
+	    $args->{switch} = '';
+	    $args->{args} = '';
+	    return;
+	}
+# PvP/GvG/Turbo maps: allow through
 	return;
 }
 
