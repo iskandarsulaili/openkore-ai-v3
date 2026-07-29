@@ -1100,14 +1100,14 @@ class HeuristicService:
                             reason="Cold start - re-enable attack for farming",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="set lockMap prt_fild01",
+                            kind="command", command="set lockMap prt_fild05",
                             confidence=0.99, domain="economy",
-                            reason="Cold start - set lockMap to prt_fild01 for farming",
+                            reason="Cold start - set lockMap to prt_fild05 for farming",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="move prt_fild01",
+                            kind="command", command="move 22 203",
                             confidence=0.99, domain="economy",
-                            reason=f"Cold start - farm {50 - zeny}z on prt_fild01 (0 zeny, no weapon)",
+                            reason=f"Cold start - farm {50 - zeny}z on prt_fild05 (0 zeny, no weapon)",
                         ))
             else:
                 # Weapon confirmed — move to step 2
