@@ -269,9 +269,11 @@ sub _cleanup_runtime {
 }
 
 sub on_start3 {
-	# Disable sitAuto at startup — OpenKore defaults enable it
-	$::config{'sitAuto_hp_lower'} = 0;
-	$::config{'sitAuto_hp_upper'} = 0;
+	# NOTE: sitAuto NOT disabled here — let the heuristic control it
+	# via the config audit which sets sitAuto_hp_lower=30, sitAuto_hp_upper=60.
+	# The old code disabled sitAuto entirely, which prevented the bot from
+	# sitting to regen HP (leading to 9% HP death spirals).
+	
 	# Disable useSelf_item at startup — delete ALL entries
 	# OpenKore's useSelf_item system calls $messageSender->sendItemUse() directly,
 	# bypassing Actor::Item::use(). The "on cooldown, skipping" message is from the server.
@@ -522,33 +524,15 @@ sub on_mainLoop_post {
             # NEVER force stand when HP is critically low (<30%) — bot needs to regen
             if (($_fs_hp_pct >= 50 || $_fs_is_town) && $_fs_hp_pct >= 30) {
                 warning "[force_stand] bot sitting (HP=$_fs_hp_pct% town=$_fs_is_town pots=$_fs_has_potions), forcing stand\n", 'aiSidecarBridge', 1;
-                # Disable OpenKore's internal sit AI to prevent immediate re-sit
-                $::config{sitAuto_hp_lower} = 0;
-                $::config{sitAuto_hp_upper} = 0;
-                $::config{sitAuto_sp} = 0;
-                $::config{sitAuto_sp_max} = 0;
+                # Let bot use OpenKore's internal sit AI for HP regen
+                # sitAuto_hp_lower = default (30%) — bot will sit when HP < 30%
+                # sitAuto_hp_upper = default (60%) — bot will stand when HP > 60%
+                # Don't disable sitAuto — the bot needs to regen HP!
                 eval { Commands::run("stand"); 1 };
                 eval { Commands::run("ai auto"); 1 };
             }
         }
         
-        # ── OVERWEIGHT HANDLER: force stand if overweight and sitting ──
-        # Being overweight slows movement but doesn't prevent attacking.
-        # The bot should still stand and fight even when overweight.
-        if ($char && $char->{sitting}) {
-            my $_ow_weight = 0;
-            if ($char->{inventory}) {
-                my $_ow_max = $char->{weight_max} || 1;
-                my $_ow_cur = $char->{weight} || 0;
-                $_ow_weight = $_ow_cur / $_ow_max if $_ow_max > 0;
-            }
-            if ($_ow_weight > 0.7) {
-                warning "[overweight] bot sitting with weight=$_ow_weight% — forcing stand\n", 'aiSidecarBridge', 1;
-                eval { Commands::run("stand"); 1 };
-                eval { Commands::run("ai auto"); 1 };
-            }
-        }
-
         # ── DISABLE useSelf_item FOR POTIONS: handled in on_mainLoop_pre ──
         # (Moved to on_mainLoop_pre to run before useSelf_item fires)
         

@@ -1862,10 +1862,52 @@ class HeuristicService:
                 "Config audit - start attacking from 5 cells away")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
+            # ── LOOTING CONFIG: auto-loot everything ──
+            self._set_config_once(actions, bot_id, "itemsTakeAuto", "2", "hunting",
+                "Config audit - auto-take all dropped items")
+            self._set_config_once(actions, bot_id, "itemsGatherAuto", "2", "hunting",
+                "Config audit - auto-gather all items")
+            self._set_config_once(actions, bot_id, "itemsTakeAuto_party", "0", "hunting",
+                "Config audit - don't take party members' drops")
+            # ── SITTING CONFIG: let bot use sitAuto for HP regen ──
+            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "30", "hunting",
+                "Config audit - sit when HP < 30%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "60", "hunting",
+                "Config audit - stand when HP > 60%")
+            self._set_config_once(actions, bot_id, "sitAuto_over_50", "0", "hunting",
+                "Config audit - never sit due to weight")
+            self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
+                "Config audit - never sit idle")
+            # ── TELEPORT CONFIG: escape from danger ──
+            self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
+                "Config audit - teleport when HP < 10%")
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "1", "hunting",
+                "Config audit - teleport from deadly monsters")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
+            # ── LOOTING CONFIG: auto-loot everything ──
+            self._set_config_once(actions, bot_id, "itemsTakeAuto", "2", "hunting",
+                "Config audit - auto-take all dropped items")
+            self._set_config_once(actions, bot_id, "itemsGatherAuto", "2", "hunting",
+                "Config audit - auto-gather all items")
+            self._set_config_once(actions, bot_id, "itemsTakeAuto_party", "0", "hunting",
+                "Config audit - don't take party members' drops")
+            # ── SITTING CONFIG: let bot use sitAuto for HP regen ──
+            self._set_config_once(actions, bot_id, "sitAuto_hp_lower", "30", "hunting",
+                "Config audit - sit when HP < 30%")
+            self._set_config_once(actions, bot_id, "sitAuto_hp_upper", "60", "hunting",
+                "Config audit - stand when HP > 60%")
+            self._set_config_once(actions, bot_id, "sitAuto_over_50", "0", "hunting",
+                "Config audit - never sit due to weight")
+            self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
+                "Config audit - never sit idle")
+            # ── TELEPORT CONFIG: escape from danger ──
+            self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
+                "Config audit - teleport when HP < 10%")
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "1", "hunting",
+                "Config audit - teleport from deadly monsters")
             # CRITICAL: Disable avoidList on hunting maps
             # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
             # instead of attacking them. This is the root cause of zero kills.
