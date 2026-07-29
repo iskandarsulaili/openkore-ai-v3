@@ -1752,8 +1752,11 @@ class HeuristicService:
                     reason=f"Death recovery - buy weapon {_death_weapon_id} for {_death_job}",
                 ))
             # Return to hunt via portal after 15s in town
+            # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
+            _rth_step = self._cold_start_step.get(bot_id, 0)
+            _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
-            if _town_time > 15:
+            if not _rth_skip and _town_time > 15:
                 self._set_config_once(actions, bot_id, "lockMap", "prt_fild05", "hunting",
                     "Lock to hunting map")
                 self._set_config_once(actions, bot_id, "lockMap_randX", "30", "hunting",
