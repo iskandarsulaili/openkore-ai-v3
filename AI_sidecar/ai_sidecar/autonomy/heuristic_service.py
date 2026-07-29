@@ -1191,9 +1191,13 @@ class HeuristicService:
                 # Already equipped — skip cold start
                 self._cold_start_step[_cs_stable_key] = 4
             else:
-                # Need cold start — keep re-emitting portal commands until in Prontera
-                # Stay at step 0 (don't advance to 1) until bot reaches town
-                if not _cs_in_town:
+                # Need cold start
+                if _cs_in_hunting:
+                    # Already on hunting map with no weapon — advance directly to step 1 (farm)
+                    self._cold_start_step[_cs_stable_key] = 1
+                    _cold_start_step = 1
+                elif not _cs_in_town:
+                    # On a different non-town map — portal walk to Prontera
                     actions.append(HeuristicAction(
                         kind="command", command="ai manual",
                         confidence=0.99, domain="economy",
