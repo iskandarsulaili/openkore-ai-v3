@@ -3774,8 +3774,8 @@ sub _rewrite_runtime_command {
 	if ($_mc_lc =~ /^mon_control\s+(.+)$/) {
 		my $_mc_entry = $1;
 		my $_mc_base = $0 ? (($0 =~ /^(.*)\//)[0] || '.') : '.';
-		my @_mc_files = glob("$_mc_base/.bot_profiles/*/control/mon_control.txt");
-		push @_mc_files, "$_mc_base/control/mon_control.txt";
+		my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
+		push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
 		for my $_mc_file (@_mc_files) {
 			if (open my $_mc_fh, '>>', $_mc_file) {
 				print $_mc_fh "$_mc_entry\n";
