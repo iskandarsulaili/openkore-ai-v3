@@ -576,13 +576,19 @@ sub on_mainLoop_post {
                         }
                     }
                     if (!$_hp) {
-                        warning "[portal_exit] 0 potions on $_pm, turning back\n", 'aiSidecarBridge', 1;
-                        $::config{sitAuto_hp_lower} = 0;
-                        $::config{sitAuto_hp_upper} = 0;
-                        $::config{sitAuto_sp} = 0;
-                        $::config{sitAuto_sp_max} = 0;
-                        eval { Commands::run("stand"); 1 };
-                        eval { Commands::run("move prontera"); 1 };
+                        # Check if lockMap matches current map (heuristic wants bot here)
+                        my $_pe_lockmap = $::config{lockMap} || '';
+                        if ($_pe_lockmap ne '' && $_pe_lockmap eq $_pm) {
+                            debug "[portal_exit] 0 potions on $_pm but lockMap=$_pe_lockmap - staying (heuristic override)\n", 'aiSidecarBridge', 1;
+                        } else {
+                            warning "[portal_exit] 0 potions on $_pm, turning back\n", 'aiSidecarBridge', 1;
+                            $::config{sitAuto_hp_lower} = 0;
+                            $::config{sitAuto_hp_upper} = 0;
+                            $::config{sitAuto_sp} = 0;
+                            $::config{sitAuto_sp_max} = 0;
+                            eval { Commands::run("stand"); 1 };
+                            eval { Commands::run("move prontera"); 1 };
+                        }
                     }
                 }
             }

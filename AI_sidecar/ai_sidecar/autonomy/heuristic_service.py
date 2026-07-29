@@ -857,7 +857,7 @@ class HeuristicService:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
         # Stay in COLD_START until cold start sequence completes (step >= 4)
-        if _prev_state == "COLD_START" and self._cold_start_step.get(_cs_stable_key, 0) < 4:
+        if _prev_state == "COLD_START" and self._cold_start_step.get(bot_id, 0) < 4:
             return "COLD_START"
         # DEATH: if bot just died and respawned
         # Only trigger DEATH if bot actually died (HP was 0 or very low)
