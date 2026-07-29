@@ -9,6 +9,11 @@ from ai_sidecar.game_knowledge_db import GameKnowledgeDB
 from ai_sidecar.anti_detection import BehaviorEngine, get_behavior_engine
 from ai_sidecar.anti_detection.behavior_engine import BehaviorProfileType
 from ai_sidecar.autonomy.ro_mechanics import (
+    PER_MAP_MON_CONTROL,
+    JOB_CHANGE_2_1,
+    JOB_2_1_CLASSES,
+    CLASS_SKILL_TRAINING,
+
     get_monster_stats, calculate_aspd, calculate_flee, calculate_hit_rate,
     calculate_monster_hit_rate, calculate_damage, calculate_profit_per_kill,
     calculate_skill_dps, get_best_skill, get_nearest_breakpoint,
@@ -957,7 +962,12 @@ class HeuristicService:
         self._post_job_change_reset: dict[str, bool] = {}  # bot_id -> True if job just changed
         # Mon_control dedup: bot_id -> set of (map, monster_tuple) already sent
         self._mon_control_sent: dict[str, set] = {}
-        # Load persisted state on startup
+        # Leader-decided team job assignments (persisted for crash recovery)
+        self._team_levels: dict[str, int] = {}
+        self._team_jobs_assigned: dict[str, bool] = {}
+        self._last_job_change_time: dict[str, float] = {}
+        self._assigned_jobs: dict[str, str] = {}  # profile -> assigned job class
+        # Auto-save timer
         self._load_state()
 
     # ── State persistence ──────────────────────────────────────────────
@@ -1030,6 +1040,11 @@ class HeuristicService:
                 "_last_mon_control_map": dict(self._last_mon_control_map),
                 "_last_job_name": dict(self._last_job_name),
                 "_post_job_change_reset": dict(self._post_job_change_reset),
+                "_team_levels": dict(self._team_levels),
+                "_team_jobs_assigned": dict(self._team_jobs_assigned),
+                "_last_job_change_time": dict(self._last_job_change_time),
+            "_assigned_jobs": dict(self._assigned_jobs),
+                "_assigned_jobs": dict(self._assigned_jobs),
                 "_saved_at": time.time(),
             }
             # Also persist the adaptive data store
@@ -1569,9 +1584,202 @@ class HeuristicService:
                     reason="Cold start - return to hunting map with weapon and potions",
                 ))
             elif _cs_in_hunting:
-                # On hunting map with weapon + potions — cold start complete
-                self._cold_start_step[_cs_stable_key] = 4
-                logger.info(f"[cold_start] {bot_id}: on hunting map, cold start complete")
+                # On hunting map with weapon + potions — cold start complete, advance to step 5
+                if base_level >= 10:
+                    self._cold_start_step[_cs_stable_key] = 5
+                    logger.info(f"[cold_start] {bot_id}: on hunting map level {base_level}, step 4 -> 5")
+                else:
+                    self._cold_start_step[_cs_stable_key] = 4
+                    logger.info(f"[cold_start] {bot_id}: on hunting map, cold start complete")
+        # === BEYOND COLD START: progression pipeline steps 5+ ===
+        if _cold_start_step == 5:
+            # Step 5: Level to 10 on current hunting map
+            if base_level >= 10:
+                # Reached level 10 — advance to team evaluation
+                self._cold_start_step[_cs_stable_key] = 6
+                logger.info(f"[cold_start] {bot_id}: reached level {base_level}, step 5 -> 6")
+            else:
+                # Not level 10 yet — keep farming
+                if _cs_in_hunting:
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="progression",
+                        reason=f"Step 5 - farm to level 10 (currently {base_level})",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 3",
+                        confidence=0.99, domain="progression",
+                        reason=f"Step 5 - keep attacking until level 10 (currently {base_level})",
+                    ))
+                elif _cs_in_town:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prt_fild05",
+                        confidence=0.99, domain="progression",
+                        reason="Step 5 - return to hunting map to level",
+                    ))
+        if _cold_start_step == 6:
+            # Step 6: Leader evaluates team, assigns jobs via LLM
+            if self._team_jobs_assigned.get(_cs_stable_key, False):
+                # Jobs already assigned — advance to step 7
+                self._cold_start_step[_cs_stable_key] = 7
+                logger.info(f"[cold_start] {bot_id}: jobs assigned, step 6 -> 7")
+            else:
+                # Track this bot's level in shared team state
+                self._team_levels[_cs_stable_key] = base_level
+                # Check if we're in town (must be in town for job change NPC access)
+                if not _cs_in_town:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="progression",
+                        reason="Step 6 - return to town for job change",
+                    ))
+                elif _is_leader:
+                    # Leader: check if ALL bots are level >= 10
+                    # We need all bot levels. Use the shared _team_levels dict.
+                    _all_ready = all(
+                        self._team_levels.get(p, 0) >= 10
+                        for p in _all_bots if p != _bot_profile
+                    ) if _all_bots else False
+                    _self_ready = base_level >= 10
+                    if _all_ready and _self_ready:
+                        # All bots ready — call team synergy API
+                        try:
+                            import json, requests
+                            _payload = {
+                                "bots": [
+                                    {
+                                        "bot_id": bot_id,
+                                        "profile_name": _bot_profile,
+                                        "base_level": base_level,
+                                        "job_level": job_level,
+                                        "current_job": job_name.title(),
+                                    }
+                                ]
+                            }
+                            # Add other bots from _team_levels
+                            _resp = requests.post(
+                                "http://127.0.0.1:18081/v1/conscious/team-synergy",
+                                json=_payload, timeout=15.0,
+                            )
+                            if _resp.ok:
+                                _data = _resp.json()
+                                _assignments = _data.get("assignments", [])
+                                for _a in _assignments:
+                                    _prof = _a.get("profile_name", "")
+                                    _job = _a.get("recommended_job", "Acolyte")
+                                    actions.append(HeuristicAction(
+                                        kind="command",
+                                        command=f"job_change {_prof} {_job}",
+                                        confidence=0.99, domain="progression",
+                                        reason=f"Team synergy: {_prof} -> {_job} ({_a.get('role', '')})",
+                                    ))
+                                self._team_jobs_assigned[_cs_stable_key] = True
+                                # Store each bot assigned job
+                                for _a in _assignments:
+                                    _prof = _a.get("profile_name", "")
+                                    _job = _a.get("recommended_job", "Acolyte")
+                                    self._assigned_jobs[_prof] = _job
+                                logger.info(f"[team_synergy] {bot_id}: team jobs assigned via LLM")
+                            else:
+                                logger.warning(f"[team_synergy] API error: {_resp.status_code}")
+                        except Exception as _e:
+                            logger.warning(f"[team_synergy] call failed: {_e} — using knowledge fallback")
+                            # Knowledge fallback: assign jobs based on position
+                            _fallback_jobs = ["Acolyte", "Mage", "Swordsman", "Hunter", "Thief", "Merchant"]
+                            for _i, _p in enumerate(_all_bots):
+                                if _i < len(_fallback_jobs):
+                                    actions.append(HeuristicAction(
+                                        kind="command",
+                                        command=f"job_change {_p} {_fallback_jobs[_i]}",
+                                        confidence=0.95, domain="progression",
+                                        reason=f"Knowledge fallback: {_p} -> {_fallback_jobs[_i]}",
+                                    ))
+                            self._team_jobs_assigned[_cs_stable_key] = True
+                else:
+                    # Follower: wait for leader to assign job
+                    pass  # Leader will send job_change command
+                # If not leader, just wait
+        if _cold_start_step == 7:
+            # Step 7: Execute job change (walk to NPC, talk)
+            _is_novice = job_name == "novice"
+            # Check if we have an assigned job (from leader or manual)
+            _assigned_job = self._assigned_jobs.get(_bot_profile, "").lower()
+            if not _is_novice:
+                # Job change complete — advance
+                self._cold_start_step[_cs_stable_key] = 8
+                logger.info(f"[cold_start] {bot_id}: job changed to {job_name}, step 7 -> 8")
+            elif _assigned_job:
+                # Have an assigned job — look up NPC
+                _jc_data = JOB_CHANGE_2_1.get(_assigned_job)
+                if _jc_data:
+                    _jc_map, _jc_x, _jc_y, _jc_talk_seq = _jc_data
+                    if _cs_in_town:
+                        # Walk to NPC talk spot
+                        _talk_area_x = _jc_x + 1
+                        _talk_area_y = _jc_y + 1
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_talk_area_x} {_talk_area_y}",
+                            confidence=0.99, domain="progression",
+                            reason=f"Step 7 - walk to {_assigned_job} job change NPC at ({_jc_x},{_jc_y})",
+                        ))
+                        # After walking, talk to NPC
+                        # Use talknpc with the NPC coordinates
+                        _talk_cmd = f"talknpc {_jc_x} {_jc_y}"
+                        for _t in _jc_talk_seq:
+                            _talk_cmd += " " + _t.replace("talk @npc@", "").strip()
+                        actions.append(HeuristicAction(
+                            kind="command", command=_talk_cmd,
+                            confidence=0.99, domain="progression",
+                            reason=f"Step 7 - talk to {_assigned_job} job change NPC",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prontera",
+                            confidence=0.99, domain="progression",
+                            reason="Step 7 - go to Prontera for job change",
+                        ))
+            else:
+                # No assigned job yet — go to town and wait
+                if not _cs_in_town:
+                    actions.append(HeuristicAction(
+                        kind="command", command="move prontera",
+                        confidence=0.99, domain="progression",
+                        reason="Step 7 - go to town, waiting for job assignment",
+                    ))
+        if _cold_start_step == 8:
+            # Step 8: Post-job-change first hunt on appropriate map
+            # Determine map by job class
+            _job_hunt_maps = {
+                "acolyte": "pay_fild01",
+                "mage": "pay_fild01",
+                "swordman": "prt_fild05",
+                "hunter": "pay_fild01",
+                "thief": "mjolnir_04",
+                "merchant": "prt_fild05",
+            }
+            _hunt_map = "prt_fild05"
+            for _j, _m in _job_hunt_maps.items():
+                if _j in job_name:
+                    _hunt_map = _m
+                    break
+            if _cs_in_hunting:
+                # On hunting map — farm
+                actions.append(HeuristicAction(
+                    kind="command", command="ai auto",
+                    confidence=0.99, domain="progression",
+                    reason=f"Step 8 - farm {_hunt_map} as {job_name}",
+                ))
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackAuto 3",
+                    confidence=0.99, domain="progression",
+                    reason=f"Step 8 - enable attack on {_hunt_map}",
+                ))
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_hunt_map}",
+                    confidence=0.99, domain="progression",
+                    reason=f"Step 8 - move to {_hunt_map} for post-job farming",
+                ))
         # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
         # Runs every cycle for ALL bots, not just COLD_START or hunting maps
         # Fixes: attackMaxDistance, attackDistance, attackAuto, avoidList settings

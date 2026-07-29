@@ -4233,7 +4233,19 @@ sub _rewrite_runtime_command {
 		return ('ai auto', 'bare_move_rewritten');
 	}
 
-		# Handle 'mon_control <entry>' - write to mon_control.txt and reload
+		# Handle 'job_change <profile> <class>' - store assigned job for this bot
+	# Leader emits this for all bots; each bot's bridge stores its own assignment.
+	my $_jc_trimmed = _trim(_scalarize($command), 256);
+	my $_jc_lc = lc($_jc_trimmed || '');
+	if ($_jc_lc =~ /^job_change\s+(\S+)\s+(\S+)$/) {
+		my $_jc_profile = $1;
+		my $_jc_job = ucfirst(lc($2));
+		_state_set('assigned_job', $_jc_job);
+		warning "[job_change] profile=$_jc_profile job=$_jc_job stored\n", 'aiSidecarBridge', 1;
+		return ('', 'job_change_stored');
+	}
+
+	# Handle 'mon_control <entry>' - write to mon_control.txt and reload
 		# Writes to ALL bot profiles so the setting takes effect for all bots
 		if ($normalized =~ /^mon_control\s+(.+)$/) {
 			my $_mc_entry = $1;
