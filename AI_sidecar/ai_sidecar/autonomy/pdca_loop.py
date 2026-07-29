@@ -298,6 +298,95 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["leader_map"] = str(latest.get("leader_map", "") or "")
                         signals["_last_stat_points"] = int(prog.get("stat_points", 0) or 0)
                         signals["_last_exp"] = int(prog.get("base_exp", 0) or 0)
+                        # ── ENRICH ALL MISSING FIELDS for domain modules ──
+                        # Absolute HP/SP values
+                        signals["hp"] = int(v.get("hp", 100) or 100)
+                        signals["sp"] = int(v.get("sp", 50) or 50)
+                        signals["max_sp"] = int(v.get("max_sp", 80) or 80)
+                        signals["hp_max"] = int(v.get("hp_max", 1) or 1)
+                        # Job as flat string (domains check signals.get("job", ""))
+                        signals["job"] = str(prog.get("job_name", "novice") or "novice")
+                        # Level alias
+                        signals["level"] = int(prog.get("base_level", 1) or 1)
+                        # Stats
+                        _stats = prog.get("stats", latest.get("stats", {})) or {}
+                        if isinstance(_stats, dict):
+                            for _stat in ["str", "agi", "vit", "int", "dex", "luk"]:
+                                signals[_stat] = int(_stats.get(_stat, 1) or 1)
+                        # Full inventory (convert items list to dict format domains expect)
+                        _inv_items = latest.get("inventory_items", []) or []
+                        if isinstance(_inv_items, list):
+                            signals["inventory"] = {
+                                "items": [
+                                    {"name": i.get("name", ""), "quantity": i.get("quantity", 0), "id": i.get("item_id", "")}
+                                    for i in _inv_items if isinstance(i, dict)
+                                ]
+                            }
+                        # Position
+                        signals["position"] = pos
+                        signals["x"] = int(pos.get("x", 0) or 0)
+                        signals["y"] = int(pos.get("y", 0) or 0)
+                        # Equipment from raw data
+                        _raw_equip = latest.get("raw", {}).get("equipment", []) or []
+                        if isinstance(_raw_equip, list) and _raw_equip:
+                            signals["equipment"] = _raw_equip
+                            signals["weapon"] = _raw_equip[0] if _raw_equip else {}
+                        elif isinstance(_raw_equip, dict):
+                            signals["equipment"] = _raw_equip
+                        # Aggressives and monsters from raw data
+                        _raw_aggro = latest.get("raw", {}).get("aggressives", []) or []
+                        if isinstance(_raw_aggro, list):
+                            signals["aggressives"] = _raw_aggro
+                        _raw_monsters = latest.get("raw", {}).get("monsters", []) or []
+                        if isinstance(_raw_monsters, list):
+                            signals["monsters"] = _raw_monsters
+                        # Kills from progression or raw
+                        _kills = prog.get("kills", latest.get("raw", {}).get("kills", {})) or {}
+                        if isinstance(_kills, dict):
+                            signals["total_kills"] = int(_kills.get("total", 0) or 0)
+                            signals["kills_this_session"] = int(_kills.get("session", 0) or 0)
+                        # Exp
+                        signals["exp"] = int(prog.get("base_exp", 0) or 0)
+                        signals["base_exp"] = int(prog.get("base_exp", 0) or 0)
+                        # Weight capacity
+                        signals["weight_capacity"] = int(inv.get("weight_max", 0) or 0)
+                        # LockMap (from raw config)
+                        _lock_map = latest.get("raw", {}).get("lockMap", "") or ""
+                        if _lock_map:
+                            signals["lockMap"] = str(_lock_map)
+                        # Skill levels
+                        _skill_data = latest.get("skills", []) or []
+                        if isinstance(_skill_data, list):
+                            signals["skill_levels"] = {
+                                s.get("skill_id", ""): s.get("level", 0)
+                                for s in _skill_data if isinstance(s, dict) and s.get("skill_id")
+                            }
+                        # Recent kills/monster tracking
+                        _last_monster = latest.get("raw", {}).get("last_monster", {}) or {}
+                        if isinstance(_last_monster, dict):
+                            signals["monster_name"] = str(_last_monster.get("name", "") or "")
+                            signals["monster_hp"] = int(_last_monster.get("hp", 0) or 0)
+                            signals["monster_def"] = int(_last_monster.get("def", 0) or 0)
+                            signals["monster_race"] = str(_last_monster.get("race", "") or "")
+                            signals["monster_element"] = str(_last_monster.get("element", "") or "")
+                            signals["monster_size"] = str(_last_monster.get("size", "") or "")
+                        # Attack power
+                        _atk = latest.get("raw", {}).get("attack_power", latest.get("raw", {}).get("atk", 0)) or 0
+                        signals["attack_power"] = int(_atk)
+                        # Last map change
+                        _last_map = latest.get("raw", {}).get("last_map_change", "") or ""
+                        if _last_map:
+                            signals["last_map_change"] = str(_last_map)
+                        # Kills per minute
+                        _kpm = latest.get("raw", {}).get("kills_per_min", 0) or 0
+                        signals["kills_per_min"] = float(_kpm)
+                        # Last monster kill
+                        _last_kill = latest.get("raw", {}).get("last_monster_kill", "") or ""
+                        if _last_kill:
+                            signals["last_monster_kill"] = str(_last_kill)
+                        # Server info
+                        _gate = getattr(runtime_state, '_gate_status', None)
+                        signals["gate_conscious"] = bool(_gate.get('conscious', True)) if isinstance(_gate, dict) else True
                     else:
                         v = getattr(latest, "vitals", None) or {}
                         signals["hp_ratio"] = float(getattr(v, "hp_ratio", 1.0) or 1.0)
