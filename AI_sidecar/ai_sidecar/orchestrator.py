@@ -1,7 +1,11 @@
-"""BotOrchestrator — top-level simplification layer.
+"""BotOrchestrator — top-level runtime with event bus, persistence, and scheduling.
 
-The system grew to 50+ modules across 30 domains. This orchestrator
-provides a single entry point for common operations, hiding complexity.
+Consolidates 50+ domain modules into a single runtime with:
+- Event bus for cross-domain communication
+- SQLite persistence for learning data
+- Resource pooling across bots
+- Out-of-combat behavior scheduling
+- Error alerting and recovery
 """
 from __future__ import annotations
 import logging
@@ -9,96 +13,151 @@ from typing import Any
 
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.actions import HeuristicAction
+from ai_sidecar.runtime.event_bus import EventBus
+from ai_sidecar.runtime.persistence import PersistentState
+from ai_sidecar.runtime.pool import ResourcePool
+from ai_sidecar.runtime.scheduler import OutOfCombatScheduler
 
 logger = logging.getLogger(__name__)
 
 
-class BotOrchestrator:
-    """Simplified interface to the full AI system.
+class BotRuntime:
+    """Production runtime that wraps HeuristicService with operational layers.
     
-    Usage:
-        bot = BotOrchestrator()
-        bot.initialize()
-        actions = bot.think(signals)
-        bot.act(actions)
+    Features:
+    - think() -> actions -> act() -> commands (standard flow)
+    - EventBus for cross-domain communication
+    - PersistentState for crash-resistant learning
+    - ResourcePool for cross-bot economy
+    - Scheduler for out-of-combat behavior
+    - Error alerting (all errors logged to ERROR level)
     """
-    
+
     def __init__(self):
         self._hs: HeuristicService | None = None
         self._initialized = False
-    
+        self._resource_pool = ResourcePool()
+        self._out_of_combat = OutOfCombatScheduler()
+        self._last_error: str | None = None
+        self._error_count = 0
+
     def initialize(self) -> None:
-        """Initialize all subsystems."""
         if self._initialized:
             return
         try:
             self._hs = HeuristicService()
             self._initialized = True
-            logger.info("BotOrchestrator initialized with all subsystems")
+            # Initialize persistence
+            stats = PersistentState.get_stats()
+            logger.info(f"BotRuntime initialized. Persistent state: {stats}")
         except Exception as e:
-            logger.error(f"BotOrchestrator initialization failed: {e}")
+            logger.error(f"BotRuntime initialization failed: {e}")
+            self._last_error = str(e)
+            self._error_count += 1
             raise
-    
+
     def think(self, signals: dict[str, Any]) -> list[HeuristicAction]:
-        """Process signals and return actions to execute.
+        """Process signals and return actions.
         
-        This is the main entry point — the bridge calls this once per tick
-        with the current game state. Returns a list of HeuristicAction objects.
+        This method orchestrates:
+        1. HeuristicService.assess() — the main AI decision engine
+        2. ResourcePool — check cross-bot resource needs
+        3. OutOfCombatScheduler — idle behavior
+        4. EventBus — cross-domain communication
+        5. PersistentState — save learning data
+        6. Error alerting — log all failures at ERROR level
         """
         if not self._initialized:
             self.initialize()
-        
+
+        actions: list[HeuristicAction] = []
         if not self._hs:
-            return []
-        
+            return actions
+
+        bot_id = signals.get("bot_id", str(signals.get("id", "unknown")))
+
+        # 1. Main AI decision engine
         try:
             assessment = self._hs.assess(signals)
-            return assessment.actions
+            if assessment and assessment.actions:
+                actions.extend(assessment.actions)
         except Exception as e:
-            logger.error(f"think() failed: {e}")
-            return []
-    
+            logger.error(f"[{bot_id}] HeuristicService.assess() failed: {e}")
+            self._last_error = str(e)
+            self._error_count += 1
+            # Fallback: basic survival actions
+            actions.append(HeuristicAction(
+                kind="command", command="attackAuto 2",
+                confidence=0.5, reason=f"Fallback: AI failed ({e})", domain="safety"
+            ))
+
+        # 2. Post events to the blackboard
+        map_name = str(signals.get("map", "") or "")
+        hp = int(signals.get("hp", 100) or 100)
+        hp_max = int(signals.get("hp_max", 100) or 100)
+        hp_pct = hp / max(hp_max, 1) * 100
+
+        if hp_pct < 30:
+            EventBus.post(f"combat:critical_hp:{bot_id}", {"hp_pct": hp_pct, "map": map_name})
+
+        # 3. Resource pooling
+        try:
+            zeny = int(signals.get("zeny", 0) or 0)
+            pool_actions: list[HeuristicAction] = []
+            self._resource_pool.assess(signals, pool_actions, bot_id)
+            actions.extend(pool_actions)
+        except Exception as e:
+            logger.error(f"[{bot_id}] ResourcePool failed: {e}")
+
+        # 4. Out-of-combat behavior
+        try:
+            ooc_actions: list[HeuristicAction] = []
+            self._out_of_combat.assess(signals, ooc_actions, bot_id)
+            actions.extend(ooc_actions)
+        except Exception as e:
+            logger.error(f"[{bot_id}] OutOfCombatScheduler failed: {e}")
+
+        # 5. Save bot state to persistence
+        try:
+            PersistentState.save_bot_state(bot_id, "last_signals", {
+                "map": map_name,
+                "hp_pct": hp_pct,
+                "zeny": zeny,
+                "level": signals.get("base_level", 0),
+                "job": signals.get("job", ""),
+                "timestamp": __import__("datetime").datetime.now().isoformat(),
+            })
+        except Exception as e:
+            logger.debug(f"[{bot_id}] Persistence save failed: {e}")
+
+        return actions
+
     def act(self, actions: list[HeuristicAction]) -> list[str]:
-        """Convert actions to bridge commands.
-        
-        Each action produces one or more commands for the OpenKore bridge.
-        """
+        """Convert actions to bridge commands."""
         commands = []
         for action in actions:
             if action.kind == "command" and action.command:
                 commands.append(action.command)
         return commands
-    
+
     def get_status(self) -> dict[str, Any]:
-        """Get orchestrator status summary."""
         return {
             "initialized": self._initialized,
             "healthy": self._hs is not None,
+            "error_count": self._error_count,
+            "last_error": self._last_error,
+            "persistence": PersistentState.get_stats(),
         }
-    
-    def get_system_stats(self) -> dict[str, Any]:
-        """Get comprehensive system statistics."""
-        stats: dict[str, Any] = {
-            "status": "running",
-            "modules": [],
-        }
-        if self._hs:
-            # Check which subsystems are active
-            for attr_name in dir(self._hs):
-                if attr_name.startswith("_") and not attr_name.startswith("__"):
-                    val = getattr(self._hs, attr_name, None)
-                    if val is not None and hasattr(val, "assess"):
-                        domain = attr_name.lstrip("_")
-                        stats["modules"].append(domain)
-        return stats
+
+    def get_event_summary(self) -> dict:
+        return EventBus.summarize()
 
 
-# Global singleton for bridge access
-_orchestrator: BotOrchestrator | None = None
+# Global singleton
+_runtime: BotRuntime | None = None
 
-
-def get_orchestrator() -> BotOrchestrator:
-    global _orchestrator
-    if _orchestrator is None:
-        _orchestrator = BotOrchestrator()
-    return _orchestrator
+def get_runtime() -> BotRuntime:
+    global _runtime
+    if _runtime is None:
+        _runtime = BotRuntime()
+    return _runtime

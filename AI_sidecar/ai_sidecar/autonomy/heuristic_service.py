@@ -68,6 +68,8 @@ from ai_sidecar.domains.combat.pressure import CombatPressureDomain
 from ai_sidecar.domains.combat.tactics.kiting_v2 import TickBasedKiting
 from ai_sidecar.domains.economy.map_policies import InventoryPolicies, SpawnNavigator
 from ai_sidecar.domains.social.combo_protocol import ComboHandshakeProtocol
+from ai_sidecar.runtime.event_bus import EventBus, post_death_event
+from ai_sidecar.runtime.persistence import PersistentState
 from ai_sidecar.domains.navigation.danger_pathfinding import DangerAwarePathfinder
 from ai_sidecar.domains.equipment.loadout import ConsumableLoadoutPlanner, DurabilityMonitor, PostMortemAnalyzer
 from ai_sidecar.domains.social.loot import LootDisciplineEngine, EventDetector, LiveMarketScanner
@@ -1531,6 +1533,10 @@ class HeuristicService:
                         self._durability_monitor.assess(signals, _actions, _bot_id)
                     if self._post_mortem:
                         self._post_mortem.assess(signals, _actions, _bot_id)
+                    if bool(signals.get("dead", False) or signals.get("is_dead", False)):
+                        _lm = signals.get("last_attacked_monster", signals.get("last_monster", "unknown"))
+                        PersistentState.record_death(str(signals.get("map", "unknown")), str(_lm), f"died to {_lm}")
+                        post_death_event(str(signals.get("map", "unknown")), str(_lm))
                     if self._loot_discipline:
                         self._loot_discipline.assess(signals, _actions, _bot_id)
                     if self._event_detector:
