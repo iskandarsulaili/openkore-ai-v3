@@ -63,7 +63,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             if isinstance(_pe, dict) and _pe.get('type') == 'party_need_heal':
                                 from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                 _log.info("party_heal_needed: target=%s hp=%.0f%%", _pe.get('target_name'), (_pe.get('hp_pct',0)*100))
-                                _party_aq.enqueue(ActionProposal(
+                                _party_aq.enqueue(bot_id, ActionProposal(
                                     bot_id=bot_id,
                                     action_type='party_heal',
                                     priority_tier=ActionPriorityTier.reflex,
@@ -98,7 +98,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         if _wgt_pct > 0.9:
                             from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                             _log.warning("weight_management: overweight (%.0f%%), queueing restock", _wgt_pct*100)
-                            _wgt_aq.enqueue(ActionProposal(
+                            _wgt_aq.enqueue(_wgt_bs, ActionProposal(
                                 bot_id=_wgt_bs,
                                 action_type='restock',
                                 priority_tier=ActionPriorityTier.strategic,
@@ -125,7 +125,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                 _nav_aq = getattr(runtime_state, 'action_queue', None)
                 if _nav_aq is not None:
-                    _nav_aq.enqueue(ActionProposal(
+                    _nav_aq.enqueue(bot_id, ActionProposal(
                         bot_id=bot_id,
                         action_type='navigate',
                         priority_tier=ActionPriorityTier.strategic,
@@ -170,7 +170,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                                 from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                 _log.warning("burst_detected bot=%s hp=%d->%d loss=%d/%d (%.0f%%)",
                                     _burst_bs, _oldest_hp, _newest_hp, _loss, _burst_hpm, _loss/_burst_hpm*100)
-                                _burst_aq.enqueue(ActionProposal(
+                                _burst_aq.enqueue(_burst_bs, ActionProposal(
                                     bot_id=_burst_bs,
                                     action_type='auto_teleport',
                                     priority_tier=ActionPriorityTier.reflex,
@@ -5015,7 +5015,7 @@ class PDCALoop:
                                         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                                         logger.warning("burst_protection[%s]: bot=%s hp=%d->%d loss=%d/%.0f (%.0f%%)",
                                             horizon.value, _bid, _burst_oldest_hp, _burst_newest_hp, _burst_loss, _burst_max, _burst_loss/_burst_max*100)
-                                        self._runtime.action_queue.enqueue(ActionProposal(
+                                        self._runtime.action_queue.enqueue(_bid, ActionProposal(
                                             bot_id=_bid,
                                             action_type='auto_teleport',
                                             priority_tier=ActionPriorityTier.reflex,
