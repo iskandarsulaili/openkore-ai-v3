@@ -1361,6 +1361,30 @@ class HeuristicService:
             self._domain_registry.load_all()
         return self._domain_registry
 
+
+    def _init_new_domains(self) -> None:
+        if self._new_domains_initialized:
+            return
+        try:
+            self._portal_db = PortalDB()
+            self._pathfinder = Pathfinder()
+            self._quest_tracker = QuestTracker()
+            self._equipment_manager = EquipmentManager()
+            self._lifecycle = LifecycleStateMachine()
+            self._experience_tracker = ExperienceTracker()
+            self._goal_manager = GoalManager()
+            self._task_scheduler = TaskScheduler()
+            self._swarm_coordinator = SwarmCoordinator(
+                bot_names=["kicapmasin", "kicapmasin2", "kicapmasin3"],
+                data_dir="data",
+            )
+            self._state_collector = StateCollector()
+            self._new_domains_initialized = True
+            logger.info("New domain modules initialized")
+        except Exception as e:
+            logger.warning(f"New domain init failed (non-fatal): {e}")
+            self._new_domains_initialized = True
+
     def _resolve_bot_id(self, signals: dict[str, Any]) -> str:
         """Extract a stable bot identifier from signals.
         
@@ -3795,6 +3819,44 @@ class HeuristicService:
             )
             self._last_assessment[bot_id] = assessment
             return assessment
+        # ── NEW DOMAIN MODULE DELEGATION ──
+        self._init_new_domains()
+        if self._new_domains_initialized and self._state_collector:
+            try:
+                _gs = self._state_collector.collect(signals)
+                if map_name and ('prt_fild' in map_name or 'pay_fild' in map_name or 'gef_fild' in map_name):
+                    try:
+                        _disp = TacticsDispatcher()
+                        _disp.assess(signals, actions, bot_id)
+                    except Exception:
+                        pass
+                if self._quest_tracker:
+                    _qa = self._quest_tracker.get_quests_near_completion(bot_id)
+                    if _qa:
+                        actions.append(HeuristicAction(kind="log", command=f"quests_near_complete={len(_qa)}", confidence=0.5, reason="Quests near completion", domain="quests"))
+                if self._experience_tracker:
+                    self._experience_tracker.record_kill(signals.get("map",""), bot_id)
+                if self._equipment_manager:
+                    _eq = self._equipment_manager.assess_equipment(signals, bot_id)
+                    if _eq:
+                        actions.append(HeuristicAction(kind="log", command=f"equipment={_eq}", confidence=0.5, reason="Equipment assessment", domain="equipment"))
+                if self._portal_db and self._pathfinder and _gs.map_state:
+                    _cm = _gs.map_state.name
+                    if _gs.character and hasattr(_gs.character, 'base_level') and _gs.character.base_level:
+                        _target = "prt_fild05" if _gs.character.base_level < 10 else "pay_dun00" if _gs.character.base_level < 20 else "orcsdun01"
+                        if _cm and _target and _cm != _target:
+                            _path = self._pathfinder.find_path(_cm, _target)
+                            if _path:
+                                actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
+                if self._lifecycle:
+                    _phase = self._lifecycle.get_phase(bot_id)
+                    if _phase:
+                        actions.append(HeuristicAction(kind="log", command=f"lifecycle_phase={_phase}", confidence=0.5, reason=f"Phase: {_phase}", domain="progression"))
+                if self._goal_manager and self._task_scheduler:
+                    for _g in self._goal_manager.get_active_goals()[:2]:
+                        actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))
+            except Exception as _de:
+                logger.debug(f"[heuristic] domain delegation: {_de}")
         return assessment
 
     def confidence_for(self, horizon: str, signals: dict = None, bot_id: str = None) -> float:

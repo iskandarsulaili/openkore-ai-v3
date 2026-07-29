@@ -1,0 +1,26 @@
+{
+  "decision_id": "",
+  "leader_name": "kicapmasin",
+  "timestamp": 1785318739.9776895,
+  "formation": "line",
+  "hunt_map": "prt_fild05",
+  "target_monster": "",
+  "retreat": false,
+  "focus_fire_monster_id": "",
+  "spread_targets": false,
+  "kite_mode": false,
+  "formation_positions": {
+    "kicapmasin": {
+      "x": 0,
+      "y": 3
+    }
+  },
+  "member_range": 15,
+  "party_auto_share": true,
+  "acolyte_buffs": false,
+  "buff_targets": [],
+  "migration_order": [],
+  "consensus_threshold": 0.66,
+  "reason": "Formation=line, Hunt=prt_fild05, Retreat=False, Tactic=focus_fire, Composition=tank+healer+dps",
+  "version": 2
+}
