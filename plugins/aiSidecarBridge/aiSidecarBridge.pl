@@ -548,7 +548,10 @@ sub on_mainLoop_post {
             my $_er_map = lc($field->baseName() || '');
             $_er_map =~ s/\.gat$//;
             my $_er_is_town = ($_er_map =~ /^prontera|^morocc|^geffen|^payon|^alberta|^aldebaran|^izlude|^comodo$/i);
-            if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7) {
+            # Cooldown: only send move command every 10s to avoid spam
+            my $_em_cooldown = 10;
+            if (!$_er_is_town && $_er_hp > 0 && $_er_hp < 0.2 && $_er_weight > 0.7 && (time - $_last_emergency_move) >= $_em_cooldown) {
+                $_last_emergency_move = time;
                 warning "[emergency] HP=$_er_hp% weight=$_er_weight% on $_er_map — walking to Prontera portal\n", 'aiSidecarBridge', 1;
                 # Force stand first — move command doesn't work while sitting
                 eval { Commands::run("stand"); 1 };
