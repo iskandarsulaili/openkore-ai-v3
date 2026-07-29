@@ -497,3 +497,15 @@ pupa	-1 0 0
 thief bug	-1 0 0
 lunatic	-1 0 0
 fabre	-1 0 0
+thief bug egg	-1 0 0
+thief bug egg	-1 0 0
+pupa	-1 0 0
+pupa	-1 0 0
+thief bug	-1 0 0
+thief bug	-1 0 0
+lunatic	-1 0 0
+lunatic	-1 0 0
+fabre	-1 0 0
+fabre	-1 0 0
+condor	-1 0 0
+condor	-1 0 0

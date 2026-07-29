@@ -409,32 +409,11 @@ sub _check_reregister {
 sub on_mainLoop_pre {
     return unless _bridge_enabled();
     debug "[on_mainLoop_pre] bridge enabled check\n", 'aiSidecarBridge', 1;
-    # Force-set attackAuto=0 and route_randomWalk=0 when 0 potions on hunting map
-    # Runs BEFORE AI, preventing AI from attacking/routing away from portal.
-    # Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
-    # because OpenKore's getAttackAutoModeForContext returns 1 when
-    # attackAuto_inLockOnly==1 regardless of attackAuto value.
-    if ($char && $char->{inventory}) {
-        my $_ph_had_potions = 0;
-        for my $_phi (@{$char->{inventory}}) {
-            next unless $_phi;
-            my $_phn = $_phi->{name} || '';
-            if ($_phn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
-                $_ph_had_potions = 1;
-                last;
-            }
-        }
-        if (!$_ph_had_potions) {
-            my $_pmh = $field ? lc($field->name()) : '';
-            $_pmh =~ s/\.gat$//;
-            if ($_pmh =~ /_fild|_dun/i) {
-                $::config{'attackAuto'} = 0;
-                $::config{'attackAuto_inLockOnly'} = 0;
-                $::config{'attackAuto_routeToLock'} = 0;
-                $::config{'route_randomWalk'} = 0;
-            }
-        }
-    }
+    # NOTE: attackAuto override removed — heuristic handles this correctly.
+    # The old code force-set attackAuto=0 when 0 potions on hunting map,
+    # which ran EVERY cycle and overrode the heuristic's attackAuto=3.
+    # This created a deadlock: can't attack → can't earn zeny → can't buy potions.
+    # The heuristic's cold start pipeline handles potion buying and attack config.
     my $now = _now_ms();
 
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
