@@ -62,7 +62,12 @@ from ai_sidecar.domains.planning.goals import GoalManager
 from ai_sidecar.domains.planning.scheduler import TaskScheduler
 from ai_sidecar.domains.social.swarm import SwarmCoordinator
 from ai_sidecar.state.collector import StateCollector
-from ai_sidecar.domains.combat.safety import DangerPredictor, SafetyEvaluator, SafetyDomain
+from ai_sidecar.domains.combat.safety import DangerPredictor, SafetyEvaluator
+from ai_sidecar.domains.world.state import WorldState, get_world_state
+from ai_sidecar.domains.combat.pressure import CombatPressureDomain
+from ai_sidecar.domains.combat.tactics.kiting_v2 import TickBasedKiting
+from ai_sidecar.domains.economy.map_policies import InventoryPolicies, SpawnNavigator
+from ai_sidecar.domains.social.combo_protocol import ComboHandshakeProtocol
 from ai_sidecar.domains.planning.rotation import MapRotationPlanner
 
 logger = logging.getLogger(__name__)
@@ -1389,6 +1394,12 @@ class HeuristicService:
             self._map_rotation = MapRotationPlanner()
             # ── Danger predictor / safety domain ──
             self._danger_predictor = DangerPredictor()
+            self._world_state = get_world_state()
+            self._combat_pressure = CombatPressureDomain()
+            self._kiting_v2 = TickBasedKiting()
+            self._inventory_policies = InventoryPolicies()
+            self._spawn_navigator = SpawnNavigator()
+            self._combo_protocol = ComboHandshakeProtocol()
             self._new_domains_initialized = True
             logger.info("New domain modules initialized")
         except Exception as e:
@@ -1487,6 +1498,18 @@ class HeuristicService:
                         _ka = self._kiting.select_target(signals, None)
                         if _ka:
                             _actions.append(HeuristicAction(kind="command", command=_ka.get("command", ""), confidence=0.7, reason="Kiting reposition", domain="combat"))
+                    if self._world_state:
+                        self._world_state.assess(signals, _actions, _bot_id)
+                    if self._combat_pressure:
+                        self._combat_pressure.assess(signals, _actions, _bot_id)
+                    if self._kiting_v2:
+                        self._kiting_v2.assess(signals, _actions, _bot_id)
+                    if self._inventory_policies:
+                        self._inventory_policies.assess(signals, _actions, _bot_id)
+                    if self._spawn_navigator:
+                        self._spawn_navigator.assess(signals, _actions, _bot_id)
+                    if self._combo_protocol:
+                        self._combo_protocol.assess(signals, _actions, _bot_id)
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))

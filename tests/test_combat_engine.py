@@ -15,6 +15,8 @@ Validates:
 """
 
 from __future__ import annotations
+import sys
+sys.path.insert(0, "../AI_sidecar")
 
 import os
 import random
