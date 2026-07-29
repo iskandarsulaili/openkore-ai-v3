@@ -539,7 +539,9 @@ sub on_mainLoop_post {
                     }
                 }
             }
-            if ($_fs_hp_pct >= 50 || $_fs_is_town || !$_fs_has_potions) {
+            # Only force stand when HP is healthy enough to fight OR in town (safe)
+            # NEVER force stand when HP is critically low (<30%) — bot needs to regen
+            if (($_fs_hp_pct >= 50 || $_fs_is_town) && $_fs_hp_pct >= 30) {
                 warning "[force_stand] bot sitting (HP=$_fs_hp_pct% town=$_fs_is_town pots=$_fs_has_potions), forcing stand\n", 'aiSidecarBridge', 1;
                 # Disable OpenKore's internal sit AI to prevent immediate re-sit
                 $::config{sitAuto_hp_lower} = 0;
