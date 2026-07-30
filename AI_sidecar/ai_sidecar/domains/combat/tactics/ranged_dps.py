@@ -1,6 +1,8 @@
-"""Ranged DPS tactics — distance maintenance, kiting, and Arrow Shower AoE.
+"""
+Ranged DPS tactics — distance maintenance, kiting, and Arrow Shower AoE.
 
 Used by: Archer, Hunter, Sniper, and other ranged physical damage dealers.
+Pro RO behavior: maintain distance, kite in circles, use knockback to reset distance.
 """
 
 from __future__ import annotations
@@ -18,6 +20,13 @@ class RangedDPSTactics(BaseTactics):
     """Ranged DPS tactics: maintain distance, kite, use AoE on groups.
 
     Priority 50 — default damage role.
+
+    Pro RO behavior:
+    - Maintain optimal range (7 cells for bow)
+    - Use Arrow Shower knockback to reset distance
+    - Kite in circles when approached
+    - Use Improve Concentration for ASPD boost
+    - Double Strafe as primary damage (380% at Lv10)
     """
 
     name: ClassVar[str] = "ranged_dps"
@@ -26,7 +35,8 @@ class RangedDPSTactics(BaseTactics):
     role_type: ClassVar[str] = "dps"
 
     OPTIMAL_RANGE = 7  # Cells to maintain from target
-    FLEE_RANGE = 4  # Distance at which to start backing up
+    FLEE_RANGE = 4     # Distance at which to start backing up
+    MAX_BOW_RANGE = 9  # Maximum bow range
 
     def select_target(self, ctx: TacticsContext) -> TargetInfo | None:
         """Ranged DPS target priority:
@@ -79,26 +89,39 @@ class RangedDPSTactics(BaseTactics):
         return self._find_best_by_score(ctx, scorer)
 
     def select_skill(self, ctx: TacticsContext, target: TargetInfo | None) -> tuple[str, int] | None:
-        """Ranged DPS skill selection: Double Strafe primary, Arrow Shower AoE."""
+        """Ranged DPS skill selection: Double Strafe primary, Arrow Shower AoE.
+
+        Pro RO rotation:
+        - Arrow Shower for knockback when too close
+        - Arrow Shower for AoE on groups
+        - Double Strafe spam for single-target DPS
+        - Use Improve Concentration before engaging
+        """
         if not target:
             return None
 
         available = set(s.upper() for s in ctx.available_skills)
+
+        # Arrow Shower (knockback) when too close — reset distance
+        if target.distance < self.FLEE_RANGE and "AC_SHOWER" in available:
+            if ctx.cooldowns.get("ac_shower", 0) <= 0:
+                return ("ac_shower", 5)
 
         # AoE on grouped enemies
         if ctx.aggro_count >= 3 and "AC_SHOWER" in available:
             if ctx.cooldowns.get("ac_shower", 0) <= 0:
                 return ("ac_shower", 5)
 
-        # Arrow Shower (knockback) when too close
-        if target.distance < 4 and "AC_SHOWER" in available:
-            if ctx.cooldowns.get("ac_shower", 0) <= 0:
-                return ("ac_shower", 5)
+        # Too close to target — back up first (don't shoot at melee range)
+        if target.distance < self.OPTIMAL_RANGE - 2:
+            return None  # Let positioning handle retreat
 
-        # Double Strafe as primary damage
+        # Double Strafe as primary damage (380% at Lv10)
         if "AC_DOUBLE" in available:
             if ctx.my_sp_pct > 0.2:
                 return ("ac_double", 10)
+            elif ctx.my_sp_pct > 0.1:
+                return ("ac_double", 5)  # Lower level to conserve SP
 
         # Arrow Shower as AoE filler
         if "AC_SHOWER" in available:
@@ -109,12 +132,15 @@ class RangedDPSTactics(BaseTactics):
     def evaluate_positioning(self, ctx: TacticsContext, target: TargetInfo | None) -> dict[str, Any] | None:
         """Ranged positioning: maintain optimal range, flee if too close.
 
-        Returns movement intent to keep distance.
+        Pro RO kiting behavior:
+        - Back up when target is within FLEE_RANGE (4 cells)
+        - Approach slightly when target is beyond MAX_BOW_RANGE (9 cells)
+        - Stay at OPTIMAL_RANGE (7 cells) for maximum efficiency
         """
         if target is None:
             return None
 
-        # Too close — back up
+        # Too close — back up immediately (high urgency)
         if target.distance < self.FLEE_RANGE:
             return {
                 "move_x": 0,
@@ -123,8 +149,17 @@ class RangedDPSTactics(BaseTactics):
                 "urgency": 0.8,
             }
 
+        # Slightly below optimal — back up slowly
+        if target.distance < self.OPTIMAL_RANGE - 1:
+            return {
+                "move_x": 0,
+                "move_y": 0,
+                "reason": f"adjusting_range_for_{target.name}",
+                "urgency": 0.4,
+            }
+
         # Too far — approach slightly
-        if target.distance > self.OPTIMAL_RANGE + 3:
+        if target.distance > self.MAX_BOW_RANGE:
             return {
                 "move_x": 0,
                 "move_y": 0,
@@ -135,7 +170,13 @@ class RangedDPSTactics(BaseTactics):
         return None
 
     def assess_buffs(self, ctx: TacticsContext) -> list[str]:
-        """Keep offensive/ASPD buffs active."""
+        """Keep offensive/ASPD buffs active.
+
+        Pro RO ranger:
+        - Improve Concentration for ASPD (always on)
+        - Owl's Eye for DEX passive
+        - True Sight for HIT bonus
+        """
         needed: list[str] = []
         available = set(s.upper() for s in ctx.available_skills)
         active = set(b.upper() for b in ctx.active_buffs)
@@ -153,7 +194,13 @@ class RangedDPSTactics(BaseTactics):
         return needed
 
     def assess_emergency(self, ctx: TacticsContext) -> HeuristicAction | None:
-        """Ranged emergency: flee if overwhelmed."""
+        """Ranged emergency: flee if overwhelmed.
+
+        Pro RO ranger:
+        - Use Fly Wing if surrounded by 3+ at low HP
+        - Use potions at higher threshold (ranged takes fewer hits)
+        - Teleport if HP is critical
+        """
         if ctx.my_hp_pct < 0.3 and ctx.aggro_count > 2:
             return self._make_action(
                 command="flee_to_safe_spot",
@@ -163,7 +210,7 @@ class RangedDPSTactics(BaseTactics):
                 aggro=ctx.aggro_count,
             )
 
-        if ctx.my_hp_pct < 0.3:
+        if ctx.my_hp_pct < 0.4:
             return self._make_action(
                 command="use_potion_or_heal",
                 reason="ranged_hp_low",
@@ -174,13 +221,26 @@ class RangedDPSTactics(BaseTactics):
         return None
 
     def build_rotation(self, ctx: TacticsContext, target: TargetInfo | None) -> list[tuple[str, int]]:
-        """Ranged rotation: buff → Double Strafe spam → AoE as needed."""
+        """Ranged rotation: buff → Double Strafe spam → AoE as needed.
+
+        Pro RO rotation for Hunter:
+        1. Buff up (Improve Concentration)
+        2. Double Strafe at Lv10 (380% damage)
+        3. Arrow Shower if grouped (knockback + AoE)
+        4. Maintain distance between shots
+        """
         rotation: list[tuple[str, int]] = []
         available = set(s.upper() for s in ctx.available_skills)
 
-        # Double Strafe spam
+        # Check range — don't shoot if too close
+        if target and target.distance < self.OPTIMAL_RANGE - 2:
+            return rotation  # Empty rotation = reposition
+
+        # Double Strafe spam (Lv10 = 380%)
         if "AC_DOUBLE" in available and ctx.my_sp_pct > 0.2:
             rotation.append(("ac_double", 10))
+        elif "AC_DOUBLE" in available:
+            rotation.append(("ac_double", 5))  # Conserve SP
 
         # Arrow Shower for grouped mobs
         if ctx.aggro_count >= 3 and "AC_SHOWER" in available:

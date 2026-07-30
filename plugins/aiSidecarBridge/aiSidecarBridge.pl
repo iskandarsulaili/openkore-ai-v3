@@ -1,6 +1,8 @@
 package aiSidecarBridge;
 
 use strict;
+use Data::Dumper;
+$Data::Dumper::Terse = 1;
 use warnings;
 use feature 'state';
 
@@ -125,6 +127,7 @@ my $hooks = Plugins::addHooks(
 	['start3', \&on_start3, undef],
 	['mainLoop_pre', \&on_mainLoop_pre, undef],
 	['mainLoop_post', \&on_mainLoop_post, undef],
+	['Network::stateChanged', \&on_network_state_changed, undef],
 	['add_monster_list', \&on_add_actor_list_probe, 'monster'],
 	['add_player_list', \&on_add_actor_list_probe, 'player'],
 	['add_npc_list', \&on_add_actor_list_probe, 'npc'],
@@ -299,6 +302,25 @@ sub _cleanup_runtime {
 	}
 	if ($_state_builders) {
 		undef $_state_builders;
+	}
+}
+
+sub on_network_state_changed {
+	my (undef, $args) = @_;
+	return unless $args && ref($args) eq 'HASH';
+	my $state = $args->{state};
+	return unless defined $state;
+	warning "[aiSidecarBridge] Network state changed: $state\n", 'aiSidecarBridge', 3;
+	# State 0=disconnected, 1=connecting, 2=connected, 3=disconnecting
+	if ($state == 2) {
+		$_sidecar_ready = 1 if _sidecar_ping();
+		# Send initial discovery tables once connected
+		eval { _send_discovery_tables(); 1; };
+	} elsif ($state == 0) {
+		$_sidecar_ready = 0;
+		# Clear action queue on disconnect
+		my $bot_id = _bot_id();
+		delete $_action_queue{$bot_id} if exists $_action_queue{$bot_id};
 	}
 }
 
@@ -1544,7 +1566,7 @@ sub _load_bridge_config {
 		aiSidecar_ioTimeoutMs => 30000,
 		aiSidecar_snapshotEnabled => 1,
 		aiSidecar_snapshotIntervalMs => 1000,
-		aiSidecar_pollWhenDisconnected => 0,
+				aiSidecar_pollWhenDisconnected => 1,
 		aiSidecar_actionPollEnabled => 1,
 		aiSidecar_pollIntervalMs => 500,
 		aiSidecar_pollFailureBackoffBaseMs => 600,
@@ -1809,7 +1831,7 @@ sub _send_snapshot {
     return if !_bridge_enabled();
     return if !$registered;  # Don't send snapshots until registered
     if (!$net || $net->getState() != Network::IN_GAME) {
-        return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
+        return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 1);
     }
 
     my $snapshot = _build_snapshot_payload();
@@ -2741,7 +2763,7 @@ sub _actor_discovery_source_candidates {
 sub _poll_next_action {
 	return 1 if !_bridge_enabled();
 	if (!$net || $net->getState() != Network::IN_GAME) {
-		return 1 if !_cfg_bool('aiSidecar_pollWhenDisconnected', 0);
+		return 1 if !_cfg_bool('aiSidecar_pollWhenDisconnected', 1);
 	}
 
 	# Force-set sitAuto_hp_lower=0 every cycle — OpenKore's AI re-enables it
@@ -2840,8 +2862,8 @@ sub _execute_action {
 		warning "[ai_action] id=$action_id kind=$kind cmd=$command effective=$effective_command rewrite=$rewrite_kind\n", 'aiSidecarBridge', 1;
 	}
 
-	# ── LATENCY-ADAPTIVE TIMING ──
-	my $latency_ms = $_connection_metrics ? $_connection_metrics->avg_latency_ms() : 200;
+	my $latency_ms = 200;
+	# LATENCY-ADAPTIVE TIMING: ConnectionMetrics details unavailable in this build
 	$latency_ms = ($latency_ms < 50) ? 50 : ($latency_ms > 1000) ? 1000 : $latency_ms;
 	my $tick_buffer = int($latency_ms / 150) + 1;
 
@@ -3054,6 +3076,44 @@ sub _execute_action {
 		($success, $result_code, $msg) = (1, 'ok', $rewrite_kind);
 	} elsif ($rewrite_kind =~ /^use_item_not_found_/) {
 		($success, $result_code, $msg) = (1, 'ok', "item not found in inventory: $rewrite_kind");
+	} elsif ($rewrite_kind eq 'char_create') {
+		# Parse: char_create <slot> "<name>" [<str> <agi> <vit> <int> <dex> <luk>]
+		# Only slot and name are required — OpenKore's createCharacter handles the rest
+		# IMPORTANT: Only execute when at character select screen (state 3)
+		my $_cc_state = $net ? $net->getState() : 0;
+		if ($_cc_state == 3) {
+			my ($_cc_slot, $_cc_name) =
+				($effective_command =~ /^char_create\s+(\d+)\s+"([^"]+)"/i);
+			if (defined $_cc_slot && defined $_cc_name && $_cc_name ne '') {
+				debug "[char_create] Creating character '$_cc_name' in slot $_cc_slot ...\n", 'aiSidecarBridge', 1;
+				my $_cc_ok = eval { Misc::createCharacter($_cc_slot, $_cc_name); 1; };
+				if ($_cc_ok) {
+					($success, $result_code, $msg) = (1, 'ok', "character '$_cc_name' created in slot $_cc_slot");
+					warning "[char_create] SUCCESS: '$_cc_name' in slot $_cc_slot\n", 'aiSidecarBridge', 1;
+					# Auto-enter the game: set config and send char login
+					# char_select command only works IN-GAME, so we must do this here
+					eval { Commands::run("conf char $_cc_slot"); 1; };
+					eval { $messageSender->sendCharLogin($_cc_slot); 1; };
+					warning "[char_create] Auto-entering game with slot $_cc_slot\n", 'aiSidecarBridge', 1;
+				} else {
+					my $_cc_err = $@ || 'unknown error';
+					($success, $result_code, $msg) = (0, 'char_create_failed', $_cc_err);
+					warning "[char_create] FAILED for '$_cc_name' slot $_cc_slot: $_cc_err\n", 'aiSidecarBridge', 1;
+				}
+			} else {
+				($success, $result_code, $msg) = (0, 'char_create_invalid', "invalid char_create format: $effective_command");
+			}
+		} elsif ($_cc_state >= 5) {
+			# Already in-game — char_create would fail, skip silently
+			($success, $result_code, $msg) = (1, 'ok', 'char_create skipped: already in-game');
+		} else {
+			# Not at character select yet — defer: don't execute, return as-is so bridge retries
+			debug "[char_create] Deferred: bot state=$_cc_state (need 3 for char select), will retry on next poll\n", 'aiSidecarBridge', 1;
+			# Return success without executing — action stays in queue for retry
+			($success, $result_code, $msg) = (1, 'ok', "char_create deferred: state=$_cc_state");
+		}
+	} elsif ($rewrite_kind eq 'char_select_handled') {
+		($success, $result_code, $msg) = (1, 'ok', 'char_select handled by char_create auto-enter');
 	} elsif ($effective_command eq '') {
 		($success, $result_code, $msg) = (0, 'empty_command', 'empty command');
 	} elsif (length($effective_command) > _cfg_int('aiSidecar_maxCommandLength', 160)) {
@@ -4884,6 +4944,35 @@ sub _rewrite_runtime_command {
 		return ($trimmed, 'talk_ok');
 	}
 
+	# ── USE_ITEM REWRITE: OpenKore uses 'is <item>' for item-on-self ──
+	# The macro system may emit 'use_fly_wing', 'use_butterfly_wing', or 'use <item_id>'
+	if ($normalized =~ /^use_fly_wing\s*$/i) {
+		debug "[use_item_rewrite] $trimmed -> is 602\n", 'aiSidecarBridge', 2;
+		return ('is 602', 'use_item_fly_wing');
+	}
+	if ($normalized =~ /^use_butterfly_wing\s*$/i) {
+		debug "[use_item_rewrite] $trimmed -> is 602\n", 'aiSidecarBridge', 2;
+		return ('is 602', 'use_item_butterfly_wing');
+	}
+	if ($normalized =~ /^use\s+(\d+)\s*$/i) {
+		my $_item_id = $1;
+		debug "[use_item_rewrite] $trimmed -> is $_item_id\n", 'aiSidecarBridge', 2;
+		return ("is $_item_id", 'use_item_rewritten');
+	}
+
+	# ── CHAR_CREATE: OpenKore's Commands::run doesn't support character creation ──
+	# We intercept 'char_create <slot> "name" ...'
+	# and call Misc::createCharacter() directly.
+	if ($normalized =~ /^char_create\s+/) {
+		return ($trimmed, 'char_create');
+	}
+
+	# ── CHAR_SELECT: OpenKore's cmdCharSelect requires IN_GAME, not char select screen ──
+	# After char_create, the bridge auto-enters the game. This command is redundant.
+	if ($normalized =~ /^char_select\s+/i) {
+		return ($trimmed, 'char_select_handled');
+	}
+
 	# Default: pass through
 	return ($trimmed, 'passthrough');
 
@@ -4928,7 +5017,14 @@ sub _bot_id {
 		}
 	}
 
-	my $master = _normalize_identity_part($config{master}, 'unknown_master');
+	my $cfg_master = _cfg('aiSidecar_master', '');
+	# Force override: if aiSidecar_master is set, use it instead of runtime master
+	my $master;
+	if ($cfg_master ne '') {
+		$master = _normalize_identity_part($cfg_master, 'unknown_master');
+	} else {
+		$master = _normalize_identity_part($config{master}, 'unknown_master');
+	}
 	# ALWAYS use username (profile name) as identity - matches heuristic bot_id format
 	# Using char_name causes bot_id mismatch: bridge polls with master:char_name
 	# but heuristic enqueues actions for master:profile

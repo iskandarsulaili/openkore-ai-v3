@@ -1,6 +1,8 @@
-"""Melee DPS tactics — burst damage, positioning, and back attacks.
+"""
+Melee DPS tactics — burst damage, positioning, and back attacks.
 
 Used by: Thief, Assassin, Rogue, and other melee damage dealers.
+Pro RO behavior: close distance immediately, burst from behind, use positioning.
 """
 
 from __future__ import annotations
@@ -18,12 +20,22 @@ class MeleeDPSTactics(BaseTactics):
     """Melee DPS tactics: maximize damage output, burst priority.
 
     Priority 50 — default damage role.
+
+    Pro RO behavior:
+    - Close distance to 1 cell immediately
+    - Use burst skills (Sonic Blow) on priority targets
+    - Position behind target for backstab bonus
+    - Hide to drop aggro when overwhelmed
+    - Use Throw Sand to blind dangerous casters
     """
 
     name: ClassVar[str] = "melee_dps"
     priority: ClassVar[int] = 50
     description: ClassVar[str] = "Melee damage dealer — burst priority and positioning"
     role_type: ClassVar[str] = "dps"
+
+    # Optimal range for melee — always 1 cell
+    OPTIMAL_RANGE = 1
 
     # Burst skills (high SP cost, high damage)
     BURST_SKILLS = {"AS_SONICBLOW", "TF_POISON", "AS_VENOMDUST", "AS_GRIMTOOTH"}
@@ -34,10 +46,10 @@ class MeleeDPSTactics(BaseTactics):
 
     def select_target(self, ctx: TacticsContext) -> TargetInfo | None:
         """Melee DPS target priority:
-        1. Low HP targets (finish kills).
-        2. Casting monsters (interrupt).
+        1. Low HP targets (finish kills — prevent escape/heal).
+        2. Casting monsters (interrupt before they cast).
         3. High value targets (cards, drops).
-        4. Nearest monster.
+        4. Nearest monster (close distance).
         """
         monsters = ctx.monsters
         if not monsters:
@@ -52,7 +64,7 @@ class MeleeDPSTactics(BaseTactics):
             elif t.hp_pct < 0.5:
                 score += 40.0
 
-            # Interrupt casting monsters
+            # Interrupt casting monsters — melee can interrupt with attack
             if t.is_casting:
                 score += 50.0
 
@@ -63,7 +75,7 @@ class MeleeDPSTactics(BaseTactics):
             # Value (drops, cards)
             score += t.estimated_value * 0.1
 
-            # Proximity — melee must be close
+            # Proximity — melee must be close, prefer nearest
             score += max(0, 15 - t.distance) * 2
 
             # Aggressive monster = higher priority
@@ -76,6 +88,10 @@ class MeleeDPSTactics(BaseTactics):
             )
             if elem_mult > 1.1:
                 score += 15.0
+                
+            # Prefer targets within melee range already
+            if t.distance <= 2:
+                score += 20.0
 
             return score
 
@@ -84,14 +100,23 @@ class MeleeDPSTactics(BaseTactics):
     def select_skill(self, ctx: TacticsContext, target: TargetInfo | None) -> tuple[str, int] | None:
         """Melee DPS skill selection: burst → combo → basic.
 
-        Uses Sonic Blow / Grimtooth as primary, Double Attack as passive filler.
+        Pro RO rotation:
+        1. Close distance first
+        2. Blind casters with Throw Sand
+        3. Poison dangerous targets (DoT)
+        4. Sonic Blow on priority targets (8 hits)
+        5. Hide when HP is critical
         """
         if not target:
             return None
 
         available = set(s.upper() for s in ctx.available_skills)
 
-        # Sonic Blow for burst damage (high SP cost, save for important targets)
+        # Out of range — must close distance first
+        if target.distance > self.OPTIMAL_RANGE:
+            return None  # Let positioning handle movement
+
+        # Sonic Blow for burst damage (high SP, 8 hits)
         if "AS_SONICBLOW" in available and ctx.my_sp_pct > 0.3:
             if ctx.cooldowns.get("as_sonicblow", 0) <= 0:
                 return ("as_sonicblow", 10)
@@ -101,19 +126,20 @@ class MeleeDPSTactics(BaseTactics):
             if ctx.cooldowns.get("as_grimtooth", 0) <= 0:
                 return ("as_grimtooth", 5)
 
-        # Venom Dust for AoE poison
+        # Venom Dust for AoE poison on groups
         if "AS_VENOMDUST" in available and ctx.aggro_count >= 2:
             if ctx.cooldowns.get("as_venomdust", 0) <= 0:
                 return ("as_venomdust", 5)
 
-        # Poison single target
+        # Poison single target (DoT opener)
         if "TF_POISON" in available and ctx.my_sp > 15:
             if ctx.cooldowns.get("tf_poison", 0) <= 0:
                 return ("tf_poison", 5)
 
-        # Envenom as damage-over-time opener
-        if "TF_POISON" in available and target.hp_pct > 0.8 and ctx.my_sp_pct > 0.5:
-            return ("tf_poison", 5)
+        # Throw Sand to blind casting monsters
+        if target.is_casting and "TF_THROW_SAND" in available:
+            if ctx.cooldowns.get("tf_throw_sand", 0) <= 0:
+                return ("tf_throw_sand", 5)
 
         # Hiding for emergency (low HP, dangerous situation)
         if ctx.my_hp_pct < 0.25 and "TF_HIDING" in available:
@@ -123,20 +149,33 @@ class MeleeDPSTactics(BaseTactics):
         return None
 
     def evaluate_positioning(self, ctx: TacticsContext, target: TargetInfo | None) -> dict[str, Any] | None:
-        """Melee DPS positioning: get close (within 1 cell).
+        """Melee DPS positioning: close distance to 1 cell.
 
-        Returns movement intent if too far.
+        Pro RO melee behavior:
+        - Close to 1 cell immediately for maximum damage
+        - Back away only to use ranged skills (Grimtooth)
+        - If surrounded, back toward a wall to reduce exposure
         """
         if target is None:
             return None
 
         if target.distance > 1:
-            return {
-                "move_x": 0,
-                "move_y": 0,
-                "reason": f"closing_to_{target.name}",
-                "urgency": 0.7 if target.is_casting else 0.3,
-            }
+            if target.distance > 8:
+                # Very far — run toward target
+                return {
+                    "move_x": 0,
+                    "move_y": 0,
+                    "reason": f"sprinting_to_{target.name}",
+                    "urgency": 0.9,
+                }
+            else:
+                # Close distance
+                return {
+                    "move_x": 0,
+                    "move_y": 0,
+                    "reason": f"closing_to_{target.name}",
+                    "urgency": 0.7 if target.is_casting else 0.3,
+                }
 
         return None
 
@@ -153,7 +192,13 @@ class MeleeDPSTactics(BaseTactics):
         return needed
 
     def assess_emergency(self, ctx: TacticsContext) -> HeuristicAction | None:
-        """Melee DPS emergency: hide to drop aggro, or potion."""
+        """Melee DPS emergency: hide to drop aggro, or potion.
+
+        Pro RO behavior:
+        - Hide when HP < 20% to drop all aggro instantly
+        - Use potions BEFORE hiding (heal first, then vanish)
+        - If can't hide, flee
+        """
         if ctx.my_hp_pct < 0.2 and "TF_HIDING" in set(s.upper() for s in ctx.available_skills):
             return self._make_action(
                 command="use_skill tf_hiding",
@@ -170,18 +215,39 @@ class MeleeDPSTactics(BaseTactics):
                 confidence=0.8,
                 hp_pct=ctx.my_hp_pct,
             )
+            
+        # Flee if overwhelmed (3+ aggro and HP < 50%)
+        if ctx.my_hp_pct < 0.5 and ctx.aggro_count >= 3:
+            return self._make_action(
+                command="flee_to_safe_spot",
+                reason="dps_overwhelmed_flee",
+                confidence=0.85,
+                hp_pct=ctx.my_hp_pct,
+                aggro=ctx.aggro_count,
+            )
+
         return None
 
     def build_rotation(self, ctx: TacticsContext, target: TargetInfo | None) -> list[tuple[str, int]]:
-        """Melee DPS rotation: buff → poison → burst → basic."""
+        """Melee DPS rotation: buff → poison → burst → basic.
+
+        Pro RO rotation for Assassin:
+        1. Poison opener (TF_POISON) for DoT
+        2. Sonic Blow burst (8 hits)
+        3. Basic attack until cooldowns reset
+        """
         rotation: list[tuple[str, int]] = []
         available = set(s.upper() for s in ctx.available_skills)
+
+        # Close distance check
+        if target and target.distance > self.OPTIMAL_RANGE:
+            return rotation  # Empty rotation = move closer
 
         # Poison opener for long fights
         if target and target.hp_pct > 0.7 and "TF_POISON" in available:
             rotation.append(("tf_poison", 5))
 
-        # Sonic Blow burst
+        # Sonic Blow burst (8 hits, high damage)
         if ctx.my_sp_pct > 0.4 and "AS_SONICBLOW" in available:
             if ctx.cooldowns.get("as_sonicblow", 0) <= 0:
                 rotation.append(("as_sonicblow", 10))

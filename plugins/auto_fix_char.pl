@@ -50,12 +50,13 @@ sub on_char_screen {
     # Store attempt counter in custom config key
     my $attempt = $config{auto_fix_slot_attempt} || 0;
     $attempt++;
-    # Slot progression: 1, 2, 3, 4, 5, 6, 7, 8, 9, then cycle back
-    my $target_slot = (($attempt - 1) % 9) + 1;
+    # Slot progression: 0, 1, 2, 3, 4, 5, 6, 7, 8 (0-indexed for server)
+    my $target_slot = ($attempt - 1) % 9;
     configModify("auto_fix_slot_attempt", $attempt);
     
     message "[auto_fix] Creating character '$username' in slot $target_slot (attempt #$attempt)...\n", 'system';
-    $messageSender->sendCharCreate($target_slot, $username, 1, 9, 1, 1, 9, 1, 0, 0);
+    # Create Novice (job_id=0), Male (sex=1) -- match account sex (Boy)
+    $messageSender->sendCharCreate($target_slot, $username, 1, 9, 0, 1);
     $ran = 1;
     
     # Set char to target slot and schedule relog

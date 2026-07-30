@@ -15,17 +15,18 @@ from ai_sidecar.autonomy.ro_mechanics import (
     JOB_2_1_CLASSES,
     CLASS_SKILL_TRAINING,
 
-    get_monster_stats, calculate_aspd, calculate_flee, calculate_hit_rate,
+    get_monster_stats, calculate_aspd, calculate_flee, calculate_hit,
     calculate_monster_hit_rate, calculate_damage, calculate_profit_per_kill,
     calculate_skill_dps, get_best_skill, get_nearest_breakpoint,
     get_scaling_stat_targets, estimate_hits_to_die,
     calculate_party_exp_share, calculate_weight_time_to_cap,
-    build_spawn_circuit, is_mvp, get_mvp_value, get_skill_element_level,
+    build_spawn_circuit, is_mvp, get_mvp_value, get_skill_element,
     get_optimal_element_for_map,
     ELEMENT_TABLE, SIZE_PENALTY, JOB_WEAPON_TYPE,
     WEAPON_BASE_ASPD, SKILL_DAMAGE, SKILL_SP_COSTS, FOOD_ITEMS,
     CARD_VALUES, STAT_BREAKPOINTS, SCALING_STAT_TARGETS,
-    POTION_COST, POTION_HEAL, BLUE_POTION_COST, BLUE_POTION_SP, ARROW_COST,
+    POTION_COST, POTION_HEAL_MIN, POTION_HEAL_MAX,
+    BLUE_POTION_COST, BLUE_POTION_SP_MIN, BLUE_POTION_SP_MAX, ARROW_COST,
     MVP_MONSTERS, ELEMENTAL_WEAPONS, JOB_CHANGE_TALK,
     JOB_CHANGE_2_1, JOB_2_1_CLASSES,
     PER_MAP_MON_CONTROL, CLASS_SKILL_TRAINING,
@@ -78,6 +79,16 @@ from ai_sidecar.domains.social.reputation import SocialReputationDomain
 from ai_sidecar.domains.social.swarm.shm_ipc import SharedMemoryIPC, SharedMemoryCoordination
 from ai_sidecar.domains.economy.farming_loop import FarmingLoopOptimizer
 from ai_sidecar.domains.planning.rotation import MapRotationPlanner
+from ai_sidecar.domains.world.game_sense import GameSenseEngine, get_game_sense_engine
+from ai_sidecar.domains.world.monster_ai import (
+    get_monster_ai, get_monster_tactic, should_one_shot,
+    should_isolate, should_stun_first, is_night_aggro,
+    is_mvp as monster_is_mvp,
+)
+from ai_sidecar.domains.social.party_synergy import PartySynergyEngine, get_party_synergy_engine
+from ai_sidecar.woe.emperium_mechanics import get_emperium_mechanics
+from ai_sidecar.woe.battlefield_awareness import get_battlefield_awareness
+from ai_sidecar.woe.castle_intel import get_castle_intelligence
 
 logger = logging.getLogger(__name__)
 
@@ -640,8 +651,7 @@ class AdaptiveDataStore:
 
     def estimate_kill_time(self, monster_name: str, attack_power: int = 25) -> float:
         """Estimate seconds to kill a monster given current attack power.
-        Uses monster_stats cache. Returns 0 if unknown monster.
-        Formula: (HP / max(1, ATK - DEF*0.5)) * attack_speed/1000
+        Uses renewal damage formula from ro_mechanics.
         """
         _mn = monster_name.lower().strip()
         stats = get_monster_stats(_mn)
@@ -649,8 +659,8 @@ class AdaptiveDataStore:
             return 0.0
         hp = stats["hp"]
         _def = stats.get("def", 0)
-        _dmg_per_hit = max(1, attack_power - _def * 0.5)
-        _hits_needed = hp / _dmg_per_hit
+        _dmg_per_hit = calculate_damage(attack_power, defense=_def)
+        _hits_needed = hp / max(_dmg_per_hit, 1)
         _aspd = stats.get("attack_speed", 2000)
         _seconds_per_hit = _aspd / 1000.0
         return _hits_needed * _seconds_per_hit
@@ -796,17 +806,23 @@ class AdaptiveDataStore:
         return calculate_flee(agi, base_level, job_bonus)
 
     def calculate_hit_rate(self, dex: int = 1, base_level: int = 1, job_bonus: int = 0) -> int:
-        """Delegate to ro_mechanics."""
-        return calculate_hit_rate(dex, base_level, job_bonus)
+        """Calculate character hit rate using renewal formula."""
+        return calculate_hit(base_level, dex)
 
     def calculate_damage(self, attack_power: int, monster_def: int, weapon_type: str = "dagger",
                          monster_size: str = "Medium", attack_element: str = "Neutral",
                          monster_element: str = "Neutral", monster_race: str = "Brute",
                          skill_mult: float = 1.0) -> int:
-        """Delegate to ro_mechanics (uses 4-level element table, element_level from skill)."""
-        return calculate_damage(attack_power, monster_def, weapon_type,
-                               monster_size, attack_element, monster_element, monster_race,
-                               1, skill_mult)
+        """Delegate to ro_mechanics (uses renewal formula, 4-level element table)."""
+        return calculate_damage(
+            attack_power,
+            defense=monster_def,
+            weapon_type=weapon_type,
+            target_size=monster_size,
+            attack_element=attack_element,
+            target_element=monster_element,
+            card_mod=skill_mult,
+        )
 
     def calculate_profit_per_kill(self, monster_name: str, attack_power: int, weapon_type: str = "dagger",
                                    agi: int = 1, dex: int = 1, base_level: int = 1,
@@ -1025,6 +1041,7 @@ class HeuristicService:
         self._domain_registry: DomainRegistry | None = None
         self._state_collector: StateCollector | None = None
         self._new_domains_initialized: bool = False
+        self._init_lock = threading.RLock()
         self._portal_db: PortalDB | None = None
         self._pathfinder: Pathfinder | None = None
         self._quest_tracker: QuestTracker | None = None
@@ -1038,6 +1055,10 @@ class HeuristicService:
         self._map_rotation: MapRotationPlanner | None = None
         # ── Danger predictor and safety evaluator ──
         self._danger_predictor: DangerPredictor | None = None
+        # ── Game sense engine ──
+        self._game_sense: GameSenseEngine = get_game_sense_engine()
+        # ── Party synergy engine ──
+        self._party_synergy: PartySynergyEngine = get_party_synergy_engine()
 
     # ── State persistence ──────────────────────────────────────────────
 
@@ -1385,50 +1406,72 @@ class HeuristicService:
     def _init_new_domains(self) -> None:
         if self._new_domains_initialized:
             return
-        try:
-            self._portal_db = PortalDB()
-            self._pathfinder = Pathfinder()
-            self._quest_tracker = QuestTracker(db_path="data/quests.db")
-            self._equipment_manager = EquipmentManager()
-            self._lifecycle = LifecycleStateMachine()
-            self._experience_tracker = ExperienceTracker(db_path="data/learning.db")
-            self._goal_manager = GoalManager(bot_id="default")
-            self._task_scheduler = TaskScheduler()
-            self._swarm_coordinator = SwarmCoordinator(
-                bot_names=["kicapmasin", "kicapmasin2", "kicapmasin3"],
-                data_dir="data",
-            )
-            self._state_collector = StateCollector()
-            # ── Map rotation planner ──
-            self._map_rotation = MapRotationPlanner()
-            # ── Danger predictor / safety domain ──
-            self._danger_predictor = DangerPredictor()
-            self._world_state = get_world_state()
-            self._combat_pressure = CombatPressureDomain()
-            self._kiting_v2 = TickBasedKiting()
-            self._inventory_policies = InventoryPolicies()
-            self._spawn_navigator = SpawnNavigator()
-            self._combo_protocol = ComboHandshakeProtocol()
-            self._danger_pathfinder = DangerAwarePathfinder()
-            self._loadout_planner = ConsumableLoadoutPlanner()
-            self._durability_monitor = DurabilityMonitor()
-            self._post_mortem = PostMortemAnalyzer()
-            self._loot_discipline = LootDisciplineEngine()
-            self._event_detector = EventDetector()
-            self._live_market = LiveMarketScanner()
-            self._social_reputation = SocialReputationDomain()
-            self._farming_loop = FarmingLoopOptimizer()
-            self._new_domains_initialized = True
-            # Initialize competition planner (gracefully degraded)
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if self._new_domains_initialized:
+                return
             try:
-                from ai_sidecar.domains.farming.competition import CompetitionAwareFarming
-                self._competition_planner = CompetitionAwareFarming()
-            except Exception:
-                self._competition_planner = None
-            logger.info("New domain modules initialized")
-        except Exception as e:
-            logger.warning(f"New domain init failed (non-fatal): {e}")
-            self._new_domains_initialized = True
+                self._portal_db = PortalDB()
+                self._pathfinder = Pathfinder()
+                self._quest_tracker = QuestTracker(db_path="data/quests.db")
+                self._equipment_manager = EquipmentManager()
+                self._lifecycle = LifecycleStateMachine()
+                self._experience_tracker = ExperienceTracker(db_path="data/learning.db")
+                self._goal_manager = GoalManager(bot_id="default")
+                self._task_scheduler = TaskScheduler()
+                self._swarm_coordinator = SwarmCoordinator(
+                    bot_names=["kicapmasin", "kicapmasin2", "kicapmasin3"],
+                    data_dir="data",
+                )
+                self._state_collector = StateCollector()
+                self._map_rotation = MapRotationPlanner()
+                self._danger_predictor = DangerPredictor()
+                self._world_state = get_world_state()
+                self._combat_pressure = CombatPressureDomain()
+                self._kiting_v2 = TickBasedKiting()
+                self._inventory_policies = InventoryPolicies()
+                self._spawn_navigator = SpawnNavigator()
+                self._combo_protocol = ComboHandshakeProtocol()
+                self._danger_pathfinder = DangerAwarePathfinder()
+                self._loadout_planner = ConsumableLoadoutPlanner()
+                self._durability_monitor = DurabilityMonitor()
+                self._post_mortem = PostMortemAnalyzer()
+                self._loot_discipline = LootDisciplineEngine()
+                self._event_detector = EventDetector()
+                self._live_market = LiveMarketScanner()
+                self._social_reputation = SocialReputationDomain()
+                self._farming_loop = FarmingLoopOptimizer()
+                # ── NEW DOMAIN MODULES ──
+                for _mod_name, _import_path, _attr_name in [
+                    ("ProfitabilityDomain", "ai_sidecar.domains.economy.profitability", "_profitability"),
+                    ("WoEDomain", "ai_sidecar.domains.pvp.woe", "_woe"),
+                    ("PartyDomain", "ai_sidecar.domains.social.party", "_party_domain"),
+                    ("EquipmentOptimizer", "ai_sidecar.domains.equipment.optimizer", "_equipment_optimizer"),
+                    ("MacroIntelligence", "ai_sidecar.autonomy.macro_intelligence", "_macro_intelligence"),
+                    ("LifecycleManager", "ai_sidecar.domains.progression.lifecycle", "_connection_lifecycle"),
+                    ("ColdStartManager", "ai_sidecar.domains.progression.cold_start", "_cold_start_manager"),
+                    ("CompetitionAwareFarming", "ai_sidecar.domains.farming.competition", "_competition_planner"),
+                ]:
+                    try:
+                        import importlib
+                        _mod = importlib.import_module(_import_path)
+                        _cls = getattr(_mod, _mod_name)
+                        setattr(self, _attr_name, _cls())
+                        logger.info(f"{_mod_name} initialized")
+                    except Exception:
+                        setattr(self, _attr_name, None)
+                # BehaviorEngine: singleton, not instance-based
+                try:
+                    from ai_sidecar.anti_detection.behavior_engine import get_behavior_engine
+                    self._behavior_engine = get_behavior_engine()
+                    logger.info("BehaviorEngine initialized")
+                except Exception:
+                    self._behavior_engine = None
+                self._new_domains_initialized = True
+                logger.info("New domain modules initialized")
+            except Exception as e:
+                logger.warning(f"New domain init failed (non-fatal, will retry): {e}")
+                self._new_domains_initialized = False  # Will retry on next assess cycle
 
     def _resolve_bot_id(self, signals: dict[str, Any]) -> str:
         """Extract a stable bot identifier from signals.
@@ -1444,11 +1487,13 @@ class HeuristicService:
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         try:
             assessment = self._assess_impl(signals, bot_id_override)
-            # ── SUPPLEMENTARY DOMAINS: run cross-cutting domains for all states ──
-            # Learning, mimicry, environment, quests, consumables, equipment
-            # These add actions on top of the state machine's decisions.
+            # ── SUPPLEMENTARY DOMAINS: only run when in-game (not during login) ──
+            # Bot is in-game only if map_known=True (from snapshot) or base_level > 1
+            _bl = signals.get("base_level", 0) or 0
+            _is_ingame = signals.get("map_known", False) or (isinstance(_bl, (int, float)) and _bl > 1)
             supplementary: list[HeuristicAction] = []
-            self.domain_registry.assess_all(signals, supplementary, self)
+            if _is_ingame:
+                self.domain_registry.assess_all(signals, supplementary, self)
             if supplementary:
                 if not assessment.actions:
                     assessment.actions = supplementary
@@ -1480,6 +1525,12 @@ class HeuristicService:
                             _actions.append(HeuristicAction(kind="log", command=f"quests_near_complete={len(_qa)}", confidence=0.5, reason="Quests near completion", domain="quests"))
                     if self._experience_tracker:
                         self._experience_tracker.record_kill(signals.get("map",""), _bot_id)
+                    # ── Connection Lifecycle: heartbeat every cycle ──
+                    if hasattr(self, '_connection_lifecycle') and self._connection_lifecycle:
+                        self._connection_lifecycle.heartbeat(_bot_id)
+                    # ── Cold Start: create character if none exists ──
+                    if hasattr(self, '_cold_start_manager') and self._cold_start_manager:
+                        self._cold_start_manager.assess(signals, _actions, _bot_id)
                     if self._equipment_manager:
                         _eq = self._equipment_manager.assess_equipment(signals, _bot_id)
                         if _eq:
@@ -1499,6 +1550,16 @@ class HeuristicService:
                     if self._swarm_coordinator:
                         _sa = self._swarm_coordinator.tick(_bot_id, signals)
                         _actions.extend(_sa)
+                    # ── Game Sense: run every cycle in-game ──
+                    try:
+                        self._game_sense.assess(signals, _actions, _bot_id)
+                    except Exception:
+                        pass
+                    # ── Party Synergy: run every cycle in-party ──
+                    try:
+                        self._party_synergy.assess(signals, _actions, _bot_id)
+                    except Exception:
+                        pass
                     if self._cold_start_planner:
                         _bl = int(signals.get("base_level", 1) or 1)
                         _job = str(signals.get("job", "") or "").lower()
@@ -1544,6 +1605,56 @@ class HeuristicService:
                     safe_assess(self._social_reputation, "social_reputation", signals, _actions, _bot_id, get_registry())
                     safe_assess(self._farming_loop, "farming_loop", signals, _actions, _bot_id, get_registry())
                     safe_assess(self._competition_planner, "competition_planner", signals, _actions, _bot_id, get_registry())
+                    # ── NEW DOMAIN MODULES: wired into assess cycle ──
+                    # Macro Intelligence: evaluate triggers from current state
+                    if hasattr(self, '_macro_intelligence') and self._macro_intelligence:
+                        try:
+                            _macro = self._macro_intelligence.process_triggers(
+                                bot_state=signals, bot_id=_bot_id,
+                            )
+                            if _macro and hasattr(_macro, 'action_sequence'):
+                                for _action in _macro.action_sequence:
+                                    _actions.append(HeuristicAction(
+                                        kind="command", command=getattr(_action, 'command', ''),
+                                        confidence=0.85, domain="macro",
+                                        reason=f"Macro: {_macro.description}",
+                                    ))
+                        except Exception:
+                            pass
+                    # Behavior Engine: human-like behavior simulation (used elsewhere in PDCA)
+                    # The behavior engine is a singleton accessed via get_behavior_engine()
+                    # and is consumed by the PDCA loop's anti-detection module — not here.
+                    # Profitability: market-aware farming decisions
+                    if hasattr(self, '_profitability') and self._profitability:
+                        try:
+                            self._profitability.assess(signals, _actions, _bot_id)
+                        except Exception:
+                            pass
+                    # WoE: War of Emperium tactics
+                    if hasattr(self, '_woe') and self._woe:
+                        try:
+                            self._woe.assess(signals, _actions, _bot_id)
+                        except Exception:
+                            pass
+                    # Party: coordination and sync
+                    if hasattr(self, '_party_domain') and self._party_domain:
+                        try:
+                            self._party_domain.assess(signals, _actions, _bot_id)
+                        except Exception:
+                            pass
+                    # Equipment Optimizer: loadout recommendations
+                    if hasattr(self, '_equipment_optimizer') and self._equipment_optimizer:
+                        try:
+                            _eq_results = self._equipment_optimizer.assess(signals, bot_id=_bot_id)
+                            if _eq_results:
+                                for _eq in _eq_results[:3]:
+                                    _actions.append(HeuristicAction(
+                                        kind="command", command=str(_eq),
+                                        confidence=0.7, domain="equipment",
+                                        reason="Equipment optimizer recommendation",
+                                    ))
+                        except Exception:
+                            pass
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))
@@ -1640,6 +1751,18 @@ class HeuristicService:
     def _assess_impl(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         actions: list[HeuristicAction] = []
         bot_id = bot_id_override or signals.get("bot_id", "default")
+
+        # ── NOT IN-GAME GUARD: skip all domains except cold start if bot hasn't entered game ──
+        # Detect by checking if we have real snapshot data (not just default signals)
+        _bl = signals.get("base_level", 0) or 0
+        _mk = signals.get("map_known", False)
+        if not _mk and (not isinstance(_bl, (int, float)) or _bl <= 1):
+            return HeuristicAssessment(
+                actions=[], actionable=False, confidence=1.0,
+                top_domain="login", horizon=signals.get("horizon", "unknown"),
+                signals={"reason": "Bot not in-game — waiting for login"}
+            )
+
         # Normalize to stable key (character name only) — bridge sends different
         # account prefixes per cycle (openkoreai: vs Asgards Glory:)
         _track_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
@@ -3497,10 +3620,16 @@ class HeuristicService:
                 _skill_levels = signals.get("skill_levels", {}) or {}
                 _weapon_type = JOB_WEAPON_TYPE.get(_job_name, "dagger")
                 _aggro_count = signals.get("aggressives", 0) or 0
-                _best_skill = get_best_skill(
-                    _known_skills, _skill_levels, _attack_power, _weapon_type,
-                    _monster_def, _monster_size, _monster_element, _monster_race,
-                    _current_sp, _max_sp, _agi, _dex, _aggro_count, _player_hp
+                # Build available skills dict from known skills and levels
+                _skill_dict: dict[str, int] = {}
+                if _known_skills and _skill_levels:
+                    for i, sk in enumerate(_known_skills[:20]):
+                        lv = _skill_levels[i] if i < len(_skill_levels) else 1
+                        _skill_dict[str(sk)] = int(lv)
+                _best_skill, _best_lv, _best_dps = get_best_skill(
+                    int(_attack_power or 25),
+                    _skill_dict,
+                    int(_current_sp or 10),
                 )
                 if _best_skill:
                     actions.append(HeuristicAction(

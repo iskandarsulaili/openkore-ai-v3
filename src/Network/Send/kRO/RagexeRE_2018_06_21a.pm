@@ -29,6 +29,7 @@ sub new {
 		buy_bulk_openShop 0811
 		buy_bulk_request 0817
 		character_move 035F
+		char_create 0A39
 		friend_request 0202
 		homunculus_command 022D
 		item_drop 0363

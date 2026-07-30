@@ -2616,6 +2616,10 @@ class RuntimeState:
 
         proposal = self.action_queue.fetch_next(bot_id)
         if proposal is not None:
+            logger.info(
+                "actions_next_dispatched action_id=%s bot_id=%s poll_id=%s kind=%s command=%.200s",
+                proposal.action_id, bot_id, poll_id, proposal.kind, proposal.command or "",
+            )
             # Validate through situational awareness before serving to bridge
             if hasattr(self, '_situational') and self._situational:
                 snapshot_obj = self.snapshot_cache.get(bot_id)

@@ -1,6 +1,8 @@
-"""Magic DPS tactics — spell rotation, elemental advantage, AoE nuking.
+"""
+Magic DPS tactics — spell rotation, elemental advantage, AoE nuking, Safety Wall usage.
 
 Used by: Mage, Wizard, Sage, and other magical damage dealers.
+Pro RO behavior: use best element, freeze combo, Safety Wall for defense, position safely.
 """
 
 from __future__ import annotations
@@ -18,6 +20,14 @@ class MagicDPSTactics(BaseTactics):
     """Magic DPS tactics: elemental advantage priority, spell rotation, AoE.
 
     Priority 50 — default damage role.
+
+    Pro RO Wizard behavior:
+    - Always use best element against target (Fire Bolt Lv10 = 460%)
+    - Use Safety Wall when being approached by melee monsters
+    - Frost Diver → Storm Gust combo (freeze + AoE shatter)
+    - AoE nuke on groups (Meteor Storm, Storm Gust, Lord of Vermilion)
+    - Use Energy Coat for SP-to-HP conversion when low
+    - Maintain 7-8 cells distance from target
     """
 
     name: ClassVar[str] = "magic_dps"
@@ -25,20 +35,24 @@ class MagicDPSTactics(BaseTactics):
     description: ClassVar[str] = "Magic damage dealer — elemental advantage and spell rotation"
     role_type: ClassVar[str] = "dps"
 
+    # Optimal range for casting
+    OPTIMAL_RANGE = 7
+    RETREAT_RANGE = 3  # Distance at which wizard should retreat
+
     # Element: best offensive element per target element
     BEST_ELEMENT = {
-        "water": "wind",    # Lightning beats water
-        "earth": "fire",    # Fire beats earth
-        "fire": "water",    # Water beats fire
-        "wind": "earth",    # Earth beats wind
-        "undead": "holy",   # Holy beats undead
-        "dark": "holy",     # Holy beats dark
+        "water": "wind",    # Lightning beats water (200% at Lv3)
+        "earth": "fire",    # Fire beats earth (175% at Lv2)
+        "fire": "water",    # Water beats fire (200% at Lv3)
+        "wind": "earth",    # Earth beats wind (200% at Lv3)
+        "undead": "holy",   # Holy beats undead (200% at Lv2)
+        "dark": "holy",     # Holy beats dark (250% at Lv2)
         "poison": "holy",   # Holy beats poison
         "ghost": "holy",    # Holy beats ghost (Lv1)
         "neutral": "fire",  # Fire as general
     }
 
-    # Skill ID mapping: (internal_id, element)
+    # Skill ID mapping: (internal_id, element, sp_cost)
     SPELL_SKILLS: dict[str, tuple[str, str, int]] = {
         "mg_firebolt": ("MG_FIREBOLT", "fire", 15),
         "mg_coldbolt": ("MG_COLD", "water", 15),
@@ -74,12 +88,12 @@ class MagicDPSTactics(BaseTactics):
             score += elem_mult * 30.0  # Up to 60 points for 2.0x
 
             # Low HP — finish with fast cast
-            if t.is_casting:
+            if t.hp_pct < 0.3:
                 score += 40.0
 
             # Aggro high = many monsters nearby, AoE effective
             if c.aggro_count >= 3:
-                score += 15.0
+                score += 20.0
 
             # Casting monster — interrupt priority
             if t.is_casting:
@@ -89,7 +103,7 @@ class MagicDPSTactics(BaseTactics):
             if t.is_boss:
                 score += 40.0
 
-            # Proximity for AoE spells
+            # Proximity for AoE spells (prefer targets at cast range)
             score += max(0, 12 - t.distance)
 
             # Aggressive
@@ -103,20 +117,36 @@ class MagicDPSTactics(BaseTactics):
     def select_skill(self, ctx: TacticsContext, target: TargetInfo | None) -> tuple[str, int] | None:
         """Magic DPS skill selection: best element → AoE → fast filler.
 
-        Core gameplay:
-          - Always use the best element against target.
-          - Fire Bolt vs Earth = 175% damage.
-          - Cold Bolt vs Fire = 200% damage.
-          - Frost Diver (freeze) then Fire Bolt for 4x on frozen.
+        Pro RO Wizard rotation:
+        1. Place Safety Wall if target is getting close
+        2. Use best element spell against target
+        3. Frost Diver → freeze → follow-up for 4x damage
+        4. AoE nuke when grouped (Storm Gust, Meteor Storm)
+        5. Fast filler for low SP (Napalm Beat)
         """
         if not target:
             return None
 
         available = set(s.upper() for s in ctx.available_skills)
 
+        # Safety Wall when being approached (melee monsters getting close)
+        if target.distance < self.RETREAT_RANGE and "MG_SAFETYWALL" in available:
+            if ctx.cooldowns.get("mg_safetywall", 0) <= 0:
+                return ("mg_safetywall", 5)
+
+        # Too close for comfort — back up first
+        if target.distance < self.OPTIMAL_RANGE - 3:
+            return None  # Let positioning handle retreat
+
         # Determine the best offensive element
         target_elem = target.element
         best_elem = self.BEST_ELEMENT.get(target_elem, "fire")
+
+        # Frost Diver opener (freeze → follow-up for big damage)
+        if target.hp_pct > 0.7 and "MG_FROSTDIVER" in available:
+            if ctx.cooldowns.get("mg_frostdiver", 0) <= 0:
+                level = 10 if ctx.my_sp_pct > 0.5 else 5
+                return ("mg_frostdiver", level)
 
         # Map best element to a spell
         element_spell_map = {
@@ -140,15 +170,15 @@ class MagicDPSTactics(BaseTactics):
 
         # AoE when grouped
         if ctx.aggro_count >= 4 and ctx.my_sp_pct > 0.5:
-            # Meteor Storm for big groups
+            # Meteor Storm for big groups (7 hits × 150% = 1050%)
             if "WZ_METEOR" in available and ctx.my_sp >= 90:
                 if ctx.cooldowns.get("wz_meteor", 0) <= 0:
                     return ("wz_meteor", 10)
-            # Storm Gust
+            # Storm Gust for water-weak (10 hits × 160% = 1600%)
             if "WZ_STORMGUST" in available and ctx.my_sp >= 80:
                 if ctx.cooldowns.get("wz_stormgust", 0) <= 0:
                     return ("wz_stormgust", 10)
-            # Lord of Vermilion
+            # Lord of Vermilion for wind-weak (5 hits × 400% = 2000%)
             if "WZ_VERMILION" in available and ctx.my_sp >= 85:
                 if ctx.cooldowns.get("wz_vermillion", 0) <= 0:
                     return ("wz_vermillion", 10)
@@ -164,32 +194,42 @@ class MagicDPSTactics(BaseTactics):
             if "MG_SOULSTRIKE" in available:
                 return ("mg_soulstrike", 5)
 
-        # Frost Diver opener (freeze → follow-up)
-        if target.hp_pct > 0.7 and "MG_FROSTDIVER" in available:
-            if ctx.cooldowns.get("mg_frostdiver", 0) <= 0:
-                return ("mg_frostdiver", 5)
-
-        # Fire Bolt as general filler
+        # Fire Bolt as general filler (Lv10 = 460%)
         if "MG_FIREBOLT" in available:
             return ("mg_firebolt", 10)
 
         return None
 
     def evaluate_positioning(self, ctx: TacticsContext, target: TargetInfo | None) -> dict[str, Any] | None:
-        """Magic positioning: stay at 5-8 cells for casting safety."""
+        """Magic positioning: stay at 5-8 cells for casting safety.
+
+        Pro RO Wizard positioning:
+        - Back up if target is within RETREAT_RANGE (3 cells)
+        - Hold position at OPTIMAL_RANGE (7 cells)
+        - If multiple mobs, back toward a safe direction
+        """
         if target is None:
             return None
 
-        if target.distance < 3:
-            # Too close, back up
+        if target.distance < self.RETREAT_RANGE:
+            # Too close, back up (high urgency — wizard is fragile)
             return {
                 "move_x": 0,
                 "move_y": 0,
                 "reason": "backing_up_for_cast_safety",
-                "urgency": 0.7,
+                "urgency": 0.9,
             }
 
-        if target.distance > 8:
+        if target.distance < self.OPTIMAL_RANGE - 2:
+            # Slightly too close, adjust
+            return {
+                "move_x": 0,
+                "move_y": 0,
+                "reason": "adjusting_range_for_safe_cast",
+                "urgency": 0.4,
+            }
+
+        if target.distance > self.OPTIMAL_RANGE + 3:
             return {
                 "move_x": 0,
                 "move_y": 0,
@@ -200,7 +240,13 @@ class MagicDPSTactics(BaseTactics):
         return None
 
     def assess_buffs(self, ctx: TacticsContext) -> list[str]:
-        """Keep magic buffs active."""
+        """Keep magic buffs active.
+
+        Pro RO Wizard:
+        - Energy Coat for SP-to-HP conversion
+        - Amplify Magic Power for +50% MATK
+        - SP Recovery passive (always on)
+        """
         needed: list[str] = []
         available = set(s.upper() for s in ctx.available_skills)
         active = set(b.upper() for b in ctx.active_buffs)
@@ -220,7 +266,13 @@ class MagicDPSTactics(BaseTactics):
         return needed
 
     def assess_emergency(self, ctx: TacticsContext) -> HeuristicAction | None:
-        """Magic emergency: use Blue Potions for SP, flee if overwhelmed."""
+        """Magic emergency: use Blue Potions for SP, flee if overwhelmed.
+
+        Pro RO Wizard emergency:
+        - Use Blue Potion when SP < 15% (SP is damage)
+        - Use Fly Wing when surrounded by 3+ at < 50% HP
+        - Use potions at higher threshold (wizard is squishy)
+        """
         if ctx.my_sp_pct < 0.15:
             return self._make_action(
                 command="use_blue_potion",
@@ -229,7 +281,7 @@ class MagicDPSTactics(BaseTactics):
                 sp_pct=ctx.my_sp_pct,
             )
 
-        if ctx.my_hp_pct < 0.3 and ctx.aggro_count > 2:
+        if ctx.my_hp_pct < 0.4 and ctx.aggro_count > 2:
             return self._make_action(
                 command="flee_to_safe_spot",
                 reason="mage_overwhelmed_flee",
@@ -238,7 +290,7 @@ class MagicDPSTactics(BaseTactics):
                 aggro=ctx.aggro_count,
             )
 
-        if ctx.my_hp_pct < 0.4:
+        if ctx.my_hp_pct < 0.45:
             return self._make_action(
                 command="use_potion_or_heal",
                 reason="mage_hp_low",
@@ -250,7 +302,11 @@ class MagicDPSTactics(BaseTactics):
     def build_rotation(self, ctx: TacticsContext, target: TargetInfo | None) -> list[tuple[str, int]]:
         """Magic rotation: buff → Frost Diver → best element spell → filler.
 
-        Pro rotation: Frost Diver (freeze) then 4x damage follow-up.
+        Pro RO Wizard rotation:
+        1. Frost Diver (freeze target)
+        2. Best element spell (Fire Bolt Lv10 = 460%)
+        3. Storm Gust if grouped (10 hits × 160% = 1600%)
+        4. Fire Bolt filler
         """
         rotation: list[tuple[str, int]] = []
         available = set(s.upper() for s in ctx.available_skills)
@@ -272,6 +328,11 @@ class MagicDPSTactics(BaseTactics):
             elif best_elem == "wind" and "MG_LIGHTNING" in available:
                 rotation.append(("mg_lightningbolt", 10))
 
+        # Storm Gust for groups (10 hits × per-level damage)
+        if ctx.aggro_count >= 3 and "WZ_STORMGUST" in available and ctx.my_sp >= 80:
+            rotation.append(("wz_stormgust", 10))
+            return rotation  # Don't follow up SG with single target
+
         # Best element spell spam
         element_map = {
             "fire": ("mg_firebolt", "MG_FIREBOLT", 10),
@@ -284,7 +345,7 @@ class MagicDPSTactics(BaseTactics):
             if skill_id in available:
                 rotation.append((skill_key, level))
 
-        # Fire Bolt filler
+        # Fire Bolt filler (Lv10 = 460%)
         if "MG_FIREBOLT" in available:
             rotation.append(("mg_firebolt", 10))
 

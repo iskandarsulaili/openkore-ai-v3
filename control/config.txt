@@ -3,7 +3,7 @@
 
 ######## Login options and server-specific options ########
 
-master
+master Local rAthena AI World
 server
 username
 password

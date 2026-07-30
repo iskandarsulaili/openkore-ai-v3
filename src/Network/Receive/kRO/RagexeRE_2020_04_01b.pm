@@ -19,6 +19,8 @@ sub new {
 	my ($class) = @_;
 	my $self = $class->SUPER::new(@_);
 
+	$self->{packet_list}{'01DC'} = ['secure_login_key', 'x2 a*', [qw(secure_key)]];
+
 	$self->{vender_items_list_item_pack} = 'V v2 C V C3 a16 a25 V v';
 	$self->{npc_store_info_pack} = "V V C V";
 	$self->{buying_store_items_list_pack} = "V v C V";

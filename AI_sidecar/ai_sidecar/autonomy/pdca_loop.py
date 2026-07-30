@@ -470,7 +470,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 priority_tier=_cs_priority,
                 source="bridge",  # bridge source = source_boost=-1, same as reflex
                 created_at=_now,
-                expires_at=_now + _td(seconds=30),
+                expires_at=_now + _td(seconds=120),
                 idempotency_key=f"heuristic_{horizon}_{ha.domain}_{ha.command}_{_t.monotonic_ns()}",
                 metadata={"domain": ha.domain, "confidence": ha.confidence, "horizon": horizon, "reason": ha.reason},
             )
@@ -2496,6 +2496,7 @@ class PDCALoop:
             try:
                 from ai_sidecar.config import settings as _settings
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
+                _cost_mode = None  # initialize before conditional block
                 _cost_mode_str = getattr(_settings, "cost_mode", "standard")
                 if not self._services_initialized:
                 
@@ -4776,9 +4777,9 @@ class PDCALoop:
                 
                 # Update budget limits from cost mode (used as cap, not gate)
                 if _ct is not None:
-                    _cm = getattr(self._runtime, 'cost_mode_manager', None) or _cost_mode
-                    _daily_budget = _cm.get_daily_budget_tokens()
-                    _hourly_limit = _cm.get_llm_calls_per_hour_limit()
+                    _cm = _cost_mode or getattr(self._runtime, 'cost_mode_manager', None)
+                    _daily_budget = _cm.get_daily_budget_tokens() if _cm else 1000000
+                    _hourly_limit = _cm.get_llm_calls_per_hour_limit() if _cm else 100
                     _allowed, _reason = _ct.check(
                         daily_budget_tokens=_daily_budget,
                         max_calls_per_hour=_hourly_limit,
@@ -5132,7 +5133,8 @@ class PDCALoop:
                             pass
                     logger.info(
                         "cost_gate[%s]: mode=%s use_llm=False heuristic=%.2f total=%d bots=%d",
-                        horizon.value, _cost_mode.mode.value, _hc,
+                        horizon.value, getattr(_cost_mode, 'mode', getattr(_cost_mode, 'value', 'unknown')),
+                        _hc,
                         _total_actions, len(_all_bot_ids),
                     )
                     # If death actions were queued, report re_planned=True for respawn
@@ -5296,7 +5298,7 @@ class PDCALoop:
                                       actions_queued=_total_actions + _death_actions_queued, progress_pct=0.0, stuck=False, 
                                       re_planned=_death_recovery,
                                       force_replan=_death_recovery, selected_goal="survival" if _death_recovery else "cost_gated", 
-                                      objective="respawning" if _death_recovery else f"Cost mode {_cost_mode.mode.value}",
+                                      objective="respawning" if _death_recovery else f"Cost mode {getattr(_cost_mode, 'mode', type('obj', (object,), {'value': 'standard'})()).value if hasattr(_cost_mode, 'mode') else 'standard'}",
                                       replan_reasons=[], cycle_ms=0.0, error=None)
                 
                 # Check daily/hourly budget (for LLM path)

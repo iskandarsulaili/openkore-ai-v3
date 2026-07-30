@@ -1,6 +1,8 @@
-"""Tank tactics — threat management, aggro skills, party protection.
+"""
+Tank tactics — aggro management, damage mitigation, and party protection.
 
-Used by: Swordsman, Knight, Paladin, Crusader, and other defensive roles.
+Used by: Swordman, Knight, Crusader, and other tank classes.
+Pro RO behavior: provoke to maintain aggro, Endure to prevent flinch, position between party and enemy.
 """
 
 from __future__ import annotations
@@ -15,179 +17,202 @@ logger = logging.getLogger(__name__)
 
 
 class TankTactics(BaseTactics):
-    """Tank tactics: hold aggro, protect party, absorb damage.
+    """Tank tactics: hold aggro, mitigate damage, protect party.
 
-    Priority 10 — runs before DPS modules so tanks select targets first.
+    Priority 55 — high priority (party survival).
+
+    Pro RO Knight/Crusader behavior:
+    - Provoke (Lv10) every 5s to maintain aggro (-40% DEF for target)
+    - Endure (Lv10) to prevent flinch from monster attacks
+    - Position between party and enemy (body blocking)
+    - Use Bowling Bash for AoE aggro
+    - Use potions aggressively — tank must stay alive
     """
 
     name: ClassVar[str] = "tank"
-    priority: ClassVar[int] = 10
-    description: ClassVar[str] = "Tank/defensive — threat management and party protection"
+    priority: ClassVar[int] = 55
+    description: ClassVar[str] = "Tank — aggro management and damage mitigation"
     role_type: ClassVar[str] = "tank"
 
-    # Provoke / taunt skill IDs
-    TAUNT_SKILLS = {"SM_PROVOKE", "CR_PROVOCATE", "LG_BANDING"}
-    # AoE aggro skills
-    AOE_AGGRO_SKILLS = {"SM_MAGNUM", "KN_BOWLINGBASH", "CR_SHIELDBOOMERANG"}
-    # Defensive buffs
-    DEFENSIVE_BUFFS = {"SM_ENDURE", "CR_AUTOGUARD", "CR_REFLECTSHIELD",
-                       "KN_AURA", "LG_SHIELDSPELL"}
+    OPTIMAL_RANGE = 1  # Melee range
+    PROVOKE_RANGE = 9  # Can provoke from distance
 
     def select_target(self, ctx: TacticsContext) -> TargetInfo | None:
         """Tank target priority:
-        1. Monsters attacking party members (peel).
-        2. Casting monsters (interrupt).
-        3. Most dangerous monster (highest ATK).
+        1. Monsters attacking party members.
+        2. Casting monsters (interrupt with provoke/attack).
+        3. Boss/MVP monsters.
         4. Nearest aggressive monster.
         """
         monsters = ctx.monsters
         if not monsters:
             return None
 
-        # Check if any monster is attacking a party member
-        if ctx.has_party:
-            for m in monsters:
-                target_id = int(m.get("target_id", m.get("attack_target", 0)))
-                if target_id > 0 and target_id != ctx.current_target_id:
-                    # Check if this target is a party member
-                    for pm in ctx.party_members:
-                        if int(pm.get("actor_id", pm.get("id", 0))) == target_id:
-                            info = self._monster_to_info(m)
-                            info.score = 100.0 + (1.0 - info.hp_pct) * 10
-                            info.reason = f"peeling_for_{pm.get('name', 'ally')}"
-                            return info
-
-        # Interrupt casting monsters
-        casting = [m for m in monsters if m.get("is_casting", False)]
-        if casting:
-            c = casting[0]
-            info = self._monster_to_info(c)
-            info.score = 90.0
-            info.reason = "interrupting_cast"
-            return info
-
-        # Score by danger level
         def scorer(t: TargetInfo, c: TacticsContext) -> float:
             score = 0.0
-            # Aggressive monsters first
-            if t.is_aggressive:
-                score += 30.0
-            # Boss priority
-            if t.is_boss:
-                score += 50.0
-            # Casting monsters
+
+            # Monster attacking a party member — highest priority
+            if getattr(t, 'target', '') == "party_member":
+                score += 100.0
+
+            # Interrupt casting monsters
             if t.is_casting:
-                score += 40.0
-            # Low HP = easy kill
-            score += (1.0 - t.hp_pct) * 20.0
-            # Closer = more immediate threat
-            score += max(0, 20 - t.distance)
+                score += 60.0
+
+            # Boss / MVP — tank must hold aggro
+            if t.is_boss:
+                score += 80.0
+
+            # Nearest monster (get into aggro range)
+            score += max(0, 15 - t.distance) * 3
+
+            # Aggressive monsters
+            if t.is_aggressive:
+                score += 15.0
+
+            # Monster with high ATK (needs to be controlled)
+            if getattr(t, 'attack', 0) > 100:
+                score += 20.0
+
             return score
 
         return self._find_best_by_score(ctx, scorer)
 
     def select_skill(self, ctx: TacticsContext, target: TargetInfo | None) -> tuple[str, int] | None:
-        """Tank skill selection:
-        1. Provoke if not taunted.
-        2. AoE aggro skills if multiple enemies.
-        3. Defensive stance if HP low.
-        4. Damage skills as filler.
+        """Tank skill selection: provoke → endure → attack.
+
+        Pro RO Tank rotation:
+        1. Endure (Lv10) before engaging — prevents flinch
+        2. Provoke (Lv10) to maintain aggro
+        3. Bowling Bash for AoE aggro on groups
+        4. Bash as filler
         """
         if not target:
             return None
 
         available = set(s.upper() for s in ctx.available_skills)
 
-        # Provoke priority: use on boss or when party members nearby
-        for taunt in self.TAUNT_SKILLS:
-            if taunt in available:
-                taunt_lower = taunt.lower()
-                # Check cooldown
-                if ctx.cooldowns.get(taunt_lower, 0) <= 0:
-                    if target.is_boss or ctx.party_members_nearby > 0:
-                        return (taunt_lower, 5)
-                    if "provoke" in taunt_lower or "provocate" in taunt_lower:
-                        return (taunt_lower, 5)
+        # Endure first — prevents flinch from all attacks (Lv10 = 10 hits)
+        if "SM_ENDURE" in available and "ENDURE" not in set(b.upper() for b in ctx.active_buffs):
+            if ctx.cooldowns.get("sm_endure", 0) <= 0:
+                return ("sm_endure", 10)
 
-        # AoE aggro when surrounded
-        if ctx.aggro_count >= 3:
-            for aoe in self.AOE_AGGRO_SKILLS:
-                if aoe in available and ctx.cooldowns.get(aoe.lower(), 0) <= 0:
-                    return (aoe.lower(), 5)
+        # Provoke to maintain aggro (Lv10 = -40% DEF for target)
+        if "SM_PROVOKE" in available:
+            if ctx.cooldowns.get("sm_provoke", 0) <= 0:
+                return ("sm_provoke", 10)
 
-        # Defensive buff if low HP
-        if ctx.my_hp_pct < 0.5:
-            if "SM_ENDURE" in available and ctx.cooldowns.get("endure", 0) <= 0:
-                return ("endure", 5)
+        # Bowling Bash for AoE aggro on groups
+        if ctx.aggro_count >= 2 and "KN_BOWLINGBASH" in available:
+            if ctx.cooldowns.get("kn_bowlingbash", 0) <= 0:
+                return ("kn_bowlingbash", 10)
 
-        # Damage filler: bash is low SP cost
-        if "SM_BASH" in available:
-            return ("sm_bash", 5)
-        if "KN_BRANDISHSPEAR" in available:
-            return ("kn_brandishspear", 5)
+        # Bash as filler (Lv10 = 420% damage)
+        if "SM_BASH" in available and ctx.my_sp > 10:
+            return ("sm_bash", 10)
 
         return None
 
     def evaluate_positioning(self, ctx: TacticsContext, target: TargetInfo | None) -> dict[str, Any] | None:
         """Tank positioning: between party and monsters.
 
-        Returns a movement intent to interpose between threats and allies.
+        Pro RO Tank:
+        - Stay at melee range (1 cell)
+        - Position between party and approaching monsters
+        - Don't chase runners — let ranged DPS handle them
         """
-        if not ctx.has_party or not target:
+        if target is None:
             return None
 
-        # If we have a target and party members, stay between them
-        if target.distance > 3:
+        if target.distance > 1:
             return {
                 "move_x": 0,
                 "move_y": 0,
-                "reason": f"approaching_{target.name}",
-                "urgency": 0.6,
+                "reason": f"closing_to_{target.name}_tank_aggro",
+                "urgency": 0.8,
             }
+
         return None
 
     def assess_buffs(self, ctx: TacticsContext) -> list[str]:
-        """Keep defensive buffs active."""
+        """Keep tank buffs active.
+
+        Pro RO Tank:
+        - Endure (prevents flinch, allows uninterrupted attacks)
+        - Increase Agility if available (more ASPD = more aggro)
+        - Defender (Crusader) for DEF boost
+        """
         needed: list[str] = []
         available = set(s.upper() for s in ctx.available_skills)
         active = set(b.upper() for b in ctx.active_buffs)
 
+        # Endure — prevents flinch
         if "SM_ENDURE" in available and "ENDURE" not in active:
-            needed.append("endure")
-        if "CR_AUTOGUARD" in available and "AUTOGUARD" not in active:
-            needed.append("cr_autoguard")
-        if "CR_REFLECTSHIELD" in available and "REFLECTSHIELD" not in active:
-            needed.append("cr_reflectshield")
+            needed.append("sm_endure")
+
+        # Increase Agility (from support)
+        if "AL_INCAGI" in available and "INCAGI" not in active:
+            needed.append("al_incagi")
+
+        # Defender (Crusader)
+        if "CR_DEFENDER" in available and "DEFENDER" not in active:
+            needed.append("cr_defender")
 
         return needed
 
     def assess_emergency(self, ctx: TacticsContext) -> HeuristicAction | None:
-        """Tank emergency: use potion early, activate defensive cooldowns."""
-        if ctx.my_hp_pct < 0.25 and ctx.aggro_count > 0:
+        """Tank emergency: use potions aggressively, hold position.
+
+        Pro RO Tank:
+        - Use potions at 50% HP (tank stays alive to hold aggro)
+        - Endure before taking big hits
+        - NEVER flee while party is alive (tank holds the line)
+        """
+        if ctx.my_hp_pct < 0.5:
             return self._make_action(
                 command="use_potion_or_heal",
-                reason="tank_hp_critical_with_aggro",
-                confidence=0.95,
+                reason="tank_hp_low_hold_position",
+                confidence=0.9,
                 hp_pct=ctx.my_hp_pct,
-                aggro=ctx.aggro_count,
             )
+
+        # Endure reactively if HP is dropping fast
+        if ctx.my_hp_pct < 0.7 and "SM_ENDURE" in set(s.upper() for s in ctx.available_skills):
+            if "ENDURE" not in set(b.upper() for b in ctx.active_buffs):
+                return self._make_action(
+                    command="use_skill sm_endure",
+                    reason="tank_reactive_endure",
+                    confidence=0.8,
+                    hp_pct=ctx.my_hp_pct,
+                )
+
         return None
 
     def build_rotation(self, ctx: TacticsContext, target: TargetInfo | None) -> list[tuple[str, int]]:
-        """Tank rotation: buff → taunt → AoE → Bash spam."""
+        """Tank rotation: Endure → Provoke → attack.
+
+        Pro RO Tank rotation:
+        1. Endure (flinch immunity)
+        2. Provoke (aggro + DEF debuff)
+        3. Bowling Bash (AoE aggro)
+        4. Bash (single target filler)
+        """
         rotation: list[tuple[str, int]] = []
         available = set(s.upper() for s in ctx.available_skills)
 
-        # Always maintain provoke uptime
-        if "SM_PROVOKE" in available and target and ctx.cooldowns.get("sm_provoke", 0) <= 0:
-            rotation.append(("sm_provoke", 5))
+        # Endure for flinch immunity
+        if "SM_ENDURE" in available:
+            rotation.append(("sm_endure", 10))
 
-        # AoE if grouped
-        if ctx.aggro_count >= 3 and "SM_MAGNUM" in available:
-            if ctx.cooldowns.get("sm_magnum", 0) <= 0:
-                rotation.append(("sm_magnum", 5))
+        # Provoke for aggro
+        if "SM_PROVOKE" in available:
+            rotation.append(("sm_provoke", 10))
 
-        # Damage filler
+        # Bowling Bash for AoE
+        if ctx.aggro_count >= 2 and "KN_BOWLINGBASH" in available:
+            rotation.append(("kn_bowlingbash", 10))
+
+        # Bash filler
         if "SM_BASH" in available:
             rotation.append(("sm_bash", 10))
 

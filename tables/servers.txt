@@ -16,3 +16,17 @@ charBlockSize 155
 serverType kRO_RagexeRE_2020_04_01b
 serverEncoding Western
 addTableFolders kRO/RagexeRE_2020_04_01b;translated/kRO_english;kRO
+
+[Local rAthena AI World]
+ip cannes-johnny.with.playit.plus
+port 1053
+charServer_ip 192.168.0.100
+charServer_port 1063
+private 1
+master_version 0
+version 128
+charBlockSize 155
+serverType kRO_RagexeRE_2021_11_03
+serverEncoding Western
+addTableFolders kRO/RagexeRE_2021_11_03;translated/kRO_english;kRO
+secureLogin 0

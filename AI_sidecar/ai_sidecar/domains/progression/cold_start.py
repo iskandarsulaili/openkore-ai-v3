@@ -1,216 +1,556 @@
-"""Cold Start Planner — data-driven leveling pipeline.
+"""Cold start — automatic character creation and onboarding.
 
-Replaces hardcoded cold start logic with data-driven decisions.
-Safe zones, item prices, and progression paths are in YAML data files,
-not hardcoded in the AI system.
+Provides:
+  - ColdStartManager: checks if account has characters, creates one if none exist
+  - Character creation with configured job class
+  - Stat allocation plan from stat_planner.py
+  - Character slot selection (up to 12 slots)
+  - Delete-recreate if enabled
+  - Post-creation verification
 """
 from __future__ import annotations
-from typing import Any
+
 import logging
-from pathlib import Path
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
 
 from ai_sidecar.actions import HeuristicAction
 
 logger = logging.getLogger(__name__)
 
-# Try to load YAML data
-try:
-    import yaml
-    _DATA_DIR = Path(__file__).parent.parent.parent / "data"
-except ImportError:
-    yaml = None  # type: ignore
-    _DATA_DIR = None
 
-_SafeZoneDB = None
+# ── Character Slot Configuration ───────────────────────────────────────────
 
+# Maximum number of character slots available
+MAX_CHARACTER_SLOTS = 12
 
-def _load_start_zones() -> dict:
-    """Load safe start zone data from YAML file."""
-    global _SafeZoneDB
-    if _SafeZoneDB is not None:
-        return _SafeZoneDB
-    if yaml is None or _DATA_DIR is None:
-        _SafeZoneDB = {}
-        return _SafeZoneDB
-    path = _DATA_DIR / "start_zones.yaml"
-    if path.exists():
-        with open(path) as f:
-            _SafeZoneDB = yaml.safe_load(f) or {}
-    else:
-        _SafeZoneDB = {}
-    return _SafeZoneDB
+# Default character creation parameters
+DEFAULT_START_MAP = "prontera"
+DEFAULT_START_X = 156
+DEFAULT_START_Y = 165
 
 
-def get_safe_zone(level: int) -> dict | None:
-    """Get the recommended safe start zone for a given level."""
-    data = _load_start_zones()
-    zones = data.get("start_zones", {})
-    if level <= 3:
-        key = "level_1_3"
-    elif level <= 10:
-        key = "level_4_10"
-    elif level <= 25:
-        key = "level_11_25"
-    else:
-        return None
-    
-    zone_list = zones.get(key, [])
-    if zone_list:
-        return zone_list[0]
-    return None
+# ── Job class definitions ─────────────────────────────────────────────────
+
+@dataclass
+class JobClassDef:
+    """Definition of a job class for character creation."""
+    name: str
+    display_name: str
+    base_str: int = 1
+    base_agi: int = 1
+    base_vit: int = 1
+    base_int: int = 1
+    base_dex: int = 1
+    base_luk: int = 1
+    start_weapon: str = ""
+    start_armor: str = ""
+
+    def stat_allocation_string(self) -> str:
+        """Generate stat allocation command string."""
+        parts = []
+        if self.base_str > 1:
+            parts.append(f"str {self.base_str}")
+        if self.base_agi > 1:
+            parts.append(f"agi {self.base_agi}")
+        if self.base_vit > 1:
+            parts.append(f"vit {self.base_vit}")
+        if self.base_int > 1:
+            parts.append(f"int {self.base_int}")
+        if self.base_dex > 1:
+            parts.append(f"dex {self.base_dex}")
+        if self.base_luk > 1:
+            parts.append(f"luk {self.base_luk}")
+        return " ".join(parts)
 
 
-def get_item_price(item_name: str) -> dict | None:
-    """Get pricing info for an item."""
-    data = _load_start_zones()
-    prices = data.get("item_prices", {})
-    return prices.get(item_name)
+# ── Job class presets ──────────────────────────────────────────────────────
+
+JOB_CLASSES: dict[str, JobClassDef] = {
+    "novice": JobClassDef(
+        name="novice", display_name="Novice",
+        base_str=1, base_agi=1, base_vit=1, base_int=1, base_dex=1, base_luk=1,
+    ),
+    "swordman": JobClassDef(
+        name="swordman", display_name="Swordman",
+        base_str=9, base_agi=9, base_vit=1, base_int=1, base_dex=9, base_luk=1,
+        start_weapon="1201", start_armor="2301",
+    ),
+    "mage": JobClassDef(
+        name="mage", display_name="Mage",
+        base_str=1, base_agi=1, base_vit=1, base_int=9, base_dex=9, base_luk=1,
+        start_weapon="1601", start_armor="2301",
+    ),
+    "archer": JobClassDef(
+        name="archer", display_name="Archer",
+        base_str=1, base_agi=9, base_vit=1, base_int=1, base_dex=9, base_luk=5,
+        start_weapon="1701", start_armor="2301",
+    ),
+    "acolyte": JobClassDef(
+        name="acolyte", display_name="Acolyte",
+        base_str=5, base_agi=1, base_vit=5, base_int=9, base_dex=5, base_luk=1,
+        start_weapon="1501", start_armor="2301",
+    ),
+    "thief": JobClassDef(
+        name="thief", display_name="Thief",
+        base_str=5, base_agi=9, base_vit=1, base_int=1, base_dex=9, base_luk=1,
+        start_weapon="1301", start_armor="2301",
+    ),
+    "merchant": JobClassDef(
+        name="merchant", display_name="Merchant",
+        base_str=9, base_agi=1, base_vit=5, base_int=1, base_dex=5, base_luk=1,
+        start_weapon="1201", start_armor="2301",
+    ),
+}
 
 
-class ColdStartPlanner:
-    """Data-driven cold start planner.
-    
-    Produces HeuristicAction commands for the cold start pipeline
-    based on character level, current map, and zeny.
-    Does NOT use hardcoded values — everything comes from data files.
+# ── Stat Planner Integration ──────────────────────────────────────────────
+
+@dataclass
+class StatPlan:
+    """A stat allocation plan for a character.
+
+    Defines target stats at various level milestones.
     """
-    
-    def assess(self, signals: dict[str, Any], actions: list[HeuristicAction], bot_id: str) -> None:
-        level = int(signals.get("base_level", 1) or 1)
-        job = str(signals.get("job", "Novice") or "Novice")
-        zeny = int(signals.get("zeny", 0) or 0)
-        current_map = str(signals.get("map", "") or "")
-        weight = int(signals.get("weight", 0) or 0)
-        weight_max = int(signals.get("weight_max", 100) or 100)
-        
-        weight_pct = weight / max(weight_max, 1)
-        
-        # Get safe zone for this level
-        zone = get_safe_zone(level)
-        if not zone:
-            return  # No recommendation for this level
-        
-        target_map = zone["map"]
-        expected_zeny = zone["expected_zeny_per_hour"]
-        npc_town = zone["npc"]
-        
-        # Item pricing
-        knife_price = get_item_price("Knife")
-        potion_price = get_item_price("Red_Potion")
-        
-        knife_cost = knife_price["buy"] if knife_price else 500
-        potion_cost = potion_price["buy"] if potion_price else 10
-        
-        # Determine what to do
-        has_weapon = self._has_weapon(signals)
-        
-        # Step 0: If we have a weapon and potions, go hunt
-        if has_weapon and zeny >= potion_cost * 5:
-            if current_map != target_map:
-                # Find portal from current town to target zone
-                actions.append(HeuristicAction(
-                    kind="command",
-                    command=f"move {zone.get('portal', [22, 203])[0]} {zone.get('portal', [22, 203])[1]}",
-                    confidence=0.8,
-                    reason=f"ColdStart: move to {target_map} for leveling",
-                    domain="progression",
-                ))
-            else:
-                # Already on the right map — start hunting
-                actions.append(HeuristicAction(
-                    kind="command",
-                    command="attackAuto 2",
-                    confidence=0.9,
-                    reason=f"ColdStart: start hunting on {target_map}",
-                    domain="progression",
-                ))
-        
-        # Step 1: If we have no weapon, farm for one
-        elif not has_weapon:
-            if zeny < knife_cost:
-                # Farm for a weapon
-                if current_map == target_map:
-                    actions.append(HeuristicAction(
-                        kind="command",
-                        command="attackAuto 2",
-                        confidence=0.9,
-                        reason=f"ColdStart: farm {knife_cost - zeny}z for weapon on {target_map}",
-                        domain="progression",
-                    ))
-                else:
-                    # Walk to farm map
-                    actions.append(HeuristicAction(
-                        kind="command",
-                        command=f"move {zone.get('portal', [22, 203])[0]} {zone.get('portal', [22, 203])[1]}",
-                        confidence=0.8,
-                        reason=f"ColdStart: walk to {target_map} to farm",
-                        domain="progression",
-                    ))
-            else:
-                # Have enough zeny — buy weapon
-                actions.append(HeuristicAction(
-                    kind="command",
-                    command=f"buy {knife_cost} {knife_price.get('npc', 'prt_in 42 170')}",
-                    confidence=0.9,
-                    reason=f"ColdStart: buy weapon ({knife_cost}z)",
-                    domain="progression",
-                ))
-        
-        # Step 2: Have weapon but no potions — buy some
-        elif zeny >= potion_cost * 10:
-            actions.append(HeuristicAction(
-                kind="command",
-                command=f"buy {potion_cost * 10} {potion_price.get('npc', 'prt_in 22 164')}",
-                confidence=0.9,
-                reason=f"ColdStart: buy potions ({potion_cost * 10}z for 10)",
-                domain="progression",
-            ))
-        
-        # Step 3: Overweight — sell junk
-        if weight_pct > 0.7:
-            actions.append(HeuristicAction(
-                kind="command",
-                command="sellAuto 1",
-                confidence=0.9,
-                reason="ColdStart: overweight, sell junk",
-                domain="economy",
-            ))
-        
-        # Log current state
-        actions.append(HeuristicAction(
-            kind="log",
-            command=f"cold_start level={level} job={job} zeny={zeny} map={current_map} target={target_map}",
-            confidence=0.5,
-            reason="ColdStart state tracking",
-            domain="progression",
-        ))
-    
-    def _has_weapon(self, signals: dict) -> bool:
-        inventory = signals.get("inventory", {}) or {}
-        if isinstance(inventory, dict):
-            items = inventory.get("items", inventory.get("inventory", []))
-            if isinstance(items, list):
-                for item in items:
-                    if isinstance(item, dict):
-                        name = str(item.get("name", item.get("identifiedDisplayName", "")) or "")
-                        if any(w in name.lower() for w in ["knife", "sword", "mace", "bow", "staff", "dagger", "axe"]):
-                            return True
-        equipment = signals.get("equipment", {}) or {}
-        if isinstance(equipment, dict):
-            for slot, item in equipment.items():
-                if isinstance(item, dict):
-                    name = str(item.get("name", "") or "")
-                    if any(w in name.lower() for w in ["weapon", "knife", "sword"]):
-                        return True
+    name: str
+    job_class: str
+    milestones: list[dict[str, Any]] = field(default_factory=list)
+    # milestone format: {"level": 10, "stats": {"str": 10, "agi": 20, ...}}
+
+    def get_stats_for_level(self, level: int) -> dict[str, int]:
+        """Get the recommended stat allocation for a given level."""
+        best: dict[str, int] = {}
+        for milestone in self.milestones:
+            if milestone.get("level", 0) <= level:
+                best = milestone.get("stats", {})
+        return best
+
+    def get_stat_commands(self, current_stats: dict[str, int], target_stats: dict[str, int]) -> list[str]:
+        """Generate stat_add commands to reach target stats from current."""
+        commands: list[str] = []
+        for stat, target in target_stats.items():
+            current = current_stats.get(stat, 1)
+            if target > current:
+                commands.append(f"stat_add {stat} {target - current}")
+        return commands
+
+
+# ── Default stat plans ─────────────────────────────────────────────────────
+
+DEFAULT_STAT_PLANS: dict[str, StatPlan] = {
+    "swordman": StatPlan(
+        name="swordman_str_agi",
+        job_class="swordman",
+        milestones=[
+            {"level": 10, "stats": {"str": 20, "agi": 15, "dex": 15, "vit": 10}},
+            {"level": 20, "stats": {"str": 30, "agi": 25, "dex": 20, "vit": 15}},
+            {"level": 30, "stats": {"str": 40, "agi": 35, "dex": 25, "vit": 20}},
+            {"level": 40, "stats": {"str": 50, "agi": 45, "dex": 30, "vit": 25}},
+            {"level": 50, "stats": {"str": 60, "agi": 50, "dex": 35, "vit": 30}},
+            {"level": 60, "stats": {"str": 70, "agi": 55, "dex": 40, "vit": 35}},
+            {"level": 70, "stats": {"str": 80, "agi": 60, "dex": 45, "vit": 40}},
+            {"level": 80, "stats": {"str": 85, "agi": 65, "dex": 50, "vit": 45}},
+            {"level": 90, "stats": {"str": 90, "agi": 70, "dex": 55, "vit": 50}},
+            {"level": 99, "stats": {"str": 99, "agi": 75, "dex": 60, "vit": 55}},
+        ],
+    ),
+    "mage": StatPlan(
+        name="mage_int_dex",
+        job_class="mage",
+        milestones=[
+            {"level": 10, "stats": {"int": 20, "dex": 15, "vit": 10}},
+            {"level": 20, "stats": {"int": 30, "dex": 20, "vit": 15}},
+            {"level": 30, "stats": {"int": 40, "dex": 25, "vit": 20}},
+            {"level": 40, "stats": {"int": 50, "dex": 30, "vit": 25}},
+            {"level": 50, "stats": {"int": 60, "dex": 35, "vit": 30}},
+            {"level": 60, "stats": {"int": 70, "dex": 40, "vit": 35}},
+            {"level": 70, "stats": {"int": 80, "dex": 45, "vit": 40}},
+            {"level": 80, "stats": {"int": 85, "dex": 50, "vit": 45}},
+            {"level": 90, "stats": {"int": 90, "dex": 55, "vit": 50}},
+            {"level": 99, "stats": {"int": 99, "dex": 60, "vit": 55}},
+        ],
+    ),
+    "archer": StatPlan(
+        name="archer_dex_agi",
+        job_class="archer",
+        milestones=[
+            {"level": 10, "stats": {"dex": 20, "agi": 15, "luk": 10}},
+            {"level": 20, "stats": {"dex": 30, "agi": 20, "luk": 15}},
+            {"level": 30, "stats": {"dex": 40, "agi": 25, "luk": 20}},
+            {"level": 40, "stats": {"dex": 50, "agi": 30, "luk": 25}},
+            {"level": 50, "stats": {"dex": 60, "agi": 35, "luk": 30}},
+            {"level": 60, "stats": {"dex": 70, "agi": 40, "luk": 35}},
+            {"level": 70, "stats": {"dex": 80, "agi": 45, "luk": 40}},
+            {"level": 80, "stats": {"dex": 85, "agi": 50, "luk": 45}},
+            {"level": 90, "stats": {"dex": 90, "agi": 55, "luk": 50}},
+            {"level": 99, "stats": {"dex": 99, "agi": 60, "luk": 55}},
+        ],
+    ),
+    "acolyte": StatPlan(
+        name="acolyte_int_dex",
+        job_class="acolyte",
+        milestones=[
+            {"level": 10, "stats": {"int": 20, "dex": 15, "vit": 10}},
+            {"level": 20, "stats": {"int": 30, "dex": 20, "vit": 15}},
+            {"level": 30, "stats": {"int": 40, "dex": 25, "vit": 20}},
+            {"level": 40, "stats": {"int": 50, "dex": 30, "vit": 25}},
+            {"level": 50, "stats": {"int": 60, "dex": 35, "vit": 30}},
+            {"level": 60, "stats": {"int": 70, "dex": 40, "vit": 35}},
+            {"level": 70, "stats": {"int": 80, "dex": 45, "vit": 40}},
+            {"level": 80, "stats": {"int": 85, "dex": 50, "vit": 45}},
+            {"level": 90, "stats": {"int": 90, "dex": 55, "vit": 50}},
+            {"level": 99, "stats": {"int": 99, "dex": 60, "vit": 55}},
+        ],
+    ),
+    "thief": StatPlan(
+        name="thief_agi_dex",
+        job_class="thief",
+        milestones=[
+            {"level": 10, "stats": {"agi": 20, "dex": 15, "str": 10}},
+            {"level": 20, "stats": {"agi": 30, "dex": 20, "str": 15}},
+            {"level": 30, "stats": {"agi": 40, "dex": 25, "str": 20}},
+            {"level": 40, "stats": {"agi": 50, "dex": 30, "str": 25}},
+            {"level": 50, "stats": {"agi": 60, "dex": 35, "str": 30}},
+            {"level": 60, "stats": {"agi": 70, "dex": 40, "str": 35}},
+            {"level": 70, "stats": {"agi": 80, "dex": 45, "str": 40}},
+            {"level": 80, "stats": {"agi": 85, "dex": 50, "str": 45}},
+            {"level": 90, "stats": {"agi": 90, "dex": 55, "str": 50}},
+            {"level": 99, "stats": {"agi": 99, "dex": 60, "str": 55}},
+        ],
+    ),
+    "merchant": StatPlan(
+        name="merchant_str_vit",
+        job_class="merchant",
+        milestones=[
+            {"level": 10, "stats": {"str": 20, "vit": 15, "dex": 10}},
+            {"level": 20, "stats": {"str": 30, "vit": 20, "dex": 15}},
+            {"level": 30, "stats": {"str": 40, "vit": 25, "dex": 20}},
+            {"level": 40, "stats": {"str": 50, "vit": 30, "dex": 25}},
+            {"level": 50, "stats": {"str": 60, "vit": 35, "dex": 30}},
+            {"level": 60, "stats": {"str": 70, "vit": 40, "dex": 35}},
+            {"level": 70, "stats": {"str": 80, "vit": 45, "dex": 40}},
+            {"level": 80, "stats": {"str": 85, "vit": 50, "dex": 45}},
+            {"level": 90, "stats": {"str": 90, "vit": 55, "dex": 50}},
+            {"level": 99, "stats": {"str": 99, "vit": 60, "dex": 55}},
+        ],
+    ),
+}
+
+
+# ── Cold Start Manager ────────────────────────────────────────────────────
+
+@dataclass
+class ColdStartConfig:
+    """Configuration for cold start behavior."""
+    job_class: str = "swordman"
+    character_name_prefix: str = "Bot"
+    start_map: str = DEFAULT_START_MAP
+    start_x: int = DEFAULT_START_X
+    start_y: int = DEFAULT_START_Y
+    enable_delete_recreate: bool = False
+    max_creation_retries: int = 3
+    verify_after_creation: bool = True
+    preferred_slot: int = 0  # 0 = auto-select first empty slot
+
+
+class ColdStartManager:
+    """Manages automatic character creation and onboarding.
+
+    Workflow:
+    1. Check if the account has characters
+    2. If no characters exist, create one with the configured job class
+    3. Allocate stats according to the stat plan
+    4. Handle character slot selection (up to 12 slots)
+    5. Handle delete-recreate if enabled
+    6. Verify character exists after creation before proceeding
+    """
+
+    def __init__(self, config: ColdStartConfig | None = None) -> None:
+        self._config = config or ColdStartConfig()
+        self._creation_attempts: dict[str, int] = {}  # bot_id -> attempt count
+
+    def assess(
+        self,
+        signals: dict[str, Any],
+        actions: list[HeuristicAction],
+        bot_id: str,
+    ) -> None:
+        """Evaluate cold start state and emit character creation actions.
+
+        Called each cycle. Emits actions only when character creation is needed.
+        Once a character exists and is verified, no further actions are emitted.
+        """
+        # Check if we already have a character
+        characters = self._get_characters(signals)
+        if self._has_valid_character(characters):
+            # Character exists — emit stat allocation if needed
+            self._emit_stat_allocation(signals, actions, bot_id)
+            return
+
+        # No valid character — need to create one
+        attempt_count = self._creation_attempts.get(bot_id, 0)
+        if attempt_count >= self._config.max_creation_retries:
+            logger.error(
+                "[cold_start] %s: Max creation retries (%d) reached — giving up",
+                bot_id, self._config.max_creation_retries,
+            )
+            return
+
+        # Determine which slot to use
+        slot = self._find_empty_slot(characters)
+        if slot is None:
+            if self._config.enable_delete_recreate:
+                # Delete the lowest-level character and recreate
+                slot = self._find_delete_slot(characters)
+                if slot is not None:
+                    self._emit_delete_character(actions, bot_id, slot, characters)
+                    return
+            logger.warning(
+                "[cold_start] %s: All %d slots full and delete-recreate disabled",
+                bot_id, MAX_CHARACTER_SLOTS,
+            )
+            return
+
+        # Create the character
+        self._creation_attempts[bot_id] = attempt_count + 1
+        self._emit_create_character(actions, bot_id, slot, signals)
+
+        # If verification is enabled, emit a verify action
+        if self._config.verify_after_creation:
+            self._emit_verify_character(actions, bot_id)
+
+    # ── Character detection ───────────────────────────────────────────
+
+    def _get_characters(self, signals: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract character list from signals."""
+        characters = signals.get("characters", signals.get("character_list", []))
+        if isinstance(characters, list):
+            return characters
+        if isinstance(characters, dict):
+            return list(characters.values())
+        return []
+
+    def _has_valid_character(self, characters: list[dict[str, Any]]) -> bool:
+        """Check if there's at least one valid character on the account."""
+        for char in characters:
+            if isinstance(char, dict):
+                name = str(char.get("name", char.get("char_name", "")) or "")
+                if name and not name.startswith("UNKNOWN"):
+                    return True
         return False
 
+    def _find_empty_slot(self, characters: list[dict[str, Any]]) -> int | None:
+        """Find the first empty character slot (0-indexed, up to 12)."""
+        occupied_slots: set[int] = set()
+        for char in characters:
+            if isinstance(char, dict):
+                slot = int(char.get("slot", char.get("char_slot", -1)) or -1)
+                if slot >= 0:
+                    occupied_slots.add(slot)
 
-# Singleton
-_cold_start_planner: ColdStartPlanner | None = None
+        for slot in range(MAX_CHARACTER_SLOTS):
+            if slot not in occupied_slots:
+                return slot
+        return None
+
+    def _find_delete_slot(self, characters: list[dict[str, Any]]) -> int | None:
+        """Find the best slot to delete (lowest-level character)."""
+        best_slot: int | None = None
+        best_level: int = 999
+
+        for char in characters:
+            if isinstance(char, dict):
+                slot = int(char.get("slot", char.get("char_slot", -1)) or -1)
+                level = int(char.get("level", char.get("base_level", 99)) or 99)
+                if slot >= 0 and level < best_level:
+                    best_level = level
+                    best_slot = slot
+
+        return best_slot
+
+    # ── Action emitters ───────────────────────────────────────────────
+
+    def _emit_create_character(
+        self,
+        actions: list[HeuristicAction],
+        bot_id: str,
+        slot: int,
+        signals: dict[str, Any],
+    ) -> None:
+        """Emit character creation command."""
+        job_class = self._config.job_class
+        job_def = JOB_CLASSES.get(job_class, JOB_CLASSES["swordman"])
+
+        # Generate character name
+        char_name = self._generate_character_name(bot_id, slot, signals)
+
+        # Build stat allocation string
+        stat_str = job_def.stat_allocation_string()
+
+        logger.info(
+            "[cold_start] %s: Creating character '%s' (slot %d, class: %s, stats: %s)",
+            bot_id, char_name, slot, job_class, stat_str or "default",
+        )
+
+        # Create character command — OpenKore uses char_create via the character select screen
+        # OpenKore command format: "char_create <slot> <name> <str> <agi> <vit> <int> <dex> <luk>"
+        create_cmd = f"char_create {slot} \"{char_name}\" {job_def.base_str} {job_def.base_agi} {job_def.base_vit} {job_def.base_int} {job_def.base_dex} {job_def.base_luk}"
+
+        actions.append(HeuristicAction(
+            kind="command",
+            command=create_cmd,
+            confidence=0.95,
+            domain="progression",
+            reason=f"ColdStart: create {job_class} character '{char_name}' in slot {slot}",
+            metadata={
+                "slot": slot,
+                "char_name": char_name,
+                "job_class": job_class,
+                "stat_allocation": stat_str,
+            },
+        ))
+
+        # Select the character after creation
+        # REMOVED: char_select emitted inline — bridge's char_create handler
+        # calls sendCharLogin(slot) after successful creation, which auto-enters
+        # the game. Separate char_select action interferes.
+
+    def _emit_delete_character(
+        self,
+        actions: list[HeuristicAction],
+        bot_id: str,
+        slot: int,
+        characters: list[dict[str, Any]],
+    ) -> None:
+        """Emit character deletion command (for delete-recreate)."""
+        char_name = "unknown"
+        for char in characters:
+            if isinstance(char, dict) and int(char.get("slot", -1)) == slot:
+                char_name = str(char.get("name", "unknown"))
+                break
+
+        logger.warning(
+            "[cold_start] %s: Deleting character '%s' (slot %d) for recreate",
+            bot_id, char_name, slot,
+        )
+
+        actions.append(HeuristicAction(
+            kind="command",
+            command=f"char_delete {slot}",
+            confidence=0.95,
+            domain="progression",
+            reason=f"ColdStart: delete '{char_name}' in slot {slot} for recreate",
+            metadata={"slot": slot, "char_name": char_name},
+        ))
+
+    def _emit_verify_character(
+        self,
+        actions: list[HeuristicAction],
+        bot_id: str,
+    ) -> None:
+        """Emit character verification action."""
+        actions.append(HeuristicAction(
+            kind="command",
+            command="char_list",
+            confidence=0.90,
+            domain="progression",
+            reason="ColdStart: verify character exists after creation",
+            metadata={"verify": True},
+        ))
+
+    def _emit_stat_allocation(
+        self,
+        signals: dict[str, Any],
+        actions: list[HeuristicAction],
+        bot_id: str,
+    ) -> None:
+        """Emit stat allocation commands based on the stat plan."""
+        job_class = self._config.job_class
+        stat_plan = DEFAULT_STAT_PLANS.get(job_class)
+        if not stat_plan:
+            return
+
+        base_level = int(signals.get("base_level", 1) or 1)
+        status_points = int(signals.get("status_points", 0) or 0)
+
+        if status_points < 5:
+            return  # Not enough points to bother
+
+        # Get current stats from signals
+        current_stats: dict[str, int] = {}
+        for stat in ["str", "agi", "vit", "int", "dex", "luk"]:
+            current_stats[stat] = int(signals.get(f"stat_{stat}", signals.get(stat, 1)) or 1)
+
+        # Get target stats for this level
+        target_stats = stat_plan.get_stats_for_level(base_level)
+
+        # Generate stat commands
+        commands = stat_plan.get_stat_commands(current_stats, target_stats)
+        if not commands:
+            return
+
+        for cmd in commands:
+            actions.append(HeuristicAction(
+                kind="command",
+                command=cmd,
+                confidence=0.90,
+                domain="progression",
+                reason=f"ColdStart: stat allocation ({cmd}) for {job_class} at level {base_level}",
+                metadata={
+                    "stat_plan": stat_plan.name,
+                    "level": base_level,
+                    "status_points": status_points,
+                },
+            ))
+
+    # ── Name generation ────────────────────────────────────────────────
+
+    def _generate_character_name(
+        self,
+        bot_id: str,
+        slot: int,
+        signals: dict[str, Any],
+    ) -> str:
+        """Generate a character name from bot_id and slot."""
+        prefix = self._config.character_name_prefix
+        # Use bot_id as base, sanitize it
+        base = bot_id.replace("_", "").replace("-", "").replace(" ", "")
+        # Truncate to fit within RO's 24-char limit
+        max_name_len = 24 - len(prefix) - 2  # -2 for slot suffix
+        if max_name_len < 4:
+            max_name_len = 4
+        base = base[:max_name_len]
+        return f"{prefix}{base}{slot:02d}"
+
+    # ── Configuration ──────────────────────────────────────────────────
+
+    @property
+    def config(self) -> ColdStartConfig:
+        return self._config
+
+    def set_config(self, config: ColdStartConfig) -> None:
+        self._config = config
+
+    def reset_attempts(self, bot_id: str) -> None:
+        """Reset creation attempt counter for a bot."""
+        self._creation_attempts.pop(bot_id, None)
 
 
-def get_cold_start_planner() -> ColdStartPlanner:
-    global _cold_start_planner
-    if _cold_start_planner is None:
-        _cold_start_planner = ColdStartPlanner()
-    return _cold_start_planner
+# ── Global Singleton ───────────────────────────────────────────────────────
+
+_manager: ColdStartManager | None = None
+
+
+def get_cold_start_manager() -> ColdStartManager:
+    """Get the global ColdStartManager singleton."""
+    global _manager
+    if _manager is None:
+        _manager = ColdStartManager()
+    return _manager
+
+
+def create_cold_start_manager(config: ColdStartConfig | None = None) -> ColdStartManager:
+    """Factory for a new ColdStartManager with optional custom config."""
+    return ColdStartManager(config=config)

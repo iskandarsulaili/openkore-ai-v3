@@ -29,6 +29,7 @@ sub new {
 	my %handlers = qw(
 		master_login 0ACF
 		token_login 0064
+		char_create 0A39
 	);
 
 	$self->{packet_lut}{$_} = $handlers{$_} for keys %handlers;

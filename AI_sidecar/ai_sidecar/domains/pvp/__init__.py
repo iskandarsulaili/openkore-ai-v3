@@ -13,6 +13,12 @@ from ai_sidecar.actions import HeuristicAction
 from ai_sidecar.domains import BaseDomain
 from ai_sidecar.domains.pvp.arenas import ArenaTactics, ThreatScore, ThreatProfile
 from ai_sidecar.domains.pvp.woe import WoETactics, CastleState, WoERole
+from ai_sidecar.domains.pvp.self_learning_hit_flee_analyzer import SelfLearningHitFleeAnalyzer
+from ai_sidecar.domains.pvp.self_learning_status_resistance_tracker import SelfLearningStatusResistanceTracker
+from ai_sidecar.domains.pvp.gtb_detector import GtbDetector
+from ai_sidecar.domains.pvp.self_learning_class_counters import SelfLearningClassCounters
+from ai_sidecar.domains.pvp.self_learning_elemental_armor_checker import SelfLearningElementalArmorChecker
+from ai_sidecar.domains.pvp.self_learning_steal_analyzer import SelfLearningStealAnalyzer
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -24,6 +30,12 @@ __all__ = [
     "WoETactics",
     "CastleState",
     "WoERole",
+    "SelfLearningHitFleeAnalyzer",
+    "SelfLearningStatusResistanceTracker",
+    "GtbDetector",
+    "SelfLearningClassCounters",
+    "SelfLearningElementalArmorChecker",
+    "SelfLearningStealAnalyzer",
 ]
 
 

@@ -13,8 +13,13 @@ from ai_sidecar.actions import HeuristicAction
 from ai_sidecar.domains import BaseDomain
 from ai_sidecar.domains.progression.lifecycle import (
     LifecycleStateMachine,
-    LifecyclePhase,
-    PhaseConfig,
+    LifecycleManager,
+    BotState,
+    StateTimeoutConfig,
+)
+from ai_sidecar.domains.progression.cold_start import (
+    ColdStartManager,
+    ColdStartConfig,
 )
 from ai_sidecar.domains.progression.advancement import (
     AdvancementDomain,
@@ -27,11 +32,14 @@ logger = __import__("logging").getLogger(__name__)
 __all__ = [
     "ProgressionDomain",
     "LifecycleStateMachine",
-    "LifecyclePhase",
-    "PhaseConfig",
+    "LifecycleManager",
+    "BotState",
+    "StateTimeoutConfig",
     "AdvancementDomain",
     "JobChangePlan",
     "JobChangeStep",
+    "ColdStartManager",
+    "ColdStartConfig",
 ]
 
 

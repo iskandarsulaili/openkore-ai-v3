@@ -1,6 +1,7 @@
 """
 PartyEngine — real RO party system with skill combos, positioning,
-EXP share optimization, role assignment, and loot distribution.
+EXP share optimization, role assignment, loot distribution, and
+full party coordination features.
 
 A pro party in RO doesn't just stand next to each other. It:
   - Chains skills for multiplicative damage (Aspersio → Holy DPS)
@@ -8,6 +9,8 @@ A pro party in RO doesn't just stand next to each other. It:
   - Tracks EXP share range so nobody misses the 160% bonus
   - Assigns roles based on job class and enforces position discipline
   - Distributes loot intelligently (cards/valuables → tank, rest → anyone)
+  - Tracks buff synchronization, heal targets, resurrect, follow mode
+  - Detects AFK members, tracks summon stones, coordinates quests
 
 Usage:
     from ai_sidecar.domains.social.party import PartyEngine, get_party_engine
@@ -24,7 +27,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import RLock
 from typing import Any
@@ -38,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 
 class PartyRole(StrEnum):
-    """Roles the party engine assigns based on job class."""
     TANK = "Tank"
     DD_MELEE = "DD_Melee"
     DD_RANGED = "DD_Ranged"
@@ -48,15 +50,13 @@ class PartyRole(StrEnum):
 
 
 class FormationType(StrEnum):
-    """Named formations the party can adopt."""
-    LINE = "line"           # Side-by-side, tank center-front
-    WEDGE = "wedge"         # Arrowhead, tank at point
-    CLUSTER = "cluster"     # Tight group (safe passages)
-    SPREAD = "spread"       # Max distance (AoE avoidance)
+    LINE = "line"
+    WEDGE = "wedge"
+    CLUSTER = "cluster"
+    SPREAD = "spread"
 
 
 class ComboState(StrEnum):
-    """State of a skill combo in progress."""
     PENDING = "pending"
     PREP_CAST = "prep_cast"
     READY = "ready"
@@ -67,19 +67,17 @@ class ComboState(StrEnum):
 
 @dataclass
 class SkillCombo:
-    """A skill synergy that two or more party members can execute."""
     name: str
     prep_skill: str
     main_skill: str
     prep_class: str
     main_class: str
-    prep_time_s: float = 2.0       # How long prep takes
-    window_s: float = 5.0          # Window to follow up after prep lands
+    prep_time_s: float = 2.0
+    window_s: float = 5.0
     description: str = ""
     min_level: int = 1
-    target_required: bool = False   # Whether a specific target ID is needed
+    target_required: bool = False
 
-    # Active tracking
     state: ComboState = ComboState.PENDING
     started_at: float = 0.0
     prep_caster: str = ""
@@ -91,11 +89,10 @@ class SkillCombo:
 
 @dataclass
 class ComboOpportunity:
-    """A detected combo opportunity between two party members."""
     combo: SkillCombo
     prep_member_name: str
     main_member_name: str
-    readiness: float  # 0.0-1.0, how ready/viable this combo is right now
+    readiness: float
     target_id: int = 0
     target_x: int = 0
     target_y: int = 0
@@ -103,7 +100,6 @@ class ComboOpportunity:
 
 @dataclass
 class PartyMemberInfo:
-    """Runtime info about a party member for the engine."""
     name: str
     job: str = "novice"
     job_class: str = "novice"
@@ -120,15 +116,34 @@ class PartyMemberInfo:
     distance_to_leader: float = 0.0
     distance_to_target: float = 0.0
     last_update: float = 0.0
+    # Buff tracking
+    buffs: dict[str, float] = field(default_factory=dict)  # buff_name -> expiry_time
+    # AFK tracking
+    last_action_time: float = 0.0
+    afk_warning_sent: bool = False
+    # Summon tracking
+    summon_active: bool = False
+    summon_expiry: float = 0.0
+
+    def __post_init__(self):
+        if self.buffs is None:
+            self.buffs = {}
+
+    @property
+    def hp_pct(self) -> float:
+        return self.hp / max(1, self.hp_max)
+
+    @property
+    def sp_pct(self) -> float:
+        return self.sp / max(1, self.sp_max)
 
 
 @dataclass
 class LootRule:
-    """Rules for who should pick up what type of loot."""
-    item_category: str          # "card", "equipment", "consumable", "valuable", "any"
-    priority_role: PartyRole    # Which role gets first pick
-    shared: bool = True         # Whether anyone can pick up if primary misses it
-    announce: bool = False       # Whether to announce in party chat
+    item_category: str
+    priority_role: PartyRole
+    shared: bool = True
+    announce: bool = False
 
 
 # ──────────────────────────────────────────────
@@ -143,7 +158,7 @@ SKILL_COMBOS: list[SkillCombo] = [
         prep_class="priest",
         main_class="dd_melee",
         prep_time_s=2.0,
-        window_s=30.0,  # Aspersio lasts 30s
+        window_s=30.0,
         description="Priest blesses weapon with holy element — all attacks deal bonus holy damage vs undead/dark",
         target_required=True,
     ),
@@ -166,7 +181,7 @@ SKILL_COMBOS: list[SkillCombo] = [
         main_class="wizard",
         prep_time_s=1.5,
         window_s=8.0,
-        description="Hunter traps a monster, Wizard layers Fire Wall on top — trapped target takes repeated fire ticks",
+        description="Hunter traps a monster, Wizard layers Fire Wall on top",
         target_required=True,
     ),
     SkillCombo(
@@ -176,8 +191,8 @@ SKILL_COMBOS: list[SkillCombo] = [
         prep_class="priest",
         main_class="dd_melee",
         prep_time_s=2.0,
-        window_s=120.0,  # Gloria lasts 2min
-        description="Priest casts Gloria — +20% crit rate for entire party, huge for Assassins and Hunters",
+        window_s=120.0,
+        description="Priest casts Gloria — +20% crit rate for entire party",
     ),
     SkillCombo(
         name="Frost Diver → Ranged Bonus",
@@ -209,7 +224,7 @@ SKILL_COMBOS: list[SkillCombo] = [
         main_class="any",
         prep_time_s=2.0,
         window_s=300.0,
-        description="Priest casts Magnificat — +80% SP regen for 5min, enables sustained casting",
+        description="Priest casts Magnificat — +80% SP regen for 5min",
     ),
     SkillCombo(
         name="Safety Wall → Ranged PvP",
@@ -219,7 +234,7 @@ SKILL_COMBOS: list[SkillCombo] = [
         main_class="dd_ranged",
         prep_time_s=1.0,
         window_s=10.0,
-        description="Priest drops Safety Wall under the ranged DPS — 10 hits of melee immunity while they free-fire",
+        description="Priest drops Safety Wall under the ranged DPS — 10 hits of melee immunity",
         target_required=False,
     ),
     SkillCombo(
@@ -235,13 +250,10 @@ SKILL_COMBOS: list[SkillCombo] = [
 ]
 
 # ──────────────────────────────────────────────
-#  Job → role mapping (RO-accurate)
+#  Job → role mapping
 # ──────────────────────────────────────────────
 
-# Each entry: list of job names (lowercase) -> (role, priority)
-# Priority determines which role wins if multi-class
 JOB_TO_ROLE: dict[str, tuple[PartyRole, int]] = {
-    # Novice / first classes
     "novice": (PartyRole.DD_MELEE, 5),
     "swordman": (PartyRole.TANK, 100),
     "mage": (PartyRole.MAGIC, 100),
@@ -249,7 +261,6 @@ JOB_TO_ROLE: dict[str, tuple[PartyRole, int]] = {
     "acolyte": (PartyRole.SUPPORT, 100),
     "thief": (PartyRole.DD_MELEE, 100),
     "merchant": (PartyRole.DD_MELEE, 50),
-    # 2-1 classes (transcendent preferred if matched)
     "knight": (PartyRole.TANK, 100),
     "crusader": (PartyRole.TANK, 100),
     "wizard": (PartyRole.MAGIC, 100),
@@ -258,12 +269,11 @@ JOB_TO_ROLE: dict[str, tuple[PartyRole, int]] = {
     "bard": (PartyRole.DD_RANGED, 70),
     "dancer": (PartyRole.DD_RANGED, 70),
     "priest": (PartyRole.SUPPORT, 100),
-    "monk": (PartyRole.TANK, 60),  # Monk can off-tank or DPS
+    "monk": (PartyRole.TANK, 60),
     "assassin": (PartyRole.DD_MELEE, 100),
     "rogue": (PartyRole.DD_MELEE, 90),
     "blacksmith": (PartyRole.DD_MELEE, 60),
     "alchemist": (PartyRole.SUPPORT, 50),
-    # Transcendent 2-1
     "lord_knight": (PartyRole.TANK, 100),
     "paladin": (PartyRole.TANK, 100),
     "high_wizard": (PartyRole.MAGIC, 100),
@@ -277,7 +287,6 @@ JOB_TO_ROLE: dict[str, tuple[PartyRole, int]] = {
     "stalker": (PartyRole.DD_MELEE, 90),
     "whitesmith": (PartyRole.DD_MELEE, 60),
     "creator": (PartyRole.SUPPORT, 50),
-    # 2-2 classes
     "super_novice": (PartyRole.SUPPORT, 30),
     "taekwon": (PartyRole.DD_MELEE, 50),
     "soul_linker": (PartyRole.SUPPORT, 60),
@@ -289,59 +298,19 @@ JOB_TO_ROLE: dict[str, tuple[PartyRole, int]] = {
 #  Positioning rules (cells)
 # ──────────────────────────────────────────────
 
-# Optimal distance ranges by role
 ROLE_POSITION_RULES: dict[PartyRole, dict[str, int | float]] = {
-    PartyRole.TANK: {
-        "min_dist_from_target": 1,
-        "max_dist_from_target": 2,
-        "ideal_dist_from_anchor": 0,
-        "min_dist_from_priest": 3,
-    },
-    PartyRole.DD_MELEE: {
-        "min_dist_from_target": 1,
-        "max_dist_from_target": 3,
-        "ideal_dist_from_anchor": 2,
-        "min_dist_from_priest": 2,
-    },
-    PartyRole.DD_RANGED: {
-        "min_dist_from_target": 7,
-        "max_dist_from_target": 9,
-        "ideal_dist_from_anchor": 4,
-        "min_dist_from_priest": 3,
-    },
-    PartyRole.MAGIC: {
-        "min_dist_from_target": 5,
-        "max_dist_from_target": 9,
-        "ideal_dist_from_anchor": 4,
-        "min_dist_from_priest": 2,
-    },
-    PartyRole.SUPPORT: {
-        "min_dist_from_target": 8,
-        "max_dist_from_target": 10,
-        "ideal_dist_from_anchor": 3,
-        "min_dist_from_priest": 0,
-    },
-    PartyRole.UNKNOWN: {
-        "min_dist_from_target": 3,
-        "max_dist_from_target": 7,
-        "ideal_dist_from_anchor": 3,
-        "min_dist_from_priest": 2,
-    },
+    PartyRole.TANK: {"min_dist_from_target": 1, "max_dist_from_target": 2, "ideal_dist_from_anchor": 0, "min_dist_from_priest": 3},
+    PartyRole.DD_MELEE: {"min_dist_from_target": 1, "max_dist_from_target": 3, "ideal_dist_from_anchor": 2, "min_dist_from_priest": 2},
+    PartyRole.DD_RANGED: {"min_dist_from_target": 7, "max_dist_from_target": 9, "ideal_dist_from_anchor": 4, "min_dist_from_priest": 3},
+    PartyRole.MAGIC: {"min_dist_from_target": 5, "max_dist_from_target": 9, "ideal_dist_from_anchor": 4, "min_dist_from_priest": 2},
+    PartyRole.SUPPORT: {"min_dist_from_target": 8, "max_dist_from_target": 10, "ideal_dist_from_anchor": 3, "min_dist_from_priest": 0},
+    PartyRole.UNKNOWN: {"min_dist_from_target": 3, "max_dist_from_target": 7, "ideal_dist_from_anchor": 3, "min_dist_from_priest": 2},
 }
 
-# EXP share range (RO hard cap)
 EXP_SHARE_RANGE: int = 14
 
-# Base EXP multipliers by party size
 EXP_MULTIPLIERS: dict[int, float] = {
-    1: 1.0,
-    2: 1.2,
-    3: 1.3,
-    4: 1.4,
-    5: 1.5,
-    6: 1.6,
-    7: 1.7,
-    8: 1.8,
+    1: 1.0, 2: 1.2, 3: 1.3, 4: 1.4, 5: 1.5, 6: 1.6, 7: 1.7, 8: 1.8,
 }
 
 # ──────────────────────────────────────────────
@@ -356,6 +325,26 @@ LOOT_RULES: list[LootRule] = [
     LootRule(item_category="any", priority_role=PartyRole.SUPPORT, shared=True, announce=False),
 ]
 
+# Buff durations in seconds (RO-accurate approximations)
+BUFF_DURATIONS: dict[str, int] = {
+    "blessing": 300,
+    "agnus_dei": 300,
+    "gloria": 120,
+    "magnificat": 300,
+    "impositio_manus": 60,
+    "aspersio": 30,
+    "safety_wall": 10,
+    "kyrie_eleison": 300,
+    "increase_agility": 300,
+    "decrease_agility": 30,
+    "energy_coat": 60,
+    "endure": 30,
+    "concentration": 120,
+    "true_sight": 120,
+    "assumptio": 30,
+    "lex_aeterna": 3,
+}
+
 
 # ──────────────────────────────────────────────
 #  Position helpers
@@ -363,7 +352,6 @@ LOOT_RULES: list[LootRule] = [
 
 
 def _distance(x1: int, y1: int, x2: int, y2: int) -> float:
-    """Euclidean distance between two points on the RO grid."""
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
@@ -379,13 +367,17 @@ def _clamp(val: int, lo: int, hi: int) -> int:
 class PartyEngine:
     """Real RO party system — skill combos, positioning, EXP share, roles, loot.
 
-    Runs on every bot in the party. Each bot:
-      1. Assesses party state from signals
-      2. Detects skill combo opportunities
-      3. Calculates optimal positions
-      4. Tracks EXP share range
-      5. Assigns roles
-      6. Manages loot distribution
+    Features:
+      - EXP share range management: position to maximize shared kills
+      - Buff synchronization: track party member buff status, re-apply as needed
+      - Heal target selection: heal lowest HP% party member in range
+      - Resurrect: auto-target fallen members with safety check
+      - Party follow mode: maintain formation offset while following leader
+      - Loot distribution: free-for-all, shared, or by turn
+      - Party chat: status reports on request
+      - Summon tracking: respond to summon stones / reunion scrolls
+      - AFK detection: notify party if member is idle >5min
+      - Party quest tracking: coordinate turn-ins
     """
 
     def __init__(self) -> None:
@@ -408,10 +400,10 @@ class PartyEngine:
 
         # Active combos
         self._active_combos: list[SkillCombo] = []
-        self._combo_cooldowns: dict[str, float] = {}  # combo_name -> time when ready again
+        self._combo_cooldowns: dict[str, float] = {}
 
         # Loot tracking
-        self._loot_announced: set[str] = set()  # item names already announced
+        self._loot_announced: set[str] = set()
 
         # EXP stats
         self._exp_stats: dict[str, Any] = {
@@ -420,6 +412,15 @@ class PartyEngine:
             "total_members": 0,
             "warning": "",
         }
+
+        # Follow mode
+        self._follow_target: str = ""
+        self._follow_offset_x: int = 0
+        self._follow_offset_y: int = -3  # Default: behind leader
+
+        # Quest tracking
+        self._quest_items: dict[str, int] = {}  # item_name -> count needed
+        self._quest_turn_in_ready: bool = False
 
         # Leader cache
         self._is_leader: bool = False
@@ -434,17 +435,7 @@ class PartyEngine:
         actions: list[Any],
         bot_id: str,
     ) -> None:
-        """Main assess method — run every PDCA cycle.
-
-        Evaluates party state, manages combos, positions, EXP sharing,
-        roles, and loot. Appends HeuristicAction-compatible dicts to
-        *actions*.
-
-        Args:
-            signals: Bridge snapshot signals dict.
-            actions: List to append generated actions to.
-            bot_id: This bot's identifier.
-        """
+        """Main assess method — run every PDCA cycle."""
         if not signals or not bot_id:
             return
 
@@ -470,19 +461,28 @@ class PartyEngine:
             # 6. Party response commands
             self._handle_party_commands(actions, bot_id, signals)
 
+            # 7. Buff synchronization
+            self._evaluate_buffs(actions, bot_id, signals)
+
+            # 8. Heal target selection
+            self._evaluate_healing(actions, bot_id, signals)
+
+            # 9. Resurrect fallen members
+            self._evaluate_resurrect(actions, bot_id, signals)
+
+            # 10. Follow mode
+            self._evaluate_follow(actions, bot_id, signals)
+
+            # 11. AFK detection
+            self._evaluate_afk_detection(actions, bot_id, signals)
+
+            # 12. Summon tracking
+            self._evaluate_summon(actions, bot_id, signals)
+
+            # 13. Party quest tracking
+            self._evaluate_quest(actions, bot_id, signals)
+
     def get_formation_positions(self, bot_id: str) -> list[dict[str, int]]:
-        """Get the formation position(s) for a bot.
-
-        Returns a list of (x, y) dicts for this bot's role in the
-        current formation. Usually one position, but some formations
-        may have multiple valid slots.
-
-        Args:
-            bot_id: Bot identifier.
-
-        Returns:
-            List of dicts with 'x' and 'y' keys.
-        """
         with self._lock:
             member = self._get_member(bot_id)
             if not member:
@@ -502,21 +502,8 @@ class PartyEngine:
         self,
         party_members: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Check what skill combos are available given current party composition.
-
-        Args:
-            party_members: List of party member dicts, each with at least
-                          'name' and 'job' or 'job_class' keys.
-
-        Returns:
-            List of combo opportunity dicts with keys:
-                combo_name, description, prep_member, main_member,
-                prep_skill, main_skill, window_s, readiness.
-        """
         with self._lock:
             opportunities: list[dict[str, Any]] = []
-
-            # Parse member classes into a lookup
             member_jobs: dict[str, str] = {}
             for m in party_members:
                 name = m.get("name", "") or m.get("bot_id", "")
@@ -527,7 +514,6 @@ class PartyEngine:
             for combo in SKILL_COMBOS:
                 prep_candidates = []
                 main_candidates = []
-
                 for name, job in member_jobs.items():
                     if self._job_matches_class(job, combo.prep_class):
                         prep_candidates.append(name)
@@ -537,7 +523,6 @@ class PartyEngine:
                     ):
                         main_candidates.append(name)
 
-                # Need at least one prep and one main (can be same person for self-combos)
                 if prep_candidates and main_candidates:
                     for prep_name in prep_candidates:
                         for main_name in main_candidates:
@@ -554,7 +539,6 @@ class PartyEngine:
                                 "window_s": combo.window_s,
                                 "readiness": round(readiness, 2),
                             })
-
             return opportunities
 
     def is_within_share_range(
@@ -562,15 +546,6 @@ class PartyEngine:
         bot_id: str,
         other_bot_id: str,
     ) -> bool:
-        """Check if two party members are within EXP share range (≤14 cells).
-
-        Args:
-            bot_id: First bot identifier.
-            other_bot_id: Second bot identifier.
-
-        Returns:
-            True if both are on the same map and within 14 cells.
-        """
         with self._lock:
             a = self._get_member(bot_id)
             b = self._get_member(other_bot_id)
@@ -601,7 +576,6 @@ class PartyEngine:
             return self._exp_stats.get("multiplier", 1.0)
 
     def get_party_summary(self) -> str:
-        """Return a human-readable party status overview."""
         with self._lock:
             lines = [f"── Party Engine ──"]
             lines.append(f"Party: {self._party_name or 'none'}")
@@ -617,11 +591,13 @@ class PartyEngine:
             lines.append("")
             for name, member in self._members.items():
                 dist = member.distance_to_leader
+                afk_marker = " [AFK]" if self._is_afk(member) else ""
                 lines.append(
                     f"  {name:20s} Lv{member.base_level:<3d} "
                     f"{member.role.value:<10s} "
                     f"{member.job:<15s} "
                     f"dist={dist:.0f}c"
+                    f"{afk_marker}"
                 )
             active = [c for c in self._active_combos if c.state not in (ComboState.COMPLETED, ComboState.FAILED)]
             if active:
@@ -632,7 +608,6 @@ class PartyEngine:
             return "\n".join(lines)
 
     def reset(self) -> None:
-        """Reset all party state."""
         with self._lock:
             self._members.clear()
             self._active_combos.clear()
@@ -649,7 +624,6 @@ class PartyEngine:
     # ══════════════════════════════════════════
 
     def _sync_members(self, signals: dict[str, Any]) -> None:
-        """Sync party member data from signals."""
         now = time.time()
         raw_members: list[dict[str, Any]] = list(
             signals.get("party_members", signals.get("party", [])) or []
@@ -660,12 +634,10 @@ class PartyEngine:
         self_y = int(signals.get("y", 0))
         current_map = str(signals.get("map", "") or "")
 
-        # If signals has my own info, ensure we're tracked
         my_name = signals.get("name", "")
         if my_name and my_name not in self._members:
             self._members[my_name] = PartyMemberInfo(name=my_name)
 
-        # Process each raw member
         seen: set[str] = set()
         for m in raw_members:
             if isinstance(m, str):
@@ -694,7 +666,12 @@ class PartyEngine:
                 pm.online = bool(m.get("online", True))
                 pm.last_update = now
 
-        # Also check signals for direct position data
+                # Track buffs from signals
+                buffs = m.get("buffs", {})
+                if isinstance(buffs, dict):
+                    for buff_name, expiry in buffs.items():
+                        pm.buffs[buff_name] = float(expiry)
+
         self_x = int(signals.get("x", self_x))
         self_y = int(signals.get("y", self_y))
         if my_name and my_name in self._members:
@@ -704,20 +681,17 @@ class PartyEngine:
             self._members[my_name].last_update = now
             self._members[my_name].online = True
 
-        # Mark unseen members as offline
         for name in self._members:
             if name not in seen and name != my_name:
                 if now - self._members[name].last_update > 30:
                     self._members[name].online = False
 
-        # Set anchor to leader position
         leader_name = leader_name or self._leader_name
         if leader_name and leader_name in self._members:
             self._formation_anchor_x = self._members[leader_name].x
             self._formation_anchor_y = self._members[leader_name].y
 
     def _update_party_meta(self, signals: dict[str, Any], bot_id: str) -> None:
-        """Update party metadata from signals."""
         self._in_party = bool(signals.get("in_party", False))
         self._party_name = str(signals.get("party_name", self._party_name or ""))
         self._leader_name = signals.get("party_leader") or signals.get("leader_name", self._leader_name)
@@ -736,7 +710,6 @@ class PartyEngine:
     # ══════════════════════════════════════════
 
     def _assign_roles(self) -> None:
-        """Auto-assign PartyRole to every member based on job class."""
         for name, member in self._members.items():
             if not member.online:
                 continue
@@ -744,22 +717,13 @@ class PartyEngine:
 
     @staticmethod
     def _job_to_role(job: str) -> PartyRole:
-        """Map a job class string to a PartyRole.
-
-        Uses class family matching (e.g. 'champion' matches as tank).
-        Falls back to role for base classes if 2-1 class not found.
-        """
-        # Direct lookup
         if job in JOB_TO_ROLE:
             return JOB_TO_ROLE[job][0]
 
-        # Partial matching: check if any known job is a substring or starts with
-        # e.g. "high_wizard" -> check "high_wizard", "wizard"
         for known_job, (role, _priority) in JOB_TO_ROLE.items():
             if known_job in job or job in known_job:
                 return role
 
-        # Family matching: detect based on class keywords
         job_lower = job.lower().replace("_", " ").replace("-", " ")
         tank_keywords = {"swordman", "knight", "crusader", "paladin", "tank"}
         melee_keywords = {"thief", "assassin", "rogue", "dagger", "melee", "taekwon", "ninja"}
@@ -780,7 +744,7 @@ class PartyEngine:
         if words & support_keywords:
             return PartyRole.SUPPORT
 
-        return PartyRole.DD_MELEE  # Default to melee DPS
+        return PartyRole.DD_MELEE
 
     # ══════════════════════════════════════════
     #  Internal: positioning
@@ -788,32 +752,22 @@ class PartyEngine:
 
     @staticmethod
     def _get_role_offsets(role: PartyRole, member_count: int) -> dict[str, int]:
-        """Get formation position offsets for a given role.
-
-        Produces a staggered formation with tank in front, support behind,
-        melee flanking, ranged/magic at range.
-        """
         rules = ROLE_POSITION_RULES.get(role, ROLE_POSITION_RULES[PartyRole.UNKNOWN])
         ideal_dist = int(rules["ideal_dist_from_anchor"])
 
-        # Different formations produce different offsets
-        # WEDGE: tank at point, melee on flanks, range/magic back, support rear
         base_dx = 0
         base_dy = ideal_dist
 
-        # Add staggering based on role to create a natural formation
         stagger: dict[PartyRole, tuple[int, int]] = {
-            PartyRole.TANK: (0, 0),        # Center-front
-            PartyRole.DD_MELEE: (-2, -1),   # Left flank (slightly behind tank)
-            PartyRole.DD_RANGED: (-4, -2),   # Left-back (range)
-            PartyRole.MAGIC: (4, -2),        # Right-back (range)
-            PartyRole.SUPPORT: (0, -4),     # Center-rear
+            PartyRole.TANK: (0, 0),
+            PartyRole.DD_MELEE: (-2, -1),
+            PartyRole.DD_RANGED: (-4, -2),
+            PartyRole.MAGIC: (4, -2),
+            PartyRole.SUPPORT: (0, -4),
             PartyRole.UNKNOWN: (-3, -2),
         }
 
         dx_off, dy_off = stagger.get(role, (0, 0))
-
-        # If multiple members have the same role, distribute them
         return {"dx": base_dx + dx_off, "dy": base_dy + dy_off}
 
     def _evaluate_positioning(
@@ -822,7 +776,6 @@ class PartyEngine:
         bot_id: str,
         signals: dict[str, Any],
     ) -> None:
-        """Check positioning and issue move commands if needed."""
         member = self._get_member(bot_id)
         if not member:
             return
@@ -831,7 +784,6 @@ class PartyEngine:
         anchor_x = self._formation_anchor_x
         anchor_y = self._formation_anchor_y
 
-        # Update distance tracking
         for name, m in self._members.items():
             if name == bot_id:
                 if leader:
@@ -840,17 +792,14 @@ class PartyEngine:
                 if member:
                     m.distance_to_leader = _distance(m.x, m.y, anchor_x, anchor_y)
 
-        # What's the current target position?
         target_positions = self.get_formation_positions(bot_id)
         if not target_positions:
             return
         target = target_positions[0]
         tx, ty = target["x"], target["y"]
 
-        # How far is the bot from its ideal position?
         dist = _distance(member.x, member.y, tx, ty)
 
-        # Only move if we're significantly out of position
         if dist > 3.0:
             self._append_action(
                 actions,
@@ -860,7 +809,6 @@ class PartyEngine:
                        f"(currently {int(dist)}c away)",
             )
 
-        # Tank positioning check: must be closest to target
         if member.role == PartyRole.TANK:
             monsters: list[dict[str, Any]] = list(signals.get("monsters", []) or [])
             if monsters:
@@ -874,7 +822,6 @@ class PartyEngine:
                         continue
                     other_dist = _distance(other.x, other.y, mx, my)
                     if other_dist < tank_dist - 2 and other.role != PartyRole.TANK:
-                        # Tank is not in front — someone else is closer
                         self._append_action(
                             actions,
                             command=f"move {mx} {my}",
@@ -892,13 +839,6 @@ class PartyEngine:
         actions: list[Any],
         bot_id: str,
     ) -> None:
-        """Evaluate EXP share status and recommend actions.
-
-        In RO:
-        - Party of Priest + Tank + DD = 160% total XP (1.6x base multi)
-        - All members must be within 14 cells to share
-        - Out-of-range members lose the bonus for everyone
-        """
         online = self._online_members()
         total = len(online)
         self._exp_stats["total_members"] = total
@@ -909,7 +849,6 @@ class PartyEngine:
             self._exp_stats["warning"] = ""
             return
 
-        # Find members in share range
         leader = self._get_member(self._leader_name)
         if not leader:
             leader = self._get_member(bot_id)
@@ -928,12 +867,8 @@ class PartyEngine:
 
         self._exp_stats["members_in_range"] = in_range
 
-        # Compute multiplier
         base_mult = EXP_MULTIPLIERS.get(total, 1.5)
         if in_range < total:
-            # Not everyone is sharing — reduced multiplier
-            # RO: only members in range get the share; members out of range
-            # get solo XP. The party still gets the bonus for those in range.
             effective = in_range
             self._exp_stats["multiplier"] = EXP_MULTIPLIERS.get(effective, 1.0)
             self._exp_stats["warning"] = (
@@ -945,7 +880,6 @@ class PartyEngine:
             self._exp_stats["multiplier"] = base_mult
             self._exp_stats["warning"] = ""
 
-        # Recommend regroup if someone is too far
         if out_of_range_names and self._is_leader:
             self._append_action(
                 actions,
@@ -954,6 +888,320 @@ class PartyEngine:
                 reason=f"EXP share: {', '.join(out_of_range_names)} out of range "
                        f"(>{EXP_SHARE_RANGE}c). Regroup to restore "
                        f"{base_mult:.1f}x multiplier",
+            )
+
+    # ══════════════════════════════════════════
+    #  Internal: buff synchronization
+    # ══════════════════════════════════════════
+
+    def _evaluate_buffs(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Track party member buff status and re-apply as needed."""
+        now = time.time()
+        my_member = self._get_member(bot_id)
+        if not my_member:
+            return
+
+        # Check which buffs are expiring on self
+        for buff_name, duration in BUFF_DURATIONS.items():
+            expiry = my_member.buffs.get(buff_name, 0)
+            if expiry < now + 30:  # Re-apply if expiring within 30s
+                self._append_action(
+                    actions,
+                    command=f"use_skill {buff_name}",
+                    confidence=0.70,
+                    reason=f"Buff sync: re-applying {buff_name} (expires soon)",
+                )
+
+        # Check party members' buffs
+        for name, member in self._members.items():
+            if name == bot_id or not member.online:
+                continue
+            for buff_name, duration in BUFF_DURATIONS.items():
+                expiry = member.buffs.get(buff_name, 0)
+                if expiry < now + 30:
+                    self._append_action(
+                        actions,
+                        command=f"use_skill {buff_name} {name}",
+                        confidence=0.65,
+                        reason=f"Buff sync: {name} needs {buff_name}",
+                    )
+
+    # ══════════════════════════════════════════
+    #  Internal: heal target selection
+    # ══════════════════════════════════════════
+
+    def _evaluate_healing(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Heal the lowest HP% party member in range."""
+        my_member = self._get_member(bot_id)
+        if not my_member:
+            return
+
+        # Find lowest HP% party member
+        lowest_hp_member: PartyMemberInfo | None = None
+        lowest_hp = 1.0
+
+        for name, member in self._members.items():
+            if not member.online:
+                continue
+            hp_pct = member.hp_pct
+            if hp_pct < lowest_hp and hp_pct < 0.70:  # Only heal if below 70%
+                lowest_hp = hp_pct
+                lowest_hp_member = member
+
+        if lowest_hp_member:
+            dist = _distance(my_member.x, my_member.y, lowest_hp_member.x, lowest_hp_member.y)
+            if dist <= 14:  # Heal range
+                self._append_action(
+                    actions,
+                    command=f"use_skill Heal {lowest_hp_member.name}",
+                    confidence=0.90,
+                    reason=f"Heal: {lowest_hp_member.name} at {lowest_hp:.0%} HP",
+                )
+
+    # ══════════════════════════════════════════
+    #  Internal: resurrect
+    # ══════════════════════════════════════════
+
+    def _evaluate_resurrect(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Auto-target fallen members with safety check."""
+        my_member = self._get_member(bot_id)
+        if not my_member:
+            return
+
+        # Check for dead party members
+        dead_members = signals.get("dead_party_members", []) or []
+        for dead in dead_members:
+            if isinstance(dead, dict):
+                dead_name = dead.get("name", "")
+                dead_x = int(dead.get("x", 0))
+                dead_y = int(dead.get("y", 0))
+            elif isinstance(dead, str):
+                dead_name = dead
+                dead_x, dead_y = 0, 0
+            else:
+                continue
+
+            if not dead_name:
+                continue
+
+            # Safety check: only resurrect if area is clear
+            enemies = signals.get("monsters", []) or []
+            nearby_enemies = [
+                e for e in enemies
+                if isinstance(e, dict) and _distance(
+                    int(e.get("x", 0)), int(e.get("y", 0)),
+                    dead_x or my_member.x, dead_y or my_member.y,
+                ) < 10
+            ]
+
+            if not nearby_enemies:
+                self._append_action(
+                    actions,
+                    command=f"use_skill Resurrection {dead_name}",
+                    confidence=0.85,
+                    reason=f"Resurrect: reviving {dead_name} (area clear)",
+                )
+            else:
+                self._append_action(
+                    actions,
+                    command=f"p 'Cannot resurrect {dead_name} — enemies nearby'",
+                    confidence=0.70,
+                    reason=f"Resurrect blocked: enemies near {dead_name}",
+                    kind="chat",
+                )
+
+    # ══════════════════════════════════════════
+    #  Internal: follow mode
+    # ══════════════════════════════════════════
+
+    def _evaluate_follow(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Maintain formation offset while following leader."""
+        if not self._follow_target:
+            return
+
+        target = self._get_member(self._follow_target)
+        if not target or not target.online:
+            return
+
+        my_member = self._get_member(bot_id)
+        if not my_member:
+            return
+
+        # Calculate follow position with offset
+        follow_x = target.x + self._follow_offset_x
+        follow_y = target.y + self._follow_offset_y
+
+        dist = _distance(my_member.x, my_member.y, follow_x, follow_y)
+        if dist > 3.0:
+            self._append_action(
+                actions,
+                command=f"move {follow_x} {follow_y}",
+                confidence=0.85,
+                reason=f"Follow: maintaining position behind {self._follow_target}",
+            )
+
+    def set_follow(self, target_name: str, offset_x: int = 0, offset_y: int = -3) -> None:
+        """Set follow mode for a party member."""
+        self._follow_target = target_name
+        self._follow_offset_x = offset_x
+        self._follow_offset_y = offset_y
+        logger.info("[Party] Follow mode set to %s (offset: %d, %d)", target_name, offset_x, offset_y)
+
+    def clear_follow(self) -> None:
+        """Clear follow mode."""
+        self._follow_target = ""
+        logger.info("[Party] Follow mode cleared")
+
+    # ══════════════════════════════════════════
+    #  Internal: AFK detection
+    # ══════════════════════════════════════════
+
+    @staticmethod
+    def _is_afk(member: PartyMemberInfo) -> bool:
+        """Check if a member is AFK (>5 min since last action)."""
+        if member.last_action_time == 0:
+            return False
+        return (time.time() - member.last_action_time) > 300  # 5 min
+
+    def _evaluate_afk_detection(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Detect AFK party members and notify."""
+        now = time.time()
+        for name, member in self._members.items():
+            if name == bot_id or not member.online:
+                continue
+
+            # Update last action time from signals
+            member_actions = signals.get("member_actions", {})
+            if isinstance(member_actions, dict):
+                last_action = member_actions.get(name, 0)
+                if last_action:
+                    member.last_action_time = float(last_action)
+
+            # Check if AFK
+            if member.last_action_time > 0 and (now - member.last_action_time) > 300:
+                if not member.afk_warning_sent:
+                    self._append_action(
+                        actions,
+                        command=f"p '{name} has been idle for >5 min'",
+                        confidence=0.80,
+                        reason=f"AFK detection: {name} idle >5 min",
+                        kind="chat",
+                    )
+                    member.afk_warning_sent = True
+            else:
+                member.afk_warning_sent = False
+
+    # ══════════════════════════════════════════
+    #  Internal: summon tracking
+    # ══════════════════════════════════════════
+
+    def _evaluate_summon(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Respond to summon stones / reunion scrolls."""
+        summon_request = signals.get("summon_request", signals.get("reunion_request", ""))
+        if not summon_request:
+            return
+
+        # Check if we have a summon stone or reunion scroll
+        inventory = signals.get("inventory", []) or []
+        has_summon_stone = any(
+            "summon" in str(item.get("name", "")).lower() or
+            "reunion" in str(item.get("name", "")).lower()
+            for item in inventory
+        )
+
+        if has_summon_stone:
+            self._append_action(
+                actions,
+                command="use_item Summon Stone",
+                confidence=0.90,
+                reason=f"Summon: responding to {summon_request}",
+            )
+            self._append_action(
+                actions,
+                command=f"p 'Responding to summon from {summon_request}'",
+                confidence=0.85,
+                reason="Summon response announcement",
+                kind="chat",
+            )
+        else:
+            self._append_action(
+                actions,
+                command=f"p 'No summon stone available for {summon_request}'",
+                confidence=0.70,
+                reason="Cannot respond to summon — no stone",
+                kind="chat",
+            )
+
+    # ══════════════════════════════════════════
+    #  Internal: party quest tracking
+    # ══════════════════════════════════════════
+
+    def _evaluate_quest(
+        self,
+        actions: list[Any],
+        bot_id: str,
+        signals: dict[str, Any],
+    ) -> None:
+        """Track party quest items and coordinate turn-ins."""
+        quest_data = signals.get("party_quest", {})
+        if not isinstance(quest_data, dict):
+            return
+
+        quest_items = quest_data.get("items", []) or []
+        quest_npc = quest_data.get("turn_in_npc", "")
+        quest_map = quest_data.get("turn_in_map", "")
+
+        if not quest_items or not quest_npc:
+            return
+
+        # Check if all quest items are collected
+        all_collected = all(
+            item.get("collected", False) for item in quest_items
+        )
+
+        if all_collected and self._is_leader:
+            self._append_action(
+                actions,
+                command=f"p 'All quest items collected — heading to {quest_npc} on {quest_map}'",
+                confidence=0.90,
+                reason="Party quest: all items collected, coordinating turn-in",
+                kind="chat",
+            )
+            self._append_action(
+                actions,
+                command=f"move {quest_npc}",
+                confidence=0.80,
+                reason=f"Party quest: moving to turn-in NPC {quest_npc}",
             )
 
     # ══════════════════════════════════════════
@@ -966,17 +1214,14 @@ class PartyEngine:
         bot_id: str,
         signals: dict[str, Any],
     ) -> None:
-        """Detect combo opportunities and manage active combos."""
         now = time.time()
 
-        # 1. Clean up expired/old combos
         self._active_combos = [
             c for c in self._active_combos
             if c.state not in (ComboState.COMPLETED, ComboState.FAILED)
             and (c.started_at == 0 or now - c.started_at < 60)
         ]
 
-        # 2. Find new combo opportunities
         member_names: dict[str, str] = {}
         for m in self._online_members():
             member_names[m.name] = m.job.lower()
@@ -985,25 +1230,20 @@ class PartyEngine:
             return
 
         for combo in SKILL_COMBOS:
-            # Skip if on cooldown
             cd_key = f"{combo.name}:{bot_id}"
             if cd_key in self._combo_cooldowns and now < self._combo_cooldowns[cd_key]:
                 continue
 
-            # Check if already active
             if any(c.name == combo.name for c in self._active_combos):
                 continue
 
-            # Find prep caster
             if not self._job_matches_class(
                 member_names.get(bot_id, ""), combo.prep_class
             ):
                 continue
 
-            # Find main caster among party
             for m_name, m_job in member_names.items():
                 if m_name == bot_id and combo.prep_class == combo.main_class:
-                    # Self-combo (e.g. Priest Impositio Manus → Heal)
                     pass
                 if m_name == bot_id:
                     continue
@@ -1023,7 +1263,6 @@ class PartyEngine:
                         )
                         break
 
-        # 3. Progress active combos
         for combo in self._active_combos:
             self._progress_combo(combo, actions, bot_id, now)
 
@@ -1034,43 +1273,34 @@ class PartyEngine:
         main_caster: str,
         signals: dict[str, Any],
     ) -> ComboOpportunity | None:
-        """Check if a combo is viable right now."""
         prep_member = self._get_member(prep_caster)
         main_member = self._get_member(main_caster)
 
         if not prep_member or not main_member or not prep_member.online or not main_member.online:
             return None
 
-        # Check SP availability
         if prep_member.sp < prep_member.sp_max * 0.2:
-            return None  # Not enough SP to cast
+            return None
 
-        # Check distance (prep and main must be within combo range)
         dist = _distance(prep_member.x, prep_member.y, main_member.x, main_member.y)
 
-        # Basic readiness calculation
         readiness = 1.0
-
-        # Distance penalty
         if dist > 14:
             readiness -= 0.3
         if dist > 20:
             readiness -= 0.3
 
-        # Level penalty if below min
         if prep_member.base_level < combo.min_level:
             readiness -= 0.5
         if main_member.base_level < combo.min_level:
             readiness -= 0.3
 
-        # HP penalty: don't combo if about to die
         hp_pct = prep_member.hp / max(1, prep_member.hp_max)
         if hp_pct < 0.3:
             readiness -= 0.5
         elif hp_pct < 0.5:
             readiness -= 0.2
 
-        # Find target if required
         target_id = 0
         target_x = 0
         target_y = 0
@@ -1082,7 +1312,7 @@ class PartyEngine:
                 target_x = int(closest.get("x", 0))
                 target_y = int(closest.get("y", 0))
             else:
-                readiness -= 0.5  # No target available
+                readiness -= 0.5
 
         return ComboOpportunity(
             combo=combo,
@@ -1095,7 +1325,6 @@ class PartyEngine:
         )
 
     def _start_combo(self, opportunity: ComboOpportunity, bot_id: str) -> None:
-        """Begin tracking a new combo execution."""
         now = time.time()
         combo = SkillCombo(
             name=opportunity.combo.name,
@@ -1125,13 +1354,11 @@ class PartyEngine:
         bot_id: str,
         now: float,
     ) -> None:
-        """Move a combo through its lifecycle."""
         elapsed = now - combo.started_at
 
         if combo.state == ComboState.PREP_CAST:
             if elapsed >= combo.prep_time_s:
                 combo.state = ComboState.READY
-                # Notify main caster
                 if bot_id == combo.prep_caster or bot_id == combo.main_caster:
                     self._append_action(
                         actions,
@@ -1142,7 +1369,6 @@ class PartyEngine:
                     )
 
         elif combo.state == ComboState.READY:
-            # Check if window is closing
             remaining = combo.window_s - elapsed
             if remaining <= 0:
                 combo.state = ComboState.FAILED
@@ -1157,7 +1383,6 @@ class PartyEngine:
                         kind="chat",
                     )
             elif combo.main_caster == bot_id and elapsed >= combo.prep_time_s:
-                # Signal main caster to execute
                 combo.state = ComboState.MAIN_CAST
                 target_str = ""
                 if combo.target_id:
@@ -1194,7 +1419,6 @@ class PartyEngine:
         bot_id: str,
         signals: dict[str, Any],
     ) -> None:
-        """Evaluate loot on the ground and assign pickup responsibilities."""
         ground_items: list[dict[str, Any]] = list(
             signals.get("items", signals.get("ground_items", [])) or []
         )
@@ -1214,13 +1438,9 @@ class PartyEngine:
             if not item_name or not item_id:
                 continue
 
-            # Determine item category
             category = self._classify_item(item)
-
-            # Find matching loot rule
             rule = self._find_loot_rule(category)
 
-            # Check if this bot should pick it up
             should_pickup = False
             role = member.role
 
@@ -1228,17 +1448,15 @@ class PartyEngine:
                 if role == rule.priority_role:
                     should_pickup = True
                 elif rule.shared:
-                    # Anyone can pick up, but check proximity
                     dist = _distance(member.x, member.y, item_x, item_y)
                     should_pickup = dist < 5
 
             if should_pickup:
-                # Announce valuable drops
                 if rule and rule.announce and item_name not in self._loot_announced:
                     self._loot_announced.add(item_name)
                     self._append_action(
                         actions,
-                        command=f"p '🎒 {item_name} dropped — I\'ll grab it'",
+                        command=f"p '🎒 {item_name} dropped — I'll grab it'",
                         confidence=0.95,
                         reason=f"Loot: picking up {item_name} (role: {role.value})",
                         kind="chat",
@@ -1253,15 +1471,12 @@ class PartyEngine:
 
     @staticmethod
     def _classify_item(item: dict[str, Any]) -> str:
-        """Classify a ground item into a loot category."""
         name = str(item.get("name", item.get("identifiedDisplayName", ""))).lower()
         item_type = str(item.get("type", "")).lower()
 
-        # Card detection
         if "card" in name or item_type == "card":
             return "card"
 
-        # Equipment detection
         equipment_types = {"weapon", "armor", "shield", "shoe", "garment",
                            "accessory", "headgear", "helm", "manteau", "boots"}
         if item_type in equipment_types:
@@ -1271,7 +1486,6 @@ class PartyEngine:
                                      "suit", "plate", "greaves", "bracers"]):
             return "equipment"
 
-        # Valuable detection (ores, gems, hard-to-find materials)
         valuable_keywords = {"rough_elunium", "rough_oridecon", "elunium", "oridecon",
                              "emerald", "ruby", "sapphire", "diamond", "topaz",
                              "amethyst", "opal", "garnet", "zircon", "jade",
@@ -1283,7 +1497,6 @@ class PartyEngine:
         if any(kw in name for kw in ["rough_", "jewel", "gem", "pearl", "diamond"]):
             return "valuable"
 
-        # Potions/consumables
         consumable_keywords = {"potion", "fruit", "food", "fish", "meat",
                                "bread", "cake", "cookie", "candy", "herb",
                                "mushroom", "flower", "leaf", "sprout",
@@ -1295,11 +1508,9 @@ class PartyEngine:
 
     @staticmethod
     def _find_loot_rule(category: str) -> LootRule | None:
-        """Find the best loot rule for a category."""
         exact_rules = [r for r in LOOT_RULES if r.item_category == category]
         if exact_rules:
             return exact_rules[0]
-        # Fallback to "any"
         any_rules = [r for r in LOOT_RULES if r.item_category == "any"]
         return any_rules[0] if any_rules else None
 
@@ -1313,7 +1524,6 @@ class PartyEngine:
         bot_id: str,
         signals: dict[str, Any],
     ) -> None:
-        """Handle party response commands from signals/bot input."""
         cmd = signals.get("party_command", signals.get("command", ""))
         if not cmd or not isinstance(cmd, str):
             return
@@ -1321,7 +1531,6 @@ class PartyEngine:
         cmd = cmd.strip().lower()
 
         if cmd.startswith("party position"):
-            # Format: party position <formation_type>
             parts = cmd.split()
             if len(parts) >= 3:
                 formation_str = parts[2]
@@ -1338,7 +1547,6 @@ class PartyEngine:
             )
 
         elif cmd == "party regroup":
-            # Everyone moves to leader's position
             leader = self._get_member(self._leader_name)
             if leader:
                 self._append_action(
@@ -1356,7 +1564,6 @@ class PartyEngine:
                 )
 
         elif cmd.startswith("party skill_combo"):
-            # Format: party skill_combo <skill_id> <target_id>
             parts = cmd.split()
             if len(parts) >= 3:
                 skill_id = parts[2]
@@ -1369,14 +1576,12 @@ class PartyEngine:
                 )
 
         elif cmd.startswith("follow"):
-            # Format: follow <member>
             parts = cmd.split()
             if len(parts) >= 2:
                 target_name = parts[1]
                 target = self._get_member(target_name)
                 if target:
-                    # Store follow target for the PDCA loop
-                    self._exp_stats["follow_target"] = target_name
+                    self.set_follow(target_name)
                     self._append_action(
                         actions,
                         command=f"move {target.x} {target.y}",
@@ -1384,24 +1589,40 @@ class PartyEngine:
                         reason=f"Following party member {target_name}",
                     )
 
+        elif cmd == "party status":
+            summary = self.get_party_summary()
+            self._append_action(
+                actions,
+                command=f"p '{summary}'",
+                confidence=0.95,
+                reason="Party status report",
+                kind="chat",
+            )
+
+        elif cmd == "party stop follow":
+            self.clear_follow()
+            self._append_action(
+                actions,
+                command="p 'Follow mode disabled'",
+                confidence=0.90,
+                reason="Party command: stop following",
+                kind="chat",
+            )
+
     # ══════════════════════════════════════════
     #  Internal: helpers
     # ══════════════════════════════════════════
 
     @staticmethod
     def _job_matches_class(job: str, class_name: str) -> bool:
-        """Check if a job name matches a combo class requirement."""
         job_norm = job.lower().replace("_", " ").replace("-", " ").strip()
         cls_norm = class_name.lower().replace("_", " ").replace("-", " ").strip()
 
         if cls_norm == "any":
             return True
-
-        # Direct match
         if cls_norm == job_norm:
             return True
 
-        # Class family matching
         class_families: dict[str, list[str]] = {
             "priest": ["acolyte", "priest", "high priest", "monk", "champion"],
             "wizard": ["mage", "wizard", "high wizard", "sage", "professor"],
@@ -1423,7 +1644,6 @@ class PartyEngine:
                 for fam_job in class_families[cls_norm]
             )
 
-        # Substring match
         if cls_norm in job_norm or job_norm in cls_norm:
             return True
 
@@ -1436,10 +1656,9 @@ class PartyEngine:
         main_name: str,
         member_jobs: dict[str, str],
     ) -> float:
-        """Calculate how ready a combo is (simplified, no position data)."""
-        readiness = 0.85  # Base: pretty ready
+        readiness = 0.85
         if prep_name == main_name:
-            readiness -= 0.1  # Self-combo slightly harder to coordinate
+            readiness -= 0.1
         return max(0.0, min(1.0, readiness))
 
     def _append_action(
@@ -1450,7 +1669,6 @@ class PartyEngine:
         reason: str,
         kind: str = "command",
     ) -> None:
-        """Append an action safely, matching the HeuristicAction pattern."""
         actions.append({
             "kind": kind,
             "command": command,
@@ -1469,7 +1687,6 @@ _engine_lock = RLock()
 
 
 def get_party_engine() -> PartyEngine:
-    """Get or create the global PartyEngine singleton."""
     global _engine
     with _engine_lock:
         if _engine is None:

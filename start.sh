@@ -31,7 +31,7 @@ shopt -s nullglob
 for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
     _name="$(basename "$_profile_dir")"
     BOT_NAMES+=("$_name")
-    BOT_MASTER["$_name"]="Asgards Glory"
+    BOT_MASTER["$_name"]="Local rAthena AI World"
     BOT_USER["$_name"]="$_name"
     BOT_CHAR["$_name"]="0"
 done

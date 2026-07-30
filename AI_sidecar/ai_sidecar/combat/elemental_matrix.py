@@ -19,7 +19,7 @@ import enum
 import logging
 import os
 import threading
-from typing import Final, Optional
+from typing import Any, Final, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -697,6 +697,202 @@ class ElementalMatrix:
 
         # Combine multiplicatively
         return elem_mult * size_mult * race_mult * card_mult
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # NEW: Race + Element + Size combo damage modifier
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def get_damage_modifier(
+        self,
+        attack_element: str | Element,
+        attack_element_level: int,
+        target_element: str | Element,
+        target_element_level: int,
+        target_race: str | Race,
+        target_size: str | Size,
+        weapon_type: str | WeaponType,
+    ) -> float:
+        """Return the final damage multiplier for race+element+size combo.
+
+        This is the full combination lookup that a Pro RO player uses:
+          - Element vs Element (with element levels)
+          - Race modifier
+          - Size penalty from weapon type
+
+        Example: Angeling is Ghost 2 + Angel + Medium.
+          Ghost Lv2 = immune to Neutral (0% Neutral damage).
+          Holy vs Ghost Lv2 = 100%
+          Dark vs Ghost Lv2 = 100%
+
+        Args:
+            attack_element: Element of the attack
+            attack_element_level: Element level of the attack (1-4)
+            target_element: Element of the target
+            target_element_level: Element level of the target (1-4)
+            target_race: Race of the target
+            target_size: Size of the target
+            weapon_type: Type of weapon being used
+
+        Returns:
+            Combined damage multiplier from element + size + race
+        """
+        ae = self._resolve_element(attack_element)
+        te = self._resolve_element(target_element)
+        tr = self._resolve_race(target_race)
+        ts = self._resolve_size(target_size)
+        wt = self._resolve_weapon(weapon_type)
+
+        with self._lock:
+            # Element advantage uses the HIGHER of attacker and defender element levels
+            effective_level = max(attack_element_level, target_element_level)
+            table = self._get_table_for_level(effective_level)
+            row_idx = _ELEMENT_INDEX[ae]
+            col_idx = _ELEMENT_INDEX[te]
+            elem_mult = table[row_idx][col_idx] / 100.0
+
+            # Size penalty
+            size_mult = _SIZE_MODIFIERS[wt][ts] / 100.0
+
+            # Race modifier
+            race_mult = _RACE_MODIFIERS[wt][tr] / 100.0
+
+        return elem_mult * size_mult * race_mult
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # NEW: Attack range / optimal range awareness
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # Build-specific optimal ranges (in cells)
+    BUILD_OPTIMAL_RANGES: Final[dict[str, int]] = {
+        "melee_dps": 1,
+        "melee_tank": 1,
+        "ranged_dps": 7,
+        "ranged_hunter": 9,
+        "magic_dps": 7,
+        "magic_wizard": 8,
+        "support": 5,
+        "tank": 1,
+    }
+
+    # Build descriptions for combat positioning
+    BUILD_RANGE_DESCRIPTIONS: Final[dict[str, str]] = {
+        "melee_dps": "Close distance (1 cell) — use burst skills at melee range",
+        "melee_tank": "Stay at melee range (1 cell) — provoke and endure",
+        "ranged_dps": "Maintain 7 cells — use Double Strafe, kite when approached",
+        "ranged_hunter": "Stay at max bow range (9 cells) — use traps and falcon",
+        "magic_dps": "Cast from 7 cells — use Safety Wall if pressured",
+        "magic_wizard": "Max range (8 cells) — AoE nuke from safety",
+        "support": "Stay 5 cells behind party — buff, heal, resurrect",
+        "tank": "Melee range (1 cell) — hold aggro, use Endure",
+    }
+
+    def get_optimal_range(self, build_name: str) -> int:
+        """Get the optimal engagement range for a given build.
+        
+        Returns cells (1 = melee, 7-9 = ranged/magic).
+        Defaults to 5 (mid-range) if build not found.
+        """
+        return self.BUILD_OPTIMAL_RANGES.get(build_name, 5)
+
+    def get_positioning_advice(self, build_name: str, target_distance: int) -> dict[str, Any]:
+        """Get positioning advice for a build at a given target distance.
+        
+        Returns:
+            dict with keys:
+            - should_move: bool
+            - direction: str ("approach", "retreat", "hold")
+            - desired_distance: int
+            - urgency: float (0.0-1.0)
+            - reason: str
+        """
+        optimal = self.get_optimal_range(build_name)
+        description = self.BUILD_RANGE_DESCRIPTIONS.get(build_name, "No specific positioning data")
+
+        if target_distance > optimal + 3:
+            # Too far — close in
+            return {
+                "should_move": True,
+                "direction": "approach",
+                "desired_distance": optimal,
+                "urgency": 0.4,
+                "reason": f"Target at {target_distance} cells, optimal is {optimal}. {description}",
+            }
+        elif target_distance < max(optimal - 1, 1):
+            # Too close for ranged — retreat
+            return {
+                "should_move": True,
+                "direction": "retreat",
+                "desired_distance": optimal,
+                "urgency": 0.8 if optimal > 3 else 0.2,  # High urgency for ranged being closed on
+                "reason": f"Target at {target_distance} cells (too close), optimal is {optimal}. {description}",
+            }
+        else:
+            # Optimal range
+            return {
+                "should_move": False,
+                "direction": "hold",
+                "desired_distance": optimal,
+                "urgency": 0.0,
+                "reason": f"In optimal range ({target_distance}/{optimal} cells). {description}",
+            }
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # NEW: MVP element shift awareness
+    # ══════════════════════════════════════════════════════════════════════════
+
+    MVP_ELEMENT_SHIFT: Final[dict[str, dict]] = {
+        "edga": {"element": "Fire", "element_level": 2, "hp_threshold": 0.25},
+        "eddga": {"element": "Fire", "element_level": 2, "hp_threshold": 0.25},
+        "drake": {"element": "Undead", "element_level": 2, "hp_threshold": 0.25},
+        "garm": {"element": "Water", "element_level": 3, "hp_threshold": 0.25},
+        "ifrit": {"element": "Fire", "element_level": 4, "hp_threshold": 0.25},
+        "thanatos": {"element": "Ghost", "element_level": 3, "hp_threshold": 0.25},
+        "beelzebub": {"element": "Dark", "element_level": 3, "hp_threshold": 0.25},
+        "detardeuras": {"element": "Holy", "element_level": 3, "hp_threshold": 0.25},
+        "gloom under night": {"element": "Dark", "element_level": 3, "hp_threshold": 0.25},
+        "kiel": {"element": "Ghost", "element_level": 2, "hp_threshold": 0.25},
+    }
+
+    def get_mvp_shifted_element(
+        self,
+        monster_name: str,
+        current_hp_pct: float,
+    ) -> tuple[Optional[Element], int]:
+        """Check if an MVP shifts element at low HP.
+        
+        Some MVPs (Eddga, Drake, etc.) change element when HP < 25%.
+        A Pro RO player adjusts their element strategy accordingly.
+        
+        Args:
+            monster_name: Name of the monster
+            current_hp_pct: Current HP percentage (0.0-1.0)
+        
+        Returns:
+            (Element, element_level) if shifted, (None, 0) if no shift
+        """
+        info = self.MVP_ELEMENT_SHIFT.get(monster_name.lower())
+        if info and current_hp_pct <= info["hp_threshold"]:
+            return (Element(info["element"]), info["element_level"])
+        return (None, 0)
+
+    def get_effective_target_element(
+        self,
+        monster_name: str,
+        base_element: str | Element,
+        base_element_level: int,
+        current_hp_pct: float,
+    ) -> tuple[Element, int]:
+        """Get the effective target element considering MVP shifts.
+        
+        If the monster is an MVP with low HP, returns the shifted element
+        instead of the base element.
+        """
+        shifted_elem, shifted_level = self.get_mvp_shifted_element(
+            monster_name, current_hp_pct,
+        )
+        if shifted_elem is not None:
+            return (shifted_elem, shifted_level)
+        return (self._resolve_element(base_element), base_element_level)
 
     def get_elemental_advantage_description(
         self,

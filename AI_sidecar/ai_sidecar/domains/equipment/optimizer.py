@@ -2,12 +2,23 @@
 
 Real RO data: weapon upgrade effects, card database, element multipliers,
 elemental converters, and equipment swap recommendations.
-Commands: equip, slot, upgrade.
+
+Features:
+  - Stat-to-equipment mapping: which equipment gives which stats
+  - Set bonuses: track item set effects (e.g., Orleans set, Valkyrie set)
+  - Card slot analysis: which cards for which hunting target
+  - Refine-aware scoring: higher refine = more ATK but more weight
+  - Loadout presets: farming, PvP, MVP, tank, flee
+  - Auto-swap conditions: swap to fire weapon on earth mobs
+  - Element weapon priority: given target element, recommend best weapon + card combo
+  - Durability monitoring: track equipment durability and auto-repair
+  - Weight optimization: maximize ATK/DEF per weight unit
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,95 +27,165 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 # Weapon Upgrade Levels (+0 to +10)
 # ──────────────────────────────────────────────
-# Each upgrade level adds ATK and a small chance of breaking on failure.
-# Level 1-9 upgrades use Enriched or normal Elunium/Oridecon.
-# Level 10 is the maximum safe upgrade (safe to +4, risky +5+).
+
 _WEAPON_UPGRADE_BONUS: dict[int, int] = {
-    0: 0,    # Base
-    1: 3,    # +1: +3 ATK
-    2: 6,    # +2: +6 ATK
-    3: 9,    # +3: +9 ATK
-    4: 12,   # +4: +12 ATK
-    5: 17,   # +5: +17 ATK
-    6: 22,   # +6: +22 ATK
-    7: 27,   # +7: +27 ATK
-    8: 32,   # +8: +32 ATK
-    9: 37,   # +9: +37 ATK
-    10: 42,  # +10: +42 ATK
+    0: 0, 1: 3, 2: 6, 3: 9, 4: 12,
+    5: 17, 6: 22, 7: 27, 8: 32, 9: 37, 10: 42,
 }
 
 _ARMOR_UPGRADE_BONUS: dict[int, int] = {
-    0: 0,   # Base
-    1: 1,   # +1: +1 DEF
-    2: 2,   # +2: +2 DEF
-    3: 3,   # +3: +3 DEF
-    4: 4,   # +4: +4 DEF
-    5: 6,   # +5: +6 DEF
-    6: 8,   # +6: +8 DEF
-    7: 10,  # +7: +10 DEF
-    8: 12,  # +8: +12 DEF
-    9: 14,  # +9: +14 DEF
-    10: 16, # +10: +16 DEF
+    0: 0, 1: 1, 2: 2, 3: 3, 4: 4,
+    5: 6, 6: 8, 7: 10, 8: 12, 9: 14, 10: 16,
 }
 
-# Upgrade success probabilities (pre-renewal formula)
-# Safe: +0->+1 to +4->+5 with 100% on +0->+4, then decreasing
 _UPGRADE_SUCCESS_RATES: dict[int, float] = {
-    0: 1.00,   # +0 -> +1: 100%
-    1: 1.00,   # +1 -> +2: 100%
-    2: 1.00,   # +2 -> +3: 100%
-    3: 1.00,   # +3 -> +4: 100%
-    4: 0.60,   # +4 -> +5: 60%
-    5: 0.40,   # +5 -> +6: 40%
-    6: 0.40,   # +6 -> +7: 40%
-    7: 0.20,   # +7 -> +8: 20%
-    8: 0.20,   # +8 -> +9: 20%
-    9: 0.08,   # +9 -> +10: 8%
+    0: 1.00, 1: 1.00, 2: 1.00, 3: 1.00,
+    4: 0.60, 5: 0.40, 6: 0.40, 7: 0.20, 8: 0.20, 9: 0.08,
 }
 
-# Upgrade costs per attempt (Oridecon cost for weapons)
 _UPGRADE_COST_PER_TRY: dict[int, int] = {
-    0: 55000,   # Oridecon cost for +0->+1
-    1: 55000,   # +1->+2
-    2: 55000,   # +2->+3
-    3: 55000,   # +3->+4
-    4: 55000,   # +4->+5
-    5: 55000,   # +5->+6
-    6: 55000,   # +6->+7
-    7: 55000,   # +7->+8
-    8: 55000,   # +8->+9
-    9: 55000,   # +9->+10
+    0: 55000, 1: 55000, 2: 55000, 3: 55000,
+    4: 55000, 5: 55000, 6: 55000, 7: 55000, 8: 55000, 9: 55000,
+}
+
+# ──────────────────────────────────────────────
+# Equipment weight database
+# ──────────────────────────────────────────────
+
+_EQUIPMENT_WEIGHTS: dict[str, int] = {
+    # Weapons
+    "dagger": 40, "sword": 50, "two_handed_sword": 100,
+    "spear": 80, "two_handed_spear": 120,
+    "staff": 30, "two_handed_staff": 60,
+    "bow": 50, "crossbow": 70,
+    "mace": 60, "two_handed_mace": 100,
+    "knuckle": 30, "instrument": 40, "whip": 30,
+    "katar": 60, "claw": 40,
+    "gun": 40, "grenade": 50,
+    "huuma_shuriken": 50,
+    # Armor
+    "armor": 50, "robe": 30, "coat": 40,
+    "shield": 40, "buckler": 20,
+    "manteau": 20, "cloak": 15,
+    "boots": 20, "shoes": 15,
+    "helm": 20, "hat": 10, "crown": 15,
+    "accessory": 5, "ring": 3, "earring": 3, "necklace": 5,
+}
+
+# ──────────────────────────────────────────────
+# Set bonuses
+# ──────────────────────────────────────────────
+
+@dataclass
+class SetBonus:
+    """A set bonus effect from wearing multiple items together."""
+    name: str
+    items: list[str]  # Item names in the set
+    bonus_description: str
+    atk_bonus: int = 0
+    matk_bonus: int = 0
+    def_bonus: int = 0
+    hp_bonus_pct: float = 0.0
+    sp_bonus_pct: float = 0.0
+    stat_bonus: dict[str, int] = field(default_factory=dict)
+    damage_bonus_pct: float = 0.0
+    reduction_pct: float = 0.0
+
+_SET_BONUSES: dict[str, SetBonus] = {
+    "orleans_set": SetBonus(
+        name="Orleans Set",
+        items=["orleans_gown", "orleans_glove"],
+        bonus_description="+15% MATK, -15% cast time, +5% SP",
+        matk_bonus=15,
+        sp_bonus_pct=5.0,
+    ),
+    "valkyrie_set": SetBonus(
+        name="Valkyrie Set",
+        items=["valkyrie_armor", "valkyrie_shield", "valkyrie_manteau", "valkyrie_boots"],
+        bonus_description="+10% HP, +5% DEF, +5 MDEF",
+        hp_bonus_pct=10.0,
+        def_bonus=5,
+    ),
+    "devil_set": SetBonus(
+        name="Devil Set",
+        items=["devil_helm", "devil_manteau"],
+        bonus_description="+5% ATK, +5% ASPD",
+        atk_bonus=5,
+    ),
+    "frozen_set": SetBonus(
+        name="Frozen Set",
+        items=["frozen_armor", "frozen_shield"],
+        bonus_description="+20% resistance to Water, +5 MDEF",
+        reduction_pct=20.0,
+    ),
+    "skeleton_set": SetBonus(
+        name="Skeleton Set",
+        items=["skeleton_armor", "skeleton_shield"],
+        bonus_description="+10% resistance to Undead, +3 DEF",
+        reduction_pct=10.0,
+        def_bonus=3,
+    ),
+    "angelic_set": SetBonus(
+        name="Angelic Set",
+        items=["angelic_helm", "angelic_manteau", "angelic_armor"],
+        bonus_description="+10% HP, +5% SP, +3 INT",
+        hp_bonus_pct=10.0,
+        sp_bonus_pct=5.0,
+        stat_bonus={"int": 3},
+    ),
+    "bloody_set": SetBonus(
+        name="Bloody Set",
+        items=["bloody_armor", "bloody_shield"],
+        bonus_description="+10% ATK, +5% HP",
+        atk_bonus=10,
+        hp_bonus_pct=5.0,
+    ),
+}
+
+# ──────────────────────────────────────────────
+# Stat-to-equipment mapping
+# ──────────────────────────────────────────────
+
+_STAT_EQUIPMENT_MAP: dict[str, list[str]] = {
+    "str": ["mantis_card", "kukre_card", "skel_worker_card", "bloody_armor"],
+    "agi": ["boned_card", "whisper_card", "sohee_card"],
+    "vit": ["pecopeco_card", "verit_card", "valkyrie_armor"],
+    "int": ["sohee_card", "zerom_card", "orleans_glove", "angelic_helm"],
+    "dex": ["dex_card", "kobold_archer_card", "sniper_goggles"],
+    "luk": ["zerom_card", "lunatic_card", "lucky_hat"],
+    "crit": ["kobold_archer_card", "critical_ring"],
+    "flee": ["whisper_card", "flee_boots", "flee_manteau"],
+    "aspd": ["boned_card", "devil_manteau", "berserk_potion"],
 }
 
 # ──────────────────────────────────────────────
 # Card Database — real RO cards
 # ──────────────────────────────────────────────
+
 @dataclass
 class CardInfo:
-    """Information about a card and its effects."""
     name: str
     item_id: int
-    slot_type: str  # 'weapon', 'armor', 'garment', 'shield', 'shoes', 'accessory', 'head'
+    slot_type: str
     effect: str
-    damage_bonus_pct: float = 0.0       # +% damage to specific race/element/size
-    damage_bonus_race: str = ""          # race this bonus applies to
-    damage_bonus_element: str = ""       # element this bonus applies to
-    damage_bonus_size: str = ""          # size this bonus applies to
-    atk_bonus: int = 0                   # flat ATK bonus
-    matk_bonus: int = 0                  # flat MATK bonus
-    def_bonus: int = 0                   # flat DEF bonus
-    hp_bonus_pct: float = 0.0            # +% HP
-    sp_bonus_pct: float = 0.0            # +% SP
-    reduction_pct: float = 0.0           # -% damage from specific element/race
-    reduction_race: str = ""             # race reduced
-    reduction_element: str = ""          # element reduced
-    stat_bonus: dict[str, int] = field(default_factory=dict)  # e.g. {"str": 2}
+    damage_bonus_pct: float = 0.0
+    damage_bonus_race: str = ""
+    damage_bonus_element: str = ""
+    damage_bonus_size: str = ""
+    atk_bonus: int = 0
+    matk_bonus: int = 0
+    def_bonus: int = 0
+    hp_bonus_pct: float = 0.0
+    sp_bonus_pct: float = 0.0
+    reduction_pct: float = 0.0
+    reduction_race: str = ""
+    reduction_element: str = ""
+    stat_bonus: dict[str, int] = field(default_factory=dict)
     market_price: int = 50000
 
     def calc_damage_multiplier(self, monster_race: str = "",
                                monster_element: str = "",
                                monster_size: str = "") -> float:
-        """Calculate the damage multiplier this card provides against a specific monster."""
         mult = 1.0
         if self.damage_bonus_pct > 0:
             applicable = True
@@ -116,11 +197,9 @@ class CardInfo:
                 applicable = False
             if applicable:
                 mult *= (1.0 + self.damage_bonus_pct / 100.0)
-        # Reduction doesn't multiply damage, it reduces incoming damage
         return mult
 
 
-# Real RO Card Database
 _CARD_DB: dict[str, CardInfo] = {
     # ── Weapon Cards ──
     "vadon_card": CardInfo(
@@ -189,7 +268,6 @@ _CARD_DB: dict[str, CardInfo] = {
         stat_bonus={"crit": 9},
         market_price=60000,
     ),
-
     # ── Armor Cards ──
     "pecopeco_card": CardInfo(
         name="Peco Peco Card", item_id=4113, slot_type="armor",
@@ -219,7 +297,6 @@ _CARD_DB: dict[str, CardInfo] = {
         effect="FLEE +20",
         market_price=15000,
     ),
-
     # ── Garment Cards ──
     "raydric_garment_card": CardInfo(
         name="Raydric Card", item_id=4167, slot_type="garment",
@@ -233,7 +310,6 @@ _CARD_DB: dict[str, CardInfo] = {
         reduction_pct=30.0,
         market_price=200000,
     ),
-
     # ── Shield Cards ──
     "thara_frog_card": CardInfo(
         name="Thara Frog Card", item_id=4175, slot_type="shield",
@@ -247,7 +323,6 @@ _CARD_DB: dict[str, CardInfo] = {
         reduction_pct=30.0, reduction_element="water",
         market_price=15000,
     ),
-
     # ── Footgear Cards ──
     "sohee_card": CardInfo(
         name="Sohee Card", item_id=4199, slot_type="shoes",
@@ -267,7 +342,6 @@ _CARD_DB: dict[str, CardInfo] = {
         hp_bonus_pct=10.0, sp_bonus_pct=10.0,
         market_price=20000,
     ),
-
     # ── Accessory Cards ──
     "zerom_card": CardInfo(
         name="Zerom Card", item_id=4029, slot_type="accessory",
@@ -304,88 +378,66 @@ _CARD_DB: dict[str, CardInfo] = {
 # ──────────────────────────────────────────────
 # Elemental Converters & Endow Skills
 # ──────────────────────────────────────────────
+
 @dataclass
 class ElementalConverter:
-    """An item or skill that changes weapon element."""
     name: str
     element: str
     item_id: int = 0
     is_skill: bool = False
     skill_id: str = ""
-    duration_s: int = 1800  # 30 min default
+    duration_s: int = 1800
     market_price: int = 0
 
     def multiplier_against(self, target_element: str) -> float:
-        """Get damage multiplier when using this element against a target."""
         return _ELEMENT_TABLE_L1.get(self.element, {}).get(target_element, 1.0)
 
 
 _ELEMENTAL_CONVERTERS: dict[str, ElementalConverter] = {
-    # ── Fire ──
     "elemental_converter_fire": ElementalConverter(
-        name="Fire Converter", element="fire", item_id=12713,
-        market_price=5000,
+        name="Fire Converter", element="fire", item_id=12713, market_price=5000,
     ),
     "endow_skill_fire": ElementalConverter(
         name="Endow Flame (Skill)", element="fire",
         is_skill=True, skill_id="PR_ENDOW_FLAME",
     ),
-
-    # ── Water ──
     "elemental_converter_water": ElementalConverter(
-        name="Water Converter", element="water", item_id=12714,
-        market_price=5000,
+        name="Water Converter", element="water", item_id=12714, market_price=5000,
     ),
     "endow_skill_water": ElementalConverter(
         name="Endow Tsunami (Skill)", element="water",
         is_skill=True, skill_id="PR_ENDOW_TSUNAMI",
     ),
-
-    # ── Wind ──
     "elemental_converter_wind": ElementalConverter(
-        name="Wind Converter", element="wind", item_id=12715,
-        market_price=5000,
+        name="Wind Converter", element="wind", item_id=12715, market_price=5000,
     ),
     "endow_skill_wind": ElementalConverter(
         name="Endow Tornado (Skill)", element="wind",
         is_skill=True, skill_id="PR_ENDOW_TORNADO",
     ),
-
-    # ── Earth ──
     "elemental_converter_earth": ElementalConverter(
-        name="Earth Converter", element="earth", item_id=12716,
-        market_price=5000,
+        name="Earth Converter", element="earth", item_id=12716, market_price=5000,
     ),
     "endow_skill_earth": ElementalConverter(
         name="Endow Quake (Skill)", element="earth",
         is_skill=True, skill_id="PR_ENDOW_QUAKE",
     ),
-
-    # ── Holy ──
     "holy_water": ElementalConverter(
-        name="Holy Water", element="holy", item_id=12622,
-        market_price=2000,
-        duration_s=600,  # 10 min
+        name="Holy Water", element="holy", item_id=12622, market_price=2000, duration_s=600,
     ),
     "aspersio_skill": ElementalConverter(
         name="Aspersio (Skill)", element="holy",
         is_skill=True, skill_id="PR_ASPERSIO",
     ),
-
-    # ── Shadow ──
     "shadow_converter": ElementalConverter(
-        name="Shadow Converter", element="shadow", item_id=12764,
-        market_price=8000,
+        name="Shadow Converter", element="shadow", item_id=12764, market_price=8000,
     ),
     "endow_shadow_skill": ElementalConverter(
         name="Enchant Shadow (Skill)", element="shadow",
         is_skill=True, skill_id="NC_ENCHANT_SHADOW",
     ),
-
-    # ── Ghost ──
     "ghost_converter": ElementalConverter(
-        name="Ghost Converter", element="ghost", item_id=12765,
-        market_price=10000,
+        name="Ghost Converter", element="ghost", item_id=12765, market_price=10000,
     ),
     "endow_ghost_skill": ElementalConverter(
         name="Enchant Ghost (Skill)", element="ghost",
@@ -396,8 +448,7 @@ _ELEMENTAL_CONVERTERS: dict[str, ElementalConverter] = {
 # ──────────────────────────────────────────────
 # Element Table (Level 1 — pre-renewal)
 # ──────────────────────────────────────────────
-# Attack element rows × Target element columns
-# Order: neutral, water, earth, fire, wind, poison, holy, shadow, ghost, undead
+
 _ELEMENT_TABLE_L1: dict[str, dict[str, float]] = {
     "neutral":  {"neutral": 1.00, "water": 0.75, "earth": 0.75, "fire": 0.75,
                  "wind": 0.75, "poison": 0.75, "holy": 0.75, "shadow": 0.75,
@@ -432,8 +483,9 @@ _ELEMENT_TABLE_L1: dict[str, dict[str, float]] = {
 }
 
 # ──────────────────────────────────────────────
-# Monster Database Snapshot (for recommendations)
+# Monster Database Snapshot
 # ──────────────────────────────────────────────
+
 @dataclass
 class MonsterInfo:
     name: str
@@ -444,7 +496,7 @@ class MonsterInfo:
     hp: int = 1000
     level: int = 1
 
-# Key grinding monsters with real RO data
+
 _GRINDING_MONSTERS: dict[str, MonsterInfo] = {
     "poring": MonsterInfo(name="Poring", element="water", race="plant", size="medium", hp=55, level=1),
     "poporing": MonsterInfo(name="Poporing", element="poison", race="plant", size="medium", hp=519, level=16),
@@ -483,14 +535,116 @@ _GRINDING_MONSTERS: dict[str, MonsterInfo] = {
     "sand_man": MonsterInfo(name="Sand Man", element="earth", race="formless", size="medium", hp=1305, level=28),
 }
 
+# ──────────────────────────────────────────────
+# Loadout presets
+# ──────────────────────────────────────────────
+
+@dataclass
+class LoadoutPreset:
+    """A named equipment loadout preset."""
+    name: str
+    description: str
+    priority_stats: list[str]
+    recommended_armor_cards: list[str]
+    recommended_garment_cards: list[str]
+    recommended_shield_cards: list[str]
+    recommended_shoe_cards: list[str]
+    recommended_accessory_cards: list[str]
+    recommended_weapon_cards: list[str]
+    min_refine: int = 0
+    max_weight: int = 2000
+
+LOADOUT_PRESETS: dict[str, LoadoutPreset] = {
+    "farming": LoadoutPreset(
+        name="Farming",
+        description="Optimized for sustained farming: weight efficiency, ASPD, and damage per weight",
+        priority_stats=["str", "dex", "aspd"],
+        recommended_armor_cards=["pecopeco_card"],
+        recommended_garment_cards=["whisper_card"],
+        recommended_shield_cards=["thara_frog_card"],
+        recommended_shoe_cards=["boned_card"],
+        recommended_accessory_cards=["mantis_card", "mantis_card"],
+        recommended_weapon_cards=["vadon_card", "drainliar_card"],
+        min_refine=4,
+        max_weight=1500,
+    ),
+    "pvp": LoadoutPreset(
+        name="PvP",
+        description="Optimized for player vs player: demi-human damage, survivability",
+        priority_stats=["vit", "str", "agi"],
+        recommended_armor_cards=["raydric_card"],
+        recommended_garment_cards=["deviling_card"],
+        recommended_shield_cards=["thara_frog_card"],
+        recommended_shoe_cards=["verit_card"],
+        recommended_accessory_cards=["mantis_card", "dex_card"],
+        recommended_weapon_cards=["hydra_card", "hydra_card"],
+        min_refine=6,
+        max_weight=2500,
+    ),
+    "mvp": LoadoutPreset(
+        name="MVP",
+        description="Optimized for MVP/boss hunting: boss damage, high HP",
+        priority_stats=["str", "vit", "dex"],
+        recommended_armor_cards=["pecopeco_card"],
+        recommended_garment_cards=["raydric_garment_card"],
+        recommended_shield_cards=["thara_frog_card"],
+        recommended_shoe_cards=["verit_card"],
+        recommended_accessory_cards=["mantis_card", "dex_card"],
+        recommended_weapon_cards=["mino_card", "abysmal_knight_card"],
+        min_refine=7,
+        max_weight=2500,
+    ),
+    "tank": LoadoutPreset(
+        name="Tank",
+        description="Maximum survivability: HP, DEF, MDEF, elemental reduction",
+        priority_stats=["vit", "agi", "int"],
+        recommended_armor_cards=["pecopeco_card", "raydric_card"],
+        recommended_garment_cards=["deviling_card"],
+        recommended_shield_cards=["thara_frog_card"],
+        recommended_shoe_cards=["verit_card"],
+        recommended_accessory_cards=["zerom_card", "zerom_card"],
+        recommended_weapon_cards=["skel_bone_card"],
+        min_refine=4,
+        max_weight=3000,
+    ),
+    "flee": LoadoutPreset(
+        name="Flee",
+        description="Maximum flee rate: avoid physical attacks entirely",
+        priority_stats=["agi", "luk", "dex"],
+        recommended_armor_cards=["whisper_card"],
+        recommended_garment_cards=["whisper_card"],
+        recommended_shield_cards=[],
+        recommended_shoe_cards=["boned_card"],
+        recommended_accessory_cards=["zerom_card", "lunatic_card"],
+        recommended_weapon_cards=["kobold_archer_card"],
+        min_refine=0,
+        max_weight=1000,
+    ),
+}
 
 # ──────────────────────────────────────────────
-# Equipment Optimizer
+# Auto-swap conditions
+# ──────────────────────────────────────────────
+
+# Element -> recommended weapon element for auto-swap
+_AUTO_SWAP_RULES: dict[str, str] = {
+    "earth": "fire",       # Earth mobs -> fire weapon
+    "fire": "water",       # Fire mobs -> water weapon
+    "water": "wind",       # Water mobs -> wind weapon
+    "wind": "earth",       # Wind mobs -> earth weapon
+    "undead": "holy",      # Undead -> holy weapon
+    "shadow": "holy",      # Shadow -> holy weapon
+    "ghost": "shadow",     # Ghost -> shadow weapon
+    "poison": "holy",      # Poison -> holy weapon
+    "neutral": "neutral",  # Neutral -> no swap needed
+}
+
+# ──────────────────────────────────────────────
+# Data classes for results
 # ──────────────────────────────────────────────
 
 @dataclass
 class CardSlotResult:
-    """Result of slotting a card into an item."""
     item_name: str
     card_name: str
     slot_index: int
@@ -498,9 +652,9 @@ class CardSlotResult:
     damage_multiplier: float
     command: str
 
+
 @dataclass
 class UpgradeResult:
-    """Result of a weapon/armor upgrade attempt."""
     item_name: str
     current_level: int
     target_level: int
@@ -511,9 +665,9 @@ class UpgradeResult:
     expected_cost: int
     command: str
 
+
 @dataclass
 class ElementSwapRecommendation:
-    """Recommendation to swap weapon element."""
     target_monster: str
     monster_element: str
     recommended_element: str
@@ -523,9 +677,9 @@ class ElementSwapRecommendation:
     converter_name: str
     command: str
 
+
 @dataclass
 class EquipRecommendation:
-    """Full equipment recommendation for a target."""
     monster_name: str
     recommended_weapon: str
     recommended_cards: list[str]
@@ -534,16 +688,45 @@ class EquipRecommendation:
     priority: int = 5
 
 
+@dataclass
+class DurabilityInfo:
+    """Equipment durability state."""
+    item_name: str
+    current_durability: int
+    max_durability: int
+    broken: bool = False
+    last_repair_time: float = 0.0
+
+
+@dataclass
+class WeightOptimizationResult:
+    """Weight optimization recommendation."""
+    item_name: str
+    weight: int
+    atk_per_weight: float
+    def_per_weight: float
+    score: float
+    recommendation: str
+
+
+# ──────────────────────────────────────────────
+# Equipment Optimizer
+# ──────────────────────────────────────────────
+
 class EquipmentOptimizer:
-    """Advanced equipment optimizer with upgrade, card, and element awareness.
+    """Advanced equipment optimizer with upgrade, card, element, set bonus,
+    durability, and weight awareness.
 
     Features:
-        - Weapon/armor upgrade tracking (+0 to +10) with damage calculation
-        - Card system: know which cards go in which slot
-        - Slot-aware: 2-slot weapon + 2 cards = multiplicative bonus
-        - Elemental advantage: converters, endow skills
-        - Swap recommendations based on target monster
-        - Commands: equip, slot, upgrade
+      - Stat-to-equipment mapping
+      - Set bonuses tracking
+      - Card slot analysis
+      - Refine-aware scoring
+      - Loadout presets (farming, PvP, MVP, tank, flee)
+      - Auto-swap conditions
+      - Element weapon priority
+      - Durability monitoring
+      - Weight optimization
     """
 
     def __init__(self, db: Any = None) -> None:
@@ -551,16 +734,62 @@ class EquipmentOptimizer:
         if self._gk_db is None:
             from ai_sidecar.game_knowledge_db import GameKnowledgeDB
             self._gk_db = GameKnowledgeDB()
+        self._durability: dict[str, DurabilityInfo] = {}
+        self._last_repair_check: float = 0.0
 
-    # ── Card Methods ─────────────────────────────────────────
+    # ── Stat-to-equipment mapping ─────────────────────────────────
+
+    def get_equipment_for_stat(self, stat_name: str) -> list[str]:
+        """Get equipment/cards that provide a specific stat."""
+        return _STAT_EQUIPMENT_MAP.get(stat_name.lower(), [])
+
+    def get_stats_from_equipment(self, equipped_items: list[str]) -> dict[str, int]:
+        """Calculate total stat bonuses from a list of equipped items."""
+        stats: dict[str, int] = {}
+        for item in equipped_items:
+            item_lower = item.lower().replace(" ", "_")
+            for stat_name, items in _STAT_EQUIPMENT_MAP.items():
+                if any(eq_item in item_lower for eq_item in items):
+                    stats[stat_name] = stats.get(stat_name, 0) + 1
+        return stats
+
+    # ── Set bonuses ────────────────────────────────────────────────
+
+    def get_set_bonuses(self, equipped_items: list[str]) -> list[SetBonus]:
+        """Get active set bonuses from equipped items."""
+        active_bonuses: list[SetBonus] = []
+        equipped_lower = [item.lower().replace(" ", "_") for item in equipped_items]
+
+        for set_name, set_bonus in _SET_BONUSES.items():
+            set_items_lower = [item.lower().replace(" ", "_") for item in set_bonus.items]
+            # Check if all items in the set are equipped
+            if all(any(set_item in eq for eq in equipped_lower) for set_item in set_items_lower):
+                active_bonuses.append(set_bonus)
+                logger.debug("Set bonus active: %s", set_bonus.name)
+
+        return active_bonuses
+
+    def calculate_set_bonus_stats(self, equipped_items: list[str]) -> dict[str, float]:
+        """Calculate total stat bonuses from active set effects."""
+        total: dict[str, float] = {}
+        for bonus in self.get_set_bonuses(equipped_items):
+            total["atk"] = total.get("atk", 0) + bonus.atk_bonus
+            total["matk"] = total.get("matk", 0) + bonus.matk_bonus
+            total["def"] = total.get("def", 0) + bonus.def_bonus
+            total["hp_pct"] = total.get("hp_pct", 0) + bonus.hp_bonus_pct
+            total["sp_pct"] = total.get("sp_pct", 0) + bonus.sp_bonus_pct
+            total["damage_pct"] = total.get("damage_pct", 0) + bonus.damage_bonus_pct
+            total["reduction_pct"] = total.get("reduction_pct", 0) + bonus.reduction_pct
+            for stat, val in bonus.stat_bonus.items():
+                total[stat] = total.get(stat, 0) + val
+        return total
+
+    # ── Card Methods ─────────────────────────────────────────────
 
     def get_card(self, card_name: str) -> CardInfo | None:
-        """Look up a card by name (partial match supported)."""
         name_lower = card_name.lower().replace(" ", "_")
-        # Exact match first
         if name_lower in _CARD_DB:
             return _CARD_DB[name_lower]
-        # Partial match
         for key, card in _CARD_DB.items():
             if name_lower in key or key in name_lower:
                 return card
@@ -569,7 +798,6 @@ class EquipmentOptimizer:
         return None
 
     def get_cards_for_slot(self, slot_type: str) -> list[CardInfo]:
-        """Get all cards that can go in a particular slot."""
         return [c for c in _CARD_DB.values() if c.slot_type == slot_type]
 
     def calc_card_damage_multiplier(
@@ -579,17 +807,6 @@ class EquipmentOptimizer:
         monster_element: str = "",
         monster_size: str = "",
     ) -> float:
-        """Calculate total damage multiplier from multiple cards (multiplicative).
-
-        Args:
-            cards: List of card names in the weapon.
-            monster_race: Target monster race.
-            monster_element: Target monster element.
-            monster_size: Target monster size.
-
-        Returns:
-            Total multiplier (e.g. 1.44 for 2x Vadon vs Water).
-        """
         mult = 1.0
         for card_name in cards:
             card = self.get_card(card_name)
@@ -605,11 +822,6 @@ class EquipmentOptimizer:
         monster_size: str = "",
         available_slots: int = 4,
     ) -> list[CardInfo]:
-        """Recommend the best cards to put in a weapon against a specific monster.
-
-        Uses real card data and monster properties.
-        """
-        # Try to look up monster info
         monster_key = monster_name.lower().replace(" ", "_").replace("'", "")
         monster = _GRINDING_MONSTERS.get(monster_key)
 
@@ -617,7 +829,6 @@ class EquipmentOptimizer:
         element = monster_element or (monster.element if monster else "")
         size = monster_size or (monster.size if monster else "")
 
-        # Score each weapon card
         scored: list[tuple[CardInfo, float]] = []
         for card in _CARD_DB.values():
             if card.slot_type != "weapon":
@@ -626,18 +837,14 @@ class EquipmentOptimizer:
             if mult > 1.0:
                 scored.append((card, mult))
 
-        # Sort by multiplier (highest first)
         scored.sort(key=lambda x: -x[1])
 
         if not scored:
-            # Fallback: return generic recommendations
             return self.get_cards_for_slot("weapon")[:available_slots]
 
-        # Return top N cards
         return [c[0] for c in scored[:available_slots]]
 
     def slot_command(self, item_name: str, card_name: str, slot_index: int = 0) -> str:
-        """Generate a command to insert a card into an item."""
         return f"slot {item_name} {card_name}"
 
     def calc_full_weapon_multiplier(
@@ -649,25 +856,8 @@ class EquipmentOptimizer:
         monster_size: str,
         weapon_element: str = "neutral",
     ) -> dict[str, float]:
-        """Calculate the total damage multiplier from element + cards + upgrades.
-
-        Args:
-            weapon_slots: Number of slots in the weapon (1, 2, 3, 4).
-            cards: Card names inserted.
-            monster_race: Target race.
-            monster_element: Target element.
-            monster_size: Target size.
-            weapon_element: Current weapon element (from converter/endow).
-
-        Returns:
-            Dict with breakdown: element_mult, card_mult, total_mult.
-        """
-        # Element multiplier
         element_mult = _ELEMENT_TABLE_L1.get(weapon_element, {}).get(monster_element, 1.0)
-
-        # Card multiplier (multiplicative with element)
         card_mult = self.calc_card_damage_multiplier(cards, monster_race, monster_element, monster_size)
-
         total_mult = element_mult * card_mult
 
         return {
@@ -679,22 +869,15 @@ class EquipmentOptimizer:
     # ── Upgrade Methods ──────────────────────────────────────
 
     def get_upgrade_bonus(self, item_type: str, refine_level: int) -> int:
-        """Get the stat bonus from a given upgrade level."""
         if item_type == "weapon":
             return _WEAPON_UPGRADE_BONUS.get(refine_level, 0)
         else:
             return _ARMOR_UPGRADE_BONUS.get(refine_level, 0)
 
     def calc_upgrade_success_chance(self, current_level: int) -> float:
-        """Get the success probability for upgrading from current_level."""
         return _UPGRADE_SUCCESS_RATES.get(current_level, 0.0)
 
     def calc_upgrade_cost(self, current_level: int, target_level: int) -> int:
-        """Calculate expected cost to go from current_level to target_level.
-
-        Accounts for failure probability (item breaks on failure at >= +5 in pre-renewal).
-        Simple model: each attempt costs Oridecon + fee, success rate per level.
-        """
         total_cost = 0
         level = current_level
         while level < target_level and level < 10:
@@ -702,7 +885,6 @@ class EquipmentOptimizer:
             cost_per_try = _UPGRADE_COST_PER_TRY.get(level, 55000)
             if success_rate <= 0:
                 break
-            # Expected attempts = 1/success_rate (geometric distribution)
             expected_attempts = 1.0 / success_rate
             total_cost += int(expected_attempts * cost_per_try)
             level += 1
@@ -716,7 +898,6 @@ class EquipmentOptimizer:
         zeny: int,
         target_level: int = 10,
     ) -> UpgradeResult | None:
-        """Recommend whether and how to upgrade an item."""
         if current_level >= target_level:
             return None
 
@@ -739,19 +920,17 @@ class EquipmentOptimizer:
         )
 
     def is_upgrade_worthwhile(self, current_level: int, zeny: int) -> bool:
-        """Decide if upgrading further makes economic sense."""
         if current_level >= 10:
             return False
         if current_level >= 7:
-            return zeny > 500000  # Only rich players should push past +7
+            return zeny > 500000
         if current_level >= 4:
             return zeny > 100000
-        return True  # +0 to +4 is always worth it (100% success)
+        return True
 
     # ── Element Methods ──────────────────────────────────────
 
     def get_element_multiplier(self, attack_element: str, defense_element: str) -> float:
-        """Get the damage multiplier for attack element vs defense element."""
         return _ELEMENT_TABLE_L1.get(attack_element, {}).get(defense_element, 1.0)
 
     def find_best_converter(
@@ -760,12 +939,10 @@ class EquipmentOptimizer:
         available_converters: list[str] | None = None,
         available_skills: list[str] | None = None,
     ) -> ElementalConverter | None:
-        """Find the best converter/endow to use against a target element."""
         best: ElementalConverter | None = None
         best_mult = 1.0
 
         for conv in _ELEMENTAL_CONVERTERS.values():
-            # Check if we have this converter
             if conv.is_skill:
                 if available_skills and conv.skill_id.upper() not in [s.upper() for s in available_skills]:
                     continue
@@ -781,11 +958,157 @@ class EquipmentOptimizer:
         return best
 
     def get_converter_command(self, converter: ElementalConverter, target: str = "") -> str:
-        """Generate the command to use a converter or cast an endow skill."""
         if converter.is_skill:
             return f"use_skill {converter.skill_id} {target}"
         else:
             return f"use_item {converter.name}"
+
+    # ── Auto-swap conditions ─────────────────────────────────
+
+    def get_auto_swap_element(self, monster_element: str) -> str | None:
+        """Get the recommended weapon element for auto-swap against a monster element."""
+        return _AUTO_SWAP_RULES.get(monster_element.lower())
+
+    def should_auto_swap(self, current_element: str, monster_element: str) -> bool:
+        """Check if we should auto-swap weapon element."""
+        recommended = self.get_auto_swap_element(monster_element)
+        if not recommended:
+            return False
+        return current_element.lower() != recommended
+
+    # ── Loadout presets ──────────────────────────────────────
+
+    def get_loadout_preset(self, preset_name: str) -> LoadoutPreset | None:
+        """Get a named loadout preset."""
+        return LOADOUT_PRESETS.get(preset_name.lower())
+
+    def get_all_presets(self) -> dict[str, LoadoutPreset]:
+        """Get all available loadout presets."""
+        return dict(LOADOUT_PRESETS)
+
+    def recommend_loadout(
+        self,
+        preset_name: str,
+        current_equipment: list[str] = None,
+    ) -> dict[str, Any]:
+        """Get a full loadout recommendation for a preset."""
+        preset = self.get_loadout_preset(preset_name)
+        if not preset:
+            return {"error": f"Unknown preset: {preset_name}"}
+
+        return {
+            "preset": preset.name,
+            "description": preset.description,
+            "priority_stats": preset.priority_stats,
+            "recommended_armor_cards": preset.recommended_armor_cards,
+            "recommended_garment_cards": preset.recommended_garment_cards,
+            "recommended_shield_cards": preset.recommended_shield_cards,
+            "recommended_shoe_cards": preset.recommended_shoe_cards,
+            "recommended_accessory_cards": preset.recommended_accessory_cards,
+            "recommended_weapon_cards": preset.recommended_weapon_cards,
+            "min_refine": preset.min_refine,
+            "max_weight": preset.max_weight,
+        }
+
+    # ── Durability monitoring ───────────────────────────────
+
+    def update_durability(self, item_name: str, current: int, max_durability: int) -> None:
+        """Update durability tracking for an item."""
+        if item_name not in self._durability:
+            self._durability[item_name] = DurabilityInfo(
+                item_name=item_name,
+                current_durability=current,
+                max_durability=max_durability,
+            )
+        else:
+            info = self._durability[item_name]
+            info.current_durability = current
+            info.max_durability = max_durability
+            info.broken = current <= 0
+
+    def check_durability(self, item_name: str) -> DurabilityInfo | None:
+        """Get durability info for an item."""
+        return self._durability.get(item_name)
+
+    def get_items_needing_repair(self, threshold: float = 0.3) -> list[DurabilityInfo]:
+        """Get items with durability below threshold."""
+        now = time.time()
+        needing_repair: list[DurabilityInfo] = []
+        for info in self._durability.values():
+            if info.broken:
+                needing_repair.append(info)
+            elif info.max_durability > 0:
+                pct = info.current_durability / info.max_durability
+                if pct < threshold and (now - info.last_repair_time) > 60:
+                    needing_repair.append(info)
+        return needing_repair
+
+    def auto_repair_recommendation(self, threshold: float = 0.3) -> list[str]:
+        """Get auto-repair commands for items with low durability."""
+        commands: list[str] = []
+        for info in self.get_items_needing_repair(threshold):
+            commands.append(f"repair {info.item_name}")
+            info.last_repair_time = time.time()
+        return commands
+
+    # ── Weight optimization ─────────────────────────────────
+
+    def get_item_weight(self, item_type: str) -> int:
+        """Get the weight of an item type."""
+        return _EQUIPMENT_WEIGHTS.get(item_type.lower().replace(" ", "_"), 50)
+
+    def calculate_weight_score(
+        self,
+        atk: int,
+        def_val: int,
+        weight: int,
+    ) -> float:
+        """Calculate ATK/DEF per weight unit score."""
+        if weight <= 0:
+            return float(atk + def_val)
+        return (atk + def_val) / weight
+
+    def optimize_for_weight(
+        self,
+        equipment_options: list[dict[str, Any]],
+        max_weight: int,
+    ) -> list[WeightOptimizationResult]:
+        """Optimize equipment selection for weight efficiency.
+
+        Args:
+            equipment_options: List of dicts with 'name', 'atk', 'def', 'weight', 'type'
+            max_weight: Maximum total weight allowed
+
+        Returns:
+            Sorted list of weight optimization results.
+        """
+        results: list[WeightOptimizationResult] = []
+        for item in equipment_options:
+            name = item.get("name", "unknown")
+            atk = item.get("atk", 0)
+            def_val = item.get("def", 0)
+            weight = item.get("weight", self.get_item_weight(item.get("type", "armor")))
+            score = self.calculate_weight_score(atk, def_val, weight)
+
+            atk_per_weight = atk / max(1, weight)
+            def_per_weight = def_val / max(1, weight)
+
+            if weight <= max_weight:
+                recommendation = "Recommended"
+            else:
+                recommendation = f"Over weight limit by {weight - max_weight}"
+
+            results.append(WeightOptimizationResult(
+                item_name=name,
+                weight=weight,
+                atk_per_weight=round(atk_per_weight, 2),
+                def_per_weight=round(def_per_weight, 2),
+                score=round(score, 2),
+                recommendation=recommendation,
+            ))
+
+        results.sort(key=lambda r: -r.score)
+        return results
 
     # ── Combined Recommendations ─────────────────────────────
 
@@ -797,10 +1120,6 @@ class EquipmentOptimizer:
         available_converters: list[str] | None = None,
         available_skills: list[str] | None = None,
     ) -> EquipRecommendation | None:
-        """Full equipment recommendation against a specific monster.
-
-        Combines element advantage, card recommendations, and upgrade advice.
-        """
         monster_key = monster_name.lower().replace(" ", "_").replace("'", "")
         monster = _GRINDING_MONSTERS.get(monster_key)
 
@@ -843,7 +1162,7 @@ class EquipmentOptimizer:
         # Upgrade bonus
         if weapon_level > 0:
             atk_bonus_val = _WEAPON_UPGRADE_BONUS.get(weapon_level, 0)
-            upgrade_factor = 1.0 + (atk_bonus_val / 100.0)  # rough estimate
+            upgrade_factor = 1.0 + (atk_bonus_val / 100.0)
             total_mult *= upgrade_factor
 
         priority = 8 if total_mult > 2.0 else (6 if total_mult > 1.5 else 4)
@@ -865,16 +1184,10 @@ class EquipmentOptimizer:
         available_converters: list[str] | None = None,
         available_skills: list[str] | None = None,
     ) -> list[EquipRecommendation]:
-        """Get recommendations for the most dangerous/common monsters on a map.
-
-        Falls back to element-based recommendations using the map's dominant
-        monster element known in the knowledge DB.
-        """
         from ai_sidecar.autonomy.ro_mechanics import get_optimal_element_for_map
 
         target_element = get_optimal_element_for_map(map_name)
         if target_element:
-            # Mock a monster with this element
             monster = MonsterInfo(
                 name=f"{map_name}_monsters",
                 element=target_element,
@@ -889,32 +1202,24 @@ class EquipmentOptimizer:
     # ── Utility Commands ─────────────────────────────────────
 
     def equip_command(self, item_id_or_name: str) -> str:
-        """Generate a command to equip an item."""
         return f"equip {item_id_or_name}"
 
     def upgrade_command(self, item_name: str) -> str:
-        """Generate a command to attempt upgrading an item."""
         return f"upgrade {item_name}"
 
     def slot_card_command(self, item_name: str, card_name: str) -> str:
-        """Generate a command to slot a card into an item."""
         return f"slot {item_name} {card_name}"
 
     def use_converter_command(self, converter_name: str) -> str:
-        """Generate a command to use an elemental converter."""
         return f"use_item {converter_name}"
 
     def use_endow_command(self, skill_id: str, target: str = "") -> str:
-        """Generate a command to cast an endow weapon skill."""
         return f"use_skill {skill_id} {target}"
 
     # ── Batch Assess ─────────────────────────────────────────
 
     def assess(self, signals: dict[str, Any], bot_id: str = "") -> list[dict]:
-        """Assess equipment state and return optimization recommendations.
-
-        Integrates with the existing signal-based assessment pipeline.
-        """
+        """Assess equipment state and return optimization recommendations."""
         actions: list[dict] = []
 
         inventory = signals.get("inventory", []) or []
@@ -923,6 +1228,7 @@ class EquipmentOptimizer:
         job_name = str(signals.get("job_name", "novice") or "novice").lower()
         base_level = int(signals.get("base_level", 1) or 1)
         zeny = int(signals.get("zeny", 0) or 0)
+        current_map = str(signals.get("map", "") or "")
 
         # Current monster recommendation
         if current_monster:
@@ -953,6 +1259,22 @@ class EquipmentOptimizer:
                         "expected_mult": rec.expected_damage_multiplier,
                     })
 
+        # Auto-swap check
+        if current_monster and isinstance(current_monster, dict):
+            monster_element = current_monster.get("element", "")
+            if monster_element:
+                current_weapon_element = signals.get("weapon_element", "neutral")
+                if self.should_auto_swap(current_weapon_element, monster_element):
+                    recommended = self.get_auto_swap_element(monster_element)
+                    if recommended:
+                        actions.append({
+                            "type": "auto_swap_weapon",
+                            "priority": 7,
+                            "reason": f"Auto-swap: {monster_element} mob -> {recommended} weapon",
+                            "current_element": current_weapon_element,
+                            "recommended_element": recommended,
+                        })
+
         # Upgrade recommendations
         for item in equipped:
             eq_name = str(item.get("name", "") or "")
@@ -979,7 +1301,6 @@ class EquipmentOptimizer:
         if equipped_weapon:
             equip_name = str(equipped_weapon.get("name", "") or "")
             current_cards = equipped_weapon.get("cards", []) or []
-            # Extract slot count from name like "Blade[3]"
             slot_count = 0
             if "[" in equip_name and "]" in equip_name:
                 try:
@@ -995,7 +1316,7 @@ class EquipmentOptimizer:
                     monster_name = current_monster.get("name", "")
                 cards = self.recommend_cards_for_monster(
                     monster_name, available_slots=empty_slots,
-                )
+                ) or []
                 for card in cards[:empty_slots]:
                     actions.append({
                         "type": "slot_card",
@@ -1005,5 +1326,55 @@ class EquipmentOptimizer:
                         "card": card.name,
                         "command": f"slot {equip_name} {card.name}",
                     })
+
+        # Durability check
+        now = time.time()
+        if now - self._last_repair_check > 60:
+            self._last_repair_check = now
+            for item in equipped:
+                eq_name = str(item.get("name", "") or "")
+                durability = int(item.get("durability", item.get("dur", 100)) or 100)
+                max_dur = int(item.get("max_durability", item.get("max_dur", 100)) or 100)
+                self.update_durability(eq_name, durability, max_dur)
+
+            repair_commands = self.auto_repair_recommendation()
+            for cmd in repair_commands:
+                actions.append({
+                    "type": "repair_equipment",
+                    "priority": 8,
+                    "reason": f"Auto-repair: {cmd}",
+                    "command": cmd,
+                })
+
+        # Set bonus check
+        equipped_names = [str(item.get("name", "")) for item in equipped if item.get("name")]
+        active_sets = self.get_set_bonuses(equipped_names)
+        if active_sets:
+            for bonus in active_sets:
+                actions.append({
+                    "type": "set_bonus_active",
+                    "priority": 3,
+                    "reason": f"Set bonus active: {bonus.name} — {bonus.bonus_description}",
+                    "set_name": bonus.name,
+                })
+
+        # Loadout recommendation based on current activity
+        current_activity = signals.get("activity", signals.get("mode", ""))
+        if current_activity:
+            preset_map = {
+                "farming": "farming",
+                "pvp": "pvp",
+                "mvp": "mvp",
+                "tank": "tank",
+                "flee": "flee",
+            }
+            preset_name = preset_map.get(current_activity.lower())
+            if preset_name:
+                actions.append({
+                    "type": "loadout_recommendation",
+                    "priority": 4,
+                    "reason": f"Loadout suggestion: {preset_name} mode",
+                    "preset": preset_name,
+                })
 
         return actions

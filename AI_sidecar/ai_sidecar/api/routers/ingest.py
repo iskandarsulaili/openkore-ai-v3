@@ -23,6 +23,12 @@ def register_bot(
     runtime: RuntimeState = Depends(get_runtime),
 ) -> BotRegistrationResponse:
     registration = runtime.register_bot(payload)
+    reg_bot_id = str(registration.get("bot_id") or payload.meta.bot_id)
+    if "Asgards" in reg_bot_id or "Glory" in reg_bot_id or "asgardsglory" in reg_bot_id.lower():
+        logger.warning(
+            "bot_id_asgards_origins requested=%s registered=%s bot_name=%s",
+            payload.meta.bot_id, reg_bot_id, payload.bot_name,
+        )
     logger.info(
         "bot_registered",
         extra={"event": "bot_registered", "bot_id": payload.meta.bot_id},

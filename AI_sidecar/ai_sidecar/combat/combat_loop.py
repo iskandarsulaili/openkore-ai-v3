@@ -73,6 +73,12 @@ class CombatState:
     my_weapon_type: str = "sword"
     my_buffs: list[str] = field(default_factory=list)
     my_available_skills: list[str] = field(default_factory=list)
+    my_dex: int = 1
+    my_base_level: int = 1
+    # After-cast delay tracking (separate from cast time)
+    after_cast_delays: dict[str, float] = field(default_factory=dict)
+    # Skill level overrides per skill name
+    skill_levels: dict[str, int] = field(default_factory=dict)
     is_in_combat: bool = False
     combat_started_at: float = 0.0
     kills_this_session: int = 0
@@ -222,6 +228,10 @@ class CombatLoop:
             self._state.my_sp_pct = float(vitals.get("sp_ratio", 1.0))
             if my_max_sp > 0:
                 self._state.my_sp_pct = self._state.my_sp / my_max_sp
+            # ── Stats (DEX, base level for cast time / accuracy) ──
+            stats = vitals.get("stats", {}) if isinstance(vitals, dict) else {}
+            self._state.my_dex = int(stats.get("dex", stats.get("DEX", 1)))
+            self._state.my_base_level = int(vitals.get("base_level", vitals.get("level", 1)))
 
             # ── Position ──
             self._state.map_name = str(position.get("map", ""))
@@ -665,9 +675,24 @@ class CombatLoop:
         return None
 
     def _execute_skill_rotation(self, now: float) -> str | None:
-        """Phase 6: Execute skill rotation based on current build."""
+        """Phase 6: Execute skill rotation based on current build.
+        
+        Uses DEX-based cast time reduction and tracks after-cast delay separately.
+        
+        RO has TWO separate delays:
+        1. Cast time (reducible by DEX, interrupted by damage)
+        2. After-cast delay (FIXED, NOT reducible by DEX, NOT interruptable)
+        """
         s = self._state
         if not self._skill_rotation:
+            return None
+        
+        # Check after-cast delay first (FIXED delay — not reducible by DEX)
+        for skill_name, expiry in list(s.after_cast_delays.items()):
+            if now >= expiry:
+                del s.after_cast_delays[skill_name]
+        if s.current_skill and s.current_skill in s.after_cast_delays:
+            # Still in after-cast delay — skip this tick
             return None
 
         # Get the rotation for current build
@@ -698,7 +723,9 @@ class CombatLoop:
             return None  # Skip this tick — still in skill delay
 
         # Check SP cost
-        if current_skill.sp_cost > 0 and current_skill.sp_cost > s.my_sp:
+        skill_level = s.skill_levels.get(skill_name, 10)
+        sp_cost = self._skill_rotation.get_sp_cost(skill_name, skill_level)
+        if sp_cost > 0 and sp_cost > s.my_sp:
             # Not enough SP — try next skill or basic attack
             s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
             if s.current_skill_index == 0:
@@ -707,8 +734,9 @@ class CombatLoop:
 
         # Check elemental advantage
         if self._elemental_matrix:
+            skill_elem = current_skill.element if hasattr(current_skill, 'element') else current_skill.get('element', 'neutral')
             multiplier = self._elemental_matrix.get_elemental_multiplier(
-                current_skill.element,
+                skill_elem,
                 s.current_target_element,
             )
             if multiplier < 0.5:
@@ -716,17 +744,52 @@ class CombatLoop:
                 s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
                 return self._execute_skill_rotation(now)
 
+        # Calculate ACTUAL cast time with DEX reduction:
+        # cast_time * (1 - DEX/150), minimum 10% of base cast time
+        base_cast_ms = self._skill_rotation.get_cast_time(skill_name, skill_level)
+        is_fixed_cast = False
+        if hasattr(current_skill, 'tags'):
+            is_fixed_cast = "fixed_cast" in current_skill.tags
+        elif isinstance(current_skill, dict):
+            is_fixed_cast = "fixed_cast" in current_skill.get('tags', [])
+        
+        if is_fixed_cast or base_cast_ms <= 0:
+            actual_cast_ms = base_cast_ms  # Fixed cast — unaffected by DEX
+        else:
+            dex = max(s.my_dex, 1)
+            reduction = 1.0 - min(dex / 150.0, 1.0)
+            actual_cast_ms = int(base_cast_ms * reduction)
+            actual_cast_ms = max(actual_cast_ms, int(base_cast_ms * 0.1))  # Min 10% of base
+        
+        # Get after-cast delay (FIXED — NOT reducible by DEX)
+        after_cast_ms = self._skill_rotation.get_after_cast_delay(skill_name, skill_level)
+        
+        # Total time before next action = cast_time + after_cast_delay
+        total_block_ms = actual_cast_ms + after_cast_ms
+
         # Execute the skill
         s.current_skill = skill_name
         s.last_skill_time = now
         s.skill_cooldowns[skill_name] = now
+        # Set after-cast delay expiry (separate from cast time)
+        s.after_cast_delays[skill_name] = now + (after_cast_ms / 1000.0)
         s.current_skill_index = (s.current_skill_index + 1) % len(rotation)
 
         self._enqueue_action(f"use_skill_{skill_name.lower().replace(' ', '_')}", "attack_skill")
-        logger.debug("combat_skill: %s (sp=%d/%d)", skill_name, s.my_sp,
-                     self._elemental_matrix.get_elemental_multiplier(
-                         current_skill.element, s.current_target_element
-                     ) if self._elemental_matrix else 1.0)
+        
+        total_damage = 0
+        hits = 1
+        if hasattr(current_skill, 'damage_ratio'):
+            hits = current_skill.hits_per_cast
+            ratio = self._skill_rotation.get_skill_total_damage_ratio(skill_name, skill_level) if hasattr(self._skill_rotation, 'get_skill_total_damage_ratio') else current_skill.damage_ratio
+            total_damage = ratio
+
+        logger.debug(
+            "combat_skill: %s Lv%d (cast=%dms dex_reduced=%dms after_cast=%dms total=%dms dmg_ratio=%d%% hits=%d sp=%d/%d)",
+            skill_name, skill_level,
+            base_cast_ms, actual_cast_ms, after_cast_ms, total_block_ms,
+            total_damage, hits, s.my_sp, s.my_max_hp if s.my_max_hp else 0,
+        )
 
         return f"use_skill_{skill_name}"
 
@@ -737,6 +800,24 @@ class CombatLoop:
         if target_id > 0:
             self._enqueue_action_raw(f"attack {target_id}", "attack_skill")
         return "use_basic_attack_only"
+
+    def get_skill_effective_cast_time(self, skill_name: str, level: int = 10) -> int:
+        """Get the effective cast time for a skill with current DEX.
+        
+        Returns cast time in ms after DEX reduction.
+        """
+        s = self._state
+        if not self._skill_rotation:
+            skill = self._skill_rotation.get_skill(skill_name) if self._skill_rotation and hasattr(self._skill_rotation, 'get_skill') else None
+            return 0
+        
+        base_cast = self._skill_rotation.get_cast_time(skill_name, level)
+        if base_cast <= 0:
+            return 0
+        dex = max(s.my_dex, 1)
+        reduction = 1.0 - min(dex / 150.0, 1.0)
+        actual = int(base_cast * reduction)
+        return max(actual, int(base_cast * 0.1))
 
     # ── Action Enqueue Helpers ──
 
