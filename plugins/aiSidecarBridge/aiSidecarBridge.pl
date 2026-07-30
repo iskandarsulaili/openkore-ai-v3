@@ -1155,12 +1155,41 @@ sub on_command_intercept {
 	# Pre-command hook: intercept ALL commands including OpenKore internal AI
 	# This is the LAST LINE OF DEFENSE against "move prontera" spam
 	# Also blocks potion use when bot has 0 potions on hunting map
+	# Also humanizes movement coordinates to avoid bot detection
 	# Hook name: Commands::run/pre, params: {switch, args}
 	my (undef, $args) = @_;
 	my $switch = $args->{switch} || '';
 	my $cmd_args = $args->{args} || '';
 	my $full_cmd = $switch . ' ' . $cmd_args;
 	$full_cmd =~ s/\s+$//;
+
+	# ── MOVE HUMANIZATION: intercept move x y and perturb coordinates ──
+	if ($switch eq 'move' && $cmd_args =~ /^\s*(\d+)\s+(\d+)\s*$/) {
+		my $tx = int($1);
+		my $ty = int($2);
+		my $cx = ($char && $char->{pos_to}) ? int($char->{pos_to}{x}) : 0;
+		my $cy = ($char && $char->{pos_to}) ? int($char->{pos_to}{y}) : 0;
+		# Only humanize if target is within a reasonable distance
+		my $dist = abs($tx - $cx) + abs($ty - $cy);
+		if ($dist > 3 && $dist < 100) {
+			my $resp = _http_post_json('/v1/humanize/move', {
+				bot_id => _scalarize(_bot_id()),
+				current_x => $cx,
+				current_y => $cy,
+				target_x => $tx,
+				target_y => $ty,
+			});
+			if ($resp && $resp->{humanized}) {
+				my $hx = int($resp->{humanized_x} + 0.5);
+				my $hy = int($resp->{humanized_y} + 0.5);
+				# Only apply if coordinates actually changed
+				if ($hx != $tx || $hy != $ty) {
+					$args->{args} = "$hx $hy";
+					debug "[aiSidecarBridge] move humanized: ($tx,$ty) -> ($hx,$hy) dev=${\($resp->{deviation})}\n", 'aiSidecarBridge', 3;
+				}
+			}
+		}
+	}
 
 	# ── POTION USE INTERCEPTION: block when 0 potions on hunting map ──
 	# OpenKore's built-in useSelf_item system fires independently of the bridge.

@@ -25,6 +25,7 @@ from ai_sidecar.api.routers import (
     acknowledgements,
     actions,
     combat,
+    humanize,
     conscious,
     control_domain,
     crewai_v2,
@@ -263,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(fleet_v2.router)
     app.include_router(observability_v2.router)
     app.include_router(combat.router)
+    app.include_router(humanize.router)
     app.include_router(conscious.router)
     app.include_router(party.router)
     app.include_router(discovery.router)

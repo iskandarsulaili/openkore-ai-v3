@@ -340,12 +340,14 @@ def _gaussian_deviation_2d(
     dist = math.sqrt(dx * dx + dy * dy) or 1.0
     # σ grows with distance but also has a random component per step
     sigma = max(0.5, dist * 0.05 * strength)
-    nx = x + random.gauss(0, sigma)
-    ny = y + random.gauss(0, sigma)
+    # Add noise to the TARGET coordinates, not the source
+    # This produces a waypoint near the intended destination
+    nx = target_x + random.gauss(0, sigma * 0.3)
+    ny = target_y + random.gauss(0, sigma * 0.3)
     # Clamp so we don't overshoot dramatically
-    max_dev = max(3.0, dist * 0.15)
-    nx = max(x - max_dev, min(x + max_dev, nx))
-    ny = max(y - max_dev, min(y + max_dev, ny))
+    max_dev = max(3.0, dist * 0.3)
+    nx = max(target_x - max_dev, min(target_x + max_dev, nx))
+    ny = max(target_y - max_dev, min(target_y + max_dev, ny))
     return (nx, ny)
 
 
@@ -518,7 +520,7 @@ class BehaviorEngine:
                 "afk_break": {"duration_s": 0},
                 "fav_spot": {"enabled": False},
                 "micro_mistake": {"type": None},
-                "movement_deviation": {"enabled": False},
+                "movement_deviation": {"enabled": True, "strength": 1.0},
                 "movement_noise": {"dx": 0, "dy": 0},
                 "typing_speed": {"wpm": 60},
                 "inventory_delay": {"delay_ms": 0},
