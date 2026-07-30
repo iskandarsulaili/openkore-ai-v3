@@ -1565,7 +1565,17 @@ class HeuristicService:
                         _actions.extend(_sa)
                     # ── Monster AI: per-monster behavior overrides ──
                     try:
-                        _mon_name = str(signals.get("attacked_monster", "") or "")
+                        _mon_name = str(signals.get("monster_name", "") or "")
+                        if not _mon_name:
+                            # Try to extract from actors list
+                            _actors_m = signals.get("actors", []) or []
+                            _combat_m = signals.get("combat", {}) or {}
+                            _target_id = _combat_m.get('target_id')
+                            if _target_id and _actors_m:
+                                for _a in _actors_m:
+                                    if isinstance(_a, dict) and _a.get("id") == _target_id:
+                                        _mon_name = str(_a.get("name", "") or "")
+                                        break
                         if _mon_name:
                             _tactic = get_monster_tactic(_mon_name)
                             if _tactic in ("isolate", "stun_first"):
@@ -1587,21 +1597,25 @@ class HeuristicService:
                     # ── Prediction: skill predictor every cycle in-combat ──
                     try:
                         _sp = getattr(self, '_skill_predictor_internal', None)
-                        if _sp and signals.get('in_combat', False):
-                            _casting = signals.get('casting_info', {})
-                            if _casting:
-                                _pred = _sp.predict_skill(
-                                    _casting.get('caster_class', ''),
-                                    _casting.get('cast_time_ms', 0)
-                                )
-                                if _pred and _pred.predicted_skill:
-                                    _actions.append(HeuristicAction(
-                                        kind="reflex_override",
-                                        command=f"prediction:incoming={_pred.predicted_skill} confidence={_pred.confidence:.2f}",
-                                        confidence=min(1.0, _pred.confidence * 1.5),
-                                        reason=f"Predicted incoming skill: {_pred.predicted_skill}",
-                                        domain="prediction",
-                                    ))
+                        _combat = signals.get('combat', {}) or {}
+                        if _sp and _combat.get('is_in_combat', False):
+                            # Scan actors list for casting monsters/players
+                            _actors = signals.get('actors', []) or []
+                            for _actor in _actors:
+                                _cast = _actor.get('casting') if isinstance(_actor, dict) else None
+                                if _cast:
+                                    _pred = _sp.predict_skill(
+                                        _cast.get('caster_class', '') or str(_actor.get('name', '')),
+                                        float(_cast.get('time', 0) if isinstance(_cast, dict) else 0),
+                                    )
+                                    if _pred and _pred.predicted_skill:
+                                        _actions.append(HeuristicAction(
+                                            kind="reflex_override",
+                                            command=f"prediction:incoming={_pred.predicted_skill} confidence={_pred.confidence:.2f}",
+                                            confidence=min(1.0, _pred.confidence * 1.5),
+                                            reason=f"Predicted incoming skill: {_pred.predicted_skill}",
+                                            domain="prediction",
+                                        ))
                     except Exception:
                         pass
                     # ── Prediction: server tick sync ──
