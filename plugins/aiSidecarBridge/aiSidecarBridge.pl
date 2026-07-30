@@ -313,11 +313,12 @@ sub on_network_state_changed {
 	warning "[aiSidecarBridge] Network state changed: $state\n", 'aiSidecarBridge', 3;
 	# State 0=disconnected, 1=connecting, 2=connected, 3=disconnecting
 	if ($state == 2) {
-		$_sidecar_ready = 1 if _sidecar_ping();
-		# Send initial discovery tables once connected
-		eval { _send_discovery_tables(); 1; };
+		# Try to register with sidecar immediately
+		_eval_guard(sub { _attempt_register(); 1; });
+		# Send initial discovery tables
+		_eval_guard(sub { _send_discovery_data(); 1; });
 	} elsif ($state == 0) {
-		$_sidecar_ready = 0;
+		$_registered = 0 if defined $_registered;
 		# Clear action queue on disconnect
 		my $bot_id = _bot_id();
 		delete $_action_queue{$bot_id} if exists $_action_queue{$bot_id};
