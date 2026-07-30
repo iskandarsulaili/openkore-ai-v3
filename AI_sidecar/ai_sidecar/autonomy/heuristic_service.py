@@ -89,6 +89,14 @@ from ai_sidecar.domains.social.party_synergy import PartySynergyEngine, get_part
 from ai_sidecar.woe.emperium_mechanics import get_emperium_mechanics
 from ai_sidecar.woe.battlefield_awareness import get_battlefield_awareness
 from ai_sidecar.woe.castle_intel import get_castle_intelligence
+from ai_sidecar.prediction.self_learning_skill_predictor import SelfLearningSkillPredictor
+from ai_sidecar.prediction.path_predictor import PathPredictor
+from ai_sidecar.prediction.self_learning_spawn_tracker import SelfLearningSpawnTracker
+from ai_sidecar.prediction.mvp_finisher import MvpFinisher
+from ai_sidecar.prediction.server_tick_synchronizer import ServerTickSynchronizer
+from ai_sidecar.anti_detection.bridge_wiring import get_bridge_wiring
+from ai_sidecar.anti_detection.command_pacing import get_command_pacer
+from ai_sidecar.anti_detection.session_profile import get_session_profiler
 
 logger = logging.getLogger(__name__)
 
@@ -1451,6 +1459,11 @@ class HeuristicService:
                     ("LifecycleManager", "ai_sidecar.domains.progression.lifecycle", "_connection_lifecycle"),
                     ("ColdStartManager", "ai_sidecar.domains.progression.cold_start", "_cold_start_manager"),
                     ("CompetitionAwareFarming", "ai_sidecar.domains.farming.competition", "_competition_planner"),
+                    ("SelfLearningSkillPredictor", "ai_sidecar.prediction.self_learning_skill_predictor", "_skill_predictor_internal"),
+                    ("PathPredictor", "ai_sidecar.prediction.path_predictor", "_path_predictor_internal"),
+                    ("SelfLearningSpawnTracker", "ai_sidecar.prediction.self_learning_spawn_tracker", "_spawn_tracker_internal"),
+                    ("MvpFinisher", "ai_sidecar.prediction.mvp_finisher", "_mvp_finisher_internal"),
+                    ("ServerTickSynchronizer", "ai_sidecar.prediction.server_tick_synchronizer", "_tick_sync_internal"),
                 ]:
                     try:
                         import importlib
@@ -1558,6 +1571,54 @@ class HeuristicService:
                     # ── Party Synergy: run every cycle in-party ──
                     try:
                         self._party_synergy.assess(signals, _actions, _bot_id)
+                    except Exception:
+                        pass
+                    # ── Prediction: skill predictor every cycle in-combat ──
+                    try:
+                        _sp = getattr(self, '_skill_predictor_internal', None)
+                        if _sp and signals.get('in_combat', False):
+                            _casting = signals.get('casting_info', {})
+                            if _casting:
+                                _pred = _sp.predict_skill(
+                                    _casting.get('caster_class', ''),
+                                    _casting.get('cast_time_ms', 0)
+                                )
+                                if _pred and _pred.predicted_skill:
+                                    _actions.append(HeuristicAction(
+                                        kind="reflex_override",
+                                        command=f"prediction:incoming={_pred.predicted_skill} confidence={_pred.confidence:.2f}",
+                                        confidence=min(1.0, _pred.confidence * 1.5),
+                                        reason=f"Predicted incoming skill: {_pred.predicted_skill}",
+                                        domain="prediction",
+                                    ))
+                    except Exception:
+                        pass
+                    # ── Prediction: server tick sync ──
+                    try:
+                        _ts = getattr(self, '_tick_sync_internal', None)
+                        if _ts:
+                            _ts.record_packet_interval(20.0)  # Default, learned over time
+                            if _ts.should_send_now():
+                                _actions.append(HeuristicAction(
+                                    kind="timing", command="tick_aligned_send",
+                                    confidence=0.6,
+                                    reason="Tick-aligned send ready",
+                                    domain="prediction",
+                                ))
+                    except Exception:
+                        pass
+                    # ── Anti-detection: bridge wiring ──
+                    try:
+                        _bw = get_bridge_wiring()
+                        _cfg = _bw.get_config_push(_bot_id)
+                        if _cfg:
+                            _actions.append(HeuristicAction(
+                                kind="config_push", command=f"anti_detection_config",
+                                confidence=0.9,
+                                reason="Anti-detection config push",
+                                domain="anti_detection",
+                                metadata=_cfg,
+                            ))
                     except Exception:
                         pass
                     if self._cold_start_planner:
