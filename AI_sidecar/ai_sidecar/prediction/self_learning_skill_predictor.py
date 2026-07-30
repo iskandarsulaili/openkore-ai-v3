@@ -135,6 +135,110 @@ class SelfLearningSkillPredictor:
         self._total_predictions: int = 0
         self._start_time: float = time.time()
 
+        # Seed baseline RO knowledge so the predictor isn't empty on first run
+        self.seed_default_knowledge()
+
+    # ── Seed default knowledge ──────────────────────────────────────────
+
+    def seed_default_knowledge(self) -> None:
+        """Populate known RO skill signatures so predictions work from day one.
+
+        These are baseline cast times from official RO mechanics.  The
+        self-learning layer will adjust them as real observations come in.
+        """
+        # Wizard
+        wizard_skills: dict[str, float] = {
+            "fire_bolt": 1500,
+            "cold_bolt": 1500,
+            "lightning_bolt": 1500,
+            "storm_gust": 5000,
+            "meteor_storm": 6000,
+            "lord_of_vermillion": 5000,
+            "heavens_drive": 4000,
+            "thunderstorm": 3000,
+        }
+        # Priest
+        priest_skills: dict[str, float] = {
+            "heal": 1000,
+            "blessing": 2000,
+            "increase_agility": 2000,
+            "magnificat": 2000,
+            "gloria": 3000,
+            "kyrie_eleison": 2000,
+            "assumptio": 3000,
+            "lex_aeterna": 1000,
+        }
+        # Hunter
+        hunter_skills: dict[str, float] = {
+            "anklesnare": 500,
+            "double_strafing": 0,
+            "arrow_shower": 0,
+            "blast_arrow": 1500,
+        }
+        # Knight
+        knight_skills: dict[str, float] = {
+            "bowling_bash": 500,
+            "bash": 0,
+            "magnum_break": 0,
+            "brandish_spear": 1000,
+            "spear_boomerang": 500,
+        }
+        # Assassin
+        assassin_skills: dict[str, float] = {
+            "sonic_blow": 0,
+            "grimtooth": 0,
+            "soul_destroyer": 2000,
+        }
+        # Blacksmith
+        blacksmith_skills: dict[str, float] = {
+            "hammer_fall": 1000,
+            "power_thrust": 0,
+            "weapon_perfection": 2000,
+        }
+        # Sage
+        sage_skills: dict[str, float] = {
+            "endow": 2000,
+            "deluge": 3000,
+            "volcano": 3000,
+            "violent_gale": 3000,
+        }
+        # Dancer / Bard
+        dancer_bard_skills: dict[str, float] = {
+            "hypnotist_waltz": 3000,
+            "experience_increase": 3000,
+        }
+
+        all_classes: list[tuple[str, dict[str, float]]] = [
+            ("wizard", wizard_skills),
+            ("priest", priest_skills),
+            ("hunter", hunter_skills),
+            ("knight", knight_skills),
+            ("assassin", assassin_skills),
+            ("blacksmith", blacksmith_skills),
+            ("sage", sage_skills),
+            ("dancer_bard", dancer_bard_skills),
+        ]
+
+        now = time.time()
+        for class_name, skill_map in all_classes:
+            class_key = class_name.lower()
+            for skill_name, cast_ms in skill_map.items():
+                sig = SkillSignature(
+                    skill_name=skill_name,
+                    caster_class=class_name.title(),
+                    cast_time_ms=cast_ms,
+                    cast_time_std=100.0,          # Baseline variance
+                    observations=3,                # Starts "reliable"
+                    last_seen=now,
+                    confidence=0.5,                # Moderate baseline confidence
+                )
+                self._skill_db[class_key][skill_name] = sig
+                self._class_cast_ranges[class_key] = {
+                    "min_ms": cast_ms,
+                    "max_ms": cast_ms,
+                    "avg_ms": cast_ms,
+                }
+
     # ── Prediction ──────────────────────────────────────────────────────
 
     def predict_skill(

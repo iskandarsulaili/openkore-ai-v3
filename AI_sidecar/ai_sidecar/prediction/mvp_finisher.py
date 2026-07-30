@@ -46,6 +46,13 @@ BASE_MVP_HP_ESTIMATES: dict[str, int] = {
     "doppelganger": 1600000,
     "gloom_under_night": 2800000,
     "turtle_general": 1300000,
+    "moonlight_flower": 1100000,
+    "osiris": 1900000,
+    "phreeoni": 1200000,
+    "orc_hero": 1500000,
+    "orc_lord": 2100000,
+    "maya": 1700000,
+    "mistress": 1000000,
 }
 
 
@@ -170,6 +177,105 @@ class MvpFinisher:
         self._latency_samples: int = 0
 
         self._start_time: float = time.time()
+
+        # Seed MVP knowledge so the finisher isn't empty on first run
+        self.seed_mvp_knowledge()
+
+    # ── Seed MVP knowledge ──────────────────────────────────────────────
+
+    def seed_mvp_knowledge(self) -> None:
+        """Populate known MVP behaviours so finisher decisions are informed
+        from day one.
+
+        Each entry records:
+          - Where the MVP spawns (for path planning)
+          - Key combat mechanics (element shifts, clones, summons, etc.)
+          - Baseline HP estimate
+        """
+        mvp_data: list[dict[str, Any]] = [
+            {
+                "name": "Eddga",
+                "spawn_map": "pay_fild03",
+                "mechanics": "Shifts to Fire element below 25% HP",
+                "hp": 1800000,
+            },
+            {
+                "name": "Moonlight Flower",
+                "spawn_map": "umbala_dun01",
+                "mechanics": "Clones at 50% HP",
+                "hp": 1100000,
+            },
+            {
+                "name": "Drake",
+                "spawn_map": "trev_dun02",
+                "mechanics": "Summons skeletons",
+                "hp": 1400000,
+            },
+            {
+                "name": "Osiris",
+                "spawn_map": "moc_pryd05",
+                "mechanics": "Teleports",
+                "hp": 1900000,
+            },
+            {
+                "name": "Doppelganger",
+                "spawn_map": "gef_dun01",
+                "mechanics": "Clones at 75% HP",
+                "hp": 1600000,
+            },
+            {
+                "name": "Phreeoni",
+                "spawn_map": "mjolnir_12",
+                "mechanics": "Runs at low HP",
+                "hp": 1200000,
+            },
+            {
+                "name": "Orc Hero",
+                "spawn_map": "orc_dun02",
+                "mechanics": "Stuns with skill",
+                "hp": 1500000,
+            },
+            {
+                "name": "Orc Lord",
+                "spawn_map": "orc_dun03",
+                "mechanics": "Calls orcs",
+                "hp": 2100000,
+            },
+            {
+                "name": "Baphomet",
+                "spawn_map": "nif_dun02",
+                "mechanics": "Teleports + AoE",
+                "hp": 2200000,
+            },
+            {
+                "name": "Maya",
+                "spawn_map": "ant_dun01",
+                "mechanics": "Immune to physical when shell up",
+                "hp": 1700000,
+            },
+            {
+                "name": "Mistress",
+                "spawn_map": "tur_dun01",
+                "mechanics": "Flies away",
+                "hp": 1000000,
+            },
+        ]
+
+        now = time.time()
+        for entry in mvp_data:
+            key = entry["name"].lower()
+            if key in self._mvp_models:
+                continue  # Don't overwrite a model that already exists
+
+            model = MvpModel(mvp_name=entry["name"])
+            model.estimated_max_hp = entry["hp"]
+            model.encounters = 1
+            model.total_attempts = 1
+            model.optimal_threshold = DEFAULT_FINISHER_THRESHOLD
+            model.last_encounter_time = now
+            model.confidence = 0.3  # Baseline — improved by real encounters
+
+            self._mvp_models[key] = model
 
     # ── Active tracking ────────────────────────────────────────────────
 

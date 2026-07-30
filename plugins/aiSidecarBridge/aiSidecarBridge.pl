@@ -197,6 +197,7 @@ my $_state_builders;
 my $_last_emergency_move = 0;
 
 my @ack_queue;
+my %_action_queue;
 my @telemetry_queue;
 my @event_queue;
 my @chat_queue;

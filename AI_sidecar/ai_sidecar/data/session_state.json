@@ -1,0 +1,26 @@
+{
+  "config": {
+    "max_session_hours": 3.0,
+    "min_offline_hours": 2.0,
+    "max_offline_hours": 6.0,
+    "daily_play_cap_hours": 8.0,
+    "max_time_on_map_hours": 2.0,
+    "avoid_peak_hours": true,
+    "peak_hour_start": 20,
+    "peak_hour_end": 23
+  },
+  "bot_states": {
+    "test_bot_01": {
+      "bot_id": "test_bot_01",
+      "session_start": 1785425720.5336566,
+      "total_today": 0.0002989768981933594,
+      "last_logout": 1785425720.5339556,
+      "current_map": "",
+      "map_enter_time": 0.0,
+      "sessions_today": 1,
+      "is_logged_out": true,
+      "scheduled_login_at": 1785442413.0034277
+    }
+  },
+  "_saved_at": 1785425720.534011
+}

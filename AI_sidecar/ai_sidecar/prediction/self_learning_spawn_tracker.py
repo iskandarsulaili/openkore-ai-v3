@@ -188,6 +188,75 @@ class SelfLearningSpawnTracker:
         self._total_first_hits: int = 0
         self._start_time: float = time.time()
 
+        # Seed common spawn points so the tracker isn't empty on first run
+        self.seed_common_spawns()
+
+    # ── Seed common spawns ──────────────────────────────────────────────
+
+    def seed_common_spawns(self) -> None:
+        """Populate known spawn points for common farming maps.
+
+        These are canonical spawn locations from official RO map data.
+        The self-learning layer will refine timers and discover new points
+        as the bot observes real spawns.
+        """
+        spawn_data: dict[str, list[tuple[str, int, int, int, int]]] = {
+            "prt_fild01": [
+                ("poring", 50, 50, 70, 70),
+                ("poring", 30, 30, 40, 40),
+                ("lunatic", 20, 20, 30, 30),
+            ],
+            "pay_fild01": [
+                ("savage_babe", 120, 120, 150, 150),
+                ("yoyo", 80, 80, 100, 100),
+            ],
+            "gef_fild01": [
+                ("creamy", 100, 100, 130, 130),
+                ("willow", 80, 80, 90, 90),
+            ],
+            "mjolnir_01": [
+                ("wolf", 50, 50, 70, 70),
+                ("vadon", 30, 30, 50, 50),
+            ],
+            "orc_dun01": [
+                ("orc_warrior", 50, 50, 80, 80),
+                ("orc_archer", 30, 30, 50, 50),
+                ("orc_lady", 80, 80, 100, 100),
+            ],
+        }
+
+        now = time.time()
+        for _map_name, entries in spawn_data.items():
+            for monster_name, x1, y1, x2, y2 in entries:
+                # Use the centre of the spawn rectangle as the representative point
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                name_key = monster_name.lower()
+                spawn_key = (
+                    int(round(cx / SPAWN_GRID_SIZE)),
+                    int(round(cy / SPAWN_GRID_SIZE)),
+                )
+                model_key = (name_key, spawn_key)
+
+                if model_key not in self._spawn_models:
+                    model = SpawnTimerModel(
+                        monster_name=monster_name,
+                        spawn_x=cx,
+                        spawn_y=cy,
+                        spawn_key=spawn_key,
+                    )
+                    # Give seeded models a baseline confidence so the tracker
+                    # treats them as known-but-unconfirmed locations.
+                    model.observations = 1
+                    model.confidence = 0.3
+                    model.last_death_time = now - model.average_interval  # Pretend it died one respawn-cycle ago
+                    model.predicted_next_spawn = now + 30
+                    model.spawn_window_start = now + 15
+                    model.spawn_window_end = now + 90
+
+                    self._spawn_models[model_key] = model
+                    self._monster_spawns[name_key].append(spawn_key)
+
     # ── Core recording ─────────────────────────────────────────────────
 
     def record_death(
