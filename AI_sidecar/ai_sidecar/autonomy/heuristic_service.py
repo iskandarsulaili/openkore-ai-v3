@@ -1667,6 +1667,40 @@ class HeuristicService:
                                 ))
                     except Exception:
                         pass
+                    # ── Session Manager: anti-24/7 logout scheduling ──
+                    try:
+                        from ai_sidecar.autonomy.session_manager import get_session_manager
+                        _sm = get_session_manager()
+                        # Ensure bot is registered
+                        if not _sm.is_online(_bot_id):
+                            _sm.start_session(_bot_id)
+                        if _sm.should_logout(_bot_id):
+                            _actions.append(HeuristicAction(
+                                kind="command", command="quit",
+                                confidence=0.95, domain="session",
+                                reason="Session time limit reached",
+                            ))
+                        elif _sm.should_rotate_map(_bot_id, str(signals.get("map", "") or ""), 0):
+                            _actions.append(HeuristicAction(
+                                kind="command", command="move_random",
+                                confidence=0.7, domain="session",
+                                reason="Map rotation due",
+                            ))
+                    except Exception:
+                        pass
+                    # ── Farming Routes: level-based route suggestion ──
+                    try:
+                        from ai_sidecar.domains.navigation.farming_routes import route_for_level
+                        _bl = int(signals.get("vitals", {}).get("base_level", 1) or 1)
+                        _route = route_for_level(_bl)
+                        if _route:
+                            _actions.append(HeuristicAction(
+                                kind="log", command=f"recommend_route:{_route.map_name}",
+                                confidence=0.5, domain="navigation",
+                                reason=f"Level {_bl} route: {_route.map_name} ({_route.zeny_per_hour_estimate} z/h)",
+                            ))
+                    except Exception:
+                        pass
                     if self._cold_start_planner:
                         _bl = int(signals.get("base_level", 1) or 1)
                         _job = str(signals.get("job", "") or "").lower()

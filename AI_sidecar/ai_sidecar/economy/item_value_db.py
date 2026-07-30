@@ -111,6 +111,26 @@ class ItemValueDB:
 
     def __post_init__(self) -> None:
         self._load_knowledge()
+        self._seed_market_prices()
+
+    def _seed_market_prices(self) -> None:
+        """Seed realistic market prices from market_seeder on top of knowledge.json data."""
+        try:
+            from ai_sidecar.economy.market_seeder import MarketSeeder
+            _seeder = MarketSeeder()
+            _prices = _seeder.seed_prices()
+            _count = 0
+            for _name, _price in _prices.items():
+                _low = _name.lower()
+                for _item in self._items.values():
+                    if _item.name.lower() == _low or _item.aegis_name.lower() == _low:
+                        _item.market_value = _price
+                        _item.value_density = _price / max(_item.weight, 1)
+                        _count += 1
+                        break
+            logger.info("market_prices_seeded: %d items updated from market_seeder", _count)
+        except Exception as exc:
+            logger.debug("market_seeder_skipped: %s", exc)
 
     def _load_knowledge(self) -> None:
         """Load knowledge.json and build item valuations."""
