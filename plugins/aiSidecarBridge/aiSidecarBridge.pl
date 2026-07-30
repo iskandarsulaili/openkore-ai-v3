@@ -1183,12 +1183,15 @@ sub on_command_intercept {
 				target_x => $tx,
 				target_y => $ty,
 			});
-			if ($resp && $resp->{humanized}) {
-				my $hx = int($resp->{humanized_x} + 0.5);
-				my $hy = int($resp->{humanized_y} + 0.5);
+			# _http_post_json returns {status, error, json, raw}
+			# The actual response fields are in ->{json}
+			my $body = $resp ? $resp->{json} : undef;
+			if ($body && $body->{humanized}) {
+				my $hx = int($body->{humanized_x} + 0.5);
+				my $hy = int($body->{humanized_y} + 0.5);
 				if ($hx != $tx || $hy != $ty) {
 					$args->{args} = "$hx $hy";
-					debug "[aiSidecarBridge] move humanized: ($tx,$ty) -> ($hx,$hy) dev=${\($resp->{deviation})}\n", 'aiSidecarBridge', 3;
+					debug "[aiSidecarBridge] move humanized: ($tx,$ty) -> ($hx,$hy) dev=$body->{deviation}\n", 'aiSidecarBridge', 3;
 				}
 			}
 		}
