@@ -25,6 +25,10 @@ from ai_sidecar.prediction.mvp_finisher import (
     MvpFinisherObservation,
 )
 from ai_sidecar.prediction.server_tick_synchronizer import ServerTickSynchronizer
+from ai_sidecar.prediction.persistence import (
+    save_module_state, load_module_state,
+    save_all_prediction_state, get_persist_cycle_checker,
+)
 
 __all__ = [
     "SelfLearningSkillPredictor",

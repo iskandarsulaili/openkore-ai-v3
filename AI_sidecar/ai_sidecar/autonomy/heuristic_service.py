@@ -1563,6 +1563,17 @@ class HeuristicService:
                     if self._swarm_coordinator:
                         _sa = self._swarm_coordinator.tick(_bot_id, signals)
                         _actions.extend(_sa)
+                    # ── Monster AI: per-monster behavior overrides ──
+                    try:
+                        _mon_name = str(signals.get("attacked_monster", "") or "")
+                        if _mon_name:
+                            _tactic = get_monster_tactic(_mon_name)
+                            if _tactic in ("isolate", "stun_first"):
+                                _actions.append(HeuristicAction(kind="combat", command=f"monster_behavior:{_tactic}", confidence=0.8, reason=f"{_mon_name} needs {_tactic}", domain="monster_ai"))
+                            if should_one_shot(_mon_name):
+                                _actions.append(HeuristicAction(kind="combat", command=f"one_shot:{_mon_name}", confidence=0.85, reason=f"{_mon_name} should be one-shot", domain="monster_ai"))
+                    except Exception:
+                        pass
                     # ── Game Sense: run every cycle in-game ──
                     try:
                         self._game_sense.assess(signals, _actions, _bot_id)

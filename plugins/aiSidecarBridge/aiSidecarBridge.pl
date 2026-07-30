@@ -314,9 +314,9 @@ sub on_network_state_changed {
 	# State 0=disconnected, 1=connecting, 2=connected, 3=disconnecting
 	if ($state == 2) {
 		# Try to register with sidecar immediately
-		_eval_guard(sub { _attempt_register(); 1; });
+		eval { _attempt_register(); 1; };
 		# Send initial discovery tables
-		_eval_guard(sub { _send_discovery_data(); 1; });
+		eval { _send_discovery_data(); 1; };
 	} elsif ($state == 0) {
 		$_registered = 0 if defined $_registered;
 		# Clear action queue on disconnect
