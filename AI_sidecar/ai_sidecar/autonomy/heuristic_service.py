@@ -1646,6 +1646,27 @@ class HeuristicService:
                             ))
                     except Exception:
                         pass
+                    # ── Anti-detection: periodic anti-afk (every 300 cycles ≈5min) ──
+                    try:
+                        _afk_cycle = getattr(self, '_afk_cycle', 0) + 1
+                        self._afk_cycle = _afk_cycle
+                        if _afk_cycle % 300 == 0:
+                            from ai_sidecar.anti_detection.anti_afk import get_anti_afk_engine
+                            _afk = get_anti_afk_engine()
+                            _afk_action = _afk.get_next_action(_bot_id)
+                            if _afk_action:
+                                # Convert AntiAfkAction to a bridge-consumable command string
+                                _cmd = f"anti_afk:{_afk_action.action_type}"
+                                if _afk_action.parameters:
+                                    _params = ";".join(f"{k}={v}" for k, v in _afk_action.parameters.items())
+                                    _cmd += f":{_params}"
+                                _actions.append(HeuristicAction(
+                                    kind="anti_afk", command=_cmd,
+                                    confidence=0.3, domain="anti_detection",
+                                    reason=f"Anti-AFK: {_afk_action.action_type}",
+                                ))
+                    except Exception:
+                        pass
                     if self._cold_start_planner:
                         _bl = int(signals.get("base_level", 1) or 1)
                         _job = str(signals.get("job", "") or "").lower()
