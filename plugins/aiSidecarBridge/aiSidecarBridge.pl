@@ -318,7 +318,6 @@ sub on_network_state_changed {
 		# Send initial discovery tables
 		eval { _send_discovery_data(); 1; };
 	} elsif ($state == 0) {
-		$_registered = 0 if defined $_registered;
 		# Clear action queue on disconnect
 		my $bot_id = _bot_id();
 		delete $_action_queue{$bot_id} if exists $_action_queue{$bot_id};
