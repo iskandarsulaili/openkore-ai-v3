@@ -335,15 +335,17 @@ def _gaussian_deviation_2d(
     Used by route_humanizer to add realistic path variation.
     """
     import math
+    import random
+    _rng = random.Random()
     dx = target_x - x
     dy = target_y - y
     dist = math.sqrt(dx * dx + dy * dy) or 1.0
     # σ grows with distance but also has a random component per step
     sigma = max(0.5, dist * 0.05 * strength)
     # Add noise to the TARGET coordinates, not the source
-    # This produces a waypoint near the intended destination
-    nx = target_x + random.gauss(0, sigma * 0.3)
-    ny = target_y + random.gauss(0, sigma * 0.3)
+    # Uses per-call Random instance to avoid thread-safety issues with shared random state
+    nx = target_x + _rng.gauss(0, sigma * 0.3)
+    ny = target_y + _rng.gauss(0, sigma * 0.3)
     # Clamp so we don't overshoot dramatically
     max_dev = max(3.0, dist * 0.3)
     nx = max(target_x - max_dev, min(target_x + max_dev, nx))

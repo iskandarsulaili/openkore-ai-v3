@@ -108,6 +108,7 @@ our %_last_reflex_fire_ms = ();
 
 # Committed action guard - prevents conflicting commands within 30s window
 our %_committed_actions = ();
+our $_last_move_humanize_ms = 0;
 our %_pending_batch_actions = ();
 our $COMMITTED_ACTION_COOLDOWN_MS = 30000;
 
@@ -1169,9 +1170,12 @@ sub on_command_intercept {
 		my $ty = int($2);
 		my $cx = ($char && $char->{pos_to}) ? int($char->{pos_to}{x}) : 0;
 		my $cy = ($char && $char->{pos_to}) ? int($char->{pos_to}{y}) : 0;
-		# Only humanize if target is within a reasonable distance
+		# Rate limit: only humanize every 1s to avoid blocking main loop
+		my $now_ms = int(Time::HiRes::time() * 1000);
+		my $last_ms = $_last_move_humanize_ms || 0;
 		my $dist = abs($tx - $cx) + abs($ty - $cy);
-		if ($dist > 3 && $dist < 100) {
+		if ($dist > 3 && $dist < 100 && ($now_ms - $last_ms) > 1000) {
+			$_last_move_humanize_ms = $now_ms;
 			my $resp = _http_post_json('/v1/humanize/move', {
 				bot_id => _scalarize(_bot_id()),
 				current_x => $cx,
@@ -1182,7 +1186,6 @@ sub on_command_intercept {
 			if ($resp && $resp->{humanized}) {
 				my $hx = int($resp->{humanized_x} + 0.5);
 				my $hy = int($resp->{humanized_y} + 0.5);
-				# Only apply if coordinates actually changed
 				if ($hx != $tx || $hy != $ty) {
 					$args->{args} = "$hx $hy";
 					debug "[aiSidecarBridge] move humanized: ($tx,$ty) -> ($hx,$hy) dev=${\($resp->{deviation})}\n", 'aiSidecarBridge', 3;
