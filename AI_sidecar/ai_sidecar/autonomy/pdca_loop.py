@@ -4205,6 +4205,131 @@ class PDCALoop:
                         except Exception as e:
                             logger.warning("reinforcement_learner_init_failed: %s", e)
 
+                    # ── NEW: Initialize Empire Manager ──
+                    _emp = getattr(self._runtime, "empire_manager", None)
+                    if _emp is None:
+                        try:
+                            from ai_sidecar.strategy.empire_manager import EmpireManager
+                            _emp = EmpireManager()
+                            # Wire enqueue function
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _emp._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"emp-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.strategic,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=60),
+                                    idempotency_key=f"emp-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            # Wire dependencies
+                            _mas = getattr(self._runtime, "multi_account_synergy", None)
+                            if _mas is not None:
+                                _emp._multi_account_synergy = _mas
+                            _fleet = getattr(self._runtime, "fleet_coordinator", None)
+                            if _fleet is not None:
+                                _emp._fleet_coordinator = _fleet
+                            _ci = getattr(self._runtime, "competitive_intelligence", None)
+                            if _ci is not None:
+                                _emp._competitive_intelligence = _ci
+                            _cm = getattr(self._runtime, "crisis_manager", None)
+                            if _cm is not None:
+                                _emp._crisis_manager = _cm
+                            _se = getattr(self._runtime, "social_engine", None)
+                            if _se is not None:
+                                _emp._social_engine = _se
+                            _me = getattr(self._runtime, "market_engine", None)
+                            if _me is not None:
+                                _emp._market_engine = _me
+                            self._runtime.empire_manager = _emp
+                            logger.info("empire_manager_initialized")
+                        except Exception as e:
+                            logger.warning("empire_manager_init_failed: %s", e)
+
+                    # ── NEW: Initialize Theory of Mind ──
+                    _tom = getattr(self._runtime, "theory_of_mind", None)
+                    if _tom is None:
+                        try:
+                            from ai_sidecar.strategy.theory_of_mind import TheoryOfMind
+                            _tom = TheoryOfMind()
+                            # Wire dependencies
+                            _ci = getattr(self._runtime, "competitive_intelligence", None)
+                            if _ci is not None:
+                                _tom._competitive_intelligence = _ci
+                            _se = getattr(self._runtime, "social_engine", None)
+                            if _se is not None:
+                                _tom._social_engine = _se
+                            _emp = getattr(self._runtime, "empire_manager", None)
+                            if _emp is not None:
+                                _tom._empire_manager = _emp
+                            self._runtime.theory_of_mind = _tom
+                            logger.info("theory_of_mind_initialized")
+                        except Exception as e:
+                            logger.warning("theory_of_mind_init_failed: %s", e)
+
+                    # ── NEW: Initialize Unified Consciousness ──
+                    _uc = getattr(self._runtime, "unified_consciousness", None)
+                    if _uc is None:
+                        try:
+                            from ai_sidecar.strategy.unified_consciousness import UnifiedConsciousness
+                            _uc = UnifiedConsciousness()
+                            # Wire enqueue function
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _uc._enqueue_fn = lambda bot_id, cmd: _aq.enqueue(bot_id, _AP(
+                                    action_id=f"uc-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command",
+                                    command=cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.strategic,
+                                    source="manual",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=60),
+                                    idempotency_key=f"uc-{int(_dt.now(UTC).timestamp())}",
+                                ))
+                            # Wire all dependencies
+                            _emp = getattr(self._runtime, "empire_manager", None)
+                            if _emp is not None:
+                                _uc._empire_manager = _emp
+                            _tom = getattr(self._runtime, "theory_of_mind", None)
+                            if _tom is not None:
+                                _uc._theory_of_mind = _tom
+                            _ci = getattr(self._runtime, "competitive_intelligence", None)
+                            if _ci is not None:
+                                _uc._competitive_intelligence = _ci
+                            _cm = getattr(self._runtime, "crisis_manager", None)
+                            if _cm is not None:
+                                _uc._crisis_manager = _cm
+                            _ce = getattr(self._runtime, "conscious_engine", None)
+                            if _ce is not None:
+                                _uc._conscious_engine = _ce
+                            _ltp = getattr(self._runtime, "long_term_planner", None)
+                            if _ltp is not None:
+                                _uc._long_term_planner = _ltp
+                            _mas = getattr(self._runtime, "multi_account_synergy", None)
+                            if _mas is not None:
+                                _uc._multi_account_synergy = _mas
+                            _fleet = getattr(self._runtime, "fleet_coordinator", None)
+                            if _fleet is not None:
+                                _uc._fleet_coordinator = _fleet
+                            _se = getattr(self._runtime, "social_engine", None)
+                            if _se is not None:
+                                _uc._social_engine = _se
+                            _me = getattr(self._runtime, "market_engine", None)
+                            if _me is not None:
+                                _uc._market_engine = _me
+                            self._runtime.unified_consciousness = _uc
+                            logger.info("unified_consciousness_initialized")
+                        except Exception as e:
+                            logger.warning("unified_consciousness_init_failed: %s", e)
+
                     self._services_initialized = True
 
 
@@ -5120,6 +5245,38 @@ class PDCALoop:
                                 _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
                         except Exception:
                             pass
+                        # ── UNIFIED CONSCIOUSNESS: primary decision-maker (runs every cycle) ──
+                        try:
+                            _uc = getattr(self._runtime, "unified_consciousness", None)
+                            if _uc is not None:
+                                # Build signals from snapshot for consciousness tick
+                                _uc_signals = {
+                                    "bot_id": _bid,
+                                    "horizon": horizon.value,
+                                }
+                                _uc_snap = None
+                                _uc_sc = getattr(self._runtime, "snapshot_cache", None)
+                                if _uc_sc is not None and hasattr(_uc_sc, 'get'):
+                                    _uc_snap = _uc_sc.get(_bid)
+                                if _uc_snap is not None:
+                                    if isinstance(_uc_snap, dict):
+                                        _uc_signals.update(_uc_snap)
+                                    else:
+                                        try:
+                                            _uc_snap_dict = _uc_snap.model_dump(mode='json') if hasattr(_uc_snap, 'model_dump') else {}
+                                            _uc_signals.update(_uc_snap_dict)
+                                        except Exception:
+                                            pass
+                                # Run consciousness tick
+                                _uc_decisions = _uc.consciousness_tick(_uc_signals)
+                                if _uc_decisions:
+                                    _total_actions += len(_uc_decisions)
+                                    logger.info(
+                                        "consciousness_tick: bot=%s decisions=%d horizon=%s",
+                                        _bid, len(_uc_decisions), horizon.value,
+                                    )
+                        except Exception as e:
+                            logger.warning("consciousness_tick_error: %s", e)
                         # ── GOD MODE: override layer before heuristic (runs every cycle) ──
                         try:
                             _gm_sc = getattr(self._runtime, "snapshot_cache", None)
