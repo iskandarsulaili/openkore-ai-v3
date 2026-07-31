@@ -380,6 +380,11 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Kills per minute
                         _kpm = latest.get("raw", {}).get("kills_per_min", 0) or 0
                         signals["kills_per_min"] = float(_kpm)
+                        # Character list (from bridge snapshot)
+                        signals["characters"] = latest.get("characters", []) or []
+                        if not signals["characters"]:
+                            _raw = latest.get("raw", {}) or {}
+                            signals["characters"] = _raw.get("characters", []) or []
                         # Last monster kill
                         _last_kill = latest.get("raw", {}).get("last_monster_kill", "") or ""
                         if _last_kill:
