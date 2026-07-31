@@ -582,10 +582,10 @@ class ColdStartManager:
     ) -> str:
         """Generate a character name from bot_id and slot."""
         prefix = self._config.character_name_prefix
-        # Use bot_id as base, sanitize it
-        base = bot_id.replace("_", "").replace("-", "").replace(" ", "")
-        # Truncate to fit within RO's 24-char limit
-        max_name_len = 24 - len(prefix) - 2  # -2 for slot suffix
+        # Use bot_id as base, sanitize it (RO allows letters/digits/underscore only)
+        base = bot_id.replace("_", "").replace("-", "").replace(" ", "").replace(":", "")
+        # Truncate to fit within RO's 23-char limit (NAME_LENGTH = 23+1 null)
+        max_name_len = 23 - len(prefix) - 2  # -2 for slot suffix
         if max_name_len < 4:
             max_name_len = 4
         base = base[:max_name_len]

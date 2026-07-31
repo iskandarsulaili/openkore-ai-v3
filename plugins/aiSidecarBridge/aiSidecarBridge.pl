@@ -3122,7 +3122,12 @@ sub _execute_action {
 				($effective_command =~ /^char_create\s+(\d+)\s+"([^"]+)"/i);
 			if (defined $_cc_slot && defined $_cc_name && $_cc_name ne '') {
 				debug "[char_create] Creating character '$_cc_name' in slot $_cc_slot ...\n", 'aiSidecarBridge', 1;
-				my $_cc_ok = eval { Misc::createCharacter($_cc_slot, $_cc_name); 1; };
+				my $_cc_ok = 0;
+				my $_cc_err = '';
+				eval {
+					$_cc_ok = Misc::createCharacter($_cc_slot, $_cc_name);
+					1;
+				} or $_cc_err = $@ || 'eval failed';
 				if ($_cc_ok) {
 					($success, $result_code, $msg) = (1, 'ok', "character '$_cc_name' created in slot $_cc_slot");
 					warning "[char_create] SUCCESS: '$_cc_name' in slot $_cc_slot\n", 'aiSidecarBridge', 1;
