@@ -458,8 +458,12 @@ class ColdStartManager:
         )
 
         # Create character command — OpenKore uses char_create via the character select screen
-        # OpenKore command format: "char_create <slot> <name> <str> <agi> <vit> <int> <dex> <luk>"
-        create_cmd = f"char_create {slot} \"{char_name}\" {job_def.base_str} {job_def.base_agi} {job_def.base_vit} {job_def.base_int} {job_def.base_dex} {job_def.base_luk}"
+        # PACKETVER 20250604 server uses char_create 0x0A39 format (matches rathena-ai-world):
+        #   char_create <slot> "<name>" [hairstyle] [haircolor] [job] [sex]
+        # Job: novice|summoner   Sex: M|F  (defaults: novice, F)
+        _job_str = "novice"
+        _sex_str = "M"
+        create_cmd = f"char_create {slot} \"{char_name}\" 0 1 {_job_str} {_sex_str}"
 
         actions.append(HeuristicAction(
             kind="command",
