@@ -6660,9 +6660,1210 @@ sub _apply_ml_override {
 		my $mem_id = $rec->{memory_id};
 		warning("ml_override applied: memory_retrieval=$mem_id (logging only)");
 	} else {
-		warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
+	        warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
+	    }
 	}
-}
 
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Missing periodic-task stubs (called from _poll_next_action) ──
+	# ═══════════════════════════════════════════════════════════════════════════
 
-1;
+	# ── Scan NPC shops from snapshot data (no dialog interaction) ──
+	# Tracks NPCs that have shop data visible in the snapshot.
+	# Called every poll cycle from _poll_next_action.
+	sub _scan_npc_shops {
+	    my $now = _now_ms();
+	    return if $now - $_last_npc_shop_scan_ms < $NPC_SHOP_SCAN_INTERVAL_MS;
+	    $_last_npc_shop_scan_ms = $now;
+
+	    # Collect NPC shop data from the npcs hash
+	    my @shops;
+	    if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	        foreach my $_nid (keys %{$main::npcsList}) {
+	            my $_n = $main::npcsList->{$_nid};
+	            next unless ref($_n) eq 'HASH';
+	            my $_nname = $_n->{name} || '';
+	            next if $_nname eq '';
+	            # Check if this NPC has a shop flag or is a known shop NPC
+	            if ($_n->{shop} || $_nname =~ /tool\s*dealer|kafra|weapon|armor|potion|accessory|item\s*shop|general\s*store|inn/i) {
+	                push @shops, {
+	                    name => $_nname,
+	                    map => $_n->{map} || _safe_field_map() || '',
+	                    x => $_n->{x} || 0,
+	                    y => $_n->{y} || 0,
+	                    shop => $_n->{shop} || 0,
+	                };
+	            }
+	        }
+	    }
+
+	    # Report to sidecar if we found shops
+	    if (@shops) {
+	        _post_event({
+	            kind => 'discovery_shops',
+	            event_type => 'npc.shops_scanned',
+	            severity => 'info',
+	            text => 'NPC shops scanned from snapshot',
+	            shops => \@shops,
+	            count => scalar(@shops),
+	        });
+	        debug "[npc_shops] scanned " . scalar(@shops) . " NPC shops from snapshot\n", 'aiSidecarBridge', 2;
+	    }
+	}
+
+	# ── Scan player vendors from snapshot data (no dialog interaction) ──
+	# Tracks players who are vending (visible in the player list).
+	# Called every poll cycle from _poll_next_action.
+	sub _scan_player_vendors {
+	    my $now = _now_ms();
+	    return if $now - $_last_player_vendor_scan_ms < $PLAYER_VENDOR_SCAN_INTERVAL_MS;
+	    $_last_player_vendor_scan_ms = $now;
+
+	    my @vendors;
+	    if (defined $main::playersList && ref($main::playersList) eq 'HASH') {
+	        foreach my $_pid (keys %{$main::playersList}) {
+	            my $_p = $main::playersList->{$_pid};
+	            next unless ref($_p) eq 'HASH';
+	            my $_pname = $_p->{name} || '';
+	            next if $_pname eq '';
+	            # Check if player is vending (has shop_open flag or vendor title)
+	            if ($_p->{shop_open} || $_p->{vendor_title} || $_p->{vending}) {
+	                push @vendors, {
+	                    name => $_pname,
+	                    map => $_p->{map} || _safe_field_map() || '',
+	                    x => $_p->{x} || 0,
+	                    y => $_p->{y} || 0,
+	                    title => $_p->{vendor_title} || $_p->{shop_title} || '',
+	                };
+	            }
+	        }
+	    }
+
+	    if (@vendors) {
+	        _post_event({
+	            kind => 'discovery_vendors',
+	            event_type => 'player.vendors_scanned',
+	            severity => 'info',
+	            text => 'Player vendors scanned from snapshot',
+	            vendors => \@vendors,
+	            count => scalar(@vendors),
+	        });
+	        debug "[player_vendors] scanned " . scalar(@vendors) . " player vendors from snapshot\n", 'aiSidecarBridge', 2;
+	    }
+	}
+
+	# ── Report party member positions to sidecar ──
+	sub _report_party_positions {
+	    return if !_bridge_enabled();
+	    return if !$registered;
+	    return if !$char;
+	    return if !$char->{party};
+
+	    my $now = _now_ms();
+	    state $_last_rpp_ms = 0;
+	    return if $now - $_last_rpp_ms < 30000;
+	    $_last_rpp_ms = $now;
+
+	    my $map = _safe_field_map() || '';
+	    my ($x, $y);
+	    if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+	        $x = $char->{pos_to}{x}; $y = $char->{pos_to}{y};
+	    } elsif ($char->{pos} && ref $char->{pos} eq 'HASH') {
+	        $x = $char->{pos}{x}; $y = $char->{pos}{y};
+	    }
+	    return if !defined $x || !defined $y;
+
+	    my $resp = _http_post_json('/v2/party/position', {
+	        meta => _meta(_bot_id()),
+	        x => $x + 0,
+	        y => $y + 0,
+	        map => $map,
+	        timestamp => $now,
+	    });
+	    if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+	        debug "[party_position] reported position ($x,$y) on $map\n", 'aiSidecarBridge', 3;
+	    }
+	}
+
+	# ── Report game time to sidecar ──
+	sub _report_game_time {
+	    my $now = _now_ms();
+	    return if $now - $_last_game_time_check_ms < $GAME_TIME_CHECK_INTERVAL_MS;
+	    $_last_game_time_check_ms = $now;
+
+	    # Get server time from OpenKore's internal clock
+	    my $game_time = '';
+	    if (defined $main::timeInfo && ref($main::timeInfo) eq 'HASH') {
+	        $game_time = $main::timeInfo->{serverTime} || '';
+	    }
+	    if ($game_time eq '' && defined $main::field) {
+	        # Fallback: use local time as approximation
+	        my ($sec, $min, $hour) = (localtime(time))[0,1,2];
+	        $game_time = sprintf('%02d:%02d:%02d', $hour, $min, $sec);
+	    }
+
+	    if ($game_time ne '' && $game_time ne $_last_reported_game_time) {
+	        $_last_reported_game_time = $game_time;
+	        _post_event({
+	            kind => 'bridge_event',
+	            event_type => 'game.time',
+	            severity => 'info',
+	            text => "Game time: $game_time",
+	            game_time => $game_time,
+	        });
+	        debug "[game_time] reported: $game_time\n", 'aiSidecarBridge', 2;
+	    }
+	}
+
+	# ── Flush pending server announcements to sidecar ──
+	sub _flush_announcements {
+	    my $now = _now_ms();
+	    return if $now - $_last_announcement_flush_ms < $ANNOUNCEMENT_FLUSH_INTERVAL_MS;
+	    $_last_announcement_flush_ms = $now;
+
+	    return if !@_pending_announcements;
+
+	    my @batch = splice @_pending_announcements, 0, 10;
+	    for my $_ann (@batch) {
+	        _post_event({
+	            kind => 'bridge_event',
+	            event_type => 'server.announcement',
+	            severity => 'info',
+	            text => $_ann,
+	        });
+	    }
+	    debug "[announcements] flushed " . scalar(@batch) . " announcements\n", 'aiSidecarBridge', 2;
+	}
+
+	# ── Detect dispel effects by monitoring buff count changes ──
+	sub _detect_dispel {
+	    my $now = _now_ms();
+	    return if $now - $_last_dispel_check_ms < $DISPEL_CHECK_INTERVAL_MS;
+	    $_last_dispel_check_ms = $now;
+
+	    return if !$char;
+
+	    my @current_buffs;
+	    if ($char->{buffs} && ref($char->{buffs}) eq 'ARRAY') {
+	        @current_buffs = map { $_->{name} || '' } @{$char->{buffs}};
+	    } elsif ($char->{buffs} && ref($char->{buffs}) eq 'HASH') {
+	        @current_buffs = keys %{$char->{buffs}};
+	    }
+	    my $current_count = scalar(@current_buffs);
+
+	    if ($_prev_buff_count > 0 && $current_count < $_prev_buff_count) {
+	        my @lost_buffs;
+	        if (@_prev_buff_names) {
+	            my %current_map = map { $_ => 1 } @current_buffs;
+	            for my $_pb (@_prev_buff_names) {
+	                push @lost_buffs, $_pb if !$current_map{$_pb};
+	            }
+	        }
+	        my $lost_count = scalar(@lost_buffs);
+	        push @_dispel_events, {
+	            detected_at_ms => $now,
+	            map => _safe_field_map() || '',
+	            buffs_lost => \@lost_buffs,
+	            prev_count => $_prev_buff_count,
+	            current_count => $current_count,
+	        };
+	        # Keep only last 10 dispel events
+	        splice @_dispel_events, 0, scalar(@_dispel_events) - 10 if @_dispel_events > 10;
+
+	        _post_event({
+	            kind => 'bridge_reflex',
+	            reflex => 'dispel_detected',
+	            severity => 'warning',
+	            text => "Dispel detected: lost $lost_count buffs",
+	            lost_buffs => join(',', @lost_buffs),
+	            prev_count => $_prev_buff_count,
+	            current_count => $current_count,
+	            map => _safe_field_map() || '',
+	        });
+	        debug "[dispel] detected: lost $lost_count buffs (was $_prev_buff_count, now $current_count)\n", 'aiSidecarBridge', 1;
+	    }
+
+	    $_prev_buff_count = $current_count;
+	    @_prev_buff_names = @current_buffs;
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── NPC Shop Dialog Interaction ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# NPC dialog state tracking
+	our %_npc_dialog_state = (
+	    in_dialog => 0,          # Are we currently in an NPC dialog?
+	    npc_name => '',          # Name of the NPC we're talking to
+	    npc_x => 0,              # NPC X position
+	    npc_y => 0,              # NPC Y position
+	    dialog_stage => '',      # Current dialog stage (menu, shop, text, etc.)
+	    menu_options => [],      # Available menu options
+	    shop_items => [],        # Shop items if in a shop dialog
+	    last_interaction_ms => 0, # When we last interacted
+	    dialog_timeout_ms => 30000, # Max time to stay in dialog
+	);
+
+	# ── Open NPC shop and buy items ──
+	# Called when sidecar sends "npc_buy <npc_name> <item_name> <quantity>"
+	# Walks to NPC, talks to them, navigates dialog to buy, reports result.
+	sub _open_npc_shop {
+	    my ($npc_name, $item_name, $quantity) = @_;
+	    return (0, 'missing_params', 'npc_name, item_name, and quantity required')
+	        if !$npc_name || !$item_name || !$quantity;
+
+	    # Find the NPC in the npcs hash
+	    my ($npc_id, $npc_x, $npc_y);
+	    if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	        foreach my $_nid (keys %{$main::npcsList}) {
+	            my $_n = $main::npcsList->{$_nid};
+	            next unless ref($_n) eq 'HASH';
+	            my $_nname = lc($_n->{name} || '');
+	            next if $_nname ne lc($npc_name);
+	            $npc_id = $_nid;
+	            $npc_x = $_n->{x} || 0;
+	            $npc_y = $_n->{y} || 0;
+	            last;
+	        }
+	    }
+
+	    if (!$npc_id) {
+	        return (0, 'npc_not_found', "NPC '$npc_name' not found nearby");
+	    }
+
+	    # Walk to NPC
+	    my $walk_ok = eval { Commands::run("move $npc_x $npc_y"); 1; };
+	    if (!$walk_ok) {
+	        return (0, 'walk_failed', "Failed to walk to NPC '$npc_name' at ($npc_x,$npc_y)");
+	    }
+
+	    # Small delay to let movement start
+	    usleep(500000);
+
+	    # Talk to NPC
+	    my $talk_ok = eval { Commands::run("talknpc $npc_x $npc_y"); 1; };
+	    if (!$talk_ok) {
+	        return (0, 'talk_failed', "Failed to talk to NPC '$npc_name'");
+	    }
+
+	    # Update dialog state
+	    $_npc_dialog_state{in_dialog} = 1;
+	    $_npc_dialog_state{npc_name} = $npc_name;
+	    $_npc_dialog_state{npc_x} = $npc_x;
+	    $_npc_dialog_state{npc_y} = $npc_y;
+	    $_npc_dialog_state{dialog_stage} = 'started';
+	    $_npc_dialog_state{last_interaction_ms} = _now_ms();
+
+	    # Wait for dialog to open
+	    usleep(300000);
+
+	    # Try to navigate: send 'c' (continue) to get past intro text
+	    eval { Commands::run("talk c"); 1; };
+	    usleep(200000);
+
+	    # Try to find the buy option in the menu
+	    # Common shop menu patterns: "Buy", "Purchase", "Shop", "Trade"
+	    eval { Commands::run("talk resp 0"); 1; };  # First option is often "Buy"
+	    usleep(200000);
+
+	    # Now we should be in the shop window — try to buy the item
+	    # OpenKore's shop interface: items are listed with indices
+	    # We need to find the item index in the shop
+	    my $item_idx = _find_shop_item_index($item_name);
+	    if (!defined $item_idx) {
+	        # Close dialog and report failure
+	        eval { Commands::run("talk close"); 1; };
+	        $_npc_dialog_state{in_dialog} = 0;
+	        return (0, 'item_not_in_shop', "Item '$item_name' not found in NPC '$npc_name' shop");
+	    }
+
+	    # Buy the item
+	    my $buy_ok = eval { Commands::run("buy $item_idx $quantity"); 1; };
+	    if (!$buy_ok) {
+	        eval { Commands::run("talk close"); 1; };
+	        $_npc_dialog_state{in_dialog} = 0;
+	        return (0, 'buy_failed', "Failed to buy $quantity x $item_name from NPC '$npc_name'");
+	    }
+
+	    usleep(300000);
+
+	    # Close dialog
+	    eval { Commands::run("talk close"); 1; };
+	    $_npc_dialog_state{in_dialog} = 0;
+
+	    # Report success
+	    _post_event({
+	        kind => 'bridge_event',
+	        event_type => 'npc.shop_bought',
+	        severity => 'info',
+	        text => "Bought $quantity x $item_name from NPC $npc_name",
+	        npc_name => $npc_name,
+	        item_name => $item_name,
+	        quantity => $quantity,
+	    });
+
+	    return (1, 'ok', "Bought $quantity x $item_name from NPC '$npc_name'");
+	}
+
+	# ── Find item index in NPC shop ──
+	# Searches the current shop window for an item by name.
+	# Returns the item index (0-based) or undef if not found.
+	sub _find_shop_item_index {
+	    my ($item_name) = @_;
+	    return undef if !$item_name;
+
+	    my $item_lc = lc($item_name);
+
+	    # Check if we have shop data from the NPC dialog
+	    if ($_npc_dialog_state{shop_items} && @{$_npc_dialog_state{shop_items}}) {
+	        for my $i (0 .. $#{$_npc_dialog_state{shop_items}}) {
+	            my $_si = $_npc_dialog_state{shop_items}[$i];
+	            next unless ref($_si) eq 'HASH';
+	            my $_sin = lc($_si->{name} || '');
+	            return $i if $_sin eq $item_lc;
+	        }
+	    }
+
+	    # Fallback: search inventory for recently bought items to infer index
+	    # This is a best-effort approach when shop data isn't available
+	    return undef;
+	}
+
+	# ── Parse shop items from NPC dialog response ──
+	# Called when we receive a shop listing from an NPC dialog.
+	# Parses the item list and stores it in _npc_dialog_state.
+	sub _parse_npc_shop_items {
+	    my ($dialog_text) = @_;
+	    return if !$dialog_text;
+
+	    my @items;
+	    my @lines = split(/\n/, $dialog_text);
+	    for my $_line (@lines) {
+	        chomp $_line;
+	        next if $_line =~ /^\s*$/;
+	        # Shop item format: "<index> - <name> : <price>z"
+	        if ($_line =~ /^(\d+)\s*[-:]\s*(.+?)\s*:\s*(\d+)\s*z/i) {
+	            push @items, {
+	                index => $1,
+	                name => $2,
+	                price => $3,
+	            };
+	        }
+	        # Alternative format: "<name> (<price>z)"
+	        elsif ($_line =~ /^(\d+)\s*[-:]\s*(.+?)\s*\((\d+)z\)/i) {
+	            push @items, {
+	                index => $1,
+	                name => $2,
+	                price => $3,
+	            };
+	        }
+	    }
+
+	    if (@items) {
+	        $_npc_dialog_state{shop_items} = \@items;
+	        debug "[npc_shop] parsed " . scalar(@items) . " shop items from dialog\n", 'aiSidecarBridge', 2;
+	    }
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Player Vendor Interaction ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Open player vendor and buy items ──
+	# Called when sidecar sends "vendor_buy <player_name> <item_name> <quantity>"
+	# Walks to player, clicks vendor, buys items, reports result.
+	sub _open_player_vendor {
+	    my ($player_name, $item_name, $quantity) = @_;
+	    return (0, 'missing_params', 'player_name, item_name, and quantity required')
+	        if !$player_name || !$item_name || !$quantity;
+
+	    # Find the player in the players hash
+	    my ($player_id, $player_x, $player_y);
+	    if (defined $main::playersList && ref($main::playersList) eq 'HASH') {
+	        foreach my $_pid (keys %{$main::playersList}) {
+	            my $_p = $main::playersList->{$_pid};
+	            next unless ref($_p) eq 'HASH';
+	            my $_pname = lc($_p->{name} || '');
+	            next if $_pname ne lc($player_name);
+	            $player_id = $_pid;
+	            $player_x = $_p->{x} || 0;
+	            $player_y = $_p->{y} || 0;
+	            last;
+	        }
+	    }
+
+	    if (!$player_id) {
+	        return (0, 'player_not_found', "Player '$player_name' not found nearby");
+	    }
+
+	    # Walk to player
+	    my $walk_ok = eval { Commands::run("move $player_x $player_y"); 1; };
+	    if (!$walk_ok) {
+	        return (0, 'walk_failed', "Failed to walk to player '$player_name' at ($player_x,$player_y)");
+	    }
+
+	    usleep(500000);
+
+	    # Open vendor by talking to the player
+	    # OpenKore uses talknpc with player ID for vendors
+	    my $talk_ok = eval { Commands::run("talknpc $player_id"); 1; };
+	    if (!$talk_ok) {
+	        return (0, 'vendor_open_failed', "Failed to open vendor for player '$player_name'");
+	    }
+
+	    usleep(300000);
+
+	    # Try to find the item in the vendor window
+	    # Vendor items are listed with indices — we need to find the right one
+	    my $item_idx = _find_vendor_item_index($item_name, $player_name);
+	    if (!defined $item_idx) {
+	        eval { Commands::run("talk close"); 1; };
+	        return (0, 'item_not_in_vendor', "Item '$item_name' not found in player '$player_name' vendor");
+	    }
+
+	    # Buy the item from vendor
+	    my $buy_ok = eval { Commands::run("buy $item_idx $quantity"); 1; };
+	    if (!$buy_ok) {
+	        eval { Commands::run("talk close"); 1; };
+	        return (0, 'buy_failed', "Failed to buy $quantity x $item_name from player '$player_name' vendor");
+	    }
+
+	    usleep(300000);
+
+	    # Close vendor window
+	    eval { Commands::run("talk close"); 1; };
+
+	    _post_event({
+	        kind => 'bridge_event',
+	        event_type => 'player.vendor_bought',
+	        severity => 'info',
+	        text => "Bought $quantity x $item_name from player $player_name vendor",
+	        player_name => $player_name,
+	        item_name => $item_name,
+	        quantity => $quantity,
+	    });
+
+	    return (1, 'ok', "Bought $quantity x $item_name from player '$player_name' vendor");
+	}
+
+	# ── Find item index in player vendor ──
+	# Searches the vendor window for an item by name.
+	# Returns the item index (0-based) or undef if not found.
+	sub _find_vendor_item_index {
+	    my ($item_name, $player_name) = @_;
+	    return undef if !$item_name;
+
+	    my $item_lc = lc($item_name);
+
+	    # Check cached vendor data
+	    if ($player_name && $_player_vendor_data{$player_name}) {
+	        my $vendor = $_player_vendor_data{$player_name};
+	        if ($vendor->{items} && ref($vendor->{items}) eq 'ARRAY') {
+	            for my $i (0 .. $#{$vendor->{items}}) {
+	                my $_vi = $vendor->{items}[$i];
+	                next unless ref($_vi) eq 'HASH';
+	                my $_vin = lc($_vi->{name} || '');
+	                return $i if $_vin eq $item_lc;
+	            }
+	        }
+	    }
+
+	    return undef;
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Vending Setup ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Set up vending shop ──
+	# Called when sidecar sends "start_vending <title> <items>"
+	# Opens vending shop with given title and item list.
+	# Items format: "item_name:price,item_name2:price2"
+	sub _setup_vending {
+	    my ($title, $items_str) = @_;
+	    return (0, 'missing_params', 'title and items required')
+	        if !$title || !$items_str;
+
+	    # Parse items: "item_name:price,item_name2:price2"
+	    my @items;
+	    my @pairs = split(/,/, $items_str);
+	    for my $_pair (@pairs) {
+	        chomp $_pair;
+	        $_pair =~ s/^\s+//;
+	        $_pair =~ s/\s+$//;
+	        next if $_pair eq '';
+	        my ($item_name, $price) = split(/:/, $_pair, 2);
+	        next if !$item_name || !$price;
+	        $item_name =~ s/^\s+//;
+	        $item_name =~ s/\s+$//;
+	        $price =~ s/^\s+//;
+	        $price =~ s/\s+$//;
+	        push @items, { name => $item_name, price => int($price) };
+	    }
+
+	    if (!@items) {
+	        return (0, 'no_items', 'No valid items specified for vending');
+	    }
+
+	    # OpenKore vending command: "vending <title>"
+	    # Then add items one by one
+	    my $vending_ok = eval { Commands::run("vending $title"); 1; };
+	    if (!$vending_ok) {
+	        return (0, 'vending_open_failed', "Failed to open vending shop with title '$title'");
+	    }
+
+	    usleep(300000);
+
+	    # Add each item to the vending shop
+	    for my $_item (@items) {
+	        # Find item in inventory by name
+	        my $_item_idx = 0;
+	        my $_found = 0;
+	        if ($char && $char->{inventory}) {
+	            for my $_inv_item (@{$char->{inventory}}) {
+	                next unless ref($_inv_item) eq 'HASH';
+	                my $_inv_name = $_inv_item->{name} || '';
+	                if (lc($_inv_name) eq lc($_item->{name})) {
+	                    $_found = 1;
+	                    last;
+	                }
+	                $_item_idx++;
+	            }
+	        }
+	        if ($_found) {
+	            # OpenKore: "vending_add <inventory_index> <quantity> <price>"
+	            my $add_ok = eval { Commands::run("vending_add $_item_idx 1 $_item->{price}"); 1; };
+	            if ($add_ok) {
+	                debug "[vending] added item '$_item->{name}' at $_item->{price}z (inv_idx=$_item_idx)\n", 'aiSidecarBridge', 2;
+	            } else {
+	                warning "[vending] failed to add item '$_item->{name}': $@\n", 'aiSidecarBridge', 1;
+	            }
+	            usleep(100000);
+	        } else {
+	            warning "[vending] item '$_item->{name}' not found in inventory, skipping\n", 'aiSidecarBridge', 1;
+	        }
+	    }
+
+	    # Open the vending shop
+	    my $open_ok = eval { Commands::run("vending_open"); 1; };
+	    if (!$open_ok) {
+	        return (0, 'vending_open_failed', "Failed to open vending shop");
+	    }
+
+	    _post_event({
+	        kind => 'bridge_event',
+	        event_type => 'player.vending_started',
+	        severity => 'info',
+	        text => "Vending started: $title with " . scalar(@items) . " items",
+	        title => $title,
+	        item_count => scalar(@items),
+	    });
+
+	    return (1, 'ok', "Vending started: '$title' with " . scalar(@items) . " items");
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Trade Request Handling ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# Trade state tracking
+	our %_trade_state = (
+	    active => 0,              # Is a trade currently active?
+	    partner => '',            # Who we're trading with
+	    stage => '',              # Current trade stage (requested, accepted, adding, confirmed)
+	    items_to_add => [],       # Items we need to add to the trade window
+	    started_at_ms => 0,       # When the trade started
+	    timeout_ms => 60000,      # Trade timeout
+	);
+
+	# ── Handle trade request ──
+	# Called when sidecar sends "trade_request <player_name> [items]"
+	# Items format: "item_name:quantity,item_name2:quantity2"
+	sub _handle_trade {
+	    my ($player_name, $items_str) = @_;
+	    return (0, 'missing_params', 'player_name required')
+	        if !$player_name;
+
+	    # Find the player
+	    my ($player_id, $player_x, $player_y);
+	    if (defined $main::playersList && ref($main::playersList) eq 'HASH') {
+	        foreach my $_pid (keys %{$main::playersList}) {
+	            my $_p = $main::playersList->{$_pid};
+	            next unless ref($_p) eq 'HASH';
+	            my $_pname = lc($_p->{name} || '');
+	            next if $_pname ne lc($player_name);
+	            $player_id = $_pid;
+	            $player_x = $_p->{x} || 0;
+	            $player_y = $_p->{y} || 0;
+	            last;
+	        }
+	    }
+
+	    if (!$player_id) {
+	        return (0, 'player_not_found', "Player '$player_name' not found nearby");
+	    }
+
+	    # Walk to player
+	    my $walk_ok = eval { Commands::run("move $player_x $player_y"); 1; };
+	    if (!$walk_ok) {
+	        return (0, 'walk_failed', "Failed to walk to player '$player_name'");
+	    }
+
+	    usleep(500000);
+
+	    # Send trade request
+	    # OpenKore: "deal <player_name>" or "trade <player_name>"
+	    my $deal_ok = eval { Commands::run("deal $player_name"); 1; };
+	    if (!$deal_ok) {
+	        return (0, 'trade_request_failed', "Failed to send trade request to '$player_name'");
+	    }
+
+	    # Update trade state
+	    $_trade_state{active} = 1;
+	    $_trade_state{partner} = $player_name;
+	    $_trade_state{stage} = 'requested';
+	    $_trade_state{started_at_ms} = _now_ms();
+
+	    # Parse items to add
+	    if ($items_str) {
+	        my @items;
+	        my @pairs = split(/,/, $items_str);
+	        for my $_pair (@pairs) {
+	            chomp $_pair;
+	            $_pair =~ s/^\s+//;
+	            $_pair =~ s/\s+$//;
+	            next if $_pair eq '';
+	            my ($item_name, $qty) = split(/:/, $_pair, 2);
+	            next if !$item_name;
+	            $item_name =~ s/^\s+//;
+	            $item_name =~ s/\s+$//;
+	            $qty ||= 1;
+	            $qty =~ s/^\s+//;
+	            $qty =~ s/\s+$//;
+	            push @items, { name => $item_name, quantity => int($qty) };
+	        }
+	        $_trade_state{items_to_add} = \@items;
+	    }
+
+	    usleep(500000);
+
+	    # Wait for trade to be accepted (we'll check on next poll)
+	    # For now, assume accepted and add items
+	    if ($_trade_state{items_to_add} && @{$_trade_state{items_to_add}}) {
+	        for my $_item (@{$_trade_state{items_to_add}}) {
+	            # Find item in inventory
+	            my $_inv_idx = 0;
+	            my $_found = 0;
+	            if ($char && $char->{inventory}) {
+	                for my $_inv_item (@{$char->{inventory}}) {
+	                    next unless ref($_inv_item) eq 'HASH';
+	                    my $_inv_name = $_inv_item->{name} || '';
+	                    if (lc($_inv_name) eq lc($_item->{name})) {
+	                        $_found = 1;
+	                        last;
+	                    }
+	                    $_inv_idx++;
+	                }
+	            }
+	            if ($_found) {
+	                # OpenKore: "deal_add <inventory_index> <quantity>"
+	                my $add_ok = eval { Commands::run("deal_add $_inv_idx $_item->{quantity}"); 1; };
+	                if ($add_ok) {
+	                    debug "[trade] added item '$_item->{name}' x$_item->{quantity} to trade (inv_idx=$_inv_idx)\n", 'aiSidecarBridge', 2;
+	                }
+	                usleep(100000);
+	            } else {
+	                warning "[trade] item '$_item->{name}' not found in inventory, skipping\n", 'aiSidecarBridge', 1;
+	            }
+	        }
+	    }
+
+	    usleep(300000);
+
+	    # Confirm the trade
+	    my $confirm_ok = eval { Commands::run("deal_ok"); 1; };
+	    if (!$confirm_ok) {
+	        $_trade_state{active} = 0;
+	        return (0, 'trade_confirm_failed', "Failed to confirm trade with '$player_name'");
+	    }
+
+	    $_trade_state{stage} = 'confirmed';
+	    $_trade_state{active} = 0;
+
+	    _post_event({
+	        kind => 'bridge_event',
+	        event_type => 'player.trade_completed',
+	        severity => 'info',
+	        text => "Trade completed with $player_name",
+	        player_name => $player_name,
+	    });
+
+	    return (1, 'ok', "Trade completed with '$player_name'");
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── NPC Shop Data Collection ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Collect NPC shop data ──
+	# Periodically visits known NPC shops to collect price data.
+	# Records item names and prices, sends to sidecar for market intelligence.
+	sub _collect_npc_shop_data {
+	    my $now = _now_ms();
+	    state $_last_npc_collect_ms = 0;
+	    return if $now - $_last_npc_collect_ms < 300000;  # Every 5 minutes
+	    $_last_npc_collect_ms = $now;
+
+	    return if !_bridge_enabled();
+	    return if !$registered;
+	    return if !$char;
+
+	    # Collect shop data from known NPCs on the current map
+	    my $map = _safe_field_map() || '';
+	    my @shop_data;
+
+	    if (defined $main::npcsList && ref($main::npcsList) eq 'HASH') {
+	        foreach my $_nid (keys %{$main::npcsList}) {
+	            my $_n = $main::npcsList->{$_nid};
+	            next unless ref($_n) eq 'HASH';
+	            my $_nname = $_n->{name} || '';
+	            next if $_nname eq '';
+
+	            # Check if this NPC has shop data
+	            if ($_n->{shop} && ref($_n->{shop}) eq 'ARRAY') {
+	                my @items;
+	                for my $_si (@{$_n->{shop}}) {
+	                    next unless ref($_si) eq 'HASH';
+	                    push @items, {
+	                        name => $_si->{name} || '',
+	                        price => $_si->{price} || 0,
+	                        type => $_si->{type} || '',
+	                    };
+	                }
+	                if (@items) {
+	                    push @shop_data, {
+	                        npc_name => $_nname,
+	                        map => $map,
+	                        x => $_n->{x} || 0,
+	                        y => $_n->{y} || 0,
+	                        items => \@items,
+	                    };
+	                    # Cache locally
+	                    $_npc_shop_data{$_nname} = {
+	                        map => $map,
+	                        items => \@items,
+	                    };
+	                }
+	            }
+	        }
+	    }
+
+	    if (@shop_data) {
+	        # Send to sidecar
+	        my $resp = _http_post_json('/v2/market/npc_shops', {
+	            meta => _meta(_bot_id()),
+	            map => $map,
+	            shops => \@shop_data,
+	            collected_at => $now,
+	        });
+	        if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+	            debug "[npc_shop_data] collected data for " . scalar(@shop_data) . " NPC shops on $map\n", 'aiSidecarBridge', 2;
+	        }
+	    }
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Player Vendor Data Collection ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Collect player vendor data ──
+	# Periodically scans town maps for player vendors.
+	# Clicks on vendors to read their item lists.
+	# Records item names, prices, quantities, sends to sidecar.
+	sub _collect_vendor_data {
+	    my $now = _now_ms();
+	    state $_last_vendor_collect_ms = 0;
+	    return if $now - $_last_vendor_collect_ms < 120000;  # Every 2 minutes
+	    $_last_vendor_collect_ms = $now;
+
+	    return if !_bridge_enabled();
+	    return if !$registered;
+	    return if !$char;
+
+	    my $map = _safe_field_map() || '';
+	    my @vendor_data;
+
+	    if (defined $main::playersList && ref($main::playersList) eq 'HASH') {
+	        foreach my $_pid (keys %{$main::playersList}) {
+	            my $_p = $main::playersList->{$_pid};
+	            next unless ref($_p) eq 'HASH';
+	            my $_pname = $_p->{name} || '';
+	            next if $_pname eq '';
+	            next if $_pname eq ($char->{name} || '');  # Skip self
+
+	            # Check if player is vending
+	            if ($_p->{shop_open} || $_p->{vendor_title} || $_p->{vending}) {
+	                my $title = $_p->{vendor_title} || $_p->{shop_title} || '';
+	                my @items;
+
+	                # If vendor items are visible in the player data, collect them
+	                if ($_p->{vendor_items} && ref($_p->{vendor_items}) eq 'ARRAY') {
+	                    for my $_vi (@{$_p->{vendor_items}}) {
+	                        next unless ref($_vi) eq 'HASH';
+	                        push @items, {
+	                            name => $_vi->{name} || '',
+	                            price => $_vi->{price} || 0,
+	                            amount => $_vi->{amount} || 0,
+	                        };
+	                    }
+	                }
+
+	                push @vendor_data, {
+	                    player_name => $_pname,
+	                    map => $map,
+	                    x => $_p->{x} || 0,
+	                    y => $_p->{y} || 0,
+	                    title => $title,
+	                    items => \@items,
+	                };
+
+	                # Cache locally
+	                $_player_vendor_data{$_pname} = {
+	                    map => $map,
+	                    x => $_p->{x} || 0,
+	                    y => $_p->{y} || 0,
+	                    title => $title,
+	                    items => \@items,
+	                };
+	            }
+	        }
+	    }
+
+	    if (@vendor_data) {
+	        my $resp = _http_post_json('/v2/market/player_vendors', {
+	            meta => _meta(_bot_id()),
+	            map => $map,
+	            vendors => \@vendor_data,
+	            collected_at => $now,
+	        });
+	        if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
+	            debug "[vendor_data] collected data for " . scalar(@vendor_data) . " player vendors on $map\n", 'aiSidecarBridge', 2;
+	        }
+	    }
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Market Order Execution ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Execute market order ──
+	# When sidecar sends "market_buy <item> <max_price> <quantity>":
+	#   Find cheapest vendor/NPC and buy
+	# When sidecar sends "market_sell <item> <min_price> <quantity>":
+	#   Set up vending or sell to NPC
+	sub _execute_market_order {
+	    my ($order_type, $item_name, $price, $quantity) = @_;
+	    return (0, 'missing_params', 'order_type, item_name, price, and quantity required')
+	        if !$order_type || !$item_name || !defined $price || !$quantity;
+
+	    my $order_lc = lc($order_type);
+
+	    if ($order_lc eq 'buy') {
+	        return _execute_market_buy($item_name, $price, $quantity);
+	    } elsif ($order_lc eq 'sell') {
+	        return _execute_market_sell($item_name, $price, $quantity);
+	    } else {
+	        return (0, 'unknown_order_type', "Unknown market order type '$order_type' (use 'buy' or 'sell')");
+	    }
+	}
+
+	# ── Execute market buy order ──
+	# Finds the cheapest source (NPC shop or player vendor) and buys the item.
+	sub _execute_market_buy {
+	    my ($item_name, $max_price, $quantity) = @_;
+	    my $item_lc = lc($item_name);
+
+	    # Strategy 1: Check NPC shops first (usually cheapest)
+	    for my $_npc_name (keys %_npc_shop_data) {
+	        my $_npc = $_npc_shop_data{$_npc_name};
+	        next unless $_npc && $_npc->{items} && ref($_npc->{items}) eq 'ARRAY';
+	        for my $_item (@{$_npc->{items}}) {
+	            next unless ref($_item) eq 'HASH';
+	            my $_iname = lc($_item->{name} || '');
+	            next if $_iname ne $item_lc;
+	            my $_iprice = $_item->{price} || 0;
+	            next if $max_price > 0 && $_iprice > $max_price;
+
+	            # Found a matching NPC shop — buy from it
+	            my ($ok, $code, $msg) = _open_npc_shop($_npc_name, $item_name, $quantity);
+	            if ($ok) {
+	                _post_event({
+	                    kind => 'bridge_event',
+	                    event_type => 'market.buy_executed',
+	                    severity => 'info',
+	                    text => "Market buy: $quantity x $item_name from NPC $_npc_name at $_iprice z",
+	                    source => 'npc',
+	                    source_name => $_npc_name,
+	                    item_name => $item_name,
+	                    quantity => $quantity,
+	                    price => $_iprice,
+	                });
+	                return ($ok, $code, $msg);
+	            }
+	        }
+	    }
+
+	    # Strategy 2: Check player vendors
+	    for my $_pv_name (keys %_player_vendor_data) {
+	        my $_pv = $_player_vendor_data{$_pv_name};
+	        next unless $_pv && $_pv->{items} && ref($_pv->{items}) eq 'ARRAY';
+	        for my $_item (@{$_pv->{items}}) {
+	            next unless ref($_item) eq 'HASH';
+	            my $_iname = lc($_item->{name} || '');
+	            next if $_iname ne $item_lc;
+	            my $_iprice = $_item->{price} || 0;
+	            next if $max_price > 0 && $_iprice > $max_price;
+
+	            # Found a matching player vendor — buy from it
+	            my ($ok, $code, $msg) = _open_player_vendor($_pv_name, $item_name, $quantity);
+	            if ($ok) {
+	                _post_event({
+	                    kind => 'bridge_event',
+	                    event_type => 'market.buy_executed',
+	                    severity => 'info',
+	                    text => "Market buy: $quantity x $item_name from player $_pv_name at $_iprice z",
+	                    source => 'vendor',
+	                    source_name => $_pv_name,
+	                    item_name => $item_name,
+	                    quantity => $quantity,
+	                    price => $_iprice,
+	                });
+	                return ($ok, $code, $msg);
+	            }
+	        }
+	    }
+
+	    return (0, 'no_source_found', "No source found for '$item_name' at or under $max_price z");
+	}
+
+	# ── Execute market sell order ──
+	# Sells item to NPC shop or sets up vending.
+	sub _execute_market_sell {
+	    my ($item_name, $min_price, $quantity) = @_;
+
+	    # Strategy 1: Sell to NPC shop (instant, but lower price)
+	    # Find an NPC that buys this item
+	    for my $_npc_name (keys %_npc_shop_data) {
+	        my $_npc = $_npc_shop_data{$_npc_name};
+	        next unless $_npc && $_npc->{items} && ref($_npc->{items}) eq 'ARRAY';
+	        for my $_item (@{$_npc->{items}}) {
+	            next unless ref($_item) eq 'HASH';
+	            my $_iname = lc($_item->{name} || '');
+	            next if $_iname ne lc($item_name);
+	            my $_iprice = $_item->{price} || 0;
+
+	            # NPC buy price is typically half the sell price
+	            my $buy_price = int($_iprice / 2);
+	            next if $min_price > 0 && $buy_price < $min_price;
+
+	            # Find item in inventory
+	            my $_inv_idx = 0;
+	            my $_found = 0;
+	            if ($char && $char->{inventory}) {
+	                for my $_inv_item (@{$char->{inventory}}) {
+	                    next unless ref($_inv_item) eq 'HASH';
+	                    my $_inv_name = $_inv_item->{name} || '';
+	                    if (lc($_inv_name) eq lc($item_name)) {
+	                        $_found = 1;
+	                        last;
+	                    }
+	                    $_inv_idx++;
+	                }
+	            }
+	            if (!$_found) {
+	                return (0, 'item_not_in_inventory', "Item '$item_name' not found in inventory");
+	            }
+
+	            # Walk to NPC and sell
+	            my $npc_x = $_npc->{x} || 0;
+	            my $npc_y = $_npc->{y} || 0;
+	            eval { Commands::run("move $npc_x $npc_y"); 1; };
+	            usleep(500000);
+	            eval { Commands::run("talknpc $npc_x $npc_y"); 1; };
+	            usleep(300000);
+	            eval { Commands::run("talk c"); 1; };
+	            usleep(200000);
+	            eval { Commands::run("talk resp 1"); 1; };  # "Sell" option
+	            usleep(200000);
+	            eval { Commands::run("sell $_inv_idx $quantity"); 1; };
+	            usleep(200000);
+	            eval { Commands::run("talk close"); 1; };
+
+	            _post_event({
+	                kind => 'bridge_event',
+	                event_type => 'market.sell_executed',
+	                severity => 'info',
+	                text => "Market sell: $quantity x $item_name to NPC $_npc_name at $buy_price z",
+	                source => 'npc',
+	                source_name => $_npc_name,
+	                item_name => $item_name,
+	                quantity => $quantity,
+	                price => $buy_price,
+	            });
+
+	            return (1, 'ok', "Sold $quantity x $item_name to NPC '$_npc_name' at $buy_price z");
+	        }
+	    }
+
+	    # Strategy 2: Set up vending (better price, but takes time)
+	    my $vending_title = "Selling $item_name";
+	    my $vending_items = "$item_name:$min_price";
+	    my ($ok, $code, $msg) = _setup_vending($vending_title, $vending_items);
+	    if ($ok) {
+	        _post_event({
+	            kind => 'bridge_event',
+	            event_type => 'market.sell_vending',
+	            severity => 'info',
+	            text => "Market sell: vending $quantity x $item_name at $min_price z",
+	            source => 'vending',
+	            item_name => $item_name,
+	            quantity => $quantity,
+	            price => $min_price,
+	        });
+	        return ($ok, $code, $msg);
+	    }
+
+	    return (0, 'no_buyer_found', "No buyer found for '$item_name' at or above $min_price z");
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Trade Negotiation ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Negotiate trade with another player ──
+	# When sidecar sends "negotiate <player_name> <item_want> <item_give>":
+	# Initiates trade negotiation, sends trade request, waits for response,
+	# if accepted, completes trade, reports result.
+	sub _negotiate_trade {
+	    my ($player_name, $item_want, $item_give) = @_;
+	    return (0, 'missing_params', 'player_name, item_want, and item_give required')
+	        if !$player_name || !$item_want || !$item_give;
+
+	    # Find the player
+	    my ($player_id, $player_x, $player_y);
+	    if (defined $main::playersList && ref($main::playersList) eq 'HASH') {
+	        foreach my $_pid (keys %{$main::playersList}) {
+	            my $_p = $main::playersList->{$_pid};
+	            next unless ref($_p) eq 'HASH';
+	            my $_pname = lc($_p->{name} || '');
+	            next if $_pname ne lc($player_name);
+	            $player_id = $_pid;
+	            $player_x = $_p->{x} || 0;
+	            $player_y = $_p->{y} || 0;
+	            last;
+	        }
+	    }
+
+	    if (!$player_id) {
+	        return (0, 'player_not_found', "Player '$player_name' not found nearby");
+	    }
+
+	    # Walk to player
+	    my $walk_ok = eval { Commands::run("move $player_x $player_y"); 1; };
+	    if (!$walk_ok) {
+	        return (0, 'walk_failed', "Failed to walk to player '$player_name'");
+	    }
+
+	    usleep(500000);
+
+	    # Send a chat message proposing the trade
+	    my $chat_msg = "Hi $player_name, I'd like to trade my $item_give for your $item_want. Interested?";
+	    my $chat_ok = eval { Commands::run("pm $player_name $chat_msg"); 1; };
+	    if (!$chat_ok) {
+	        # Fallback: try public chat
+	        eval { Commands::run("c $chat_msg"); 1; };
+	    }
+
+	    usleep(1000000);  # Wait 1 second for response
+
+	    # Send trade request
+	    my $deal_ok = eval { Commands::run("deal $player_name"); 1; };
+	    if (!$deal_ok) {
+	        return (0, 'trade_request_failed', "Failed to send trade request to '$player_name'");
+	    }
+
+	    # Update trade state
+	    $_trade_state{active} = 1;
+	    $_trade_state{partner} = $player_name;
+	    $_trade_state{stage} = 'negotiating';
+	    $_trade_state{started_at_ms} = _now_ms();
+
+	    usleep(500000);
+
+	    # Add our item to the trade window
+	    my $_inv_idx = 0;
+	    my $_found = 0;
+	    if ($char && $char->{inventory}) {
+	        for my $_inv_item (@{$char->{inventory}}) {
+	            next unless ref($_inv_item) eq 'HASH';
+	            my $_inv_name = $_inv_item->{name} || '';
+	            if (lc($_inv_name) eq lc($item_give)) {
+	                $_found = 1;
+	                last;
+	            }
+	            $_inv_idx++;
+	        }
+	    }
+
+	    if ($_found) {
+	        my $add_ok = eval { Commands::run("deal_add $_inv_idx 1"); 1; };
+	        if ($add_ok) {
+	            debug "[negotiate] added item '$item_give' to trade (inv_idx=$_inv_idx)\n", 'aiSidecarBridge', 2;
+	        }
+	    } else {
+	        $_trade_state{active} = 0;
+	        return (0, 'item_not_found', "Item '$item_give' not found in inventory");
+	    }
+
+	    usleep(500000);
+
+	    # Confirm the trade
+	    my $confirm_ok = eval { Commands::run("deal_ok"); 1; };
+	    if (!$confirm_ok) {
+	        $_trade_state{active} = 0;
+	        return (0, 'trade_confirm_failed', "Failed to confirm trade with '$player_name'");
+	    }
+
+	    $_trade_state{stage} = 'confirmed';
+	    $_trade_state{active} = 0;
+
+	    _post_event({
+	        kind => 'bridge_event',
+	        event_type => 'player.trade_negotiated',
+	        severity => 'info',
+	        text => "Trade negotiated: $item_give for $item_want with $player_name",
+	        player_name => $player_name,
+	        item_give => $item_give,
+	        item_want => $item_want,
+	    });
+
+	    return (1, 'ok', "Trade negotiated: gave $item_give for $item_want with '$player_name'");
+	}
+
+	# ═══════════════════════════════════════════════════════════════════════════
+	# ── Periodic commerce data collection (called from _poll_next_action) ──
+	# ═══════════════════════════════════════════════════════════════════════════
+
+	# ── Periodic NPC shop data collection ──
+	# Called from _poll_next_action to collect NPC shop price data.
+	sub _periodic_npc_shop_collect {
+	    _collect_npc_shop_data();
+	}
+
+	# ── Periodic player vendor data collection ──
+	# Called from _poll_next_action to collect player vendor data.
+	sub _periodic_vendor_collect {
+	    _collect_vendor_data();
+	}
+
+	1;
