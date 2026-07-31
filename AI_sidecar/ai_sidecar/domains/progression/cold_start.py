@@ -270,6 +270,27 @@ class ColdStartManager:
     def __init__(self, config: ColdStartConfig | None = None) -> None:
         self._config = config or ColdStartConfig()
         self._creation_attempts: dict[str, int] = {}  # bot_id -> attempt count
+        self._connection_blocked_until: dict[str, float] = {}  # bot_id -> timestamp
+        self._last_creation_cycle: dict[str, int] = {}  # bot_id -> cycle counter
+
+    def _is_connection_blocked(self, signals: dict) -> bool:
+        """Check if the connection is blocked by a transient server issue.
+
+        Detects 'Dual login prohibited', 'Timeout on Character Select Server',
+        and similar transient failures that character creation can't solve.
+        """
+        _blocked = False
+        for _key in ["error", "raw_message", "message", "last_error"]:
+            _val = signals.get(_key, "")
+            if isinstance(_val, str) and ("Dual login" in _val or "Timeout on Character Select" in _val):
+                _blocked = True
+                break
+        if not _blocked:
+            # Also check lifecycle state
+            _phase = str(signals.get("lifecycle_phase", ""))
+            if "TIMEOUT" in _phase.upper() or "SERVER_BLOCKED" in _phase.upper():
+                _blocked = True
+        return _blocked
 
     def assess(
         self,
@@ -287,6 +308,31 @@ class ColdStartManager:
         if self._has_valid_character(characters):
             # Character exists — emit stat allocation if needed
             self._emit_stat_allocation(signals, actions, bot_id)
+            return
+
+        # Check if connection is blocked by server (Dual login, timeout, etc.)
+        import time as _time
+        _now = _time.time()
+        _blocked_until = self._connection_blocked_until.get(bot_id, 0)
+        if _now < _blocked_until:
+            # Still in cooldown — don't attempt creation
+            _remaining = int(_blocked_until - _now)
+            actions.append(HeuristicAction(
+                kind="log", command=f"cold_start_wait:{_remaining}s",
+                confidence=0.95, domain="cold_start",
+                reason=f"Server connection blocked, waiting {_remaining}s",
+            ))
+            return
+        if self._is_connection_blocked(signals):
+            # Connection blocked — set cooldown and skip creation
+            _cooldown = 120  # 2 minutes
+            self._connection_blocked_until[bot_id] = _now + _cooldown
+            actions.append(HeuristicAction(
+                kind="command", command="relog",
+                confidence=0.95, domain="cold_start",
+                reason="Connection blocked by server, reconnecting in 5s",
+            ))
+            logger.info("[cold_start] %s: Server blocked, reconnecting in 5s", bot_id)
             return
 
         # No valid character — need to create one
