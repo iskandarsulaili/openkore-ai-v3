@@ -2179,6 +2179,10 @@ sub _build_snapshot_payload {
 			\%p;
 		} || {};
 	}
+	} # CLOSE if($char) — CRITICAL FIX: without this the skills/actors/characters
+	  # digests AND the return hash are swallowed inside if($char), so when
+	  # $char is undef (char-select) the snapshot builds as "" and cold_start
+	  # never sees existing characters.
 
 	# --- Skills digest (known skills with levels) ---
 	my @skills_list;
@@ -5525,20 +5529,10 @@ sub _check_bridge_reflexes {
 		$_escape_spike_hp = -1;
 		$_escape_spike_t_ms = 0;
 	}
-}
-}
 
-# ── STRIPPED: _apply_bot_config removed — all config is handled by sidecar heuristic ──
-# The heuristic service manages attack config, sit config, teleport config, etc.
-# Bridge only does: snapshot forwarding, command execution, emergency sit.
-    # Heuristic sets attack distances - don't override
-    # $::config{'attackDistance'} = 7;
-    # $::config{'attackMaxDistance'} = 12;
-	# Apply optimal OpenKore configs for autonomous operation
-	# (Overrides user config with AI-optimized values)
-	# SKIP if sidecar has explicitly set these values via "set" command
-	# NOTE: Uses state variables to track last-set values and avoid redundant
-	# config spam (was causing 100+ identical "set lockMap_randX 100" per cycle)
+	# ── Sidecar-managed config sync ──
+	# (Was orphaned fall-through tail of _build_snapshot_payload; moved here so
+	#  it runs on every main-loop tick via _check_bridge_reflexes.)
 	my $_sell_npc = _cfg('aiSidecar_sellNpc', '');
 	my $_stor_npc = _cfg('aiSidecar_storageNpc', '');
 	# COMBAT CONFIG: All controlled by heuristic - bridge does NOT override
@@ -5616,6 +5610,8 @@ sub _check_bridge_reflexes {
     # attackAuto_inLockOnly controlled by heuristic
     # $::config{attackDistance} = 7;  # heuristic controls this
 }
+} # CLOSE the organizational bare block opened at line ~5292 (was closed by the
+  # removed orphan brace; the config-sync tail moved inside _check_bridge_reflexes)
 
 # ── Safe character accessor ──
 sub _safe_char {
