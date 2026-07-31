@@ -28,7 +28,7 @@ private 1
 master_version 0
 version 128
 charBlockSize 155
-serverType kRO_RagexeRE_2021_11_03
+serverType kRO_RagexeRE_2025_06_04
 serverEncoding Western
-addTableFolders kRO/RagexeRE_2021_11_03;translated/kRO_english;kRO
+addTableFolders kRO/RagexeRE_2025_06_04;translated/kRO_english;kRO
 secureLogin 0

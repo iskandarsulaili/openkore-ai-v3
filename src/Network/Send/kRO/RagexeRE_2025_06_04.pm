@@ -1,0 +1,44 @@
+#########################################################################
+#  OpenKore - Packet sending
+#  This module contains functions for sending packets to the server.
+#
+#  This software is open source, licensed under the GNU General Public
+#  License, version 2.
+#  Basically, this means that you're allowed to modify and distribute
+#  this software. However, if you distribute modified versions, you MUST
+#  also distribute the source code.
+#  See http://www.gnu.org/licenses/gpl.html for the full license.
+########################################################################
+#  kRO RagexeRE 2025-06-04 (Speedrun client) — specialized for rathena-ai-world
+#
+#  rAthena PACKETVER 20250604 uses CH_MAKE_CHAR (0x0a39):
+#    int16 packetType; char name[24]; uint8 slot; uint16 hair_color;
+#    uint16 hair_style; uint32 job; uint8 sex   (36 bytes with header)
+#
+#  The vanilla kRO::RagexeRE_2021_11_03 chain inherits the OLD 0x0a39
+#  layout ('a24 C v4 C' with an undef 'unknown' field) which produces
+#  empty character names on this server. This module overrides 0x0a39
+#  with the correct uint32-job layout.
+package Network::Send::kRO::RagexeRE_2025_06_04;
+
+use strict;
+use base qw(Network::Send::kRO::RagexeRE_2021_11_03);
+use Log qw(debug);
+
+sub new {
+	my ($class) = @_;
+	my $self = $class->SUPER::new(@_);
+
+	my %packets = (
+		# CH_MAKE_CHAR — PACKETVER >= 20151001 layout: name[24], slot,
+		# hair_color u16, hair_style u16, job u32, sex u8 (36B w/ header)
+		'0A39' => ['char_create', 'a24 C v2 V C', [qw(name slot hair_color hair_style job_id sex)]],
+	);
+
+	$self->{packet_list}{$_} = $packets{$_} for keys %packets;
+	$self->{char_create_version} = 0x0A39;
+
+	return $self;
+}
+
+1;
