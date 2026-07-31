@@ -495,13 +495,13 @@ sub _check_reregister {
 		$_registered_char_name = $current_name;
 		$registered = 0;
 		$next_register_at_ms = _now_ms();
+	}
 	# Force re-register every 30s to catch stale empty-name registration
 	if ($registered && _now_ms() - ($_last_reregister || 0) > 30000) {
 		$_last_reregister = _now_ms();
 		debug "bridge_reregister: 30s heartbeat re-registration\n", 'aiSidecarBridge', 1;
 		$registered = 0;
 		$next_register_at_ms = _now_ms();
-	}
 	}
 }
 sub on_mainLoop_pre {
@@ -4260,10 +4260,11 @@ sub _http_post_json {
 	           # eval died from a timeout (alarm(0) inside eval was never
 	           # reached). Without this, the SIGALRM continues ticking and
 	           # fires in unrelated code 5 seconds later, corrupting state.
-	# Don't close the socket on success — keep-alive reuses it
-	# Only close on error to reset the connection
+	# Close socket on both success and failure — the keep-alive header is
+	# sent but we never reuse the socket (it goes out of scope at sub end).
+	# Leaking ~16 sockets/s × 8 bots × hours exhausts file descriptors.
+	close $sock;
 	if (!$ok) {
-	    close $sock;
 
 	    $io_error = _trim($io_error || 'io_failure', 220);
 	    $io_error =~ s/\s+$//;
