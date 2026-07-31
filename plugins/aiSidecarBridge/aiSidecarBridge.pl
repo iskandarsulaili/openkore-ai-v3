@@ -2470,10 +2470,11 @@ sub _build_snapshot_payload {
 	# Lets the sidecar cold_start see existing characters so it stops
 	# trying to create new ones / relogging at the char select screen.
 	my @characters;
-	if (@chars) {
-		for my $i (0 .. $#chars) {
-			next unless $chars[$i] && ref($chars[$i]) eq 'HASH' && %{$chars[$i]};
-			my $c = $chars[$i];
+	my @_chars_list = @main::chars;
+	if (@_chars_list) {
+		for my $i (0 .. $#_chars_list) {
+			next unless $_chars_list[$i] && ref($_chars_list[$i]) eq 'HASH' && %{$_chars_list[$i]};
+			my $c = $_chars_list[$i];
 			push @characters, {
 				slot       => $i,
 				name       => _trim($c->{name} || '', 64),
