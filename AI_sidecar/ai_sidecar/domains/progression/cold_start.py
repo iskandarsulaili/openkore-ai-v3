@@ -303,6 +303,14 @@ class ColdStartManager:
         Called each cycle. Emits actions only when character creation is needed.
         Once a character exists and is verified, no further actions are emitted.
         """
+        # CRITICAL GATE: skip if bot is already in-game. In-game, @main::chars
+        # is empty (the bridge only populates it at char-select), so
+        # characters=[] would make us think no character exists and emit
+        # unnecessary relog/char_create commands on a live bot.
+        _map_known = bool(signals.get("map_known", False))
+        _bl = int(signals.get("base_level", 0) or 0)
+        if _map_known or _bl > 1:
+            return
         # Check if we already have a character
         characters = self._get_characters(signals)
         if self._has_valid_character(characters):

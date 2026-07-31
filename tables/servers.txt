@@ -18,7 +18,7 @@ serverEncoding Western
 addTableFolders kRO/RagexeRE_2020_04_01b;translated/kRO_english;kRO
 
 [Local rAthena AI World]
-ip cannes-johnny.with.playit.plus
+ip 209.25.142.24
 port 1053
 charServer_ip 209.25.142.24
 charServer_port 1063

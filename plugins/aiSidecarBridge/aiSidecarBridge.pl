@@ -4238,10 +4238,15 @@ sub _http_post_json {
 		            $have += $read;
 		        }
 		    }
+		    alarm(0);  # Clear alarm BEFORE the 1 so it runs even if the eval
+		               # body completes normally (not via die).
 		    1;
 		};
 	$io_error = $@ if !$ok;
-	alarm(0);
+	alarm(0);  # Safety net: clear alarm AFTER the eval too, in case the
+	           # eval died from a timeout (alarm(0) inside eval was never
+	           # reached). Without this, the SIGALRM continues ticking and
+	           # fires in unrelated code 5 seconds later, corrupting state.
 	# Don't close the socket on success — keep-alive reuses it
 	# Only close on error to reset the connection
 	if (!$ok) {
