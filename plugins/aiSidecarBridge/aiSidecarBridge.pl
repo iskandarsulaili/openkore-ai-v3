@@ -1523,13 +1523,15 @@ sub _track_lifecycle_transitions {
 	my $y = undef;
 	if ($char) {
 		my $pos = eval {
+			# NOTE: never use bare 'return' inside this eval BLOCK —
+			# return in eval returns from the enclosing sub, not the eval.
+			my $p;
 			if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
-				return $char->{pos_to};
+				$p = $char->{pos_to};
+			} elsif ($char->{pos} && ref $char->{pos} eq 'HASH') {
+				$p = $char->{pos};
 			}
-			if ($char->{pos} && ref $char->{pos} eq 'HASH') {
-				return $char->{pos};
-			}
-			return undef;
+			$p;
 		};
 		if ($pos) {
 			$x = $pos->{x};
@@ -1871,7 +1873,12 @@ sub _send_snapshot {
         return if !_cfg_bool('aiSidecar_pollWhenDisconnected', 1);
     }
 
-    my $snapshot = _build_snapshot_payload();
+    my $snapshot;
+    eval { $snapshot = _build_snapshot_payload(); 1; } or do {
+        my $err = $@ || 'snapshot_build_failed';
+        _throttled_warning('snapshot_build_failed', "[aiSidecarBridge] _build_snapshot_payload error: $err");
+        return;
+    };
     # Send via upgraded HTTPClient (ZMQ + HTTP fallback) if available
     if ($_http_client) {
         $_http_client->send_state($snapshot);
@@ -1906,13 +1913,16 @@ sub _build_snapshot_payload {
 	my $map = '';
 	if ($char) {
 		my $pos = eval {
+			# NOTE: never use bare 'return' inside this eval BLOCK —
+			# return in eval returns from _build_snapshot_payload, not
+			# the eval. Assign to $p and use it as last expression.
+			my $p;
 			if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
-				return $char->{pos_to};
+				$p = $char->{pos_to};
+			} elsif ($char->{pos} && ref $char->{pos} eq 'HASH') {
+				$p = $char->{pos};
 			}
-			if ($char->{pos} && ref $char->{pos} eq 'HASH') {
-				return $char->{pos};
-			}
-			return undef;
+			$p;
 		};
 		if ($pos) {
 			$x = $pos->{x};
@@ -2146,13 +2156,20 @@ sub _build_snapshot_payload {
 			# Fallback: if no env vars found, use configured bot profiles
 			if (!@_bot_names) {
 				require Cwd;
-			opendir(my $_dh, Cwd::cwd() . "/.bot_profiles") or do { $p{all_bots} = []; return; };
-				while (my $_entry = readdir($_dh)) {
-					next if $_entry =~ /^\./;
-					next unless -d Cwd::cwd() . "/.bot_profiles/$_entry";
-					push @_bot_names, $_entry;
+				# NOTE: never use bare 'return;' here — this whole block is
+				# inside 'eval { ... }', and return inside eval BLOCK returns
+				# from the ENCLOSING SUB (_build_snapshot_payload), aborting
+				# the snapshot with undef. Use if/else instead.
+				if (opendir(my $_dh, Cwd::cwd() . "/.bot_profiles")) {
+					while (my $_entry = readdir($_dh)) {
+						next if $_entry =~ /^\./;
+						next unless -d Cwd::cwd() . "/.bot_profiles/$_entry";
+						push @_bot_names, $_entry;
+					}
+					closedir($_dh);
+				} else {
+					$p{all_bots} = [];
 				}
-				closedir($_dh);
 			}
 			debug "[all_bots] found: @_bot_names\n", 'aiSidecarBridge', 1;
 			$p{all_bots} = \@_bot_names;
@@ -2798,8 +2815,13 @@ sub _actor_list_items {
 	return () if !ref($list_obj);
 
 	my $items = eval {
-		return () if !$list_obj->can('getItems');
-		return $list_obj->getItems();
+		# NOTE: never use bare 'return' inside eval BLOCK — it returns
+		# from _actor_list_items itself, skipping the validation below.
+		my $res;
+		if ($list_obj->can('getItems')) {
+			$res = $list_obj->getItems();
+		}
+		$res;
 	};
 	return () if !$items || ref($items) ne 'ARRAY';
 	return @{$items};
