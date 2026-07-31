@@ -338,10 +338,27 @@ class ColdStartManager:
         # No valid character — need to create one
         attempt_count = self._creation_attempts.get(bot_id, 0)
         if attempt_count >= self._config.max_creation_retries:
-            logger.error(
-                "[cold_start] %s: Max creation retries (%d) reached — giving up",
-                bot_id, self._config.max_creation_retries,
-            )
+            # Max retries reached — wait and retry connection instead of giving up forever
+            _now = _time.time()
+            _blocked_until = self._connection_blocked_until.get(bot_id, 0)
+            if _now < _blocked_until:
+                # Still in cooldown
+                _remaining = int(_blocked_until - _now)
+                actions.append(HeuristicAction(
+                    kind="log", command=f"cold_start_wait:{_remaining}s",
+                    confidence=0.95, domain="cold_start",
+                    reason=f"Cooldown before reconnect retry: {_remaining}s",
+                ))
+                return
+            # Cooldown expired — reset retries and emit relog
+            self._creation_attempts[bot_id] = 0
+            self._connection_blocked_until[bot_id] = _now + 120
+            actions.append(HeuristicAction(
+                kind="command", command="relog",
+                confidence=0.95, domain="cold_start",
+                reason="Max creation retries reached, reconnecting",
+            ))
+            logger.info("[cold_start] %s: Reset retries, emitting relog (cooldown 120s)", bot_id)
             return
 
         # Determine which slot to use
