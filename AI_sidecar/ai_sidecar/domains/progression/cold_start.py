@@ -307,9 +307,11 @@ class ColdStartManager:
         # is empty (the bridge only populates it at char-select), so
         # characters=[] would make us think no character exists and emit
         # unnecessary relog/char_create commands on a live bot.
+        # base_level > 0 catches all in-game bots (level 1+); at char-select
+        # the bridge has no $char so base_level is 0.
         _map_known = bool(signals.get("map_known", False))
         _bl = int(signals.get("base_level", 0) or 0)
-        if _map_known or _bl > 1:
+        if _map_known or _bl > 0:
             return
         # Check if we already have a character
         characters = self._get_characters(signals)

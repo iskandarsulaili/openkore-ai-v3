@@ -4212,7 +4212,7 @@ sub _http_post_json {
 	    "Host: $host:$port",
 	    "Content-Type: application/json",
 	    "Accept: application/json",
-	    "Connection: keep-alive",
+	    "Connection: close",
 	    "Content-Length: " . length($body),
 	    '',
 	    $body,
