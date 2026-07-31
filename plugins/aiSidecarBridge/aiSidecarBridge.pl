@@ -4129,7 +4129,20 @@ sub _http_get_json {
 		or return { status=>0, error=>'connect_failed', json=>undef, raw=>'' };
 	my $req = "GET $path HTTP/1.1\r\nHost: $host:$port\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
 	$sock->send($req);
-	my $resp = ''; while (<$sock>) { $resp .= $_; } close($sock);
+	# Read with alarm timeout: if the server doesn't close the connection
+	# (e.g. keep-alive race), the while loop blocks forever.
+	my $io_timeout = _cfg_int('aiSidecar_ioTimeoutMs', 5000) / 1000;
+	$io_timeout = 0.001 if $io_timeout <= 0;
+	my $resp = '';
+	eval {
+		local $SIG{ALRM} = sub { die "bridge_http_get_timeout\n"; };
+		alarm($io_timeout);
+		while (<$sock>) { $resp .= $_; }
+		alarm(0);
+		1;
+	};
+	alarm(0);
+	close($sock);
 	my ($header, $body) = split /\r\n\r\n/, $resp, 2;
 	my $status = ($header =~ /HTTP\/\d\.\d\s+(\d+)/) ? $1 : 0;
 	my $json = undef;
