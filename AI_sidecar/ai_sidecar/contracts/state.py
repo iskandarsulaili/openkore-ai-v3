@@ -208,6 +208,7 @@ class BotStateSnapshot(BaseModel):
     npc_relationships: list[NpcRelationshipDigest] = Field(default_factory=list)
     market: MarketDigest = Field(default_factory=MarketDigest)
     actors: list[ActorDigest] = Field(default_factory=list, max_length=64)
+    characters: list[dict[str, object]] = Field(default_factory=list, max_length=32)
     in_party: bool = False
     party_members: list[str] = Field(default_factory=list)
     all_bots: list[str] = Field(default_factory=list)

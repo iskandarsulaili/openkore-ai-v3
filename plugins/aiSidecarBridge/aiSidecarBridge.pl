@@ -2466,6 +2466,28 @@ sub _build_snapshot_payload {
 	$actor_discovery->{payload}{snapshot_actor_count} = scalar(@actors) + 0;
 	$raw->{actor_discovery} = $actor_discovery;
 
+	# --- Character list digest (parsed @chars from char server) ---
+	# Lets the sidecar cold_start see existing characters so it stops
+	# trying to create new ones / relogging at the char select screen.
+	my @characters;
+	if (@chars) {
+		for my $i (0 .. $#chars) {
+			next unless $chars[$i] && ref($chars[$i]) eq 'HASH' && %{$chars[$i]};
+			my $c = $chars[$i];
+			push @characters, {
+				slot       => $i,
+				name       => _trim($c->{name} || '', 64),
+				job_id     => ($c->{jobID} // $c->{job} // 0) + 0,
+				base_level => ($c->{lv} // $c->{level} // 0) + 0,
+				job_level  => ($c->{lv_job} // 0) + 0,
+				sex        => ($c->{sex} // '') . '',
+				last_map   => _trim($c->{last_map} || '', 32),
+				zeny       => ($c->{zeny} // 0) + 0,
+			};
+		}
+	}
+	$raw->{characters} = \@characters;
+
 	return {
 		meta       => _meta($bot_id),
 		tick_id    => _trace_id(),
@@ -2509,6 +2531,7 @@ sub _build_snapshot_payload {
 		progression => $progression,
 		skills      => \@skills_list,
 		actors      => \@actors,
+		characters  => \@characters,
 		in_party      => $raw->{in_party} || 0,
 		party_members => $raw->{party_members} || [],
 		all_bots      => $raw->{all_bots} || [],

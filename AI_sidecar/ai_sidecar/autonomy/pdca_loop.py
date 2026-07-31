@@ -403,6 +403,10 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["base_level"] = int(getattr(prog, "base_level", 1) or 1)
                         signals["inventory_items"] = getattr(latest, "inventory_items", []) or []
                         signals["zeny"] = int(getattr(prog, "zeny", 0) or 0)
+                        signals["characters"] = getattr(latest, "characters", []) or []
+                        if not signals["characters"]:
+                            _raw = getattr(latest, "raw", {}) or {}
+                            signals["characters"] = _raw.get("characters", []) or []
                         pos = getattr(latest, "position", None) or {}
                         signals["map"] = str(getattr(pos, "map", "") or "")
                         signals["job_name"] = str(getattr(prog, "job_name", "novice") or "novice")
