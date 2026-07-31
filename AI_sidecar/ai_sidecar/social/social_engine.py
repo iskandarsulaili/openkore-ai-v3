@@ -1,915 +1,672 @@
-"""SocialInteractionEngine — basic player interaction intelligence.
-
-Provides scripted responses to common player interactions in Ragnarok Online:
-- Whisper handling with keyword-driven auto-replies
-- Buff acknowledgement when buffed by priests
-- Item evaluation for dropped items nearby
-- Party invite acceptance/decline based on level
-- Trade request handling
-
-Thread-safe via RLock. Response history per player avoids spam repetition.
 """
+Social Engine — Complete social intelligence for the bot fleet.
+
+A pro player knows:
+- Who to trust and who to avoid (GM detection, PKer profiling)
+- How to build reputation (helpful responses, reliable party member)
+- When to chat and what to say (human-like patterns)
+- The social contract: don't KS, don't ninja loot, don't bot in obvious places
+- How to interact with guilds, parties, and trade partners
+
+This engine wires into:
+- player_profiler.py (existing player profiling)
+- ChatMessageEvent / ChatStreamIngestRequest (chat event system)
+- social_intelligence.py (existing social modules)
+- conversation_engine.py (existing conversation system)
+"""
+
 from __future__ import annotations
 
 import logging
 import random
+import re
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-# ── Constants ──────────────────────────────────────────────────────────────
 
-# Cooldown per interaction type per player (seconds)
-_COOLDOWN_SECONDS = 30
-
-# Max history entries kept per player per interaction type
-_MAX_HISTORY_PER_PLAYER = 50
-
-# Default level threshold for party invites (max difference to accept)
-_DEFAULT_LEVEL_THRESHOLD = 15
-
-# Minimum value threshold (zeny) for auto-pickup during ITEM_EVAL
-_DEFAULT_PICKUP_VALUE_THRESHOLD = 1000
-
-
-# ── Dataclasses ────────────────────────────────────────────────────────────
+# ── Data Classes ──────────────────────────────────────────────────────────────
 
 
 @dataclass
-class WhisperIntent:
-    """Parsed intent from a whisper message."""
-    raw: str
-    lower: str
-    is_buff_request: bool = False
-    is_price_query: bool = False
-    is_party_query: bool = False
-    is_greeting: bool = False
-    is_warp_request: bool = False
-    is_buff_ack: bool = False  # Other player acknowledged our buff
-    confidence: float = 0.0
-
-
-@dataclass
-class InteractionRecord:
-    """Record of a single interaction with a player."""
-    interaction_type: str  # whisper, buff_ack, party_invite, trade, item_eval
-    detail: str
+class ChatMessage:
+    """A chat message observed in-game."""
+    channel: str  # public, whisper, party, guild, trade
+    sender: str
+    message: str
     timestamp: float
-    response: str | None = None
+    map_name: str = ""
+    target: str = ""
 
 
 @dataclass
-class PlayerHistory:
-    """Per-player interaction history to avoid spam."""
+class Relationship:
+    """Tracked relationship with another player."""
     player_name: str
-    interactions: list[InteractionRecord] = field(default_factory=list)
+    relationship_type: str = "neutral"  # friend, neutral, rival, trusted, blocked
+    trust_score: int = 50  # 0-100
+    interaction_count: int = 0
+    last_interaction: float = 0.0
     first_seen: float = 0.0
-    last_seen: float = 0.0
-    total_interactions: int = 0
+    is_gm: bool = False
+    is_pker: bool = False
+    is_bot_reporter: bool = False
+    is_trade_partner: bool = False
+    is_party_member: bool = False
+    is_guild_member: bool = False
+    notes: str = ""
 
 
 @dataclass
-class ItemDrop:
-    """Information about a dropped item on the ground."""
-    item_name: str
-    item_id: int | None
-    x: int
-    y: int
-    dropped_by: str  # Player name who dropped it
-    timestamp: float
+class SocialEvent:
+    """A social event that happened."""
+    event_type: str  # party_invite, trade_request, whisper, guild_chat, etc.
+    actor: str
+    target: str = ""
+    detail: str = ""
+    timestamp: float = 0.0
+    response: str = ""  # accepted, declined, ignored
 
 
 @dataclass
-class PartyInvite:
-    """Incoming party invite details."""
-    leader_name: str
-    leader_level: int
-    leader_map: str
-    leader_job: str | None = None
-
-
-@dataclass
-class TradeRequest:
-    """Incoming trade request details."""
-    player_name: str
-    items_offered: list[dict[str, Any]] = field(default_factory=list)
-    zeny_offered: int = 0
-    items_wanted: list[dict[str, Any]] = field(default_factory=list)
-    zeny_wanted: int = 0
-
-
-# ── SocialInteractionEngine ────────────────────────────────────────────────
+class ChatTemplate:
+    """A template for generating human-like chat responses."""
+    pattern: str  # regex pattern to match
+    responses: list[str] = field(default_factory=list)
+    cooldown_seconds: int = 60
+    priority: int = 5  # 1-10, higher = more likely to respond
+    requires_relationship: str = "any"  # any, friend, trusted, neutral
+    last_used: float = 0.0
 
 
 @dataclass(slots=True)
-class SocialInteractionEngine:
-    """Handles basic player-to-player social interactions in Ragnarok Online.
+class SocialEngine:
+    """
+    Complete social intelligence engine.
 
-    Provides scripted responses to common interactions. Does NOT implement
-    anti-detection or GM evasion — those are handled by other modules.
-
-    Thread-safe via RLock. All public methods acquire the lock.
+    Tracks relationships, analyzes chat, manages reputation,
+    and ensures human-like social behavior.
     """
 
     _lock: RLock = field(default_factory=RLock)
-
-    # ── Per-player interaction history ──
-    _history: dict[str, PlayerHistory] = field(default_factory=dict)
-
-    # ── Interaction cooldown tracking: {player_name: {type: last_time}} ──
-    _cooldowns: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
-
-    # ── Drop tracking ──
-    _recent_drops: list[ItemDrop] = field(default_factory=list)
-
-    # ── Pending invites/requests ──
-    _pending_party_invites: dict[str, PartyInvite] = field(default_factory=dict)
-    _pending_trades: dict[str, TradeRequest] = field(default_factory=dict)
-
-    # ── Stats ──
+    _relationships: dict[str, Relationship] = field(default_factory=dict)
+    _chat_history: deque = field(default_factory=lambda: deque(maxlen=500))
+    _social_events: deque = field(default_factory=lambda: deque(maxlen=200))
+    _chat_templates: list[ChatTemplate] = field(default_factory=list)
+    _recent_responses: dict[str, float] = field(default_factory=dict)  # player -> last response time
+    _guild_messages_5m: int = 0
+    _party_messages_5m: int = 0
+    _private_messages_5m: int = 0
+    _total_chat_messages: int = 0
+    _last_chat_time: float = 0.0
     _stats: dict[str, int] = field(default_factory=lambda: {
-        "whispers_handled": 0,
-        "buff_acks_sent": 0,
-        "items_evaluated": 0,
-        "items_picked_up": 0,
-        "party_invites_accepted": 0,
-        "party_invites_declined": 0,
-        "trades_handled": 0,
-        "trades_accepted": 0,
-        "default_responses": 0,
+        "messages_analyzed": 0, "relationships_tracked": 0,
+        "responses_generated": 0, "gms_detected": 0,
+        "pkers_detected": 0, "friends_made": 0,
     })
+    _player_profiler: Any = None  # PlayerProfiler instance
+    _conversation_engine: Any = None  # ConversationEngine instance
+    _enqueue_fn: Callable | None = None  # Function to enqueue chat commands
+    _last_cleanup: float = 0.0
 
-    # ── Configuration overrides ──
-    level_threshold: int = _DEFAULT_LEVEL_THRESHOLD
-    pickup_value_threshold: int = _DEFAULT_PICKUP_VALUE_THRESHOLD
-    cooldown_seconds: int = _COOLDOWN_SECONDS
+    # ── Configuration ──
 
-    # ── Optional callbacks for external services ──
-    _get_market_price: Callable[[str], int | None] | None = None
-    _cast_buff_skill: Callable[[str], bool] | None = None
-    _use_butterfly_wing: Callable[[], bool] | None = None
-    _pickup_item: Callable[[str, int, int], bool] | None = None
-    _send_whisper: Callable[[str, str], bool] | None = None
-    _party_accept: Callable[[str], bool] | None = None
-    _party_decline: Callable[[str], bool] | None = None
-    _trade_accept: Callable[[str], bool] | None = None
-    _trade_decline: Callable[[str], bool] | None = None
-    _get_player_level: Callable[[str], int | None] | None = None
-    _get_self_level: Callable[[], int] | None = None
-    _get_inventory: Callable[[], list[dict[str, Any]]] | None = None
+    GM_KEYWORDS: list[str] = field(default_factory=lambda: [
+        "gm", "game master", "admin", "staff", "moderator",
+        "helper", "support", "dev", "developer",
+    ])
+    SUSPICIOUS_PATTERNS: list[str] = field(default_factory=lambda: [
+        r"bot", r"report", r"hack", r"macro", r"auto",
+        r"cheat", r"ban", r"gm\s+check",
+    ])
+    CHAT_COOLDOWN_MIN: float = 3.0  # minimum seconds between chat messages
+    CHAT_COOLDOWN_MAX: float = 15.0  # maximum seconds between chat messages
+    MAX_CHAT_PER_HOUR: int = 30  # don't chat more than this per hour
+    RESPONSE_CHANCE: float = 0.3  # 30% chance to respond to a direct message
+    GREETING_CHANCE: float = 0.1  # 10% chance to greet someone entering map
 
-    _enqueue_fn: Callable | None = None
+    # ── Initialization ──
 
-    # ── Helpers ──────────────────────────────────────────────────────────
+    def __post_init__(self) -> None:
+        self._init_chat_templates()
 
-    def _now(self) -> float:
-        return time.time()
+    def _init_chat_templates(self) -> None:
+        """Initialize default chat response templates."""
+        self._chat_templates = [
+            # Greetings
+            ChatTemplate(
+                pattern=r"(hi|hello|hey|sup|yo)\b",
+                responses=[
+                    "hey {sender}!",
+                    "hello {sender}",
+                    "hi there!",
+                    "yo {sender}",
+                    "hey, how's it going?",
+                ],
+                cooldown_seconds=120,
+                priority=3,
+            ),
+            # Party invites
+            ChatTemplate(
+                pattern=r"(party|pt|group)\s*(invite|inv|pls|please|?)\b",
+                responses=[
+                    "sure, inv me",
+                    "yeah i can pt",
+                    "ok, one sec",
+                ],
+                cooldown_seconds=60,
+                priority=7,
+            ),
+            # Trade
+            ChatTemplate(
+                pattern=r"(trade|buy|sell|wts|wtb|wtt)\b",
+                responses=[
+                    "what are you selling?",
+                    "how much?",
+                    "not interested rn",
+                    "sure, what's your offer?",
+                ],
+                cooldown_seconds=60,
+                priority=6,
+            ),
+            # Thanks
+            ChatTemplate(
+                pattern=r"(thx|ty|thanks|thank you|appreciate)\b",
+                responses=[
+                    "np!",
+                    "anytime",
+                    "yw",
+                    "no problem",
+                ],
+                cooldown_seconds=120,
+                priority=4,
+            ),
+            # Questions about level/class
+            ChatTemplate(
+                pattern=r"(what\s*(class|job|lvl|level)|how\s*far)\b",
+                responses=[
+                    "i'm a {class}",
+                    "lvl {level} {class}",
+                    "still leveling lol",
+                ],
+                cooldown_seconds=180,
+                priority=5,
+            ),
+            # Goodbye
+            ChatTemplate(
+                pattern=r"(bye|cya|g2g|gtg|brb|afk)\b",
+                responses=[
+                    "cya!",
+                    "later!",
+                    "gl hf",
+                    "see you around",
+                ],
+                cooldown_seconds=300,
+                priority=2,
+            ),
+            # Map/spot questions
+            ChatTemplate(
+                pattern=r"(where|spot|map|good\s*(spot|place|map)|exp\s*(spot|map))\b",
+                responses=[
+                    "try {map}",
+                    "i've been farming {map}",
+                    "not sure, i just got here",
+                ],
+                cooldown_seconds=180,
+                priority=5,
+            ),
+            # WOE/Guild
+            ChatTemplate(
+                pattern=r"(woe|guild|castle|war|emp)\b",
+                responses=[
+                    "gl in woe!",
+                    "who are you guys with?",
+                    "i'm not in a guild rn",
+                ],
+                cooldown_seconds=300,
+                priority=4,
+            ),
+        ]
 
-    def _record_interaction(
-        self,
-        player_name: str,
-        interaction_type: str,
-        detail: str,
-        response: str | None = None,
-    ) -> None:
-        """Record an interaction in the player's history."""
-        now = self._now()
-        record = InteractionRecord(
-            interaction_type=interaction_type,
-            detail=detail,
-            timestamp=now,
-            response=response,
-        )
-        if player_name not in self._history:
-            self._history[player_name] = PlayerHistory(
-                player_name=player_name,
+    # ── Public API ──
+
+    def set_player_profiler(self, profiler: Any) -> None:
+        """Wire PlayerProfiler instance."""
+        self._player_profiler = profiler
+
+    def set_conversation_engine(self, engine: Any) -> None:
+        """Wire ConversationEngine instance."""
+        self._conversation_engine = engine
+
+    def set_enqueue_fn(self, fn: Callable) -> None:
+        """Set function to enqueue chat commands."""
+        self._enqueue_fn = fn
+
+    # ── Chat Processing ──
+
+    def process_chat(self, channel: str, sender: str, message: str,
+                     map_name: str = "", target: str = "") -> dict[str, Any] | None:
+        """Process an incoming chat message. Returns response if one should be sent."""
+        with self._lock:
+            now = time.time()
+            msg = ChatMessage(
+                channel=channel, sender=sender, message=message,
+                timestamp=now, map_name=map_name, target=target,
+            )
+            self._chat_history.append(msg)
+            self._total_chat_messages += 1
+            self._last_chat_time = now
+            self._stats["messages_analyzed"] += 1
+
+            # Update channel counters (rolling 5 min)
+            if now - getattr(self, '_last_channel_reset', 0) > 300:
+                self._guild_messages_5m = 0
+                self._party_messages_5m = 0
+                self._private_messages_5m = 0
+                object.__setattr__(self, '_last_channel_reset', now)
+
+            if channel == "guild":
+                self._guild_messages_5m += 1
+            elif channel in ("party", "party_chat"):
+                self._party_messages_5m += 1
+            elif channel in ("whisper", "pm"):
+                self._private_messages_5m += 1
+
+            # Update relationship
+            self._update_relationship(sender, channel, message)
+
+            # Check for GM detection
+            self._check_gm_detection(sender, message)
+
+            # Check for suspicious content (reports, accusations)
+            self._check_suspicious_content(sender, message)
+
+            # Determine if we should respond
+            return self._should_respond(msg)
+
+    def _update_relationship(self, sender: str, channel: str, message: str) -> None:
+        """Update relationship tracking for a player."""
+        if sender in ("", "System", "Server"):
+            return
+
+        now = time.time()
+        if sender not in self._relationships:
+            self._relationships[sender] = Relationship(
+                player_name=sender,
                 first_seen=now,
             )
-        ph = self._history[player_name]
-        ph.interactions.append(record)
-        ph.last_seen = now
-        ph.total_interactions += 1
-        # Trim to max size
-        if len(ph.interactions) > _MAX_HISTORY_PER_PLAYER:
-            ph.interactions = ph.interactions[-_MAX_HISTORY_PER_PLAYER:]
+            self._stats["relationships_tracked"] += 1
 
-    def _is_on_cooldown(self, player_name: str, interaction_type: str) -> bool:
-        """Check if we're on cooldown for this interaction type with this player."""
-        now = self._now()
-        player_cooldowns = self._cooldowns.get(player_name, {})
-        last_time = player_cooldowns.get(interaction_type, 0.0)
-        return (now - last_time) < self.cooldown_seconds
+        rel = self._relationships[sender]
+        rel.last_interaction = now
+        rel.interaction_count += 1
 
-    def _set_cooldown(self, player_name: str, interaction_type: str) -> None:
-        """Set the cooldown timestamp for this interaction type."""
-        self._cooldowns[player_name][interaction_type] = self._now()
+        # Update relationship type based on channel
+        if channel == "whisper" or channel == "pm":
+            rel.trust_score = min(100, rel.trust_score + 2)
+        elif channel == "party" or channel == "party_chat":
+            rel.is_party_member = True
+            rel.trust_score = min(100, rel.trust_score + 1)
+        elif channel == "guild":
+            rel.is_guild_member = True
+            rel.trust_score = min(100, rel.trust_score + 1)
 
-    def _spam_check(self, player_name: str, interaction_type: str) -> bool:
-        """Check if this interaction would be spam given recent history.
-        
-        Returns True if the interaction should proceed, False if it should
-        be suppressed (spam prevention).
-        """
-        if self._is_on_cooldown(player_name, interaction_type):
-            logger.debug(
-                "social_spam_suppressed: player=%s type=%s (cooldown)",
-                player_name, interaction_type,
-            )
-            return False
-        self._set_cooldown(player_name, interaction_type)
-        return True
+        # Check for positive interactions
+        positive_words = ["thx", "ty", "thanks", "help", "nice", "good", "tyvm"]
+        if any(w in message.lower() for w in positive_words):
+            rel.trust_score = min(100, rel.trust_score + 3)
 
-    def _log(self, msg: str) -> None:
-        if self._enqueue_fn:
-            self._enqueue_fn("default", f"social_log {msg}")
+        # Check for negative interactions
+        negative_words = ["bot", "report", "hack", "cheat", "noob", "stupid", "ks"]
+        if any(w in message.lower() for w in negative_words):
+            rel.trust_score = max(0, rel.trust_score - 5)
 
-    # ── Whisper Intent Parsing ───────────────────────────────────────────
-
-    @staticmethod
-    def parse_whisper(text: str) -> WhisperIntent:
-        """Parse a whisper message and classify its intent.
-
-        Args:
-            text: The raw whisper text from another player.
-
-        Returns:
-            A WhisperIntent with classification flags.
-        """
-        lower = text.lower().strip()
-        intent = WhisperIntent(raw=text, lower=lower)
-
-        # Buff acknowledgement (someone saying "ty" after we buffed them)
-        thanks_keywords = ["ty", "thx", "thanks", "thank you", "<3", "tq"]
-        buff_refs = ["buff", "bless", "agi"]
-        if any(t in lower for t in thanks_keywords) and any(b in lower for b in buff_refs):
-            intent.is_buff_ack = True
-            intent.confidence = max(intent.confidence, 0.8)
-
-        # Buff request — only if NOT a buff acknowledgement (avoids collision on "ty for buff")
-        if not intent.is_buff_ack:
-            buff_keywords = ["buff", "bless", "agi", "blessing", "improve",
-                             "magnificat", "gloria", "kyrie", "aspersio"]
-            if any(kw in lower for kw in buff_keywords):
-                intent.is_buff_request = True
-                intent.confidence = max(intent.confidence, 0.7)
-                # Phrases like "buff pls", "buff please", "need buff"
-                if "pls" in lower or "please" in lower or "need" in lower or "buff" in lower:
-                    intent.confidence = max(intent.confidence, 0.9)
-
-        # Price query — must contain a price-related keyword
-        price_keywords = ["price", "cost", "how much", "worth", "sell", "buy"]
-        if any(kw in lower for kw in price_keywords):
-            intent.is_price_query = True
-            intent.confidence = max(intent.confidence, 0.6)
-            # More specific: "price?" or "how much is X"
-            if lower in ("price", "price?", "how much") or "price" in lower:
-                intent.confidence = max(intent.confidence, 0.85)
-
-        # Party query
-        party_keywords = ["party", "group", "team", "pt", "part"]
-        if any(kw in lower for kw in party_keywords):
-            intent.is_party_query = True
-            intent.confidence = max(intent.confidence, 0.7)
-
-        # Greeting
-        greeting_keywords = ["hi", "hello", "hey", "sup", "yo", "howdy",
-                             "greetings", "good morning", "good evening"]
-        if any(lower.startswith(kw) or lower == kw for kw in greeting_keywords):
-            intent.is_greeting = True
-            intent.confidence = max(intent.confidence, 0.8)
-
-        # Warp request
-        warp_keywords = ["warp", "teleport", "fly wing", "butterfly", "port"]
-        if any(kw in lower for kw in warp_keywords):
-            intent.is_warp_request = True
-            intent.confidence = max(intent.confidence, 0.7)
-
-        # Buff acknowledgement (someone saying "ty" after we buffed them)
-        thanks_keywords = ["ty", "thx", "thanks", "thank you", "<3", "tq"]
-        buff_refs = ["buff", "bless", "agi"]
-        if any(t in lower for t in thanks_keywords) and any(b in lower for b in buff_refs):
-            intent.is_buff_ack = True
-            intent.confidence = max(intent.confidence, 0.8)
-
-        return intent
-
-    # ── WHISPER_HANDLER ──────────────────────────────────────────────────
-
-    def handle_whisper(self, sender: str, text: str) -> str | None:
-        """Handle an incoming whisper from another player.
-
-        Parses the message, selects an appropriate response, and returns
-        the response string. Returns None if no response should be sent
-        (spam suppression or cooldown).
-
-        Args:
-            sender: Name of the player who whispered.
-            text: The whisper message text.
-
-        Returns:
-            Response string to send, or None to stay silent.
-        """
-        with self._lock:
-            if not self._spam_check(sender, "whisper"):
-                return None
-
-            intent = self.parse_whisper(text)
-            response: str | None = None
-
-            # Priority order: most specific intents first
-
-            if intent.is_buff_request:
-                response = self._handle_buff_request(sender, text)
-
-            elif intent.is_price_query:
-                response = self._handle_price_query(sender, text)
-
-            elif intent.is_party_query:
-                response = self._handle_party_query(sender, text)
-
-            elif intent.is_greeting:
-                response = "hello :)"
-
-            elif intent.is_warp_request:
-                response = self._handle_warp_request()
-
-            elif intent.is_buff_ack:
-                response = self._handle_buff_ack(sender)
-
-            else:
-                # DEFAULT_RESPONSE
-                response = self._default_whisper_response(text)
-
-            # Record the interaction
-            self._record_interaction(
-                player_name=sender,
-                interaction_type="whisper",
-                detail=text[:100],
-                response=response,
-            )
-            self._stats["whispers_handled"] += 1
-            if response is None:
-                self._stats["default_responses"] += 1
-
-            logger.info(
-                "social_whisper: from=%s text='%s' intent=%s response='%s'",
-                sender, text[:60],
-                self._summarize_intent(intent),
-                (response or "(silent)")[:60],
-            )
-
-            return response
-
-    def _summarize_intent(self, intent: WhisperIntent) -> str:
-        flags = []
-        if intent.is_buff_request:
-            flags.append("buff")
-        if intent.is_price_query:
-            flags.append("price")
-        if intent.is_party_query:
-            flags.append("party")
-        if intent.is_greeting:
-            flags.append("greet")
-        if intent.is_warp_request:
-            flags.append("warp")
-        if intent.is_buff_ack:
-            flags.append("buff_ack")
-        return "+".join(flags) if flags else "default"
-
-    def _handle_buff_request(self, sender: str, text: str) -> str:
-        """Handle a buff request whisper.
-        
-        Responds 'sure' and fires the cast_buff_skill callback if available.
-        """
-        # Determine which buff was requested
-        lower = text.lower()
-        buff_skill = "blessing"  # Default blessing
-        if "agi" in lower:
-            buff_skill = "increase_agility"
-        elif "bless" in lower:
-            buff_skill = "blessing"
-        elif "kyrie" in lower:
-            buff_skill = "kyrie_eleison"
-        elif "gloria" in lower:
-            buff_skill = "gloria"
-        elif "magnificat" in lower:
-            buff_skill = "magnificat"
-        elif "aspersio" in lower:
-            buff_skill = "aspersio"
-        elif "improve" in lower:
-            buff_skill = "improve_concentration"
-
-        # Attempt to cast the buff
-        if self._cast_buff_skill is not None:
-            try:
-                self._cast_buff_skill(buff_skill)
-            except Exception as exc:
-                logger.warning("social_cast_buff_failed: skill=%s error=%s", buff_skill, exc)
-
-        return f"sure, casting {buff_skill.replace('_', ' ')}"
-
-    def _handle_price_query(self, sender: str, text: str) -> str:
-        """Handle a price query whisper.
-        
-        Extracts item name from the text and looks up market price.
-        Falls back to a generic response if the item can't be identified.
-        """
-        # Try to extract item name from the text
-        lower = text.lower()
-        # Remove common price query prefixes
-        for prefix in ["price ", "price?", "how much ", "how much is ",
-                        "how much for ", "cost of ", "price of "]:
-            if lower.startswith(prefix):
-                item_name = text[len(prefix):].strip()
-                break
-            elif prefix.rstrip() in lower:
-                item_name = text.strip()
-                break
+        # Auto-classify relationship
+        if rel.trust_score >= 80:
+            rel.relationship_type = "trusted"
+        elif rel.trust_score >= 60:
+            rel.relationship_type = "friend"
+        elif rel.trust_score >= 40:
+            rel.relationship_type = "neutral"
+        elif rel.trust_score >= 20:
+            rel.relationship_type = "rival"
         else:
-            # If no prefix matched, use the whole text minus '?' and common words
-            item_name = text.strip().rstrip("?").strip()
+            rel.relationship_type = "blocked"
 
-        # Skip pure queries like "price?", "how much" — no item to look up
-        generic_queries = {"price", "how much", "cost", "worth", "sell", "buy"}
-        if item_name.lower().strip() in generic_queries:
-            return "which item are you asking about?"
+    def _check_gm_detection(self, sender: str, message: str) -> bool:
+        """Check if a player might be a GM."""
+        is_gm = False
+        for keyword in self.GM_KEYWORDS:
+            if keyword in sender.lower():
+                is_gm = True
+                break
 
-        if self._get_market_price is not None:
-            try:
-                price = self._get_market_price(item_name)
-                if price is not None and price > 0:
-                    return f"{item_name} is around {price}z in the market"
-                else:
-                    # Item not found in market data — give a vague answer
-                    return f"not sure about {item_name}, check the shops"
-            except Exception as exc:
-                logger.warning("social_price_lookup_failed: item=%s error=%s", item_name, exc)
+        if is_gm:
+            rel = self._relationships.get(sender)
+            if rel:
+                rel.is_gm = True
+                rel.trust_score = 0
+                rel.relationship_type = "blocked"
+            self._stats["gms_detected"] += 1
+            logger.warning("gm_detected: %s (message: %s)", sender, message[:100])
+            return True
 
-        return "check the market vendors in town"
+        return False
 
-    def _handle_party_query(self, sender: str, text: str) -> str:
-        """Handle a party invite/query whisper.
-        
-        Checks level difference and decides whether to invite or decline.
-        """
-        sender_level = None
-        if self._get_player_level is not None:
-            try:
-                sender_level = self._get_player_level(sender)
-            except Exception:
-                pass
-
-        self_level = None
-        if self._get_self_level is not None:
-            try:
-                self_level = self._get_self_level()
-            except Exception:
-                pass
-
-        # If we have level data, make an informed decision
-        if sender_level is not None and self_level is not None:
-            level_diff = abs(sender_level - self_level)
-            if level_diff <= self.level_threshold:
-                return f"sure, invite me! ({sender_level}/{self_level})"
-            else:
-                return (
-                    f"sorry, level gap too big ({sender_level} vs {self_level}). "
-                    f"try someone closer to your level"
-                )
-
-        # No level data — accept by default to be social
-        return "sure, invite me!"
-
-    def _handle_warp_request(self) -> str:
-        """Handle a warp request.
-        
-        Attempts to use Butterfly Wing if callback is available, otherwise
-        politely declines.
-        """
-        if self._use_butterfly_wing is not None:
-            try:
-                success = self._use_butterfly_wing()
-                if success:
-                    return "using butterfly wing"
-            except Exception as exc:
-                logger.warning("social_butterfly_wing_failed: %s", exc)
-
-        return "sorry, no warp skill"
-
-    def _handle_buff_ack(self, sender: str) -> str:
-        """Handle a buff acknowledgement from another player."""
-        self._stats["buff_acks_sent"] += 1
-        response = random.choice(["np!", "you're welcome!", "anytime!", "enjoy!", "👍"])
-        self._record_interaction(
-            player_name=sender,
-            interaction_type="buff_ack",
-            detail="ty for buff",
-            response=response,
-        )
-        return response
-
-    def _default_whisper_response(self, text: str) -> str:
-        """DEFAULT_RESPONSE for unrecognized whispers — polite 'sorry?'"""
-        # Add variety so it doesn't look like a bot
-        return random.choice([
-            "sorry?",
-            "hmm?",
-            "what was that?",
-            "i didn't catch that",
-            "say again?",
-            "hm?",
-        ])
-
-    # ── BUFF_ACK ──────────────────────────────────────────────────────────
-
-    def handle_buff_received(self, caster_name: str, buff_name: str) -> str | None:
-        """Called when a priest/ally casts a buff on this bot.
-
-        Args:
-            caster_name: The player who cast the buff.
-            buff_name: Name of the buff skill cast.
-
-        Returns:
-            A thank-you response string, or None if suppressed via cooldown.
-        """
-        with self._lock:
-            interaction_key = f"buff_received_{caster_name}"
-            if not self._spam_check(caster_name, interaction_key):
-                return None
-
-            self._stats["buff_acks_sent"] += 1
-            response = "ty"
-
-            self._record_interaction(
-                player_name=caster_name,
-                interaction_type="buff_received",
-                detail=f"received {buff_name}",
-                response=response,
-            )
-            logger.info(
-                "social_buff_ack: caster=%s buff=%s response='%s'",
-                caster_name, buff_name, response,
-            )
-            return response
-
-    # ── ITEM_EVAL ─────────────────────────────────────────────────────────
-
-    def handle_drop_nearby(
-        self,
-        item_name: str,
-        item_id: int | None,
-        x: int,
-        y: int,
-        dropper: str,
-    ) -> str | None:
-        """Evaluate a dropped item and decide whether to pick it up.
-
-        Args:
-            item_name: Name of the dropped item.
-            item_id: Optional server-side item ID.
-            x, y: Map coordinates of the drop.
-            dropper: Player who dropped the item.
-
-        Returns:
-            "pickup" if item is worth picking up, "ignore" if not, or None
-            if suppressed by cooldown.
-        """
-        with self._lock:
-            interaction_key = f"drop_{dropper}"
-            if not self._spam_check(dropper, interaction_key):
-                return None
-
-            self._stats["items_evaluated"] += 1
-
-            drop = ItemDrop(
-                item_name=item_name,
-                item_id=item_id,
-                x=x, y=y,
-                dropped_by=dropper,
-                timestamp=self._now(),
-            )
-            self._recent_drops.append(drop)
-            # Trim drop list
-            if len(self._recent_drops) > 100:
-                self._recent_drops = self._recent_drops[-100:]
-
-            # Evaluate value
-            estimated_value = self._estimate_item_value(item_name, item_id)
-
-            if estimated_value >= self.pickup_value_threshold:
-                self._stats["items_picked_up"] += 1
-                if self._pickup_item is not None:
-                    try:
-                        self._pickup_item(item_name, x, y)
-                    except Exception as exc:
-                        logger.warning(
-                            "social_pickup_failed: item=%s error=%s",
-                            item_name, exc,
-                        )
-                self._record_interaction(
-                    player_name=dropper,
-                    interaction_type="item_pickup",
-                    detail=f"picked up {item_name} (value={estimated_value})",
-                )
-                logger.info(
-                    "social_item_pickup: item=%s value=%d dropper=%s",
-                    item_name, estimated_value, dropper,
-                )
-                return "pickup"
-
-            self._record_interaction(
-                player_name=dropper,
-                interaction_type="item_ignore",
-                detail=f"ignored {item_name} (value={estimated_value})",
-            )
-            logger.debug(
-                "social_item_ignore: item=%s value=%d (below threshold %d)",
-                item_name, estimated_value, self.pickup_value_threshold,
-            )
-            return "ignore"
-
-    def _estimate_item_value(self, item_name: str, item_id: int | None) -> int:
-        """Estimate the value of an item, using market data if available."""
-        if self._get_market_price is not None:
-            try:
-                price = self._get_market_price(item_name)
-                if price is not None:
-                    return price
-            except Exception:
-                pass
-
-        # Fallback: heuristic based on item name
-        lower = item_name.lower()
-        # Cards are always valuable
-        if "card" in lower:
-            return 50000
-        # Equipment is usually worth something
-        equip_keywords = ["sword", "staff", "bow", "mace", "knife", "dagger",
-                          "shield", "armor", "boots", "muffler", "robe",
-                          "hat", "helm", "goggles", "ring", "earring",
-                          "necklace", "clip", "brooch", "belt"]
-        if any(kw in lower for kw in equip_keywords):
-            return 5000
-        # Consumables
-        if any(kw in lower for kw in ["potion", "fruit", "berry", "food"]):
-            return 500
-        # Materials
-        if any(kw in lower for kw in ["elunium", "oridecon", "rough", "dust",
-                                       "hammer", "anvil", "shard", "gemstone"]):
-            return 2000
-        # Default low value
-        return 100
-
-    # ── PARTY_INVITE ─────────────────────────────────────────────────────
-
-    def handle_party_invite(
-        self,
-        leader_name: str,
-        leader_level: int,
-        leader_map: str,
-        leader_job: str | None = None,
-    ) -> bool:
-        """Handle an incoming party invite.
-
-        Args:
-            leader_name: Name of the party leader.
-            leader_level: Level of the party leader.
-            leader_map: Map the leader is on.
-            leader_job: Optional job class of the leader.
-
-        Returns:
-            True if the invite was accepted, False if declined or suppressed.
-        """
-        with self._lock:
-            interaction_key = f"party_invite_{leader_name}"
-            if not self._spam_check(leader_name, interaction_key):
-                return False
-
-            self_level = 0
-            if self._get_self_level is not None:
-                try:
-                    self_level = self._get_self_level() or 0
-                except Exception:
-                    pass
-
-            invite = PartyInvite(
-                leader_name=leader_name,
-                leader_level=leader_level,
-                leader_map=leader_map,
-                leader_job=leader_job,
-            )
-            self._pending_party_invites[leader_name] = invite
-
-            # Decision logic: accept if level-appropriate
-            level_diff = abs(leader_level - self_level) if self_level > 0 else 0
-
-            if level_diff <= self.level_threshold:
-                # Accept invite
-                self._stats["party_invites_accepted"] += 1
-                if self._party_accept is not None:
-                    try:
-                        self._party_accept(leader_name)
-                    except Exception as exc:
-                        logger.warning(
-                            "social_party_accept_failed: leader=%s error=%s",
-                            leader_name, exc,
-                        )
-                        return False
-
-                self._record_interaction(
-                    player_name=leader_name,
-                    interaction_type="party_invite",
-                    detail=f"accepted from {leader_name} (lvl {leader_level}, gap {level_diff})",
-                    response="accepted",
-                )
-                logger.info(
-                    "social_party_accepted: leader=%s lvl=%d self_lvl=%d gap=%d",
-                    leader_name, leader_level, self_level, level_diff,
-                )
+    def _check_suspicious_content(self, sender: str, message: str) -> bool:
+        """Check if message contains suspicious content (reports, accusations)."""
+        for pattern in self.SUSPICIOUS_PATTERNS:
+            if re.search(pattern, message, re.IGNORECASE):
+                rel = self._relationships.get(sender)
+                if rel:
+                    rel.is_bot_reporter = True
+                    rel.trust_score = max(0, rel.trust_score - 20)
+                    rel.relationship_type = "blocked"
+                logger.warning("suspicious_content: %s said '%s'", sender, message[:100])
                 return True
-            else:
-                # Decline — level gap too large
-                self._stats["party_invites_declined"] += 1
-                if self._party_decline is not None:
-                    try:
-                        self._party_decline(leader_name)
-                    except Exception as exc:
-                        logger.warning(
-                            "social_party_decline_failed: leader=%s error=%s",
-                            leader_name, exc,
-                        )
+        return False
 
-                self._record_interaction(
-                    player_name=leader_name,
-                    interaction_type="party_invite",
-                    detail=f"declined from {leader_name} (lvl {leader_level}, gap {level_diff})",
-                    response="declined",
+    def _should_respond(self, msg: ChatMessage) -> dict[str, Any] | None:
+        """Determine if and how to respond to a chat message."""
+        now = time.time()
+
+        # Don't respond to ourselves
+        if msg.sender == "" or msg.sender == "System":
+            return None
+
+        # Rate limiting: don't chat too much
+        if self._total_chat_messages > self.MAX_CHAT_PER_HOUR:
+            return None
+
+        # Cooldown between messages
+        if now - self._last_chat_time < self.CHAT_COOLDOWN_MIN:
+            return None
+
+        # Check if we've responded to this player recently
+        last_resp = self._recent_responses.get(msg.sender, 0)
+        if now - last_resp < 60:
+            return None
+
+        # Check relationship
+        rel = self._relationships.get(msg.sender)
+        if rel and rel.relationship_type == "blocked":
+            return None
+
+        # Direct messages (whisper) have higher response chance
+        if msg.channel in ("whisper", "pm"):
+            if random.random() < self.RESPONSE_CHANCE + 0.3:
+                return self._generate_response(msg)
+            return None
+
+        # Public chat: check templates
+        for template in self._chat_templates:
+            if now - template.last_used < template.cooldown_seconds:
+                continue
+            if re.search(template.pattern, msg.message, re.IGNORECASE):
+                if random.random() < self.RESPONSE_CHANCE * (template.priority / 5):
+                    template.last_used = now
+                    return self._generate_response(msg, template)
+
+        # Random social greeting (low chance)
+        if random.random() < self.GREETING_CHANCE:
+            return self._generate_greeting(msg)
+
+        return None
+
+    def _generate_response(self, msg: ChatMessage,
+                           template: ChatTemplate | None = None) -> dict[str, Any]:
+        """Generate a response to a chat message."""
+        now = time.time()
+
+        # Use conversation engine if available
+        if self._conversation_engine is not None and msg.channel in ("whisper", "pm"):
+            try:
+                response = self._conversation_engine.generate_response(
+                    sender=msg.sender,
+                    message=msg.message,
+                    context={
+                        "relationship": self._relationships.get(msg.sender),
+                        "channel": msg.channel,
+                    },
                 )
-                logger.info(
-                    "social_party_declined: leader=%s lvl=%d self_lvl=%d gap=%d",
-                    leader_name, leader_level, self_level, level_diff,
-                )
-                return False
+                if response:
+                    self._recent_responses[msg.sender] = now
+                    self._stats["responses_generated"] += 1
+                    return {
+                        "channel": msg.channel,
+                        "target": msg.sender,
+                        "message": response,
+                        "delay_ms": random.randint(1500, 4000),
+                    }
+            except Exception:
+                pass
 
-    # ── TRADE_REQUEST ────────────────────────────────────────────────────
+        # Fallback: use templates
+        if template and template.responses:
+            response = random.choice(template.responses)
+            response = response.replace("{sender}", msg.sender)
+            response = response.replace("{map}", msg.map_name or "this map")
+            response = response.replace("{class}", "novice")
+            response = response.replace("{level}", "1")
 
-    def handle_trade_request(self, player_name: str) -> str | None:
-        """Handle an incoming trade request from another player.
+            self._recent_responses[msg.sender] = now
+            self._stats["responses_generated"] += 1
 
-        Args:
-            player_name: The player requesting a trade.
+            # Variable delay to simulate human typing
+            delay_ms = random.randint(1000, 4000) + len(response) * 50
 
-        Returns:
-            A message describing available items for sale, or None if suppressed.
-        """
+            return {
+                "channel": msg.channel,
+                "target": msg.sender if msg.channel in ("whisper", "pm") else "",
+                "message": response,
+                "delay_ms": delay_ms,
+            }
+
+        return None
+
+    def _generate_greeting(self, msg: ChatMessage) -> dict[str, Any]:
+        """Generate a greeting response."""
+        greetings = [
+            f"hey {msg.sender}!",
+            f"hi {msg.sender}",
+            f"hello!",
+            f"sup {msg.sender}",
+        ]
+        response = random.choice(greetings)
+
+        self._stats["responses_generated"] += 1
+        return {
+            "channel": msg.channel,
+            "target": msg.sender if msg.channel in ("whisper", "pm") else "",
+            "message": response,
+            "delay_ms": random.randint(2000, 5000),
+        }
+
+    # ── Social Event Processing ──
+
+    def process_event(self, event_type: str, actor: str, target: str = "",
+                      detail: str = "") -> dict[str, Any] | None:
+        """Process a social event (party invite, trade request, etc.)."""
         with self._lock:
-            interaction_key = f"trade_{player_name}"
-            if not self._spam_check(player_name, interaction_key):
-                return None
-
-            self._stats["trades_handled"] += 1
-
-            # Gather items available for trade from inventory
-            sale_items: list[dict[str, Any]] = []
-            if self._get_inventory is not None:
-                try:
-                    inventory = self._get_inventory() or []
-                    for item in inventory:
-                        if isinstance(item, dict) and item.get("sellable", False):
-                            sale_items.append({
-                                "name": item.get("name", "unknown"),
-                                "qty": item.get("quantity", 1),
-                                "price": item.get("estimated_price", 0),
-                            })
-                except Exception as exc:
-                    logger.warning("social_inventory_lookup_failed: %s", exc)
-
-            # Build response
-            if sale_items:
-                # Present up to 5 items for sale
-                items_str = ", ".join(
-                    f"{i['name']} x{i['qty']} @{i['price']}z"
-                    for i in sale_items[:5]
-                )
-                if len(sale_items) > 5:
-                    items_str += f" (and {len(sale_items) - 5} more)"
-                response = f"i have: {items_str}"
-            else:
-                response = "nothing for sale right now, sorry"
-
-            self._record_interaction(
-                player_name=player_name,
-                interaction_type="trade_request",
-                detail=f"trade from {player_name}",
-                response=response,
+            now = time.time()
+            event = SocialEvent(
+                event_type=event_type, actor=actor, target=target,
+                detail=detail, timestamp=now,
             )
-            logger.info(
-                "social_trade_request: from=%s items_available=%d",
-                player_name, len(sale_items),
-            )
-            return response
+            self._social_events.append(event)
 
-    # ── Utility ──────────────────────────────────────────────────────────
+            # Check relationship
+            rel = self._relationships.get(actor)
 
-    def get_player_history(self, player_name: str) -> PlayerHistory | None:
-        """Get the interaction history for a specific player.
+            # Party invites
+            if event_type == "party_invite":
+                if rel and rel.relationship_type == "blocked":
+                    event.response = "declined"
+                    return {"action": "decline", "reason": "blocked_player"}
+                if rel and rel.trust_score >= 40:
+                    event.response = "accepted"
+                    self._stats["friends_made"] += 1
+                    return {"action": "accept", "reason": "trusted_player"}
+                # Random chance to accept
+                if random.random() < 0.4:
+                    event.response = "accepted"
+                    return {"action": "accept", "reason": "random_accept"}
+                event.response = "declined"
+                return {"action": "decline", "reason": "unknown_player"}
 
-        Args:
-            player_name: Name of the player.
+            # Trade requests
+            if event_type == "trade_request":
+                if rel and rel.trust_score >= 50:
+                    event.response = "accepted"
+                    return {"action": "accept", "reason": "trusted_trader"}
+                if random.random() < 0.3:
+                    event.response = "accepted"
+                    return {"action": "accept", "reason": "random_trade"}
+                event.response = "declined"
+                return {"action": "decline", "reason": "not_interested"}
 
-        Returns:
-            PlayerHistory or None if no interactions recorded.
+            # Friend requests
+            if event_type == "friend_request":
+                if rel and rel.trust_score >= 60:
+                    event.response = "accepted"
+                    return {"action": "accept", "reason": "trusted_player"}
+                if random.random() < 0.2:
+                    event.response = "accepted"
+                    return {"action": "accept", "reason": "random_accept"}
+                event.response = "declined"
+                return {"action": "decline", "reason": "dont_know_you"}
+
+            return None
+
+    # ── Social Contract ──
+
+    def check_social_contract(self, map_name: str, nearby_players: list[dict],
+                               current_activity: str) -> dict[str, Any]:
+        """Check if current behavior violates the social contract.
+
+        Returns a dict with:
+        - violation: bool
+        - reason: str
+        - suggested_action: str
         """
         with self._lock:
-            return self._history.get(player_name)
+            result = {"violation": False, "reason": "", "suggested_action": ""}
 
-    def get_recent_interactions(
-        self,
-        limit: int = 20,
-        player_name: str | None = None,
-    ) -> list[InteractionRecord]:
-        """Get recent interactions, optionally filtered by player.
+            # Don't bot in popular spots
+            popular_maps = ["prt_fild01", "pay_fild01", "moc_fild01",
+                           "gef_fild01", "alde_dun01"]
+            if map_name in popular_maps and len(nearby_players) > 3:
+                result["violation"] = True
+                result["reason"] = "Too many players on popular map"
+                result["suggested_action"] = "change_map"
+                return result
 
-        Args:
-            limit: Maximum number of records to return.
-            player_name: Optional filter by player name.
+            # Don't KS (kill steal)
+            if current_activity == "attacking" and len(nearby_players) > 0:
+                for player in nearby_players:
+                    if player.get("is_attacking", False):
+                        result["violation"] = True
+                        result["reason"] = "Potential KS - player is attacking nearby"
+                        result["suggested_action"] = "move_away"
+                        return result
 
-        Returns:
-            List of recent InteractionRecords (newest first).
-        """
+            # Don't bot in town
+            town_maps = ["prontera", "morocc", "payon", "geffen",
+                        "aldebaran", "alberta", "izlude"]
+            if any(t in map_name.lower() for t in town_maps):
+                if current_activity in ("farming", "attacking", "looting"):
+                    result["violation"] = True
+                    result["reason"] = "Botting in town is suspicious"
+                    result["suggested_action"] = "stop_activity"
+                    return result
+
+            return result
+
+    # ── Reputation Building ──
+
+    def get_reputation_context(self) -> str:
+        """Get formatted reputation context for LLM prompts."""
         with self._lock:
-            if player_name:
-                ph = self._history.get(player_name)
-                if ph is None:
-                    return []
-                records = list(reversed(ph.interactions))
-            else:
-                # Collect all records across all players
-                all_records: list[InteractionRecord] = []
-                for ph in self._history.values():
-                    all_records.extend(ph.interactions)
-                records = sorted(
-                    all_records, key=lambda r: r.timestamp, reverse=True,
-                )
-            return records[:limit]
+            lines = ["── Social Intelligence ──"]
+            lines.append(f"Total messages analyzed: {self._total_chat_messages}")
+            lines.append(f"Relationships tracked: {len(self._relationships)}")
 
-    def get_stats(self) -> dict[str, int]:
-        """Get interaction statistics.
+            # Trusted players
+            trusted = [r for r in self._relationships.values()
+                       if r.relationship_type == "trusted"]
+            if trusted:
+                lines.append(f"Trusted: {', '.join(r.player_name for r in trusted[:5])}")
 
-        Returns:
-            Copy of the internal stats dict.
-        """
+            # Threats
+            threats = [r for r in self._relationships.values()
+                       if r.relationship_type in ("rival", "blocked")]
+            if threats:
+                lines.append(f"Threats: {', '.join(f'{r.player_name}({r.relationship_type})' for r in threats[:5])}")
+
+            # GMs
+            gms = [r for r in self._relationships.values() if r.is_gm]
+            if gms:
+                lines.append(f"GMs detected: {', '.join(r.player_name for r in gms)}")
+
+            # Bot reporters
+            reporters = [r for r in self._relationships.values() if r.is_bot_reporter]
+            if reporters:
+                lines.append(f"Bot reporters: {', '.join(r.player_name for r in reporters)}")
+
+            # Recent chat activity
+            lines.append(f"Chat activity (5m): guild={self._guild_messages_5m}, "
+                         f"party={self._party_messages_5m}, pm={self._private_messages_5m}")
+
+            return "\n".join(lines)
+
+    # ── Cycle Tick ──
+
+    def tick(self) -> dict[str, Any]:
+        """Called every PDCA cycle to update social state."""
+        now = time.time()
+        result = {
+            "messages_analyzed": self._total_chat_messages,
+            "relationships": len(self._relationships),
+            "gms_detected": self._stats["gms_detected"],
+            "pkers_detected": self._stats["pkers_detected"],
+            "friends_made": self._stats["friends_made"],
+        }
+
+        # Cleanup stale relationships every 10 minutes
+        if now - self._last_cleanup > 600:
+            self._cleanup()
+            self._last_cleanup = now
+
+        return result
+
+    def _cleanup(self) -> None:
+        """Remove stale data."""
+        with self._lock:
+            now = time.time()
+            # Remove relationships not seen in 7 days
+            stale = [k for k, v in self._relationships.items()
+                     if now - v.last_interaction > 604800]
+            for k in stale:
+                del self._relationships[k]
+
+    def counters(self) -> dict[str, int]:
         with self._lock:
             return dict(self._stats)
 
-    def get_total_players_interacted(self) -> int:
-        """Get the number of unique players interacted with.
 
-        Returns:
-            Count of unique players.
-        """
-        with self._lock:
-            return len(self._history)
+# ── Global Singleton ──
 
-    def reset_stats(self) -> None:
-        """Reset all interaction statistics."""
-        with self._lock:
-            for key in self._stats:
-                self._stats[key] = 0
-            logger.info("social_stats_reset")
-
-    def expire_old_drops(self, max_age_seconds: int = 300) -> None:
-        """Remove drop entries older than max_age_seconds.
-
-        Args:
-            max_age_seconds: Maximum age of drops to keep (default 5 min).
-        """
-        now = self._now()
-        with self._lock:
-            self._recent_drops = [
-                d for d in self._recent_drops
-                if now - d.timestamp <= max_age_seconds
-            ]
+_social_engine: SocialEngine | None = None
+_social_engine_lock = RLock()
 
 
-# ── Factory function ──────────────────────────────────────────────────────
-
-_SocialInteractionEngine: SocialInteractionEngine | None = None
-_engine_lock = RLock()
-
-
-def get_social_interaction_engine() -> SocialInteractionEngine:
-    """Factory function — returns the global SocialInteractionEngine singleton.
-
-    Thread-safe. Creates the engine on first call.
-    """
-    global _SocialInteractionEngine
-    with _engine_lock:
-        if _SocialInteractionEngine is None:
-            _SocialInteractionEngine = SocialInteractionEngine()
-            logger.info("SocialInteractionEngine created")
-        return _SocialInteractionEngine
+def get_social_engine() -> SocialEngine:
+    global _social_engine
+    with _social_engine_lock:
+        if _social_engine is None:
+            _social_engine = SocialEngine()
+        return _social_engine

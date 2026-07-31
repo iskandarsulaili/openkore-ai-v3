@@ -256,7 +256,23 @@ class ActionQueue:
                     item for item in self._by_bot[bot_id] if item.proposal.action_id != action_id
                 )
                 self._clear_idempotency_index(bot_id, queued.proposal.idempotency_key, action_id)
+            # Schedule removal from _actions_by_id / _action_to_bot after 60s TTL
+            # to prevent unbounded memory growth. The action is already removed from
+            # _by_bot above; keeping it in _actions_by_id only serves completed_actions()
+            # which has a 60s window. After that, it's dead weight.
+            self._schedule_ack_cleanup(action_id, bot_id)
             return True, queued.status
+
+    def _schedule_ack_cleanup(self, action_id: str, bot_id: str | None) -> None:
+        """Remove acknowledged/dropped action from _actions_by_id after 60s TTL."""
+        import threading
+        threading.Timer(65.0, self._remove_ack_action, args=[action_id, bot_id]).start()
+
+    def _remove_ack_action(self, action_id: str, bot_id: str | None) -> None:
+        with self._lock:
+            self._actions_by_id.pop(action_id, None)
+            if bot_id:
+                self._action_to_bot.pop(action_id, None)
 
     @property
     def completed_actions(self) -> list[dict]:

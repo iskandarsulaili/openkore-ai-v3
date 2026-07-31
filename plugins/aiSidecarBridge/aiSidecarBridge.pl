@@ -112,6 +112,59 @@ our $_last_move_humanize_ms = 0;
 our %_pending_batch_actions = ();
 our $COMMITTED_ACTION_COOLDOWN_MS = 30000;
 
+# ── Skill delay tracking ──
+# Tracks per-skill cooldowns: skill_name => timestamp_ms when it becomes available again
+our %_skill_delays = ();
+# Tracks cast time per skill: skill_name => cast_time_ms
+our %_cast_times = ();
+# Tracks after-cast delay per skill: skill_name => after_cast_delay_ms
+our %_after_cast_delays = ();
+# Tracks when a skill was last used: skill_name => timestamp_ms
+our %_last_skill_use_ms = ();
+# Tracks if currently casting (don't send movement during cast)
+our $_is_casting = 0;
+our $_casting_until_ms = 0;
+# Max actions per poll
+our $MAX_ACTIONS_PER_POLL = 5;
+
+# ── Party coordination state ──
+# Tracks active party buffs: buff_name => { source_bot, expires_at_ms }
+our %_party_active_buffs = ();
+# Tracks party member positions: member_name => { x, y, map, updated_at_ms }
+our %_party_member_positions = ();
+# Last time we sent a party buff request
+our $_last_party_buff_request_ms = 0;
+# Party buff request cooldown (ms)
+our $PARTY_BUFF_REQUEST_COOLDOWN_MS = 5000;
+
+# ── MVP hunting state ──
+# Tracks MVP spawn timers: mvp_name => { killed_at_ms, respawn_window_start, respawn_window_end, map }
+our %_mvp_spawn_timers = ();
+# Tracks current MVP target (if any)
+our $_current_mvp_target = '';
+# Last time we checked MVP status
+our $_last_mvp_check_ms = 0;
+# MVP check interval (ms)
+our $MVP_CHECK_INTERVAL_MS = 10000;
+
+# ── WOE state ──
+# Is WOE currently active?
+our $_woe_active = 0;
+# Last WOE time check
+our $_last_woe_check_ms = 0;
+# WOE check interval (ms)
+our $WOE_CHECK_INTERVAL_MS = 30000;
+# Emperium target ID (if any)
+our $_emperium_target_id = '';
+# Last escape reflex time for WOE
+our $_last_woe_escape_ms = 0;
+# WOE escape cooldown (ms)
+our $WOE_ESCAPE_COOLDOWN_MS = 10000;
+
+# ── Batch completion tracking ──
+# Tracks completed batches so we can report them to the sidecar
+our %_completed_batches = ();
+
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
@@ -2900,6 +2953,7 @@ sub _poll_next_action {
 	my $resp = _http_post_json('/v1/actions/next', {
 		meta => _meta(_bot_id()),
 		poll_id => $poll_id,
+		max_actions => $MAX_ACTIONS_PER_POLL,
 	});
 
 	my $status = _http_status_code($resp);
@@ -2937,9 +2991,52 @@ sub _poll_next_action {
 	my $json = $resp->{json};
 	return 1 if ref($json) ne 'HASH';
 	return 1 if !$json->{has_action};
-	return 1 if ref($json->{action}) ne 'HASH';
 
-	_execute_action($poll_id, $json->{action});
+	# ── Multi-action per poll ──
+	# Accept either a single action (backward compat) or an array of actions
+	my @actions = ();
+	if (ref($json->{actions}) eq 'ARRAY') {
+		@actions = @{$json->{actions}};
+	} elsif (ref($json->{action}) eq 'HASH') {
+		@actions = ($json->{action});
+	}
+
+	# Limit to max actions per poll
+	if (@actions > $MAX_ACTIONS_PER_POLL) {
+		splice @actions, $MAX_ACTIONS_PER_POLL;
+	}
+
+	# Execute each action in sequence with proper delay handling
+	my $executed_count = 0;
+	for my $action (@actions) {
+		last if !ref($action) eq 'HASH';
+		_execute_action($poll_id, $action);
+		$executed_count++;
+
+		# Check if we need to wait for cast/animation before next action
+		if ($_is_casting && $_casting_until_ms > _now_ms()) {
+			my $wait_ms = $_casting_until_ms - _now_ms();
+			$wait_ms = 0 if $wait_ms < 0;
+			$wait_ms = 5000 if $wait_ms > 5000;  # Safety cap
+			usleep($wait_ms * 1000) if $wait_ms > 0;
+		} elsif ($executed_count < @actions) {
+			# Small inter-action delay to let server process
+			usleep(50000);  # 50ms between actions
+		}
+	}
+
+	# ── Report completed batches to sidecar ──
+	_flush_completed_batches();
+
+	# ── Check WOE status periodically ──
+	_check_woe_status();
+
+	# ── Check MVP status periodically ──
+	_check_mvp_status();
+
+	# ── Check party buff expiry ──
+	_check_party_buff_expiry();
+
 	return 1;
 }
 
@@ -2981,12 +3078,76 @@ sub _execute_action {
 		warning "[ai_batch] batch=$batch_id action=$action_id cmd=$effective_command\n", 'aiSidecarBridge', 2;
 	}
 
-	if ($effective_command =~ /^move\s+/i && $rewrite_kind ne 'committed_action_blocked') {
-		Commands::run("stand") if $char && $char->{sitting};
-		warning "[ai_timing] move cmd=$effective_command latency=${latency_ms}ms buffer=${tick_buffer}tick\n", 'aiSidecarBridge', 2;
+	# ── COMMITTED ACTION TRACKING ──
+	# Wire up _committed_actions: track committed actions to prevent conflicts
+	# within the COMMITTED_ACTION_COOLDOWN_MS window.
+	# _committed_actions is declared at line 110 but was never written to.
+	# Now we track every executed action so _rewrite_runtime_command can check it.
+	if ($action_id ne 'unknown_action' && $effective_command ne '') {
+		my $now = _now_ms();
+		# Clean stale entries
+		for my $_ca_key (keys %_committed_actions) {
+			if ($now - $_committed_actions{$_ca_key} > $COMMITTED_ACTION_COOLDOWN_MS) {
+				delete $_committed_actions{$_ca_key};
+			}
+		}
+		# Track this action
+		$_committed_actions{$action_id} = $now;
+		debug "[committed_action] tracked action_id=$action_id cmd=$effective_command\n", 'aiSidecarBridge', 2;
 	}
 
-	# ── PRE-EXECUTION AUTO-STAND ──
+	# ── SKILL DELAY CHECK ──
+	# Check if the command involves a skill and if that skill is on cooldown.
+	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
+	my $_skill_name = '';
+	if ($effective_command =~ /^(?:use_skill|skill)\s+(.+)$/i) {
+		$_skill_name = lc($1);
+		$_skill_name =~ s/\s+$//;
+	} elsif ($effective_command =~ /^attack\s+skill\s+(.+)$/i) {
+		$_skill_name = lc($1);
+		$_skill_name =~ s/\s+$//;
+	}
+	if ($_skill_name ne '') {
+		my $now = _now_ms();
+		if (defined $_skill_delays{$_skill_name} && $now < $_skill_delays{$_skill_name}) {
+			my $remaining_ms = $_skill_delays{$_skill_name} - $now;
+			($success, $result_code, $msg) = (1, 'skill_on_cooldown', "skill '$_skill_name' on cooldown for ${remaining_ms}ms");
+			$rewrite_kind = 'skill_on_cooldown';
+			$effective_command = '';
+			warning "[skill_delay] skill='$_skill_name' on cooldown, remaining=${remaining_ms}ms, skipping\n", 'aiSidecarBridge', 1;
+		} else {
+			# Skill is available — track its delay after execution
+			# The delay values come from the action metadata or defaults
+			my $skill_delay_ms = defined $metadata->{skill_delay_ms} ? $metadata->{skill_delay_ms} : 0;
+			my $cast_time_ms = defined $metadata->{cast_time_ms} ? $metadata->{cast_time_ms} : 0;
+			my $after_cast_delay_ms = defined $metadata->{after_cast_delay_ms} ? $metadata->{after_cast_delay_ms} : 0;
+
+			# Update skill delay tracking
+			if ($skill_delay_ms > 0) {
+				$_skill_delays{$_skill_name} = $now + $skill_delay_ms;
+				$_last_skill_use_ms{$_skill_name} = $now;
+				debug "[skill_delay] set delay for '$_skill_name': ${skill_delay_ms}ms (until $_skill_delays{$_skill_name})\n", 'aiSidecarBridge', 2;
+			}
+			if ($cast_time_ms > 0) {
+				$_cast_times{$_skill_name} = $cast_time_ms;
+				$_is_casting = 1;
+				$_casting_until_ms = $now + $cast_time_ms;
+				debug "[skill_delay] set cast time for '$_skill_name': ${cast_time_ms}ms (until $_casting_until_ms)\n", 'aiSidecarBridge', 2;
+			}
+			if ($after_cast_delay_ms > 0) {
+				$_after_cast_delays{$_skill_name} = $after_cast_delay_ms;
+			}
+		}
+	}
+
+	# ── CAST TIME AWARENESS: don't send movement commands during cast ──
+	if ($_is_casting && $_casting_until_ms > _now_ms() && $effective_command =~ /^move\s+/i) {
+		$rewrite_kind = 'movement_blocked_during_cast';
+		$effective_command = '';
+		debug "[cast_aware] blocking move command during cast (until $_casting_until_ms)\n", 'aiSidecarBridge', 2;
+	}
+
+	# ── PARTY LEAVE SUPPRESSION: one-time leave, then suppress forever ──
 	# The sidecar may queue 'stand' and 'move prontera' as separate actions.
 	# The bridge only processes ONE action per poll, so 'move prontera' arrives
 	# while the bot is still sitting. Auto-stand ensures the bot can actually move.
@@ -2996,9 +3157,7 @@ sub _execute_action {
 		Commands::run("stand");
 		debug "[auto_stand] bot was sitting, auto-stand before move command\n", 'aiSidecarBridge', 1;
 	}
-	
-	my ($success, $result_code, $msg) = (0, 'invalid_action', 'invalid action payload');
-	
+
 	# ── PARTY LEAVE SUPPRESSION: one-time leave, then suppress forever ──
 	# Once a bot has left a party, it should never try again unless it somehow rejoins.
 	# The bridge tracks this independently of the sidecar's cooldown.
@@ -3276,7 +3435,490 @@ sub _execute_action {
 		        message => $msg,
 		    });
 		}
+
+	# ── BATCH COMPLETION: wire up _pending_batch_actions ──
+	# _pending_batch_actions was write-only dead code — actions were pushed
+	# into it but never consumed. Now we track completed batches and report
+	# them to the sidecar via _flush_completed_batches.
+	if ($action_id ne 'unknown_action' && $action_id =~ /^(\d+)_/) {
+		my $batch_id = $1;
+		if (defined $_pending_batch_actions{$batch_id}) {
+			my $batch_size = scalar(@{$_pending_batch_actions{$batch_id}});
+			# Check if this is the last action in the batch by looking at
+			# the action_id suffix (e.g., "123_5" for 5th action in batch 123)
+			my ($batch_seq) = ($action_id =~ /^\d+_(\d+)$/);
+			if (defined $batch_seq && $batch_seq >= $batch_size) {
+				# Batch is complete — mark for reporting
+				$_completed_batches{$batch_id} = {
+					batch_id => $batch_id,
+					action_count => $batch_size,
+					completed_at => _now_ms(),
+					actions => $_pending_batch_actions{$batch_id},
+				};
+				delete $_pending_batch_actions{$batch_id};
+				warning "[ai_batch] batch=$batch_id complete ($batch_size actions)\n", 'aiSidecarBridge', 1;
+			}
+		}
 	}
+}
+
+# ── Flush completed batches to sidecar ──
+# Reports completed batch actions so the sidecar knows the batch is done.
+# This wires up _pending_batch_actions (previously write-only dead code).
+sub _flush_completed_batches {
+	return if !_bridge_enabled();
+	return if !%_completed_batches;
+
+	for my $_cb_id (keys %_completed_batches) {
+		my $_cb = $_completed_batches{$_cb_id};
+		my $_resp = _http_post_json('/v1/acknowledgements/batch', {
+			meta => _meta(_bot_id()),
+			batch_id => $_cb->{batch_id},
+			action_count => $_cb->{action_count},
+			completed_at => $_cb->{completed_at},
+			actions => $_cb->{actions},
+		});
+		if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
+			delete $_completed_batches{$_cb_id};
+			debug "[ai_batch] reported batch=$_cb_id complete to sidecar\n", 'aiSidecarBridge', 2;
+		} else {
+			debug "[ai_batch] failed to report batch=$_cb_id, will retry\n", 'aiSidecarBridge', 1;
+		}
+	}
+}
+
+# ── Party coordination: send buff request to other bots ──
+# Sends a buff request to the sidecar, which forwards it to the appropriate bot.
+# The sidecar handles routing — the bridge just posts the request.
+sub _send_party_buff_request {
+	my ($buff_name, $target_bot) = @_;
+	return if !_bridge_enabled();
+	return if !$registered;
+	return if !$buff_name;
+
+	my $now = _now_ms();
+	return if $now - $_last_party_buff_request_ms < $PARTY_BUFF_REQUEST_COOLDOWN_MS;
+	$_last_party_buff_request_ms = $now;
+
+	my $_resp = _http_post_json('/v2/party/buff_request', {
+		meta => _meta(_bot_id()),
+		buff_name => $buff_name,
+		target_bot => $target_bot || '',
+		requested_at => $now,
+	});
+	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
+		debug "[party_buff] buff request sent: $buff_name -> $target_bot\n", 'aiSidecarBridge', 2;
+	} else {
+		debug "[party_buff] failed to send buff request: $buff_name\n", 'aiSidecarBridge', 1;
+	}
+}
+
+# ── Party coordination: share target info with party members ──
+# Sends current target information to the sidecar for party target coordination.
+sub _send_target_coordination {
+	my ($target_id, $target_name, $target_hp_pct) = @_;
+	return if !_bridge_enabled();
+	return if !$registered;
+
+	my $_resp = _http_post_json('/v2/party/target', {
+		meta => _meta(_bot_id()),
+		target_id => $target_id || '',
+		target_name => $target_name || '',
+		target_hp_pct => $target_hp_pct || 0,
+		map => _safe_field_map() || '',
+		timestamp => _now_ms(),
+	});
+	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
+		debug "[party_target] shared target: $target_name (ID=$target_id, HP=$target_hp_pct%)\n", 'aiSidecarBridge', 2;
+	}
+}
+
+# ── Party coordination: send position update for formation keeping ──
+# Shares the bot's current position with party members via the sidecar.
+sub _send_position_update {
+	return if !_bridge_enabled();
+	return if !$registered;
+	return if !$char;
+
+	my ($x, $y);
+	if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+		$x = $char->{pos_to}{x};
+		$y = $char->{pos_to}{y};
+	} elsif ($char->{pos} && ref $char->{pos} eq 'HASH') {
+		$x = $char->{pos}{x};
+		$y = $char->{pos}{y};
+	}
+	return if !defined $x || !defined $y;
+
+	my $_resp = _http_post_json('/v2/party/position', {
+		meta => _meta(_bot_id()),
+		x => $x + 0,
+		y => $y + 0,
+		map => _safe_field_map() || '',
+		timestamp => _now_ms(),
+	});
+	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
+		debug "[party_position] sent position: ($x, $y) on $_resp->{map}\n", 'aiSidecarBridge', 3;
+	}
+}
+
+# ── Party coordination: check party buff expiry ──
+# Checks if any tracked party buffs have expired and removes them.
+sub _check_party_buff_expiry {
+	my $now = _now_ms();
+	for my $_pb_name (keys %_party_active_buffs) {
+		my $_pb = $_party_active_buffs{$_pb_name};
+		if ($now >= $_pb->{expires_at_ms}) {
+			delete $_party_active_buffs{$_pb_name};
+			debug "[party_buff] buff '$_pb_name' expired (was from $_pb->{source_bot})\n", 'aiSidecarBridge', 2;
+		}
+	}
+}
+
+# ── Party coordination: track a party buff as active ──
+# Called when a party member uses a buff skill. Tracks the buff so we
+# don't cast the same buff if another bot already has it active.
+sub _track_party_buff {
+	my ($buff_name, $source_bot, $duration_ms) = @_;
+	return if !$buff_name;
+	$duration_ms ||= 240000;  # Default 4 minutes for most buffs
+
+	$_party_active_buffs{$buff_name} = {
+		source_bot => $source_bot || '',
+		expires_at_ms => _now_ms() + $duration_ms,
+	};
+	debug "[party_buff] tracking buff '$buff_name' from $source_bot for ${duration_ms}ms\n", 'aiSidecarBridge', 2;
+}
+
+# ── WOE support: check if WOE is active ──
+# Checks the current time against WOE schedule. WOE is typically active
+# on Wed/Sat/Sun evenings. Also checks for guild castle map indicators.
+sub _check_woe_status {
+	my $now = _now_ms();
+	return if $now - $_last_woe_check_ms < $WOE_CHECK_INTERVAL_MS;
+	$_last_woe_check_ms = $now;
+
+	# Check if we're on a WOE map (guild castle)
+	my $map = _safe_field_map() || '';
+	my $_on_woe_map = ($map =~ /^guild|^schguild|^turbo_room|^pvp_/i) ? 1 : 0;
+
+	# Check time-based WOE schedule
+	# WOE is typically active on Wed/Sat/Sun from 20:00-22:00 server time
+	my ($sec, $min, $hour, $mday, $mon, $year, $wday) = localtime(time);
+	my $_is_woe_day = ($wday == 3 || $wday == 6 || $wday == 0) ? 1 : 0;  # Wed, Sat, Sun
+	my $_is_woe_hour = ($hour >= 20 && $hour < 22) ? 1 : 0;
+
+	my $_was_woe_active = $_woe_active;
+	$_woe_active = ($_on_woe_map || ($_is_woe_day && $_is_woe_hour)) ? 1 : 0;
+
+	if ($_woe_active && !$_was_woe_active) {
+		warning "[woe] WOE detected as active (map=$map, woe_day=$_is_woe_day, woe_hour=$_is_woe_hour)\n", 'aiSidecarBridge', 1;
+		# Post WOE active event
+		_post_event({
+			kind => 'bridge_reflex',
+			reflex => 'woe_active',
+			severity => 'info',
+			text => "WOE detected active on $map",
+			map => $map,
+		});
+	} elsif (!$_woe_active && $_was_woe_active) {
+		warning "[woe] WOE no longer active\n", 'aiSidecarBridge', 1;
+	}
+}
+
+# ── WOE support: emperium targeting ──
+# Checks if there's an emperium (guild castle crystal) in the monster list
+# and prioritizes it as a target.
+sub _check_emperium_target {
+	return if !$_woe_active;
+
+	# Search for emperium in the monster list
+	if ($monstersList && ref($monstersList) eq 'HASH') {
+		for my $_em_id (keys %{$monstersList}) {
+			my $_em = $monstersList->{$_em_id};
+			next if !ref($_em) eq 'HASH';
+			my $_em_name = lc($_em->{name} || '');
+			# Emperium names vary by server: "Emperium", "Guild Castle Crystal", etc.
+			if ($_em_name =~ /emperium|crystal|guild.*castle/i) {
+				$_emperium_target_id = $_em_id;
+				debug "[woe] emperium detected: ID=$_em_id name=$_em->{name}\n", 'aiSidecarBridge', 2;
+				return 1;
+			}
+		}
+	}
+	$_emperium_target_id = '';
+	return 0;
+}
+
+# ── WOE support: dispel chain awareness ──
+# In WOE, certain skills (Dispel, Lex Divina) remove buffs. This checks
+# if we should avoid casting buffs that will likely be dispelled.
+sub _is_woe_dispel_risk {
+	return 0 if !$_woe_active;
+
+	# If we're near enemy players (within 10 cells), buffs are at risk of being dispelled
+	if ($playersList && ref($playersList) eq 'HASH') {
+		my ($my_x, $my_y);
+		if ($char && $char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+			$my_x = $char->{pos_to}{x};
+			$my_y = $char->{pos_to}{y};
+		}
+		return 0 if !defined $my_x || !defined $my_y;
+
+		for my $_pl_id (keys %{$playersList}) {
+			my $_pl = $playersList->{$_pl_id};
+			next if !ref($_pl) eq 'HASH';
+			next if $_pl->{name} && lc($_pl->{name}) eq lc($char->{name} || '');
+			# Check if player is within 10 cells
+			my $_dx = abs(($_pl->{x} || 0) - $my_x);
+			my $_dy = abs(($_pl->{y} || 0) - $my_y);
+			if ($_dx <= 10 && $_dy <= 10) {
+				return 1;  # Enemy player nearby — dispel risk
+			}
+		}
+	}
+	return 0;
+}
+
+# ── WOE support: defensive positioning ──
+# In WOE, stay near guild members and don't overextend.
+sub _woe_defensive_position {
+	return if !$_woe_active;
+	return if !$char;
+
+	# Check if we're too far from guild members
+	if ($playersList && ref($playersList) eq 'HASH') {
+		my ($my_x, $my_y);
+		if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') {
+			$my_x = $char->{pos_to}{x};
+			$my_y = $char->{pos_to}{y};
+		}
+		return if !defined $my_x || !defined $my_y;
+
+		my $_nearest_guildie_dist = 999;
+		for my $_pl_id (keys %{$playersList}) {
+			my $_pl = $playersList->{$_pl_id};
+			next if !ref($_pl) eq 'HASH';
+			# Check if this player is a guild member (same guild)
+			next if !$_pl->{guild} || !$_pl->{name};
+			my $_dx = abs(($_pl->{x} || 0) - $my_x);
+			my $_dy = abs(($_pl->{y} || 0) - $my_y);
+			my $_dist = $_dx + $_dy;
+			$_nearest_guildie_dist = $_dist if $_dist < $_nearest_guildie_dist;
+		}
+
+		# If nearest guild member is > 20 cells away, move toward center
+		if ($_nearest_guildie_dist > 20 && $_nearest_guildie_dist < 999) {
+			debug "[woe_defense] nearest guild member is ${_nearest_guildie_dist} cells away, staying defensive\n", 'aiSidecarBridge', 2;
+		}
+	}
+}
+
+# ── WOE support: escape reflex for WOE ──
+# In WOE, teleport when HP is low instead of sitting.
+sub _woe_escape_reflex {
+	return if !$_woe_active;
+	return if !$char;
+
+	my $now = _now_ms();
+	return if $now - $_last_woe_escape_ms < $WOE_ESCAPE_COOLDOWN_MS;
+
+	my $hp = $char->{hp} || 0;
+	my $hp_max = $char->{hp_max} || 1;
+	my $hp_pct = $hp_max > 0 ? ($hp * 100 / $hp_max) : 100;
+
+	# In WOE, escape at 40% HP instead of sitting
+	if ($hp_pct < 40 && $hp_pct > 0) {
+		$_last_woe_escape_ms = $now;
+		warning "[woe_escape] HP=$hp_pct% on WOE map, teleporting instead of sitting\n", 'aiSidecarBridge', 1;
+		eval { Commands::run("use_skill teleport"); 1; };
+		_post_event({
+			kind => 'bridge_reflex',
+			reflex => 'woe_escape',
+			severity => 'warning',
+			text => "WOE escape reflex: HP=$hp_pct%",
+			hp => $hp,
+			hp_max => $hp_max,
+			map => _safe_field_map() || '',
+		});
+		return 1;
+	}
+	return 0;
+}
+
+# ── MVP hunting: track MVP spawn timers ──
+# Called when an MVP is killed. Records the kill time and calculates
+# the respawn window based on the MVP's known respawn time.
+sub _track_mvp_kill {
+	my ($mvp_name, $mvp_map) = @_;
+	return if !$mvp_name;
+
+	my $now = _now_ms();
+	# Default respawn window: 60-120 minutes for most MVPs
+	# Some MVPs have shorter (30min) or longer (4-8hr) windows
+	my $respawn_min_ms = 60 * 60 * 1000;    # 60 minutes
+	my $respawn_max_ms = 120 * 60 * 1000;   # 120 minutes
+
+	# Known MVP respawn times (in minutes)
+	my %_mvp_respawn_times = (
+		'maya' => 60,
+		'phreeoni' => 60,
+		'moonlight' => 60,
+		'edga' => 60,
+		'doppelganger' => 60,
+		'baphomet' => 120,
+		'osiris' => 120,
+		'drake' => 60,
+		'pharaoh' => 60,
+		'mistress' => 60,
+		'orc_hero' => 60,
+		'orc_lord' => 60,
+		'golem' => 30,
+		'golden_bug' => 60,
+		'kobold_leader' => 60,
+		'kobold_king' => 60,
+		'stormy_knight' => 60,
+		'knight_of_abyss' => 60,
+		'hatii' => 60,
+		'leib_olmai' => 60,
+		'kraken' => 60,
+		'turtle_general' => 60,
+		'kiel' => 60,
+		'kiel_d' => 60,
+		'thanatos' => 60,
+		'gloom_under_night' => 60,
+		'ifrit' => 120,
+		'beelzebub' => 120,
+		'valkyrie' => 60,
+		'randel' => 60,
+		'flamel' => 60,
+		'skogul' => 60,
+		'skeggiold' => 60,
+	);
+
+	my $mvp_lc = lc($mvp_name);
+	$mvp_lc =~ s/[^a-z0-9_]//g;
+	if (defined $_mvp_respawn_times{$mvp_lc}) {
+		my $respawn_min = $_mvp_respawn_times{$mvp_lc};
+		$respawn_min_ms = $respawn_min * 60 * 1000;
+		$respawn_max_ms = $respawn_min * 2 * 60 * 1000;  # 2x for window
+	}
+
+	$_mvp_spawn_timers{$mvp_name} = {
+		killed_at_ms => $now,
+		respawn_window_start => $now + $respawn_min_ms,
+		respawn_window_end => $now + $respawn_max_ms,
+		map => $mvp_map || _safe_field_map() || '',
+	};
+
+	warning "[mvp_tracker] tracked MVP kill: $mvp_name (respawn window: " . int($respawn_min_ms/60000) . "-" . int($respawn_max_ms/60000) . " min on $_mvp_spawn_timers{$mvp_name}->{map})\n", 'aiSidecarBridge', 1;
+
+	# Post MVP kill event to sidecar
+	_post_event({
+		kind => 'bridge_event',
+		event_type => 'mvp.killed',
+		severity => 'info',
+		text => "MVP killed: $mvp_name",
+		mvp_name => $mvp_name,
+		map => $_mvp_spawn_timers{$mvp_name}->{map},
+		respawn_window_start => $_mvp_spawn_timers{$mvp_name}->{respawn_window_start},
+		respawn_window_end => $_mvp_spawn_timers{$mvp_name}->{respawn_window_end},
+	});
+}
+
+# ── MVP hunting: check MVP status ──
+# Checks if any tracked MVPs are in their respawn window and alerts the party.
+sub _check_mvp_status {
+	my $now = _now_ms();
+	return if $now - $_last_mvp_check_ms < $MVP_CHECK_INTERVAL_MS;
+	$_last_mvp_check_ms = $now;
+
+	# Check if any tracked MVPs are in their respawn window
+	for my $_mvp_name (keys %_mvp_spawn_timers) {
+		my $_mvp = $_mvp_spawn_timers{$_mvp_name};
+		if ($now >= $_mvp->{respawn_window_start} && $now <= $_mvp->{respawn_window_end}) {
+			# MVP is in respawn window — check if we're on the right map
+			my $current_map = _safe_field_map() || '';
+			if ($current_map eq $_mvp->{map}) {
+				warning "[mvp_tracker] MVP '$_mvp_name' is in respawn window on $current_map\n", 'aiSidecarBridge', 1;
+				# Alert the sidecar
+				_post_event({
+					kind => 'bridge_event',
+					event_type => 'mvp.respawn_window',
+					severity => 'info',
+					text => "MVP respawn window: $_mvp_name on $_mvp->{map}",
+					mvp_name => $_mvp_name,
+					map => $_mvp->{map},
+				});
+			}
+		} elsif ($now > $_mvp->{respawn_window_end}) {
+			# Respawn window has passed — clean up
+			delete $_mvp_spawn_timers{$_mvp_name};
+			debug "[mvp_tracker] MVP '$_mvp_name' respawn window passed, cleaning up\n", 'aiSidecarBridge', 2;
+		}
+	}
+
+	# Check current monster list for MVP monsters
+	if ($monstersList && ref($monstersList) eq 'HASH') {
+		for my $_mm_id (keys %{$monstersList}) {
+			my $_mm = $monstersList->{$_mm_id};
+			next if !ref($_mm) eq 'HASH';
+			my $_mm_name = $_mm->{name} || '';
+			# MVPs typically have special flags or names
+			if ($_mm->{monsterType} && $_mm->{monsterType} eq 'MVP') {
+				$_current_mvp_target = $_mm_id;
+				debug "[mvp_tracker] MVP detected on map: $_mm_name (ID=$_mm_id)\n", 'aiSidecarBridge', 1;
+				# Alert party about MVP spawn
+				_post_event({
+					kind => 'bridge_event',
+					event_type => 'mvp.spawned',
+					severity => 'info',
+					text => "MVP spawned: $_mm_name",
+					mvp_name => $_mm_name,
+					mvp_id => $_mm_id,
+					map => _safe_field_map() || '',
+					x => $_mm->{x} || 0,
+					y => $_mm->{y} || 0,
+				});
+			}
+		}
+	}
+}
+
+# ── MVP hunting: get MVP combat strategy ──
+# Returns the recommended combat strategy for a given MVP.
+# Used by the sidecar to determine tank/DPS/support roles.
+sub _get_mvp_strategy {
+	my ($mvp_name) = @_;
+	return {} if !$mvp_name;
+
+	my $mvp_lc = lc($mvp_name);
+	$mvp_lc =~ s/[^a-z0-9_]//g;
+
+	# MVP combat strategies: tank (high HP/def), DPS (glass cannon), support (heal/buff)
+	my %_mvp_strategies = (
+		'baphomet' => { role => 'tank', min_party => 3, notes => 'high damage, need tank and healer' },
+		'osiris' => { role => 'tank', min_party => 3, notes => 'undead, use holy water' },
+		'drake' => { role => 'dps', min_party => 2, notes => 'water element, use wind' },
+		'pharaoh' => { role => 'dps', min_party => 2, notes => 'neutral element' },
+		'maya' => { role => 'tank', min_party => 2, notes => 'reflects physical damage' },
+		'phreeoni' => { role => 'dps', min_party => 2, notes => 'ranged attacker' },
+		'moonlight' => { role => 'dps', min_party => 2, notes => 'fast movement' },
+		'doppelganger' => { role => 'tank', min_party => 3, notes => 'high damage, need tank' },
+		'mistress' => { role => 'dps', min_party => 2, notes => 'wind element' },
+		'orc_hero' => { role => 'tank', min_party => 2, notes => 'brute force' },
+		'orc_lord' => { role => 'tank', min_party => 2, notes => 'brute force' },
+		'stormy_knight' => { role => 'dps', min_party => 2, notes => 'wind element' },
+		'golden_bug' => { role => 'dps', min_party => 2, notes => 'immune to physical' },
+		'ifrit' => { role => 'tank', min_party => 5, notes => 'fire element, need high fire resist' },
+		'beelzebub' => { role => 'tank', min_party => 5, notes => 'dark element, need high dark resist' },
+		'thanatos' => { role => 'tank', min_party => 4, notes => 'ghost element' },
+		'turtle_general' => { role => 'tank', min_party => 3, notes => 'water element' },
+		'gloom_under_night' => { role => 'dps', min_party => 3, notes => 'shadow element' },
+	);
+
+	return $_mvp_strategies{$mvp_lc} || { role => 'dps', min_party => 1, notes => 'unknown MVP, use standard tactics' };
+}
 
 sub _party_leave_state_file {
 	my $_pl_dir = $::config{control} || '.';

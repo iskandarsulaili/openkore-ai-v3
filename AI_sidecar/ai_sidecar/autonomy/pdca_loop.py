@@ -4135,7 +4135,76 @@ class PDCALoop:
                             logger.info("opportunity_cost_engine_initialized")
                         except Exception as e:
                             logger.warning("opportunity_cost_engine_init_failed: %s", e)
-    
+
+                    # ── NEW: Initialize Stealth Engine ──
+                    _stealth = getattr(self._runtime, "stealth_engine", None)
+                    if _stealth is None:
+                        try:
+                            from ai_sidecar.stealth.stealth_engine import StealthEngine
+                            _stealth = StealthEngine()
+                            _be = getattr(self._runtime, "behavior_engine", None)
+                            if _be is not None:
+                                _stealth.set_behavior_engine(_be)
+                            _pp = getattr(self._runtime, "player_profiler", None)
+                            if _pp is not None:
+                                _stealth.set_player_profiler(_pp)
+                            _se = getattr(self._runtime, "social_engine", None)
+                            if _se is not None:
+                                _stealth.set_social_engine(_se)
+                            self._runtime.stealth_engine = _stealth
+                            logger.info("stealth_engine_initialized")
+                        except Exception as e:
+                            logger.warning("stealth_engine_init_failed: %s", e)
+
+                    # ── NEW: Initialize Long-Term Planner ──
+                    _ltp = getattr(self._runtime, "long_term_planner", None)
+                    if _ltp is None:
+                        try:
+                            from ai_sidecar.strategy.long_term_planner import LongTermPlanner
+                            _ltp = LongTermPlanner()
+                            _amb = getattr(self._runtime, "ambition_engine", None)
+                            if _amb is not None:
+                                _ltp.set_ambition_engine(_amb)
+                            _me = getattr(self._runtime, "market_engine", None)
+                            if _me is not None:
+                                _ltp.set_market_engine(_me)
+                            _se = getattr(self._runtime, "social_engine", None)
+                            if _se is not None:
+                                _ltp.set_social_engine(_se)
+                            _oc = getattr(self._runtime, "opportunity_cost", None)
+                            if _oc is not None:
+                                _ltp.set_opportunity_cost(_oc)
+                            self._runtime.long_term_planner = _ltp
+                            logger.info("long_term_planner_initialized")
+                        except Exception as e:
+                            logger.warning("long_term_planner_init_failed: %s", e)
+
+                    # ── NEW: Initialize Market Engine ──
+                    _mkt = getattr(self._runtime, "market_engine", None)
+                    if _mkt is None:
+                        try:
+                            from ai_sidecar.economy.market_engine import MarketEngine
+                            _mkt = MarketEngine()
+                            _p2p = getattr(self._runtime, "p2p_node", None)
+                            if _p2p is not None:
+                                _mkt.set_p2p_node(_p2p)
+                            self._runtime.market_engine = _mkt
+                            logger.info("market_engine_initialized")
+                        except Exception as e:
+                            logger.warning("market_engine_init_failed: %s", e)
+
+                    # ── NEW: Initialize Reinforcement Learner ──
+                    _rl = getattr(self._runtime, "reinforcement_learner", None)
+                    if _rl is None:
+                        try:
+                            from ai_sidecar.learning.reinforcement_learner import ReinforcementLearner
+                            _rl = ReinforcementLearner()
+                            _rl.initialize()
+                            self._runtime.reinforcement_learner = _rl
+                            logger.info("reinforcement_learner_initialized")
+                        except Exception as e:
+                            logger.warning("reinforcement_learner_init_failed: %s", e)
+
                     self._services_initialized = True
 
 
