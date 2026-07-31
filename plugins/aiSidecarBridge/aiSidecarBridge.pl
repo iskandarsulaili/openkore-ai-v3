@@ -1879,15 +1879,17 @@ sub _send_snapshot {
         _throttled_warning('snapshot_build_failed', "[aiSidecarBridge] _build_snapshot_payload error: $err");
         return;
     };
-    # Send via upgraded HTTPClient (ZMQ + HTTP fallback) if available
-    if ($_http_client) {
-        $_http_client->send_state($snapshot);
-    } else {
-        my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
-        if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
-            _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
-            _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
-        }
+    # Send via the bridge's own _http_post_json — the same proven path
+    # used by telemetry (works reliably inside OpenKore's main loop).
+    # NOTE: NOT via $_http_client->send_state() — the HTTPClient alarm()
+    # + SIGALRM pattern conflicts with OpenKore's own alarm timers in the
+    # live loop and silently returns 0 (verified: 0 snapshot POSTs reach
+    # the sidecar via that path, while telemetry via _http_post_json
+    # delivers 100%).
+    my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
+    if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
+        _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
+        _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
     }
 
     # ── Send 17 specialized state builder snapshots (disabled — sidecar uses ingest/snapshot) ──
