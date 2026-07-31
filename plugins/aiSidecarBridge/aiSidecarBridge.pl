@@ -3713,6 +3713,17 @@ sub _check_woe_status {
 	} elsif (!$_woe_active && $_was_woe_active) {
 		warning "[woe] WOE no longer active\n", 'aiSidecarBridge', 1;
 	}
+
+	# ── Wire sub-functions into WOE check ──
+	if ($_woe_active) {
+		_check_emperium_target();
+		_woe_defensive_position();
+		_woe_escape_reflex();
+		# Check dispel risk — if high, avoid casting buffs
+		if (_is_woe_dispel_risk()) {
+			debug "[woe] dispel risk detected — avoiding buff casts\n", 'aiSidecarBridge', 2;
+		}
+	}
 }
 
 # ── WOE support: emperium targeting ──
@@ -3969,6 +3980,18 @@ sub _check_mvp_status {
 					x => $_mm->{x} || 0,
 					y => $_mm->{y} || 0,
 				});
+			}
+		}
+	}
+
+	# ── Wire sub-functions into MVP check ──
+	# Check if any tracked MVPs need strategy updates
+	for my $_mvp_name (keys %_mvp_spawn_timers) {
+		my $_mvp = $_mvp_spawn_timers{$_mvp_name};
+		if ($now >= $_mvp->{respawn_window_start} && $now <= $_mvp->{respawn_window_end}) {
+			my $strategy = _get_mvp_strategy($_mvp_name);
+			if ($strategy && $strategy->{role}) {
+				debug "[mvp_tracker] MVP '$_mvp_name' strategy: role=$strategy->{role} min_party=$strategy->{min_party}\n", 'aiSidecarBridge', 2;
 			}
 		}
 	}
