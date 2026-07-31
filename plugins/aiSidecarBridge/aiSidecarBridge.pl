@@ -165,6 +165,50 @@ our $WOE_ESCAPE_COOLDOWN_MS = 10000;
 # Tracks completed batches so we can report them to the sidecar
 our %_completed_batches = ();
 
+# ── NPC shop data ──
+# Persistent hash of NPC shop data: npc_name => { map, items => [ { name, price, type } ] }
+our %_npc_shop_data = ();
+# Last time we scanned NPC shops
+our $_last_npc_shop_scan_ms = 0;
+# NPC shop scan interval (ms)
+our $NPC_SHOP_SCAN_INTERVAL_MS = 60000;
+
+# ── Player vendor data ──
+# Persistent hash of player vendor data: player_name => { map, x, y, title, items => [ { name, price, amount } ] }
+our %_player_vendor_data = ();
+# Last time we scanned player vendors
+our $_last_player_vendor_scan_ms = 0;
+# Player vendor scan interval (ms)
+our $PLAYER_VENDOR_SCAN_INTERVAL_MS = 30000;
+
+# ── Game time tracking ──
+# Last reported game time
+our $_last_reported_game_time = '';
+# Last game time check
+our $_last_game_time_check_ms = 0;
+# Game time check interval (ms)
+our $GAME_TIME_CHECK_INTERVAL_MS = 60000;
+
+# ── Server announcement tracking ──
+# Last time we flushed announcements
+our $_last_announcement_flush_ms = 0;
+# Announcement flush interval (ms)
+our $ANNOUNCEMENT_FLUSH_INTERVAL_MS = 2000;
+# Queue of pending announcements
+our @_pending_announcements = ();
+
+# ── Dispel tracking ──
+# Tracks dispel events: { detected_at_ms, map, source_id, buffs_lost => [] }
+our @_dispel_events = ();
+# Last dispel check time
+our $_last_dispel_check_ms = 0;
+# Dispel check interval (ms)
+our $DISPEL_CHECK_INTERVAL_MS = 5000;
+# Previous buff count for detecting dispels
+our $_prev_buff_count = 0;
+# Previous buff list for detecting which buffs were lost
+our @_prev_buff_names = ();
+
 # ── Hardcoded safety net: White Potion ──
 # This is the ABSOLUTE LAST RESORT item — always available as fallback.
 # Used only when dynamic heal cache fails and HP is critically low.
@@ -3006,11 +3050,15 @@ sub _poll_next_action {
 		splice @actions, $MAX_ACTIONS_PER_POLL;
 	}
 
-	# Execute each action in sequence with proper delay handling
+	# ── Execute ALL actions in sequence with proper delays ──
+	# FIX: Collect results and send ACKs AFTER all actions are done,
+	# so the sidecar doesn't interpret individual ACKs as batch completion.
 	my $executed_count = 0;
+	my @action_results = ();
 	for my $action (@actions) {
 		last if !ref($action) eq 'HASH';
-		_execute_action($poll_id, $action);
+		my $result = _execute_action($poll_id, $action);
+		push @action_results, $result if $result;
 		$executed_count++;
 
 		# Check if we need to wait for cast/animation before next action
@@ -3025,6 +3073,23 @@ sub _poll_next_action {
 		}
 	}
 
+	# ── Send ACKs for ALL executed actions in batch ──
+	# This prevents the sidecar from treating individual ACKs as batch completion.
+	# The sidecar expects ACKs after the batch is fully processed.
+	for my $_ar (@action_results) {
+		next if !$_ar;
+		my $_ar_id = $_ar->{action_id} || '';
+		next if $_ar_id eq '' || $_ar_id eq 'unknown_action';
+		_http_post_json('/v1/acknowledgements/action', {
+			meta => _meta(_bot_id()),
+			action_id => $_ar_id,
+			poll_id => $poll_id,
+			success => $_ar->{success} ? JSON::PP::true() : JSON::PP::false(),
+			result_code => $_ar->{result_code} || 'unknown',
+			message => $_ar->{message} || '',
+		});
+	}
+
 	# ── Report completed batches to sidecar ──
 	_flush_completed_batches();
 
@@ -3036,6 +3101,24 @@ sub _poll_next_action {
 
 	# ── Check party buff expiry ──
 	_check_party_buff_expiry();
+
+	# ── Scan NPC shops periodically ──
+	_scan_npc_shops();
+
+	# ── Scan player vendors periodically ──
+	_scan_player_vendors();
+
+	# ── Report party member positions periodically ──
+	_report_party_positions();
+
+	# ── Report game time periodically ──
+	_report_game_time();
+
+	# ── Flush server announcements periodically ──
+	_flush_announcements();
+
+	# ── Detect dispel effects periodically ──
+	_detect_dispel();
 
 	return 1;
 }

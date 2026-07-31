@@ -11,6 +11,8 @@ Covers:
 - ASPD-based attack interval
 - Cast time (variable + fixed, modified by DEX)
 - Skill delay (modified by DEX)
+- Flee / hit rate
+- Status resistance
 """
 
 import datetime
@@ -22,6 +24,7 @@ from typing import Any
 # Rows: attacker element (Neutral, Water, Earth, Fire, Wind, Poison, Holy, Dark, Ghost, Undead)
 # Cols: defender element (same order)
 # Values: damage multiplier (1.0 = 100%)
+# NOTE: This is Level 1 only. For Level 1-4 support, use element_table.py
 ELEMENT_CHART: list[list[float]] = [
     # Neutral Water Earth Fire Wind Poison Holy Dark Ghost Undead
     [1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  0.75, 0.75],  # Neutral
@@ -487,8 +490,7 @@ def calculate_soft_def(def_stat: int, refinement_level: int = 0) -> float:
 
 
 def calculate_mdef(mdef_stat: int, int_stat: int) -> float:
-    """MDEF formula: (MDEF * 0.5 + MDEF * 0.5 * INT/100) with hard cap at 99%.
-    """
+    """MDEF formula: (MDEF * 0.5 + MDEF * 0.5 * INT/100) with hard cap at 99%."""
     raw = mdef_stat * 0.5 + mdef_stat * 0.5 * (int_stat / 100.0)
     return min(99.0, raw)
 
@@ -512,13 +514,18 @@ def calculate_damage(
     card_bonus_vs_size: float = 1.0,
     card_bonus_vs_element: float = 1.0,
     refinement_level: int = 0,
+    element_level: int = 1,
 ) -> float:
     """Full RO damage calculation with all modifiers.
 
     Returns actual damage after all reductions and bonuses.
     """
-    # 1. Element multiplier
-    element_mult = get_element_multiplier(attacker_element, monster_element)
+    # 1. Element multiplier (use element_table for Level 1-4 support)
+    try:
+        from ai_sidecar.combat.element_table import element_modifier
+        element_mult = element_modifier(attacker_element, monster_element, attack_level=element_level, defense_level=1)
+    except ImportError:
+        element_mult = get_element_multiplier(attacker_element, monster_element)
 
     # 2. Size multiplier
     size_mult = get_size_multiplier(weapon_type, monster_size)
@@ -546,6 +553,45 @@ def calculate_damage(
         mdef_val = calculate_mdef(monster_mdef, monster_int)
         reduction = mdef_val / 100.0
         return max(1, int(modified_damage * (1.0 - reduction)))
+
+
+def calculate_flee(base_flee: int, agi: int, level: int, monster_hit: int, monster_level: int) -> float:
+    """Calculate flee chance against a monster.
+
+    RO formula:
+      flee_chance = 100 - (monster_hit - player_flee)
+      player_flee = base_flee + level + agi
+      Cap: 95% max, 5% min
+
+    Args:
+        base_flee: Base flee from class/equipment
+        agi: Player AGI stat
+        level: Player base level
+        monster_hit: Monster's HIT stat
+        monster_level: Monster's level
+
+    Returns:
+        Flee chance as a float (0.0 to 1.0)
+    """
+    player_flee = base_flee + level + agi
+    raw = 95 + player_flee - monster_hit
+    return max(0.05, min(0.95, raw / 100.0))
+
+
+def calculate_hit_chance(player_hit: int, monster_flee: int) -> float:
+    """Calculate hit probability based on your HIT vs monster FLEE.
+
+    RO formula:
+      hit_chance = 100 - (monster_flee - player_hit) * 1
+      Minimum 5%, Maximum 95%
+
+    If your HIT >= monster FLEE, you have 95% hit rate (95% is cap).
+    If monster FLEE is much higher, you have 5% minimum.
+    """
+    if player_hit >= monster_flee:
+        return 0.95  # 95% cap
+    raw = 0.95 - (monster_flee - player_hit) * 0.01
+    return max(0.05, min(0.95, raw))
 
 
 def calculate_cast_time(skill_name: str, dex: int = 0, is_dual: bool = False) -> float:
@@ -577,6 +623,100 @@ def calculate_after_cast_delay(skill_name: str, dex: int = 0) -> float:
     _, _, delay_ms, _, _ = skill_info
     dex_factor = max(0.0, 1.0 - dex / 150.0)
     return (delay_ms * dex_factor) / 1000.0
+
+
+def calculate_status_resistance(vit: int, int_: int, agi: int, status_type: str) -> float:
+    """Calculate resistance to a status effect.
+
+    RO formula:
+      Stun: VIT * 0.5 + LUK * 0.1 (simplified: VIT * 0.5)
+      Freeze: INT * 0.5 + LUK * 0.1 (simplified: INT * 0.5)
+      Sleep: INT * 0.5 + LUK * 0.1 (simplified: INT * 0.5)
+      Poison: VIT * 0.5 + LUK * 0.1 (simplified: VIT * 0.5)
+      Blind: AGI * 0.5 + LUK * 0.1 (simplified: AGI * 0.5)
+      Silence: INT * 0.5 + LUK * 0.1 (simplified: INT * 0.5)
+      Confusion: AGI * 0.5 + LUK * 0.1 (simplified: AGI * 0.5)
+      Curse: INT * 0.5 + LUK * 0.1 (simplified: INT * 0.5)
+
+    Returns:
+        Resistance as a percentage (0.0 to 100.0)
+    """
+    status_map = {
+        "stun": vit,
+        "freeze": int_,
+        "sleep": int_,
+        "poison": vit,
+        "blind": agi,
+        "silence": int_,
+        "confusion": agi,
+        "curse": int_,
+    }
+    stat = status_map.get(status_type.lower(), 0)
+    return min(100.0, stat * 0.5)
+
+
+def calculate_refinement_bonus(weapon_level: int, refine_level: int) -> dict:
+    """Calculate refinement bonus for a weapon.
+
+    RO formula:
+      Weapon Level 1: ATK + 2 per refine
+      Weapon Level 2: ATK + 3 per refine
+      Weapon Level 3: ATK + 5 per refine
+      Weapon Level 4: ATK + 7 per refine
+      Safe refine: +4 (Lv1-3), +4 (Lv4)
+      Over-upgrade bonus at +7, +8, +9, +10
+
+    Args:
+        weapon_level: Weapon level (1-4)
+        refine_level: Current refine level (0-10)
+
+    Returns:
+        Dict with atk_bonus, safe_refine, over_upgrade_bonus
+    """
+    atk_per_refine = {1: 2, 2: 3, 3: 5, 4: 7}
+    safe_refine = {1: 7, 2: 6, 3: 5, 4: 4}
+
+    atk_bonus = refine_level * atk_per_refine.get(weapon_level, 2)
+
+    # Over-upgrade bonus at +7, +8, +9, +10
+    over_upgrade = 0
+    if refine_level >= 7:
+        over_upgrade += atk_per_refine.get(weapon_level, 2) * (refine_level - 6)
+    if refine_level >= 8:
+        over_upgrade += atk_per_refine.get(weapon_level, 2) * (refine_level - 7)
+    if refine_level >= 9:
+        over_upgrade += atk_per_refine.get(weapon_level, 2) * (refine_level - 8)
+    if refine_level >= 10:
+        over_upgrade += atk_per_refine.get(weapon_level, 2) * (refine_level - 9)
+
+    return {
+        "atk_bonus": atk_bonus,
+        "safe_refine": safe_refine.get(weapon_level, 7),
+        "over_upgrade_bonus": over_upgrade,
+        "total_atk": atk_bonus + over_upgrade,
+    }
+
+
+def calculate_aspd(base_aspd: int, agi: int, dex: int, weapon_type: str) -> float:
+    """Calculate ASPD (attack speed).
+
+    RO formula:
+      ASPD = 200 - (200 - base_aspd - sqrt(agi²/2 + dex²/4) - item_bonus) * (200 - skill_mod)/200
+      Simplified: ASPD = 200 - (200 - base_aspd - sqrt(agi*0.5 + dex*0.5)/4)
+
+    Args:
+        base_aspd: Base ASPD from weapon type (e.g. 1500 for sword)
+        agi: Player AGI stat
+        dex: Player DEX stat
+        weapon_type: Weapon type string
+
+    Returns:
+        ASPD value (100-193)
+    """
+    weapon_aspd = base_aspd / 10.0
+    stat_reduction = math.sqrt(agi * agi / 2 + dex * dex / 4) / 10.0
+    raw = 200 - (200 - weapon_aspd - stat_reduction)
+    return min(193.0, max(100.0, round(raw, 1)))
 
 
 def calculate_aspd_interval(aspd: int) -> float:
@@ -670,6 +810,7 @@ class SkillCooldownTracker:
         self._last_used: dict[str, datetime.datetime] = {}
         self._last_cast_start: dict[str, datetime.datetime] = {}
         self._dex: int = 0
+        self._cooldowns: dict[str, float] = {}
 
     def set_dex(self, dex: int) -> None:
         self._dex = dex
@@ -690,7 +831,7 @@ class SkillCooldownTracker:
         """Check if a skill is available (cooldown expired)."""
         if skill_name not in self._last_used:
             return True
-        cd = get_skill_cooldown(skill_name)
+        cd = self._cooldowns.get(skill_name, get_skill_cooldown(skill_name))
         if cd <= 0:
             return True
         elapsed = (datetime.datetime.now(datetime.timezone.utc) - self._last_used[skill_name]).total_seconds()
@@ -700,7 +841,7 @@ class SkillCooldownTracker:
         """Seconds until skill is available."""
         if skill_name not in self._last_used:
             return 0.0
-        cd = get_skill_cooldown(skill_name)
+        cd = self._cooldowns.get(skill_name, get_skill_cooldown(skill_name))
         if cd <= 0:
             return 0.0
         elapsed = (datetime.datetime.now(datetime.timezone.utc) - self._last_used[skill_name]).total_seconds()
