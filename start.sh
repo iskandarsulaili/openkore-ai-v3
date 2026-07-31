@@ -203,9 +203,14 @@ stop_all() {
         done < "$PID_FILE"
         rm -f "$PID_FILE"
     fi
-    # Kill watchdog
+    # Kill watchdog daemon (if running) — SIGTERM then SIGKILL; the daemon
+    # ignores SIGTERM while sleeping in its check loop, so force-kill too.
     local wpid=$(cat "$SCRIPT_DIR/.watchdog_pid" 2>/dev/null || echo "")
-    [ -n "$wpid" ] && kill "$wpid" 2>/dev/null || true
+    if [ -n "$wpid" ]; then
+        kill "$wpid" 2>/dev/null || true
+        sleep 1
+        kill -9 "$wpid" 2>/dev/null || true
+    fi
     rm -f "$SCRIPT_DIR/.watchdog_pid"
     # Force-kill any remaining processes
     pkill -9 -f "openkore.pl" 2>/dev/null || true

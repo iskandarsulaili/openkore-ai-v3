@@ -104,6 +104,9 @@ class BotProcess:
                 cmd,
                 stdout=open(log_file, 'w'),
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,  # never inherit tty stdin: if
+                # ErrorHandler::showError hits <STDIN> on a die during
+                # shutdown, it must return EOF immediately, not hang forever.
                 cwd=PROJECT_ROOT,
             )
             self.pid = self.process.pid
