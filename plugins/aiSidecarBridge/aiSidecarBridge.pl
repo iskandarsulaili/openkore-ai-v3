@@ -6416,82 +6416,10 @@ sub _safe_hp_ratio {
 # buyAuto, sellAuto, items_control). This function only fires when the
 # Pro RO LLM's goals detect no progression for >5 minutes, or when
 # HP is critically low (< 20%) as an emergency override.
-sub _survival_check {
-	my $now = _now_ms();
-	state $_last_sc_ms = 0;
-	return if $now - $_last_sc_ms < 60000;  # Check every 1 MINUTE (was 2s)
-	$_last_sc_ms = $now;
-
-	my $cr = _safe_char();
-	return if !$cr;
-	my $hp = $cr->{hp} || 0;
-	my $hp_max = $cr->{hp_max} || 1;
-	my $zeny = $cr->{zeny} || 0;
-	my $base_lv = $cr->{lv} || $cr->{level} || 1;
-	my $hp_pct = $hp_max > 0 ? int($hp * 100 / $hp_max) : 0;
-	my $map = $cr->{map} || '';
-
-# ── Emergency: HP critically low — heuristic handles HP management ──
-	if ($hp_pct < 20 && $hp_pct > 0) {
-	    # Heuristic handles HP management - bridge only does sub-100ms reflexes
-	    # Only sit on hunting maps (not in town - heuristic handles town economy)
-	    my $_hp_map = $field ? lc($field->name()) : '';
-	    $_hp_map =~ s/\.gat$//;
-	    my $_hp_is_town = $_hp_map =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
-	    if ($hp_pct < 15 && !$_hp_is_town) {
-	        # Only sit if NOT in combat — prevents stand-sit loop
-	        my $_sc_in_combat = @ai_seq && $ai_seq[0] =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
-	        if (!$_sc_in_combat) {
-	            eval { Commands::run('sit'); 1 };
-	        }
-	    }
-	    return;
-	}
-	# ── Economy DISABLED: heuristic handles all routing decisions ──
-	# The heuristic service decides when to return to town and when to go back to hunt
-
-	# ── Progression: Apply optimal configs if not already set ──
-	_apply_bot_config();
-
-		# ── Auto-mode: Enable if disabled and conditions safe ──
-		# IMPORTANT: Only set AI to auto if it's currently manual AND we're not in combat
-		# This prevents the toggle war between sidecar PDCA and bridge reflexes
-		my $ai_val = $AI::AI;
-		my $ai_val = $AI::AI;
-		if (defined $ai_val && $ai_val == 1) {  # Only toggle from manual(1) to auto(2)
-			eval { require AI; AI::state(2); 1 };
-		}
-	}
-
-# ── Economy / Sell loop (auto-sell junk items for zeny) ──
-# This is called by the survival_check when zeny is needed.
-sub _sell_junk_items {
-	my $cr = _safe_char();
-	return if !$cr || !$cr->{inventory};
-	# # Items to auto-sell (configurable via aiSidecar_sellItems CSV)
-my @sell_list = split(',', _cfg('aiSidecar_sellItems', 'Jellopy,Stem,Empty Bottle,Red Herb,Yellow Herb,White Herb,Feather,Cactus Needle,Shell'));
-my %sell_items = map { $_ => 1 } @sell_list;
-	foreach my $item (@{$cr->{inventory}}) {
-	    next unless ref($item) eq 'HASH';
-	    my $iname = $item->{name} || '';
-	    my $iamount = $item->{amount} || 0;
-	    next if $iname eq '' || $iamount < 1;
-	    next unless $sell_items{$iname};
-	    # Sell by inventory index (OpenKore requires index, not name)
-	    my $_sell_idx = 0;
-	    if ($cr->{inventory}) {
-	        for my $_si (@{$cr->{inventory}}) {
-	            next unless ref($_si) eq 'HASH';
-	            my $_sin = $_si->{name} || '';
-	            if ($_sin eq $iname) {
-	                eval { Commands::run("sell $_sell_idx"); 1; };
-	                last;
-	            }
-	            $_sell_idx++;
-	        }
-	    }
-	}
-}
+# ── _survival_check: REMOVED — stripped from main loop, all config/survival
+# handled by sidecar heuristic service. The function was dead code that
+# called undefined _apply_bot_config. _sell_junk_items also removed as
+# it was only called from within _survival_check.
 
 1;
 sub _discover_shops {
