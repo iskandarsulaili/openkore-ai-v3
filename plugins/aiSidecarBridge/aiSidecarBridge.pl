@@ -239,9 +239,22 @@ sub on_reload {
 	on_start3();
 }
 
+my $_unloaded_once = 0;
+
 sub on_unload {
+	if ($_unloaded_once) { return; }
+	$_unloaded_once = 1;
 	_cleanup_runtime();
-	Plugins::delHooks($hooks);
+	# CRITICAL: guard delHooks — during shutdown/global destruction a hook
+	# handle's HOOKNAME may already be cleared or its INDEX stale, so
+	# Plugins::delHook() throws ArgumentException ("Invalid hook handle")
+	# and the Assertion "Can't remove undefined item". That die hits
+	# ErrorHandler::showError which does <STDIN> — hanging forever under
+	# nohup. Swallow it here; the process is exiting anyway.
+	eval { Plugins::delHooks($hooks) if defined $hooks; 1; } or do {
+		warning "[aiSidecarBridge] delHooks during unload failed (already torn down): $@\n", 'aiSidecarBridge' if defined $@ && $@;
+	};
+	undef $hooks;
 }
 
 sub _cleanup_runtime {

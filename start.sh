@@ -175,7 +175,10 @@ EOF
 
     info "Starting bot: $name"
     cd "$SCRIPT_DIR"
-    nohup perl -I src openkore.pl --plugins=plugins --control=".bot_profiles/$name/control" > "$log_file" 2>&1 &
+    # stdin from /dev/null: if ErrorHandler::showError ever hits <STDIN>
+    # (e.g. a die during shutdown), it returns EOF immediately and the
+    # process exits cleanly instead of hanging forever on a tty.
+    nohup perl -I src openkore.pl --plugins=plugins --control=".bot_profiles/$name/control" < /dev/null > "$log_file" 2>&1 &
     local pid=$!
     _save_pid "$pid"
     ok "Bot $name started (PID $pid)"
