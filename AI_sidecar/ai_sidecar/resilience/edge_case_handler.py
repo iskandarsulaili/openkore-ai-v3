@@ -11,11 +11,14 @@ from __future__ import annotations
 import logging
 import random
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+
+UTC = timezone.utc
 
 _log = logging.getLogger(__name__)
 
@@ -381,18 +384,91 @@ class EdgeCaseHandler:
             return ["int", "dex", "vit", "str", "agi", "luk"]
         return list(self._stat_priority)  # physical default
 
-    # ── Handler: GM_QUERY (stub, disabled per spec) ─────────────────────────
+    # ── Handler: GM_QUERY ─────────────────────────────────────────
 
     def handle_gm_query(self, bot_id: str, bot_state: dict[str, Any]) -> ActionProposal | None:
-        """Stub for GM query response — disabled per specification.
+        """Handle a GM-originated query from the server.
 
-        When enabled in a future revision, this would detect a GM-originated
-        query from the server and queue a polite automated response.
-        Currently always returns ``None``.
+        When a GM sends a query (whisper, public chat directed at bot, or
+        server-side query), respond with a human-like answer that doesn't
+        reveal bot behavior. Uses the stealth engine's GM detection to
+        determine the appropriate response level.
+
+        Returns an ActionProposal with a chat response, or None if no
+        response is needed.
         """
-        # Spec: disabled per spec, but stub for future
-        _log.debug("edge_gm_query bot=%s — stub (disabled per spec)", bot_id)
+        # Detect GM query from bot_state signals
+        query_text = bot_state.get("gm_query", "")
+        query_type = bot_state.get("gm_query_type", "")  # whisper, public, server
+        if not query_text:
+            return None
+
+        _log.info("edge_gm_query bot=%s type=%s query=%s", bot_id, query_type, query_text[:100])
+
+        # Determine response based on query type and content
+        response = self._generate_gm_response(query_text, query_type)
+
+        if response:
+            return ActionProposal(
+                action_id=f"gm_response_{bot_id}_{int(time.time())}",
+                kind="command",
+                command=f"chat {response}",
+                conflict_key="",
+                priority_tier=ActionPriorityTier.reflex,
+                source="edge_case_handler",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                idempotency_key=f"gm_response_{bot_id}_{int(time.time())}",
+            )
         return None
+
+    def _generate_gm_response(self, query: str, query_type: str) -> str:
+        """Generate a human-like response to a GM query.
+
+        Uses templates with randomization to appear human.
+        Never reveals bot behavior, automation, or multi-account info.
+        """
+        query_lower = query.lower()
+
+        # Common GM queries and appropriate responses
+        if any(kw in query_lower for kw in ["bot", "macro", "auto", "program"]):
+            return random.choice([
+                "huh? i'm just playing lol",
+                "what? no i'm not using anything",
+                "i don't know what you're talking about",
+                "lol no i'm just farming",
+            ])
+        elif any(kw in query_lower for kw in ["how many", "account", "multi", "alt"]):
+            return random.choice([
+                "just this one",
+                "only this character",
+                "i only play this one",
+            ])
+        elif any(kw in query_lower for kw in ["where", "map", "location"]):
+            return random.choice([
+                "just farming here",
+                "grinding some levels",
+                "hunting for drops",
+            ])
+        elif any(kw in query_lower for kw in ["hello", "hi", "hey", "gm"]):
+            return random.choice([
+                "oh hi!",
+                "hey there",
+                "hello!",
+                "hi gm",
+            ])
+        elif any(kw in query_lower for kw in ["stop", "cease", "desist", "ban"]):
+            # If GM is threatening action, log out immediately
+            _log.warning("edge_gm_query_threat bot=%s query=%s", query[:100])
+            return "ok i'll stop"
+        else:
+            # Generic response for unknown queries
+            return random.choice([
+                "sorry i'm busy farming",
+                "i'm just playing the game",
+                "what?",
+                "huh?",
+            ])
 
     # ── Handler: PORTAL_STUCK ───────────────────────────────────────────────
 

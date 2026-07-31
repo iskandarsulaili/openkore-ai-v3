@@ -3120,6 +3120,12 @@ sub _poll_next_action {
 	# ── Detect dispel effects periodically ──
 	_detect_dispel();
 
+	# ── Discover NPC shops periodically ──
+	_discover_shops();
+
+	# ── Discover portals periodically ──
+	_discover_portals();
+
 	return 1;
 }
 
@@ -6470,8 +6476,9 @@ sub _discover_shops {
 	state $_last_ss = 0;
 	return if $now - $_last_ss < 3600000;
 	$_last_ss = $now;
-	# Stub — will be populated with actual NPC data from observed shops
-	_post_event({ kind => 'discovery_shops', shops => [] });
+	# Scan NPCs from npcsList for shop-type NPCs
+	my $shops = _discover_shops_sync();
+	_post_event({ kind => 'discovery_shops', shops => $shops });
 }
 
 sub _discover_portals {
