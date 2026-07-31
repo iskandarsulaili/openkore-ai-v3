@@ -62,7 +62,8 @@ sub new {
 	$self->{packet_list} = {
 		'0069' => ['account_server_info', 'v a4 a4 a4 a4 a26 C a*', [qw(len sessionID accountID sessionID2 lastLoginIP lastLoginTime accountSex serverInfo)]],
 		'006A' => ['login_error', 'C Z20', [qw(type date)]],
-		'006B' => ['received_characters_info', 'v C3', [qw(len total_slot premium_start_slot premium_end_slot)]], # last known struct
+		# '006B' => ['received_characters_info', 'v x20 a*', [qw(len charInfo)]], # not used in official server
+		'006B' => ['received_characters_info', 'v C3 x20 a*', [qw(len total_slot premium_start_slot premium_end_slot charInfo)]], # last known struct
 		'006C' => ['login_error_game_login_server'],
 		'006D' => ['character_creation_successful', 'a*', [qw(charInfo)]],
 		'006E' => ['character_creation_failed', 'C' ,[qw(type)]],
@@ -82,7 +83,7 @@ sub new {
 		# OLD '007B' => ['actor_moved', 'a4 v8 x4 v6 a4 x7 C a5 x3 v',	[qw(ID walk_speed opt1 opt2 option type hair_style weapon lowhead shield tophead midhead hair_color clothes_color head_dir guildID sex coords lv)]], #walking
 		'007B' => ['actor_moved',	'a4 v8 V v6 a4 a2 v2 C2 a6 C2 v',	[qw(ID walk_speed opt1 opt2 option type hair_style weapon lowhead tick shield tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords unknown1 unknown2 lv)]], #walking
 		#VERY OLD '007C' => ['actor_exists', 'a4 v1 v1 v1 v1 x6 v1 C1 x12 C1 a3', [qw(ID walk_speed opt1 opt2 option type pet sex coords)]],
-		#OLD '007C' => ($rpackets{'007C'} == 41	# or 42
+		#OLD '007C' => ($rpackets{'007C'}{length} == 41	# or 42
 		#OLD 	? ['actor_exists',			'x a4 v14 C2 a3 C',				[qw(ID walk_speed opt1 opt2 option hair_style weapon lowhead type shield tophead midhead hair_color clothes_color head_dir stance sex coords unknown1)]]
 		#OLD	: ['actor_exists',			'x a4 v14 C2 a3 C2',			[qw(ID walk_speed opt1 opt2 option hair_style weapon lowhead type shield tophead midhead hair_color clothes_color head_dir stance sex coords unknown1 unknown2)]]
 		#OLD),
@@ -263,7 +264,7 @@ sub new {
 		'019B' => ['unit_levelup', 'a4 V', [qw(ID type)]],
 		'019E' => ['pet_capture_process'],
 		'01A0' => ['pet_capture_result', 'C', [qw(success)]],
-		#'01A2' => ($rpackets{'01A2'} == 35 # or 37
+		#'01A2' => ($rpackets{'01A2'}{length} == 35 # or 37
 		#	? ['pet_info', 'Z24 C v4', [qw(name renameflag level hungry friendly accessory)]]
 		#	: ['pet_info', 'Z24 C v5', [qw(name renameflag level hungry friendly accessory type)]]
 		#),
@@ -625,7 +626,7 @@ sub new {
 		'09FC' => ['pet_evolution_result', 'v V',[qw(len result)]],
 		'09FD' => ['actor_moved', 'v C a4 a4 v3 V v2 V2 v V v6 a4 a2 v V C2 a6 C2 v2 V2 C v Z*', [qw(len object_type ID charID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tick tophead midhead hair_color clothes_color head_dir costume guildID emblemID manner opt3 stance sex coords xSize ySize lv font maxHP HP isBoss opt4 name)]],
 		'09FE' => ['actor_connected', 'v C a4 a4 v3 V v2 V2 v7 a4 a2 v V C2 a3 C2 v2 V2 C v Z*', [qw(len object_type ID charID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir costume guildID emblemID manner opt3 stance sex coords xSize ySize lv font maxHP HP isBoss opt4 name)]],
-		'09FF' => ['actor_exists', 'v C a4 a4 v3 V v2 V2 v7 a4 a2 v V C2 a3 C3 v2 V2 C v Z*', [qw(len object_type ID charID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir costume guildID emblemID manner opt3 stance sex coords xSize ySize state lv font maxHP HP isBoss opt4 name)]],
+		'09FF' => ['actor_exists', 'v C a4 a4 v3 V v2 V2 v7 a4 a2 v V C2 a3 C3 v2 V2 C v Z*', [qw(len object_type ID charID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir costume guildID emblemID manner opt3 stance sex coords xSize ySize act lv font maxHP HP isBoss opt4 name)]],
 		'0A00' => ['hotkeys', 'C a*', [qw(rotate hotkeys)]], # 269 # hotkeys:38
 		'0A05' => ['rodex_add_item', 'C a2 v2 C4 a8 a25 v C V', [qw(fail ID amount nameID type identified broken upgrade cards options weight favorite type_equip)]],   # 53
 		'0A07' => ['rodex_remove_item', 'C a2 v2', [qw(result ID amount weight)]],   # 9
@@ -639,6 +640,7 @@ sub new {
 		'0A12' => ['rodex_open_write', 'Z24 C', [qw(name result)]],   # 27
 		'0A14' => ['rodex_check_player', 'V v2', [qw(char_id class base_level)]],
 		'0A15' => ['gold_pc_cafe_point', 'C2 V2', [qw(isActive mode point playedTime)]], # 12
+		'0A17' => ['dynamicnpc_create_result', 'V', [qw(result)]], # 6
 		'0A18' => ['map_loaded', 'V a3 C2 v C', [qw(syncMapSync coords xSize ySize font sex)]], # 14
 		'0A1A' => ['roulette_window', 'C V C2 v V3', [qw(result serial stage price additional_item gold silver bronze)]],
 		'0A1C' => ['roulette_info', 'v V a*', [qw(len serial roulette_info)]],
@@ -755,6 +757,7 @@ sub new {
 		'0B47' => ['char_emblem_update', 'a4 a4', [qw(guildID emblemID accountID)]], # 14 TODO
 		'0B5F' => ['rodex_mail_list', 'v C a*', [qw(len isEnd mailList)]], #-1
 		'0B60' => ['account_server_info', 'v a4 a4 a4 a4 a26 C x17 a*', [qw(len sessionID accountID sessionID2 lastLoginIP lastLoginTime accountSex serverInfo)]],
+        '0B62' => ['vender_items_list', 'v a4 a4 C V a*', [qw(len venderID venderCID flag expireDate itemList)]], #-1
 		'0B6F' => ['character_creation_successful', 'a*', [qw(charInfo)]],
 		'0B72' => ['received_characters', 'v a*', [qw(len charInfo)]],
 		'0B73' => ['revolving_entity', 'a4 v', [qw(sourceID entity)]],
@@ -767,6 +770,7 @@ sub new {
 		'0B8D' => ['repute_info', 'v C a*', [qw(len sucess reputeInfo)]], # -1
 		# 'C350' => ['senbei_vender_items_list'], #new senbei vender, need research
 		'0BA4' => ['homunculus_property', 'Z24 C v11 V4 V4 v2', [qw(name state level hunger intimacy atk matk hit critical def mdef flee aspd hp hp_max sp sp_max exp exp2 exp_max exp_max2 points_skill attack_range)]],
+		'0840' => ['notify_accessible_mapname', 'v a*', [qw(len mapList)]], # map_list
 	};
 
 	# Item RECORD Struct's
@@ -1040,6 +1044,7 @@ sub _items_list {
 			@{$local_item}{@$_} = @{$item}{@$_};
 		}
 		$local_item->{name} = itemName($local_item);
+		$local_item->{serverID} = unpack('v', $local_item->{ID});
 
 		$args->{callback}($local_item) if $args->{callback};
 
@@ -1401,10 +1406,9 @@ sub skill_used_no_damage {
 		my $pos = calcPosFromPathfinding($field, $char);
 		%{$char->{pos}} = %{$pos};
 		%{$char->{pos_to}} = %{$pos};
-		$char->{time_move} = 0;
+		$char->{time_move} = time;
 		$char->{time_move_calc} = 0;
 		$char->{solution} = [];
-		push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 	}
 
 	# Resolve source and target names
@@ -1438,7 +1442,7 @@ sub skill_used_no_damage {
 		$timeout{ai_teleport_delay}{time} = time;
 	}
 
-	if (AI::state == AI::AUTO && $config{'autoResponseOnHeal'}) {
+	if (AI::state() == AI::AUTO() && $config{'autoResponseOnHeal'}) {
 		# Handle auto-response on heal
 		my $player = $playersList->getByID($args->{sourceID});
 		if ($player && ($args->{skillID} == 28 || $args->{skillID} == 29 || $args->{skillID} == 34)) {
@@ -1607,3 +1611,5 @@ sub senbei_amount {
 *changeToInGameState = *Network::Receive::changeToInGameState;
 
 1;
+
+

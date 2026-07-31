@@ -19,8 +19,6 @@ sub new {
 	my ($class) = @_;
 	my $self = $class->SUPER::new(@_);
 
-	$self->{packet_list}{'01DC'} = ['secure_login_key', 'x2 a*', [qw(secure_key)]];
-
 	return $self;
 }
 

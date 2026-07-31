@@ -522,7 +522,7 @@ sub checkConnection {
 						\@serverList,
 						title => T("Select Login Server"));
 				if ($ret == -1) {
-					main::quit();
+					quit();
 				} else {
 					main::configModify('server', $ret, 1);
 					undef $conState_tries;

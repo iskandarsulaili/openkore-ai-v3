@@ -23,11 +23,9 @@ sub new {
 
 	my %packets = (
 		'0436' => ['map_login', 'a4 a4 a4 V2 C', [qw(accountID charID sessionID unknown tick sex)]],#23
-		'0A39' => ['char_create', 'a24 C v2 V C', [qw(name slot hair_color hair_style job_id sex)]],
 	);
 
 	$self->{packet_list}{$_} = $packets{$_} for keys %packets;
-	$self->{char_create_version} = 0x0A39;
 
 	return $self;
 }
