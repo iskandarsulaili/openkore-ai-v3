@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ai_sidecar.api.deps import get_runtime
-from ai_sidecar.contracts.actions import ActionStatus
+from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
+from ai_sidecar.contracts.common import ContractMeta
 from ai_sidecar.contracts.fleet import (
     AssignmentUpdateResponse,
     BotAssignmentUpdateRequest,
@@ -124,5 +125,60 @@ def memory_context(
         "matches": runtime.memory_context(bot_id=bot_id, query=query, limit=limit),
         "episodes": runtime.memory_recent_episodes(bot_id=bot_id, limit=min(limit, 20)),
         "stats": runtime.memory_stats(bot_id=bot_id),
+    }
+
+
+@router.post("/shutdown", response_model=dict[str, object])
+def graceful_shutdown(
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict[str, object]:
+    """Gracefully disconnect all bots by queueing a quit action for each.
+
+    This lets the bridge execute Commands::run('quit') so OpenKore sends
+    the proper logout packet to the server, clearing the session. Without
+    this, start.sh stop kills bots abruptly and rAthena keeps stale
+    sessions -> 'Dual login prohibited' on next start.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    bots = runtime.list_bots()
+    queued: list[dict[str, str]] = []
+    errors: list[str] = []
+    now = datetime.now(UTC)
+
+    for row in bots:
+        bot_id = str(row.get("bot_id", ""))
+        if not bot_id:
+            continue
+        try:
+            proposal = ActionProposal(
+                action_id=f"graceful_shutdown_{bot_id}_{int(now.timestamp() * 1000)}",
+                bot_id=bot_id,
+                action_type="command",
+                kind="command",
+                command="quit",
+                priority_tier=ActionPriorityTier.reflex,
+                conflict_key="quit",
+                source="fleet",
+                created_at=now,
+                expires_at=now + timedelta(seconds=30),
+                idempotency_key=f"quit:{bot_id}",
+                metadata={"action": "graceful_shutdown", "bot_id": bot_id},
+            )
+            meta = ContractMeta(bot_id=bot_id, source="fleet")
+            accepted, status, action_id, reason = runtime.queue_action(proposal=proposal, bot_id=bot_id)
+            if accepted:
+                queued.append({"bot_id": bot_id, "action_id": action_id, "status": str(status)})
+            else:
+                errors.append(f"{bot_id}:{reason}")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{bot_id}:{exc}")
+
+    return {
+        "ok": True,
+        "queued": queued,
+        "queued_count": len(queued),
+        "errors": errors,
+        "total_bots": len(bots),
     }
 

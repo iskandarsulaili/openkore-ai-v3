@@ -184,6 +184,15 @@ EOF
 
 stop_all() {
     info "Stopping all processes..."
+    # Graceful shutdown: ask sidecar to queue 'quit' for each bot so OpenKore
+    # sends the proper logout packet to the server, clearing sessions.
+    # Without this, killed bots leave stale server sessions -> Dual login on next start.
+    if curl -sf -X POST "http://127.0.0.1:${SIDECAR_PORT:-18081}/v1/fleet/shutdown" > /dev/null 2>&1; then
+        info "Graceful quit queued for all bots — waiting 15s for logout packets..."
+        sleep 15
+    else
+        warn "Sidecar not reachable — skipping graceful shutdown"
+    fi
     # Kill by PID file first
     if [ -f "$PID_FILE" ]; then
         while IFS= read -r pid; do
@@ -201,7 +210,7 @@ stop_all() {
     pkill -9 -f "llama-grammar-proxy" 2>/dev/null || true
     sleep 2
     # Verify all dead
-    if pgrep -f "openkore.pl\|ai_sidecar.app" > /dev/null 2>&1; then
+    if pgrep -f "openkore.pl|ai_sidecar.app" > /dev/null 2>&1; then
         warn "Some processes still running — forcing kill..."
         pkill -9 -f "openkore.pl" 2>/dev/null || true
         pkill -9 -f "ai_sidecar.app" 2>/dev/null || true
