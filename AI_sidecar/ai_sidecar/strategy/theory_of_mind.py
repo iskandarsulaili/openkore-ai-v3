@@ -924,6 +924,130 @@ class TheoryOfMind:
         with self._lock:
             return dict(self._stats)
 
+    # ── Persistence ──
+
+    def save_state(self) -> int:
+        """Save all theory of mind state to persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        with self._lock:
+            data = {
+                "observations": {
+                    k: [{
+                        "player_name": o.player_name,
+                        "action": o.action,
+                        "map_name": o.map_name,
+                        "class_name": o.class_name,
+                        "level": o.level,
+                        "timestamp": o.timestamp,
+                        "context": o.context,
+                        "confidence": o.confidence,
+                    } for o in list(v)]
+                    for k, v in self._observations.items()
+                },
+                "intentions": {
+                    k: {
+                        "player_name": v.player_name,
+                        "primary_intention": v.primary_intention.value if hasattr(v.primary_intention, 'value') else str(v.primary_intention),
+                        "secondary_intention": v.secondary_intention.value if hasattr(v.secondary_intention, 'value') else str(v.secondary_intention),
+                        "confidence": v.confidence,
+                        "evidence": v.evidence,
+                        "last_updated": v.last_updated,
+                    }
+                    for k, v in self._intentions.items()
+                },
+                "predictions": {
+                    k: [{
+                        "player_name": p.player_name,
+                        "predicted_action": p.predicted_action,
+                        "predicted_map": p.predicted_map,
+                        "predicted_timeframe": p.predicted_timeframe,
+                        "probability": p.probability,
+                        "reasoning": p.reasoning,
+                        "expires_at": p.expires_at,
+                    } for p in v]
+                    for k, v in self._predictions.items()
+                },
+                "relationships": {
+                    k: {
+                        "player_name": v.player_name,
+                        "disposition": v.disposition.value if hasattr(v.disposition, 'value') else str(v.disposition),
+                        "trust_level": v.trust_level,
+                        "familiarity": v.familiarity,
+                        "interaction_count": v.interaction_count,
+                        "positive_interactions": v.positive_interactions,
+                        "negative_interactions": v.negative_interactions,
+                        "last_interaction": v.last_interaction,
+                        "first_seen": v.first_seen,
+                        "notes": v.notes,
+                        "tags": v.tags,
+                    }
+                    for k, v in self._relationships.items()
+                },
+                "patterns": {
+                    k: [{
+                        "player_name": p.player_name,
+                        "pattern_type": p.pattern_type.value if hasattr(p.pattern_type, 'value') else str(p.pattern_type),
+                        "description": p.description,
+                        "confidence": p.confidence,
+                        "first_detected": p.first_detected,
+                        "last_observed": p.last_observed,
+                        "data_points": p.data_points,
+                        "prediction": p.prediction,
+                    } for p in v]
+                    for k, v in self._patterns.items()
+                },
+                "deception_indicators": [{
+                    "player_name": d.player_name,
+                    "indicator_type": d.indicator_type,
+                    "description": d.description,
+                    "severity": d.severity,
+                    "timestamp": d.timestamp,
+                    "evidence": d.evidence,
+                } for d in self._deception_indicators],
+                "stats": dict(self._stats),
+            }
+            return StrategyStateDB.save_theory_of_mind(data)
+
+    def load_state(self) -> bool:
+        """Load theory of mind state from persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        data = StrategyStateDB.load_theory_of_mind()
+        if data is None:
+            return False
+        with self._lock:
+            self._observations.clear()
+            for player, obs_list in data.get("observations", {}).items():
+                for o_data in obs_list:
+                    self._observations[player].append(PlayerObservation(**o_data))
+            self._intentions.clear()
+            for name, i_data in data.get("intentions", {}).items():
+                i_data["primary_intention"] = PlayerIntention(i_data.get("primary_intention", "unknown"))
+                i_data["secondary_intention"] = PlayerIntention(i_data.get("secondary_intention", "unknown"))
+                self._intentions[name] = IntentionEstimate(**i_data)
+            self._predictions.clear()
+            for name, pred_list in data.get("predictions", {}).items():
+                for p_data in pred_list:
+                    self._predictions[name].append(BehaviorPrediction(**p_data))
+            self._relationships.clear()
+            for name, r_data in data.get("relationships", {}).items():
+                r_data["disposition"] = PlayerDisposition(r_data.get("disposition", "unknown"))
+                self._relationships[name] = PlayerRelationship(**r_data)
+            self._patterns.clear()
+            for name, pat_list in data.get("patterns", {}).items():
+                for p_data in pat_list:
+                    p_data["pattern_type"] = BehaviorPattern(p_data.get("pattern_type", "farming_schedule"))
+                    self._patterns[name].append(DetectedPattern(**p_data))
+            self._deception_indicators.clear()
+            for d_data in data.get("deception_indicators", []):
+                self._deception_indicators.append(DeceptionIndicator(**d_data))
+            saved_stats = data.get("stats", {})
+            for k, v in saved_stats.items():
+                if k in self._stats:
+                    self._stats[k] = v
+            logger.info("theory_of_mind_state_loaded: %d players, %d relationships",
+                        len(self._intentions), len(self._relationships))
+            return True
+
 
 # ── Global instance ──
 

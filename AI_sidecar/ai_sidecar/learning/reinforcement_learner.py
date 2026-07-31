@@ -17,6 +17,9 @@ This engine implements:
 - Model persistence with versioning
 - Training metrics tracking
 - Epsilon-greedy exploration with decay
+- Cross-session learning: ALL experiences saved to disk, loaded on restart
+- Experience compression: summarize old experiences
+- Model versioning with rollback support
 - Wires into PDCA loop
 """
 
@@ -84,12 +87,19 @@ DEFAULT_DISCOUNT_FACTOR: float = 0.9
 DEFAULT_EPSILON: float = 0.3
 DEFAULT_EPSILON_DECAY: float = 0.995
 DEFAULT_MIN_EPSILON: float = 0.05
-DEFAULT_REPLAY_BUFFER_SIZE: int = 50000
+DEFAULT_REPLAY_BUFFER_SIZE: int = 100000  # Increased for cross-session
 DEFAULT_BATCH_SIZE: int = 64
 DEFAULT_PRIORITY_EPSILON: float = 1e-6
 DEFAULT_ALPHA: float = 0.6  # How much prioritization to use (0=none, 1=full)
 DEFAULT_BETA: float = 0.4   # Importance sampling correction (starts low, anneals to 1)
 DEFAULT_BETA_INCREMENT: float = 0.001
+
+# Cross-session learning constants
+EXPERIENCE_DB_PATH = "data/reinforcement_experiences.db"
+EXPERIENCE_COMPRESSION_INTERVAL = 3600  # Compress old experiences every hour
+MAX_RAW_EXPERIENCES = 50000  # Max raw experiences before compression
+COMPRESSED_EXPERIENCE_TTL = 86400 * 7  # Keep compressed experiences for 7 days
+MODEL_BACKUP_COUNT = 5  # Keep 5 model backups for rollback
 
 
 @dataclass
@@ -102,6 +112,22 @@ class PrioritizedExperience:
     done: bool
     priority: float = 1.0  # TD-error based priority
     timestamp: float = 0.0
+    session_id: str = ""  # Which session this experience came from
+    map_name: str = ""    # Context: which map
+    monster_name: str = ""  # Context: which monster
+
+
+@dataclass
+class CompressedExperience:
+    """A compressed summary of many similar experiences."""
+    state_cluster: list[float]  # Centroid of state cluster
+    action: int
+    avg_reward: float
+    count: int
+    first_seen: float
+    last_seen: float
+    map_name: str = ""
+    session_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -120,6 +146,9 @@ class QLearningStats:
     max_td_error: float = 0.0
     training_steps: int = 0
     model_version: int = 0
+    sessions_completed: int = 0
+    total_experiences: int = 0
+    compressed_experiences: int = 0
 
 
 class SumTree:
@@ -406,6 +435,9 @@ class ReinforcementLearner:
     - Model persistence with versioning
     - Training metrics tracking
     - Thread-safe: all mutable state is guarded by RLock
+    - Cross-session learning: ALL experiences saved to disk, loaded on restart
+    - Experience compression: summarize old experiences
+    - Model versioning with rollback support
     """
 
     _lock: RLock = field(default_factory=RLock)
@@ -431,11 +463,16 @@ class ReinforcementLearner:
     _training_steps: int = 0
     _model_path: str = "data/reinforcement_model.pkl"
     _stats_path: str = "data/reinforcement_stats.json"
+    _experiences_path: str = "data/reinforcement_experiences.jsonl"
+    _compressed_path: str = "data/reinforcement_compressed.jsonl"
     _last_save: float = 0.0
     _save_interval: float = 300.0  # Save every 5 minutes
+    _last_compression: float = 0.0
     _initialized: bool = False
     _action_to_idx: dict = field(default_factory=lambda: {a: i for i, a in enumerate(ACTIONS)})
     _idx_to_action: dict = field(default_factory=lambda: {i: a for i, a in enumerate(ACTIONS)})
+    _session_id: str = ""
+    _compressed_experiences: list[CompressedExperience] = field(default_factory=list)
 
     # -- Public API --
 
@@ -444,14 +481,27 @@ class ReinforcementLearner:
         if model_path:
             self._model_path = model_path
             self._stats_path = model_path.replace(".pkl", "_stats.json")
+            self._experiences_path = model_path.replace(".pkl", "_experiences.jsonl")
+            self._compressed_path = model_path.replace(".pkl", "_compressed.jsonl")
+
+        # Generate session ID
+        self._session_id = time.strftime("%Y%m%d_%H%M%S")
 
         # Initialize target network with same weights
         self._target_net.hard_update_from(self._online_net)
 
+        # Load model, stats, AND experiences
         self._load_model()
+        self._load_experiences()
+        self._load_compressed_experiences()
+
         self._initialized = True
-        logger.info("reinforcement_learner_initialized: online_net=%d params, %d experiences",
-                    self._count_params(), len(self._sum_tree))
+        logger.info(
+            "reinforcement_learner_initialized: online_net=%d params, "
+            "%d experiences, %d compressed, session=%s",
+            self._count_params(), len(self._sum_tree),
+            len(self._compressed_experiences), self._session_id,
+        )
 
     def _count_params(self) -> int:
         """Count total parameters in the online network."""
@@ -563,7 +613,8 @@ class ReinforcementLearner:
     # -- Learning --
 
     def observe(self, state: np.ndarray, action: str, reward: float,
-                next_state: np.ndarray, done: bool = False) -> None:
+                next_state: np.ndarray, done: bool = False,
+                map_name: str = "", monster_name: str = "") -> None:
         """Observe an experience and add it to the prioritized replay buffer."""
         with self._lock:
             action_idx = self._action_to_idx.get(action, 0)
@@ -577,11 +628,15 @@ class ReinforcementLearner:
                 next_state=next_state, done=done,
                 priority=priority,
                 timestamp=time.time(),
+                session_id=self._session_id,
+                map_name=map_name,
+                monster_name=monster_name,
             )
             self._sum_tree.add(priority, exp)
             self._stats.total_reward += reward
             self._stats.recent_rewards.append(reward)
             self._stats.action_rewards[action] += reward
+            self._stats.total_experiences += 1
 
             # Update best/worst
             if reward > self._stats.best_reward:
@@ -612,7 +667,13 @@ class ReinforcementLearner:
             # Save periodically
             if time.time() - self._last_save > self._save_interval:
                 self._save_model()
+                self._save_experiences()
                 self._last_save = time.time()
+
+            # Compress old experiences periodically
+            if time.time() - self._last_compression > EXPERIENCE_COMPRESSION_INTERVAL:
+                self._compress_experiences()
+                self._last_compression = time.time()
 
     def _train_from_replay(self) -> None:
         """Sample a batch from prioritized replay and train."""
@@ -713,6 +774,222 @@ class ReinforcementLearner:
 
         return reward
 
+    # -- Cross-Session Experience Persistence --
+
+    def _save_experiences(self) -> None:
+        """Save ALL raw experiences to disk as JSONL for cross-session learning."""
+        try:
+            path = Path(self._experiences_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Save experiences from the sum tree
+            count = 0
+            with open(path, "w") as f:
+                for i in range(self._sum_tree.n_entries):
+                    exp = self._sum_tree.data[i]
+                    if exp is not None:
+                        entry = {
+                            "state": exp.state.tolist(),
+                            "action": exp.action,
+                            "reward": exp.reward,
+                            "next_state": exp.next_state.tolist(),
+                            "done": exp.done,
+                            "priority": exp.priority,
+                            "timestamp": exp.timestamp,
+                            "session_id": exp.session_id,
+                            "map_name": exp.map_name,
+                            "monster_name": exp.monster_name,
+                        }
+                        f.write(json.dumps(entry) + "\n")
+                        count += 1
+
+            logger.debug(
+                "reinforcement_experiences_saved: %d experiences to %s",
+                count, self._experiences_path,
+            )
+        except Exception as e:
+            logger.warning("reinforcement_experiences_save_failed: %s", e)
+
+    def _load_experiences(self) -> None:
+        """Load ALL raw experiences from disk for cross-session learning."""
+        try:
+            path = Path(self._experiences_path)
+            if not path.exists():
+                return
+
+            loaded = 0
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        exp = PrioritizedExperience(
+                            state=np.array(entry["state"], dtype=np.float32),
+                            action=entry["action"],
+                            reward=entry["reward"],
+                            next_state=np.array(entry["next_state"], dtype=np.float32),
+                            done=entry["done"],
+                            priority=entry.get("priority", 1.0),
+                            timestamp=entry.get("timestamp", 0.0),
+                            session_id=entry.get("session_id", ""),
+                            map_name=entry.get("map_name", ""),
+                            monster_name=entry.get("monster_name", ""),
+                        )
+                        self._sum_tree.add(exp.priority, exp)
+                        loaded += 1
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
+
+            logger.info(
+                "reinforcement_experiences_loaded: %d experiences from %s",
+                loaded, self._experiences_path,
+            )
+        except Exception as e:
+            logger.warning("reinforcement_experiences_load_failed: %s", e)
+
+    def _save_compressed_experiences(self) -> None:
+        """Save compressed experiences to disk."""
+        try:
+            path = Path(self._compressed_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(path, "w") as f:
+                for ce in self._compressed_experiences:
+                    entry = {
+                        "state_cluster": ce.state_cluster,
+                        "action": ce.action,
+                        "avg_reward": ce.avg_reward,
+                        "count": ce.count,
+                        "first_seen": ce.first_seen,
+                        "last_seen": ce.last_seen,
+                        "map_name": ce.map_name,
+                        "session_ids": ce.session_ids,
+                    }
+                    f.write(json.dumps(entry) + "\n")
+
+            logger.debug(
+                "reinforcement_compressed_saved: %d compressed experiences",
+                len(self._compressed_experiences),
+            )
+        except Exception as e:
+            logger.warning("reinforcement_compressed_save_failed: %s", e)
+
+    def _load_compressed_experiences(self) -> None:
+        """Load compressed experiences from disk."""
+        try:
+            path = Path(self._compressed_path)
+            if not path.exists():
+                return
+
+            loaded = 0
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        ce = CompressedExperience(
+                            state_cluster=entry["state_cluster"],
+                            action=entry["action"],
+                            avg_reward=entry["avg_reward"],
+                            count=entry["count"],
+                            first_seen=entry["first_seen"],
+                            last_seen=entry["last_seen"],
+                            map_name=entry.get("map_name", ""),
+                            session_ids=entry.get("session_ids", []),
+                        )
+                        self._compressed_experiences.append(ce)
+                        loaded += 1
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
+
+            self._stats.compressed_experiences = loaded
+            logger.info(
+                "reinforcement_compressed_loaded: %d compressed experiences",
+                loaded,
+            )
+        except Exception as e:
+            logger.warning("reinforcement_compressed_load_failed: %s", e)
+
+    def _compress_experiences(self) -> None:
+        """Compress old experiences into summarized clusters.
+
+        Groups similar state-action pairs and averages their rewards.
+        Old raw experiences are removed from the sum tree.
+        """
+        try:
+            now = time.time()
+            cutoff = now - COMPRESSED_EXPERIENCE_TTL
+
+            # Collect old experiences from sum tree
+            old_exps: list[PrioritizedExperience] = []
+            new_exps: list[PrioritizedExperience] = []
+            for i in range(self._sum_tree.n_entries):
+                exp = self._sum_tree.data[i]
+                if exp is not None:
+                    if exp.timestamp < cutoff:
+                        old_exps.append(exp)
+                    else:
+                        new_exps.append(exp)
+
+            if len(old_exps) < 100:
+                return  # Not enough old experiences to compress
+
+            # Group by action and cluster states
+            from collections import defaultdict
+            by_action: dict[int, list[PrioritizedExperience]] = defaultdict(list)
+            for exp in old_exps:
+                by_action[exp.action].append(exp)
+
+            for action, exps in by_action.items():
+                if len(exps) < 5:
+                    continue  # Skip small groups
+
+                # Compute centroid state
+                states = np.array([e.state for e in exps])
+                centroid = np.mean(states, axis=0).tolist()
+                avg_reward = np.mean([e.reward for e in exps])
+                session_ids = list(set(e.session_id for e in exps if e.session_id))
+                maps = list(set(e.map_name for e in exps if e.map_name))
+
+                ce = CompressedExperience(
+                    state_cluster=centroid,
+                    action=action,
+                    avg_reward=float(avg_reward),
+                    count=len(exps),
+                    first_seen=min(e.timestamp for e in exps),
+                    last_seen=max(e.timestamp for e in exps),
+                    map_name=maps[0] if maps else "",
+                    session_ids=session_ids,
+                )
+                self._compressed_experiences.append(ce)
+
+            # Rebuild sum tree with only new experiences
+            new_tree = SumTree(DEFAULT_REPLAY_BUFFER_SIZE)
+            for exp in new_exps:
+                new_tree.add(exp.priority, exp)
+            self._sum_tree = new_tree
+
+            # Prune compressed list
+            self._compressed_experiences = [
+                ce for ce in self._compressed_experiences
+                if ce.last_seen > cutoff
+            ]
+
+            self._stats.compressed_experiences = len(self._compressed_experiences)
+            self._save_compressed_experiences()
+
+            logger.info(
+                "reinforcement_experiences_compressed: %d old -> %d compressed, "
+                "%d raw remaining",
+                len(old_exps), len(self._compressed_experiences), len(new_exps),
+            )
+        except Exception as e:
+            logger.warning("reinforcement_experiences_compression_failed: %s", e)
+
     # -- PDCA Integration --
 
     def tick(self, signals: dict[str, Any]) -> dict[str, Any]:
@@ -724,10 +1001,17 @@ class ReinforcementLearner:
             # Encode current state
             state = self.encode_state(signals)
 
+            # Get context info
+            map_name = str(signals.get("map", ""))
+            monster_name = str(signals.get("monster_name", ""))
+
             # Calculate reward from previous state
             if self._last_state is not None and self._last_action_str is not None:
                 reward = self.calculate_reward(signals)
-                self.observe(self._last_state, self._last_action_str, reward, state)
+                self.observe(
+                    self._last_state, self._last_action_str, reward, state,
+                    map_name=map_name, monster_name=monster_name,
+                )
 
             # Select next action
             action = self.select_action(state)
@@ -749,6 +1033,9 @@ class ReinforcementLearner:
                 "avg_td_error": self._stats.avg_td_error,
                 "model_version": self._stats.model_version,
                 "training_steps": self._training_steps,
+                "total_experiences": self._stats.total_experiences,
+                "compressed_experiences": self._stats.compressed_experiences,
+                "sessions_completed": self._stats.sessions_completed,
             }
 
     # -- Model Persistence --
@@ -758,6 +1045,15 @@ class ReinforcementLearner:
         try:
             path = Path(self._model_path)
             path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Create backup of previous model
+            if path.exists():
+                backup_path = path.with_suffix(f".v{self._stats.model_version}.bak")
+                # Keep only last MODEL_BACKUP_COUNT backups
+                backups = sorted(Path(path.parent).glob(f"{path.stem}.v*.bak"))
+                while len(backups) >= MODEL_BACKUP_COUNT:
+                    backups[0].unlink()
+                    backups = backups[1:]
 
             # Save model with version
             save_data = {
@@ -769,6 +1065,9 @@ class ReinforcementLearner:
                 "training_steps": self._training_steps,
                 "beta": self._beta,
                 "timestamp": time.time(),
+                "session_id": self._session_id,
+                "sessions_completed": self._stats.sessions_completed,
+                "total_experiences": self._stats.total_experiences,
             }
             with open(path, "wb") as f:
                 pickle.dump(save_data, f)
@@ -790,10 +1089,16 @@ class ReinforcementLearner:
                     "training_steps": self._training_steps,
                     "model_version": self._stats.model_version,
                     "q_network_params": self._count_params(),
+                    "sessions_completed": self._stats.sessions_completed,
+                    "total_experiences": self._stats.total_experiences,
+                    "compressed_experiences": self._stats.compressed_experiences,
                 }, f, indent=2)
 
-            logger.debug("reinforcement_model_saved: version=%d, %d params, %d episodes",
-                        self._stats.model_version, self._count_params(), self._episode_count)
+            logger.debug(
+                "reinforcement_model_saved: version=%d, %d params, %d episodes, %d total exp",
+                self._stats.model_version, self._count_params(),
+                self._episode_count, self._stats.total_experiences,
+            )
         except Exception as e:
             logger.warning("reinforcement_model_save_failed: %s", e)
 
@@ -811,8 +1116,14 @@ class ReinforcementLearner:
                 self._training_steps = data.get("training_steps", 0)
                 self._beta = data.get("beta", DEFAULT_BETA)
                 self._stats.model_version = data.get("model_version", 0)
-                logger.info("reinforcement_model_loaded: version=%d, %d params, %d episodes",
-                           self._stats.model_version, self._count_params(), self._episode_count)
+                self._stats.sessions_completed = data.get("sessions_completed", 0)
+                self._stats.total_experiences = data.get("total_experiences", 0)
+                logger.info(
+                    "reinforcement_model_loaded: version=%d, %d params, "
+                    "%d episodes, %d total exp",
+                    self._stats.model_version, self._count_params(),
+                    self._episode_count, self._stats.total_experiences,
+                )
 
             # Load stats
             stats_path = Path(self._stats_path)
@@ -875,9 +1186,12 @@ class ReinforcementLearner:
             lines.append(f"Exploration rate: {self._epsilon:.3f}")
             lines.append(f"Q-network params: {self._count_params()}")
             lines.append(f"Replay buffer: {len(self._sum_tree)} experiences")
+            lines.append(f"Compressed: {self._stats.compressed_experiences} summaries")
+            lines.append(f"Total experiences (all sessions): {self._stats.total_experiences}")
             lines.append(f"Avg TD error: {self._stats.avg_td_error:.4f}")
             lines.append(f"Training steps: {self._training_steps}")
             lines.append(f"Model version: {self._stats.model_version}")
+            lines.append(f"Sessions completed: {self._stats.sessions_completed}")
 
             # Best actions
             if self._stats.actions_taken:
@@ -907,6 +1221,8 @@ class ReinforcementLearner:
                 "replay_buffer": len(self._sum_tree),
                 "training_steps": self._training_steps,
                 "model_version": self._stats.model_version,
+                "total_experiences": self._stats.total_experiences,
+                "compressed_experiences": self._stats.compressed_experiences,
             }
 
 

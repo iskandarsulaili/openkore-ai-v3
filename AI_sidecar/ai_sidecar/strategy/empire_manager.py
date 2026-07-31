@@ -1255,6 +1255,130 @@ class EmpireManager:
         with self._lock:
             return dict(self._stats)
 
+    # ── Persistence ──
+
+    def save_state(self) -> int:
+        """Save all empire manager state to persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        with self._lock:
+            data = {
+                "roles": {
+                    k: {
+                        "title": v.title,
+                        "bot_id": v.bot_id,
+                        "class_name": v.class_name,
+                        "level": v.level,
+                        "status": v.status,
+                        "last_action": v.last_action,
+                        "performance_score": v.performance_score,
+                        "specialization": v.specialization,
+                    }
+                    for k, v in self._roles.items()
+                },
+                "directives": [{
+                    "directive_id": d.directive_id,
+                    "issued_by": d.issued_by,
+                    "target_bot": d.target_bot,
+                    "action": d.action,
+                    "reason": d.reason,
+                    "priority": d.priority,
+                    "issued_at": d.issued_at,
+                    "deadline": d.deadline,
+                    "completed": d.completed,
+                    "result": d.result,
+                } for d in self._directives],
+                "pipeline": {
+                    "farmer_bot_id": self._pipeline.farmer_bot_id,
+                    "crafter_bot_id": self._pipeline.crafter_bot_id,
+                    "merchant_bot_id": self._pipeline.merchant_bot_id,
+                    "pvp_bot_id": self._pipeline.pvp_bot_id,
+                    "raw_materials": dict(self._pipeline.raw_materials),
+                    "crafted_goods": dict(self._pipeline.crafted_goods),
+                    "inventory_for_sale": dict(self._pipeline.inventory_for_sale),
+                    "zeny_reserve": self._pipeline.zeny_reserve,
+                    "pipeline_active": self._pipeline.pipeline_active,
+                    "last_transfer": self._pipeline.last_transfer,
+                },
+                "territories": {
+                    k: {
+                        "map_name": v.map_name,
+                        "claimed_by": v.claimed_by,
+                        "claimed_at": v.claimed_at,
+                        "priority": v.priority,
+                        "competition_level": v.competition_level,
+                        "last_defended": v.last_defended,
+                        "zeny_per_hour": v.zeny_per_hour,
+                    }
+                    for k, v in self._territories.items()
+                },
+                "alliances": {
+                    k: {
+                        "entity_name": v.entity_name,
+                        "entity_type": v.entity_type,
+                        "relationship": v.relationship,
+                        "formed_at": v.formed_at,
+                        "last_contact": v.last_contact,
+                        "trust_level": v.trust_level,
+                        "benefits": v.benefits,
+                        "obligations": v.obligations,
+                    }
+                    for k, v in self._alliances.items()
+                },
+                "shared_inventory": {
+                    k: {
+                        "item_name": v.item_name,
+                        "total_quantity": v.total_quantity,
+                        "allocated_to": dict(v.allocated_to),
+                        "reserved_for": v.reserved_for,
+                        "last_updated": v.last_updated,
+                    }
+                    for k, v in self._shared_inventory.items()
+                },
+                "stats": dict(self._stats),
+            }
+            return StrategyStateDB.save_empire_manager(data)
+
+    def load_state(self) -> bool:
+        """Load empire manager state from persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        data = StrategyStateDB.load_empire_manager()
+        if data is None:
+            return False
+        with self._lock:
+            self._roles.clear()
+            for title, r_data in data.get("roles", {}).items():
+                self._roles[title] = EmpireRole(**r_data)
+            self._directives.clear()
+            for d_data in data.get("directives", []):
+                self._directives.append(EmpireDirective(**d_data))
+            pipeline_data = data.get("pipeline", {})
+            self._pipeline.farmer_bot_id = pipeline_data.get("farmer_bot_id", "")
+            self._pipeline.crafter_bot_id = pipeline_data.get("crafter_bot_id", "")
+            self._pipeline.merchant_bot_id = pipeline_data.get("merchant_bot_id", "")
+            self._pipeline.pvp_bot_id = pipeline_data.get("pvp_bot_id", "")
+            self._pipeline.raw_materials = defaultdict(int, pipeline_data.get("raw_materials", {}))
+            self._pipeline.crafted_goods = defaultdict(int, pipeline_data.get("crafted_goods", {}))
+            self._pipeline.inventory_for_sale = defaultdict(int, pipeline_data.get("inventory_for_sale", {}))
+            self._pipeline.zeny_reserve = pipeline_data.get("zeny_reserve", 0)
+            self._pipeline.pipeline_active = pipeline_data.get("pipeline_active", False)
+            self._pipeline.last_transfer = pipeline_data.get("last_transfer", 0.0)
+            self._territories.clear()
+            for name, t_data in data.get("territories", {}).items():
+                self._territories[name] = TerritoryClaim(**t_data)
+            self._alliances.clear()
+            for name, a_data in data.get("alliances", {}).items():
+                self._alliances[name] = Alliance(**a_data)
+            self._shared_inventory.clear()
+            for name, s_data in data.get("shared_inventory", {}).items():
+                self._shared_inventory[name] = SharedInventory(**s_data)
+            saved_stats = data.get("stats", {})
+            for k, v in saved_stats.items():
+                if k in self._stats:
+                    self._stats[k] = v
+            logger.info("empire_manager_state_loaded: %d roles, %d territories, %d alliances",
+                        len(self._roles), len(self._territories), len(self._alliances))
+            return True
+
 
 # ── Global instance ──
 

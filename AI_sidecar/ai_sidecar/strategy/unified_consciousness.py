@@ -877,6 +877,139 @@ class UnifiedConsciousness:
         with self._lock:
             return dict(self._stats)
 
+    # ── Persistence ──
+
+    def save_state(self) -> int:
+        """Save all unified consciousness state to persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        with self._lock:
+            data = {
+                "world_model": {
+                    "known_players": dict(self._world.known_players),
+                    "known_monsters": dict(self._world.known_monsters),
+                    "known_maps": dict(self._world.known_maps),
+                    "active_events": dict(self._world.active_events),
+                    "server_time": self._world.server_time,
+                    "server_population": self._world.server_population,
+                    "server_economy_state": self._world.server_economy_state,
+                    "last_updated": self._world.last_updated,
+                },
+                "self_model": {
+                    "empire_name": self._self.empire_name,
+                    "bot_ids": list(self._self.bot_ids),
+                    "primary_bot": self._self.primary_bot,
+                    "current_state": self._self.current_state.value if hasattr(self._self.current_state, 'value') else str(self._self.current_state),
+                    "current_focus": self._self.current_focus,
+                    "current_priority": self._self.current_priority,
+                    "total_bots": self._self.total_bots,
+                    "total_zeny": self._self.total_zeny,
+                    "total_wealth": self._self.total_wealth,
+                    "combat_readiness": self._self.combat_readiness,
+                    "economic_power": self._self.economic_power,
+                    "social_influence": self._self.social_influence,
+                    "creation_time": self._self.creation_time,
+                    "total_cycles": self._self.total_cycles,
+                    "total_decisions": self._self.total_decisions,
+                    "total_reflections": self._self.total_reflections,
+                    "active_goals": list(self._self.active_goals),
+                    "completed_goals": list(self._self.completed_goals),
+                    "last_updated": self._self.last_updated,
+                },
+                "decisions": [{
+                    "decision_id": d.decision_id,
+                    "domain": d.domain.value if hasattr(d.domain, 'value') else str(d.domain),
+                    "urgency": d.urgency.value if hasattr(d.urgency, 'value') else str(d.urgency),
+                    "action": d.action,
+                    "target_bot": d.target_bot,
+                    "reason": d.reason,
+                    "confidence": d.confidence,
+                    "expected_outcome": d.expected_outcome,
+                    "alternatives": d.alternatives,
+                    "timestamp": d.timestamp,
+                    "executed": d.executed,
+                    "outcome": d.outcome,
+                    "reflection": d.reflection,
+                } for d in self._decisions],
+                "reflections": [{
+                    "reflection_id": r.reflection_id,
+                    "topic": r.topic,
+                    "experience": r.experience,
+                    "lesson": r.lesson,
+                    "general_principle": r.general_principle,
+                    "domain": r.domain.value if hasattr(r.domain, 'value') else str(r.domain),
+                    "timestamp": r.timestamp,
+                    "applied_count": r.applied_count,
+                    "last_applied": r.last_applied,
+                } for r in self._reflections],
+                "scenarios": [{
+                    "scenario_id": s.scenario_id,
+                    "description": s.description,
+                    "probability": s.probability,
+                    "impact": s.impact,
+                    "timeframe": s.timeframe,
+                    "plan": s.plan,
+                    "contingencies": s.contingencies,
+                    "created_at": s.created_at,
+                } for s in self._scenarios],
+                "stats": dict(self._stats),
+            }
+            return StrategyStateDB.save_unified_consciousness(data)
+
+    def load_state(self) -> bool:
+        """Load unified consciousness state from persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        data = StrategyStateDB.load_unified_consciousness()
+        if data is None:
+            return False
+        with self._lock:
+            wm_data = data.get("world_model", {})
+            self._world.known_players = dict(wm_data.get("known_players", {}))
+            self._world.known_monsters = dict(wm_data.get("known_monsters", {}))
+            self._world.known_maps = dict(wm_data.get("known_maps", {}))
+            self._world.active_events = dict(wm_data.get("active_events", {}))
+            self._world.server_time = wm_data.get("server_time", 0.0)
+            self._world.server_population = wm_data.get("server_population", 0)
+            self._world.server_economy_state = wm_data.get("server_economy_state", "unknown")
+            self._world.last_updated = wm_data.get("last_updated", 0.0)
+            sm_data = data.get("self_model", {})
+            self._self.empire_name = sm_data.get("empire_name", "")
+            self._self.bot_ids = list(sm_data.get("bot_ids", []))
+            self._self.primary_bot = sm_data.get("primary_bot", "")
+            self._self.current_focus = sm_data.get("current_focus", "")
+            self._self.current_priority = sm_data.get("current_priority", "")
+            self._self.total_bots = sm_data.get("total_bots", 0)
+            self._self.total_zeny = sm_data.get("total_zeny", 0)
+            self._self.total_wealth = sm_data.get("total_wealth", 0)
+            self._self.combat_readiness = sm_data.get("combat_readiness", 0.5)
+            self._self.economic_power = sm_data.get("economic_power", 0.5)
+            self._self.social_influence = sm_data.get("social_influence", 0.5)
+            self._self.creation_time = sm_data.get("creation_time", 0.0)
+            self._self.total_cycles = sm_data.get("total_cycles", 0)
+            self._self.total_decisions = sm_data.get("total_decisions", 0)
+            self._self.total_reflections = sm_data.get("total_reflections", 0)
+            self._self.active_goals = list(sm_data.get("active_goals", []))
+            self._self.completed_goals = list(sm_data.get("completed_goals", []))
+            self._self.last_updated = sm_data.get("last_updated", 0.0)
+            self._decisions.clear()
+            for d_data in data.get("decisions", []):
+                d_data["domain"] = DecisionDomain(d_data.get("domain", "learning"))
+                d_data["urgency"] = DecisionUrgency(d_data.get("urgency", "short_term"))
+                self._decisions.append(UnifiedDecision(**d_data))
+            self._reflections.clear()
+            for r_data in data.get("reflections", []):
+                r_data["domain"] = DecisionDomain(r_data.get("domain", "learning"))
+                self._reflections.append(Reflection(**r_data))
+            self._scenarios.clear()
+            for s_data in data.get("scenarios", []):
+                self._scenarios.append(FutureScenario(**s_data))
+            saved_stats = data.get("stats", {})
+            for k, v in saved_stats.items():
+                if k in self._stats:
+                    self._stats[k] = v
+            logger.info("unified_consciousness_state_loaded: %d decisions, %d reflections, %d scenarios",
+                        len(self._decisions), len(self._reflections), len(self._scenarios))
+            return True
+
 
 # ── Global instance ──
 

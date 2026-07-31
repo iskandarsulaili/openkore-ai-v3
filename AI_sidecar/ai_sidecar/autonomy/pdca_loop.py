@@ -4330,6 +4330,60 @@ class PDCALoop:
                         except Exception as e:
                             logger.warning("unified_consciousness_init_failed: %s", e)
 
+                    # ── NEW: Initialize Autonomous Goal Generator ──
+                    _agg = getattr(self._runtime, "autonomous_goal_generator", None)
+                    if _agg is None:
+                        try:
+                            from ai_sidecar.autonomy.autonomous_goal_generator import AutonomousGoalGenerator
+                            _agg = AutonomousGoalGenerator()
+                            self._runtime.autonomous_goal_generator = _agg
+                            logger.info("autonomous_goal_generator_initialized")
+                        except Exception as e:
+                            logger.warning("autonomous_goal_generator_init_failed: %s", e)
+
+                    # ── NEW: Initialize Real-Time Party Coordinator ──
+                    _rtpc = getattr(self._runtime, "real_time_party_coordinator", None)
+                    if _rtpc is None:
+                        try:
+                            from ai_sidecar.domains.social.swarm.real_time_party import RealTimePartyCoordinator
+                            _rtpc = RealTimePartyCoordinator()
+                            self._runtime.real_time_party_coordinator = _rtpc
+                            logger.info("real_time_party_coordinator_initialized")
+                        except Exception as e:
+                            logger.warning("real_time_party_coordinator_init_failed: %s", e)
+
+                    # ── NEW: Initialize Strategy State Persistence ──
+                    _ssdb = getattr(self._runtime, "strategy_state_db", None)
+                    if _ssdb is None:
+                        try:
+                            from ai_sidecar.persistence.strategy_state import StrategyStateDB
+                            StrategyStateDB._init_db()
+                            self._runtime.strategy_state_db = StrategyStateDB
+                            logger.info("strategy_state_db_initialized")
+                        except Exception as e:
+                            logger.warning("strategy_state_db_init_failed: %s", e)
+
+                    # ── NEW: Load persisted strategy state on startup ──
+                    try:
+                        _ci = getattr(self._runtime, "competitive_intelligence", None)
+                        if _ci is not None and hasattr(_ci, 'load_state'):
+                            _ci.load_state()
+                        _tom = getattr(self._runtime, "theory_of_mind", None)
+                        if _tom is not None and hasattr(_tom, 'load_state'):
+                            _tom.load_state()
+                        _emp = getattr(self._runtime, "empire_manager", None)
+                        if _emp is not None and hasattr(_emp, 'load_state'):
+                            _emp.load_state()
+                        _cm = getattr(self._runtime, "crisis_manager", None)
+                        if _cm is not None and hasattr(_cm, 'load_state'):
+                            _cm.load_state()
+                        _uc = getattr(self._runtime, "unified_consciousness", None)
+                        if _uc is not None and hasattr(_uc, 'load_state'):
+                            _uc.load_state()
+                        logger.info("strategy_state_loaded_from_disk")
+                    except Exception as e:
+                        logger.warning("strategy_state_load_failed: %s", e)
+
                     self._services_initialized = True
 
 
@@ -6440,6 +6494,85 @@ class PDCALoop:
                     cycle_ms=(time.monotonic() - start) * 1000,
                     error=None,
                 )
+
+            # ── AUTONOMOUS GOAL GENERATION ──
+            # Generate autonomous goals from server state (runs on LONG_TERM horizon)
+            if horizon == Horizon.LONG_TERM:
+                try:
+                    _agg = getattr(self._runtime, "autonomous_goal_generator", None)
+                    if _agg is not None:
+                        # Build signals from latest snapshot
+                        _agg_signals = {}
+                        _agg_snap = latest_snapshot
+                        if _agg_snap is not None:
+                            if isinstance(_agg_snap, dict):
+                                _agg_signals["base_level"] = int(_agg_snap.get("progression", {}).get("base_level", 1) or 1)
+                                _agg_signals["job_level"] = int(_agg_snap.get("progression", {}).get("job_level", 0) or 0)
+                                _agg_signals["zeny"] = int(_agg_snap.get("progression", {}).get("zeny", 0) or 0)
+                                _agg_signals["map"] = str(_agg_snap.get("position", {}).get("map", ""))
+                                _agg_signals["hp_ratio"] = float(_agg_snap.get("vitals", {}).get("hp_ratio", 1.0) or 1.0)
+                                _agg_signals["sp_ratio"] = float(_agg_snap.get("vitals", {}).get("sp_ratio", 1.0) or 1.0)
+                                _agg_signals["kills_per_min"] = float(_agg_snap.get("raw", {}).get("kills_per_min", 0) or 0)
+                                _agg_signals["base_exp"] = int(_agg_snap.get("progression", {}).get("base_exp", 0) or 0)
+                        goals = _agg.generate_goals(_agg_signals)
+                        top_goal = _agg.get_top_goal()
+                        if top_goal:
+                            logger.info("autonomous_goal_active: %s (priority=%d, value=%.1f)",
+                                        top_goal.description, top_goal.priority, top_goal.expected_value)
+                            # Override objective with autonomous goal if no existing plan
+                            if self._active_plan[horizon] is None:
+                                objective = top_goal.description
+                                selected_goal = top_goal.category.value
+                except Exception as e:
+                    logger.debug("autonomous_goal_generation_cycle: %s", e)
+
+            # ── STRATEGY STATE PERSISTENCE ──
+            # Save strategy state periodically (every 60 cycles ≈ every 5 min)
+            if self._cycle_count % 60 == 0:
+                try:
+                    _ci = getattr(self._runtime, "competitive_intelligence", None)
+                    if _ci is not None and hasattr(_ci, 'save_state'):
+                        _ci.save_state()
+                    _tom = getattr(self._runtime, "theory_of_mind", None)
+                    if _tom is not None and hasattr(_tom, 'save_state'):
+                        _tom.save_state()
+                    _emp = getattr(self._runtime, "empire_manager", None)
+                    if _emp is not None and hasattr(_emp, 'save_state'):
+                        _emp.save_state()
+                    _cm = getattr(self._runtime, "crisis_manager", None)
+                    if _cm is not None and hasattr(_cm, 'save_state'):
+                        _cm.save_state()
+                    _uc = getattr(self._runtime, "unified_consciousness", None)
+                    if _uc is not None and hasattr(_uc, 'save_state'):
+                        _uc.save_state()
+                except Exception as e:
+                    logger.debug("strategy_state_save_cycle: %s", e)
+
+            # ── REAL-TIME PARTY COORDINATION ──
+            # Share position and check for emergencies (every cycle)
+            try:
+                _rtpc = getattr(self._runtime, "real_time_party_coordinator", None)
+                if _rtpc is not None:
+                    _rtpc_snap = latest_snapshot
+                    if _rtpc_snap is not None:
+                        if isinstance(_rtpc_snap, dict):
+                            _rtpc_pos = _rtpc_snap.get("position", {})
+                            _rtpc_vitals = _rtpc_snap.get("vitals", {})
+                            _rtpc_bot_id = str(_rtpc_snap.get("bot_id", ""))
+                            if _rtpc_bot_id:
+                                _rtpc.share_position(
+                                    map_name=str(_rtpc_pos.get("map", "")),
+                                    x=int(_rtpc_pos.get("x", 0)),
+                                    y=int(_rtpc_pos.get("y", 0)),
+                                    hp_pct=float(_rtpc_vitals.get("hp_ratio", 1.0)),
+                                )
+                                # Check for emergencies
+                                _rtpc_emergencies = _rtpc.check_emergencies()
+                                for _rtpc_em in _rtpc_emergencies:
+                                    logger.warning("party_emergency: %s - %s",
+                                                   _rtpc_em.get("bot_id", "?"), _rtpc_em.get("message", ""))
+            except Exception as e:
+                logger.debug("party_coordination_cycle: %s", e)
 
             # ── PLAN phase ───────────────────────────────────────
             _should_plan = self._active_plan[horizon] is None or force_replan

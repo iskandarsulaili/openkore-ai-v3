@@ -630,6 +630,93 @@ class CrisisManager:
         with self._lock:
             return dict(self._stats)
 
+    # ── Persistence ──
+
+    def save_state(self) -> int:
+        """Save all crisis manager state to persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        with self._lock:
+            data = {
+                "crisis_history": {
+                    k: [{
+                        "event_id": e.event_id,
+                        "bot_id": e.bot_id,
+                        "crisis_type": e.crisis_type,
+                        "severity": e.severity,
+                        "timestamp": e.timestamp,
+                        "map_name": e.map_name,
+                        "context": e.context,
+                        "diagnosis": e.diagnosis,
+                        "action_taken": e.action_taken,
+                        "resolved": e.resolved,
+                        "resolved_at": e.resolved_at,
+                        "recurrence_count": e.recurrence_count,
+                        "recurrence_key": e.recurrence_key,
+                    } for e in v]
+                    for k, v in self._crisis_history.items()
+                },
+                "active_crises": {
+                    k: {
+                        "event_id": v.event_id,
+                        "bot_id": v.bot_id,
+                        "crisis_type": v.crisis_type,
+                        "severity": v.severity,
+                        "timestamp": v.timestamp,
+                        "map_name": v.map_name,
+                        "context": v.context,
+                        "diagnosis": v.diagnosis,
+                        "action_taken": v.action_taken,
+                        "resolved": v.resolved,
+                        "resolved_at": v.resolved_at,
+                        "recurrence_count": v.recurrence_count,
+                        "recurrence_key": v.recurrence_key,
+                    }
+                    for k, v in self._active_crises.items()
+                },
+                "lessons": dict(self._lessons),
+                "map_blacklist": dict(self._map_blacklist),
+                "monster_blacklist": dict(self._monster_blacklist),
+                "config_overrides": {
+                    k: dict(v) for k, v in self._config_overrides.items()
+                },
+                "cooldowns": {
+                    k: dict(v) for k, v in self._cooldowns.items()
+                },
+                "stats": dict(self._stats),
+            }
+            return StrategyStateDB.save_crisis_manager(data)
+
+    def load_state(self) -> bool:
+        """Load crisis manager state from persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        data = StrategyStateDB.load_crisis_manager()
+        if data is None:
+            return False
+        with self._lock:
+            self._crisis_history.clear()
+            for bot_id, events in data.get("crisis_history", {}).items():
+                for e_data in events:
+                    self._crisis_history[bot_id].append(CrisisEvent(**e_data))
+            self._active_crises.clear()
+            for bot_id, e_data in data.get("active_crises", {}).items():
+                self._active_crises[bot_id] = CrisisEvent(**e_data)
+            self._lessons = dict(data.get("lessons", {}))
+            self._map_blacklist = dict(data.get("map_blacklist", {}))
+            self._monster_blacklist = dict(data.get("monster_blacklist", {}))
+            self._config_overrides.clear()
+            for bot_id, overrides in data.get("config_overrides", {}).items():
+                self._config_overrides[bot_id] = defaultdict(dict, overrides)
+            self._cooldowns.clear()
+            for bot_id, cds in data.get("cooldowns", {}).items():
+                self._cooldowns[bot_id] = dict(cds)
+            saved_stats = data.get("stats", {})
+            for k, v in saved_stats.items():
+                if k in self._stats:
+                    self._stats[k] = v
+            logger.info("crisis_manager_state_loaded: %d crises, %d lessons",
+                        sum(len(v) for v in self._crisis_history.values()), len(self._lessons))
+            return True
+
 
 # ── Global Singleton ──
 

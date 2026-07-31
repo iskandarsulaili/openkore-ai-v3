@@ -605,6 +605,113 @@ class CompetitiveIntelligence:
         with self._lock:
             return dict(self._stats)
 
+    # ── Persistence ──
+
+    def save_state(self) -> int:
+        """Save all competitive intelligence state to persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        with self._lock:
+            data = {
+                "farming_activities": {
+                    k: [{
+                        "player_name": a.player_name,
+                        "map_name": a.map_name,
+                        "monster_name": a.monster_name,
+                        "estimated_zeny_per_hour": a.estimated_zeny_per_hour,
+                        "estimated_xp_per_hour": a.estimated_xp_per_hour,
+                        "first_observed": a.first_observed,
+                        "last_observed": a.last_observed,
+                        "observation_count": a.observation_count,
+                        "competition_level": a.competition_level,
+                    } for a in v]
+                    for k, v in self._farming_activities.items()
+                },
+                "market_activities": {
+                    k: [{
+                        "player_name": a.player_name,
+                        "item_name": a.item_name,
+                        "price": a.price,
+                        "quantity": a.quantity,
+                        "shop_location": a.shop_location,
+                        "first_observed": a.first_observed,
+                        "last_observed": a.last_observed,
+                        "total_volume": a.total_volume,
+                        "price_trend": a.price_trend,
+                    } for a in v]
+                    for k, v in self._market_activities.items()
+                },
+                "player_builds": {
+                    k: {
+                        "player_name": v.player_name,
+                        "job_class": v.job_class,
+                        "base_level": v.base_level,
+                        "job_level": v.job_level,
+                        "build_type": v.build_type,
+                        "guild_name": v.guild_name,
+                        "first_seen": v.first_seen,
+                        "last_seen": v.last_seen,
+                        "level_up_rate": v.level_up_rate,
+                        "is_competitor": v.is_competitor,
+                        "is_threat": v.is_threat,
+                        "is_ally": v.is_ally,
+                        "threat_score": v.threat_score,
+                    }
+                    for k, v in self._player_builds.items()
+                },
+                "guild_intel": {
+                    k: {
+                        "guild_name": v.guild_name,
+                        "member_count": v.member_count,
+                        "members": v.members,
+                        "alliance_with": v.alliance_with,
+                        "enemy_of": v.enemy_of,
+                        "territory": v.territory,
+                        "strength_rating": v.strength_rating,
+                        "first_seen": v.first_seen,
+                        "last_seen": v.last_seen,
+                        "notes": v.notes,
+                    }
+                    for k, v in self._guild_intel.items()
+                },
+                "threat_list": self._threat_list,
+                "ally_list": self._ally_list,
+                "competitor_list": self._competitor_list,
+                "stats": dict(self._stats),
+            }
+            return StrategyStateDB.save_competitive_intelligence(data)
+
+    def load_state(self) -> bool:
+        """Load competitive intelligence state from persistent storage."""
+        from ai_sidecar.persistence.strategy_state import StrategyStateDB
+        data = StrategyStateDB.load_competitive_intelligence()
+        if data is None:
+            return False
+        with self._lock:
+            self._farming_activities.clear()
+            for player, activities in data.get("farming_activities", {}).items():
+                for a_data in activities:
+                    self._farming_activities[player].append(FarmingActivity(**a_data))
+            self._market_activities.clear()
+            for player, activities in data.get("market_activities", {}).items():
+                for a_data in activities:
+                    self._market_activities[player].append(MarketActivity(**a_data))
+            self._player_builds.clear()
+            for name, b_data in data.get("player_builds", {}).items():
+                self._player_builds[name] = PlayerBuild(**b_data)
+            self._guild_intel.clear()
+            for name, g_data in data.get("guild_intel", {}).items():
+                self._guild_intel[name] = GuildIntel(**g_data)
+            self._threat_list = data.get("threat_list", [])
+            self._ally_list = data.get("ally_list", [])
+            self._competitor_list = data.get("competitor_list", [])
+            saved_stats = data.get("stats", {})
+            for k, v in saved_stats.items():
+                if k in self._stats:
+                    self._stats[k] = v
+            logger.info("competitive_intelligence_state_loaded: %d players, %d guilds",
+                        len(self._player_builds), len(self._guild_intel))
+            return True
+
 
 # ── Global Singleton ──
 
