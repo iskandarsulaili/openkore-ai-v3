@@ -309,6 +309,8 @@ class ColdStartManager:
             # Character exists — emit stat allocation if needed
             self._emit_stat_allocation(signals, actions, bot_id)
             return
+        logger.debug("[cold_start] %s: no valid character in signals; chars=%s", bot_id, str(characters)[:200])
+        logger.info("[cold_start] %s: characters_signal=%s", bot_id, str(characters)[:150])
 
         # Check if connection is blocked by server (Dual login, timeout, etc.)
         import time as _time

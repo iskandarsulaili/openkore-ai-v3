@@ -54,6 +54,7 @@ sub new {
     my ($class, %args) = @_;
     my $self = {
         # ZMQ configuration
+        zmq_enabled       => $args{zmq_enabled} // 1,
         zmq_address       => $args{zmq_address}    || 'tcp://127.0.0.1:5559',
         zmq_connect_ms    => $args{zmq_connect_ms} || 500,
         zmq_linger_ms     => $args{zmq_linger_ms}  || 100,
@@ -219,6 +220,12 @@ sub metrics_summary {
 # ── internal: ZMQ send via ZMQ::FFI push socket ──
 sub _send_via_zmq {
     my ($self, $payload) = @_;
+
+    # ZMQ transport can be disabled (e.g. HTTP-only sidecar). Without
+    # this gate, ZMQ PUSH connect() succeeds silently even with NO
+    # listener (ZMQ is async) — messages vanish and HTTP fallback
+    # never triggers.
+    return 0 unless $self->{zmq_enabled};
 
     # Lazy-init ZMQ
     $self->_zmq_init() unless $self->{_zmq_initialized};

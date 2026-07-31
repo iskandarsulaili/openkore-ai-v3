@@ -430,6 +430,7 @@ sub on_start3 {
 		window_seconds      => 300,
 	);
 	$_http_client = HTTPClient->new(
+		zmq_enabled       => _cfg_bool('aiSidecar_zmqEnabled', 0),  # HTTP-only sidecar
 		zmq_address       => $ENV{SIDECAR_ZMQ_ADDR} || 'tcp://127.0.0.1:5559',
 		http_base_url     => _cfg('aiSidecar_baseUrl', 'http://127.0.0.1:18081'),
 		zmq_connect_ms    => 500,
