@@ -3050,28 +3050,28 @@ sub _poll_next_action {
 		splice @actions, $MAX_ACTIONS_PER_POLL;
 	}
 
-	# ── Execute ALL actions in sequence with proper delays ──
-	# FIX: Collect results and send ACKs AFTER all actions are done,
-	# so the sidecar doesn't interpret individual ACKs as batch completion.
-	my $executed_count = 0;
-	my @action_results = ();
-	for my $action (@actions) {
-		last if !ref($action) eq 'HASH';
-		my $result = _execute_action($poll_id, $action);
-		push @action_results, $result if $result;
-		$executed_count++;
+				# ── Execute ALL actions in sequence with proper delays ──
+				# FIX: Collect results and send ACKs AFTER all actions are done,
+				# so the sidecar doesn't interpret individual ACKs as batch completion.
+				my $executed_count = 0;
+				my @action_results = ();
+				for my $action (@actions) {
+					last if ref($action) ne 'HASH';
+					my $result = _execute_action($poll_id, $action);
+					push @action_results, $result if $result;
+					$executed_count++;
 
-		# Check if we need to wait for cast/animation before next action
-		if ($_is_casting && $_casting_until_ms > _now_ms()) {
-			my $wait_ms = $_casting_until_ms - _now_ms();
-			$wait_ms = 0 if $wait_ms < 0;
-			$wait_ms = 5000 if $wait_ms > 5000;  # Safety cap
-			usleep($wait_ms * 1000) if $wait_ms > 0;
-		} elsif ($executed_count < @actions) {
-			# Small inter-action delay to let server process
-			usleep(50000);  # 50ms between actions
-		}
-	}
+					# Check if we need to wait for cast/animation before next action
+					if ($_is_casting && $_casting_until_ms > _now_ms()) {
+						my $wait_ms = $_casting_until_ms - _now_ms();
+						$wait_ms = 0 if $wait_ms < 0;
+						$wait_ms = 5000 if $wait_ms > 5000;  # Safety cap
+						usleep($wait_ms * 1000) if $wait_ms > 0;
+					} elsif ($executed_count < @actions) {
+						# Small inter-action delay to let server process
+						usleep(50000);  # 50ms between actions
+					}
+				}
 
 	# ── Send ACKs for ALL executed actions in batch ──
 	# This prevents the sidecar from treating individual ACKs as batch completion.

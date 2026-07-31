@@ -1,5 +1,5 @@
 """
-RO damage formulas — pre-renewal (classic) accurate.
+RO damage formulas - pre-renewal AND renewal accurate.
 
 Covers:
 - Hard DEF (VIT-based) vs Soft DEF (equipment-based)
@@ -13,14 +13,50 @@ Covers:
 - Skill delay (modified by DEX)
 - Flee / hit rate
 - Status resistance
+- SERVER_MODE: 'pre_renewal' or 'renewal'
+- Renewal: DEF% = DEF / (DEF + 400), MDEF% = MDEF / (MDEF + 1000)
+- Renewal: elemental damage is multiplicative with cards (not additive)
+- Renewal: flee = 100 + flee - hit (not 95)
+- Auto-detect server mode from monster stats
 """
 
 import datetime
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Any
 
-# ── Element chart (attacker row vs defender col) ──
+logger = logging.getLogger(__name__)
+
+# -- Server Mode --
+SERVER_MODE = 'pre_renewal'  # 'pre_renewal' or 'renewal' - can be overridden at runtime
+
+
+def set_server_mode(mode: str) -> None:
+    """Set the global server mode: 'pre_renewal' or 'renewal'."""
+    global SERVER_MODE
+    if mode not in ('pre_renewal', 'renewal'):
+        raise ValueError(f"Invalid server mode: {mode}. Must be 'pre_renewal' or 'renewal'.")
+    SERVER_MODE = mode
+    logger.info("server_mode_set: %s", mode)
+
+
+def get_server_mode() -> str:
+    """Get the current server mode."""
+    return SERVER_MODE
+
+
+def detect_server_mode_from_monster(monster_def: int, monster_mdef: int) -> str:
+    """Auto-detect server mode from monster stats.
+
+    Renewal monsters typically have much higher DEF/MDEF values.
+    If DEF > 100 or MDEF > 50, it's likely renewal.
+    """
+    if monster_def > 100 or monster_mdef > 50:
+        return 'renewal'
+    return 'pre_renewal'
+
+# -- Element chart (attacker row vs defender col) --
 # Rows: attacker element (Neutral, Water, Earth, Fire, Wind, Poison, Holy, Dark, Ghost, Undead)
 # Cols: defender element (same order)
 # Values: damage multiplier (1.0 = 100%)
@@ -39,7 +75,7 @@ ELEMENT_CHART: list[list[float]] = [
     [1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  0.0 ],  # Undead
 ]
 
-# ── Size chart (weapon type vs monster size) ──
+# -- Size chart (weapon type vs monster size) --
 # Rows: weapon type (Dagger, 1H Sword, 2H Sword, Spear, Mace, Axe, Staff, Bow, Knuckle, Instrument, Whip, Katar)
 # Cols: monster size (Small, Medium, Large)
 SIZE_CHART: dict[str, list[float]] = {
@@ -57,7 +93,7 @@ SIZE_CHART: dict[str, list[float]] = {
     "Katar":        [1.0, 0.75, 0.5],
 }
 
-# ── Race chart (attacker weapon vs defender race) ──
+# -- Race chart (attacker weapon vs defender race) --
 # Races: Angel, Brute, DemiHuman, Demon, Dragon, Fish, Formless, Insect, Plant, Undead
 RACE_CHART: dict[str, dict[str, float]] = {
     "Dagger":       {"DemiHuman": 1.0, "Brute": 1.0, "Dragon": 0.75, "Undead": 0.75, "Formless": 0.75},
@@ -65,7 +101,7 @@ RACE_CHART: dict[str, dict[str, float]] = {
     "Bow":          {"Brute": 1.0, "DemiHuman": 1.0, "Dragon": 0.75, "Formless": 0.75},
 }
 
-# ── Race-to-element mapping for common monsters ──
+# -- Race-to-element mapping for common monsters --
 RACE_ELEMENTS: dict[str, str] = {
     "Poring": "Water", "Drops": "Water", "Poporing": "Poison",
     "Lunatic": "Neutral", "Picky": "Fire", "Picky_": "Fire",
@@ -121,7 +157,7 @@ RACE_ELEMENTS: dict[str, str] = {
     "Biolab_Monster": "DemiHuman",
 }
 
-# ── Weapon type mapping ──
+# -- Weapon type mapping --
 WEAPON_TYPES: dict[str, str] = {
     "Dagger": "Dagger", "Knife": "Dagger", "Main_Gauche": "Dagger",
     "Sword": "1H_Sword", "Blade": "1H_Sword", "Edge": "1H_Sword",
@@ -137,11 +173,11 @@ WEAPON_TYPES: dict[str, str] = {
     "Katar": "Katar", "Claw": "Katar", "Fist_Blade": "Katar",
 }
 
-# ── Skill data: cast time, delay, cooldown, range ──
+# -- Skill data: cast time, delay, cooldown, range --
 # Format: (variable_cast_ms, fixed_cast_ms, after_cast_delay_ms, cooldown_ms, range_cells)
 # Source: rAthena skill_db
 SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
-    # ── Archer ──
+    # -- Archer --
     "Double Strafe":    (0, 0, 100, 0, 9),
     "Arrow Shower":     (0, 0, 500, 0, 9),
     "Improve Concentration": (0, 0, 0, 0, 0),
@@ -152,7 +188,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Detecting":        (0, 0, 0, 0, 0),
     "Falconry Mastery": (0, 0, 0, 0, 0),
     "Steel Crow":       (0, 0, 0, 0, 9),
-    # ── Mage ──
+    # -- Mage --
     "Fire Bolt":        (3200, 0, 1000, 0, 9),
     "Cold Bolt":        (3200, 0, 1000, 0, 9),
     "Lightning Bolt":   (3200, 0, 1000, 0, 9),
@@ -166,7 +202,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Safety Wall":      (2000, 0, 1000, 0, 9),
     "Stone Curse":      (2000, 0, 1000, 0, 9),
     "Energy Coat":      (0, 0, 0, 0, 0),
-    # ── Wizard ──
+    # -- Wizard --
     "Storm Gust":       (5000, 5000, 5000, 0, 9),
     "Meteor Storm":     (6000, 3000, 5000, 0, 9),
     "Lord of Vermilion":(4000, 2000, 3000, 0, 9),
@@ -175,7 +211,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Ice Wall":         (2000, 0, 1000, 0, 9),
     "Water Ball":       (3000, 0, 2000, 0, 9),
     "Sight":            (0, 0, 0, 0, 0),
-    # ── Acolyte / Priest ──
+    # -- Acolyte / Priest --
     "Heal":             (1000, 0, 500, 0, 9),
     "Blessing":         (2000, 0, 1000, 0, 9),
     "Increase Agility": (2000, 0, 1000, 0, 9),
@@ -190,7 +226,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Gloria":           (2000, 0, 1000, 0, 0),
     "Lex Aeterna":      (1000, 0, 500, 0, 9),
     "Lex Divina":       (1000, 0, 500, 0, 9),
-    # ── Thief / Assassin ──
+    # -- Thief / Assassin --
     "Double Attack":    (0, 0, 0, 0, 1),
     "Sonic Blow":       (0, 0, 1000, 0, 1),
     "Grimtooth":        (0, 0, 500, 0, 9),
@@ -203,7 +239,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Left Hand Mastery": (0, 0, 0, 0, 0),
     "Soul Breaker":     (0, 0, 1000, 0, 9),
     "Meteor Assault":   (0, 0, 1000, 0, 1),
-    # ── Swordsman / Knight ──
+    # -- Swordsman / Knight --
     "Bash":             (0, 0, 500, 0, 1),
     "Magnum Break":     (0, 0, 1000, 0, 1),
     "Endure":           (0, 0, 0, 0, 0),
@@ -216,7 +252,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Bowling Bash":     (0, 0, 1000, 0, 1),
     "Riding":           (0, 0, 0, 0, 0),
     "Cavalry Mastery":  (0, 0, 0, 0, 0),
-    # ── Merchant / Blacksmith ──
+    # -- Merchant / Blacksmith --
     "Mammonite":        (0, 0, 1000, 0, 1),
     "Cart Revolution":  (0, 0, 1000, 0, 1),
     "Change Cart":      (0, 0, 0, 0, 0),
@@ -226,7 +262,7 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Weapon Perfection": (0, 0, 0, 0, 0),
     "Over Thrust":      (0, 0, 0, 0, 0),
     "Maximum Over Thrust": (0, 0, 0, 0, 0),
-    # ── Acolyte / Monk ──
+    # -- Acolyte / Monk --
     "Iron Fists":       (0, 0, 0, 0, 0),
     "Flee":             (0, 0, 0, 0, 0),
     "Spirit Recovery":  (0, 0, 0, 0, 0),
@@ -237,11 +273,11 @@ SKILL_DATA: dict[str, tuple[int, int, int, int, int]] = {
     "Guillotine Fist":  (0, 0, 2000, 0, 1),
     "Raging Trifecta":  (0, 0, 1000, 0, 1),
     "Chain Combo":      (0, 0, 0, 0, 1),
-    # ── General ──
+    # -- General --
     "Basic Attack":     (0, 0, 0, 0, 1),
 }
 
-# ── Skill element mapping ──
+# -- Skill element mapping --
 SKILL_ELEMENTS: dict[str, str] = {
     "Fire Bolt": "Fire", "Fire Ball": "Fire", "Fire Wall": "Fire",
     "Meteor Storm": "Fire", "Mammonite": "Neutral",
@@ -262,7 +298,7 @@ SKILL_ELEMENTS: dict[str, str] = {
     "Basic Attack": "Neutral",
 }
 
-# ── Monster size mapping ──
+# -- Monster size mapping --
 MONSTER_SIZES: dict[str, str] = {
     "Poring": "Small", "Drops": "Small", "Poporing": "Small",
     "Lunatic": "Small", "Picky": "Small", "Picky_": "Small",
@@ -318,7 +354,7 @@ MONSTER_SIZES: dict[str, str] = {
     "Biolab_Monster": "Medium",
 }
 
-# ── Monster race mapping ──
+# -- Monster race mapping --
 MONSTER_RACES: dict[str, str] = {
     "Poring": "Brute", "Drops": "Brute", "Poporing": "Brute",
     "Lunatic": "Brute", "Picky": "Brute", "Picky_": "Brute",
@@ -374,7 +410,7 @@ MONSTER_RACES: dict[str, str] = {
     "Biolab_Monster": "DemiHuman",
 }
 
-# ── Monster DEF/MDEF data (from rAthena mob_db) ──
+# -- Monster DEF/MDEF data (from rAthena mob_db) --
 MONSTER_DEF: dict[str, dict[str, int]] = {
     "Poring": {"def": 2, "mdef": 5, "vit": 1, "int": 0},
     "Drops": {"def": 2, "mdef": 5, "vit": 1, "int": 0},
@@ -495,6 +531,133 @@ def calculate_mdef(mdef_stat: int, int_stat: int) -> float:
     return min(99.0, raw)
 
 
+def calculate_damage_pre_renewal(
+    raw_damage: float,
+    attacker_level: int = 1,
+    monster_name: str = "",
+    weapon_type: str = "Dagger",
+    attacker_element: str = "Neutral",
+    is_physical: bool = True,
+    monster_def: int = 0,
+    monster_mdef: int = 0,
+    monster_vit: int = 0,
+    monster_int: int = 0,
+    monster_level: int = 1,
+    monster_size: str = "Medium",
+    monster_race: str = "Brute",
+    monster_element: str = "Neutral",
+    card_bonus_vs_race: float = 1.0,
+    card_bonus_vs_size: float = 1.0,
+    card_bonus_vs_element: float = 1.0,
+    refinement_level: int = 0,
+    element_level: int = 1,
+) -> float:
+    """Pre-renewal damage calculation.
+
+    Pre-renewal formula:
+      - DEF = hard_DEF + soft_DEF, flat reduction
+      - Elemental + cards are additive (summed)
+      - DEF reduction: total_def / (total_def + 100)
+    """
+    # 1. Element multiplier (use element_table for Level 1-4 support)
+    try:
+        from ai_sidecar.combat.element_table import element_modifier
+        element_mult = element_modifier(attacker_element, monster_element, attack_level=element_level, defense_level=1)
+    except ImportError:
+        element_mult = get_element_multiplier(attacker_element, monster_element)
+
+    # 2. Size multiplier
+    size_mult = get_size_multiplier(weapon_type, monster_size)
+
+    # 3. Race multiplier
+    race_mult = get_race_multiplier(weapon_type, monster_race)
+
+    # 4. Card bonuses (pre-renewal: additive with element)
+    card_mult = card_bonus_vs_race * card_bonus_vs_size * card_bonus_vs_element
+
+    # 5. Level penalty
+    level_pen = get_level_penalty(attacker_level, monster_level)
+
+    # 6. Apply multipliers to raw damage
+    modified_damage = raw_damage * element_mult * size_mult * race_mult * card_mult * level_pen
+
+    # 7. Apply DEF/MDEF reduction (pre-renewal: flat reduction)
+    if is_physical:
+        hard_def = calculate_hard_def(monster_vit, monster_def)
+        soft_def = calculate_soft_def(monster_def, refinement_level)
+        total_def = hard_def + soft_def
+        reduction = total_def / (total_def + 100)
+        return max(1, int(modified_damage * (1.0 - reduction)))
+    else:
+        mdef_val = calculate_mdef(monster_mdef, monster_int)
+        reduction = mdef_val / 100.0
+        return max(1, int(modified_damage * (1.0 - reduction)))
+
+
+def calculate_damage_renewal(
+    raw_damage: float,
+    attacker_level: int = 1,
+    monster_name: str = "",
+    weapon_type: str = "Dagger",
+    attacker_element: str = "Neutral",
+    is_physical: bool = True,
+    monster_def: int = 0,
+    monster_mdef: int = 0,
+    monster_vit: int = 0,
+    monster_int: int = 0,
+    monster_level: int = 1,
+    monster_size: str = "Medium",
+    monster_race: str = "Brute",
+    monster_element: str = "Neutral",
+    card_bonus_vs_race: float = 1.0,
+    card_bonus_vs_size: float = 1.0,
+    card_bonus_vs_element: float = 1.0,
+    refinement_level: int = 0,
+    element_level: int = 1,
+) -> float:
+    """Renewal damage calculation.
+
+    Renewal formula:
+      - DEF% = DEF / (DEF + 400) - percentage-based reduction
+      - MDEF% = MDEF / (MDEF + 1000) - percentage-based reduction
+      - Elemental damage is multiplicative with cards (not additive)
+      - All modifiers multiply together
+    """
+    # 1. Element multiplier (use element_table for Level 1-4 support)
+    try:
+        from ai_sidecar.combat.element_table import element_modifier
+        element_mult = element_modifier(attacker_element, monster_element, attack_level=element_level, defense_level=1)
+    except ImportError:
+        element_mult = get_element_multiplier(attacker_element, monster_element)
+
+    # 2. Size multiplier
+    size_mult = get_size_multiplier(weapon_type, monster_size)
+
+    # 3. Race multiplier
+    race_mult = get_race_multiplier(weapon_type, monster_race)
+
+    # 4. Card bonuses (renewal: multiplicative with element, not additive)
+    card_mult = card_bonus_vs_race * card_bonus_vs_size * card_bonus_vs_element
+
+    # 5. Level penalty
+    level_pen = get_level_penalty(attacker_level, monster_level)
+
+    # 6. Apply ALL multipliers multiplicatively (renewal: everything multiplies)
+    modified_damage = raw_damage * element_mult * size_mult * race_mult * card_mult * level_pen
+
+    # 7. Apply DEF/MDEF reduction (renewal: percentage-based)
+    if is_physical:
+        # Renewal DEF% = DEF / (DEF + 400)
+        total_def = monster_def + monster_vit * 0.5  # DEF + VIT contribution
+        def_pct = total_def / (total_def + 400)
+        return max(1, int(modified_damage * (1.0 - def_pct)))
+    else:
+        # Renewal MDEF% = MDEF / (MDEF + 1000)
+        total_mdef = monster_mdef + monster_int * 0.5  # MDEF + INT contribution
+        mdef_pct = total_mdef / (total_mdef + 1000)
+        return max(1, int(modified_damage * (1.0 - mdef_pct)))
+
+
 def calculate_damage(
     raw_damage: float,
     attacker_level: int = 1,
@@ -518,48 +681,72 @@ def calculate_damage(
 ) -> float:
     """Full RO damage calculation with all modifiers.
 
+    Auto-selects pre-renewal or renewal based on SERVER_MODE.
+    Can also auto-detect from monster stats.
+
     Returns actual damage after all reductions and bonuses.
     """
-    # 1. Element multiplier (use element_table for Level 1-4 support)
-    try:
-        from ai_sidecar.combat.element_table import element_modifier
-        element_mult = element_modifier(attacker_element, monster_element, attack_level=element_level, defense_level=1)
-    except ImportError:
-        element_mult = get_element_multiplier(attacker_element, monster_element)
+    # Auto-detect server mode from monster stats if not explicitly set
+    mode = SERVER_MODE
+    if mode == 'pre_renewal' and (monster_def > 100 or monster_mdef > 50):
+        mode = 'renewal'
 
-    # 2. Size multiplier
-    size_mult = get_size_multiplier(weapon_type, monster_size)
-
-    # 3. Race multiplier
-    race_mult = get_race_multiplier(weapon_type, monster_race)
-
-    # 4. Card bonuses
-    card_mult = card_bonus_vs_race * card_bonus_vs_size * card_bonus_vs_element
-
-    # 5. Level penalty
-    level_pen = get_level_penalty(attacker_level, monster_level)
-
-    # 6. Apply multipliers to raw damage
-    modified_damage = raw_damage * element_mult * size_mult * race_mult * card_mult * level_pen
-
-    # 7. Apply DEF/MDEF reduction
-    if is_physical:
-        hard_def = calculate_hard_def(monster_vit, monster_def)
-        soft_def = calculate_soft_def(monster_def, refinement_level)
-        total_def = hard_def + soft_def
-        reduction = total_def / (total_def + 100)
-        return max(1, int(modified_damage * (1.0 - reduction)))
+    if mode == 'renewal':
+        return calculate_damage_renewal(
+            raw_damage=raw_damage,
+            attacker_level=attacker_level,
+            monster_name=monster_name,
+            weapon_type=weapon_type,
+            attacker_element=attacker_element,
+            is_physical=is_physical,
+            monster_def=monster_def,
+            monster_mdef=monster_mdef,
+            monster_vit=monster_vit,
+            monster_int=monster_int,
+            monster_level=monster_level,
+            monster_size=monster_size,
+            monster_race=monster_race,
+            monster_element=monster_element,
+            card_bonus_vs_race=card_bonus_vs_race,
+            card_bonus_vs_size=card_bonus_vs_size,
+            card_bonus_vs_element=card_bonus_vs_element,
+            refinement_level=refinement_level,
+            element_level=element_level,
+        )
     else:
-        mdef_val = calculate_mdef(monster_mdef, monster_int)
-        reduction = mdef_val / 100.0
-        return max(1, int(modified_damage * (1.0 - reduction)))
+        return calculate_damage_pre_renewal(
+            raw_damage=raw_damage,
+            attacker_level=attacker_level,
+            monster_name=monster_name,
+            weapon_type=weapon_type,
+            attacker_element=attacker_element,
+            is_physical=is_physical,
+            monster_def=monster_def,
+            monster_mdef=monster_mdef,
+            monster_vit=monster_vit,
+            monster_int=monster_int,
+            monster_level=monster_level,
+            monster_size=monster_size,
+            monster_race=monster_race,
+            monster_element=monster_element,
+            card_bonus_vs_race=card_bonus_vs_race,
+            card_bonus_vs_size=card_bonus_vs_size,
+            card_bonus_vs_element=card_bonus_vs_element,
+            refinement_level=refinement_level,
+            element_level=element_level,
+        )
 
 
 def calculate_flee(base_flee: int, agi: int, level: int, monster_hit: int, monster_level: int) -> float:
     """Calculate flee chance against a monster.
 
-    RO formula:
-      flee_chance = 100 - (monster_hit - player_flee)
+    Pre-renewal RO formula:
+      flee_chance = 95 + player_flee - monster_hit
+      player_flee = base_flee + level + agi
+      Cap: 95% max, 5% min
+
+    Renewal RO formula:
+      flee_chance = 100 + player_flee - monster_hit
       player_flee = base_flee + level + agi
       Cap: 95% max, 5% min
 
@@ -574,7 +761,12 @@ def calculate_flee(base_flee: int, agi: int, level: int, monster_hit: int, monst
         Flee chance as a float (0.0 to 1.0)
     """
     player_flee = base_flee + level + agi
-    raw = 95 + player_flee - monster_hit
+    if SERVER_MODE == 'renewal':
+        # Renewal: 100 + flee - hit
+        raw = 100 + player_flee - monster_hit
+    else:
+        # Pre-renewal: 95 + flee - hit
+        raw = 95 + player_flee - monster_hit
     return max(0.05, min(0.95, raw / 100.0))
 
 
@@ -701,7 +893,7 @@ def calculate_aspd(base_aspd: int, agi: int, dex: int, weapon_type: str) -> floa
     """Calculate ASPD (attack speed).
 
     RO formula:
-      ASPD = 200 - (200 - base_aspd - sqrt(agi²/2 + dex²/4) - item_bonus) * (200 - skill_mod)/200
+      ASPD = 200 - (200 - base_aspd - sqrt(agi/2 + dex/2)/4) - item_bonus
       Simplified: ASPD = 200 - (200 - base_aspd - sqrt(agi*0.5 + dex*0.5)/4)
 
     Args:
