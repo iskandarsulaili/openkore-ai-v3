@@ -102,3 +102,5 @@ fix_chars_plugin.pl
 test_rijndael.pl
 .watchdog.log
 .start_watchdog.sh
+AI_sidecar/ai_sidecar/data/session_state.json
+AI_sidecar/data/session_state.json
