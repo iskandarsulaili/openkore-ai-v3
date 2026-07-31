@@ -3142,14 +3142,13 @@ sub _execute_action {
 	} elsif ($rewrite_kind eq 'stale_npc_blocked') {
 		($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
 	} elsif ($rewrite_kind eq 'ai_manual_to_sit') {
-	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
-	    ($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
-	    ($success, $result_code, $msg) = (1, 'ok', 'blocked: stale NPC teleport');
-	} elsif ($rewrite_kind eq 'sit_blocked_on_hunting_map') {
-	    ($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
 		my $ok = eval { Commands::run('sit'); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai manual rewritten to sit') : (0, 'dispatch_error', $@);
-		} elsif ($rewrite_kind eq 'ai_manual_allowed') {
+	} elsif ($rewrite_kind eq 'ai_manual_suppressed') {
+		($success, $result_code, $msg) = (1, 'ok', 'ai_manual_suppressed');
+	} elsif ($rewrite_kind eq 'sit_blocked_on_hunting_map') {
+		($success, $result_code, $msg) = (1, 'ok', 'sit_blocked_on_hunting_map');
+	} elsif ($rewrite_kind eq 'ai_manual_allowed') {
 		    my $ok = eval { Commands::run($effective_command); 1; };
 		    ($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai_manual') : (0, 'dispatch_error', $@);
 		} elsif ($rewrite_kind eq 'ai_manual_throttled') {
