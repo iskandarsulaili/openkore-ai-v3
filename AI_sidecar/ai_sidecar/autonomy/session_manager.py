@@ -181,6 +181,17 @@ class SessionManager:
                     "SessionManager: bot '%s' started session #%d",
                     bot_id, state.sessions_today,
                 )
+            elif (now - state.session_start) > 900:
+                # Stale session detection: session_start is >15min old but the bot
+                # was never marked logged out — it was killed/restarted without a
+                # clean end_session(). Reset to a fresh session so the dead time
+                # doesn't instantly trigger the anti-24/7 logout.
+                logger.info(
+                    "SessionManager: bot '%s' stale session reset "
+                    "(was %ds old, unclosed — killed/restarted)",
+                    bot_id, int(now - state.session_start),
+                )
+                state.session_start = now
 
             if current_map:
                 state.current_map = current_map
@@ -251,6 +262,18 @@ class SessionManager:
                 return False
 
             now = time.time()
+
+            # Stale session guard: if session_start is >15min old but the bot
+            # was never cleanly logged out, it's a killed/restarted session.
+            # Reset it instead of triggering an instant anti-24/7 logout.
+            if (now - state.session_start) > 900:
+                logger.info(
+                    "SessionManager: bot '%s' stale session reset in "
+                    "should_logout (was %ds old, unclosed)", bot_id,
+                    int(now - state.session_start),
+                )
+                state.session_start = now
+
             session_duration = (now - state.session_start) / 3600  # hours
 
             # Condition 1: Max session duration exceeded
