@@ -6935,7 +6935,8 @@ class PDCALoop:
                                 _ts = _dt.datetime.fromisoformat(_last.replace("Z", "+00:00"))
                                 if _ts >= _cutoff:
                                     _fresh.append(b)
-                            except: pass
+                            except ValueError:
+                                pass
                     if not _fresh:
                         _fresh = bots
                     # Rotate through fresh bots
