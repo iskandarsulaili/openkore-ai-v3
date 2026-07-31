@@ -12,7 +12,7 @@
   "bot_states": {
     "Local rAthena AI World:kicapmasin10": {
       "bot_id": "Local rAthena AI World:kicapmasin10",
-      "session_start": 1785466032.6947613,
+      "session_start": 1785466994.0329823,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -23,7 +23,7 @@
     },
     "Local rAthena AI World:kicapmasin11": {
       "bot_id": "Local rAthena AI World:kicapmasin11",
-      "session_start": 1785466032.7087898,
+      "session_start": 1785466994.3297172,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -34,7 +34,7 @@
     },
     "Local rAthena AI World:kicapmasin4": {
       "bot_id": "Local rAthena AI World:kicapmasin4",
-      "session_start": 1785466032.8428648,
+      "session_start": 1785466999.568574,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -45,7 +45,7 @@
     },
     "Local rAthena AI World:kicapmasin5": {
       "bot_id": "Local rAthena AI World:kicapmasin5",
-      "session_start": 1785466037.9085078,
+      "session_start": 1785466999.5787807,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -56,7 +56,7 @@
     },
     "Local rAthena AI World:kicapmasin6": {
       "bot_id": "Local rAthena AI World:kicapmasin6",
-      "session_start": 1785466042.971864,
+      "session_start": 1785467004.696133,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -67,7 +67,7 @@
     },
     "Local rAthena AI World:kicapmasin7": {
       "bot_id": "Local rAthena AI World:kicapmasin7",
-      "session_start": 1785466042.9773176,
+      "session_start": 1785467004.70472,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -78,7 +78,7 @@
     },
     "Local rAthena AI World:kicapmasin8": {
       "bot_id": "Local rAthena AI World:kicapmasin8",
-      "session_start": 1785466048.0257359,
+      "session_start": 1785467009.7745845,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -89,7 +89,7 @@
     },
     "Local rAthena AI World:kicapmasin9": {
       "bot_id": "Local rAthena AI World:kicapmasin9",
-      "session_start": 1785466048.0303967,
+      "session_start": 1785467014.8729293,
       "total_today": 0.0,
       "last_logout": 0.0,
       "current_map": "",
@@ -99,5 +99,5 @@
       "scheduled_login_at": 0.0
     }
   },
-  "_saved_at": 1785466048.0305042
+  "_saved_at": 1785467014.8730853
 }
