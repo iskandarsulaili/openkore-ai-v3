@@ -1849,6 +1849,9 @@ class HeuristicService:
                         # ── TASK SCHEDULER EXECUTION (was dormant) ──
                         # Run the scheduler and translate its semantic tasks
                         # into safe real commands / observable intents.
+                        # NOTE: consumable_depletion_score is injected into
+                        # signals by _emit_heuristic_actions (pdca_loop) from
+                        # the enriched world projection before assess() runs.
                         try:
                             _schedule = self._task_scheduler.schedule_from_signals(signals)
                             _seen_tasks: set[tuple[str, str]] = set()

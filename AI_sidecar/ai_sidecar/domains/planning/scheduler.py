@@ -242,6 +242,7 @@ class TaskScheduler:
         low_hp: bool = False,
         near_level_up: bool = False,
         current_level: int = 1,
+        consumable_depletion_score: float = 0.0,
         **context: Any,
     ) -> list[ScheduledTask]:
         """Build a prioritized schedule of tasks based on context.
@@ -252,6 +253,8 @@ class TaskScheduler:
             low_hp: Whether HP is critically low.
             near_level_up: Whether bot is close to next level.
             current_level: Current character level.
+            consumable_depletion_score: 0..1 how drained consumables are
+                (0 = full, 1 = empty); drives restock before pots run out.
             **context: Additional context flags.
 
         Returns:
@@ -267,7 +270,7 @@ class TaskScheduler:
         # Check if restock is due
         last_restock = self._last_task_time.get("restock_pots", 0)
         if now - last_restock > 900:  # 15 min since last restock
-            if self._should_restock(map_name):
+            if self._should_restock(map_name, consumable_depletion_score):
                 self._push_task("restock_pots", 5)
 
         # Check repair needs
@@ -418,13 +421,22 @@ class TaskScheduler:
           - low_hp: bool
           - near_level_up: bool
           - level: current character level
+          - consumable_depletion_score: float 0..1 (enriched; injected by
+            the heuristic service when absent from raw bridge signals)
         """
+        depletion = signals.get("consumable_depletion_score", 0.0)
+        if not depletion:
+            # Nested enriched-shape fallback
+            _inv = signals.get("inventory")
+            if isinstance(_inv, dict):
+                depletion = _inv.get("consumable_depletion_score", 0.0)
         return self.schedule(
             map_name=signals.get("map", "unknown"),
             inventory_full=signals.get("inventory_full", False),
             low_hp=signals.get("low_hp", False),
             near_level_up=signals.get("near_level_up", False),
             current_level=signals.get("level", 1),
+            consumable_depletion_score=float(depletion or 0.0),
         )
 
     # ── Task execution ──────────────────────────────────────────────
@@ -488,15 +500,19 @@ class TaskScheduler:
             f"<TaskScheduler: {len(self._tasks)} tasks for '{self.bot_id}'>"
         )
 
-    def _should_restock(self, map_name: str) -> bool:
+    def _should_restock(self, map_name: str, consumable_depletion_score: float = 0.0) -> bool:
         """Determine if restock is needed based on context.
 
-        Uses learning data if available: if map has high death rate,
-        restock more aggressively.
+        Restock when consumables are drained (depletion score >= 0.75,
+        i.e. pots are ~1/4 left) OR when the map has a high death rate
+        (learning data: dying a lot means burning through pots).
+        Previously this returned False whenever no learning tracker was
+        attached — the depletion signal never triggered a restock.
         """
+        if consumable_depletion_score >= 0.75:
+            return True
         if not self._tracker:
-            return False  # Let signals trigger restock
-
+            return False
         death_rate = self._tracker.get_death_rate_per_hour(map_name, self.bot_id)
         # If dying a lot, restock more often
         if death_rate > 5.0:

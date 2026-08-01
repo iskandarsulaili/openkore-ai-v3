@@ -505,6 +505,22 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["level"] = int(getattr(prog, "base_level", 1) or 1)
             except Exception:
                 pass
+        # ── ENRICHED FEATURE INJECTION: consumable depletion ──
+        # Raw bridge signals don't carry the depletion score (it's a
+        # world-projection feature); inject it so the task scheduler can
+        # trigger restock BEFORE pots run out (_should_restock >= 0.75).
+        try:
+            if bot_id and not signals.get("consumable_depletion_score"):
+                _enr = runtime_state.enriched_state(bot_id=bot_id)
+                if _enr is not None:
+                    _feat = getattr(_enr, "features", None)
+                    _vals = getattr(_feat, "values", None) if _feat is not None else None
+                    if isinstance(_vals, dict):
+                        _dep = _vals.get("inventory.consumable_depletion_score", 0.0)
+                        if _dep:
+                            signals["consumable_depletion_score"] = float(_dep)
+        except Exception:
+            pass
         assessment = hs.assess(signals, bot_id_override=bot_id)
         if not assessment.actions:
             _log.info("heuristic_no_actions horizon=%s signals=%s", horizon, str(signals)[:200])

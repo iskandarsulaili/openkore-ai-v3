@@ -360,8 +360,9 @@ class SnapshotRepository:
 
 
 class ActionRepository:
-    def __init__(self, db: SQLiteDB) -> None:
+    def __init__(self, db: SQLiteDB, max_history_per_bot: int = 1000) -> None:
         self._db = db
+        self._max_history_per_bot = max_history_per_bot
 
     def upsert_action(
         self,
@@ -403,6 +404,29 @@ class ActionRepository:
                 to_iso(now),
                 status_reason,
             ),
+        )
+        self._trim_history(bot_id)
+
+    def _trim_history(self, bot_id: str) -> None:
+        """Keep the newest max_history_per_bot actions per bot.
+
+        The actions table persisted every enqueued action forever (3.3K rows
+        and growing) — terminal-state history only matters for replay/debug,
+        so cap it per bot like snapshots/telemetry/audit.
+        """
+        self._db.execute(
+            """
+            DELETE FROM actions
+            WHERE bot_id=?
+              AND rowid NOT IN (
+                SELECT rowid
+                FROM actions
+                WHERE bot_id=?
+                ORDER BY queued_at DESC, rowid DESC
+                LIMIT ?
+              )
+            """,
+            (bot_id, bot_id, self._max_history_per_bot),
         )
 
     def mark_dispatched(self, *, action_id: str, poll_id: str | None = None) -> None:

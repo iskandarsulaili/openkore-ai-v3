@@ -119,3 +119,33 @@ def test_grind_and_hunt_are_observed_only() -> None:
         for a in acts:
             if "attack" in getattr(t, "commands", []) or "attack" in a.command:
                 assert a.kind == "log", f"attack intent must be observed-only: {a}"
+
+
+def test_restock_triggered_by_depletion_score() -> None:
+    # The depletion score (enriched world projection) must drive restock
+    # BEFORE pots run out — previously _should_restock returned False
+    # whenever no learning tracker was attached.
+    ts = _scheduler()
+    drained = ts.schedule_from_signals(
+        {"map": "prt_fild05", "base_level": 8, "consumable_depletion_score": 0.85}
+    )
+    restock = [t for t in drained if t.name == "restock_pots"]
+    assert restock, "depletion >= 0.75 must schedule restock_pots"
+
+    ts2 = _scheduler()
+    full = ts2.schedule_from_signals(
+        {"map": "prt_fild05", "base_level": 8, "consumable_depletion_score": 0.2}
+    )
+    assert not [t for t in full if t.name == "restock_pots"], \
+        "low depletion must NOT schedule restock"
+
+
+def test_depletion_score_reads_nested_inventory_shape() -> None:
+    # Enriched-state fallback shape: {"inventory": {"consumable_depletion_score": ...}}
+    ts = _scheduler()
+    drained = ts.schedule_from_signals({
+        "map": "prt_fild05", "base_level": 8,
+        "inventory": {"consumable_depletion_score": 0.9},
+    })
+    assert [t for t in drained if t.name == "restock_pots"], \
+        "nested enriched shape must also trigger restock"
