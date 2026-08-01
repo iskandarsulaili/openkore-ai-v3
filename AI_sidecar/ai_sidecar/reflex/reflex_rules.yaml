@@ -38,11 +38,13 @@ rules:
         - { fact: "combat.is_in_combat", op: "eq", value: true }
     guards: []
     action:
-      kind: command
-      command: "sit"
+      kind: log
+      command: "lethal_escape_pending"
       priority_tier: reflex
       conflict_key: ""
     fallback_macro: reflex_teleport_escape
+    metadata:
+      note: "Observability-only: the bridge's emergency-escape reflex owns actual teleport/flee; 'sit' is bridge-blocked."
 
   - rule_id: self_heal_skill
     enabled: true
@@ -74,11 +76,13 @@ rules:
         - { fact: "vitals.hp_ratio", op: "lte", value: 0.60 }
     guards: []
     action:
-      kind: command
-      command: "sit"
+      kind: log
+      command: "overwhelmed_flee_pending"
       priority_tier: reflex
       conflict_key: ""
     fallback_macro: reflex_flee_overwhelmed
+    metadata:
+      note: "Observability-only: bridge emergency-escape owns actual fleeing; 'sit' is bridge-blocked."
 
   - rule_id: safe_auto_resume
     enabled: true
@@ -149,12 +153,12 @@ rules:
         - { fact: "party.has_members", op: "eq", value: true }
     guards: []
     action:
-      kind: command
-      command: "ai manual"
+      kind: log
+      command: "party_heal_pending"
       priority_tier: reflex
       conflict_key: ""
     metadata:
-      note: "Party heal request — switch to manual so reflex/LLM can target specific ally for healing via 'sp heal <player#>'"
+      note: "Observability-only: 'ai manual' would DISABLE bot AI permanently (config-audit owns AI mode). The fleet coordinator + bridge dispatch real party heals."
 
   - rule_id: sit_recover
     enabled: true
@@ -171,10 +175,12 @@ rules:
         - { fact: "ai.is_sitting", op: "eq", value: false }
     guards: []
     action:
-      kind: command
-      command: "sit"
+      kind: log
+      command: "sit_recover_pending"
       priority_tier: reflex
       conflict_key: ""
+    metadata:
+      note: "Observability-only: 'sit' is bridge-blocked (bot should never sit); the bridge's emergency-sit reflex + pdca rest path handle recovery."
 
   - rule_id: aggro_attack
     enabled: true
@@ -208,10 +214,12 @@ rules:
         - { fact: "combat.aggro_count", op: "gte", value: 5 }
     guards: []
     action:
-      kind: command
-      command: "ai manual"
+      kind: log
+      command: "mob_swarm_stance_pending"
       priority_tier: reflex
       conflict_key: ""
+    metadata:
+      note: "Observability-only: 'ai manual' would DISABLE bot AI permanently; the tactics dispatcher owns combat stance."
 
   - rule_id: emergency_red_potion
     enabled: true

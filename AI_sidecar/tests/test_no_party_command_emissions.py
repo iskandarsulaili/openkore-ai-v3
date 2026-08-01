@@ -49,6 +49,36 @@ def test_no_party_command_emissions_sidecar_wide() -> None:
     )
 
 
+def test_no_party_or_ai_manual_in_reflex_yaml() -> None:
+    """reflex_rules.yaml is loaded at startup (lifecycle:6035, pdca:2842)
+    and was a blindspot: party_heal_ally + mob_swarm_combat_stance emitted
+    'ai manual' (disables bot AI) and 3 rules emitted 'sit' (bridge-blocked).
+    Every rule must be either a safe command root or observability-only."""
+    import yaml as _yaml
+
+    path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "ai_sidecar/reflex/reflex_rules.yaml",
+    )
+    data = _yaml.safe_load(open(path, encoding="utf-8"))
+    rules = data.get("rules") or []
+    assert len(rules) > 0
+    bad: list[str] = []
+    for rule in rules:
+        action = rule.get("action") or {}
+        kind = (action.get("kind") or "command").strip().lower()
+        command = (action.get("command") or "").strip().lower()
+        if kind == "command":
+            if command.startswith("party"):
+                bad.append(f"{rule.get('rule_id')}: party command")
+            if command == "ai manual":
+                bad.append(f"{rule.get('rule_id')}: ai manual (disables bot AI)")
+            if command == "sit":
+                bad.append(f"{rule.get('rule_id')}: sit (bridge-blocked)")
+    assert not bad, "unsafe reflex_rules.yaml commands:\n" + "\n".join(bad)
+
+
 def test_heuristic_service_direct_party_check_is_observability_only() -> None:
     """The inline 'direct party check' block must never emit executable
     party commands — only log intents with party_action metadata."""
