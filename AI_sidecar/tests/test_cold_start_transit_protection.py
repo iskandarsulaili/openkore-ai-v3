@@ -63,3 +63,11 @@ def test_level1_in_town_enables_attacking() -> None:
     # navigating toward it (not stuck idle); it does NOT set attackAuto 0 —
     # transit protection only fires while on a *_fild map en route.
     assert any("prt_fild08" in c for c in cmds), f"must navigate to academy: {cmds}"
+
+
+def test_level1_in_academy_registers_at_receptionist() -> None:
+    """A level-1 bot spawned in the Izlude Academy must register for starter
+    gear (Novice_Knife + potions) before hunting prt_fild08."""
+    cmds = _assess(base_level=1, map_name="iz_ac01", lock_map="prt_fild08")
+    assert any("talknpc" in c and "100 39" in c for c in cmds), \
+        f"must talk to Academy Receptionist (100,39): {cmds}"

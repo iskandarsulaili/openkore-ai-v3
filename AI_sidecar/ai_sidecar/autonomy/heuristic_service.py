@@ -1739,6 +1739,24 @@ class HeuristicService:
                                 _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 15:
                             if _bl <= 5:
+                                # ── ACADEMY REGISTRATION (rathena-ai-world starter gear) ──
+                                # New characters spawn in the Izlude Academy (iz_int,
+                                # char_athena.conf start_point). The Academy
+                                # Receptionist (iz_ac01 100,39) gives the starter kit
+                                # on registration: Novice_Knife (1243), Novice_Plate,
+                                # Novice_Hood, Novice_Boots, + 300 Novice_Potion.
+                                # Bare-hands a level-1 bot cannot kill a 55-HP Poring
+                                # (12 dmg/hit), so registration is the required first
+                                # step before prt_fild08 hunting.
+                                _cur_map = str(signals.get("map", "") or "").lower()
+                                if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="talknpc 100 39 c r0 n",
+                                        confidence=0.95,
+                                        reason="Cold start: register at Academy Receptionist for Novice_Knife + potions",
+                                        domain="progression",
+                                    ))
                                 # Level 1-5: Cryptura Academy (prt_fild08) — the
                                 # rathena-ai-world starter field. Level-1 Porings/
                                 # Lunatics (Atk 1, BaseExp 150) spawn here with a
