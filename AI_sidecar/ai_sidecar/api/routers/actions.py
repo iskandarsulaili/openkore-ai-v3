@@ -85,6 +85,14 @@ def next_action(
             _a = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
             if _a is None:
                 break
+            # OBSERVABILITY-ONLY INTENTS: kind="log" actions are diagnostic
+            # (party state, ai-mode notes, etc.) and must NEVER be dispatched
+            # to the bridge as executable commands — the bridge would treat
+            # the literal intent string as a command and spam unknown-command
+            # errors. Drain-and-skip them so they don't block real actions.
+            _kind = str(getattr(_a, "kind", "") or "").strip().lower()
+            if _kind not in ("", "command"):
+                continue
             batch.append(_a)
             if first is None:
                 first = _a
