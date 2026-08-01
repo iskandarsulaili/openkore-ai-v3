@@ -200,10 +200,14 @@ def install_request_validation_logging(app: FastAPI) -> None:
             body_preview = f"<unavailable:{type(body_error).__name__}>"
 
         details = exc.errors()
-        logger.debug(
+        # Structured WARNING per observability contract (RULE.md §20): request
+        # validation failures are ops signal (malformed payloads from bots), not
+        # noise — restored from DEBUG/"_ignored" silencing (03ed162c0) to match
+        # the contract test test_request_validation_logging_handler_emits_structured_warning.
+        logger.warning(
             "http_request_validation_failed",
             extra={
-                "event": "http_request_validation_failed_ignored",
+                "event": "http_request_validation_failed",
                 "trace_id": trace_id,
                 "method": request.method,
                 "path": request.url.path,

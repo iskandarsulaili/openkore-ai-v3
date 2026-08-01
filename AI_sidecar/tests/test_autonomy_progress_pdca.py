@@ -135,6 +135,10 @@ class _PDCAStubRuntime:
             "objective_rotation_cooldown_s": 0.0,
             "reconnect_grace_s": 20.0,
         }
+        # Mirror the production Runtime's dataclass fields (lifecycle.py) so
+        # pdca_loop's object.__setattr__ cold-start counters work in tests.
+        self._pro_ro_player_cold_start_count: int = 0
+        self._llm_warmup_cycles: int = 0
         self.snapshot_cache = _SnapshotCache(snapshot=_snapshot(tick_id="pdca-snap"))
         self.fleet_constraint_state = _FleetState(stale=False, central_available=True)
         self.cost_mode_manager = _AlwaysAllowCostModeManager()

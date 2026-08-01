@@ -132,6 +132,11 @@ class HighFreqReflex:
     def stats(self) -> dict[str, int]:
         with self._lock:
             return dict(self._stats)
+
+    def get_stats(self) -> dict[str, int]:
+        """Public stats accessor (alias of stats()) for consistent API surface."""
+        with self._lock:
+            return dict(self._stats)
     
     async def _tick(self) -> None:
         """Single tick of the high-frequency monitor.
@@ -371,20 +376,44 @@ class HighFreqReflex:
                     _predictive_flee = True
                     _predictive_reason = f"HP dropping {_drop_rate_per_second:.0f}%/sec, will hit 30% in {_time_to_30pct:.1f}s"
         
+        # ── EMERGENCY: Healing item takes priority over fleeing ──
+        # A Pro player heals when potions exist and HP is recoverable
+        # (> critical). Running away with potions in hand is a mistake.
+        # Escape only fires when: no potions available, OR HP is critical
+        # (≤ 15% — a heal won't land before death), OR predictive flee.
+        _critical_hp = hp_pct <= thresholds.get("critical_hp_pct", 0.15)
+        _heal_cmd: str | None = None
+        if has_potions and hp_pct <= thresholds.get("emergency_potion_hp_pct", 0.30) and not _critical_hp:
+            _heal_cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level)
+            if _heal_cmd:
+                with self._lock:
+                    self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
+                    self._stats["actions"] += 1
+                logger.info("highfreq_reflex: bot=%s emergency_heal=%s hp=%.0f%%", bot_id, _heal_cmd, hp_pct * 100)
+                if reflex_pipeline is not None:
+                    reflex_pipeline.emit_direct(bot_id, _heal_cmd)
+                    return None
+                return _heal_cmd
+
         # ── EMERGENCY: Escape at threshold ──
         # Multi-tier escape for all character levels:
+        # TIER 0: 'ai manual' (level ≥ 10 — real escape, disengages auto-AI
+        #         so the bot can flee/teleport; verified working at level 10+)
         # TIER 1: Sit to regen (works for everyone, no items needed)
         # TIER 2: Run away (move in random direction)
         # TIER 3: Accept death (don't spam teleport that will fail)
         # NOTE: Level 1 novices don't have Teleport or Fly Wings.
-        # Sending "ai manual" as escape was causing 100% failure rate.
-        if (hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.30) or _predictive_flee) and not is_town:
+        # Sending "ai manual" as escape for level-1 was causing 100% failure rate.
+        if ((hp_pct <= thresholds.get("escape_teleport_hp_pct", 0.30) and _heal_cmd is None) or _predictive_flee or _critical_hp) and not is_town:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.TELEPORT_COOLDOWN
                 self._stats["actions"] += 1
             logger.info("highfreq_reflex: bot=%s escape hp=%.0f%% aggro=%d%s", bot_id, hp_pct * 100, aggro_count, f' PREDICTIVE:{_predictive_reason}' if _predictive_flee else '')
+            # TIER 0: Real escape for capable levels
+            if level >= 10:
+                cmd = "ai manual"
             # TIER 1: Sit to regen (always available, no items needed)
-            if aggro_count <= 2:
+            elif aggro_count <= 2:
                 cmd = "sit"
             # TIER 2: Run away if heavily aggroed
             elif aggro_count <= 5:
@@ -395,18 +424,6 @@ class HighFreqReflex:
             else:
                 cmd = "sit"  # Sit and accept death gracefully
                 logger.info("highfreq_reflex: bot=%s accepting_death hp=%.0f%% aggro=%d", bot_id, hp_pct * 100, aggro_count)
-            if reflex_pipeline is not None:
-                reflex_pipeline.emit_direct(bot_id, cmd)
-                return None
-            return cmd
-        
-        # ── EMERGENCY: Healing item at 30% HP ──
-        if hp_pct <= thresholds.get("emergency_potion_hp_pct", 0.30) and has_potions:
-            with self._lock:
-                self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
-                self._stats["actions"] += 1
-            cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level)  # returns None if no heal available — don't toggle AI mode
-            logger.info("highfreq_reflex: bot=%s emergency_heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
                 return None

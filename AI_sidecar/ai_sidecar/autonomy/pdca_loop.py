@@ -5283,20 +5283,41 @@ class PDCALoop:
                         try:
                             _cache = getattr(self._runtime, "snapshot_cache", None)
                             _snap = _cache.get(_bid) if _cache is not None else None
-                            logger.debug("death_check: bot=%s snap=%s hp=%s", _bid, _snap is not None, 
-                                         getattr(_snap, "hp", None) if _snap is not None else "N/A")
+                            # Read hp from vitals (BotStateSnapshot model) with
+                            # dict fallback — top-level getattr(_snap,'hp') always
+                            # returned None because hp lives in .vitals.hp, so the
+                            # death bypass never fired and respawn was never queued.
+                            _death_hp_raw: object = None
                             if _snap is not None:
-                                _hp = getattr(_snap, "hp", None)
+                                if hasattr(_snap, "vitals"):
+                                    _dv = getattr(_snap, "vitals", None)
+                                    _death_hp_raw = getattr(_dv, "hp", None) if _dv is not None else None
+                                elif isinstance(_snap, dict):
+                                    _dv = _snap.get("vitals") or {}
+                                    _death_hp_raw = _dv.get("hp") if isinstance(_dv, dict) else None
+                                else:
+                                    _death_hp_raw = getattr(_snap, "hp", None)
+                            logger.debug("death_check: bot=%s snap=%s hp=%s", _bid, _snap is not None,
+                                         _death_hp_raw if _snap is not None else "N/A")
+                            if _snap is not None:
+                                _hp = _death_hp_raw
                                 if _hp is not None and int(_hp) <= 0:
                                     _aq = getattr(self._runtime, "action_queue", None)
                                     if _aq is not None and hasattr(_aq, "enqueue"):
+                                        from datetime import UTC, datetime, timedelta as _td
                                         from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
+                                        _now = datetime.now(UTC)
                                         _prop = ActionProposal(
-                                            source="pdca_death_recovery",
+                                            action_id=f"pdca-respawn-{_bid}-{time.time_ns()}",
+                                            bot_id=_bid,
                                             command="respawn",
+                                            priority_tier=ActionPriorityTier.reflex,
                                             conflict_key="recovery.death",
+                                            source="reflex",
+                                            created_at=_now,
+                                            expires_at=_now + _td(seconds=30),
+                                            idempotency_key=f"respawn-{_bid}-{time.time_ns()}",
                                             metadata={"fallback_mode": "death_recovery"},
-                                            priority=ActionPriorityTier.reflex,
                                         )
                                         _aq.enqueue(_bid, _prop)
                                         _death_actions_queued += 1
@@ -5304,6 +5325,38 @@ class PDCALoop:
                         except Exception:
                             logger.exception("pdca_death_respawn_enqueue_failed bot=%s", _bid)
                     _total_actions = 0
+                    # ── STARTUP GATE: block cost-mode/heuristic emission during warmup ──
+                    # The cost-mode path returns early (line ~5648) BEFORE the
+                    # startup-gate check on the LLM path (~6472), so a closed gate
+                    # never blocked heuristic actions during warmup. Evaluate the
+                    # gate here too: if closed, return immediately with 0 queued
+                    # (death-respawn actions queued above are preserved via
+                    # _death_actions_queued). Mirrors the gate-blocked return.
+                    # NOTE: uses _startup_gate_status (bot_id-only) — the full
+                    # _evaluate_startup_gate needs latest_snapshot/goal_state which
+                    # are not in scope in this early cost-mode path.
+                    try:
+                        _warmup_gate = self._startup_gate_status(
+                            bot_id=_cycle_bot_id or "default"
+                        )
+                        if not bool(_warmup_gate.get("gate_open", False)):
+                            logger.info(
+                                "pdca_cost_gate_blocked",
+                                extra={
+                                    "event": "pdca_cost_gate_blocked",
+                                    "bot_id": _cycle_bot_id or "default",
+                                    "reason": _warmup_gate.get("reason"),
+                                    "mode": _warmup_gate.get("mode"),
+                                },
+                            )
+                            return PDCAResult(
+                                horizon=horizon, plan_id="", actions_queued=_death_actions_queued,
+                                progress_pct=0.0, stuck=False, re_planned=False, force_replan=False,
+                                replan_reasons=[], objective="startup_gate_warmup", selected_goal="",
+                                cycle_ms=0.0, error=None,
+                            )
+                    except Exception as _wg_exc:
+                        logger.warning("pdca_cost_gate_blocked_check_failed: %s", _wg_exc)
                     for _bid in _all_bot_ids:
                         # ── Burst protection: track recent HP for each bot ──
                         try:

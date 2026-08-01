@@ -1019,6 +1019,10 @@ class _PDCAStage1Runtime:
         self.snapshot_cache = _SnapshotCache(
             snapshot=_snapshot(bot_id="bot:pdca", tick_id="tick-pdca", hp=900, hp_max=1000),
         )
+        # Mirror production Runtime dataclass fields (lifecycle.py) so
+        # pdca_loop's cold-start counter writes work in tests.
+        self._pro_ro_player_cold_start_count: int = 0
+        self._llm_warmup_cycles: int = 0
         self.autonomy_policy = {
             "ranked_objectives": ["grind", "recovery", "economy", "quest"],
             "objective_rotation_cooldown_s": 0.0,

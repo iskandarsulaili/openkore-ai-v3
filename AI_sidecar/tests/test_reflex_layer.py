@@ -333,7 +333,12 @@ def test_reflex_default_rules_bridge_compat_no_unsupported_direct_roots(tmp_path
     engine = ReflexRuleEngine(workspace_root=tmp_path, contract_version="v1", action_ttl_seconds=20)
     rules = engine.list_rules(bot_id=bot_id)
 
-    allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take", "use"}
+    # Source of truth: the production bridge-safe roots declared for the
+    # capability registry (RULE.md §20). The reflex rules must only emit
+    # direct roots the bridge actually allows — sit/stand/respawn/use are
+    # all bridge-allowed (bridge policy allow_7/8 + allow_41 'use').
+    from ai_sidecar.autonomy.ro_knowledge import _DIRECT_ALLOWED_ROOTS
+    allowed_roots = set(_DIRECT_ALLOWED_ROOTS)
     checked = 0
     for rule in rules:
         command = (rule.action_template.command or "").strip()
