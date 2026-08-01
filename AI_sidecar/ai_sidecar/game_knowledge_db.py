@@ -387,11 +387,23 @@ class GameKnowledgeDB:
         conn = self._get_conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM npc_interactions WHERE interaction_type=? AND LOWER(map_name)=LOWER(?) LIMIT 1",
+            "SELECT * FROM npc_interactions WHERE task_type=? AND LOWER(map_name)=LOWER(?) LIMIT 1",
             (task_type, map_name),
         )
         row = cur.fetchone()
         return dict(row) if row else None
+
+    def list_npcs_on_map(self, map_name: str) -> list[dict]:
+        """List all known NPC interactions on a given map from the DB."""
+        conn = self._get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM npc_interactions WHERE LOWER(map_name)=LOWER(?) ORDER BY npc_name",
+            (map_name,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     # ── Player Memory (Learned Knowledge) ──────────────────────────
 

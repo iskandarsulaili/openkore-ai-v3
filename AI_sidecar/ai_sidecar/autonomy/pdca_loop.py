@@ -5500,12 +5500,42 @@ class PDCALoop:
                             bot_id=_cycle_bot_id or "default"
                         )
                         if not bool(_warmup_gate.get("gate_open", False)):
+                            # Normalize the raw runtime default reason. During
+                            # warmup the runtime's cached status starts as
+                            # "startup_gate_initializing" (its pre-evaluation
+                            # placeholder); the semantically-correct blocking
+                            # reason (matching the full _evaluate_startup_gate
+                            # path below) is "startup_gate_waiting_minimum_live_state".
+                            # Mirror that so the gate-blocked report is truthful
+                            # regardless of which path short-circuits.
+                            _warmup_reason = str(_warmup_gate.get("reason") or "")
+                            if _warmup_reason in ("", "startup_gate_initializing"):
+                                _warmup_reason = "startup_gate_waiting_minimum_live_state"
+                            # Persist the truthful blocked-gate reason so the
+                            # runtime's status reflects it (callers/observers
+                            # read startup_gate_status, not just the log).
+                            try:
+                                _wg_mode = str(_warmup_gate.get("mode") or "warmup")
+                                _wg_fail = int(_warmup_gate.get("failure_count", 0) or 0)
+                                _wg_err = str(_warmup_gate.get("last_error") or "")
+                                self._update_startup_gate(
+                                    bot_id=_cycle_bot_id or "default",
+                                    gate_open=False,
+                                    mode=_wg_mode,
+                                    reason=_warmup_reason,
+                                    failure_count=_wg_fail,
+                                    last_error=_wg_err,
+                                    grace_s=float(_warmup_gate.get("grace_s", 20.0) or 20.0),
+                                    min_events=int(_warmup_gate.get("min_events", 2) or 2),
+                                )
+                            except Exception:
+                                logger.debug("pdca_cost_gate_blocked_status_update_failed", exc_info=True)
                             logger.info(
                                 "pdca_cost_gate_blocked",
                                 extra={
                                     "event": "pdca_cost_gate_blocked",
                                     "bot_id": _cycle_bot_id or "default",
-                                    "reason": _warmup_gate.get("reason"),
+                                    "reason": _warmup_reason,
                                     "mode": _warmup_gate.get("mode"),
                                 },
                             )

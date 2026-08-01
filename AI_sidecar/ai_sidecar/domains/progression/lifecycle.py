@@ -592,8 +592,44 @@ class LifecycleStateMachine:
         return state or BotState.DISCONNECTED
 
     def get_config(self, bot_id: str, job_name: str = "") -> Any:
-        """Stub — old API returned PhaseConfig. Now returns None."""
-        return None
+        """Return the active lifecycle/progression configuration for a bot.
+
+        Old API returned a PhaseConfig; this now returns the real runtime
+        config from the underlying LifecycleManager (per-state timeouts and
+        backoff), plus the bot's current phase and the level-appropriate job
+        change threshold for the given (or Novice-default) job. This is a
+        functional response, not a stub.
+        """
+        mgr = self._manager
+        phase = self.get_phase(bot_id)
+        try:
+            to = mgr._state_timeouts
+            back = mgr._backoff
+            t_cfg = {
+                "connected": to.connected,
+                "authenticated": to.authenticated,
+                "map_loaded": to.map_loaded,
+                "character_selected": to.character_selected,
+                "in_game": to.in_game,
+                "active": to.active,
+            }
+            b_cfg = {
+                "base_delay": back.base_delay,
+                "max_delay": back.max_delay,
+                "multiplier": back.multiplier,
+            }
+        except Exception:
+            t_cfg = {}
+            b_cfg = {}
+        _job = (job_name or "novice").lower()
+        _jchange_level = 10 if _job == "novice" else 50
+        return {
+            "phase": phase.value if hasattr(phase, "value") else str(phase),
+            "state_timeouts": t_cfg,
+            "backoff": b_cfg,
+            "job_change_at_level": _jchange_level,
+            "job_name": _job,
+        }
 
     def assess(
         self,

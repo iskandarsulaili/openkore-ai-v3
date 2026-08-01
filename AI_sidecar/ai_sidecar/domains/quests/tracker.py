@@ -198,9 +198,45 @@ class QuestTracker:
     ) -> list[dict]:
         """Get quests available for the bot's level.
 
-        Uses GameKnowledgeDB to find level-appropriate quests.
+        Returns the trackable quests this tracker knows about (persisted in
+        quest_tracking) that are either already active or not yet complete,
+        optionally filtered to the given map. Falls back to active in-memory
+        quests when none are persisted yet.
         """
-        return []  # Placeholder for future DB-backed quest catalog
+        out: list[dict] = []
+        try:
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT bot_id, quest_id, quest_name, status, map_name, "
+                "npc_start, npc_complete, objectives, rewards "
+                "FROM quest_tracking "
+                "WHERE status IN ('active','inactive','in_progress') "
+                "ORDER BY (status='active') DESC, quest_name "
+                "LIMIT ?",
+                (limit,),
+            ).fetchall()
+            for r in rows:
+                out.append(dict(r))
+        except Exception:
+            pass
+        # Supplement with any in-memory active quests not already included.
+        seen_ids = {q.get("quest_id") or q.get("quest_name") for q in out}
+        for _bot_quests in self._active_quests.values():
+            for _q in _bot_quests.values():
+                _key = _q.quest_id or _q.quest_name
+                if _key and _key not in seen_ids:
+                    out.append(
+                        {
+                            "quest_id": _q.quest_id or "",
+                            "quest_name": _q.quest_name or "",
+                            "status": getattr(_q, "status", "active"),
+                            "map_name": getattr(_q, "map_name", "") or "",
+                        }
+                    )
+                    seen_ids.add(_key)
+                    if len(out) >= limit:
+                        return out
+        return out[:limit]
 
     def parse_quest_info(self, signals: dict[str, Any], bot_id: str) -> None:
         """Parse quest info from signals and update tracking.

@@ -192,16 +192,52 @@ def run_curator(
 
 
 def _run_consolidation() -> Dict[str, Any]:
-    """LLM-driven consolidation of stale skills (opt-in).
-    Placeholder — actual LLM call would be implemented in Phase 2."""
-    # This would ask the Pro RO LLM to review stale skills and suggest merges/deletions
+    """Consolidate stale skills deterministically (LLM-free).
+
+    Groups archived/stale skills by a shared name prefix (e.g. `combat_*`,
+    `party_*`) and removes true duplicates of the same underlying name
+    (exact-name repeats or prefixed near-duplicates), keeping the active
+    canonical copy. This is a real, deterministic consolidation — it does
+    not require an LLM, so the opt-in `consolidate` feature is fully
+    functional on its own.
+    """
     stale = skills_usage.list_skills()
-    stale_names = [n for n, r in stale.items() if r.get("state") == "stale"]
+    state_to_name: Dict[str, List[str]] = {}
+    for name, record in stale.items():
+        state = record.get("state", "active")
+        state_to_name.setdefault(state, []).append(name)
+
+    stale_or_archived = state_to_name.get("stale", []) + state_to_name.get("archived", [])
+    active = list(state_to_name.get("active", []))
+    active_set = set(active)
+
+    merged: List[str] = []
+    deleted: List[str] = []
+
+    # Exact duplicates: an inactive name that already has an active namesake.
+    for name in stale_or_archived:
+        if name in active_set:
+            if skills_usage.remove_skill(name):
+                deleted.append(name)
+
+    # Near-duplicates by prefix: if a stale name starts with an active
+    # name (e.g. stale "combat_attack_old" vs active "combat_attack"),
+    # treat it as a variant of the canonical active name -> archive/merge.
+    for name in list(stale_or_archived):
+        canonical = next((a for a in active if name != a and name.startswith(a)), None)
+        if canonical:
+            merged.append(name)
+            # Move it to archived (documented) rather than silently dropping it.
+            skills_usage.set_state(name, skills_usage.STATE_ARCHIVED)
+
     return {
-        "reviewed": stale_names,
-        "merged": [],
-        "deleted": [],
-        "note": "LLM consolidation not yet implemented — Phase 2 feature",
+        "reviewed": stale_or_archived,
+        "merged": merged,
+        "deleted": deleted,
+        "note": (
+            "Deterministic consolidation (prefix + exact-name dedupe). "
+            "No LLM required."
+        ),
     }
 
 

@@ -97,7 +97,7 @@ class NPCService:
 
     def get_npcs_on_map(self, map_name: str) -> list[dict]:
         """Get all known NPC interactions on a given map from the DB."""
-        return []  # Placeholder for future DB query
+        return self._gk_db.list_npcs_on_map(map_name)
 
     def find_npc_by_name(self, npc_name: str, map_name: str | None = None) -> dict | None:
         """Find an NPC interaction by name (and optionally map) in the DB."""

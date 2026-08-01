@@ -309,11 +309,17 @@ class KitingTactics(BaseTactics):
         return None
 
     def _can_block_with_terrain(self, ctx: TacticsContext, target: TargetInfo) -> bool:
-        """Check if we can use terrain (wall, obstacle) to block the target."""
-        # In practice this uses the map's collision grid.
-        # Returns True if there's an obstacle between us and the target.
-        # Placeholder — full terrain analysis requires map collision data.
-        return False  # Simplified: actual impl needs map data
+        """Check if we can use terrain (wall, obstacle) to block the target.
+
+        Returns False — the current TacticsContext carries no map collision
+        grid (no walkable/cell data), so terrain-blocking cannot be evaluated
+        truthfully. Guarded behind the use_terrain profile flag; callers fall
+        back to distance-kiting when this returns False. Fabricating a terrain
+        hit from partial data would send the bot into walls, so False is the
+        correct safe answer until a collision source is plumbed into the
+        context.
+        """
+        return False
 
     def _get_kite_direction(self, ctx: TacticsContext, target: TargetInfo) -> str:
         """Determine the best direction to kite in.
