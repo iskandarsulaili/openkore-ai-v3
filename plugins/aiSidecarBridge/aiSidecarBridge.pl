@@ -1277,16 +1277,46 @@ sub on_command_intercept {
 	my $full_cmd = $switch . ' ' . $cmd_args;
 	$full_cmd =~ s/\s+$//;
 
-	# ── LOGGED-OUT ATTRIBUTION: catch every command attempt from every source ──
-	# Core AI, macros, plugins and all bridge paths funnel through
-	# Commands::run — so logging any attempt while the bot is NOT in-game
-	# names the residual emitter definitively in one restart + 60s.
-	# Uses network state, not $char (OpenKore keeps $char stale through
-	# char-select / relogin).
+	# ── LOGGED-OUT GATE (core-AI path): block ALL commands when not in-game ──
+	# Core AI / partyAuto / macros emit commands directly via Commands::run
+	# (Plugins::callHook), bypassing _execute_action's hoisted gate. Every
+	# Commands::run command is invalid while logged out (login/char-select use
+	# the network layer, not Commands::run) — so block the command AND name
+	# the emitter. Allowlist: reconnect/lifecycle commands that are valid
+	# logged out. This is FLAW 6's structural fix extended to the core path.
 	if (!$net || $net->getState() != Network::IN_GAME) {
 		my @_ca = caller(1);
 		my $_caller = @_ca ? ($_ca[3] || 'unknown') : 'unknown';
-		warning "[cmd_pre_logged_out] cmd=$full_cmd caller=$_caller\n", 'aiSidecarBridge', 1;
+		my $_lc_switch = lc($switch || '');
+		my %_logged_out_allow = map { $_ => 1 } (
+			'relog', 'quit', 'logout', 'exit', 'getmapinfo',
+			'getplayerinfo', 'charselect', 'servertype',
+		);
+		if (!$_logged_out_allow{$_lc_switch}) {
+			warning "[cmd_pre_logged_out] BLOCKED cmd=$full_cmd caller=$_caller\n", 'aiSidecarBridge', 1;
+			$args->{switch} = '';
+			$args->{args} = '';
+			return;
+		}
+		warning "[cmd_pre_logged_out] ALLOWED cmd=$full_cmd caller=$_caller\n", 'aiSidecarBridge', 1;
+	}
+
+	# ── SOLO PARTY-SHARE SUPPRESSION (in-game core-AI noise) ──
+	# Core OpenKore partyAutoShare=1 fires 'party share exp' every cycle even
+	# when the bot is SOLO, producing "You're not in a party" log spam. The
+	# sidecar's fleet coordinator is the party source of truth (it creates the
+	# party, gates on level/cooldown) — core share-while-solo is noise. Block
+	# when the bot has no party users.
+	if ($switch eq 'party' && $cmd_args =~ /^share/i) {
+		my $_pm_users = ($char && $char->{party} && ref($char->{party}{users}) eq 'HASH')
+			? $char->{party}{users} : {};
+		my $_pm_count = scalar(keys %{$_pm_users});
+		if ($_pm_count == 0) {
+			warning "[party_share_solo] BLOCKED cmd=$full_cmd (no party members)\n", 'aiSidecarBridge', 1;
+			$args->{switch} = '';
+			$args->{args} = '';
+			return;
+		}
 	}
 
 	# ── MOVE HUMANIZATION: intercept move x y and perturb coordinates ──
