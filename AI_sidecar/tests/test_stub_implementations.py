@@ -18,6 +18,10 @@ class _D(BaseDomain):
         self.name = name
         self.priority = priority
 
+    def assess(self, signals, actions, service=None) -> None:
+        # Test double — no behavior; satisfies the abstract contract
+        return None
+
 
 def test_domain_registry_set_weights_reorders_domains() -> None:
     reg = DomainRegistry()

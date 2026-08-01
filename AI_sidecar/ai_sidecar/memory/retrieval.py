@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from threading import RLock
@@ -58,7 +59,7 @@ class SemanticMemory:
 
 # ── Abstract Provider ───────────────────────────────────────────────────
 
-class MemoryProvider:
+class MemoryProvider(ABC):
     """Abstract base for memory providers.
 
     Each provider stores episodic and semantic memories for multiple bots.
@@ -145,6 +146,7 @@ class MemoryProvider:
 
     # ── Internal implementation hooks (override in subclasses) ──────────
 
+    @abstractmethod
     def _add_episode_impl(
         self, bot_id: str, event_type: str, content: str,
         metadata: dict[str, object],

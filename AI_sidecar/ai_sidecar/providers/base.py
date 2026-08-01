@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from threading import RLock
@@ -65,7 +66,7 @@ class ProviderHealth:
     message: str = ""
 
 
-class LLMProvider:
+class LLMProvider(ABC):
     provider_name: str = "base"
 
     def __init__(
@@ -86,6 +87,7 @@ class LLMProvider:
         self._calls = 0
         self._failures = 0
 
+    @abstractmethod
     async def generate_structured(self, request: PlannerModelRequest) -> PlannerModelResponse:
         raise NotImplementedError
 

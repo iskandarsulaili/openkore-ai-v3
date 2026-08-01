@@ -97,9 +97,47 @@ class ExperienceDB:
             self._prune(snapshot.bot_id)
 
     def record(self, entry: object) -> None:
-        """Legacy compatibility — accepts ExperienceEntry from _seed_db."""
-        # Seed data is non-critical; PDCA loop handles zone discovery dynamically
-        pass
+        """Legacy compatibility — accepts ExperienceEntry from _seed_db.
+
+        Maps a seed ExperienceEntry into the exp_snapshots table so seeding
+        actually persists (was a pass-stub: seed data silently vanished).
+        """
+        try:
+            snapshot = ExpSnapshot(
+                bot_id=getattr(entry, "bot_id", "seed") or "seed",
+                base_level=int(getattr(entry, "level", 0) or getattr(entry, "base_level", 0) or 1),
+                job_level=int(getattr(entry, "job_level", 0) or 0),
+                base_exp=int(float(getattr(entry, "exp", 0) or getattr(entry, "base_exp", 0) or 0)),
+                job_exp=int(float(getattr(entry, "job_exp", 0) or 0)),
+                zeny=0,
+                map_name=str(getattr(entry, "map_name", "") or ""),
+                timestamp=getattr(entry, "timestamp", None) or time.time(),
+            )
+        except Exception:
+            # Unmarshalable seed entry — skip rather than crash startup
+            return
+        self.record_exp_snapshot(snapshot)
+
+    def load(self, sqlite_path: str | None = None) -> int:
+        """Load snapshots from disk (observability contract).
+
+        ExperienceDB IS the SQLite store — snapshots persist on every
+        record_exp_snapshot call, so there is no in-memory hydration to do.
+        This method exists so lifecycle's uniform `experience_db.load(path)`
+        call works for both backends; it returns the number of persisted
+        snapshots (0 if the path differs / table absent).
+        """
+        path = sqlite_path or self._db_path
+        try:
+            db = sqlite3.connect(path, timeout=5.0)
+            row = db.execute(
+                "SELECT COUNT(*) FROM exp_snapshots"
+            ).fetchone()
+            db.close()
+            return int(row[0]) if row else 0
+        except Exception:
+            logger.warning("experience_load_failed")
+            return 0
 
     def _prune(self, bot_id: str) -> None:
         """Remove oldest snapshots for a bot when over the limit."""

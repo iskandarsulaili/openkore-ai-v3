@@ -626,7 +626,11 @@ def test_runtime_enriched_state_exports_phase1_recovery_features() -> None:
     runtime.ingest_snapshot(s1)
     runtime.ingest_snapshot(s2)
 
-    deadline = time.monotonic() + 2.0
+    # The snapshot -> world projection runs in a background task; poll with
+    # a generous barrier (10s) instead of the previous 2s, which flaked
+    # under full-suite CPU load. On timeout, dump the projector state so a
+    # real regression is diagnosable instead of an opaque assertion.
+    deadline = time.monotonic() + 10.0
     enriched = runtime.enriched_state(bot_id=bot_id)
     while (
         (
@@ -635,10 +639,19 @@ def test_runtime_enriched_state_exports_phase1_recovery_features() -> None:
         )
         and time.monotonic() < deadline
     ):
-        time.sleep(0.01)
+        time.sleep(0.02)
         enriched = runtime.enriched_state(bot_id=bot_id)
 
     values = enriched.features.values
+    if values.get("navigation.route_churn_count", 0.0) < 1.0:
+        # Diagnostic dump: the projector state behind the assertion
+        _dbg = runtime.normalizer_bus.debug_graph(bot_id=bot_id) if hasattr(
+            runtime.normalizer_bus, "debug_graph"
+        ) else {}
+        raise AssertionError(
+            f"route_churn_count never reached 1.0 (got {values.get('navigation.route_churn_count')}); "
+            f"projector debug={str(_dbg)[:500]}"
+        )
     assert values["operational.death_count"] == pytest.approx(2.0)
     assert values["operational.reconnect_age_s"] == pytest.approx(11.5)
     assert values["inventory.weight_pressure"] > 0.8

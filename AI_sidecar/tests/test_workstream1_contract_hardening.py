@@ -125,6 +125,38 @@ def test_model_router_default_reasoning_routes_use_current_models() -> None:
     assert reflection.selected_model == _r_rule["models"][_r_rule["providers"][0]]
 
 
+def test_model_router_policy_targets_exist_in_registered_providers() -> None:
+    # Guards the self-referential trap: a policy could name a provider/model
+    # that NO registered provider can serve, and the derive-from-policy test
+    # above would still pass. Build a registry mirroring the live deployment
+    # (openai-gateway + deepseek + ollama) and assert every policy workload
+    # resolves to a provider that exists and a model that provider serves.
+    registered = {
+        "openai": _DummyProvider(provider_name="openai", ok=True),
+        "deepseek": _DummyProvider(provider_name="deepseek", ok=True),
+        "ollama": _DummyProvider(provider_name="ollama", ok=True),
+    }
+    # Models each provider is known to serve (live deployment mirror)
+    _served_by = {
+        "openai": {"opencode-go/deepseek-v4-flash", "gpt-4o-mini"},
+        "deepseek": {"deepseek-chat", "deepseek-reasoner"},
+        "ollama": {"qwen3.6:35b-a3b-q4_K_M"},
+    }
+    router = ModelRouter(providers=registered)
+    for _workload in ("tactical_short_reasoning", "strategic_planning", "long_reflection"):
+        _decision = router.decide(workload=_workload)
+        assert _decision.selected_provider in registered, (
+            f"{_workload} policy names provider {_decision.selected_provider} "
+            f"which is not registered: {sorted(registered)}"
+        )
+        _served = _served_by.get(_decision.selected_provider, set())
+        if _served and _decision.selected_model not in _served:
+            raise AssertionError(
+                f"{_workload} policy names model {_decision.selected_model} "
+                f"which {_decision.selected_provider} does not serve: {sorted(_served)}"
+            )
+
+
 def test_model_router_no_provider_emits_none_metric() -> None:
     metrics: list[tuple[str, str, str]] = []
     router = ModelRouter(

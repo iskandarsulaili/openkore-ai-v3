@@ -28,6 +28,14 @@ class SidecarSettings(BaseSettings):
     security_doctrine_denylist: str = "exploit,dupe,rmt,botting service"
 
     contract_version: str = "v1"
+    # Data directory for sidecar-local files (experience DB, adaptive state).
+    # Relative paths resolve against the sidecar CWD (start.sh runs from
+    # AI_sidecar/). This field is REQUIRED by lifecycle create_runtime — it
+    # was referenced (settings.data_dir) but never declared, so the attribute
+    # access raised AttributeError and the SQLite ExperienceDB silently fell
+    # back to the in-memory ExperienceDatabase (experience_load_failed at
+    # every startup, zero persistent EXP tracking).
+    data_dir: str = "data"
 
     action_default_ttl_seconds: int = Field(default=120, ge=1, le=600)
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)

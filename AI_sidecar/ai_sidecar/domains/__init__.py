@@ -1,12 +1,13 @@
 """Domain base classes for openkore-ai-v3."""
 from __future__ import annotations
+from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class BaseDomain:
+class BaseDomain(ABC):
     """Base class for all domain modules.
     
     Each domain handles a specific gameplay area (combat, economy, routing, etc.)
@@ -26,6 +27,7 @@ class BaseDomain:
         """Called once when the domain is registered. Set up resources here."""
         self._initialized = True
     
+    @abstractmethod
     def assess(
         self,
         signals: dict[str, Any],

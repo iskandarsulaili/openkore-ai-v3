@@ -1102,8 +1102,16 @@ class AuditRepository:
 
 
 class MemoryRepository:
-    def __init__(self, db: SQLiteDB) -> None:
+    def __init__(
+        self,
+        db: SQLiteDB,
+        *,
+        max_episodes_per_bot: int = 5000,
+        max_semantic_per_bot: int = 10000,
+    ) -> None:
         self._db = db
+        self._max_episodes = max_episodes_per_bot
+        self._max_semantic = max_semantic_per_bot
 
     def add_episode(self, episode: MemoryEpisodeRecord) -> None:
         self._db.execute(
@@ -1120,6 +1128,23 @@ class MemoryRepository:
                 to_iso(episode.created_at),
             ),
         )
+        # ── RETENTION CAP (was declared but never enforced on the SQLite path) ──
+        # The in-memory provider prunes oldest past max_episodes_per_bot; the
+        # persistent path had no trim, so memory_episodes grew unbounded
+        # (495K rows / 1.9GB observed). Mirror the in-memory cap: keep the
+        # newest N per bot.
+        if self._max_episodes > 0:
+            self._db.execute(
+                """
+                DELETE FROM memory_episodes
+                WHERE bot_id=?
+                  AND id NOT IN (
+                    SELECT id FROM memory_episodes
+                    WHERE bot_id=? ORDER BY created_at DESC, id DESC LIMIT ?
+                  )
+                """,
+                (episode.bot_id, episode.bot_id, self._max_episodes),
+            )
 
     def count_episodes(self, *, bot_id: str) -> int:
         row = self._db.fetchone("SELECT COUNT(*) AS c FROM memory_episodes WHERE bot_id=?", (bot_id,))
@@ -1181,6 +1206,27 @@ class MemoryRepository:
                 ),
             )
         )
+        # ── RETENTION CAP (mirror of the episodes trim) ──
+        # Keep the newest max_semantic_per_bot records per bot and remove
+        # their orphaned embedding rows.
+        if self._max_semantic > 0:
+            self._db.execute(
+                """
+                DELETE FROM memory_semantic_records
+                WHERE bot_id=?
+                  AND id NOT IN (
+                    SELECT id FROM memory_semantic_records
+                    WHERE bot_id=? ORDER BY created_at DESC, id DESC LIMIT ?
+                  )
+                """,
+                (record.bot_id, record.bot_id, self._max_semantic),
+            )
+            self._db.execute(
+                """
+                DELETE FROM memory_embeddings
+                WHERE memory_id NOT IN (SELECT id FROM memory_semantic_records)
+                """
+            )
 
     def semantic_candidates(
         self,

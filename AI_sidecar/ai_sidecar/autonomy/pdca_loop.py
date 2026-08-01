@@ -1097,24 +1097,11 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
         if npc_disc is not None:
             town_map = npc_disc.get_nearest_town_for_map(map_name)
         else:
-            # Fallback if NPC discovery not available
+            # Data-driven fallback: GameKnowledgeService.town_for_map covers
+            # all 18 known town prefixes (prontera/morocc/payon/geffen/...)
+            # with a prontera default — no hardcoded per-town branches here
+            # (previously duplicated the prefix logic inline with a TODO).
             town_map = game_knowledge().town_for_map(map_name)
-            if not town_map:
-                town_map = "prontera"  # TODO: make data-driven via GameKnowledgeService
-            if "payon" in map_name.lower() or "pay_" in map_name.lower():
-                town_map = "payon"
-            elif "morocc" in map_name.lower() or "moc_" in map_name.lower():
-                town_map = "morocc"
-            elif "geffen" in map_name.lower() or "gef_" in map_name.lower():
-                town_map = "geffen"
-            elif "aldebaran" in map_name.lower() or "alde_" in map_name.lower():
-                town_map = "aldebaran"
-            elif "yuno" in map_name.lower():
-                town_map = "yuno"
-            elif "xmas" in map_name.lower():
-                town_map = "xmas"
-            elif "amatsu" in map_name.lower() or "ama_" in map_name.lower():
-                town_map = "amatsu"
         
         # Check if already in town
         if map_name and town_map in map_name.lower():

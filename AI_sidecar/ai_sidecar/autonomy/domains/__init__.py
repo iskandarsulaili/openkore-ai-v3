@@ -8,6 +8,7 @@ domain's assess() method in priority order.
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BaseDomain:
+class BaseDomain(ABC):
     """Base class for all heuristic domains.
 
     Subclasses must set:
@@ -33,10 +34,11 @@ class BaseDomain:
     name: str = "base"
     priority: int = 100
 
+    @abstractmethod
     def assess(
         self,
         signals: dict[str, Any],
-        actions: list[HeuristicAction],
+        actions: list[Any],
         service: Any,  # HeuristicService
     ) -> None:
         """Analyze signals and append actions. Override in subclass."""
