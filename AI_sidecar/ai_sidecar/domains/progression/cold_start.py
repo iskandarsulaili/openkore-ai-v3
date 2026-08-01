@@ -547,9 +547,6 @@ class ColdStartManager:
     ) -> None:
         """Emit stat allocation commands based on the stat plan."""
         job_class = self._config.job_class
-        stat_plan = DEFAULT_STAT_PLANS.get(job_class)
-        if not stat_plan:
-            return
 
         base_level = int(signals.get("base_level", 1) or 1)
         status_points = int(signals.get("status_points", 0) or 0)
@@ -562,11 +559,32 @@ class ColdStartManager:
         for stat in ["str", "agi", "vit", "int", "dex", "luk"]:
             current_stats[stat] = int(signals.get(f"stat_{stat}", signals.get(stat, 1)) or 1)
 
-        # Get target stats for this level
-        target_stats = stat_plan.get_stats_for_level(base_level)
+        # Primary: data-driven StatBreakpointPlanner (per-job breakpoint
+        # builds). Fallback: embedded DEFAULT_STAT_PLANS milestones.
+        target_stats: dict[str, int] | None = None
+        stat_plan_name = "stat_breakpoint_planner"
+        try:
+            from ai_sidecar.domains.planning.stat_planner import StatBreakpointPlanner
+            _sbp = getattr(self, "_stat_breakpoint_planner", None)
+            if _sbp is None:
+                _sbp = StatBreakpointPlanner()
+                self._stat_breakpoint_planner = _sbp
+            target_stats = _sbp.get_target_stats(job_class)
+        except Exception:
+            target_stats = None
+        if not target_stats:
+            stat_plan = DEFAULT_STAT_PLANS.get(job_class)
+            if not stat_plan:
+                return
+            target_stats = stat_plan.get_stats_for_level(base_level)
+            stat_plan_name = stat_plan.name
 
         # Generate stat commands
-        commands = stat_plan.get_stat_commands(current_stats, target_stats)
+        commands = []
+        for stat, target in (target_stats or {}).items():
+            current = current_stats.get(stat, 1)
+            if target > current:
+                commands.append(f"stat_add {stat} {target - current}")
         if not commands:
             return
 
@@ -578,7 +596,7 @@ class ColdStartManager:
                 domain="progression",
                 reason=f"ColdStart: stat allocation ({cmd}) for {job_class} at level {base_level}",
                 metadata={
-                    "stat_plan": stat_plan.name,
+                    "stat_plan": stat_plan_name,
                     "level": base_level,
                     "status_points": status_points,
                 },

@@ -24,6 +24,7 @@ from ai_sidecar.domains.planning.scheduler import (
     TaskCategory,
     TaskScheduler,
 )
+from ai_sidecar.domains.planning.translator import TaskCommandTranslator
 from ai_sidecar.domains.planning.build_planner import (
     BuildPlanner,
 )
@@ -61,6 +62,7 @@ class PlanningDomain:
         self._goal_manager: GoalManager | None = None
         self._scheduler: TaskScheduler | None = None
         self._experience_tracker = None
+        self._translator: TaskCommandTranslator | None = None
 
     def initialize(self) -> None:
         """Set up goal manager and scheduler."""
@@ -69,6 +71,12 @@ class PlanningDomain:
             goal_manager=self._goal_manager,
             bot_id="default",
         )
+        # Semantic -> real translation layer. NEVER emit scheduler commands
+        # naively (execute_task would emit unknown commands and bare
+        # `party` every 5 minutes — the frozen-party-spam bug). The
+        # translator gates return_town on inventory_full, keeps party/guild
+        # as never-emit, and dedupes moves.
+        self._translator = TaskCommandTranslator()
 
     def wire_experience_tracker(self, tracker: Any) -> None:
         """Connect the learning domain's experience tracker.
@@ -140,10 +148,21 @@ class PlanningDomain:
         # Build task schedule from signals
         schedule = self._scheduler.schedule_from_signals(signals)
 
-        # Emit scheduled tasks as actions
+        # Emit scheduled tasks as actions — THROUGH THE TRANSLATOR.
+        # Never call scheduler.execute_task() directly: its raw commands
+        # (bare `party`, unknown intents) would execute in the bridge and
+        # reintroduce the frozen-party-spam bug. The translator gates
+        # return_town on inventory_full, never emits party/guild, and
+        # dedupes identical moves within a cycle.
+        if not self._translator:
+            self._translator = TaskCommandTranslator()
+        _seen: set[tuple[str, str]] = set()
         for task in schedule[:5]:  # Top 5 tasks
-            task_actions = self._scheduler.execute_task(task)
-            for action in task_actions:
+            for action in self._translator.translate(task, signals, bot):
+                _key = (action.kind, action.command)
+                if _key in _seen:
+                    continue
+                _seen.add(_key)
                 action.metadata["bot_id"] = bot
                 actions.append(action)
 

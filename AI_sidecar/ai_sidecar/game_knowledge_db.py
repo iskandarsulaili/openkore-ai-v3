@@ -28,6 +28,205 @@ class GameKnowledgeDB:
     def __init__(self, db_path: str | Path | None = None) -> None:
         self._db_path = Path(db_path) if db_path else _DB_PATH
         self._local = threading.local()
+        self._ensure_seeded()
+
+    # ── Schema + seed ────────────────────────────────────────────────────
+
+    def _ensure_seeded(self) -> None:
+        """Create all tables and seed from knowledge.json if empty.
+
+        The DB-backed knowledge layer was previously a read-only facade over
+        tables that NOTHING ever created or populated — every query returned
+        empty and consumers silently fell back to hardcoded paths. This
+        guarantees schema existence and a baseline seed (zone ladder from
+        monster spawn levels, skill builds from skill trees, job paths from
+        job stats) so the DB path is actually functional.
+        """
+        try:
+            conn = self._get_conn()
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS zone_ladder (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    map_name TEXT NOT NULL,
+                    min_level INTEGER NOT NULL DEFAULT 1,
+                    max_level INTEGER NOT NULL DEFAULT 99,
+                    difficulty INTEGER NOT NULL DEFAULT 1,
+                    monster_count INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS stat_builds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_name TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 1,
+                    stats_json TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS skill_builds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_name TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 1,
+                    skill_order TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TABLE IF NOT EXISTS npc_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    npc_name TEXT NOT NULL,
+                    map_name TEXT NOT NULL DEFAULT '',
+                    task_type TEXT NOT NULL DEFAULT '',
+                    steps_json TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TABLE IF NOT EXISTS player_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bot_id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value_json TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS exp_efficiency (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    map_name TEXT NOT NULL,
+                    bot_level INTEGER NOT NULL DEFAULT 1,
+                    exp_per_hour REAL NOT NULL DEFAULT 0,
+                    deaths_per_hour REAL NOT NULL DEFAULT 0,
+                    sample_count INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS job_paths (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_job TEXT NOT NULL,
+                    to_job TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 1,
+                    requirements TEXT NOT NULL DEFAULT '',
+                    order_index INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_zone_ladder_level ON zone_ladder(min_level, max_level);
+                CREATE INDEX IF NOT EXISTS idx_npc_task ON npc_interactions(task_type, map_name);
+                CREATE INDEX IF NOT EXISTS idx_skill_build_job ON skill_builds(job_name);
+                """
+            )
+            conn.commit()
+            # Schema migration: drop tables whose shape changed between
+            # versions (job_paths gained from_job/to_job/requirements).
+            try:
+                _cols = [r[1] for r in conn.execute("PRAGMA table_info(job_paths)").fetchall()]
+                if _cols and "from_job" not in _cols:
+                    conn.execute("DROP TABLE IF EXISTS job_paths")
+                    conn.execute(
+                        """
+                        CREATE TABLE job_paths (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            from_job TEXT NOT NULL,
+                            to_job TEXT NOT NULL,
+                            priority INTEGER NOT NULL DEFAULT 1,
+                            requirements TEXT NOT NULL DEFAULT '',
+                            order_index INTEGER NOT NULL DEFAULT 0
+                        )
+                        """
+                    )
+                    conn.commit()
+            except Exception:
+                pass
+            # Seed only when the DB is genuinely empty (first run)
+            empty = conn.execute("SELECT COUNT(*) AS c FROM zone_ladder").fetchone()[0] == 0
+            if empty:
+                self._seed_from_knowledge(conn)
+                conn.commit()
+        except Exception as e:
+            logger.warning("game_knowledge_db_seed_failed: %s", e)
+
+    def _seed_from_knowledge(self, conn: sqlite3.Connection) -> None:
+        """Populate baseline tables from knowledge/knowledge.json."""
+        kpath = Path(__file__).resolve().parent.parent / "knowledge" / "knowledge.json"
+        if not kpath.exists():
+            logger.info("game_knowledge_db_seed_skip: no knowledge.json")
+            return
+        try:
+            with open(kpath) as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning("game_knowledge_db_seed_read_failed: %s", e)
+            return
+
+        # ── zone_ladder: authoritative LEVEL_LADDER tiers + map_drops ──
+        # The mobs in knowledge.json carry no spawn-map keys (ingestion
+        # limitation), so the level ladder comes from the curated
+        # GameKnowledgeService.LEVEL_LADDER, extended with monster-level
+        # aggregates from map_drops for the higher-tier zones.
+        try:
+            from ai_sidecar.game_knowledge import LEVEL_LADDER
+            for min_lv, max_lv, map_name, _desc in LEVEL_LADDER:
+                conn.execute(
+                    "INSERT INTO zone_ladder(map_name, min_level, max_level, difficulty, monster_count) "
+                    "VALUES (?, ?, ?, ?, 0)",
+                    (str(map_name).lower(), min_lv, max_lv,
+                     max(1, min(10, (max_lv - min_lv) // 10 + 1))),
+                )
+        except Exception:
+            pass
+
+        # map_drops: maps -> monster names -> levels (high-tier zones)
+        mobs = data.get("mobs", []) or []
+        mob_levels = {
+            str(m.get("AegisName", "") or "").upper(): int(m.get("Level", 0) or 0)
+            for m in mobs
+        }
+        for entry in data.get("map_drops", []) or []:
+            mn = str(entry.get("Map", "") or "").lower().replace(".gat", "")
+            if not mn:
+                continue
+            lvls = [
+                mob_levels.get(str(s.get("Monster", "") or "").upper(), 0)
+                for s in (entry.get("SpecificDrops", []) or [])
+            ]
+            lvls = [l for l in lvls if l > 0]
+            if not lvls:
+                continue
+            conn.execute(
+                "INSERT INTO zone_ladder(map_name, min_level, max_level, difficulty, monster_count) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (mn, min(lvls), max(lvls),
+                 max(1, min(10, (max(lvls) - min(lvls)) // 10 + 1)),
+                 len(lvls)),
+            )
+
+        # ── skill_builds: first skill-tree per job ──
+        skill_trees = data.get("skill_trees", []) or []
+        for tree in skill_trees:
+            job = str(tree.get("Job", "") or "").lower()
+            tree_list = tree.get("Tree") or []
+            if not job or not tree_list:
+                continue
+            order = [
+                [str(s.get("Name", "") or ""), int(s.get("MaxLevel", 1) or 1)]
+                for s in tree_list if isinstance(s, dict) and s.get("Name")
+            ]
+            if order:
+                conn.execute(
+                    "INSERT INTO skill_builds(job_name, priority, skill_order) VALUES (?, 1, ?)",
+                    (job, json.dumps(order)),
+                )
+
+        # ── job_paths: parent/child from job_stats naming ──
+        job_stats = data.get("job_stats", {}) or {}
+        order_idx = 0
+        for job in job_stats:
+            base = str(job).lower()
+            parent = ""
+            for suffix in ("_high", "_baby"):
+                if base.endswith(suffix):
+                    parent = base[: -len(suffix)]
+                    break
+            if parent:
+                conn.execute(
+                    "INSERT INTO job_paths(from_job, to_job, priority, order_index) "
+                    "VALUES (?, ?, 1, ?)",
+                    (parent, base, order_idx),
+                )
+            order_idx += 1
+
+        n_zones = conn.execute("SELECT COUNT(*) FROM zone_ladder").fetchone()[0]
+        n_skills = conn.execute("SELECT COUNT(*) FROM skill_builds").fetchone()[0]
+        logger.info(
+            "game_knowledge_db_seeded: %d zones, %d skill builds, %d job paths",
+            n_zones, n_skills, order_idx,
+        )
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
