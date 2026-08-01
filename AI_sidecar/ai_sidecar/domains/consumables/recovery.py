@@ -212,4 +212,15 @@ class RecoveryManager:
         return max(potions, key=lambda p: p["heals"])
 
     def cleanup_bot(self, bot_id: str) -> None:
-        pass
+        """Remove per-bot state on unregistration.
+
+        RecoveryManager keeps no persistent per-bot dicts today (only the
+        shared GameKnowledgeDB), but cleanup must be idempotent and defensive:
+        any per-bot tracker attribute present is popped so a re-registered
+        bot starts fresh.
+        """
+        for _attr in ("_last_heal", "_heal_timers", "_cooldowns", "_states", "_pending"):
+            _holder = getattr(self, _attr, None)
+            if isinstance(_holder, dict):
+                _holder.pop(bot_id, None)
+        logger.debug("[recovery] cleanup_bot %s", bot_id)

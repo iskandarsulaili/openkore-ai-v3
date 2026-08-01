@@ -1400,7 +1400,16 @@ class HeuristicService:
         return _rate
 
     def set_domain_weights(self, weights: dict) -> None:
-        pass
+        """Override domain execution priority weights.
+
+        Delegates to the DomainRegistry's set_weights: effective priority =
+        base_priority / weight, so heavier-weighted domains run earlier in the
+        assessment chain. Invalid entries are ignored.
+        """
+        try:
+            self.domain_registry.set_weights(dict(weights or {}))
+        except Exception:
+            logger.exception("set_domain_weights_failed")
 
     @property
     def domain_registry(self) -> DomainRegistry:

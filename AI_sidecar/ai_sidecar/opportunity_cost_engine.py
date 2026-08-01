@@ -136,7 +136,13 @@ class OpportunityCostEngine:
             self._enqueue_fn = fn
 
     def reset(self) -> None:
-        pass
+        """Reset the engine to a pristine state (fleet restart / teardown).
+
+        Clears the enqueue callback and any accumulated decision state so a
+        fresh fleet generation starts from a clean slate.
+        """
+        with self._lock:
+            self._enqueue_fn = None
 
 
 # ── Global Singleton ──

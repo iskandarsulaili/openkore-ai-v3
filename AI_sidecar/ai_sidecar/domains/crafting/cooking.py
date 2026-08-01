@@ -178,7 +178,18 @@ class CookingCrafting:
         return len(missing) == 0, missing
 
     def cleanup_bot(self, bot_id: str) -> None:
-        pass
+        """Remove per-bot state on unregistration.
+
+        CookingCrafting keeps no persistent per-bot dicts today (only the
+        shared GameKnowledgeDB), but cleanup must be idempotent and defensive:
+        any per-bot tracker attribute present is popped so a re-registered
+        bot starts fresh.
+        """
+        for _attr in ("_active_batches", "_last_craft", "_craft_timers", "_cooldowns", "_states"):
+            _holder = getattr(self, _attr, None)
+            if isinstance(_holder, dict):
+                _holder.pop(bot_id, None)
+        logger.debug("[cooking] cleanup_bot %s", bot_id)
 
 # Alias for compatibility
 Cooking = CookingCrafting

@@ -54,10 +54,32 @@ class DomainRegistry:
 
     def __init__(self) -> None:
         self._domains: list[BaseDomain] = []
+        self._weights: dict[str, float] = {}
 
     def register(self, domain: BaseDomain) -> None:
         """Register a single domain instance."""
         self._domains.append(domain)
+
+    def set_weights(self, weights: dict[str, float]) -> None:
+        """Apply per-domain execution weights (weight > 1.0 runs earlier).
+
+        Effective priority = base_priority / weight, so a domain weighted 2.0
+        runs before one weighted 1.0 at the same base priority. Unknown names
+        are ignored (weight stays 1.0). Re-sorts the domain list in place.
+        """
+        sanitized: dict[str, float] = {}
+        for name, w in (weights or {}).items():
+            try:
+                fw = float(w)
+            except (TypeError, ValueError):
+                continue
+            if fw <= 0:
+                fw = 1.0
+            sanitized[str(name)] = fw
+        self._weights.update(sanitized)
+        self._domains.sort(
+            key=lambda d: d.priority / self._weights.get(d.name, 1.0)
+        )
 
     def load_all(self) -> None:
         """Auto-discover and register all domain modules.
