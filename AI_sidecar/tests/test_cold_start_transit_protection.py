@@ -31,11 +31,22 @@ def test_level1_on_fild_triggers_transit_protection() -> None:
     cmds = _assess(base_level=1, map_name="prt_fild05")
     assert "set attackAuto 0" in cmds, f"transit protection missing: {cmds}"
     assert "set attackAuto_inLockOnly 1" in cmds
-    assert "set lockMap prontera" in cmds
+    # level 1-5 now targets the academy field prt_fild08 (rathena-ai-world
+    # starter zone), not the town map
+    assert "set lockMap prt_fild08" in cmds
 
 
-def test_level5_on_fild_triggers_transit_protection() -> None:
-    cmds = _assess(base_level=5, map_name="prt_fild08")
+def test_level5_on_academy_field_enables_attacking() -> None:
+    # prt_fild08 is the safe Cryptura Academy starter field (level-1
+    # Porings/Lunatics) — a level-5 bot should FIGHT there, not transit-run.
+    cmds = _assess(base_level=5, map_name="prt_fild08", lock_map="prt_fild08")
+    assert "set attackAuto 3" in cmds, f"academy field must enable attack: {cmds}"
+    assert "set attackAuto 0" not in cmds
+
+
+def test_level5_on_non_academy_fild_still_transits() -> None:
+    # A level-5 bot on a tougher NON-academy field still runs (don't fight).
+    cmds = _assess(base_level=5, map_name="prt_fild05", lock_map="prt_fild08")
     assert "set attackAuto 0" in cmds
 
 
@@ -47,7 +58,8 @@ def test_level6_on_fild_uses_field_config_not_transit() -> None:
 
 
 def test_level1_in_town_enables_attacking() -> None:
-    cmds = _assess(base_level=1, map_name="prontera", lock_map="prontera")
-    # Arrived at town lockMap -> attacking enabled (farming Porings)
-    assert "set attackAuto 3" in cmds, f"town arrival must enable attack: {cmds}"
-    assert "set attackAuto 0" not in cmds
+    cmds = _assess(base_level=1, map_name="prontera", lock_map="prt_fild08")
+    # Level 1-5 targets the academy field prt_fild08. A bot still in town is
+    # navigating toward it (not stuck idle); it does NOT set attackAuto 0 —
+    # transit protection only fires while on a *_fild map en route.
+    assert any("prt_fild08" in c for c in cmds), f"must navigate to academy: {cmds}"

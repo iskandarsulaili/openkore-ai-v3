@@ -1739,18 +1739,25 @@ class HeuristicService:
                                 _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 15:
                             if _bl <= 5:
-                                # Level 1-5: Prontera town only, attack Porings only
+                                # Level 1-5: Cryptura Academy (prt_fild08) — the
+                                # rathena-ai-world starter field. Level-1 Porings/
+                                # Lunatics (Atk 1, BaseExp 150) spawn here with a
+                                # 10% Knife drop; the town map has no weapon vendor
+                                # and its Porings offer no progression. Lock onto
+                                # prt_fild08 (safe academy field), attack Porings/
+                                # Lunatics only.
                                 # NOTE: 'set lockMap' (not bare 'lockMap') so the
                                 # bridge's _sidecar_set_lockMap marker shields it
                                 # from the hunting-map stickiness override.
-                                _actions.append(HeuristicAction(kind="command", command="set lockMap prontera", confidence=0.85, reason=f"Cold start: stay in town (lvl {_bl})", domain="progression"))
+                                _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
+                                _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
                                 # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
-                                # A level-1 Novice cannot survive monster fields
-                                # (prt_fild05/08, etc.) en route to Prontera town.
-                                # If the bot is NOT yet on its lockMap, disable
-                                # attacking entirely so it RUNS through the fields
-                                # instead of fighting and dying. attackAuto 2 (auto
+                                # A level-1 Novice cannot survive the tougher NON-
+                                # academy fields (prt_fild05 etc.) en route to the
+                                # academy farm prt_fild08. If the bot is NOT yet on
+                                # its lockMap, disable attacking entirely so it
+                                # RUNS to the academy instead of fighting and dying. attackAuto 2 (auto
                                 # everywhere) is the default — force 0 while in
                                 # transit; OpenKore re-enables it once in town via
                                 # attackAuto_inLockOnly semantics.
@@ -1761,17 +1768,24 @@ class HeuristicService:
                                 # whenever a bot is on *_fild, so lock==cur is TRUE on
                                 # every field — an equality-based "arrived" branch would
                                 # re-enable attacking precisely where a level-1 bot must
-                                # run, not fight. fild + low level ⇒ transit (run);
-                                # town (non-fild) matching lock ⇒ arrived (attack).
-                                if "fild" in _cur_map and _bl <= 5:
+                                # run, not fight. fild + low level ⇒ transit (run),
+                                # UNLESS the field is the safe academy starter field
+                                # prt_fild08 (where level-1 Porings/Lunatics are the
+                                # intended target and fighting is correct).
+                                if "fild" in _cur_map and _bl <= 5 and _cur_map != "prt_fild08":
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 0", confidence=0.90, reason=f"Cold start: transit through {_cur_map} at lvl {_bl} — run, don't fight", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 1", confidence=0.90, reason="Cold start: only attack on lockMap", domain="survival"))
-                                elif _cur_map and _cur_map == _lock and "fild" not in _cur_map:
-                                    # ── ARRIVED AT TOWN: re-enable attacking ──
+                                elif _cur_map and (_cur_map == _lock or _cur_map == "prt_fild08"):
+                                    # ── ARRIVED AT THE ACADEMY FARM: re-enable attacking ──
                                     # Reverse the transit protection so the bot can
-                                    # actually farm Porings once it reaches lockMap.
-                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto 3", confidence=0.90, reason=f"Cold start: on lockMap {_cur_map} at lvl {_bl} — attack enabled", domain="survival"))
-                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 0", confidence=0.90, reason="Cold start: attack enabled outside lockMap too", domain="survival"))
+                                    # actually farm Porings/Lunatics once it reaches
+                                    # the academy field prt_fild08 (safe starter field
+                                    # with level-1 mobs). Note prt_fild08 IS a *_fild
+                                    # map, so match it explicitly — the generic
+                                    # "arrived at town" check (non-fild) never fires
+                                    # for a fild lockMap.
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto 3", confidence=0.90, reason=f"Cold start: at academy {_cur_map} lvl {_bl} — attack enabled", domain="survival"))
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 0", confidence=0.90, reason="Cold start: attack enabled on lockMap", domain="survival"))
                             else:
                                 # Level 6-15: prt_fild05, avoid dangerous mobs
                                 # NOTE: 'set lockMap' so the bridge marker shields
