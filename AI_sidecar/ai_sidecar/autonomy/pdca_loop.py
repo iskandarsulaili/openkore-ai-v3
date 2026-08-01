@@ -4847,14 +4847,41 @@ class PDCALoop:
                                     # warp / spawn point. Feed it into the discovery
                                     # engine so the portal graph learns the server's
                                     # real topology (RULE.md §19 self-adapt/learn).
-                                    # NOTE: record_portal_exit with (0,0) is skipped
-                                    # by the same-map guard — only map_visit (which
-                                    # builds the explored-map set used by the
-                                    # unexplored-map scout) is meaningful here.
+                                    # REAL COORDS: entry = last known position on the
+                                    # previous map, exit = arrival position on the new
+                                    # map (paired by DPD via _recent_entries).
+                                    # NOTE: this block lives INSIDE the map-change
+                                    # guard so char-select/disconnected cycles with
+                                    # empty _map never feed junk into the discovery
+                                    # graph (that would pollute the scout's input).
                                     try:
                                         from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
                                         _dpd = get_dynamic_portal_discovery()
                                         _dpd.record_map_visit(_reflex_bot_id, _map)
+                                        # Extract real x/y (BotStateSnapshot object or dict)
+                                        _new_x = 0
+                                        _new_y = 0
+                                        _pos_ref = getattr(_conscious_snap, "position", None)
+                                        if _pos_ref is not None and not isinstance(_pos_ref, dict):
+                                            _new_x = int(getattr(_pos_ref, "x", 0) or 0)
+                                            _new_y = int(getattr(_pos_ref, "y", 0) or 0)
+                                        elif isinstance(_conscious_snap, dict):
+                                            _pos_ref = _conscious_snap.get("position") or {}
+                                            if isinstance(_pos_ref, dict):
+                                                _new_x = int(_pos_ref.get("x", 0) or 0)
+                                                _new_y = int(_pos_ref.get("y", 0) or 0)
+                                            else:
+                                                _new_x = int(_conscious_snap.get("x", 0) or 0)
+                                                _new_y = int(_conscious_snap.get("y", 0) or 0)
+                                        _last_pos = getattr(self, "_last_pos", {})
+                                        _prev_pos = _last_pos.get(_reflex_bot_id)
+                                        if _prev_pos is not None and len(_prev_pos) >= 3:
+                                            _prev_map_p, _prev_x_p, _prev_y_p = _prev_pos
+                                            if _prev_map_p and _prev_map_p != _map:
+                                                _dpd.record_portal_entry(_reflex_bot_id, _prev_map_p, int(_prev_x_p), int(_prev_y_p))
+                                                _dpd.record_portal_exit(_reflex_bot_id, _map, _new_x, _new_y)
+                                        _last_pos[_reflex_bot_id] = (_map, _new_x, _new_y)
+                                        object.__setattr__(self, "_last_pos", _last_pos)
                                     except Exception:
                                         pass
                                 _last_map[_reflex_bot_id] = _map

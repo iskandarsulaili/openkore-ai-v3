@@ -94,6 +94,14 @@ class DynamicPortalDiscovery:
                     if portal.confirmed:
                         self._add_to_knowledge(portal)
                 logger.info("dynamic_portal_loaded: %d discovered portals", len(self._discovered_portals))
+                # Load explored maps so the unexplored-map scout survives restarts
+                _explored_rows = conn.execute(
+                    "SELECT map_name FROM explored_maps ORDER BY first_explored_at"
+                ).fetchall()
+                for (_em,) in _explored_rows:
+                    self._explored_maps.add(str(_em))
+                if _explored_rows:
+                    logger.info("dynamic_explored_loaded: %d explored maps", len(_explored_rows))
             finally:
                 conn.close()
         except (sqlite3.OperationalError, Exception) as e:
@@ -127,6 +135,14 @@ class DynamicPortalDiscovery:
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_dp_target ON discovered_portals(target_map)
                 """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS explored_maps (
+                        map_name TEXT PRIMARY KEY,
+                        first_explored_at REAL NOT NULL,
+                        last_seen_at REAL NOT NULL,
+                        explored_by TEXT NOT NULL DEFAULT ''
+                    )
+                """)
                 conn.commit()
             finally:
                 conn.close()
@@ -155,6 +171,8 @@ class DynamicPortalDiscovery:
         This is called when the bot walks onto a portal cell.
         We save the entry point and wait for the exit to confirm.
         """
+        if not map_name:
+            return
         with self._lock:
             self._recent_entries[bot_id] = (map_name, x, y, time.time())
 
@@ -164,6 +182,11 @@ class DynamicPortalDiscovery:
         This confirms a portal connection. We pair it with the last entry
         to determine the portal's target.
         """
+        if not map_name:
+            # Discard the pending entry: bot left to nowhere (char-select,
+            # disconnect) — this is NOT a portal transition.
+            self._recent_entries.pop(bot_id, None)
+            return
         with self._lock:
             entry = self._recent_entries.pop(bot_id, None)
             if entry is None:
@@ -213,11 +236,41 @@ class DynamicPortalDiscovery:
             )
 
     def record_map_visit(self, bot_id: str, map_name: str) -> None:
-        """Record that a bot visited a map."""
+        """Record that a bot visited a map (persisted for restart survival)."""
+        if not map_name:
+            return
         with self._lock:
             if map_name not in self._explored_maps:
                 self._explored_maps.add(map_name)
                 logger.info("dynamic_map_explored: %s by %s", map_name, bot_id)
+                try:
+                    self._ensure_schema()
+                    conn = sqlite3.connect(self._get_db_path())
+                    try:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO explored_maps (map_name, first_explored_at, last_seen_at, explored_by) "
+                            "VALUES (?, ?, ?, ?)",
+                            (map_name, time.time(), time.time(), bot_id),
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    logger.warning("dynamic_map_explored_save_error: %s", e)
+            else:
+                # Refresh last_seen for existing maps (cheap, keeps recency signal)
+                try:
+                    conn = sqlite3.connect(self._get_db_path())
+                    try:
+                        conn.execute(
+                            "UPDATE explored_maps SET last_seen_at = ? WHERE map_name = ?",
+                            (time.time(), map_name),
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception:
+                    pass
 
     def _save_portal(self, portal: DiscoveredPortal) -> None:
         """Save a discovered portal to the shared database."""
