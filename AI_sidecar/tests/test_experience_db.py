@@ -59,3 +59,35 @@ def test_experience_db_record_exp_snapshot_prunes_to_cap(tmp_path) -> None:
     n = conn.execute("SELECT COUNT(*) FROM exp_snapshots WHERE bot_id='bot:x'").fetchone()[0]
     conn.close()
     assert n == 3, f"cap 3 must hold, got {n}"
+
+
+def test_best_action_exists_and_returns_empty_without_data(tmp_path) -> None:
+    """best_action must exist (was missing -> AttributeError every cycle)."""
+    db = ExperienceDB(str(tmp_path / "exp.sqlite"))
+    assert hasattr(db, "best_action"), "best_action method must exist"
+    # No snapshots yet -> no learned action, graceful fallback.
+    act, score = db.best_action(context_type="combat", bot_id="bot:x")
+    assert act == "" and score == 0.0
+
+
+def test_best_action_returns_action_on_exp_gain(tmp_path) -> None:
+    from ai_sidecar.experience_db import ExpSnapshot
+
+    db = ExperienceDB(str(tmp_path / "exp.sqlite"))
+    t = time.time()
+    # Two snapshots on a productive map (exp rising) -> best_action yields a hunt.
+    db.record_exp_snapshot(ExpSnapshot(
+        bot_id="bot:x", base_level=1, job_level=0, base_exp=0, job_exp=0,
+        zeny=0, map_name="prt_fild08", timestamp=t,
+    ))
+    db.record_exp_snapshot(ExpSnapshot(
+        bot_id="bot:x", base_level=1, job_level=0,
+        base_exp=_LARGE_EXP, job_exp=0, zeny=0, map_name="prt_fild08",
+        timestamp=t + 3600,  # 1 hour later, big exp gain
+    ))
+    act, score = db.best_action(context_type="combat", bot_id="bot:x")
+    assert act.startswith("attack_optimal_target"), f"unexpected action: {act!r}"
+    assert 0.0 < score <= 1.0
+
+
+_LARGE_EXP = 1_000_000  # 1M base exp/hr -> score well above 0.4 threshold

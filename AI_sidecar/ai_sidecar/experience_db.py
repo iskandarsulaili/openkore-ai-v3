@@ -268,6 +268,92 @@ class ExperienceDB:
                 "snapshot_count": len(rows),
             }
 
+    def best_action(
+        self,
+        context_type: str = "combat",
+        bot_id: str = "",
+        map_name: str = "",
+        monster_name: str = "",
+        **_: Any,
+    ) -> tuple[str, float]:
+        """Return the best learned action + confidence score for a context.
+
+        Data-driven from exp_snapshots: rates recently-hunted maps by BASE EXP
+        per hour and returns a context-appropriate action targeting the best
+        map. When no meaningful exp signal exists (or the agent has no
+        snapshots yet), returns ("", 0.0) so callers (behavior agents, pdca
+        zone-ladder override) fall back to their default action without error.
+
+        This closes a real gap: pdca_loop:6633 and the behavior-profile agents
+        called ExperienceDB.best_action() which did NOT exist, throwing
+        "AttributeError: 'ExperienceDB' object has no attribute 'best_action'"
+        every cycle.
+        """
+        with self._lock:
+            try:
+                db = sqlite3.connect(self._db_path, timeout=5.0)
+                if bot_id:
+                    rows = db.execute(
+                        """SELECT base_exp, job_exp, map_name, timestamp
+                           FROM exp_snapshots
+                           WHERE bot_id = ? ORDER BY timestamp DESC LIMIT 50""",
+                        (bot_id,),
+                    ).fetchall()
+                else:
+                    rows = db.execute(
+                        """SELECT base_exp, job_exp, map_name, timestamp
+                           FROM exp_snapshots
+                           ORDER BY timestamp DESC LIMIT 50"""
+                    ).fetchall()
+                db.close()
+            except Exception as e:
+                logger.debug("ExperienceDB: best_action query failed: %s", e)
+                return ("", 0.0)
+
+        if len(rows) < 2:
+            return ("", 0.0)
+
+        # Score maps by base-exp gain per hour over the available trajectory.
+        by_map: dict[str, list[tuple[float, float]]] = {}
+        for base_exp, job_exp, m_name, ts in rows:
+            by_map.setdefault(m_name or "", []).append((float(ts), float(base_exp)))
+        best_map = ""
+        best_rate = 0.0
+        for m_name, pts in by_map.items():
+            if not m_name or len(pts) < 2:
+                continue
+            pts.sort()
+            t0, e0 = pts[0]
+            t1, e1 = pts[-1]
+            hours = max(0.001, (t1 - t0) / 3600.0)
+            rate = max(0.0, (e1 - e0) / hours)
+            if rate > best_rate:
+                best_rate, best_map = rate, m_name
+
+        if best_rate <= 0:
+            return ("", 0.0)
+
+        # Normalize score into [0,1] — exp/hour scaled; cap at ~2M/hr → ~1.0
+        score = max(0.0, min(1.0, best_rate / 2_000_000.0))
+        if score < 0.4:
+            # Weak signal — let callers fall back rather than force an action.
+            return ("", 0.0)
+
+        _ct = (context_type or "combat").lower()
+        if _ct in ("combat", "hunting"):
+            action = f"attack_optimal_target@{best_map}" if best_map else "attack_optimal_target"
+        elif _ct in ("economy", "farming"):
+            action = f"farm@{best_map}" if best_map else "farm"
+        elif _ct == "craft":
+            action = f"craft@{best_map}" if best_map else "craft"
+        elif _ct in ("nav", "navigation"):
+            action = f"navigate {best_map}" if best_map else "navigate"
+        elif _ct in ("social", "party"):
+            action = "party_buffer"
+        else:
+            action = f"act@{best_map}" if best_map else "act"
+        return (action, score)
+
     def get_plateau_warnings(self, bot_id: str) -> list[dict[str, Any]]:
         """Detect leveling plateaus — same level for >60 minutes.
 
