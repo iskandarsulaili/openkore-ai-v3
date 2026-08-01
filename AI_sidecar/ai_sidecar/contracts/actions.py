@@ -119,6 +119,10 @@ class NextActionResponse(BaseModel):
     poll_id: str
     has_action: bool
     action: ActionProposal | NoopActionPayload | None = None
+    # Full drained batch (up to max_actions from the request) — the first
+    # entry equals `action`. Backward compatible: single-action clients
+    # keep reading `action`; batched consumers read `actions`.
+    actions: list[ActionProposal] | None = None
     reason: str = ""
 
 

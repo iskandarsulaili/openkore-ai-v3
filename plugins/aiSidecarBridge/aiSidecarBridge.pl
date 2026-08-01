@@ -3211,10 +3211,10 @@ sub _execute_action {
 		warning "[ai_action] id=$action_id kind=$kind cmd=$command effective=$effective_command rewrite=$rewrite_kind\n", 'aiSidecarBridge', 1;
 	}
 
-	my $latency_ms = 200;
+	my $tick_latency_ms = 200;
 	# LATENCY-ADAPTIVE TIMING: ConnectionMetrics details unavailable in this build
-	$latency_ms = ($latency_ms < 50) ? 50 : ($latency_ms > 1000) ? 1000 : $latency_ms;
-	my $tick_buffer = int($latency_ms / 150) + 1;
+	$tick_latency_ms = ($tick_latency_ms < 50) ? 50 : ($tick_latency_ms > 1000) ? 1000 : $tick_latency_ms;
+	my $tick_buffer = int($tick_latency_ms / 150) + 1;
 
 
 	# ── ACTION BATCH COORDINATION ──
@@ -6221,8 +6221,9 @@ sub _calc_distance {
 # to avoid Perl "will not stay shared" closure warnings. The bare block { } below
 # is for organizational scoping only — state vars live at package level.
 our %_reflex_last_fired;
-our @_heal_items;
-our @_heal_skills;
+# @_heal_items / @_heal_skills are declared ONCE at package level (line ~1226,
+# on_post_bulk_config_modify) — do NOT redeclare here (Perl warns
+# "our variable ... redeclared"). These are the same package arrays.
 our $_heal_cache_last_update_ms = 0;
 our $_last_prontera_recovery_ms = 0;
 

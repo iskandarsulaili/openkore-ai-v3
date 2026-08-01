@@ -74,10 +74,23 @@ def next_action(
 ) -> NextActionResponse:
     started = runtime.latency_router.begin()
     try:
-        action = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
+        # Drain up to max_actions per poll (the bridge declares its batch
+        # capacity via max_actions; the response carries the first action in
+        # `action` for backward-compatible single-action clients and the
+        # full drained set in `actions` for batched consumers).
+        batch: list[ActionProposal] = []
+        first: ActionProposal | None = None
+        max_n = int(getattr(payload, "max_actions", 1) or 1)
+        for _ in range(max(1, min(max_n, 10))):
+            _a = runtime.next_action(payload.meta.bot_id, poll_id=payload.poll_id)
+            if _a is None:
+                break
+            batch.append(_a)
+            if first is None:
+                first = _a
         elapsed_ms = runtime.latency_router.end("actions.next", started)
         budget_exceeded = not runtime.latency_router.within_budget(elapsed_ms)
-        had_action = action is not None
+        had_action = first is not None
 
         if budget_exceeded:
             logger.warning(
@@ -93,7 +106,7 @@ def next_action(
                 },
             )
 
-        if action is None:
+        if first is None:
             reason = "latency_budget_exceeded" if not runtime.latency_router.within_budget(elapsed_ms) else "no_action_available"
             return NextActionResponse(
                 ok=True,
@@ -115,7 +128,8 @@ def next_action(
             bot_id=payload.meta.bot_id,
             poll_id=payload.poll_id,
             has_action=True,
-            action=action,
+            action=first,
+            actions=batch,
             reason="action_ready",
         )
     except HTTPException:
