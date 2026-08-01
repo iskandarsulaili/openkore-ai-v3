@@ -1747,6 +1747,82 @@ class PDCAConfig:
     max_actions_per_cycle: int = 5
 
 
+def _emit_exploration_scout(runtime_state, bot_id: str, map_name: str, base_level: int) -> int:
+    """FLAW 2: when a bot is stuck, propose an exploration target.
+
+    Consumes DPD's unexplored-map + portal knowledge (RULE.md §19 self-learn):
+      - Prefer maps reachable via discovered portals FROM the current map
+        (real topology, likely safe) that are not yet explored.
+      - Fall back to any unexplored map.
+      - Level-gate: academy bots (level <=5) stay on the izlude route — the
+        server's transit protection keeps them off fild fields; sending them
+        to an unexplored fild map would strand them.
+      - Per-bot cooldown (5 min) so a stuck bot doesn't spam scout moves.
+    Returns 1 if a scout action was queued, else 0.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        if base_level < 6:
+            return 0
+        if not map_name:
+            return 0
+        # Prefer the runtime-owned DPD instance (set by pdca_loop init), fall
+        # back to the singleton — deterministic in tests, correct in prod.
+        _dpd = getattr(runtime_state, "dynamic_portal_discovery", None)
+        if _dpd is None:
+            from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
+            _dpd = get_dynamic_portal_discovery()
+        _targets: list[str] = []
+        # 1) Reachable via discovered portals from current map, unexplored first
+        try:
+            for _p in _dpd.get_discovered_portals_from(map_name):
+                _tm = str(getattr(_p, "target_map", "") or "")
+                if _tm and _tm != map_name and not _dpd.is_map_explored(_tm):
+                    if _tm not in _targets:
+                        _targets.append(_tm)
+        except Exception:
+            pass
+        # 2) Any unexplored map
+        if not _targets:
+            for _m in _dpd.get_unexplored_maps():
+                if _m and _m != map_name:
+                    _targets.append(_m)
+        if not _targets:
+            return 0
+        # Per-bot cooldown (5 min)
+        if not hasattr(runtime_state, "_last_scout"):
+            object.__setattr__(runtime_state, "_last_scout", {})
+        _ls = runtime_state._last_scout
+        _now = time.time()
+        if _ls.get(bot_id, 0.0) > _now - 300.0:
+            return 0
+        _target = _targets[0]
+        _ls[bot_id] = _now
+        _aq = getattr(runtime_state, "action_queue", None)
+        if _aq is None:
+            return 0
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        _aq.enqueue(bot_id, ActionProposal(
+            action_id=f"scout_{bot_id}_{int(_now * 1000)}",
+            bot_id=bot_id,
+            kind="command",
+            command=f"move {_target}",
+            priority_tier=ActionPriorityTier.tactical,
+            conflict_key="nav.scout",
+            source="reflex",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=90),
+            idempotency_key=f"scout_{bot_id}_{_target}",
+            metadata={"source": "exploration_scout", "reason": "stuck_route", "map": _target},
+        ))
+        _log.warning("exploration_scout: bot=%s stuck on %s -> move %s", bot_id, map_name, _target)
+        return 1
+    except Exception:
+        return 0
+
+
 def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None) -> int:
     """Monitor combat efficiency and auto-fix config issues.
     
@@ -1812,6 +1888,20 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                                 idempotency_key=f"stuck_reset_{_st_bid}",
                                 metadata={"source": "combat_monitor", "reason": "ai_stuck_reset", "bot_id": _st_bid},
                             ))
+                            # FLAW 2: exploration scout — a bot stuck 60+ cycles
+                            # on the same map needs a NEW destination, not just
+                            # an AI reset. Prefers DPD portal-reachable
+                            # unexplored maps; level-gated (academy <=5 stay on
+                            # the izlude route); per-bot 5-min cooldown.
+                            _scout_level = 1
+                            try:
+                                if isinstance(latest, dict):
+                                    _scout_level = int(latest.get("progression", {}).get("base_level", 1) or 1)
+                                else:
+                                    _scout_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
+                            except Exception:
+                                _scout_level = 1
+                            _emit_exploration_scout(runtime_state, _st_bid, map_name, _scout_level)
                             return 1
                     except Exception:
                         pass
