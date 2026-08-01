@@ -124,6 +124,7 @@ def get_recurring_failures_check(runtime_state: Any) -> Any:
     Returns a callable that checks for recurring failures and applies
     config adjustments if any have count >= 3.
     """
+    from datetime import timedelta
     engine = getattr(runtime_state, "failure_reasoning_engine", None)
     if engine is None:
         return None
@@ -133,6 +134,8 @@ def get_recurring_failures_check(runtime_state: Any) -> Any:
             recurring = engine.get_recurring_failures(
                 server_id=server_id, min_count=3, limit=10,
             )
+            applied: list[dict] = []
+            aq = getattr(runtime_state, "action_queue", None)
             for failure in recurring:
                 from ai_sidecar.learning.failure_reasoning import FailureRecord
                 record = FailureRecord(
@@ -151,7 +154,42 @@ def get_recurring_failures_check(runtime_state: Any) -> Any:
                         "failure_pipeline: auto-adjusting config for %s/%s: %s",
                         record.category, record.subcategory, config_changes,
                     )
-            return recurring
+                    # ACTUALLY APPLY: enqueue `set <key> <value>` commands
+                    # through the bridge's `set` config path (was recorded
+                    # but never applied — a dormant incomplete loop).
+                    if aq is not None and record.bot_id:
+                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                        from ai_sidecar.contracts.common import utc_now
+                        for change in config_changes:
+                            change = change.strip()
+                            if not change:
+                                continue
+                            _key = change.split(maxsplit=1)[0]
+                            _now = utc_now()
+                            aq.enqueue(record.bot_id, ActionProposal(
+                                action_id=f"failure-{record.id[:20]}-{_key}",
+                                bot_id=record.bot_id,
+                                action_type="set",
+                                command=f"set {change}",
+                                priority_tier=ActionPriorityTier.strategic,
+                                source="failure_reasoning",
+                                conflict_key=f"failure_adjust.{_key}",
+                                created_at=_now,
+                                expires_at=_now + timedelta(seconds=300),
+                                idempotency_key=f"failure:{record.id}:{_key}",
+                                metadata={
+                                    "failure_id": record.id,
+                                    "category": record.category,
+                                    "subcategory": record.subcategory or "",
+                                },
+                            ))
+                    applied.append({
+                        "id": record.id,
+                        "category": record.category,
+                        "changes": config_changes,
+                        "bot_id": record.bot_id,
+                    })
+            return applied or recurring
         except Exception:
             logger.exception("recurring_failures_check_failed")
             return []

@@ -5606,6 +5606,26 @@ class PDCALoop:
                                     )
                         except Exception as e:
                             logger.warning("consciousness_tick_error: %s", e)
+                        # ── RECURRING-FAILURE CONFIG ADJUSTMENT (time-gated) ──
+                        # Wires the failure_reasoning auto-adjust loop: recurring
+                        # failures (count>=3) enqueue `set <key> <value>` config
+                        # changes through the bridge. Was a dormant loop that
+                        # only RECORDED suggestions and never applied them.
+                        try:
+                            _fr_now = __import__("time").time()
+                            if _fr_now - getattr(self, "_last_failure_adjust_check", 0) > 300:
+                                self._last_failure_adjust_check = _fr_now
+                                from ai_sidecar.learning.failure_wiring import get_recurring_failures_check
+                                _fr_check = get_recurring_failures_check(self._runtime)
+                                if _fr_check is not None:
+                                    _fr_adjusted = _fr_check()
+                                    if _fr_adjusted:
+                                        logger.info(
+                                            "failure_adjust_check: %d recurring failures processed",
+                                            len(_fr_adjusted),
+                                        )
+                        except Exception as _fr_e:
+                            logger.warning("failure_adjust_check_error: %s", _fr_e)
                         # ── GOD MODE: override layer before heuristic (runs every cycle) ──
                         try:
                             _gm_sc = getattr(self._runtime, "snapshot_cache", None)
