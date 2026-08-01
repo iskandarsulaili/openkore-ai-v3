@@ -83,6 +83,7 @@ class SwarmCoordinator:
         # Cooldowns
         self._last_state_publish: float = 0
         self._last_leader_tick: float = 0
+        self._last_party_create_attempt: dict[str, float] = {}
         self._publish_interval: float = 5.0   # Publish state every 5s
         self._leader_tick_interval: float = 10.0  # Leader makes decisions every 10s
 
@@ -363,7 +364,12 @@ class SwarmCoordinator:
             return
 
         # ── Party sharing commands ──
-        if decision.party_auto_share:
+        # Only emit when actually in a party — 'party share exp' on a
+        # non-party bot produces "You're not in a party." error spam.
+        _my_state = self._all_states.get(bot_name)
+        _in_party = bool(_my_state.in_party) if _my_state else False
+        _my_level = int(_my_state.level) if _my_state else 1
+        if decision.party_auto_share and _in_party and _my_level >= 40:
             self._actions.append(HeuristicAction(
                 kind="command",
                 command="party share exp",
@@ -457,35 +463,45 @@ class SwarmCoordinator:
         in_party = bool(signals.get("in_party", False))
         all_bots: list[str] = list(signals.get("all_bots", []) or [])
         party_members: list[str] = list(signals.get("party_members", []) or [])
+        base_level = int(signals.get("base_level", signals.get("level", 1)) or 1)
 
         if not all_bots:
+            return actions
+
+        # ── LEVEL GATE: parties are for level 40+ (solo before 40 is faster) ──
+        # Prevents level-1 academy bots from issuing party create/request/share
+        # every cycle, which spams "You're not in a party." errors.
+        if base_level < 40:
             return actions
 
         # Get my state for role/skills
         my_state = self._my_state
 
-        # ── Leader: ensure party exists ──
+        # ── Leader: ensure party exists (with cooldown to avoid per-cycle re-request) ──
         if is_leader and not in_party:
-            ts = int(time.time())
-            actions.append(HeuristicAction(
-                kind="command",
-                command=f"party create SWARM{ts}",
-                confidence=0.95,
-                domain="swarm",
-                reason="[SWARM] Leader creates party",
-            ))
+            _now = time.time()
+            if _now - self._last_party_create_attempt.get(bot_name, 0) > 30:
+                self._last_party_create_attempt[bot_name] = _now
+                ts = int(_now)
+                actions.append(HeuristicAction(
+                    kind="command",
+                    command=f"party create SWARM{ts}",
+                    confidence=0.95,
+                    domain="swarm",
+                    reason="[SWARM] Leader creates party",
+                ))
 
-            # Request each bot to join
-            sorted_bots = sorted(all_bots)
-            for other in sorted_bots:
-                if other != bot_name and other not in party_members:
-                    actions.append(HeuristicAction(
-                        kind="command",
-                        command=f"party request {other}",
-                        confidence=0.90,
-                        domain="swarm",
-                        reason=f"[SWARM] Request {other} to join",
-                    ))
+                # Request each bot to join
+                sorted_bots = sorted(all_bots)
+                for other in sorted_bots:
+                    if other != bot_name and other not in party_members:
+                        actions.append(HeuristicAction(
+                            kind="command",
+                            command=f"party request {other}",
+                            confidence=0.90,
+                            domain="swarm",
+                            reason=f"[SWARM] Request {other} to join",
+                        ))
 
         # ── Non-leader: ensure partyAuto is on ──
         if not is_leader:
@@ -497,8 +513,8 @@ class SwarmCoordinator:
                 reason="[SWARM] Enable auto-accept party invites",
             ))
 
-        # ── Party share settings ──
-        if is_leader and self._party_auto_share:
+        # ── Party share settings (only when actually in a party) ──
+        if is_leader and self._party_auto_share and in_party:
             actions.append(HeuristicAction(
                 kind="command",
                 command="party share exp",

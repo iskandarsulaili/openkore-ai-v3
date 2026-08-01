@@ -53,8 +53,22 @@ def ingest_snapshot(
     # which can be older than the TTL, causing immediate cache expiry.
     from datetime import UTC, datetime
     payload.observed_at = datetime.now(UTC)
-    # Bot is sending snapshots — it knows its map. Enable heuristic.
-    payload.map_known = True
+    # map_known must reflect REAL in-game state, not the act of sending a
+    # snapshot. Char-select / disconnected snapshots have no position data
+    # (map empty, raw.in_game false). Forcing True here made the heuristic's
+    # not-in-game guard (heuristic_service `_assess_impl`) believe every bot
+    # knows its map, so phantom actions were emitted against logged-out
+    # sessions ("You must be logged in" spam). Derive from actual data.
+    try:
+        _raw = getattr(payload, "raw", None) or {}
+        if not isinstance(_raw, dict):
+            _raw = {}
+        _in_game = _raw.get("in_game", False)
+        _pos = getattr(payload, "position", None)
+        _has_map = bool(_pos and getattr(_pos, "map", None))
+        payload.map_known = bool(_in_game and _has_map)
+    except Exception:
+        payload.map_known = False
     runtime.ingest_snapshot(payload)
     logger.info(
         "snapshot_ingested",

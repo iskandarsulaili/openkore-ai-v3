@@ -1067,6 +1067,7 @@ class GodModeOrchestrator:
         self._formation: str = "v"
         self._god_mode_enabled = True
         self._last_gear_check: dict[str, float] = {}
+        self._last_party_organize: dict[str, float] = {}
         
     def assess(self, snapshots: dict[str, Any]) -> list[dict]:
         """Main assessment function - called every cycle.
@@ -1138,13 +1139,19 @@ class GodModeOrchestrator:
                 
                 # Map to ActionProposal
                 mapped_type = _GOD_MODE_ACTION_MAP.get(action_type, action_type)
+                # party_organize needs a REAL subcommand — bare 'party' errors
+                # with "You're not in a party." / syntax errors.
+                if action_type == "party_organize":
+                    _cmd = f"party create AI{int(__import__('time').time())}"
+                else:
+                    _cmd = str(mapped_type)
                 import hashlib
                 _key = f"gm_{bot_id}_{action_type}_{now.timestamp()}"
                 proposal = ActionProposal(
                     action_id=hashlib.md5(_key.encode()).hexdigest()[:32],
                     bot_id=bot_id,
                     action_type=mapped_type,
-                    command=mapped_type,
+                    command=_cmd,
                     priority_tier=ActionPriorityTier.strategic if priority >= 80 else ActionPriorityTier.tactical,
                     source="god_mode",
                     metadata={"reason": data.get("reason", ""), "gm_type": action_type},
@@ -1258,18 +1265,26 @@ class GodModeOrchestrator:
     def _assess_party(self, bot_states: dict[str, dict]) -> list[dict]:
         """Assess party coordination opportunities."""
         actions = []
-        
+
         # Check if all bots are in party
         in_party = [bid for bid, s in bot_states.items() if s.get("in_party")]
         if len(in_party) < 3:
-            # Party is incomplete - leader should invite
+            # Party is incomplete - leader should invite.
+            # LEVEL GATE + COOLDOWN: at low levels no bot can be in a party yet,
+            # so this would fire every cycle and spam bare 'party' commands
+            # ("You're not in a party." errors). Only organize at level 40+
+            # and at most once per 60s per leader.
             leader = sorted(bot_states.keys())[0]
-            actions.append({
-                "bot_id": leader,
-                "type": "party_organize",
-                "priority": 90,
-                "data": {"reason": "incomplete_party"},
-            })
+            _lv = int((bot_states.get(leader) or {}).get("level", 1) or 1)
+            _now = __import__("time").time()
+            if _lv >= 40 and _now - self._last_party_organize.get(leader, 0) > 60:
+                self._last_party_organize[leader] = _now
+                actions.append({
+                    "bot_id": leader,
+                    "type": "party_organize",
+                    "priority": 90,
+                    "data": {"reason": "incomplete_party"},
+                })
         
         # Check for heal opportunities
         for bot_id, state in bot_states.items():

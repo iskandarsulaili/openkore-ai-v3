@@ -36,13 +36,25 @@ sub on_char_screen {
     }
     
     if (@valid_slots) {
-        # Use the first valid character
-        my $slot = $valid_slots[0];
-        message "[auto_fix] Using slot $slot (already has character)\n", 'system';
+        # Respect the configured slot if it holds a valid character;
+        # otherwise fall back to the first valid slot.
+        my $slot;
+        if (defined $config{char} && $config{char} ne '' && $config{char} =~ /^\d+$/
+            && $chars[$config{char}] && $chars[$config{char}]->{name} ne '') {
+            $slot = $config{char};
+            message "[auto_fix] Config slot $slot is valid, keeping it\n", 'system';
+        } else {
+            $slot = $valid_slots[0];
+            message "[auto_fix] Using slot $slot (already has character)\n", 'system';
+        }
         configModify("char", $slot);
         $ran = 1;
         Plugins::delHook('charSelectScreen', $hook) if $hook;
-        $args->{return} = \"";
+        # IMPORTANT: do NOT set $args->{return} here. charSelectScreen's
+        # autoLogin block (which sends the 0x66 char_login packet) only runs
+        # when the plugin does not hijack the return value. Returning a
+        # truthy ref (\ "\"") made charSelectScreen return early and the bot
+        # never entered the game.
         return;
     }
     

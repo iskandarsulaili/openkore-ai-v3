@@ -75,7 +75,7 @@ class SocialDomain(BaseDomain):
         _party_incomplete = (_actual_count + 1) < _expected_count
 
         # ── PARTY LEAVE (level < 40: solo is faster) ──
-        self._check_party_leave(actions, bot_id, base_level, state, service)
+        self._check_party_leave(actions, bot_id, base_level, state, service, party_in=_party_in)
 
         # ── LEADER party creation (level >= 40) ──
         if _is_leader and _party_incomplete and base_level >= 40:
@@ -92,10 +92,18 @@ class SocialDomain(BaseDomain):
         base_level: int,
         state: str,
         service: Any,
+        party_in: bool = False,
     ) -> None:
-        """Force leave party if level < 40 (solo is faster)."""
+        """Force leave party if level < 40 (solo is faster).
+
+        Only fires when the bot is ACTUALLY in a party — issuing
+        'party leave' to a bot with no party produces
+        "You're not in a party." error spam every cycle.
+        """
         if base_level >= 40:
             return
+        if not party_in:
+            return  # not in a party — nothing to leave, no spam
         _now = __import__("time").time()
         _last_leave = service._last_party_leave.get(bot_id, 0)
         if _now - _last_leave > 30:

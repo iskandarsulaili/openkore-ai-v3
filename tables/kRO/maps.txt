@@ -433,6 +433,10 @@ prt_fild05.rsw#프론테라 필드#
 prt_fild06.rsw#프론테라 필드#
 prt_fild07.rsw#프론테라 필드#
 prt_fild08.rsw#프론테라 필드#
+prt_fild08a.rsw#프론테라 필드 A#
+prt_fild08b.rsw#프론테라 필드 B#
+prt_fild08c.rsw#프론테라 필드 C#
+prt_fild08d.rsw#프론테라 필드 D#
 prt_fild09.rsw#프론테라 필드#
 prt_fild10.rsw#프론테라 필드#
 prt_fild11.rsw#프론테라 필드#
@@ -606,6 +610,20 @@ prt_castle.rsw#프론테라 성 내부#
 prt_church.rsw#프론테라 성당 내부#
 izlude.rsw#위성도시 이즈루드#
 izlude_in.rsw#이즈루드 내부#
+izlude_a.rsw#위성도시 이즈루드 A#
+izlude_b.rsw#위성도시 이즈루드 B#
+izlude_c.rsw#위성도시 이즈루드 C#
+izlude_d.rsw#위성도시 이즈루드 D#
+iz_int.rsw#이즈루드 아카데미#
+iz_int01.rsw#이즈루드 아카데미 1#
+iz_int02.rsw#이즈루드 아카데미 2#
+iz_int03.rsw#이즈루드 아카데미 3#
+iz_int04.rsw#이즈루드 아카데미 4#
+int_land.rsw#외딴 섬#
+int_land01.rsw#외딴 섬 1#
+int_land02.rsw#외딴 섬 2#
+int_land03.rsw#외딴 섬 3#
+int_land04.rsw#외딴 섬 4#
 izlu2dun.rsw#바이아란 섬#
 monk_in.rsw#성 카피톨리나 수도원 내부#
 prt_are_in.rsw#아레나 대기실#

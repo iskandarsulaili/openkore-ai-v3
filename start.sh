@@ -33,7 +33,19 @@ for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
     BOT_NAMES+=("$_name")
     BOT_MASTER["$_name"]="Local rAthena AI World"
     BOT_USER["$_name"]="$_name"
-    BOT_CHAR["$_name"]="0"
+    # Preserve each bot's existing char slot from its config (critical:
+    # overwriting with 0 breaks login when the character lives at slot 5/7/3/2/4/6).
+    _cfg_char="$SCRIPT_DIR/.bot_profiles/$_name/control/config.txt"
+    if [ -f "$_cfg_char" ]; then
+        _existing_char=$(grep -E '^char ' "$_cfg_char" | head -1 | awk '{print $2}')
+        if [ -n "$_existing_char" ] && [ "$_existing_char" != "0" ]; then
+            BOT_CHAR["$_name"]="$_existing_char"
+        else
+            BOT_CHAR["$_name"]="0"
+        fi
+    else
+        BOT_CHAR["$_name"]="0"
+    fi
 done
 shopt -u nullglob
 # Fallback if no profiles found
@@ -415,9 +427,12 @@ case "${1:-all}" in
         echo ""
 
         start_sidecar
+        # Stagger bot starts (12s apart) — the char-server SEGVs when 8 bots
+        # hit char-select simultaneously. 12s lets each bot finish
+        # char-select -> map-entry before the next one connects.
         for name in "${BOT_NAMES[@]}"; do
             start_bot "$name"
-            sleep 3
+            sleep 12
         done
 
         # Wait for bots to connect before showing status

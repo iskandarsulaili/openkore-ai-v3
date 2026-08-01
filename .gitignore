@@ -104,3 +104,22 @@ test_rijndael.pl
 .start_watchdog.sh
 AI_sidecar/ai_sidecar/data/session_state.json
 AI_sidecar/data/session_state.json
+# ── Local ops scripts (never pushed to GitHub) ────────────────────────────
+scripts/game_server_keepalive.py
+scripts/game_server_keepalive.log
+logs/game_server_keepalive.log
+# ── Root-level runtime persistence (sidecar state churn, never commit) ────
+data/adaptive/
+data/heuristic/
+data/swarm_decision.json
+data/swarm_state_*.json
+data/learning.db
+data/learning.db-shm
+data/learning.db-wal
+data/quests.db
+data/quests.db-shm
+data/quests.db-wal
+data/sidecar_experience.sqlite
+control/ai_sidecar_macros.txt
+control/ai_sidecar_generated_macros.txt
+AI_sidecar/ai_sidecar/skills/.usage.json

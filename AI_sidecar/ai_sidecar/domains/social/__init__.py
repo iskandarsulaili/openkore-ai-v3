@@ -33,11 +33,13 @@ class SocialDomain(BaseDomain):
 
     def assess(self, signals: dict[str, Any], actions: list[Any], bot_id: str) -> None:
         in_party = signals.get("in_party", False)
-        
-        # Party management
-        if not in_party and bot_id not in self._party_cache:
+        base_level = int(signals.get("base_level", signals.get("level", 1)) or 1)
+
+        # Party management (level 40+ only — solo before 40 is faster,
+        # and 'party create' with no name errors on a non-party bot)
+        if not in_party and bot_id not in self._party_cache and base_level >= 40:
             actions.append(HeuristicAction(
-                kind="command", command="party create",
+                kind="command", command=f"party create AI{int(__import__('time').time())}",
                 confidence=0.8, reason="Create party",
                 domain="social",
             ))

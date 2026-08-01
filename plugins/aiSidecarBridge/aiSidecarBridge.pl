@@ -1276,6 +1276,18 @@ sub on_command_intercept {
 	my $full_cmd = $switch . ' ' . $cmd_args;
 	$full_cmd =~ s/\s+$//;
 
+	# ── LOGGED-OUT ATTRIBUTION: catch every command attempt from every source ──
+	# Core AI, macros, plugins and all bridge paths funnel through
+	# Commands::run — so logging any attempt while the bot is NOT in-game
+	# names the residual emitter definitively in one restart + 60s.
+	# Uses network state, not $char (OpenKore keeps $char stale through
+	# char-select / relogin).
+	if (!$net || $net->getState() != Network::IN_GAME) {
+		my @_ca = caller(1);
+		my $_caller = @_ca ? ($_ca[3] || 'unknown') : 'unknown';
+		warning "[cmd_pre_logged_out] cmd=$full_cmd caller=$_caller\n", 'aiSidecarBridge', 1;
+	}
+
 	# ── MOVE HUMANIZATION: intercept move x y and perturb coordinates ──
 	if ($switch eq 'move' && $cmd_args =~ /^\s*(\d+)\s+(\d+)\s*$/) {
 		my $tx = int($1);
@@ -2059,6 +2071,7 @@ sub _build_snapshot_payload {
 		ai_queue   => _trim(join(',', @ai_seq[0 .. ($#ai_seq < 4 ? $#ai_seq : 4)]), $max_raw),
 		in_game => ($net && $net->getState() == Network::IN_GAME) ? JSON::PP::true() : JSON::PP::false(),
 		net_state => ($net ? ($net->getState() + 0) : -1),
+		lockMap => _trim($::config{lockMap} || '', 64),
 		reconnect_age_s => ($last_disconnect_at_ms > 0 && $net && $net->getState() == Network::IN_GAME)
 			? ((_now_ms() - $last_disconnect_at_ms) / 1000.0)
 			: 0.0,
@@ -3145,6 +3158,21 @@ sub _execute_action {
 	
 	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
 
+	# ── LOGGED-OUT GATE (hoisted to top of dispatch) ──
+	# Previously an elsif at the END of the dispatch chain, so early
+	# execution branches (auto-stand ~3245, party-leave ~3278, escape
+	# ~3322) ran Commands::run BEFORE the gate and fired in-game commands
+	# against a logged-out session — "You must be logged in" spam with no
+	# [ai_action] trace. Hoisting here short-circuits any effective command
+	# that isn't in the char_select/char_create/conf reconnect family
+	# before ANY internal branch runs. The elsif at the chain end remains
+	# as defense-in-depth.
+	if (_logged_out_execution_block($effective_command)) {
+		$rewrite_kind = 'logged_out_gate';
+		$effective_command = '';
+		debug "[logged_out_gate_hoisted] blocked '$command' while bot not in game\n", 'aiSidecarBridge', 1;
+	}
+
 	# ── AI action log — proves decisions reach OpenKore
 	if ($effective_command ne '' && $rewrite_kind ne 'committed_action_blocked' && $rewrite_kind ne 'empty_command') {
 		warning "[ai_action] id=$action_id kind=$kind cmd=$command effective=$effective_command rewrite=$rewrite_kind\n", 'aiSidecarBridge', 1;
@@ -3251,9 +3279,13 @@ sub _execute_action {
 	# Once a bot has left a party, it should never try again unless it somehow rejoins.
 	# The bridge tracks this independently of the sidecar's cooldown.
 	# Uses a persistent file-based state to survive restarts.
+	# NOTE: the latch is bypassed while the bot is ACTUALLY in a party, so
+	# stale-party cleanup after a rejoin still works (one-way latches that
+	# never reset would otherwise suppress every future 'party leave').
 	if (lc($command || '') eq 'party leave') {
 		# Read persistent state from file
 		my $_pl_file = _party_leave_state_file();
+		my $_pl_actually_in_party = (defined($char) && defined($char->{party})) ? 1 : 0;
 		my $_has_left_party = 0;
 		if (-e $_pl_file) {
 			open my $_pl_fh, '<', $_pl_file or do { debug "[party_leave] cannot read $_pl_file: $!\n", 'aiSidecarBridge', 1 };
@@ -3264,7 +3296,7 @@ sub _execute_action {
 				close $_pl_fh;
 			}
 		}
-		if ($_has_left_party) {
+		if ($_has_left_party && !$_pl_actually_in_party) {
 			($success, $result_code, $msg) = (1, 'ok', 'party_leave_already_left');
 			$rewrite_kind = 'party_leave_already_left';
 			$effective_command = '';
@@ -3474,6 +3506,13 @@ sub _execute_action {
 		($success, $result_code, $msg) = (0, 'command_too_long', 'command length exceeds policy');
 	} elsif (!_command_allowed($effective_command)) {
 		($success, $result_code, $msg) = (0, 'policy_rejected', 'command rejected by bridge policy');
+	} elsif (_logged_out_execution_block($effective_command)) {
+		# ── LOGGED-OUT GATE: never execute in-game commands while the bot is
+		# disconnected / at char-select. Executing them produces
+		# "You must be logged in the game to use this command" error spam.
+		# char_select/char_create/reconnect actions are the ONLY ones allowed
+		# through while logged out — they are what bring the bot back in-game.
+		($success, $result_code, $msg) = (1, 'ok', 'skipped: bot not in game (logged-out gate)');
 	} else {
 		my $ok = eval { Commands::run($effective_command); 1; };
 		if ($ok) {
@@ -4035,6 +4074,11 @@ sub _get_mvp_strategy {
 sub _party_leave_state_file {
 	my $_pl_dir = $::config{control} || '.';
 	$_pl_dir =~ s/\/control$//;
+	# Normalize per-profile control dirs (.bot_profiles/<name>/control) to a
+	# single shared location, so the leave-suppression latch is actually
+	# honored by all 8 bots (previously it resolved to a per-profile path
+	# that was never created, so 'party leave' fired and spammed every cycle).
+	$_pl_dir =~ s{\.bot_profiles/[^/]+$}{.bot_profiles};
 	return "$_pl_dir/ai_sidecar_party_leave_state.txt";
 }
 
@@ -4286,6 +4330,17 @@ sub _execute_macro_reload_action {
 
 sub _run_safe_openkore_command {
 	my ($command) = @_;
+	# LOGGED-OUT GATE: this helper is used by the macro/config hot-reload
+	# paths, which run OUTSIDE _execute_action and therefore bypass the
+	# hoisted logged-out gate. Block in-game commands here too — reloading
+	# macros while at char-select is fine (config-only), but executing
+	# in-game commands is not.
+	my $_rs_root = lc(($command =~ /^\s*(\S+)/)[0] || '');
+	if (!($net && $net->getState() == Network::IN_GAME)
+		&& $_rs_root ne 'char_select' && $_rs_root ne 'char_create' && $_rs_root ne 'conf') {
+		debug "[safe_cmd_logged_out] blocked '$command' while bot not in game\n", 'aiSidecarBridge', 2;
+		return (1, 'skipped: bot not in game');
+	}
 	my $ok = eval { Commands::run($command); 1; };
 	if ($ok) {
 		debug "[aiSidecarBridge] executed safe command '$command'\n", 'aiSidecarBridge', 2;
@@ -5058,6 +5113,31 @@ sub _http_error_text {
 	return 'none' if ref($resp) ne 'HASH';
 	my $err = _trim(_scalarize($resp->{error}), 220);
 	return $err ne '' ? $err : 'none';
+}
+
+# ── LOGGED-OUT GATE: block in-game commands while the bot is not in-game ──
+# Executing normal commands while disconnected / at char-select produces
+# "You must be logged in the game to use this command" error spam.
+# char_select / char_create / conf (char slot select) are the ONLY commands
+# allowed through while logged out — they are what bring the bot back in-game.
+sub _logged_out_execution_block {
+	my ($command) = @_;
+	# Use the NETWORK state as the in-game signal, NOT $char presence.
+	# OpenKore keeps $char populated (stale) through char-select and
+	# relogin, so gating on $char alone lets logged-out commands through.
+	my $_in_game = ($net && $net->getState() == Network::IN_GAME) ? 1 : 0;
+	return 0 if $_in_game;
+	# If the network is not connected at all, there is nothing to execute
+	# against — but still let the reconnect-family commands through.
+	my $root = lc(($command =~ /^\s*(\S+)/)[0] || '');
+	return 0 if $root eq '';
+	# Always allow the reconnect / char-management family.
+	for my $_ok_root ('char_select', 'char_create', 'conf') {
+		return 0 if $root eq $_ok_root;
+	}
+	# Bare 'party'/'guild' info commands are harmless but noisy — block them
+	# too so the bot stays quiet while logged out.
+	return 1;
 }
 
 sub _command_allowed {

@@ -38,6 +38,31 @@ from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
 
 logger = logging.getLogger(__name__)
 
+def _snapshot_disconnected_safe(snapshot: Any) -> bool:
+    """Module-level check: is this snapshot for a disconnected / logged-out bot?
+
+    Handles both pydantic BotStateSnapshot objects and plain dicts.
+    Used by _emit_heuristic_actions to skip phantom action emission.
+    """
+    try:
+        if isinstance(snapshot, dict):
+            raw = snapshot.get("raw", {})
+            if not isinstance(raw, dict):
+                raw = {}
+        else:
+            raw = getattr(snapshot, "raw", {}) or {}
+            if not isinstance(raw, dict):
+                raw = {}
+        if raw.get("in_game") is False:
+            return True
+        status = str(raw.get("status") or raw.get("state") or raw.get("net_state") or "").strip().lower()
+        return status in {
+            "offline", "disconnected", "disconnect", "reconnecting",
+            "connecting", "not_connected",
+        }
+    except Exception:
+        return False
+
 def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
     """Emit heuristic actions to the action queue.
     Uses the first registered bot if none specified.
@@ -237,14 +262,23 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             _log.info(f"snapshot_found: bot_id={bot_id} snap_bot={_snap_bot} map={_snap_map}")
                 # If no per-bot snapshot, use cached last known state
                 if latest is None:
-                    _cached = self._last_snapshot.get(bot_id)
-                    if _cached is not None:
-                        _log.info(f"snapshot_cached: bot_id={bot_id} using cached snapshot")
-                        latest = _cached
-                    else:
-                        _log.warning(f"snapshot_missing: bot_id={bot_id} no snapshot available - skipping")
-                        return 0
+                    # NOTE: previous code referenced self._last_snapshot from this
+                    # module-level function — NameError every time, silently swallowed
+                    # by the outer except, leaving latest=None and emitting phantom
+                    # actions on DEFAULT signals for bots that are disconnected or
+                    # mid-char-select ("You must be logged in" spam). Fixed: skip
+                    # emission entirely when we have no real snapshot.
+                    _log.info(f"snapshot_missing: bot_id={bot_id} no snapshot available - skipping")
+                    return 0
                 if latest is not None:
+                    # ── IN-GAME GATE: never emit heuristic actions for a bot that
+                    # is disconnected / at char-select. The bridge would execute
+                    # them against a logged-out session ("You must be logged in").
+                    # Reconnect / char-select / char_create actions are handled by
+                    # the bridge and reflex layer, not by heuristic emission.
+                    if self_disconnected := _snapshot_disconnected_safe(latest):
+                        _log.info(f"heuristic_skip_disconnected: bot_id={bot_id}")
+                        return 0
                     if isinstance(latest, dict):
                         v = latest.get("vitals") or {}
                         signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
@@ -271,12 +305,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Read in_party from raw bridge digest if not at top level
                         if not signals["in_party"]:
                             _raw = latest.get("raw", {}) or {}
-                            _raw_in_party = _raw.get("in_party", False)
-                            if _raw_in_party:
-                                signals["in_party"] = bool(_raw_in_party)
-                                _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
-                            else:
+                            if "in_party" not in _raw:
+                                # Key genuinely absent from the bridge digest — schema drift, log it
                                 _log.info(f"raw_in_party_missing: bot_id={bot_id} raw_keys={list(_raw.keys())[:10]}")
+                            else:
+                                _raw_in_party = _raw.get("in_party", False)
+                                if _raw_in_party:
+                                    signals["in_party"] = bool(_raw_in_party)
+                                    _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
                         signals["party_members"] = latest.get("party_members", []) or []
                         if not signals["party_members"]:
                             _raw = latest.get("raw", {}) or {}
@@ -414,6 +450,15 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             signals["characters"] = _raw.get("characters", []) or []
                         pos = getattr(latest, "position", None) or {}
                         signals["map"] = str(getattr(pos, "map", "") or "")
+                        # lockMap from raw bridge digest (object branch — the live
+                        # path for BotStateSnapshot). Without this, the cold-start
+                        # transit protection (attackAuto 0 while crossing fields)
+                        # never fires because signals["lockMap"] stays empty.
+                        _raw_lm = getattr(latest, "raw", {}) or {}
+                        if isinstance(_raw_lm, dict):
+                            _lm_val = _raw_lm.get("lockMap", "") or ""
+                            if _lm_val:
+                                signals["lockMap"] = str(_lm_val)
                         signals["job_name"] = str(getattr(prog, "job_name", "novice") or "novice")
                         signals["job_level"] = int(getattr(prog, "job_level", 0) or 0)
                         signals["stat_points"] = int(getattr(prog, "stat_points", 0) or 0)
@@ -423,12 +468,14 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Read in_party from raw bridge digest if not at top level
                         if not signals["in_party"]:
                             _raw = getattr(latest, "raw", {}) or {}
-                            _raw_in_party = _raw.get("in_party", False)
-                            if _raw_in_party:
-                                signals["in_party"] = bool(_raw_in_party)
-                                _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
-                            else:
+                            if "in_party" not in _raw:
+                                # Key genuinely absent from the bridge digest — schema drift, log it
                                 _log.info(f"raw_in_party_missing: bot_id={bot_id} raw_keys={list(_raw.keys())[:10]}")
+                            else:
+                                _raw_in_party = _raw.get("in_party", False)
+                                if _raw_in_party:
+                                    signals["in_party"] = bool(_raw_in_party)
+                                    _log.info(f"raw_in_party_found: bot_id={bot_id} raw_in_party={_raw_in_party}")
                         signals["party_members"] = getattr(latest, "party_members", []) or []
                         if not signals["party_members"]:
                             _raw = getattr(latest, "raw", {}) or {}
@@ -4795,6 +4842,21 @@ class PDCALoop:
                                         importance=3,
                                         metadata={"map": _map, "level": _level},
                                     )
+                                    # ── DYNAMIC PORTAL DISCOVERY FEED ──
+                                    # A map transition means the bot used a portal /
+                                    # warp / spawn point. Feed it into the discovery
+                                    # engine so the portal graph learns the server's
+                                    # real topology (RULE.md §19 self-adapt/learn).
+                                    # NOTE: record_portal_exit with (0,0) is skipped
+                                    # by the same-map guard — only map_visit (which
+                                    # builds the explored-map set used by the
+                                    # unexplored-map scout) is meaningful here.
+                                    try:
+                                        from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
+                                        _dpd = get_dynamic_portal_discovery()
+                                        _dpd.record_map_visit(_reflex_bot_id, _map)
+                                    except Exception:
+                                        pass
                                 _last_map[_reflex_bot_id] = _map
                                 object.__setattr__(self, "_last_map", _last_map)
                         except Exception:

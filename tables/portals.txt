@@ -577,6 +577,63 @@ bat_c01 148 54 bat_room 154 150 0 c
 izlude 125 257 iz_ac01 99 29
 izlude 130 257 iz_ac01 99 29
 iz_ac01 100 24 izlude 127 253
+# Intro rooms (iz_int family): room_out warp cell (27,30)->(51,30)
+iz_int 27 30 iz_int 51 30
+iz_int01 27 30 iz_int01 51 30
+iz_int02 27 30 iz_int02 51 30
+iz_int03 27 30 iz_int03 51 30
+iz_int04 27 30 iz_int04 51 30
+# Intro rooms: room_in warp cell (47,30)->(22,30)
+iz_int 47 30 iz_int 22 30
+iz_int01 47 30 iz_int01 22 30
+iz_int02 47 30 iz_int02 22 30
+iz_int03 47 30 iz_int03 22 30
+iz_int04 47 30 iz_int04 22 30
+# Intro rooms: ship_out OnTouch (56,15) -> int_land (85,107)
+iz_int 56 15 int_land 85 107
+iz_int01 56 15 int_land01 85 107
+iz_int02 56 15 int_land02 85 107
+iz_int03 56 15 int_land03 85 107
+iz_int04 56 15 int_land04 85 107
+# Secluded island: intro_to_izlude OnTouch (49,57) -> izlude clones (196,209)
+int_land 49 57 izlude 196 209
+int_land01 49 57 izlude_a 196 209
+int_land02 49 57 izlude_b 196 209
+int_land03 49 57 izlude_c 196 209
+int_land04 49 57 izlude_d 196 209
+# Izlude clone towns: north exit (20,98) -> prt_fild08 clones (367,212)
+izlude_a 20 98 prt_fild08a 367 212
+izlude_b 20 98 prt_fild08b 367 212
+izlude_c 20 98 prt_fild08c 367 212
+izlude_d 20 98 prt_fild08d 367 212
+# prt_fild08 clones: south exit back to izlude clones (server: prtf005_a 371,212 -> 24,98)
+prt_fild08a 371 212 izlude_a 24 98
+prt_fild08b 371 212 izlude_b 24 98
+prt_fild08c 371 212 izlude_c 24 98
+prt_fild08d 371 212 izlude_d 24 98
+# prt_fild08 clones: west exits to prt_fild07 (server: prtf15-1_* 16,187 / prtf14-1_* 16,239)
+prt_fild08a 16 187 prt_fild07 380 186
+prt_fild08b 16 187 prt_fild07 380 186
+prt_fild08c 16 187 prt_fild07 380 186
+prt_fild08d 16 187 prt_fild07 380 186
+prt_fild08a 16 239 prt_fild07 379 239
+prt_fild08b 16 239 prt_fild07 379 239
+prt_fild08c 16 239 prt_fild07 379 239
+prt_fild08d 16 239 prt_fild07 379 239
+# prt_fild08 clones: south exit to prontera (server: prtf004_* 170,378 -> 156,26)
+prt_fild08a 170 378 prontera 156 26
+prt_fild08b 170 378 prontera 156 26
+prt_fild08c 170 378 prontera 156 26
+prt_fild08d 170 378 prontera 156 26
+# prt_fild08 clones: north/northwest exits to moc_fild01 (server: prtf023_* 233,16 / prtf024_* 55,21)
+prt_fild08a 233 16 moc_fild01 239 382
+prt_fild08b 233 16 moc_fild01 239 382
+prt_fild08c 233 16 moc_fild01 239 382
+prt_fild08d 233 16 moc_fild01 239 382
+prt_fild08a 55 21 moc_fild01 56 384
+prt_fild08b 55 21 moc_fild01 56 384
+prt_fild08c 55 21 moc_fild01 56 384
+prt_fild08d 55 21 moc_fild01 56 384
 # Garden
 iz_ac01 45 80 new_1-3 95 171 0 c r0 c
 new_1-3 96 176 iz_ac01 49 73
@@ -1334,7 +1391,7 @@ iz_dun03 29 63 iz_dun02 339 331
 iz_dun03 264 245 iz_dun04 26 24
 iz_dun04 26 24 iz_dun03 264 245
 izlu2dun 108 83 iz_dun00 168 173
-izlude 30 78 prt_fild08 371 212
+izlude 20 98 prt_fild08 367 212
 izlude 52 140 izlude_in 74 158
 izlude 109 151 izlude_in 65 84
 izlude 148 148 izlude_in 116 46
@@ -1820,7 +1877,7 @@ payon_in03 160 17 payon_in03 172 32
 payon_in03 186 32 payon_in03 160 17
 payon_in03 190 17 payon_in03 186 32
 payon_in03 146 39 payon 186 233
-prontera 22 203 prt_fild05 373 205
+prontera 22 203 prt_fild05 367 205
 prontera 42 67 prt_in 47 29
 prontera 45 346 prt_in 80 113
 prontera 73 100 prt_in 208 179
@@ -1923,7 +1980,7 @@ prt_fild08 16 239 prt_fild07 383 239
 prt_fild08 55 21 moc_fild01 56 384
 prt_fild08 170 378 prontera 156 26
 prt_fild08 233 16 moc_fild01 239 382
-prt_fild08 371 212 izlude 30 78
+prt_fild08 371 212 izlude 24 98
 prt_fild09 14 139 prt_fild10 339 126
 prt_fild09 87 380 prt_fild07 84 13
 prt_fild09 224 380 prt_fild07 206 12

@@ -24,6 +24,7 @@ from ai_sidecar.api.routers import (
     npc_dialog,
     acknowledgements,
     actions,
+    capabilities,
     combat,
     humanize,
     conscious,
@@ -248,6 +249,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/v1/health")
     app.include_router(ingest.router)
     app.include_router(actions.router)
+    app.include_router(capabilities.router)
     app.include_router(skills.router)
     app.include_router(acknowledgements.router)
     app.include_router(macros.router)

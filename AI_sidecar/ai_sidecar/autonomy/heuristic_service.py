@@ -1710,11 +1710,43 @@ class HeuristicService:
                         if _bl <= 15:
                             if _bl <= 5:
                                 # Level 1-5: Prontera town only, attack Porings only
-                                _actions.append(HeuristicAction(kind="command", command="lockMap prontera", confidence=0.85, reason=f"Cold start: stay in town (lvl {_bl})", domain="progression"))
+                                # NOTE: 'set lockMap' (not bare 'lockMap') so the
+                                # bridge's _sidecar_set_lockMap marker shields it
+                                # from the hunting-map stickiness override.
+                                _actions.append(HeuristicAction(kind="command", command="set lockMap prontera", confidence=0.85, reason=f"Cold start: stay in town (lvl {_bl})", domain="progression"))
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
+                                # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
+                                # A level-1 Novice cannot survive monster fields
+                                # (prt_fild05/08, etc.) en route to Prontera town.
+                                # If the bot is NOT yet on its lockMap, disable
+                                # attacking entirely so it RUNS through the fields
+                                # instead of fighting and dying. attackAuto 2 (auto
+                                # everywhere) is the default — force 0 while in
+                                # transit; OpenKore re-enables it once in town via
+                                # attackAuto_inLockOnly semantics.
+                                _cur_map = str(signals.get("map", "") or "").lower()
+                                _lock = str(signals.get("lockMap", "") or "").lower()
+                                # Keyed on map TYPE, not lock equality: the bridge's
+                                # hunting-map stickiness overrides lockMap=current-map
+                                # whenever a bot is on *_fild, so lock==cur is TRUE on
+                                # every field — an equality-based "arrived" branch would
+                                # re-enable attacking precisely where a level-1 bot must
+                                # run, not fight. fild + low level ⇒ transit (run);
+                                # town (non-fild) matching lock ⇒ arrived (attack).
+                                if "fild" in _cur_map and _bl <= 5:
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto 0", confidence=0.90, reason=f"Cold start: transit through {_cur_map} at lvl {_bl} — run, don't fight", domain="survival"))
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 1", confidence=0.90, reason="Cold start: only attack on lockMap", domain="survival"))
+                                elif _cur_map and _cur_map == _lock and "fild" not in _cur_map:
+                                    # ── ARRIVED AT TOWN: re-enable attacking ──
+                                    # Reverse the transit protection so the bot can
+                                    # actually farm Porings once it reaches lockMap.
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto 3", confidence=0.90, reason=f"Cold start: on lockMap {_cur_map} at lvl {_bl} — attack enabled", domain="survival"))
+                                    _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 0", confidence=0.90, reason="Cold start: attack enabled outside lockMap too", domain="survival"))
                             else:
                                 # Level 6-15: prt_fild05, avoid dangerous mobs
-                                _actions.append(HeuristicAction(kind="command", command="lockMap prt_fild05", confidence=0.75, reason=f"Cold start: field at lvl {_bl}", domain="progression"))
+                                # NOTE: 'set lockMap' so the bridge marker shields
+                                # it from the hunting-map stickiness override.
+                                _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild05", confidence=0.75, reason=f"Cold start: field at lvl {_bl}", domain="progression"))
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 1 0 0", confidence=0.6, reason="Avoid Pupa", domain="progression"))
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Thief Bug 1 0 0", confidence=0.6, reason="Avoid Thief Bug", domain="progression"))
                         if _bl <= 25:

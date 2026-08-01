@@ -26,6 +26,36 @@ logger = logging.getLogger(__name__)
 _BRIDGE_ALLOWED_ROOTS = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
 
 
+def _render_system_capabilities(invariants: dict[str, object]) -> str:
+    """Render the full system capability context (RULE.md §18/§19) for LLM prompts.
+
+    Uses the capability registry's rendered block when available; falls back to
+    the compact capability_truth line otherwise.
+    """
+    try:
+        from ai_sidecar.capabilities import capabilities_to_prompt_block
+        block = capabilities_to_prompt_block()
+        if block:
+            return block
+    except Exception:  # pragma: no cover - defensive fallback
+        logger.warning("planner_system_capabilities_render_failed", exc_info=True)
+    cap_raw = invariants.get("capability_truth")
+    cap: dict[str, Any] = cap_raw if isinstance(cap_raw, dict) else {}
+    cap_direct_raw = cap.get("direct")
+    cap_config_raw = cap.get("config")
+    cap_macro_raw = cap.get("macro")
+    cap_direct: dict[str, Any] = cap_direct_raw if isinstance(cap_direct_raw, dict) else {}
+    cap_config: dict[str, Any] = cap_config_raw if isinstance(cap_config_raw, dict) else {}
+    cap_macro: dict[str, Any] = cap_macro_raw if isinstance(cap_macro_raw, dict) else {}
+    return (
+        "SYSTEM CAPABILITIES: "
+        f"direct tool={cap_direct.get('tool', 'propose_actions')} "
+        f"roots={sorted(_BRIDGE_ALLOWED_ROOTS)}; "
+        f"config tool={cap_config.get('tool', 'plan_control_change')}; "
+        f"macro tool={cap_macro.get('tool', 'publish_macro')}"
+    )
+
+
 def _now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -763,6 +793,11 @@ class PlanGenerator:
             f'Known upgrade rule ids (reference only): {known_rule_ids[:12]}. '
             f'Trigger context: reason={context.context_overrides.get("trigger_reason", "none")} context={str(context.context_overrides.get("trigger_context", {}))[:200]}. '
         )
+        # Inject full system capability context (RULE.md §18/§19) so the LLM
+        # knows what the AI system can do and can delegate/plan/tool-call across it.
+        capability_block = _render_system_capabilities(invariants)
+        if capability_block:
+            base_prompt += "\n" + capability_block
         prompt_limit = int(self.max_user_prompt_chars) + 14000
         domain_blocks: list[str] = []
         domain_context = {

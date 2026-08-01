@@ -667,6 +667,25 @@ def load_ro_knowledge(
     )
 
 
+def _system_capabilities_context() -> dict[str, object]:
+    """Full system capability context for LLM prompts (RULE.md §18/§19).
+
+    Provides the complete picture of what the AI system can do — execution
+    domains, direct command roots, knowledge systems, learning systems, fleet
+    coordination, and API surface — so the LLM can process/delegate/plan/
+    execute/tool-call across the entire capability surface.
+    """
+    try:
+        from ai_sidecar.capabilities import get_capabilities_registry
+        return get_capabilities_registry()
+    except Exception:  # pragma: no cover - defensive fallback
+        logger.warning(
+            "autonomy_system_capabilities_unavailable",
+            extra={"event": "autonomy_system_capabilities_unavailable"},
+        )
+        return {}
+
+
 def prompt_invariants(
     *,
     knowledge: ROKnowledgeBundle | None = None,
@@ -708,6 +727,10 @@ def prompt_invariants(
                 ],
             },
         },
+        # Full system capability context (RULE.md §18/§19): lets the LLM know
+        # EVERYTHING the AI system can do so it can process/delegate/plan/
+        # execute/tool-call across the whole surface — not just direct commands.
+        "system_capabilities": _system_capabilities_context(),
         "known_upgrade_rule_ids": list(known_rule_ids[: max(1, int(max_known_rules))]),
     }
 

@@ -206,6 +206,35 @@ This system is a God-Tier AI, NOT a human mimicry bot:
 - **Speed is a feature**: The fastest kill rate, the shortest downtime, the most efficient routing. God-tier means optimal, not invisible.
 - **However**: Respect server rules. Don't flood commands faster than the server can process them (use rate limiting, not randomized delays).
 
+### 18. Crowdsource & Delegate to Solve Problems
+The AI fleet must **crowdsource and delegate** to solve any issue or achieve anything — no single bot (or the sidecar alone) should brute-force a problem when a coordinated solution exists:
+- **Crowdsource information**: When one bot lacks data (monster spawns, shop prices, safe routes, portal coordinates, unknown maps), query the fleet — other bots report what they observe, and the combined picture beats any single observer.
+- **Delegate tasks**: Break a complex goal (map discovery, market price survey, multi-zone scouting, portal mapping) into subtasks and assign them to specific bots; collect and merge results.
+- **Sequence thinking + action**: Some solutions need a sequence combination of thinking and action — e.g. scout a route with one bot → verify safety with a second → then move the group. Chain exploration, verification, and execution instead of acting on one bot's single observation.
+- **Solve gaps with the fleet**: Missing portal data, unknown NPC positions, unverified spawn tables → send a scout to observe and report back, rather than guessing or hardcoding.
+- **Never block on one bot**: If one bot is stuck or blind, have a peer confirm/assist; the fleet's knowledge is the union of all members' observations.
+- **Implementation home**: Fleet-level coordination lives in `AI_sidecar/ai_sidecar/strategy/empire_manager.py` and `AI_sidecar/ai_sidecar/strategy/unified_consciousness.py` (plus the PDCA decision layer in `pdca_loop.py`); individual bot actions still go through the action queue.
+
+### 19. Self-Adapt / Self-Learn for Custom Server Layouts
+The conscious AI must **self-adapt, self-improve, and self-learn for ANY server**, because different servers ship custom portals, NPCs, maps, items, and warp layouts that no static table can fully capture:
+- **Never trust tables as complete**: `portals.txt`, map knowledge, NPC lists are STARTING knowledge, not ground truth. The server's actual layout (observed in-game) wins.
+- **Detect knowledge gaps**: A bot that cannot calculate a route, cannot find an NPC, or sees an unknown map name = a learning opportunity, not a failure. Log the gap with the map + position.
+- **Explore to learn**: When stuck on a map with no known exits, the sidecar issues exploration actions (walk map edges / candidate warp cells) to discover portal entries; the bridge reports map changes; `DynamicPortalDiscovery` records portal entry→exit pairs (source map/coords → dest map/coords).
+- **Persist learned knowledge**: Discovered portals, map connections, NPC positions, and item IDs persist to the sidecar's knowledge DB (`dynamic_portal_discovery` SQLite + `map_knowledge`) and are reused on every future run — no manual table edits needed.
+- **Share across the fleet**: One bot's discovery becomes every bot's knowledge (fleet learning). If bot A finds the iz_int → int_land warp, bots B-H route through it immediately.
+- **Feed back into static tables**: When the sidecar learns a stable, verified portal/NPC layout for a map, it can (optionally) write the entry back into the corresponding static table so future sessions start smarter.
+- **Adapt config per server**: Item IDs (Red Potion 501 vs custom), Kafra positions, portal coordinates, town layouts — all resolved from observed knowledge, never assumed from one server's values.
+- **Implementation home**: `AI_sidecar/ai_sidecar/dynamic_portal_discovery.py`, `AI_sidecar/ai_sidecar/map_knowledge.py`, `AI_sidecar/ai_sidecar/fleet/self_learning.py`, and the exploration/unstuck logic in `heuristic_service.py` + the bridge's route-failure reporting.
+
+### 20. LLM & Agents Always Have System Capability Context
+The LLM and agents must **always have context on what the AI system is capable of**, so they can process / delegate / plan / execute / tool-call correctly:
+- **Capability registry is the source of truth**: `AI_sidecar/ai_sidecar/capabilities.py` declares the FULL capability surface — execution domains (combat/movement/economy/progression/social/survival), direct command roots, knowledge systems, learning/self-adaptation systems, fleet coordination/crowdsourcing systems, and the API surface.
+- **Injected into every LLM prompt**: `prompt_invariants()` includes `system_capabilities`, and the planner's `_system_prompt()` renders the full capability block — so the LLM knows what it can delegate to, plan against, execute through, and call via tools.
+- **Queryable via HTTP**: `GET /v1/capabilities` (full JSON), `/v1/capabilities/prompt` (rendered prompt block), `/v1/capabilities/domains`, `/v1/capabilities/roots` — agents and external tooling can introspect capabilities at runtime.
+- **No guessing**: If a capability isn't in the registry, the LLM must NOT assume it exists. Unknown capability → abstain or use the `unsupported` path, never fabricate.
+- **Registry stays current**: When a new module/domain/endpoint is added, update `capabilities.py` in the same change. Stale capability context is a planning bug.
+- **Delegation uses capabilities**: The LLM picks WHICH agent/system to delegate to based on the registry (fleet systems for crowdsourcing, knowledge systems for lookups, learning systems for adaptation), then sequences thinking + action across them.
+
 ## Config Management
 - **All config adjustments must go through the AI system (heuristic / Pro RO agent)** — never manually edit .bot_profiles/*/control/config.txt
 - The heuristic uses `set <key> <value>` commands to change config at runtime
