@@ -122,6 +122,9 @@ our %_cast_times = ();
 our %_after_cast_delays = ();
 # Tracks when a skill was last used: skill_name => timestamp_ms
 our %_last_skill_use_ms = ();
+# NPC dialog state tracking (declared here so the buy-rewrite at ~line 5350
+# can reference it; re-initialized later with full defaults).
+our %_npc_dialog_state = ();
 # Tracks if currently casting (don't send movement during cast)
 our $_is_casting = 0;
 our $_casting_until_ms = 0;
@@ -5339,6 +5342,20 @@ sub _rewrite_runtime_command {
 		return ($command, 'store_command');
 	}
 	if ($command =~ /^buy\s+(\d+)\s+(\d+)$/i) {
+		my $_buy_id = $1;
+		my $_buy_qty = $2;
+		# Bare `buy <item> <qty>` requires an OPEN store window; OpenKore
+		# errors ("Store Item N does not exist") if the bot isn't in a shop
+		# dialog. Potions/weapons are actually purchased by OpenKore's own
+		# buyAuto (configured in the profile with npc + npc_steps), which
+		# walks to the vendor and opens the shop itself. So a bare `buy`
+		# with no dialog open is redundant AND spammy — suppress it and let
+		# buyAuto do the real purchase (heuristic_service was emitting this
+		# every cycle for Novices, causing endless buy-error spam).
+		if (!$_npc_dialog_state{in_dialog}) {
+			debug "[buy_suppress] store not open for bare 'buy $_buy_id $_buy_qty' — buyAuto handles it\n", 'aiSidecarBridge', 1;
+			return ('', 'buy_suppressed_no_store');
+		}
 		debug "[buy_rewrite] $command\n", 'aiSidecarBridge', 2;
 		return ($command, 'buy_command');
 	}
@@ -7008,8 +7025,8 @@ sub _apply_ml_override {
 	# ── NPC Shop Dialog Interaction ──
 	# ═══════════════════════════════════════════════════════════════════════════
 
-	# NPC dialog state tracking
-	our %_npc_dialog_state = (
+	# NPC dialog state tracking (initialized; `our` at top of file)
+	%_npc_dialog_state = (
 	    in_dialog => 0,          # Are we currently in an NPC dialog?
 	    npc_name => '',          # Name of the NPC we're talking to
 	    npc_x => 0,              # NPC X position

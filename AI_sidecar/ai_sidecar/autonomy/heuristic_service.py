@@ -1719,7 +1719,24 @@ class HeuristicService:
                         _job = str(signals.get("job", "") or "").lower()
                         # Basic Skill: needed by ALL Novices to sit/regen (any level)
                         if _job == "novice":
-                            _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
+                            # Guard the Red Potion buy (item 501) so it fires only
+                            # when actually needed: no potions in inventory AND has
+                            # zeny AND not within the shared 60s buy cooldown.
+                            # Previously emitted unconditionally every cycle — the
+                            # bot spammed "Error in function 'buy' / Store Item 501
+                            # does not exist" (the shop window isn't open for a bare
+                            # `buy`), blocking real progress.
+                            _inv_items = signals.get("inventory_items") or signals.get("items") or signals.get("inventory", {}).get("items", []) if isinstance(signals.get("inventory", {}), dict) else (signals.get("inventory_items") or [])
+                            _has_potion = any(
+                                "potion" in str(i).lower() or "red" in str(i).lower()
+                                for i in _inv_items
+                            )
+                            _zeny = int(signals.get("zeny", 0) or 0)
+                            _pb_now = __import__("time").time()
+                            _pb_last = self._last_buy_time.get(_bot_id, 0)
+                            if not _has_potion and _zeny >= 500 and (_pb_now - _pb_last >= 60):
+                                self._last_buy_time[_bot_id] = _pb_now
+                                _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 15:
                             if _bl <= 5:
                                 # Level 1-5: Prontera town only, attack Porings only
