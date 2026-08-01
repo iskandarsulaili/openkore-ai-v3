@@ -5,6 +5,7 @@ from collections import deque
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from threading import RLock
+from typing import Callable
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal, ActionStatus
 
@@ -29,8 +30,13 @@ class ActionQueue:
         ActionPriorityTier.macro_management: 3,
     }
 
-    def __init__(self, max_per_bot: int) -> None:
+    def __init__(self, max_per_bot: int, connection_probe: Callable[[str], bool] | None = None) -> None:
         self._max_per_bot = max_per_bot
+        # Optional per-bot "is the bot in-game?" predicate. When provided and
+        # returning False, enqueue() rejects the action with status dropped —
+        # nothing ever queues for logged-out / char-select bots (FLAW 6's
+        # enqueue-side counterpart to the bridge execution gate).
+        self._connection_probe = connection_probe
         self._lock = RLock()
         self._by_bot: dict[str, deque[QueuedAction]] = {}
         self._idempotency_index: dict[str, dict[str, str]] = {}
@@ -41,6 +47,35 @@ class ActionQueue:
     def enqueue(self, bot_id: str, proposal: ActionProposal) -> tuple[bool, ActionStatus, str, str]:
         now = datetime.now(UTC)
         with self._lock:
+            # ── Enqueue-side disconnected gate ──
+            # Reject non-reflex actions for bots that are KNOWN to be logged
+            # out (a snapshot exists with map_known=False from char-select /
+            # disconnected state — FLAW 8 derived flag). Reflex-tier actions
+            # (death respawn, escape) always queue: they are emergency
+            # responses, and the bridge execution gate still guards logged-out
+            # execution. No snapshot = state unknown = allow (legacy behavior).
+            try:
+                if (
+                    proposal.priority_tier != ActionPriorityTier.reflex
+                    and self._connection_probe is not None
+                    and not self._connection_probe(bot_id)
+                ):
+                    _rejected = QueuedAction(
+                        proposal=proposal,
+                        status=ActionStatus.dropped,
+                        enqueue_seq=self._next_enqueue_seq(),
+                    )
+                    self._actions_by_id[proposal.action_id] = _rejected
+                    self._action_to_bot[proposal.action_id] = bot_id
+                    logger.debug(
+                        "action_rejected_disconnected: bot=%s action=%s",
+                        bot_id,
+                        proposal.action_id,
+                    )
+                    return False, ActionStatus.dropped, proposal.action_id, "bot_disconnected"
+            except Exception:
+                logger.exception("action_connection_probe_failed bot=%s", bot_id)
+
             self._expire_for_bot(bot_id, now)
 
             bot_queue = self._by_bot.setdefault(bot_id, deque())

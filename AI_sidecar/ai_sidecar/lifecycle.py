@@ -5825,6 +5825,17 @@ def create_runtime() -> RuntimeState:
 
     action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
     snapshot_cache = SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds)
+    # Enqueue-side disconnected gate: nothing queues for bots that are KNOWN
+    # logged out (snapshot exists with map_known=False from char-select /
+    # disconnected state — FLAW 8 derived flag). No snapshot = unknown =
+    # allowed (legacy behavior); reflex-tier actions bypass the gate in
+    # ActionQueue.enqueue itself.
+    action_queue._connection_probe = (
+        lambda _bid: (
+            (_snap := snapshot_cache.get(_bid)) is None
+            or bool(getattr(_snap, "map_known", False))
+        )
+    )
     action_arbiter = ActionArbiter(
         queue=action_queue,
         fleet_client=fleet_sync_client,
