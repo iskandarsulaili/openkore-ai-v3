@@ -71,3 +71,14 @@ def test_level1_in_academy_registers_at_receptionist() -> None:
     cmds = _assess(base_level=1, map_name="iz_ac01", lock_map="prt_fild08")
     assert any("talknpc" in c and "100 39" in c for c in cmds), \
         f"must talk to Academy Receptionist (100,39): {cmds}"
+
+
+def test_level1_on_secluded_island_sails_to_izlude() -> None:
+    """A level-1 bot on int_land (Secluded Island intro; disconnected map)
+    must walk to the sailor (49,57) and sail to Izlude instead of trying to
+    route to prt_fild08 (which OpenKore can't path and spams route errors)."""
+    cmds = _assess(base_level=1, map_name="int_land", lock_map="prt_fild08")
+    assert "move 49 57" in cmds, f"must walk to sailor: {cmds}"
+    assert "talk resp 1" in cmds, f"must select 'Sail to Izlude!': {cmds}"
+    # Must NOT force prt_fild08 lockMap while stranded on the island.
+    assert not any("prt_fild08" in c for c in cmds), f"no lockMap on island: {cmds}"

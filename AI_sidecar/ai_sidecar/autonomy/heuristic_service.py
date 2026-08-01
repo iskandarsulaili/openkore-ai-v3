@@ -1749,6 +1749,33 @@ class HeuristicService:
                                 # (12 dmg/hit), so registration is the required first
                                 # step before prt_fild08 hunting.
                                 _cur_map = str(signals.get("map", "") or "").lower()
+                                # ── SECLUDED ISLAND BAILOUT (rathena-ai-world intro) ──
+                                # New characters spawn on int_land (Secluded Island),
+                                # a disconnected intro map: char_athena.conf
+                                # start_point + #ship_out set the save point there, so
+                                # login/respawn always lands at int_land(77,101). The
+                                # only way out is the WARPNPC `#intro_to_izlude` at
+                                # (49,57): walking onto it fires OnTouch -> a menu,
+                                # option 2 "Sail to Izlude!" sails to the academy.
+                                # OpenKore cannot path from int_land to prt_fild08
+                                # (no direct portal), so the bot must leave the island
+                                # first — otherwise it spams "Cannot calculate a route
+                                # from int_land ... to prt_fild08" forever.
+                                if _cur_map.startswith("int_land"):
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="move 49 57",
+                                        confidence=0.95,
+                                        reason="Cold start: walk to Secluded Island sailor to sail to Izlude",
+                                        domain="progression",
+                                    ))
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="talk resp 1",
+                                        confidence=0.90,
+                                        reason="Cold start: select 'Sail to Izlude!' to leave the island",
+                                        domain="progression",
+                                    ))
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
                                     _actions.append(HeuristicAction(
                                         kind="command",
@@ -1767,9 +1794,14 @@ class HeuristicService:
                                 # NOTE: 'set lockMap' (not bare 'lockMap') so the
                                 # bridge's _sidecar_set_lockMap marker shields it
                                 # from the hunting-map stickiness override.
-                                _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
+                                # Skip lockMap/mon_control while on the Secluded
+                                # Island intro (int_land) — OpenKore can't route and
+                                # there's nothing to fight there; the island bailout
+                                # above moves the bot off it first.
+                                if not _cur_map.startswith("int_land"):
+                                    _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
+                                    _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
+                                    _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
                                 # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
                                 # A level-1 Novice cannot survive the tougher NON-
                                 # academy fields (prt_fild05 etc.) en route to the
