@@ -1,4 +1,14 @@
-"""Domain Registry — discovers and manages all domain modules."""
+"""Domain Registry — discovers and manages all domain modules.
+
+⚠️ SUPERSEDED / UNWIRED — DO NOT WIRE. This registry has ZERO importers and
+ZERO instantiation sites. The live registry is
+ai_sidecar.autonomy.domains.DomainRegistry (consumed by heuristic_service's
+domain_registry property + assess_all). The BaseDomain base class lives in
+ai_sidecar.domains and IS used (autonomy/domains/__init__.py imports it), but
+this DomainRegistry class is a dead duplicate. Wiring it would double-emit
+with the autonomy registry. If a registry is ever needed here, merge INTO the
+autonomy one instead of activating this.
+"""
 from __future__ import annotations
 from typing import Any
 import logging

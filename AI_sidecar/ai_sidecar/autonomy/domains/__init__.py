@@ -88,6 +88,18 @@ class DomainRegistry:
         function ``create_domain() -> BaseDomain`` or a class
         ``Domain`` that can be instantiated.
         """
+        # ⚠️ DELIBERATELY EMPTY — DO NOT POPULATE.
+        # The modules under autonomy/domains/* (combat, social, economy, ...) are
+        # a LEGACY parallel domain system. The modern per-manager wiring in
+        # heuristic_service._init_new_domains (PartyDomain, EquipmentOptimizer,
+        # ColdStartManager, LifecycleManager, ...) supersedes them. Populating
+        # this list would DOUBLE-EMIT with those wired managers AND reintroduce
+        # the round-2 party spam (social.py emits 'party create AI<ts>' /
+        # 'party request <name>' / 'party leave' — the exact commands the bridge
+        # party gates and the fleet coordinator now suppress).
+        # If a new domain is genuinely needed, add it to _init_new_domains
+        # instead of this list. See tests/test_task_scheduler_wiring.py and
+        # the bridge party-suppression blocks for the guard rationale.
         domain_module_names = [
         ]
         for mod_name in domain_module_names:

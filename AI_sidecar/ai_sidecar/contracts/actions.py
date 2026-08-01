@@ -103,6 +103,12 @@ class NextActionRequest(BaseModel):
 
     meta: ContractMeta
     poll_id: str = Field(min_length=1, max_length=128)
+    # Bridge declares its per-poll batch capacity. The endpoint serves one
+    # action per poll today, so this is informational — but it MUST be
+    # accepted: the bridge has sent it since c36b32dc7, and extra="forbid"
+    # was 422ing EVERY poll (fleet ran on native AI + reflex only, queued
+    # actions never executed). Accept + clamp so the contract holds.
+    max_actions: int = Field(default=1, ge=1, le=10)
 
 
 class NextActionResponse(BaseModel):
