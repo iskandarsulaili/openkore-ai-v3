@@ -61,6 +61,7 @@ from ai_sidecar.domains.learning.experience import ExperienceTracker
 from ai_sidecar.domains.learning.adaptation import StrategyAdapter
 from ai_sidecar.domains.planning.goals import GoalManager
 from ai_sidecar.domains.planning.scheduler import TaskScheduler
+from ai_sidecar.domains.planning.translator import TaskCommandTranslator
 from ai_sidecar.domains.social.swarm import SwarmCoordinator
 from ai_sidecar.state.collector import StateCollector
 from ai_sidecar.domains.combat.safety import DangerPredictor, SafetyEvaluator
@@ -1436,6 +1437,9 @@ class HeuristicService:
                 self._experience_tracker = ExperienceTracker(db_path="data/learning.db")
                 self._goal_manager = GoalManager(bot_id="default")
                 self._task_scheduler = TaskScheduler()
+                self._task_translator = TaskCommandTranslator()
+                # Wire the goal manager into the scheduler (quest/job tasks)
+                self._task_scheduler.set_goal_manager(self._goal_manager)
                 self._swarm_coordinator = SwarmCoordinator(
                     bot_names=["kicapmasin", "kicapmasin2", "kicapmasin3"],
                     data_dir="data",
@@ -1842,6 +1846,24 @@ class HeuristicService:
                     if self._goal_manager and self._task_scheduler:
                         for _g in self._goal_manager.get_active_goals()[:2]:
                             _actions.append(HeuristicAction(kind="log", command=f"goal={_g}", confidence=0.5, reason=f"Goal: {_g}", domain="planning"))
+                        # ── TASK SCHEDULER EXECUTION (was dormant) ──
+                        # Run the scheduler and translate its semantic tasks
+                        # into safe real commands / observable intents.
+                        try:
+                            _schedule = self._task_scheduler.schedule_from_signals(signals)
+                            _seen_tasks: set[tuple[str, str]] = set()
+                            for _task in _schedule[:3]:  # top 3 by priority
+                                for _ta in self._task_translator.translate(_task, signals, _bot_id):
+                                    # Dedupe identical (kind, command) within one
+                                    # cycle — repair/sell/grind all carry
+                                    # return_town, which must emit once.
+                                    _key = (_ta.kind, _ta.command)
+                                    if _key in _seen_tasks:
+                                        continue
+                                    _seen_tasks.add(_key)
+                                    _actions.append(_ta)
+                        except Exception as _se:
+                            logger.debug(f"[heuristic] task scheduler: {_se}")
                 except Exception as _de:
                     logger.debug(f"[heuristic] domain delegation: {_de}")
             return assessment
