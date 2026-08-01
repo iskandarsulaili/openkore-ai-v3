@@ -1710,7 +1710,7 @@ class HeuristicService:
                             ))
                     except Exception:
                         pass
-                    if self._cold_start_planner:
+                    if getattr(self, '_cold_start_manager', None):
                         _bl = int(signals.get("base_level", 1) or 1)
                         _job = str(signals.get("job", "") or "").lower()
                         # Basic Skill: needed by ALL Novices to sit/regen (any level)
@@ -1759,7 +1759,9 @@ class HeuristicService:
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 1 0 0", confidence=0.6, reason="Avoid Pupa", domain="progression"))
                                 _actions.append(HeuristicAction(kind="command", command="mon_control Thief Bug 1 0 0", confidence=0.6, reason="Avoid Thief Bug", domain="progression"))
                         if _bl <= 25:
-                            self._cold_start_planner.assess(signals, _actions, _bot_id)
+                            _cs_mgr = getattr(self, '_cold_start_manager', None)
+                            if _cs_mgr is not None:
+                                _cs_mgr.assess(signals, _actions, _bot_id)
                     if self._npc_lookup and _bl >= 9:
                         if _job in ["novice"] and _bl >= 9:
                             _nj = "swordman" if int(signals.get("str", 0) or 0) > int(signals.get("int", 0) or 0) else "mage"
