@@ -1301,18 +1301,20 @@ sub on_command_intercept {
 		warning "[cmd_pre_logged_out] ALLOWED cmd=$full_cmd caller=$_caller\n", 'aiSidecarBridge', 1;
 	}
 
-	# ── SOLO PARTY-SHARE SUPPRESSION (in-game core-AI noise) ──
-	# Core OpenKore partyAutoShare=1 fires 'party share exp' every cycle even
-	# when the bot is SOLO, producing "You're not in a party" log spam. The
-	# sidecar's fleet coordinator is the party source of truth (it creates the
-	# party, gates on level/cooldown) — core share-while-solo is noise. Block
-	# when the bot has no party users.
-	if ($switch eq 'party' && $cmd_args =~ /^share/i) {
-		my $_pm_users = ($char && $char->{party} && ref($char->{party}{users}) eq 'HASH')
-			? $char->{party}{users} : {};
-		my $_pm_count = scalar(keys %{$_pm_users});
-		if ($_pm_count == 0) {
-			warning "[party_share_solo] BLOCKED cmd=$full_cmd (no party members)\n", 'aiSidecarBridge', 1;
+	# ── SOLO PARTY-COMMAND SUPPRESSION (in-game core-AI noise) ──
+	# Core OpenKore partyAuto=1 fires 'party request <name>' / 'party share exp'
+	# every cycle even when the bot is SOLO, producing "You're not in a party"
+	# log spam (Commands.pm:4355). The sidecar's fleet coordinator is the party
+	# source of truth (it creates the party, gates on level/cooldown) — core
+	# membership commands while solo are noise. Block membership-requiring
+	# subcommands (share/request/leave/kick/leader/exp) when the bot has no
+	# party users; allow create/join (party formation is the sidecar's job).
+	if ($switch eq 'party') {
+		# OpenKore puts the bot ITSELF in $char->{party}{users} even when solo,
+		# so a users-count check never fires. The joined flag is the truth.
+		my $_pm_joined = ($char && $char->{party}) ? ($char->{party}{joined} || 0) : 0;
+		if (!$_pm_joined && $cmd_args =~ /^(share|request|leave|kick|leader|exp|shareitem|shareauto|sharediv)\b/i) {
+			warning "[party_solo] BLOCKED cmd=$full_cmd (not joined)\n", 'aiSidecarBridge', 1;
 			$args->{switch} = '';
 			$args->{args} = '';
 			return;
