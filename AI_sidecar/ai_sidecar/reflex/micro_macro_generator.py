@@ -20,8 +20,16 @@ class MicroMacroGenerator:
             f"log reflex executing fallback macro for {rule.rule_id}",
         ]
         # Include the actual command in the macro body so the fallback
-        # actually does something useful (e.g. "sit", "use red_potion")
-        if command:
+        # actually does something useful (e.g. "sit", "use red_potion").
+        # EXCEPT observability-only rules: their command text is an intent
+        # label (e.g. "extreme_overweight_alert"), NOT an executable root —
+        # emitting it would fire "Unknown command" spam. Their recovery is
+        # handled by the pdca action paths, so the macro is a no-op log.
+        is_observability = (
+            (rule.action_template.kind or "command").strip().lower() != "command"
+            or bool(dict(rule.action_template.metadata or {}).get("observability_only"))
+        )
+        if command and not is_observability:
             lines.append(command)
         lines.append("stop")
         return MacroRoutine(name=name, lines=lines)

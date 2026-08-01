@@ -1271,6 +1271,15 @@ sub on_command_intercept {
 	# Also blocks potion use when bot has 0 potions on hunting map
 	# Also humanizes movement coordinates to avoid bot detection
 	# Hook name: Commands::run/pre, params: {switch, args}
+	#
+	# ⚠ IMPORTANT: this hook LOGS ONLY — it CANNOT block execution. Vanilla
+	# Commands.pm dispatches `$handler->($switch, $args)` with the ORIGINAL
+	# switch/args captured before the hook (Commands.pm ~line 908), so
+	# setting $args->{switch}='' here has no effect on what executes.
+	# The party/ai-mode spam fix is STRUCTURAL: sidecar layers emit only
+	# kind="log" observability intents for party + ai-mode, so no party
+	# command ever reaches Commands::run. Do not rely on this hook to
+	# block; fix the emitter instead.
 	my (undef, $args) = @_;
 	my $switch = $args->{switch} || '';
 	my $cmd_args = $args->{args} || '';

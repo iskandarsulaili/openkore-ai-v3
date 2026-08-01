@@ -76,13 +76,19 @@ def test_heuristic_service_direct_party_check_is_observability_only() -> None:
 def test_no_unpaired_ai_manual_flips_sidecar_wide() -> None:
     """ai manual DISABLES bot AI; config-audit owns AI mode. Unpaired flips
     freeze stuck bots permanently. Allowed: the paired cold-start/unstuck
-    mechanism (ai manual -> move -> ai auto re-enable in the same flow,
-    heuristic_service 1937/2094) and the dev-only reflex emit_test utility."""
+    mechanism (ai manual -> move -> ai auto re-enable in the same flow) and
+    the dev-only reflex emit_test utility."""
     pattern = re.compile(r'command\s*=\s*["\']ai manual["\']')
-    exempt_pairs = {
-        # (file, line): the paired re-enable line that follows
-        os.path.normpath("ai_sidecar/autonomy/heuristic_service.py"): {1937: 1947, 2094: 2131},
-    }
+    # Semantic anchors: reasons of the legitimate paired cold-start/unstuck
+    # flips and their required paired re-enables (line numbers are fragile).
+    PAIRED_REASONS = (
+        "manual mode to unstick",
+        "Cold start - disable AI for portal walk",
+    )
+    PAIRED_REENABLE_REASONS = (
+        "Re-enable auto after unstuck move",
+        "Cold start step 1 - enable AI",
+    )
     offenders: list[str] = []
     for path in _sidecar_python_files():
         src = open(path, encoding="utf-8", errors="replace").read()
@@ -93,13 +99,17 @@ def test_no_unpaired_ai_manual_flips_sidecar_wide() -> None:
                 max(0, m.start() - 3000) : m.start()
             ]:
                 continue  # dev-only pipeline self-test utility
-            paired = exempt_pairs.get(rel, {}).get(ln)
-            if paired:
-                # The paired re-enable must exist and be an ai auto emission.
-                after = src[m.end() :]
-                match = re.search(r'command\s*=\s*["\']ai auto["\']', after)
-                assert match, f"paired ai auto missing after {rel}:{ln}"
-                assert src[: match.start()].count("\n") + 1 <= paired + 1
+            # Paired exemption: a matching reason must follow within 8 lines
+            # AND a paired ai auto with an allowed re-enable reason must
+            # appear anywhere after this site (reasons are unique strings).
+            after = src[m.end():]
+            window8 = src[m.end() : m.end() + 800]
+            if any(r in window8 for r in PAIRED_REASONS):
+                paired_auto = re.search(r'command\s*=\s*["\']ai auto["\']', after)
+                paired_reason_ok = any(r in after for r in PAIRED_REENABLE_REASONS)
+                if paired_auto and paired_reason_ok:
+                    continue
+                offenders.append(f"{rel}:{ln} (paired exemption violated: no re-enable)")
                 continue
             # Must not be a kind="command" emission (log intents are fine).
             prefix = src[: m.start()]
