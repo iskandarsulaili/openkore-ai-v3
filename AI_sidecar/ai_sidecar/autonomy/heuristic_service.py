@@ -2723,59 +2723,65 @@ class HeuristicService:
                 # If already in party with some members, just request missing ones
                 # (don't leave+recreate - that destroys existing party)
                 if _party_in and len(_party_members) > 0:
-                    # Already have a party - just request missing members
-                    # Build profile_to_char dynamically from all_bots
-                    # Each bot's char name is read from its snapshot
+                    # Already have a party - report missing members
+                    # OBSERVABILITY ONLY: the fleet coordinator is the party
+                    # actor. Raw `party request` emissions produced frozen
+                    # party-request spam (bridge gates could only LOG the
+                    # block — Commands::run dispatches the handler with the
+                    # ORIGINAL switch, so the hook cannot stop execution).
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
                             _char_name = _other_bot  # Fallback: use profile name
-                            # Only request if not already in party
                             _already_in = any(_char_name.lower() in m.lower() for m in _party_members)
                             if not _already_in:
                                 actions.append(HeuristicAction(
-                                    kind="command", command=("party request " + str(_char_name)),
+                                    kind="log", command="party_member_missing",
                                     confidence=0.95, domain="social",
                                     reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
+                                    metadata={"party_action": "request_pending", "member": _char_name},
                                 ))
-                            else:
-                                # Even if already_in check says True, still try - party_members might be stale
-                                # Only skip if we have 3+ members confirmed
-                                if _actual_count < 3:
-                                    actions.append(HeuristicAction(
-                                        kind="command", command=("party request " + str(_char_name)),
-                                        confidence=0.80, domain="social",
-                                        reason="Direct party check - retry " + str(_other_bot) + " (" + str(_char_name) + ") - stale check",
-                                    ))
+                            elif _actual_count < 3:
+                                actions.append(HeuristicAction(
+                                    kind="log", command="party_stale_check",
+                                    confidence=0.80, domain="social",
+                                    reason="Direct party check - retry " + str(_other_bot) + " (" + str(_char_name) + ") - stale check",
+                                    metadata={"party_action": "retry_pending", "member": _char_name},
+                                ))
                 else:
-                    # Not in party - move to town and create new one
+                    # Not in party - report formation need (coordinator acts)
                     actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
+                        kind="log", command="party_formation_needed",
                         confidence=0.99, domain="social",
                         reason="Direct party check - move to town for party formation",
+                        metadata={"party_action": "town_pending"},
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command=("party create AI" + str(_ts)),
+                        kind="log", command="party_create_pending",
                         confidence=0.95, domain="social",
                         reason="Direct party check - leader creates party",
+                        metadata={"party_action": "create_pending", "suffix": "AI" + str(_ts)},
                     ))
-                    # Request ALL other bots using character names
+                    # Report ALL other bots that would be invited
                     for _other_bot in _all_bots:
                         if _other_bot != _bot_profile:
                             _char_name = _other_bot  # Fallback: use profile name
                             actions.append(HeuristicAction(
-                                kind="command", command=("party request " + str(_char_name)),
+                                kind="log", command="party_invite_pending",
                                 confidence=0.95, domain="social",
                                 reason="Direct party check - request " + str(_other_bot) + " (" + str(_char_name) + ")",
+                                metadata={"party_action": "invite_pending", "member": _char_name},
                             ))
                     actions.append(HeuristicAction(
-                        kind="command", command="party share exp",
+                        kind="log", command="party_share_pending",
                         confidence=0.90, domain="social",
                         reason="Share experience in party",
+                        metadata={"party_action": "share_pending"},
                     ))
                 actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.95, domain="hunting",
-                    reason="Continue after party attempt",
+                    kind="log", command="ai_mode_auto",
+                    confidence=0.95, domain="planning",
+                    reason="Continue after party attempt [log-only: config-audit owns AI mode]",
+                    metadata={"ai_mode": "auto"},
                 ))
                 total_confidence = 0.95
                 top_domain = "social"
@@ -2798,26 +2804,31 @@ class HeuristicService:
         # Only act if we have all_bots data - empty all_bots means flicker/no data
         # Only party at level 40+ (solo before 40 is faster)
         if (not _party_in or _joiner_in_wrong_party or _joiner_stuck_in_town) and not _is_leader and state != "COLD_START" and state != "DEAD" and _all_bots and base_level >= 40:
+            # OBSERVABILITY ONLY — fleet coordinator is the party actor.
             if _party_in:
                 actions.append(HeuristicAction(
-                    kind="command", command="party leave",
+                    kind="log", command="party_stale_leave_pending",
                     confidence=0.99, domain="social",
                     reason="Direct party check - leave stale party",
+                    metadata={"party_action": "leave_pending"},
                 ))
             actions.append(HeuristicAction(
-                kind="command", command="set partyAuto 2",
+                kind="log", command="party_autojoin_pending",
                 confidence=0.99, domain="social",
                 reason="Direct party check - set auto-accept",
+                metadata={"party_action": "autojoin_pending"},
             ))
             actions.append(HeuristicAction(
-                kind="command", command="move prontera",
+                kind="log", command="party_town_wait_pending",
                 confidence=0.95, domain="social",
                 reason="Direct party check - move to town for party invite",
+                metadata={"party_action": "town_pending"},
             ))
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.95, domain="hunting",
-                reason="Continue after party attempt",
+                kind="log", command="ai_mode_auto",
+                confidence=0.95, domain="planning",
+                reason="Continue after party attempt [log-only: config-audit owns AI mode]",
+                metadata={"ai_mode": "auto"},
             ))
             total_confidence = 0.95
             top_domain = "social"
@@ -2839,9 +2850,10 @@ class HeuristicService:
             if _audit_now - _audit_last_party_leave > 30:
                 self._last_party_leave[bot_id] = _audit_now
                 actions.append(HeuristicAction(
-                    kind="command", command="party leave",
+                    kind="log", command="party_leave_requested",
                     confidence=0.99, domain="social",
                     reason=f"Level {_audit_base_level} < 40 - force leave party (solo is faster)",
+                    metadata={"party_action": "leave"},
                 ))
 
         # ── FORCE RETURN TO TOWN: 0 potions + 0 weapon + 5+ min on same map ──
@@ -3036,14 +3048,16 @@ class HeuristicService:
             _cs_base_level = signals.get("base_level", 1) or 1
             if _cs_is_leader and _cs_base_level >= 40:
                 actions.append(HeuristicAction(
-                    kind="command", command=f"party create AI{int(_now_t)}",
+                    kind="log", command="party_create_pending",
                     confidence=0.99, domain="social",
                     reason="Cold start - leader creates party with unique name",
+                    metadata={"party_action": "create_pending", "suffix": f"AI{int(_now_t)}"},
                 ))
                 actions.append(HeuristicAction(
-                    kind="command", command="party share exp",
+                    kind="log", command="party_share_pending",
                     confidence=0.95, domain="social",
                     reason="Share experience in party",
+                    metadata={"party_action": "share_pending"},
                 ))
             total_confidence = 0.99
             top_domain = "emergency"
@@ -3595,40 +3609,47 @@ class HeuristicService:
                     _last_party = self._last_party_attempt.get(bot_id, 0)
                     if _now - _last_party > 30:
                         self._last_party_attempt[bot_id] = _now
+                        # OBSERVABILITY ONLY — fleet coordinator is the
+                        # party actor (see direct party check above).
                         actions.append(HeuristicAction(
-                            kind="command", command=f"party create AI{int(_now_t)}",
+                            kind="log", command="party_create_pending",
                             confidence=0.90, domain="social",
                             reason="Leader - create party with unique name (all in town)",
+                            metadata={"party_action": "create_pending", "suffix": f"AI{int(_now_t)}"},
                         ))
-                        # Request all known bots to join while ALL in town (same map)
+                        # Report all known bots that would be invited
                         for _other_bot in _all_bots:
                             if _other_bot != _bot_profile:
                                 actions.append(HeuristicAction(
-                                    kind="command", command=f"party request {_other_bot}",
+                                    kind="log", command="party_invite_pending",
                                     confidence=0.90, domain="social",
                                     reason=f"Leader - request {_other_bot} to join party (same town map)",
+                                    metadata={"party_action": "invite_pending", "member": _other_bot},
                                 ))
                         actions.append(HeuristicAction(
-                            kind="command", command="party share exp",
+                            kind="log", command="party_share_pending",
                             confidence=0.85, domain="social",
                             reason="Share experience in party",
+                            metadata={"party_action": "share_pending"},
                         ))
                 else:
                     # Joiners: STAY in town — do NOT move to hunting map
                     # Party request only works on same map, so joiners must remain in Prontera
                     actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
+                        kind="log", command="party_waiting_town",
                         confidence=0.90, domain="social",
                         reason="Joiners - stay in town and wait for party invitation",
+                        metadata={"party_action": "waiting"},
                     ))
             else:
                 # Not in town — skip party formation (party request requires same map)
                 # Bot should return to town first (TOWN_STUCK or TOWN_HUNT will handle this)
                 logger.info("[party] bot=%s not in town (map=%s), skipping party formation", bot_id, _party_map)
                 actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
+                    kind="log", command="party_skip_not_town",
                     confidence=0.90, domain="social",
                     reason="Not in town - skip party formation, continue via town/hunt state",
+                    metadata={"party_action": "skipped_not_town"},
                 ))
             total_confidence = 0.85
             top_domain = "social"
@@ -4104,25 +4125,30 @@ class HeuristicService:
                             _last_party = self._last_party_attempt.get(bot_id, 0)
                             if _now - _last_party > 5:  # Check every 5s
                                 self._last_party_attempt[bot_id] = _now
+                                # OBSERVABILITY ONLY — fleet coordinator is
+                                # the party actor (see direct party check).
                                 actions.append(HeuristicAction(
-                                    kind="command", command="party leave",
+                                    kind="log", command="party_recreate_pending",
                                     confidence=0.99, domain="social",
                                     reason="Leader - leave old party to re-create",
+                                    metadata={"party_action": "recreate_pending"},
                                 ))
                                 actions.append(HeuristicAction(
-                                    kind="command", command=f"party create AI{int(_now)}",
+                                    kind="log", command="party_create_pending",
                                     confidence=0.95, domain="social",
                                     reason="Leader - create party",
+                                    metadata={"party_action": "create_pending", "suffix": f"AI{int(_now)}"},
                                 ))
                                 for _other_bot in _all_bots:
                                     if _other_bot != _bot_profile:
                                         actions.append(HeuristicAction(
-                                            kind="command", command=f"party request {_other_bot}",
+                                            kind="log", command="party_invite_pending",
                                             confidence=0.95, domain="social",
                                             reason=f"Leader - request {_other_bot} to join",
+                                            metadata={"party_action": "invite_pending", "member": _other_bot},
                                         ))
                                 actions.append(HeuristicAction(
-                                    kind="command", command="party share exp",
+                                    kind="log", command="party_share_pending",
                                     confidence=0.90, domain="social",
                                     reason="Share experience in party",
                                 ))

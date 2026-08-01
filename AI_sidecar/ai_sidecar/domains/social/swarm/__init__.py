@@ -478,59 +478,67 @@ class SwarmCoordinator:
         my_state = self._my_state
 
         # ── Leader: ensure party exists (with cooldown to avoid per-cycle re-request) ──
+        # OBSERVABILITY ONLY — fleet coordinator is the party actor; raw
+        # party emissions from any layer produced the frozen request spam.
         if is_leader and not in_party:
             _now = time.time()
             if _now - self._last_party_create_attempt.get(bot_name, 0) > 30:
                 self._last_party_create_attempt[bot_name] = _now
                 ts = int(_now)
                 actions.append(HeuristicAction(
-                    kind="command",
-                    command=f"party create SWARM{ts}",
+                    kind="log",
+                    command="party_create_pending",
                     confidence=0.95,
                     domain="swarm",
                     reason="[SWARM] Leader creates party",
+                    metadata={"party_action": "create_pending", "suffix": f"SWARM{ts}"},
                 ))
 
-                # Request each bot to join
+                # Report each bot that would be invited
                 sorted_bots = sorted(all_bots)
                 for other in sorted_bots:
                     if other != bot_name and other not in party_members:
                         actions.append(HeuristicAction(
-                            kind="command",
-                            command=f"party request {other}",
+                            kind="log",
+                            command="party_invite_pending",
                             confidence=0.90,
                             domain="swarm",
                             reason=f"[SWARM] Request {other} to join",
+                            metadata={"party_action": "invite_pending", "member": other},
                         ))
 
-        # ── Non-leader: ensure partyAuto is on ──
+        # ── Non-leader: report auto-accept need (config-audit owns config) ──
         if not is_leader:
             actions.append(HeuristicAction(
-                kind="command",
-                command="set partyAuto 2",
+                kind="log",
+                command="party_autojoin_pending",
                 confidence=0.90,
                 domain="swarm",
                 reason="[SWARM] Enable auto-accept party invites",
+                metadata={"party_action": "autojoin_pending"},
             ))
 
         # ── Party share settings (only when actually in a party) ──
+        # OBSERVABILITY ONLY — fleet coordinator owns party membership/sharing.
         if is_leader and self._party_auto_share and in_party:
             actions.append(HeuristicAction(
-                kind="command",
-                command="party share exp",
+                kind="log",
+                command="party_share_pending",
                 confidence=0.90,
                 domain="swarm",
                 reason="[SWARM] Share experience in party",
+                metadata={"party_action": "share_pending"},
             ))
 
-        # ── Party member range ──
+        # ── Party member range (config-audit owns config) ──
         if self._member_range:
             actions.append(HeuristicAction(
-                kind="command",
-                command=f"set partyRange {self._member_range}",
+                kind="log",
+                command="party_range_pending",
                 confidence=0.80,
                 domain="swarm",
                 reason=f"[SWARM] Set party range to {self._member_range} cells",
+                metadata={"party_action": "range_pending", "range": self._member_range},
             ))
 
         # ── Acolyte auto-buffs ──

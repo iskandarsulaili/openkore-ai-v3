@@ -418,7 +418,11 @@ def test_pdca_startup_gate_warmup_blocks_dispatch_until_minimum_live_state() -> 
     status = runtime.startup_gate_status(bot_id="bot:autonomy")
     assert status["gate_open"] is False
     assert status["mode"] == "warmup"
-    assert str(status["reason"]).startswith("startup_gate_initializing")
+    # Production truth: pdca_loop._evaluate_startup_gate emits the waiting
+    # reason when minimum live-state readiness is not met (snapshot/history
+    # unavailable). Commit 1010ee1fe wrongly reverted this to the stub's
+    # default "startup_gate_initializing"; restore the production assertion.
+    assert str(status["reason"]).startswith("startup_gate_waiting_minimum_live_state")
 
 
 def test_pdca_startup_gate_opens_in_degraded_mode_when_optional_subsystems_are_unavailable() -> None:
