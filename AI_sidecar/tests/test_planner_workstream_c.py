@@ -320,10 +320,13 @@ def test_plan_generator_actions_from_steps_bridge_compatible_for_residual_kinds(
 
     actions = generator._actions_from_steps(bot_id="bot:ws-c", steps=steps, horizon=PlanHorizon.tactical)
 
-    assert len(actions) == 2
+    # New doctrine: rest/recover steps are observability-only (sit is
+    # bridge-blocked; rewriting to "ai manual" would DISABLE bot AI). Only
+    # the combat step survives as an executable "ai auto" action.
+    assert len(actions) == 1
     commands = {item.command for item in actions}
     assert "ai auto" in commands
-    assert "ai manual" in commands
+    assert "ai manual" not in commands
 
     allowed_roots = {"ai", "move", "macro", "eventmacro", "talknpc", "take"}
     for action in actions:

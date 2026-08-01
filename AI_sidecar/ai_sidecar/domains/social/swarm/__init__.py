@@ -371,11 +371,12 @@ class SwarmCoordinator:
         _my_level = int(_my_state.level) if _my_state else 1
         if decision.party_auto_share and _in_party and _my_level >= 40:
             self._actions.append(HeuristicAction(
-                kind="command",
-                command="party share exp",
+                kind="log",
+                command="party_share_pending",
                 confidence=0.90,
                 domain="swarm",
                 reason="[SWARM] Enable party experience sharing",
+                metadata={"party_action": "share_pending"},
             ))
 
         # ── Acolyte auto-buffs ──
@@ -406,13 +407,15 @@ class SwarmCoordinator:
             ))
 
         # ── Retreat ──
+        # OBSERVABILITY ONLY — ai manual DISABLES bot AI; config-audit owns AI mode.
         if decision.retreat:
             self._actions.append(HeuristicAction(
-                kind="command",
-                command="ai manual",
+                kind="log",
+                command="retreat_signal",
                 confidence=0.95,
                 domain="swarm",
                 reason="[SWARM] Retreat signal active — disengage",
+                metadata={"swarm_action": "retreat"},
             ))
 
         # ── Combat tactics ──
@@ -427,20 +430,22 @@ class SwarmCoordinator:
 
         if decision.kite_mode:
             self._actions.append(HeuristicAction(
-                kind="command",
-                command="ai auto",
+                kind="log",
+                command="kite_mode_active",
                 confidence=0.75,
                 domain="swarm",
                 reason="[SWARM] Kite mode active",
+                metadata={"swarm_action": "kite_mode"},
             ))
 
         if decision.member_range:
             self._actions.append(HeuristicAction(
-                kind="command",
-                command=f"set partyRange {decision.member_range}",
+                kind="log",
+                command="party_range_pending",
                 confidence=0.80,
                 domain="swarm",
                 reason=f"[SWARM] Set party range to {decision.member_range} cells",
+                metadata={"party_action": "range_pending", "range": decision.member_range},
             ))
 
     # ── Party management helpers ────────────────────────────────
@@ -542,24 +547,28 @@ class SwarmCoordinator:
             ))
 
         # ── Acolyte auto-buffs ──
+        # OBSERVABILITY ONLY — `party skill` from sidecar layers risks
+        # membership-required spam; the coordinator dispatches real buffs.
         if my_state and my_state.acolyte_can_buff and party_members:
             for member in party_members:
                 if member != bot_name:
                     # Blessing
                     actions.append(HeuristicAction(
-                        kind="command",
-                        command=f"party skill Blessing {member}",
+                        kind="log",
+                        command="party_buff_pending",
                         confidence=0.85,
                         domain="swarm",
                         reason=f"[SWARM] Acolyte buff: Blessing -> {member}",
+                        metadata={"party_action": "buff_pending", "skill": "Blessing", "member": member},
                     ))
                     # Increase AGI
                     actions.append(HeuristicAction(
-                        kind="command",
-                        command=f"party skill Increase AGI {member}",
+                        kind="log",
+                        command="party_buff_pending",
                         confidence=0.85,
                         domain="swarm",
                         reason=f"[SWARM] Acolyte buff: Increase AGI -> {member}",
+                        metadata={"party_action": "buff_pending", "skill": "Increase AGI", "member": member},
                     ))
 
         return actions
@@ -578,19 +587,22 @@ class SwarmCoordinator:
         for member in party_members:
             if member == bot_name:
                 continue
+            # OBSERVABILITY ONLY — the coordinator dispatches real buffs.
             actions.append(HeuristicAction(
-                kind="command",
-                command=f"party skill Blessing {member}",
+                kind="log",
+                command="party_buff_pending",
                 confidence=0.85,
                 domain="swarm",
                 reason=f"[SWARM] Buff party: Blessing -> {member}",
+                metadata={"party_action": "buff_pending", "skill": "Blessing", "member": member},
             ))
             actions.append(HeuristicAction(
-                kind="command",
-                command=f"party skill Increase AGI {member}",
+                kind="log",
+                command="party_buff_pending",
                 confidence=0.85,
                 domain="swarm",
                 reason=f"[SWARM] Buff party: Increase AGI -> {member}",
+                metadata={"party_action": "buff_pending", "skill": "Increase AGI", "member": member},
             ))
         return actions
 

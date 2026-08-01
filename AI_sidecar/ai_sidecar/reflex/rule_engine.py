@@ -1005,16 +1005,19 @@ class ReflexRuleEngine:
                 ),
                 guards=[],
                 action_template=ReflexActionTemplate(
-                    kind="command",
-                    command="ai manual",
+                    kind="log",
+                    command="extreme_overweight_alert",
                     priority_tier="reflex",
                     conflict_key="inventory.extreme_weight_guard",
                     metadata={
                         "category": "extreme_overweight",
+                        # Originally "sit" (bridge-blocked) then "ai manual"
+                        # (which DISABLES bot AI permanently) — neither is
+                        # safe. Observability-only: the pdca npc_sell path +
+                        # fallback_macro handle the actual sell/recovery.
                         "bridge_compat": {
-                            "status": "rewritten",
+                            "status": "observability_only",
                             "original_command": "sit",
-                            "rewritten_command": "ai manual",
                             "reason": "bridge_root_not_allowed",
                         },
                     },

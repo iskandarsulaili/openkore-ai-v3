@@ -316,13 +316,17 @@ class PlanGenerator:
                 conflict_key = "loot.collect"
                 preconditions.append("inventory.can_loot")
             elif kind in {"recover", "heal"}:
-                command = "ai manual"
+                # OBSERVABILITY ONLY — the original "sit" is bridge-blocked
+                # and rewriting to "ai manual" would DISABLE bot AI. The
+                # bridge's emergency-sit reflex + pdca rest path handle
+                # actual recovery; the planner only records the intent.
+                command = "planner_recover_pending"
                 conflict_key = "recovery"
                 preconditions.append("vitals.safe_to_rest")
+                metadata["observability_only"] = True
                 metadata["bridge_compat"] = {
-                    "status": "rewritten",
+                    "status": "observability_only",
                     "original_command": "sit",
-                    "rewritten_command": command,
                     "reason": "bridge_root_not_allowed",
                 }
             elif kind in {"npc", "quest"}:
@@ -360,13 +364,15 @@ class PlanGenerator:
                 )
                 continue
             elif kind in {"rest"}:
-                command = "ai manual"
+                # OBSERVABILITY ONLY — "sit" is bridge-blocked; "ai manual"
+                # would disable bot AI. Bridge emergency-sit handles rest.
+                command = "planner_rest_pending"
                 conflict_key = "recovery.rest"
                 preconditions.append("vitals.safe_to_rest")
+                metadata["observability_only"] = True
                 metadata["bridge_compat"] = {
-                    "status": "rewritten",
+                    "status": "observability_only",
                     "original_command": "sit",
-                    "rewritten_command": command,
                     "reason": "bridge_root_not_allowed",
                 }
             elif kind in {"social"}:

@@ -347,6 +347,12 @@ def test_reflex_default_rules_bridge_compat_no_unsupported_direct_roots(tmp_path
             if compat:
                 assert compat.get("status") == "suppressed"
             continue
+        # Observability-only intents (kind="log") are NEVER dispatched to the
+        # bridge — they carry no executable root, so the bridge-root contract
+        # does not apply. Their recovery is handled by fallback macros / the
+        # pdca action paths instead.
+        if (rule.action_template.kind or "command").strip().lower() != "command":
+            continue
         checked += 1
         root = command.split(maxsplit=1)[0].strip().lower()
         assert root in allowed_roots

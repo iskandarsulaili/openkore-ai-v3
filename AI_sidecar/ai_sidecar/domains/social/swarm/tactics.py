@@ -268,12 +268,15 @@ class SwarmTactics:
 
         elif bot_role in ("healer", "support", "buffer"):
             # Healer: don't attack, focus on support
+            # OBSERVABILITY ONLY — ai manual DISABLES bot AI permanently;
+            # config-audit owns AI mode. Standby intent is observable.
             actions.append(HeuristicAction(
-                kind="command",
-                command="ai manual",
+                kind="log",
+                command="swarm_standby",
                 confidence=0.70,
                 domain="swarm",
                 reason="[SWARM] Spread: support role, standby",
+                metadata={"swarm_action": "standby"},
             ))
 
         else:
@@ -345,12 +348,14 @@ class SwarmTactics:
 
         elif bot_role in ("healer", "support"):
             # Healer stays safe, heals when needed
+            # OBSERVABILITY ONLY — ai manual DISABLES bot AI permanently.
             actions.append(HeuristicAction(
-                kind="command",
-                command="ai manual",
+                kind="log",
+                command="swarm_standby",
                 confidence=0.80,
                 domain="swarm",
                 reason="[SWARM] Kite: healer standby",
+                metadata={"swarm_action": "standby"},
             ))
 
         return actions
@@ -510,12 +515,14 @@ class SwarmTactics:
 
         elif bot_role in ("healer", "support", "buffer"):
             # Stay close to tank/healer center
+            # OBSERVABILITY ONLY — ai manual DISABLES bot AI permanently.
             actions.append(HeuristicAction(
-                kind="command",
-                command="ai manual",
+                kind="log",
+                command="swarm_standby",
                 confidence=0.85,
                 domain="swarm",
                 reason="[SWARM] Defensive: stay safe",
+                metadata={"swarm_action": "standby"},
             ))
 
         else:
