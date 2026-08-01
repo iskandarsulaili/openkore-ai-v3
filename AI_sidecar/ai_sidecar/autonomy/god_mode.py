@@ -1143,6 +1143,38 @@ class GodModeOrchestrator:
                 # with "You're not in a party." / syntax errors.
                 if action_type == "party_organize":
                     _cmd = f"party create AI{int(__import__('time').time())}"
+                    # The fleet coordinator is the party actor: after the
+                    # leader creates the party, request EVERY known bot to
+                    # join. The bridge's party-request rewrite resolves
+                    # profile names to character names. Without this the
+                    # leader formed an EMPTY party and nobody ever joined.
+                    _all_known = sorted(data.get("all_bots") or [])
+                    for _other in _all_known:
+                        if _other and _other != bot_id:
+                            # Strip the full snapshot ID to the char name
+                            # ("Local rAthena AI World:kicapmasin4" -> "kicapmasin4").
+                            _other_name = _other.split(":")[-1].split("/")[-1]
+                            import hashlib as _hl
+                            _rk = f"gm_{bot_id}_party_request_{_other}_{now.timestamp()}"
+                            aq.enqueue(bot_id, ActionProposal(
+                                action_id=_hl.md5(_rk.encode()).hexdigest()[:32],
+                                bot_id=bot_id,
+                                action_type="party_request",
+                                command=f"party request {_other_name}",
+                                priority_tier=ActionPriorityTier.strategic,
+                                source="god_mode",
+                                metadata={
+                                    "reason": data.get("reason", ""),
+                                    "gm_type": "party_organize",
+                                    "party_action": "request",
+                                    "member": _other_name,
+                                },
+                                conflict_key=f"god_mode_{bot_id}_party_request_{_other}",
+                                created_at=now,
+                                expires_at=now + timedelta(seconds=30),
+                                idempotency_key=_rk,
+                            ))
+                            count += 1
                 else:
                     _cmd = str(mapped_type)
                 import hashlib
@@ -1283,7 +1315,10 @@ class GodModeOrchestrator:
                     "bot_id": leader,
                     "type": "party_organize",
                     "priority": 90,
-                    "data": {"reason": "incomplete_party"},
+                    "data": {
+                        "reason": "incomplete_party",
+                        "all_bots": sorted(bot_states.keys()),
+                    },
                 })
         
         # Check for heal opportunities
