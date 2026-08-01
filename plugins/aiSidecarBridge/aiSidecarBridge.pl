@@ -2140,21 +2140,25 @@ sub _build_snapshot_payload {
 					# partyAuto controlled by heuristic — bridge must NOT override
 				}
 		# ── Direct party invite: leader invites missing members ──
+		# OBSERVABILITY ONLY — the fleet coordinator (sidecar) is the party
+		# actor. These blocks are leftover pre-coordinator logic; emitting
+		# party commands from the bridge fights the coordinator's gating and
+		# produced the frozen party-request spam (Commands::run dispatches the
+		# handler with the ORIGINAL switch, so hook gates cannot stop it).
 		if (@::aiSidecar_all_bots_split && ($::config{username} || '') eq $::aiSidecar_all_bots_split[0] && $_leader_lv >= 40) {
 			if (!defined($char->{party})) {
 				my $_ts = time();
-				my $_ok = eval { Commands::run("party create AI$_ts"); 1; };
-				debug "bridge_party_create: creating party AI$_ts ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+				debug "bridge_party_create: would create party AI$_ts (coordinator owns formation)\n", 'aiSidecarBridge', 1;
 			}
 		}
 	# PARTY HEARTBEAT: If not in party, create one (only at level 40+)
+	# OBSERVABILITY ONLY — coordinator owns party formation (see above).
 	if (!defined($char->{party}) && @::aiSidecar_all_bots_split && $_leader_lv >= 40) {
 		my $_now = time();
 		if (($_now - ($::aiSidecar_last_party_create || 0)) > 5) {
 			$::aiSidecar_last_party_create = $_now;
 			my $_party_name = 'AI' . int($_now);
-			my $_ok = eval { Commands::run("party create $_party_name"); 1; };
-			debug "bridge_party_create: creating '$_party_name' ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+			debug "bridge_party_create: would create '$_party_name' (coordinator owns formation)\n", 'aiSidecarBridge', 1;
 		}
 	}
 		# Then invite missing members (only at level 40+)
@@ -2172,22 +2176,21 @@ sub _build_snapshot_payload {
 					next if $_pn eq ($::config{username} || '');
 					my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;  # Use char name from sidecar
 					if (!$_mn{$_cn}) {
-						my $_ok = eval { Commands::run("party request $_cn"); 1; };
-						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+						debug "bridge_party_invite: would request $_cn (coordinator owns invites)\n", 'aiSidecarBridge', 1;
 					}
 				}
-		}
-		# Leader invites missing members
-		# Leader detection: check if this bot is the first in all_bots
-		# all_bots comes from sidecar via snapshot cache
-		if (defined($char->{party})) {
-			# Check if we're the leader by reading all_bots from shared state
-			# For now, use a simple heuristic: the bot with the lowest username alphabetically is leader
-			my $_all_bots_str = $::aiSidecar_all_bots || '';
-			my @_all_bots = split(',', $_all_bots_str);
-			my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
-			if ($_is_leader) {
-			my $_pu = $char->{party}{users} || {};
+				}
+				# Leader invites missing members
+				# Leader detection: check if this bot is the first in all_bots
+				# all_bots comes from sidecar via snapshot cache
+				if (defined($char->{party})) {
+				# Check if we're the leader by reading all_bots from shared state
+				# For now, use a simple heuristic: the bot with the lowest username alphabetically is leader
+				my $_all_bots_str = $::aiSidecar_all_bots || '';
+				my @_all_bots = split(',', $_all_bots_str);
+				my $_is_leader = @_all_bots && ($::config{username} || '') eq $_all_bots[0];
+				if ($_is_leader) {
+				my $_pu = $char->{party}{users} || {};
 				my %_mn;
 				for my $_uid (keys %$_pu) {
 					my $_pm = $_pu->{$_uid};
@@ -2199,12 +2202,11 @@ sub _build_snapshot_payload {
 					next if $_pn eq ($::config{username} || '');
 					my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;  # Use char name from sidecar
 					if (!$_mn{$_cn}) {
-						my $_ok = eval { Commands::run("party request $_cn"); 1; };
-						debug "bridge_party_invite: requesting $_cn ok=" . ($_ok||0) . "\n", 'aiSidecarBridge', 1;
+						debug "bridge_party_invite: would request $_cn (coordinator owns invites)\n", 'aiSidecarBridge', 1;
 					}
 				}
-			}
-		}
+				}
+				}
 		}
 		$progression = eval {
 			my %p;
@@ -4214,8 +4216,7 @@ sub _send_party_status {
 			next if $_pn eq ($::config{username} || '');
 			my $_cn = $::aiSidecar_profile_to_char{$_pn} || $_pn;
 			if (!$_mn{lc($_cn)}) {
-				debug "[party_status] leader inviting missing member: $_cn\n", 'aiSidecarBridge', 1;
-				eval { Commands::run("party request $_cn"); 1; };
+				debug "[party_status] leader would invite missing member: $_cn (coordinator owns invites)\n", 'aiSidecarBridge', 1;
 			}
 		}
 	}
