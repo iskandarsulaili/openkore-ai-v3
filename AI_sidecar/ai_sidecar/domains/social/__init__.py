@@ -36,12 +36,16 @@ class SocialDomain(BaseDomain):
         base_level = int(signals.get("base_level", signals.get("level", 1)) or 1)
 
         # Party management (level 40+ only — solo before 40 is faster,
-        # and 'party create' with no name errors on a non-party bot)
+        # and 'party create' with no name errors on a non-party bot).
+        # OBSERVABILITY ONLY — the fleet coordinator (god_mode) is the
+        # party actor; raw party commands from domain layers caused the
+        # frozen party-request spam (see test_no_party_command_emissions).
         if not in_party and bot_id not in self._party_cache and base_level >= 40:
             actions.append(HeuristicAction(
-                kind="command", command=f"party create AI{int(__import__('time').time())}",
+                kind="log", command="party_create_pending",
                 confidence=0.8, reason="Create party",
                 domain="social",
+                metadata={"party_action": "create_pending"},
             ))
             self._party_cache[bot_id] = True
         
