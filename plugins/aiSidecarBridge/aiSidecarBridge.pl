@@ -108,6 +108,7 @@ our %_last_reflex_fire_ms = ();
 
 # Committed action guard - prevents conflicting commands within 30s window
 our %_committed_actions = ();
+our %_committed_commands = ();  # normalized command text => last-executed ms
 our $_last_move_humanize_ms = 0;
 our %_pending_batch_actions = ();
 our $COMMITTED_ACTION_COOLDOWN_MS = 30000;
@@ -3156,7 +3157,7 @@ sub _execute_action {
 		usleep($delay_ms * 1000) if $delay_ms > 0;
 	}
 	
-	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata);
+	my ($effective_command, $rewrite_kind) = _rewrite_runtime_command($command, $metadata, $action_id);
 
 	# ── LOGGED-OUT GATE (hoisted to top of dispatch) ──
 	# Previously an elsif at the END of the dispatch chain, so early
@@ -3208,8 +3209,18 @@ sub _execute_action {
 				delete $_committed_actions{$_ca_key};
 			}
 		}
-		# Track this action
+		for my $_cc_key (keys %_committed_commands) {
+			if ($now - $_committed_commands{$_cc_key} > $COMMITTED_ACTION_COOLDOWN_MS) {
+				delete $_committed_commands{$_cc_key};
+			}
+		}
+		# Track this action (by action_id AND normalized command text so the
+		# rewrite can suppress exact duplicates of one-shot commands)
 		$_committed_actions{$action_id} = $now;
+		my $_cmd_key = lc($effective_command);
+		$_cmd_key =~ s/\s+/ /g;
+		$_cmd_key =~ s/^\s+|\s+$//g;
+		$_committed_commands{$_cmd_key} = $now if $_cmd_key ne '';
 		debug "[committed_action] tracked action_id=$action_id cmd=$effective_command\n", 'aiSidecarBridge', 2;
 	}
 
@@ -5164,7 +5175,32 @@ sub _command_allowed {
 my $_last_pro_ro_lockmap_ms = 0;
 
 sub _rewrite_runtime_command {
-	my ($command, $metadata) = @_;
+	my ($command, $metadata, $action_id) = @_;
+
+	# ── COMMITTED-ACTION CONSULTATION ──
+	# _committed_actions/_committed_commands are written in _execute_action.
+	# Suppress exact duplicates of ONE-SHOT commands (party ops, ai mode
+	# toggles, stand/sit/respawn) re-issued within the 30s cooldown window —
+	# the sidecar queue may re-emit the same proposal (e.g. after a poll
+	# retry), and repeating these is always wrong. Repeating commands like
+	# 'attack' are deliberately NOT in this set: they are legitimately
+	# re-issued every cycle.
+	if (defined $action_id && $action_id ne 'unknown_action') {
+		my %_one_shot = map { $_ => 1 } (
+			'party create', 'party join', 'party leave',
+			'ai auto', 'ai manual', 'stand', 'sit', 'respawn',
+		);
+		my $_cmd_norm = lc($command || '');
+		$_cmd_norm =~ s/\s+/ /g;
+		$_cmd_norm =~ s/^\s+|\s+$//g;
+		if ($_cmd_norm ne '' && $_one_shot{$_cmd_norm}) {
+			my $_now_ms = _now_ms();
+			if (exists $_committed_commands{$_cmd_norm} && $_now_ms - $_committed_commands{$_cmd_norm} <= $COMMITTED_ACTION_COOLDOWN_MS) {
+				debug "[committed_suppress] $command already executed within cooldown; dropping\n", 'aiSidecarBridge', 2;
+				return ('', 'committed_action_duplicate');
+			}
+		}
+	}
 
 	# ── ITEM 602 SUPPRESSION: block 'use 602' / 'use Butterfly Wing' at rewrite level ──
 	# Must be FIRST before any cooldown/rewrite logic to prevent "on cooldown" log spam.
