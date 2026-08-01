@@ -15,7 +15,6 @@ my $ran = 0;
 
 sub on_char_screen {
     my (undef, $args) = @_;
-    return if $ran;
     
     my $username = $config{username} || '';
     message "[auto_fix] Checking characters for $username...\n", 'system';
@@ -48,13 +47,24 @@ sub on_char_screen {
             message "[auto_fix] Using slot $slot (already has character)\n", 'system';
         }
         configModify("char", $slot);
+        
+        # CRITICAL: send char_login explicitly. Misc.pm's charSelectScreen
+        # only auto-logs-in when called with autoLogin=1 (::charSelectScreen(1)).
+        # The char list packet handler chain (Network/Receive.pm) calls it with
+        # NO args, so autoLogin is undef and char_login is NEVER sent — the bot
+        # loops re-receiving the char list forever and never enters the game.
+        # Sending it here guarantees login every time a valid character exists.
+        message "[auto_fix] Sending char_login for slot $slot...\n", 'system';
+        eval { $messageSender->sendCharLogin($slot); 1; } or do {
+            warning "[auto_fix] sendCharLogin failed: $@\n", 'system';
+        };
+        $timeout{charlogin}{time} = time;
+        
+        # Do NOT hijack $args->{return} — Misc.pm's charSelectScreen continues
+        # afterward; forcing a return value prevented the game from loading.
+        # We've already sent char_login above, so the flow proceeds to the map.
         $ran = 1;
         Plugins::delHook('charSelectScreen', $hook) if $hook;
-        # IMPORTANT: do NOT set $args->{return} here. charSelectScreen's
-        # autoLogin block (which sends the 0x66 char_login packet) only runs
-        # when the plugin does not hijack the return value. Returning a
-        # truthy ref (\ "\"") made charSelectScreen return early and the bot
-        # never entered the game.
         return;
     }
     
