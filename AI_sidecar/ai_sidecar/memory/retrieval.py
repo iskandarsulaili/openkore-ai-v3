@@ -153,40 +153,47 @@ class MemoryProvider(ABC):
     ) -> str:
         raise NotImplementedError
 
+    @abstractmethod
     def _add_semantic_impl(
         self, bot_id: str, source: str, content: str,
         metadata: dict[str, object],
     ) -> str:
         raise NotImplementedError
 
+    @abstractmethod
     def _search_semantic_impl(
         self, bot_id: str, query: str, limit: int,
     ) -> list[dict[str, object]]:
         raise NotImplementedError
 
+    @abstractmethod
     def _recent_episodes_impl(
         self, bot_id: str, limit: int,
     ) -> list[dict[str, object]]:
         raise NotImplementedError
 
+    @abstractmethod
     def _query_episodic_impl(
         self, bot_id: str, event_type: str | None,
         context_query: str | None, limit: int,
     ) -> list[dict[str, object]]:
         raise NotImplementedError
 
+    @abstractmethod
     def _query_semantic_impl(
         self, bot_id: str, concept: str | None,
         min_confidence: float, limit: int,
     ) -> list[dict[str, object]]:
         raise NotImplementedError
 
+    @abstractmethod
     def _search_by_relevance_impl(
         self, bot_id: str, query: str, limit: int,
         include_episodic: bool, include_semantic: bool,
     ) -> list[dict[str, object]]:
         raise NotImplementedError
 
+    @abstractmethod
     def _stats_impl(self, bot_id: str) -> dict[str, int]:
         raise NotImplementedError
 

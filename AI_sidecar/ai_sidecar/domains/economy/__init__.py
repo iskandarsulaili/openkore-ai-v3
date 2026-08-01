@@ -268,4 +268,6 @@ class EconomyDomain:
 
     def cleanup_bot(self, bot_id: str) -> None:
         """Clean up per-bot state."""
-        pass
+        removed = self._last_assessment.pop(bot_id, None)
+        if removed is not None:
+            logger.debug("Economy domain: dropped per-bot state for %s", bot_id)

@@ -91,9 +91,11 @@ class LLMProvider(ABC):
     async def generate_structured(self, request: PlannerModelRequest) -> PlannerModelResponse:
         raise NotImplementedError
 
+    @abstractmethod
     async def embed(self, *, bot_id: str, trace_id: str, model: str, texts: list[str]) -> EmbeddingResponse:
         raise NotImplementedError
 
+    @abstractmethod
     async def health(self, *, bot_id: str) -> ProviderHealth:
         raise NotImplementedError
 

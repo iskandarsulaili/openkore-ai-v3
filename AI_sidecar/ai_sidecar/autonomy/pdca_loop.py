@@ -4961,6 +4961,46 @@ class PDCALoop:
                                         object.__setattr__(self, "_last_pos", _last_pos)
                                     except Exception:
                                         pass
+                                    # ── FLEET LEARNING FEED ──
+                                    # A map transition closes the previous zone
+                                    # session. Compute per-zone outcome deltas
+                                    # (exp/zeny gained, deaths, duration) and feed
+                                    # the FleetLearningSystem so zone ELO and party
+                                    # composition stats actually learn (previously
+                                    # initialized but never fed — tables stayed 0).
+                                    try:
+                                        _fl = getattr(self._runtime, "fleet_learning", None)
+                                        if _fl is not None:
+                                            import time as _t
+                                            from ai_sidecar.fleet.self_learning import ZoneOutcome as _ZO
+                                            _now = _t.time()
+                                            _entry = getattr(self, "_zone_entry", {}).get(_reflex_bot_id)
+                                            _level = int(_conscious_snap.get("progression", {}).get("base_level", 0) or 0) if isinstance(_conscious_snap, dict) else 1
+                                            if _entry is not None:
+                                                _dur = max(0.0, (_now - _entry["ts"]) / 60.0)
+                                                if _dur >= 0.5:  # >=30s on a map is a real session
+                                                    _fl.record_outcome(_ZO(
+                                                        bot_id=_reflex_bot_id,
+                                                        map_name=_entry["map"],
+                                                        bot_level=int(_entry["level"] or 1),
+                                                        duration_minutes=_dur,
+                                                        base_exp_gained=max(0.0, float(_est_xp or 0) - float(_entry.get("xp", 0) or 0)),
+                                                        job_exp_gained=0.0,
+                                                        zeny_gained=max(0.0, float(_est_zeny or 0) - float(_entry.get("zeny", 0) or 0)),
+                                                        death_count=max(0, int(_conscious_snap.get("death_count", 0) or 0) - int(_entry.get("deaths", 0) or 0)),
+                                                        party_size=1,
+                                                        success=True,
+                                                    ))
+                                            _zone_entries = getattr(self, "_zone_entry", {})
+                                            _zone_entries[_reflex_bot_id] = {
+                                                "map": _map, "level": _level,
+                                                "xp": float(_est_xp or 0), "zeny": float(_est_zeny or 0),
+                                                "deaths": int(_conscious_snap.get("death_count", 0) or 0),
+                                                "ts": _now,
+                                            }
+                                            object.__setattr__(self, "_zone_entry", _zone_entries)
+                                    except Exception:
+                                        pass
                                 _last_map[_reflex_bot_id] = _map
                                 object.__setattr__(self, "_last_map", _last_map)
                         except Exception:
