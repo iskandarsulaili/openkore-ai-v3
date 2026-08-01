@@ -142,9 +142,10 @@ class ProgressionDomain(BaseDomain):
             service._cold_start_step[_cs_key] = 1
         elif not _in_town:
             actions.append(HeuristicAction(
-                kind="command", command="ai manual",
-                confidence=0.99, domain="economy",
-                reason="Cold start - disable AI for portal walk",
+                kind="log", command="ai_mode_manual",
+                confidence=0.5, domain="planning",
+                reason="Cold start - disable AI for portal walk [log-only: config-audit owns AI mode]",
+                metadata={"ai_mode": "manual"},
             ))
             actions.append(HeuristicAction(
                 kind="command", command="move prontera",
@@ -175,9 +176,10 @@ class ProgressionDomain(BaseDomain):
             ))
         elif _in_hunting:
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="economy",
-                reason="Cold start step 1 - enable AI for farming Porings",
+                kind="log", command="ai_mode_auto",
+                confidence=0.5, domain="planning",
+                reason="Cold start step 1 - enable AI for farming Porings [log-only: config-audit owns AI mode]",
+                metadata={"ai_mode": "auto"},
             ))
             actions.append(HeuristicAction(
                 kind="command", command="set attackAuto 3",
@@ -267,8 +269,9 @@ class ProgressionDomain(BaseDomain):
             return
         if _in_hunting:
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="progression",
+                kind="log", command="ai_mode_auto",
+                confidence=0.5, domain="planning",
+                metadata={"ai_mode": "auto"},
                 reason=f"Step 5 - farm to level 10 (currently {base_level})",
             ))
             actions.append(HeuristicAction(
@@ -416,8 +419,9 @@ class ProgressionDomain(BaseDomain):
                 break
         if _in_hunting:
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="progression",
+                kind="log", command="ai_mode_auto",
+                confidence=0.5, domain="planning",
+                metadata={"ai_mode": "auto"},
                 reason=f"Step 8 - farm {_hunt_map} as {job_name}",
             ))
             actions.append(HeuristicAction(

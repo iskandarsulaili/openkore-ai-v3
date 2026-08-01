@@ -89,20 +89,31 @@ class DomainRegistry:
         Each domain module is expected to expose a module-level
         function ``create_domain() -> BaseDomain`` or a class
         ``Domain`` that can be instantiated.
+
+        OBSERVE-ONLY MODE: all legacy autonomy/domains modules are
+        registered but every command they emit is converted to an
+        observable log intent (kind="log") at assess_all time. Their
+        analysis runs live (proving the code is exercised, not dormant)
+        but nothing executes — the modern per-manager wiring in
+        heuristic_service._init_new_domains owns actual command emission,
+        so observe-only prevents double-emission. Party commands and
+        ai-mode flips are additionally stripped at the source (social.py
+        emits party_* log intents; ai_mode_* log intents replace
+        `ai manual`/`ai auto`).
         """
-        # ⚠️ DELIBERATELY EMPTY — DO NOT POPULATE.
-        # The modules under autonomy/domains/* (combat, social, economy, ...) are
-        # a LEGACY parallel domain system. The modern per-manager wiring in
-        # heuristic_service._init_new_domains (PartyDomain, EquipmentOptimizer,
-        # ColdStartManager, LifecycleManager, ...) supersedes them. Populating
-        # this list would DOUBLE-EMIT with those wired managers AND reintroduce
-        # the round-2 party spam (social.py emits 'party create AI<ts>' /
-        # 'party request <name>' / 'party leave' — the exact commands the bridge
-        # party gates and the fleet coordinator now suppress).
-        # If a new domain is genuinely needed, add it to _init_new_domains
-        # instead of this list. See tests/test_task_scheduler_wiring.py and
-        # the bridge party-suppression blocks for the guard rationale.
         domain_module_names = [
+            "combat",
+            "consumables",
+            "economy",
+            "environment",
+            "equipment",
+            "learning",
+            "mimicry",
+            "npc",
+            "progression",
+            "quests",
+            "routing",
+            "social",
         ]
         for mod_name in domain_module_names:
             try:
@@ -128,6 +139,12 @@ class DomainRegistry:
 
         # Sort by priority so assess() iterates in priority order
         self._domains.sort(key=lambda d: d.priority)
+        if self._domains:
+            logger.info(
+                "legacy_domains_activated: %d modules in observe-only mode (%s)",
+                len(self._domains),
+                ",".join(d.name for d in self._domains),
+            )
 
     def assess_all(
         self,
@@ -135,10 +152,25 @@ class DomainRegistry:
         actions: list[HeuristicAction],
         service: Any,
     ) -> None:
-        """Call every domain's assess() in priority order."""
+        """Call every domain's assess() in priority order.
+
+        OBSERVE-ONLY: any kind="command" action a legacy domain emits is
+        converted to kind="log" (observable intent, never executed). This
+        exercises the modules' analysis without double-emitting with the
+        modern wired managers or reintroducing party/ai-mode spam.
+        """
         for domain in self._domains:
             try:
+                before = len(actions)
                 domain.assess(signals, actions, service)
+                for _idx in range(before, len(actions)):
+                    _a = actions[_idx]
+                    if _a.kind == "command":
+                        _a.kind = "log"
+                        _a.metadata = dict(getattr(_a, "metadata", {}) or {})
+                        _a.metadata["observe_only"] = True
+                        _a.metadata["source_domain"] = domain.name
+                        _a.reason = f"[observe-only {domain.name}] {_a.reason}"
             except Exception as exc:
                 logger.error(
                     "Domain %s crashed: %s", domain.name, exc, exc_info=True

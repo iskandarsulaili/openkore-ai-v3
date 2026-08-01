@@ -85,9 +85,10 @@ class RoutingDomain(BaseDomain):
             reason="Stand up before moving to hunting map",
         ))
         actions.append(HeuristicAction(
-            kind="command", command="ai auto",
-            confidence=0.99, domain="hunting",
-            reason="Enable auto-attack before moving to hunting map",
+            kind="log", command="ai_mode_auto",
+            confidence=0.5, domain="planning",
+            reason="Enable auto-attack before moving to hunting map [log-only: config-audit owns AI mode]",
+            metadata={"ai_mode": "auto"},
         ))
 
         # Set lockMap to hunting map

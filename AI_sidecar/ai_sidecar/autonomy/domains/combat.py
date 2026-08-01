@@ -192,16 +192,19 @@ class CombatDomain(BaseDomain):
         _job_name = str(signals.get("job_name", "novice") or "novice").lower()
         _weapon_type = JOB_WEAPON_TYPE.get(_job_name, "dagger")
 
-        _best_skill = get_best_skill(
-            _known_skills, _skill_levels, _attack_power, _weapon_type,
-            _monster_def, _monster_size, _monster_element, _monster_race,
-            _current_sp, _max_sp, _agi, _dex, _aggro_count, _player_hp,
+        # get_best_skill(attack_power, available_skills: dict, sp_available)
+        # — the legacy caller passed 14 positional args to a 3-arg function
+        # (TypeError the moment this module was exercised). Use the real
+        # signature; extra context (element/def/size/race/aggro) is handled
+        # by the modern combat managers, this is the DPS-only selection.
+        _best_skill, _best_level, _best_dps = get_best_skill(
+            int(_attack_power or 0), dict(_skill_levels or {}), int(_current_sp or 0),
         )
         if _best_skill:
             actions.append(HeuristicAction(
                 kind="command", command=f"attack_skill {_best_skill}",
                 confidence=0.90, domain="combat",
-                reason=f"DPS skill: {_best_skill} (best DPS vs {_monster_element} monster)",
+                reason=f"DPS skill: {_best_skill} lv{_best_level} ({_best_dps:.0f} DPS vs {_monster_element} monster)",
             ))
 
     def _check_mvp_nearby(

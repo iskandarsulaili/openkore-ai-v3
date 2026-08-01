@@ -506,4 +506,20 @@ class CrewManager:
                 "ok": True, "execution_mode": "config", "tool": "plan_control_change",
                 "capability": {"config": {"tool": "plan_control_change"}},
             }
+        if tool_name == "ml_shadow_predict":
+            # Deterministic consumer for CrewToolFacade: declared in the
+            # crew tool config but never dispatched — the facade's shadow
+            # prediction is now reachable by agents through the same
+            # execute_tool path as every other tool.
+            try:
+                from ai_sidecar.crewai.tools.runtime_tools import CrewToolFacade
+                facade = CrewToolFacade(runtime=self.runtime)
+                return facade.ml_shadow_predict(
+                    bot_id=bot_id,
+                    model_family=str(arguments.get("model_family", "") or ""),
+                    objective=str(arguments.get("objective", "") or ""),
+                    planner_choice=arguments.get("planner_choice") or None,
+                )
+            except Exception as e:
+                return {"ok": False, "error": f"ml_shadow_predict_failed:{e}"}
         return {"ok": False, "error": f"unknown_tool:{tool_name}"}

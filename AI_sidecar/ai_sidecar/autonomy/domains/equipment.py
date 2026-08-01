@@ -68,9 +68,10 @@ class EquipmentDomain(BaseDomain):
         )
         if not _has_weapon_equipped and _atk_power < 10 and zeny >= 100:
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.95, domain="economy",
-                reason="No weapon detected - go buy one",
+                kind="log", command="ai_mode_auto",
+                confidence=0.5, domain="planning",
+                reason="No weapon detected - go buy one [log-only: config-audit owns AI mode]",
+                metadata={"ai_mode": "auto"},
             ))
 
 

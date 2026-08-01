@@ -86,9 +86,10 @@ class MimicryDomain(BaseDomain):
                        f"with HP={_hp:.0%} - forcing stand",
             ))
             actions.append(HeuristicAction(
-                kind="command", command="ai auto",
-                confidence=0.99, domain="survival",
-                reason="Re-enable auto-attack after forced stand",
+                kind="log", command="ai_mode_auto",
+                confidence=0.5, domain="planning",
+                reason="Re-enable auto-attack after forced stand [log-only: config-audit owns AI mode]",
+                metadata={"ai_mode": "auto"},
             ))
             service._sit_start_time[bot_id] = 0
 
