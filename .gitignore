@@ -123,3 +123,4 @@ data/sidecar_experience.sqlite
 control/ai_sidecar_macros.txt
 control/ai_sidecar_generated_macros.txt
 AI_sidecar/ai_sidecar/skills/.usage.json
+.bot_profiles_stash/
