@@ -135,9 +135,27 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       intent when a map signal is present — the domain is exercised each cycle
       while still leaving executable NPC commands to the economy/routing
       domains (design preserved).   [this batch]
-- [x] Sweep S13 (verified no-action): combat/tactics/base.py BaseTactics
+- [x] Sweep S13 (verified no-action): combat/tactics/base.py
       None/[] defaults are the template-method fallback — all 7 concrete
       tactic classes override select_target etc. crewai base_agent can_handle
       0.0/get_action None are abstract-defaults overridden by all concrete
       agents. p2p_knowledge log_message PASS is the standard HTTP-log-noise
-      suppression. llm/providers name() accessors are correct.   [this batch]
+      suppression. llm/providers name() accessors are correct.   [previous]
+- [x] LIVE-PROGRESS FIX S14: keep-alive was DISABLED + broken.
+      start.sh launched the sidecar without `--keep-alive`; config
+      game_server_host/port pointed at the wrong endpoint; and the loop
+      skipped ALL work when bot_count>0 (bots stay registered while dead).
+      Now: start.sh enables keep-alive (--keep-alive --keep-alive-poll 10);
+      host/port fixed to 127.0.0.1:6121 (proven via the game_server_keepalive
+      watchdog); the loop restarts registered-but-stale bots (last_seen_at
+      heartbeat) when the server is reachable. +3 tests
+      (test_keep_alive_restart_stale_bots.py). [8cc398109]
+- [x] LIVE-PROGRESS FIX S15: Secluded Island escape re-routed forever.
+      PDCA re-issued `move 49 57` from every horizon each cycle; OpenKore
+      re-routed each copy and never walked onto the (49,57) OnTouch warp.
+      Bridge now dedupes the sailor move (30s committed-command cooldown) so
+      the route completes once. [0b65d6df2]
+- [x] LIVE-PROGRESS FIX S16: sailor dialog never advanced, so close2 auto-warp
+      didn't fire. Bridge auto-completes `talknpc 49 57` -> `talknpc 49 57 c`
+      (advance + close2 -> warps to iz_int03). LIVE-PROVEN: bot10 received the
+      iz_int03.gat warp handoff. [ede0f4222]
