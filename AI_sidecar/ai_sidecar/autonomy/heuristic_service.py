@@ -1772,25 +1772,28 @@ class HeuristicService:
                                 # first — otherwise it spams "Cannot calculate a route
                                 # from int_land ... to prt_fild08" forever.
                                 if _cur_map.startswith("int_land"):
-                                    # RUN, DON'T FIGHT on the island: a level-1
-                                    # bot cannot kill a 55-HP Poring bare-handed,
-                                    # and the island's aggressive Poring will kill
-                                    # it if it stops to fight. Force attackAuto 0 so
-                                    # the bot rushes past the (49,57) sailor and
-                                    # sails to Izlude unimpeded.
+                                    # Fight the island Porings while running to
+                                    # the sailor: the island's Porings are weak
+                                    # (Lv1, 55 HP, Atk 1) and the fresh bot (100 HP)
+                                    # can TANK + kill them — a Knife drop (10%)
+                                    # starts the gear chain. attackAuto 0 was
+                                    # WRONG here: it left the bot defenseless so it
+                                    # died taking hits without fighting back. Use
+                                    # attackAuto 2 (fight as it moves) so it clears
+                                    # Porings on the way to the (49,57) warp.
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="set attackAuto 0",
+                                        command="set attackAuto 2",
                                         confidence=0.95,
-                                        reason="Cold start: run (don't fight) on Secluded Island",
-                                        domain="survival",
+                                        reason="Cold start: fight weak island Porings while running to the sailor",
+                                        domain="combat",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="set attackAuto_inLockOnly 1",
+                                        command="set attackAuto_inLockOnly 0",
                                         confidence=0.90,
-                                        reason="Cold start: only attack on lockMap (not island)",
-                                        domain="survival",
+                                        reason="Cold start: allow attacking anywhere on the island (not lockMap-bound)",
+                                        domain="combat",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",

@@ -81,7 +81,8 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     assert "move 49 57" in cmds, f"must walk to sailor: {cmds}"
     assert any("talknpc 49 57" in c for c in cmds), f"must open sailor dialog: {cmds}"
     assert "talk resp 1" in cmds, f"must select 'Sail to Izlude!' if prompted: {cmds}"
-    assert "set attackAuto 0" in cmds, f"must run (attackAuto 0) on the island: {cmds}"
+    assert "set attackAuto 2" in cmds, f"must fight island Porings (attackAuto 2): {cmds}"
+    assert "set attackAuto 0" not in cmds, f"attackAuto 0 leaves the bot defenseless (dies on island): {cmds}"
     # Must NOT force prt_fild08 lockMap OR move prontera while stranded (both
     # cannot route from int_land and would leave the bot stuck at spawn).
     assert not any("prt_fild08" in c for c in cmds), f"no lockMap on island: {cmds}"
