@@ -168,13 +168,60 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       horizon/cycle, constantly cancelling combat -> 0 kills/0 exp. Throttled
       the sail attempt (move 49 57 + talknpc 49 57) to once per 45s per bot
       (_last_island_escape) so bots grind Porings between attempts. [ea478202d]
-- [ ] OPEN BLOCKER (server design, not bot code): the Secluded Island spawns
+- [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
-      (drops to teleport-range in ~4s) and cannot land a kill, so the designed
-      island-grind (collect 6008 x2 -> Sailor 58,69 -> 100 exp -> sail) is not
-      reachable by an automated gear-less bot. Escape IS proven (iz_int03 warp
-      received); sustained live escape+level is blocked by this server-side
-      starting-experience design combined with a flapping char-server. Bot-side
-      logic is complete + suite-verified; requires a server-side starting-gear
-      grant or a non-hostile starting map to demonstrate live leveling.
+      and cannot land a kill, so the designed island-grind (collect 6008 x2 ->
+      Sailor 58,69 -> 100 exp -> sail) is not reachable by an automated
+      gear-less bot. Escape IS proven (iz_int03 warp received). Requires a
+      server-side starting-gear grant or non-hostile starting map for live
+      leveling.                                                    [this batch]
+
+────────────────────────────────────────────────────────────────────────────
+## C. Connection-drop ROOT CAUSES (deep-investigated, evidence-backed)
+
+The recurring disconnect was NOT "remote server instability". Two distinct
+server C++ crashes were root-caused from logs + core dumps:
+
+- [x] C1 BROAD FIX (map-server std::invalid_argument crash): the map-server
+      crashed on unguarded std::stoi/stof in mob_ml_gateway.cpp (ML inference
+      result parsing from PG + Redis cache). Empty/NUL-padded ML values threw
+      std::invalid_argument -> std::terminate -> map-server crash -> EVERY
+      player force-disconnected. HARDENED both parse sites with try/catch,
+      rebuilt (`make map-server`), systemctl restart rathena-map. VERIFIED:
+      PID stayed alive processing ai_npc_movement ML calls >240s with 0 crash
+      / 0 invalid_argument (was crashing on same traffic). Committed in
+      rathena-AI-world as 5bb21d4eb.                   [COMMITTED+BINARY]
+- [x] C2 BROAD FIX (keep-alive one-shot latch wedge): root-caused that after a
+      server crash-cascade the keep-alive loop's one-shot `keep_alive_bots_
+      restarted` latch suppressed ALL later restarts while any bot stayed
+      stale -> fleet permanently dead at 0 processes. Replaced latch with
+      pacing (_last_stale_restart / _stale_restart_interval, min 60s). +1
+      regression test. 352 passed/0 failed.  [openkore-ai-v3 0f60c6d6d]
+- [ ] OPEN C3 (char-server SIGSEGV at char-select = REMAINING disconnect
+      cause): core dump core.char-server.3285834 -> SIGSEGV in
+      chclif_parse_charselect+446 (`mov 0x4(%rbp),%ecx`, rbp=NULL) right
+      before Sql_Query — a use-after-free of `char_session_data& sd` when
+      MANY bots select characters concurrently (23 registered) and one
+      session is freed mid-parse by a concurrent disconnect. Existing guards
+      check session[fd] at entry but the local `sd` reference dangles.
+      376 crash signals in char-server log; every crash is preceded by exactly
+      "Selected char" + "Subnet check" then SIGSEGV => kicks all bots/players.
+      FIX PATH (not yet applied): serialize/limit concurrent char-selects,
+      and/or copy `sd` fields before cross-call use, and/or throttle the fleet
+      to a small concurrent-login count. Server-side change; needs char-server
+      rebuild + verified boot.
+- [ ] OPEN C4 (mail wire-size mismatch, non-fatal but real): map-server
+      `intif_parse_Mail_inboxreceived data size error 30397 30728`. Char sends
+      field-by-field serialized size; map compares against raw
+      `sizeof(struct mail_data)` + its own expected_size; they disagree (packed
+      wire != padded struct) so the mail inbox is silently discarded and never
+      displays/updates. Not a crash, but mail is effectively non-functional.
+      FIX: map should compare against the same field-by-field expected_size
+      (line 2360), not sizeof(struct mail_data).
+- [ ] OPEN C5 (fleet concurrency amplifier): 23 bots registered hammering one
+      char-server via Poseidon concurrently is what triggers C3. Any successful
+      fix to C3 (or throttling the concurrent-login rate) reduces the whole
+      disconnect cascade. Keep-alive pacing fix (C2) makes the fleet self-heal
+      across it, but the char-server must stop SIGSEGVing for sustained live
+      progression.
