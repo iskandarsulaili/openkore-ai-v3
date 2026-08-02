@@ -269,6 +269,21 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       fixed sidecar emits ZERO prt_fild05 lockMap/route and DOES emit the escape;
       bot10 escaped to izlude.gat and the sidecar then correctly locks
       prt_fild08 + attackAuto 3 (academy farm). [e758cd5d1]
+- [x] LIVE-UPGRADE S26 (ACADEMY-FIRST, VERIFIED in-isolation): a weapon-less
+      level-1 bot that escaped to izlude was idling in town (the reflex nav sent
+      it `navigate prt_fild05` to farm bare-handed; the cold-start econ step also
+      emitted `move prt_fild05`). Root-caused: NO academy-first step — the free
+      starter kit (Novice_Knife + 300 potions at iz_ac01 receptionist) is the real
+      first move. Fixed at three layers so academy wins for an izlude weapon-less
+      bot: (1) pathfinder nav override -> `move 125 257` (academy door), suppressing
+      `navigate prt_fild05`; (2) cold-start step-1 `_cs_in_town` override -> academy
+      door instead of prt_fild05; (3) added `_has_coldstart_weapon()` helper. Then
+      corrected the emission to COORDINATE form `move 125 257` (map-name move was a
+      no-op). VERIFIED in isolation: izlude weapon-less novice produces ONLY
+      `move 125 257` with zero prt_fild05 emissions. Commits 2650c75e6, 3577fc2ac,
+      b930e9903. Live end-to-end (physically reaching iz_ac01) still blocked by the
+      sidecar snapshot-pipeline gap (`snapshot_missing`/`heuristic_skip_disconnected`
+      make academy emission intermittent) — see BLOCKER below.
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
