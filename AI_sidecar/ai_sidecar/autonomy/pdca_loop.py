@@ -43,6 +43,15 @@ def _snapshot_disconnected_safe(snapshot: Any) -> bool:
 
     Handles both pydantic BotStateSnapshot objects and plain dicts.
     Used by _emit_heuristic_actions to skip phantom action emission.
+
+    IMPORTANT (live fix): during char-select <-> in-game transitions the bridge
+    may briefly report in_game=false even though the bot holds a real playable
+    map position (e.g. it reached iz_ac01/the academy or a town). Treating that
+    as "disconnected" withholds ALL heuristic commands — including the academy
+    registration (talknpc 100 39) — which is exactly what was blocking a bot
+    that physically reached the academy from ever registering. A bot whose
+    `raw.map` is a real game map is effectively in-game for decision purposes,
+    so we do NOT consider it disconnected in that case.
     """
     try:
         if isinstance(snapshot, dict):
@@ -53,7 +62,14 @@ def _snapshot_disconnected_safe(snapshot: Any) -> bool:
             raw = getattr(snapshot, "raw", {}) or {}
             if not isinstance(raw, dict):
                 raw = {}
-        if raw.get("in_game") is False:
+        _in_game = raw.get("in_game")
+        _map = str(raw.get("map") or getattr(snapshot, "map_name", "") or "").strip().lower()
+        # A real playable map (academy / towns / fields / dungeons) proves the bot
+        # reached in-game — never treat it as disconnected even if in_game flickered
+        # during a char-select transition. Empty map / harmless = still gated below.
+        if _map and _map not in ("", "charselect", "login", "not_logged"):
+            return False
+        if _in_game is False:
             return True
         status = str(raw.get("status") or raw.get("state") or raw.get("net_state") or "").strip().lower()
         return status in {
