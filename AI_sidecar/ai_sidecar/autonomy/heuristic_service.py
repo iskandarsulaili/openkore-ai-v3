@@ -1037,6 +1037,11 @@ class HeuristicService:
         # island Porings (exp + 6008 quest items + Knife drops) instead of
         # constantly re-targeting the sail attempt every horizon.
         self._last_island_escape: dict[str, float] = {}
+        # Academy-door walk throttle: bot_id -> last time we issued move 125 257.
+        # The academy move (izlude -> iz_ac01 door) must be issued at most once
+        # per ~10s, not every PDCA cycle, so OpenKore actually walks the long
+        # route instead of continuously recalculating a fresh path each cycle.
+        self._last_academy_move: dict[str, float] = {}
         # Save-point binding: bot_id -> set of town maps already bound there.
         # Once a bot visits a town's Kafra and binds its save point, it is NOT
         # re-bound on every visit (a one-shot per town). This keeps deaths/
@@ -1648,11 +1653,18 @@ class HeuristicService:
                             _cs_map_l = str(_cm or "").lower()
                             if _cs_map_l == "izlude" and not self._has_coldstart_weapon(signals):
                                 _target = "iz_ac01"
-                                _actions.append(HeuristicAction(
-                                    kind="command", command="move 125 257",
-                                    confidence=0.95,
-                                    reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
-                                    domain="progression"))
+                                # Throttle the academy-door move: issuing it every
+                                # PDCA cycle makes OpenKore recalculate the long route
+                                # continuously instead of walking it. Emit at most
+                                # once per 10s per bot so the move completes.
+                                _now = __import__("time").time()
+                                if _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
+                                    self._last_academy_move[_bot_id] = _now
+                                    _actions.append(HeuristicAction(
+                                        kind="command", command="move 125 257",
+                                        confidence=0.95,
+                                        reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
+                                        domain="progression"))
                             if _cm and _target and _cm != _target and _target != "iz_ac01":
                                 _path = self._pathfinder.find_path(_cm, _target)
                                 if _path:
@@ -2382,11 +2394,16 @@ class HeuristicService:
                     # potions. Override the prt_fild05 step-1 walk to send it to the
                     # academy door (izlude 125,257 warp -> iz_ac01) instead.
                     if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
-                        actions.append(HeuristicAction(
-                            kind="command", command="move 125 257",
-                            confidence=0.99, domain="progression",
-                            reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
-                        ))
+                        # Throttle the academy-door move (at most once per 10s) so
+                        # OpenKore walks the long izlude route instead of recalculating.
+                        _now = __import__("time").time()
+                        if _now - self._last_academy_move.get(bot_id, 0.0) >= 10.0:
+                            self._last_academy_move[bot_id] = _now
+                            actions.append(HeuristicAction(
+                                kind="command", command="move 125 257",
+                                confidence=0.99, domain="progression",
+                                reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
+                            ))
                         # Registration completes on arrival at iz_ac01 (handled by the
                         # academy block); do NOT advance the cold-start step here — the
                         # academy kit (knife+potions) will move the flow forward naturally.
