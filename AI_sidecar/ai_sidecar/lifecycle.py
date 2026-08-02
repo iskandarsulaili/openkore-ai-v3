@@ -672,6 +672,11 @@ class RuntimeState:
     keep_alive_task: asyncio.Task[None] | None = None
     keep_alive_server_was_up: bool = False
     keep_alive_bots_restarted: bool = False
+    # Pace stale-bot restarts (epoch of last restart + min seconds between them)
+    # instead of a one-shot latch, so the fleet keeps self-healing across a
+    # server crash-cascade even when the fresh bot processes also die.
+    _last_stale_restart: float = 0.0
+    _stale_restart_interval: float = 60.0
 
     # === Agent-added modules (must be declared for dataclass) ===
     cost_mode_manager: object | None = None
@@ -911,13 +916,21 @@ class RuntimeState:
                     )
 
                 # Server is up. Restart registered-but-stale (dead) bots.
+                # NOTE: must NOT latch to one-shot. If a restarted bot fails to
+                # come back healthy (e.g. the server is mid-crash-cascade and
+                # the fresh processes also die), a one-shot `keep_alive_bots_restarted`
+                # latch wedges the fleet dead forever: `stale` stays non-empty but
+                # restart is suppressed on every subsequent tick. We ALWAYS restart
+                # stale bots and only pace via _restart_bots()'s own interval guard,
+                # so the fleet self-heals across repeated server flaps.
                 import time as _time
                 now = _time.time()
                 records = self.bot_registry.list()
                 stale = self._list_stale_bots(records, stale_seconds, now)
                 if stale:
-                    if not self.keep_alive_bots_restarted:
-                        self.keep_alive_bots_restarted = True
+                    _cooldown_left = self._stale_restart_interval - (now - self._last_stale_restart)
+                    if _cooldown_left <= 0:
+                        self._last_stale_restart = now
                         ka_logger.warning(
                             "keep_alive_restarting_stale_bots",
                             extra={
@@ -926,15 +939,22 @@ class RuntimeState:
                                 "stale_seconds": stale_seconds,
                             },
                         )
-                        await self._restart_bots()
+                        try:
+                            await self._restart_bots()
+                        except Exception as exc:
+                            ka_logger.warning(
+                                "keep_alive_restart_error",
+                                extra={"event": "keep_alive_restart_error", "error": str(exc)},
+                            )
                     else:
                         ka_logger.debug(
-                            "keep_alive_stale_bots_already_restarting",
-                            extra={"event": "keep_alive_stale_bots_already_restarting", "stale_bots": stale},
+                            "keep_alive_stale_restart_paced",
+                            extra={"event": "keep_alive_stale_restart_paced",
+                                   "stale_bots": stale, "cooldown_left_s": round(_cooldown_left, 1)},
                         )
                 else:
-                    # All bots healthy.
-                    self.keep_alive_bots_restarted = False
+                    # All bots healthy — reset the pacing state.
+                    self._last_stale_restart = 0.0
                     ka_logger.debug("keep_alive_bots_healthy", extra={"event": "keep_alive_bots_healthy"})
             except asyncio.CancelledError:
                 ka_logger.info("keep_alive_loop_cancelled", extra={"event": "keep_alive_loop_cancelled"})

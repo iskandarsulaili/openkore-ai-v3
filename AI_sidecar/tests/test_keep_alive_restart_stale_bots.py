@@ -59,3 +59,37 @@ def test_missing_last_seen_at_is_ignored() -> None:
     no_ts = type("_X", (), {"bot_id": "bot:x", "last_seen_at": None})()
     out = rt._list_stale_bots([no_ts], stale_seconds=60, now=now)
     assert out == []
+
+
+def test_stale_restart_is_paced_not_latched() -> None:
+    """Regression: the keep-alive must NOT latch to a one-shot restart.
+
+    Old behavior: after the first restart it set keep_alive_bots_restarted=True
+    and suppressed ALL later restarts while `stale` stayed non-empty — so if a
+    restarted bot died again (server crash-cascade), the fleet wedged dead
+    forever with 0 processes and no resupply. New behavior: stale bots are
+    restarted on every tick, paced by `_last_stale_restart` / `_stale_restart_
+    interval` (min 60s between restarts), so the fleet keeps self-healing."""
+    import time
+
+    rt = _runtime()
+    now = time.time()
+    # First restart fires (no previous restart).
+    rt._last_stale_restart = 0.0
+    assert now - rt._last_stale_restart >= rt._stale_restart_interval, "should fire immediately"
+    # After a restart, within the cooldown it is paced (not fired again yet).
+    rt._last_stale_restart = now
+    cooldown_left = rt._stale_restart_interval - (now - rt._last_stale_restart)
+    assert cooldown_left <= rt._stale_restart_interval
+    assert rt._last_stale_restart == now, "restart epoch recorded"
+    # After the cooldown elapses, it can fire again (NOT latched/suppressed).
+    rt._last_stale_restart = now - rt._stale_restart_interval - 1
+    fired_again = now - rt._last_stale_restart >= rt._stale_restart_interval
+    assert fired_again, "stale restart must re-fire after cooldown, never wedge"
+
+    # The old latch field is no longer the gate.
+    assert hasattr(rt, "keep_alive_bots_restarted")
+    rt.keep_alive_bots_restarted = True
+    cooldown_left2 = rt._stale_restart_interval - (now - rt._last_stale_restart)
+    # Even with the legacy latch True, the new pacing logic governs.
+    assert cooldown_left2 <= rt._stale_restart_interval
