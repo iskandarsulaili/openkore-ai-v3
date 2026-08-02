@@ -213,6 +213,22 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       skills_usage.update_confidence/get_skills_by_domain and skills_curator.
       force_run no longer appear only at their definition — all reachable.
       Full suite 359 passed.   [this batch]
+- [x] SWEEP S22 (DEAD ECONOMY ENGINES WIRED): full-repo scan found the
+      VendingArbitrageEngine (economy/vending_arbitrage.py) and MarketTimingEngine
+      (economy/market_timing.py) had 0 references anywhere outside their own files
+      — two fully-implemented Pro-RO economy engines (WoE/pre-woe price surges,
+      post-maintenance dips, server-age card decay, buy-low/sell-high windows,
+      mule-based arbitrage) that were COMPLETELY dead.
+      NEW ai_sidecar/autonomy/economy_intelligence_integration.py drives both per
+      bot-cycle from live snapshot state (zeny, inventory, map): it observes the
+      MarketTiming buy-low/sell-high windows + price multiplier and VendingArbitrage
+      arbitrage opportunities / suggested prices (advisory, logged), and queues a
+      safe, unambiguous buy-low restock command (`buy <item> <qty>`) only when in
+      town, zeny available, a restock item is empty, and not during WoE — with a
+      per-bot buy throttle. No bogus commands.
+      +3 regression tests (test_economy_intelligence_integration.py: engines wired
+      + safe buy-low, disconnected skip, no-zeny no-buy). Full suite 362 passed.
+      [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro

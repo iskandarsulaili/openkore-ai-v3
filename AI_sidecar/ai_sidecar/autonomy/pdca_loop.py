@@ -5780,6 +5780,16 @@ class PDCALoop:
                             self._runtime, _cycle_bot_id, self._get_latest_snapshot())
                     except Exception:
                         pass
+                    # ── Economy intelligence wiring ──
+                    # Drive the two dead-but-complete economy engines (MarketTimingEngine,
+                    # VendingArbitrageEngine) so their buy-low/sell-high windows and price
+                    # advice reach the cycle (observed + safe low-restock buy).
+                    try:
+                        from ai_sidecar.autonomy.economy_intelligence_integration import run_economy_intelligence
+                        _total_actions += run_economy_intelligence(
+                            self._runtime, _cycle_bot_id, self._get_latest_snapshot())
+                    except Exception:
+                        pass
                     try:
                         # Cold start cooldown: skip if less than 60s since last cold start for this bot
                         # OVERRIDDEN: heuristic's task-completion-triggered cold start handles this better
