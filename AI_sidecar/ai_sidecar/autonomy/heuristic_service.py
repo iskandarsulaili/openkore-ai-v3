@@ -1772,6 +1772,26 @@ class HeuristicService:
                                 # first — otherwise it spams "Cannot calculate a route
                                 # from int_land ... to prt_fild08" forever.
                                 if _cur_map.startswith("int_land"):
+                                    # RUN, DON'T FIGHT on the island: a level-1
+                                    # bot cannot kill a 55-HP Poring bare-handed,
+                                    # and the island's aggressive Poring will kill
+                                    # it if it stops to fight. Force attackAuto 0 so
+                                    # the bot rushes past the (49,57) sailor and
+                                    # sails to Izlude unimpeded.
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="set attackAuto 0",
+                                        confidence=0.95,
+                                        reason="Cold start: run (don't fight) on Secluded Island",
+                                        domain="survival",
+                                    ))
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="set attackAuto_inLockOnly 1",
+                                        confidence=0.90,
+                                        reason="Cold start: only attack on lockMap (not island)",
+                                        domain="survival",
+                                    ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="move 49 57",
