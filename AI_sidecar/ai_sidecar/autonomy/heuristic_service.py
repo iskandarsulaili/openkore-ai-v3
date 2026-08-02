@@ -1649,7 +1649,7 @@ class HeuristicService:
                             if _cs_map_l == "izlude" and not self._has_coldstart_weapon(signals):
                                 _target = "iz_ac01"
                                 _actions.append(HeuristicAction(
-                                    kind="command", command="move izlude 125 257",
+                                    kind="command", command="move 125 257",
                                     confidence=0.95,
                                     reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
                                     domain="progression"))
@@ -2383,7 +2383,7 @@ class HeuristicService:
                     # academy door (izlude 125,257 warp -> iz_ac01) instead.
                     if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
                         actions.append(HeuristicAction(
-                            kind="command", command="move izlude 125 257",
+                            kind="command", command="move 125 257",
                             confidence=0.99, domain="progression",
                             reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
                         ))
