@@ -236,7 +236,14 @@ server C++ crashes were root-caused from logs + core dumps:
       rebuilt (`make map-server`), systemctl restart rathena-map. VERIFIED:
       PID stayed alive processing ai_npc_movement ML calls >240s with 0 crash
       / 0 invalid_argument (was crashing on same traffic). Committed in
-      rathena-AI-world as 5bb21d4eb.                   [COMMITTED+BINARY]
+      rathena-AI-world as 5bb21d4eb.                  [REVERTED — see below]
+      NOTE (SUPERSEDED): per the user's operating constraint "openkore-ai-v3
+      must ADAPT to rathena-ai-world, never modify it", this server-source
+      change was REVERTED. rathena-ai-world/src is restored to pristine
+      (`git revert` -> 061b2b55b) and the mapper/char binaries were rebuilt +
+      restarted from pristine sources. The disconnect root-cause is therefore
+      UNFIXED on the server side going forward; openkore-ai-v3 adapts via
+      keep-alive + its own resilience only.
 - [x] C2 BROAD FIX (keep-alive one-shot latch wedge): root-caused that after a
       server crash-cascade the keep-alive loop's one-shot `keep_alive_bots_
       restarted` latch suppressed ALL later restarts while any bot stayed
@@ -252,18 +259,20 @@ server C++ crashes were root-caused from logs + core dumps:
       check session[fd] at entry but the local `sd` reference dangles.
       376 crash signals in char-server log; every crash is preceded by exactly
       "Selected char" + "Subnet check" then SIGSEGV => kicks all bots/players.
-      FIX PATH (not yet applied): serialize/limit concurrent char-selects,
-      and/or copy `sd` fields before cross-call use, and/or throttle the fleet
-      to a small concurrent-login count. Server-side change; needs char-server
-      rebuild + verified boot.
+      FIX PATH (NOT APPLYABLE — no-modify constraint): would require a
+      server-source change + rebuild, which the user forbids. openkore-ai-v3
+      ADAPTS: keep-alive pacing (C2) keeps resupplying the fleet across the
+      crashes; this is the accepted adaptation until the server is patched
+      upstream (by the server owner, not the bot).
 - [ ] OPEN C4 (mail wire-size mismatch, non-fatal but real): map-server
       `intif_parse_Mail_inboxreceived data size error 30397 30728`. Char sends
       field-by-field serialized size; map compares against raw
       `sizeof(struct mail_data)` + its own expected_size; they disagree (packed
       wire != padded struct) so the mail inbox is silently discarded and never
       displays/updates. Not a crash, but mail is effectively non-functional.
-      FIX: map should compare against the same field-by-field expected_size
-      (line 2360), not sizeof(struct mail_data).
+      FIX (NOT APPLIED — no-modify constraint): would change map-server source.
+      Documented for the server owner; the bot adapts by not depending on the
+      mailbox (mail is not in the combat/leveling hot path).
 - [ ] OPEN C5 (fleet concurrency amplifier): 23 bots registered hammering one
       char-server via Poseidon concurrently is what triggers C3. Any successful
       fix to C3 (or throttling the concurrent-login rate) reduces the whole
