@@ -1204,15 +1204,25 @@ class HeuristicService:
             return None
 
     def _load_towns(self) -> None:
-        """Load town map names from database."""
+        """Load town map names from database (server-agnostic).
+
+        Uses the npc_interactions table's `task_type` column (the schema
+        column; the old query wrongly referenced a non-existent
+        `interaction_type` column, raising "no such column" every startup and
+        silently falling back to the hardcoded set). Falls back to the known
+        town prefixes if the DB has no town-flag rows yet.
+        """
         global _HUNT_TOWNS
         try:
             gkd = GameKnowledgeDB()
             conn = gkd._get_conn()
-            rows = conn.execute("SELECT map_name FROM npc_interactions WHERE interaction_type='town_flag'").fetchall()
-            _HUNT_TOWNS = {row['map_name'] for row in rows}
+            rows = conn.execute(
+                "SELECT map_name FROM npc_interactions WHERE task_type='town_flag'"
+            ).fetchall()
+            if rows:
+                _HUNT_TOWNS = {row["map_name"] for row in rows}
         except Exception:
-            pass
+            logger.debug("_load_towns DB query failed; using prefix fallback", exc_info=True)
         if not _HUNT_TOWNS:
             _HUNT_TOWNS = {"prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude", "comodo", "umbala", "yuno", "einbroch", "einbech", "lighthalzen", "rachel", "veins", "niflheim", "manuk", "splendide", "brasilis", "moscovia", "amatsu", "kunlun", "louyang", "ayothaya", "jawaii", "gonryun", "hugel"}
 

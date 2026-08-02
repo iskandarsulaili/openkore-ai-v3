@@ -37,13 +37,31 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
 - [ ] Pres B1: heuristic_service.py:1103 (old) hardcoded `prontera`
       in town-data region → drive from GameKnowledgeService (maps/npc
       registry from the live server) instead of a hardcoded constant.
+      DONE: heuristic_service._load_towns queried a NON-EXISTENT
+      `interaction_type` column (schema uses `task_type`) — raised
+      "no such column" every startup and silently used the hardcoded town
+      set. Fixed to task_type + clear fallback. Town detection now goes
+      DB-first (town_flag rows) with the known-prefix fallback.   [this batch]
 - [ ] Pres B2: flake — harden route_churn_count test with a deterministic
       barrier + diagnostic dump (test was flaky).
+      DONE: test_runtime_enriched_state_exports_phase1_recovery_features
+      already has the requested hardening — a 10s polling barrier
+      (while-loop) that re-polls enriched_state until route_churn_count >= 1
+      (instead of a fixed sleep), plus a debug_graph diagnostic dump on
+      timeout. Verified stable across 3 consecutive runs. No change. [this batch]
 - [ ] Pres B3: model-router — validate DEFAULT_POLICY_RULES targets exist
       in registered providers (avoid route to nonexistent provider/model).
+      DONE: already covered by test_model_router_policy_targets_exist_in_
+      registered_providers (test_workstream1_contract_hardening.py, 4 model_
+      router tests pass). Strengthened with construction-time
+      _validate_policy_targets() that loudly warns on unregistered targets
+      (also removed a stray `print(...)` to stderr in generate_with_fallback).
+      [this batch]
 - [ ] Pres B4: registry-remove — delete domains/registry.py (verify zero
       test imports first). [Left-as-documented earlier; re-evaluate — if
       it's truly dead AND no imports, remove; if it has callers, wire it.]
+      DONE: file does not exist (already removed in a prior batch); verified
+      zero importers in sidecar + tests. No action.   [this batch]
 - [ ] Pres B5: abstract — NotImplementedError x4 → abc.ABC + @abstractmethod,
       then verify concrete subclasses implement them (no bare
       NotImplementedError; make it enforced + complete).

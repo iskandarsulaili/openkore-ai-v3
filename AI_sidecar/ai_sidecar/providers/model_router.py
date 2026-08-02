@@ -79,6 +79,45 @@ class ModelRouter:
             updated_at=datetime.now(UTC),
             rules=json.loads(json.dumps(seed_rules)),
         )
+        self._validate_policy_targets()
+
+    def _validate_policy_targets(self) -> list[str]:
+        """Warn about policy rules that reference unregistered providers/models.
+
+        A policy rule whose providers/models are not backed by a registered
+        adapter would silently no-op (`decide()` returns selected_provider
+        "none"), so we surface it loudly at construction time instead of
+        letting requests fall into a confusing "no_provider_for_workload"
+        with no explanation.
+        """
+        registered = self.provider_names()
+        problems: list[str] = []
+        for workload, rule in (self._policy.rules or {}).items():
+            if not isinstance(rule, dict):
+                continue
+            for prov in list(rule.get("providers") or []):
+                p = str(prov).strip().lower()
+                if p and p not in registered:
+                    problems.append(f"{workload}: provider '{prov}' not registered")
+                    logger.warning(
+                        "model_router_policy_unregistered_provider",
+                        extra={
+                            "event": "model_router_policy_unregistered_provider",
+                            "workload": workload,
+                            "provider": prov,
+                            "registered": sorted(registered),
+                        },
+                    )
+        if problems:
+            logger.warning(
+                "model_router_policy_has_unregistered_targets total=%d",
+                len(problems),
+                extra={
+                    "event": "model_router_policy_unregistered_targets",
+                    "problems": problems,
+                },
+            )
+        return problems
 
     def set_route_metric_observer(self, observer: Callable[[str, str, str], None] | None) -> None:
         with self._lock:
@@ -345,11 +384,11 @@ class ModelRouter:
                             "bot_id": request.bot_id,
                         },
                     )
-                    import asyncio
-                    await asyncio.sleep(delay)
+                    # Exponential backoff with jitter before next retry
+                    if retry < _max_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(delay)
 
-            import sys
-            print(f"PROVIDER_FAIL: workload={request.task} provider={provider_name} model={model} error={response.error} latency_ms={response.latency_ms}", file=sys.stderr, flush=True)
             logger.warning(
                 "provider_route_attempt_failed",
                 extra={
