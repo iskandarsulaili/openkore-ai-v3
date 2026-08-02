@@ -200,6 +200,19 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       +4 regression tests (test_combat_tactics_integration.py: in-combat gated
       skill cast, no-combat no-spam, disconnected skip, counters live).
       Full suite 359 passed.   [this batch]
+- [x] SWEEP S21 (skills_usage helpers + skills_curator.force_run WIRED): three
+      built-but-dead skills helpers exposed through live API endpoints:
+        * skills_curator.force_run() (thin alias) is now the non-dry-run path of
+          POST /v1/skills/curate (operators forcing a curation use it) — it was
+          a dead alias.
+        * skills_usage.get_skills_by_domain() now backs the `domain` query param
+          on GET /v1/skills/list (list skills filtered by metadata domain).
+        * skills_usage.update_confidence() now backs the new
+          `adjust_confidence` action on POST /v1/skills/manage (operator/learning
+          system adjusts a skill's confidence by a delta).
+      skills_usage.update_confidence/get_skills_by_domain and skills_curator.
+      force_run no longer appear only at their definition — all reachable.
+      Full suite 359 passed.   [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro

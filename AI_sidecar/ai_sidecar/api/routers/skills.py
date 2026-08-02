@@ -35,6 +35,7 @@ class ManageRequest:
         self.old_string = data.get("old_string", "")
         self.new_string = data.get("new_string", "")
         self.provenance = data.get("provenance", "foreground")
+        self.confidence_delta = float(data.get("confidence_delta", 0) or 0)
 
 
 # ── Endpoints ──
@@ -76,14 +77,27 @@ async def manage_skill(data: dict) -> dict:
             name=req.name,
             file_path=req.file_path,
         )
+    elif req.action == "adjust_confidence":
+        ok = skills_usage.update_confidence(req.name, req.confidence_delta)
+        return {"success": ok, "skill": req.name,
+                "delta": req.confidence_delta,
+                "error": None if ok else "skill not found in usage DB"}
     else:
         return {"success": False, "error": f"Unknown action: {req.action}"}
 
 
 @router.get("/list")
-async def list_skills(category: str = None) -> List[dict]:
-    """Return list of all skills with metadata."""
-    return skills_manager.list_skills(category=category)
+async def list_skills(category: str = None, domain: str = None) -> List[dict]:
+    """Return list of all skills with metadata.
+
+    `category` filters by skill category dir; `domain` filters by metadata
+    domain (routed through skills_usage.get_skills_by_domain).
+    """
+    result = skills_manager.list_skills(category=category)
+    if domain:
+        dset = set(skills_usage.get_skills_by_domain(domain))
+        result = [r for r in result if r.get("name") in dset]
+    return result
 
 
 @router.get("/view")
@@ -97,11 +111,18 @@ async def view_skill(name: str = Query(...)) -> dict:
 
 @router.post("/curate")
 async def curate(data: dict = None) -> dict:
-    """Run a curator cycle. Pass dry_run=true to preview."""
+    """Run a curator cycle. Pass dry_run=true to preview.
+
+    Non-dry-run calls route through skills_curator.force_run() (an immediate,
+    interval-independent run) so operators forcing a curation use the same
+    entry point the alias exposes — the alias is wired, not dead.
+    """
     if data is None:
         data = {}
     dry_run = data.get("dry_run", False)
-    return skills_curator.run_curator(dry_run=dry_run)
+    if dry_run:
+        return skills_curator.run_curator(dry_run=True)
+    return skills_curator.force_run()
 
 
 @router.get("/status")
