@@ -1796,14 +1796,14 @@ class HeuristicService:
                                         kind="command",
                                         command="move 49 57",
                                         confidence=0.95,
-                                        reason="Cold start: walk to Secluded Island sailor to sail to Izlude",
+                                        reason="Cold start: walk onto the sailor warp cell — its OnTouch fires and sails to Izlude",
                                         domain="progression",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="talknpc 49 57 c",
-                                        confidence=0.90,
-                                        reason="Cold start: talk to the sailor (script auto-warps to Izlude on close2)",
+                                        command="talk resp 1",
+                                        confidence=0.80,
+                                        reason="Cold start: if the sailor shows a select, choose 'Sail to Izlude!'",
                                         domain="progression",
                                     ))
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
