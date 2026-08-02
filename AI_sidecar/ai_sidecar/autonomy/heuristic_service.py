@@ -1031,6 +1031,12 @@ class HeuristicService:
         # Per-map mon_control tracking: bot_id -> {map_name: [(monster, attack, lvl, aggr)]}
         # Used to avoid re-sending mon_control for the same map
         self._last_mon_control_map: dict[str, str] = {}  # bot_id -> map_name
+        # Secluded Island escape throttle: bot_id -> last escape-attempt epoch
+        # The escape (move 49 57 + talknpc 49 57) fires at most once per ESCAPE
+        # interval so the bot spends the rest of its cycles grinding the weak
+        # island Porings (exp + 6008 quest items + Knife drops) instead of
+        # constantly re-targeting the sail attempt every horizon.
+        self._last_island_escape: dict[str, float] = {}
         # Job change tracking: detect when job actually changes
         self._last_job_name: dict[str, str] = {}  # bot_id -> previous job_name
         # Post-job-change: track if we need to reset maps after job change
@@ -1772,15 +1778,13 @@ class HeuristicService:
                                 # first — otherwise it spams "Cannot calculate a route
                                 # from int_land ... to prt_fild08" forever.
                                 if _cur_map.startswith("int_land"):
-                                    # Fight the island Porings while running to
-                                    # the sailor: the island's Porings are weak
-                                    # (Lv1, 55 HP, Atk 1) and the fresh bot (100 HP)
-                                    # can TANK + kill them — a Knife drop (10%)
-                                    # starts the gear chain. attackAuto 0 was
-                                    # WRONG here: it left the bot defenseless so it
-                                    # died taking hits without fighting back. Use
-                                    # attackAuto 2 (fight as it moves) so it clears
-                                    # Porings on the way to the (49,57) warp.
+                                    # Fight the island Porings while trying to
+                                    # reach the sailor: the island's Porings are
+                                    # weak (Lv1, 55 HP, Atk 1) and the fresh bot
+                                    # (100 HP) can TANK + kill them — a Knife drop
+                                    # (10%) starts the gear chain. use attackAuto 2
+                                    # so it clears Porings (exp + 6008 quest items
+                                    # + drops) instead of dying defenseless.
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto 2",
@@ -1795,27 +1799,41 @@ class HeuristicService:
                                         reason="Cold start: allow attacking anywhere on the island (not lockMap-bound)",
                                         domain="combat",
                                     ))
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="move 49 57",
-                                        confidence=0.95,
-                                        reason="Cold start: walk onto the sailor warp cell — its OnTouch fires",
-                                        domain="progression",
-                                    ))
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="talknpc 49 57",
-                                        confidence=0.90,
-                                        reason="Cold start: open sailor dialog (bridge auto-completes to close2 -> warps to Izlude)",
-                                        domain="progression",
-                                    ))
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="talk resp 1",
-                                        confidence=0.80,
-                                        reason="Cold start: if the sailor shows a select, choose 'Sail to Izlude!'",
-                                        domain="progression",
-                                    ))
+                                    # Throttle the sail attempt (move+talknpc) to
+                                    # once per 45s so the bot spends most cycles
+                                    # grinding island Porings instead of constantly
+                                    # re-targeting the escape (which was cancelling
+                                    # its combat every horizon -> 0 kills, 0 exp).
+                                    _esc_now = __import__("time").time()
+                                    _esc_last = self._last_island_escape.get(_bot_id, 0.0)
+                                    if _esc_now - _esc_last >= 45.0:
+                                        self._last_island_escape[_bot_id] = _esc_now
+                                        _actions.append(HeuristicAction(
+                                            kind="command",
+                                            command="move 49 57",
+                                            confidence=0.95,
+                                            reason="Cold start: walk onto the sailor warp cell — its OnTouch fires",
+                                            domain="progression",
+                                        ))
+                                        _actions.append(HeuristicAction(
+                                            kind="command",
+                                            command="talknpc 49 57",
+                                            confidence=0.90,
+                                            reason="Cold start: open sailor dialog (bridge auto-completes to close2 -> warps to Izlude)",
+                                            domain="progression",
+                                        ))
+                                        _actions.append(HeuristicAction(
+                                            kind="command",
+                                            command="talk resp 1",
+                                            confidence=0.80,
+                                            reason="Cold start: if the sailor shows a select, choose 'Sail to Izlude!'",
+                                            domain="progression",
+                                        ))
+                                    else:
+                                        logger.debug(
+                                            "cold_start_island: sail throttled (elapsed %.0f/45s), grinding island",
+                                            _esc_now - _esc_last,
+                                        )
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
                                     _actions.append(HeuristicAction(
                                         kind="command",
