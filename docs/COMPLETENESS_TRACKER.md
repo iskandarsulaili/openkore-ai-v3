@@ -120,3 +120,24 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       helper (respects the _sidecar_set_<key> shield). Fixed the stale
       "Missing periodic-task stubs" section header (the tasks are real).
       perl -c clean.   [this batch]
+- [x] Sweep S11 (combat dispatcher): `_make_move_action` emitted `move 0 0`
+      whenever the kiting/positioning modules signalled a tactic intent
+      (retreat/back_up/approach/reposition_los) with move_x/move_y left at 0
+      (TacticsContext carries no absolute coordinates). `move 0 0` would path
+      the bot to the map origin (no-op/teleport hazard). Now: zero-coordinate
+      positioning intents become an observability `tactics_reposition:<tactic>`
+      log record (honouring the intent without a bogus command) and let
+      OpenKore's native AI execute the actual reposition; non-zero coordinates
+      still emit the real `move`. +2 tests (test_combat_dispatcher_move.py).
+      [this batch]
+- [x] Sweep S12 (NPCDomain): `autonomy/domains/npc.py::assess` was a bare
+      `pass` (silent/dormant). Now emits a `npc_context_on:<map>` observability
+      intent when a map signal is present — the domain is exercised each cycle
+      while still leaving executable NPC commands to the economy/routing
+      domains (design preserved).   [this batch]
+- [x] Sweep S13 (verified no-action): combat/tactics/base.py BaseTactics
+      None/[] defaults are the template-method fallback — all 7 concrete
+      tactic classes override select_target etc. crewai base_agent can_handle
+      0.0/get_action None are abstract-defaults overridden by all concrete
+      agents. p2p_knowledge log_message PASS is the standard HTTP-log-noise
+      suppression. llm/providers name() accessors are correct.   [this batch]

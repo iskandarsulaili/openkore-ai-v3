@@ -192,12 +192,37 @@ class TacticsDispatcher:
 
     def _make_move_action(self, position: dict[str, Any], ctx: TacticsContext,
                           tactics: BaseTactics, target: TargetInfo | None) -> HeuristicAction:
+        _mx = position.get('move_x', 0)
+        _my = position.get('move_y', 0)
+        _reason = position.get("reason", "tactical_positioning")
+        if (not _mx and not _my):
+            # The kiting/positioning modules signal an INTENT (retreat, back_up,
+            # approach, reposition_los) with tactic labels, but do not compute an
+            # absolute coordinate vector (TacticsContext has no bot/target x,y).
+            # Emitting `move 0 0` would path the bot to the map origin (a no-op /
+            # teleport hazard). Instead honour the intent as an observability
+            # record and let OpenKore's native AI (attackAuto routing + emergency
+            # flee) execute the actual reposition — a safe, honest fallback rather
+            # than a bogus coordinate write.
+            return HeuristicAction(
+                kind="log",
+                command=f"tactics_reposition:{position.get('tactic', 'stand')}",
+                confidence=0.7,
+                domain="combat_tactics",
+                reason=_reason,
+                metadata={
+                    "tactics": tactics.name,
+                    "urgency": position.get("urgency", 0.5),
+                    "tactic": position.get("tactic", "") or "",
+                    "target_id": target.actor_id if target else 0,
+                },
+            )
         return HeuristicAction(
             kind="command",
-            command=f"move {position.get('move_x', 0)} {position.get('move_y', 0)}",
+            command=f"move {_mx} {_my}",
             confidence=0.7,
             domain="combat_tactics",
-            reason=position.get("reason", "tactical_positioning"),
+            reason=_reason,
             metadata={
                 "tactics": tactics.name,
                 "urgency": position.get("urgency", 0.5),

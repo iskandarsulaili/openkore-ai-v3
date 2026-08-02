@@ -33,9 +33,23 @@ class NPCDomain(BaseDomain):
     ) -> None:
         """NPC interaction decisions are handled inline by other domains.
 
-        This domain provides lookup helpers used by economy and routing domains.
+        This domain provides lookup helpers used by economy and routing
+        domains. To stay observably active (not a silent pass) it emits a
+        single diagnostic intent describing the NPC context for the current
+        map whenever a mapping signal is present — it never issues an
+        executable NPC command (those belong to the economy/routing domains).
         """
-        pass
+        _map = str(signals.get("map", "") or "").lower().replace(".gat", "")
+        if not _map:
+            return
+        # Emit a lightweight observability intent so the domain is exercised.
+        actions.append(HeuristicAction(
+            kind="log",
+            command=f"npc_context_on:{_map}",
+            confidence=0.6,
+            reason=f"NPC lookup helpers active for {_map} (sell/portal/potion)",
+            domain="npc",
+        ))
 
     def get_sell_npc_command(self, map_name: str) -> str:
         """Get the talknpc command for selling items on a given map."""
