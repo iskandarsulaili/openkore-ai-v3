@@ -110,3 +110,13 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
 - [x] Sweep S9 (verified no-action): persistence/repositories.py, contracts/
       autonomy.py, decision_service.py "placeholders" are legitimate SQL
       param lists / field names, not stubs.   [this batch]
+- [x] Sweep S10 (bridge): `_apply_ml_override` had several LOGGING-ONLY
+      branches with commented-out config writes (encounter_classifier
+      attackAuto, loot_ranker "item priority not implemented",
+      npc_dialogue_predictor "logging only"). Now wired: encounter_classifier
+      applies the real attackAuto/autoMove per profile; loot_ranker enables
+      itemsTakeAuto + records the priority; npc_dialogue_predictor emits the
+      predicted `talk resp N`. Added module-level `_apply_ml_config_guard`
+      helper (respects the _sidecar_set_<key> shield). Fixed the stale
+      "Missing periodic-task stubs" section header (the tasks are real).
+      perl -c clean.   [this batch]

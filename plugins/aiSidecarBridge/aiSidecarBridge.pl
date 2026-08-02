@@ -6757,16 +6757,22 @@ sub _apply_ml_override {
 	if ($family eq 'encounter_classifier' && defined $rec->{encounter_profile}) {
 		my $profile = lc($rec->{encounter_profile});
 		if ($profile eq 'aggressive') {
-			# $::config{attackAuto} = 3;
-
+			$::config{attackAuto} = 3;
+			$::config{autoMove} = 2;
+			_apply_ml_config_guard('attackAuto', 3);
+			_apply_ml_config_guard('autoMove', 2);
 			warning("ml_override applied: encounter_classifier=aggressive (attackAuto = 3, autoMove=2)");
 		} elsif ($profile eq 'safe') {
-			# $::config{attackAuto} = 1;  # heuristic controls this
-
-			warning("ml_override applied: encounter_classifier=safe (attackAuto = 3, autoMove=0)");
+			$::config{attackAuto} = 1;
+			$::config{autoMove} = 0;
+			_apply_ml_config_guard('attackAuto', 1);
+			_apply_ml_config_guard('autoMove', 0);
+			warning("ml_override applied: encounter_classifier=safe (attackAuto = 1, autoMove=0)");
 		} else {
-			# $::config{attackAuto} = 3;
-			# autoMove + attackDistance controlled by heuristic
+			$::config{attackAuto} = 3;
+			$::config{autoMove} = 1;
+			_apply_ml_config_guard('attackAuto', 3);
+			_apply_ml_config_guard('autoMove', 1);
 			warning("ml_override applied: encounter_classifier=balanced (attackAuto = 3, autoMove=1)");
 		}
 	} elsif ($family eq 'route_recovery_classifier' && defined $rec->{stuck_strategy}) {
@@ -6783,10 +6789,22 @@ sub _apply_ml_override {
 		}
 	} elsif ($family eq 'loot_ranker' && defined $rec->{loot_item}) {
 		my $item = $rec->{loot_item};
-		warning("ml_override applied: loot_ranker=$item (logging only — item priority not implemented)");
+		# Enable auto-loot if it's off so the ranked item is actually picked up,
+		# and record the priority intent so the pickup is not skipped.
+		$::config{itemsTakeAuto} = 2 unless $::config{'_sidecar_set_itemsTakeAuto'};
+		_apply_ml_config_guard('itemsTakeAuto', 2);
+		$::config{_sidecar_loot_priority} = $item;
+		warning("ml_override applied: loot_ranker=$item (loot pickup enabled, priority recorded)");
 	} elsif ($family eq 'npc_dialogue_predictor' && defined $rec->{dialogue_branch}) {
 		my $branch = $rec->{dialogue_branch};
-		warning("ml_override applied: npc_dialogue=$branch (logging only)");
+		# Apply the predicted dialogue branch (a talk response index) so the
+		# bot follows the recommended NPC dialog path.
+		if ($branch =~ /^(\d+)$/) {
+			eval { Commands::run("talk resp $1"); 1; };
+			warning("ml_override applied: npc_dialogue branch=$branch (emitted talk resp $1)");
+		} else {
+			warning("ml_override applied: npc_dialogue=$branch (non-numeric branch, logged only)");
+		}
 	} elsif ($family eq 'risk_anomaly_detector' && defined $rec->{risk_label}) {
 		my $score = $rec->{risk_label};
 		warning("ml_override applied: risk_anomaly score=$score");
@@ -6796,10 +6814,26 @@ sub _apply_ml_override {
 	} else {
 	        warning("ml_override received but not applied: unknown family=$family or missing recommendation keys");
 	    }
+}
+
+# ── Apply an ML-recommended config delta ──
+# Sets $::config{key} to the given value so the override actually takes
+# effect immediately. Respects the _sidecar_set_<key> shield (set by an
+# explicit sidecar `set <key> <value>` command) so ML overrides never
+# fight an explicit user/bot setting.
+sub _apply_ml_config_guard {
+	my ($key, $val) = @_;
+	if (!defined $key || $key eq '') {
+		return undef;
 	}
+	if (!$::config{"_sidecar_set_$key"}) {
+		$::config{$key} = $val;
+	}
+	return $::config{$key};
+}
 
 	# ═══════════════════════════════════════════════════════════════════════════
-	# ── Missing periodic-task stubs (called from _poll_next_action) ──
+	# ── Periodic snapshot-only collection tasks (called from _poll_next_action) ──
 	# ═══════════════════════════════════════════════════════════════════════════
 
 	# ── Scan NPC shops from snapshot data (no dialog interaction) ──
