@@ -1948,18 +1948,22 @@ class HeuristicService:
                                             domain="progression",
                                         ))
                                     else:
-                                        # On an Academy interior ROOM (iz_int01/02/03/04),
-                                        # the receptionist NPC is not here — the room's
-                                        # exit warp leads back toward the iz_ac01 main hall
-                                        # where (100,39) lives. Route the bot into the hall:
-                                        # use OpenKore's map-name move (sets lockMap +
-                                        # AI portal routing) so it walks through the room
-                                        # exit warp into iz_ac01, then registration fires.
+                                        # On an Academy interior ROOM (iz_int/01/02/03/04).
+                                        # These are tutorial intro rooms with the `nowarpto`
+                                        # mapflag (no portal/recall in), and OpenKore's static
+                                        # field-route table doesn't know the custom iz_int* ->
+                                        # iz_ac01 connection, so a map-name `move iz_ac01`
+                                        # recalculates forever. Behind the room's #room_outXX /
+                                        # intro_evt02 gate NPCs (which all duplicate at the same
+                                        # coords, per npc/re/jobs/novice/academy.txt) the exit
+                                        # funnels the player toward the iz_ac01 main hall. Issue a
+                                        # concrete move to that forward gate so the bot physically
+                                        # walks out of the room regardless of the route table.
                                         _actions.append(HeuristicAction(
                                             kind="command",
-                                            command="move iz_ac01",
+                                            command="move 51 30",
                                             confidence=0.95,
-                                            reason="Cold start: walk from Academy room to iz_ac01 hall (Receptionist at 100,39)",
+                                            reason="Cold start: walk from Academy room to forward gate toward iz_ac01 hall (Receptionist at 100,39)",
                                             domain="progression",
                                         ))
                                 # (the izlude academy-walk lives in the pathfinder
