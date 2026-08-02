@@ -1638,7 +1638,22 @@ class HeuristicService:
                         _cm = _gs.map_state.name
                         if _gs.character and hasattr(_gs.character, 'base_level') and _gs.character.base_level:
                             _target = "prt_fild05" if _gs.character.base_level < 10 else "pay_dun00" if _gs.character.base_level < 20 else "orcsdun01"
-                            if _cm and _target and _cm != _target:
+                            # CONSCIOUS/REFLEX FALLBACK: a weapon-less cold-start novice
+                            # that just escaped to izlude must complete ACADEMY FIRST
+                            # (free Novice_Knife + 300 potions at iz_ac01 receptionist)
+                            # before any field hunt. Sending it to prt_fild05 to farm
+                            # zeny bare-handed is a losing suggestion the reflexive
+                            # map-default would make; override the hunt target to the
+                            # academy door so registration (and real gear) follows.
+                            _cs_map_l = str(_cm or "").lower()
+                            if _cs_map_l == "izlude" and not self._has_coldstart_weapon(signals):
+                                _target = "iz_ac01"
+                                _actions.append(HeuristicAction(
+                                    kind="command", command="move izlude 125 257",
+                                    confidence=0.95,
+                                    reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
+                                    domain="progression"))
+                            if _cm and _target and _cm != _target and _target != "iz_ac01":
                                 _path = self._pathfinder.find_path(_cm, _target)
                                 if _path:
                                     _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
@@ -1913,6 +1928,9 @@ class HeuristicService:
                                         reason="Cold start: register at Academy Receptionist for Novice_Knife + potions",
                                         domain="progression",
                                     ))
+                                # (the izlude academy-walk lives in the pathfinder
+                                # block, where an escaped izlude bot is detected and
+                                # routed to the academy door).
                                 # Level 1-5: Cryptura Academy (prt_fild08) — the
                                 # rathena-ai-world starter field. Level-1 Porings/
                                 # Lunatics (Atk 1, BaseExp 150) spawn here with a
@@ -2089,6 +2107,22 @@ class HeuristicService:
                 horizon=signals.get("horizon", "short_term"), actions=[], confidence=0.5,
                 actionable=False, top_domain="survival", signals=dict(signals),
             )
+
+    def _has_coldstart_weapon(self, signals: dict) -> bool:
+        """Whether the bot holds/carries any starter weapon (used to decide if the
+        academy-first cold-start step is still needed). Robust to both inventory
+        item-name and attack-power signals."""
+        try:
+            inv = signals.get("inventory", []) or []
+            for item in inv:
+                name = str(item.get("name", "") if isinstance(item, dict) else item).lower()
+                if any(w in name for w in ("knife", "sword", "mace", "bow", "dagger", "rod", "cutter")):
+                    return True
+            if int(signals.get("attack_power", 0) or 0) > 30:
+                return True
+        except Exception:
+            pass
+        return False
 
     def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
         """Emit a 'set' command only if the value has changed since last set.
