@@ -5770,6 +5770,16 @@ class PDCALoop:
                             self._runtime, _cycle_bot_id, self._get_latest_snapshot())
                     except Exception:
                         pass
+                    # ── Combat tactics subsystem wiring ──
+                    # Drive the dormant CombatTactics skill-combo engine (get_combo /
+                    # should_kite) for in-combat bots so its Pro-RO combos reach the
+                    # action queue as gated `ss <skill>` casts.
+                    try:
+                        from ai_sidecar.autonomy.combat_tactics_integration import run_combat_tactics
+                        _total_actions += run_combat_tactics(
+                            self._runtime, _cycle_bot_id, self._get_latest_snapshot())
+                    except Exception:
+                        pass
                     try:
                         # Cold start cooldown: skip if less than 60s since last cold start for this bot
                         # OVERRIDDEN: heuristic's task-completion-triggered cold start handles this better

@@ -545,6 +545,17 @@ def get_best_element_attack(player_class: str, monster_element: str,
     return best_elem
 
 def counters() -> dict[str, int]:
-    """Return counts of registered combos."""
-    return {"combos": 0}
+    """Return counts of registered combat-tactics data (living state, not a stub)."""
+    try:
+        ct = CombatTactics()
+        class_combos = getattr(ct, "_class_combos", {}) or {}
+        total_combos = sum(len(v) for v in class_combos.values())
+        return {
+            "combos": total_combos,
+            "classes": len(class_combos),
+            "kite_classes": len(getattr(ct, "_kite_classes", set()) or set()),
+            "size_weapons": len(getattr(ct, "_size_weapons", {}) or {}),
+        }
+    except Exception:
+        return {"combos": 0}
 

@@ -184,6 +184,22 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       +3 regression tests (test_intelligence_integration.py: queues real commands,
       skips disconnected bots, no empty-target commands). Full suite 355 passed.
       [this batch]
+- [x] SWEEP S20 (DORMANT CombatTactics WIRED): the CombatTactics class
+      (combat_tactics.py) held the Pro-RO per-class skill-combo knowledge base
+      (get_combo / should_kite / weapon-for-size / element advice) but was only
+      CONSTRUCTED onto the runtime (pdca_loop:2963) — a full-repo scan found
+      NONE of its methods ever called (get_combo/should_kite/suggest_cards... =
+      0 callers). NEW ai_sidecar/autonomy/combat_tactics_integration.py drives it
+      per bot-cycle: for an in-game bot in active combat it consults
+      CombatTactics.get_combo(class, monster_element, hp, aggro) and emits the
+      best combo's skills as gated `ss <skill>` casts (SP/HP gate via
+      CombatTactics.can_execute_skill) through the action queue; should_kite
+      emits a reposition intent; per-bot cast throttle prevents spam. ALSO fixed
+      the `counters()` function (was a hardcoded `{"combos": 0}` stub) to report
+      the real combo/class/kite/size-weapon registry counts.
+      +4 regression tests (test_combat_tactics_integration.py: in-combat gated
+      skill cast, no-combat no-spam, disconnected skip, counters live).
+      Full suite 359 passed.   [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
