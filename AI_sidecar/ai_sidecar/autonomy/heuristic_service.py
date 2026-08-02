@@ -1933,13 +1933,35 @@ class HeuristicService:
                                             _esc_now - _esc_last,
                                         )
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="talknpc 100 39 c r0 n",
-                                        confidence=0.95,
-                                        reason="Cold start: register at Academy Receptionist for Novice_Knife + potions",
-                                        domain="progression",
-                                    ))
+                                    if _cur_map == "iz_ac01":
+                                        # The Academy Receptionist (Novice_Knife + 300
+                                        # potions) is on the iz_ac01 MAIN HALL at (100,39).
+                                        # Fire the registration dialog ONLY while the bot
+                                        # is actually on iz_ac01 — firing it from an iz_int*
+                                        # room coordinates the talknpc at a spot with no
+                                        # receptionist and the dialog silently fails.
+                                        _actions.append(HeuristicAction(
+                                            kind="command",
+                                            command="talknpc 100 39 c r0 n",
+                                            confidence=0.95,
+                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions",
+                                            domain="progression",
+                                        ))
+                                    else:
+                                        # On an Academy interior ROOM (iz_int01/02/03/04),
+                                        # the receptionist NPC is not here — the room's
+                                        # exit warp leads back toward the iz_ac01 main hall
+                                        # where (100,39) lives. Route the bot into the hall:
+                                        # use OpenKore's map-name move (sets lockMap +
+                                        # AI portal routing) so it walks through the room
+                                        # exit warp into iz_ac01, then registration fires.
+                                        _actions.append(HeuristicAction(
+                                            kind="command",
+                                            command="move iz_ac01",
+                                            confidence=0.95,
+                                            reason="Cold start: walk from Academy room to iz_ac01 hall (Receptionist at 100,39)",
+                                            domain="progression",
+                                        ))
                                 # (the izlude academy-walk lives in the pathfinder
                                 # block, where an escaped izlude bot is detected and
                                 # routed to the academy door).
