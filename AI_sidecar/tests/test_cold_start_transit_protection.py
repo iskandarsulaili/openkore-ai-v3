@@ -75,8 +75,9 @@ def test_level1_in_academy_registers_at_receptionist() -> None:
 
 def test_level1_on_secluded_island_sails_to_izlude() -> None:
     """A level-1 bot on int_land (Secluded Island intro; disconnected map)
-    must RUN (attackAuto 0) to the sailor (49,57) and sail to Izlude instead
-    of trying to route to prt_fild08 or fighting the island Poring."""
+    must DARE to abandon the kill-trap field: fight weak Porings (attackAuto 2),
+    and when making no progress under danger, force the field exit to the
+    (49,57) sailor + sail to Izlude (not grind a losing field)."""
     cmds = _assess(base_level=1, map_name="int_land", lock_map="prt_fild08")
     assert "move 49 57" in cmds, f"must walk to sailor: {cmds}"
     assert any("talknpc 49 57" in c for c in cmds), f"must open sailor dialog: {cmds}"
@@ -88,3 +89,30 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     assert not any("prt_fild08" in c for c in cmds), f"no lockMap on island: {cmds}"
     assert not any(c == "move prontera" for c in cmds), \
         f"must NOT move prontera from island (cannot route): {cmds}"
+
+
+def test_island_danger_without_progress_forces_fast_exit() -> None:
+    """Adaptive risk-taking: when a bot on a disconnected field is under
+    combat pressure AND making zero progress, the escape must fire with the
+    FAST cooldown (every 6s) rather than the default 20s — it dares to get out
+    of a losing fight instead of grinding it."""
+    h = HeuristicService()
+    h._init_new_domains()
+    sig = {
+        "bot_id": "bot:transit",
+        "map": "int_land",
+        "lockMap": "prt_fild08",
+        "base_level": 1,
+        "job": "novice",
+        "danger": 2,  # under combat pressure
+        "exp": 0,
+        "zeny": 0,
+        "last_monster_kill": 0,
+        "inventory_items": [],
+    }
+    # First assess with a fresh bot (empty throttle) -> escape fires.
+    first = h.assess(sig, "COLD_START")
+    first_cmds = [a.command for a in first.actions]
+    assert "move 49 57" in first_cmds, f"danger+0-progress must fire the field exit: {first_cmds}"
+    # The throttle flag is recorded so the fast-exit path is armed.
+    assert h._last_island_escape.get("COLD_START", 0) > 0

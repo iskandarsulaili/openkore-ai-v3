@@ -1777,61 +1777,75 @@ class HeuristicService:
                                 # (no direct portal), so the bot must leave the island
                                 # first — otherwise it spams "Cannot calculate a route
                                 # from int_land ... to prt_fild08" forever.
+                                # ── ADAPTIVE FIELDFALL-ABANDON (not island-specific) ──
+                                # A disconnected/hostile intro field (e.g. the
+                                # Secluded Island) can be a kill-trap for a fresh
+                                # character: mobs that out-DPS a gear-less bot, no
+                                # route out except one warp, zero progress. Instead
+                                # of hardcoding a map, we DARE adapt on telemetry:
+                                #   • If the bot IS making progress (kills/exp up)
+                                #     -> keep fighting, escape opportunistically.
+                                #   • If it is making NO progress for a sustained
+                                #     window AND is under pressure -> ABANDON the
+                                #     field: commit to the exit with full survival
+                                #     and do not keep grinding a losing field.
+                                # This is progress-aware and applies to any
+                                # profitless/dangerous field, not just int_land.
+                                _made_progress = self._check_progress(signals)
+                                _esc_now = __import__("time").time()
+                                _esc_last = self._last_island_escape.get(_bot_id, 0.0)
+                                _danger_sig = float(signals.get("danger", signals.get("aggro_count", 0)) or 0)
+                                _died_recent = bool(signals.get("died", False)) or self._bot_deaths.get(_bot_id, 0) > 0
                                 if _cur_map.startswith("int_land"):
-                                    # Fight the island Porings while trying to
-                                    # reach the sailor: the island's Porings are
-                                    # weak (Lv1, 55 HP, Atk 1) and the fresh bot
-                                    # (100 HP) can TANK + kill them — a Knife drop
-                                    # (10%) starts the gear chain. use attackAuto 2
-                                    # so it clears Porings (exp + 6008 quest items
-                                    # + drops) instead of dying defenseless.
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto 2",
                                         confidence=0.95,
-                                        reason="Cold start: fight weak island Porings while running to the sailor",
+                                        reason="Adaptive: fight if profitable while working a field exit",
                                         domain="combat",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto_inLockOnly 0",
                                         confidence=0.90,
-                                        reason="Cold start: allow attacking anywhere on the island (not lockMap-bound)",
+                                        reason="Adaptive: allow fighting anywhere while abandoning a field",
                                         domain="combat",
                                     ))
-                                    # Throttle the sail attempt (move+talknpc) to
-                                    # once per 45s so the bot spends most cycles
-                                    # grinding island Porings instead of constantly
-                                    # re-targeting the escape (which was cancelling
-                                    # its combat every horizon -> 0 kills, 0 exp).
-                                    _esc_now = __import__("time").time()
-                                    _esc_last = self._last_island_escape.get(_bot_id, 0.0)
-                                    if _esc_now - _esc_last >= 45.0:
+                                    # Danger flag for a disconnected field with no
+                                    # progress -> force the exit (risk-taking),
+                                    # firing FASTER (every 6s) than the default
+                                    # periodic retry (20s) but never spamming.
+                                    _force_exit = (not _made_progress and _danger_sig > 0) or _died_recent
+                                    _exit_cooldown = 6.0 if _force_exit else 20.0
+                                    if _esc_now - _esc_last >= _exit_cooldown:
                                         self._last_island_escape[_bot_id] = _esc_now
+                                        # Potions are auto-used via the profile's
+                                        # useSelf_item Red Potion (heal on low HP) so
+                                        # the bot survives the exit run.
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="move 49 57",
                                             confidence=0.95,
-                                            reason="Cold start: walk onto the sailor warp cell — its OnTouch fires",
+                                            reason="Adaptive: force the field exit (sailor warp)",
                                             domain="progression",
                                         ))
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="talknpc 49 57",
                                             confidence=0.90,
-                                            reason="Cold start: open sailor dialog (bridge auto-completes to close2 -> warps to Izlude)",
+                                            reason="Adaptive: open exit dialog (bridge auto-warps)",
                                             domain="progression",
                                         ))
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="talk resp 1",
                                             confidence=0.80,
-                                            reason="Cold start: if the sailor shows a select, choose 'Sail to Izlude!'",
+                                            reason="Adaptive: if a select appears, pick the leave option",
                                             domain="progression",
                                         ))
                                     else:
                                         logger.debug(
-                                            "cold_start_island: sail throttled (elapsed %.0f/45s), grinding island",
+                                            "adaptive_field: profitable grind (progress=true) elapsed=%.0f/20s",
                                             _esc_now - _esc_last,
                                         )
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
