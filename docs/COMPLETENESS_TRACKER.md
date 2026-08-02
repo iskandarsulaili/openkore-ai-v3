@@ -350,3 +350,49 @@ server C++ crashes were root-caused from logs + core dumps:
       disconnect cascade. Keep-alive pacing fix (C2) makes the fleet self-heal
       across it, but the char-server must stop SIGSEGVing for sustained live
       progression.
+
+────────────────────────────────────────────────────────────────────────────
+## D. Completeness sweep (god-tier hybrid bottom-up+top-down, zero-stub/trim)
+
+Audit (whole-repo scan of AI_sidecar/ai_sidecar + plugins/aiSidecarBridge for
+TODO/FIXME/stub/placeholder/NotImplemented/dormant): 53 markers found. Every
+one resolved/classified — none leave genuine unimplemented production code:
+  - `@abstractmethod ... raise NotImplementedError` are idiomatic ABC contract
+    hooks in base classes (memory/retrieval.py MemoryRetrievalService,
+    providers/base.py, autonomy/domains/__init__.py, domains/__init__.py); every
+    concrete subclass (InMemory/SQLite/OpenMemory provider; domain subclasses)
+    implements them. Instantiation verification passed.
+  - `decision_service.py` "placeholders" are runtime DIAGNOSTIC flags (knowledge
+    loaded/supported/actionable), not stubs — they feed SituationalAssessment.
+  - CombatTactics (get_combo/should_kite), GtbDetector, MarketTiming/VendingArbitrage
+    engines were "dormant" but are now WIRED live (pdca_loop run_combat_tactics /
+    run_economy_intelligence actually invoked each cycle).
+  - Completed-work comments ("was X", "was dormant") document finished fixes.
+  - social_engine "HACK" hits are regex moderation word-lists (false positives).
+
+Batch 1 live-progression fixes (this sweep):
+- [x] D1: kicapmasin10 charSelectSlot `char 0` -> `char 6`. Its real character is
+      at account slot 6; slot 0 was a stray pre-made `BotLocalrAthenaAIWorl00`
+      char on iz_ac01 that was being driven instead of the account's own char.
+      Now the bot drives kicapmasin10 (starts in the Academy intro).
+      (.bot_profiles/*/control/config.txt is gitignored per-bot credentials — local-only.)
+- [x] D2: academy registration fires only on iz_ac01 MAIN HALL (receptionist at
+      iz_ac01 100,39); on an iz_int* intro room the bot walks to the (51,30)
+      forward gate toward the hall instead of firing talknpc at an empty spot.
+      (map-name `move iz_ac01` can't route the nowarpto custom iz_int* maps).
+      [db7a365d7 -> 6bca14c12]
+- [x] D3 server C3 re-verified: char-server UAF v2 (_sd_re re-derive from
+      session[fd]) + char<->login loopback wiring holds; char-server crashes
+      frozen at 376, login "char-server disconnected" frozen at 193. [771e4b506]
+- [x] D4 server C4: mail wire-size check corrected to match the char sender's
+      packed field-by-field size (mailbox now parses). [in rathena-AI-world]
+
+Residual (post-sweep, infrastructure not code):
+- [ ] OPEN D5: bots still intermittently drop on the PUBLIC internet tunnel path
+      (209.25.142.24:1053/1063/1070) at char-select/map hops ("Timeout on
+      Character Select" + "Incoming data left"). Server crash/gating/wiring are
+      fixed; this residual is the Cloudflare-tunnel round-trip reliability for
+      short-lived game TCP hops. openkore-ai-v3 adapts (keep-alive + re-catch),
+      but sustained multi-step in-game actions (registration walk, farming) need
+      the tunnel hop to hold ~consecutive minutes.
+
