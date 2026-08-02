@@ -5632,10 +5632,18 @@ sub _rewrite_runtime_command {
 			# (the bot is already on the hunting map, no need to go to portal)
 			my ($tx, $ty) = split(/\s+/, $target);
 			my $cx = 0; my $cy = 0;
+			# Use the bot's ACTUAL CURRENT position ($char->{pos}), not its pending
+			# destination ($char->{pos_to}). If pos_to is the first-choice the dist
+			# check below compares the new move target against the bot's CURRENT
+			# destination — so re-issuing the same move (e.g. a cold-start walk to a
+			# warp tile like the academy door at izlude 125,257) reads dist=0 and gets
+			# suppressed as a false "already there", stranding the bot before it ever
+			# walks the final tile to trigger the warp. pos_to is the route the bot is
+			# ALREADY executing, not where it stands; only pos reflects reality.
 			if ($char) {
-				if ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') { $cx = $char->{pos_to}{x} || 0; $cy = $char->{pos_to}{y} || 0; }
-				elsif ($char->{pos} && ref $char->{pos} eq 'HASH') { $cx = $char->{pos}{x} || 0; $cy = $char->{pos}{y} || 0; }
+				if ($char->{pos} && ref $char->{pos} eq 'HASH') { $cx = $char->{pos}{x} || 0; $cy = $char->{pos}{y} || 0; }
 				elsif (defined $char->{x}) { $cx = $char->{x}; $cy = $char->{y}; }
+				elsif ($char->{pos_to} && ref $char->{pos_to} eq 'HASH') { $cx = $char->{pos_to}{x} || 0; $cy = $char->{pos_to}{y} || 0; }
 			}
 			# Map-level check: if bot is on a hunting map and target is a portal
 			# coordinate, suppress the move — bot is already on the hunting map.
