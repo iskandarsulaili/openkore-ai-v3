@@ -1037,6 +1037,11 @@ class HeuristicService:
         # island Porings (exp + 6008 quest items + Knife drops) instead of
         # constantly re-targeting the sail attempt every horizon.
         self._last_island_escape: dict[str, float] = {}
+        # Save-point binding: bot_id -> set of town maps already bound there.
+        # Once a bot visits a town's Kafra and binds its save point, it is NOT
+        # re-bound on every visit (a one-shot per town). This keeps deaths/
+        # respawns landing in a safe town, not a hostile start field.
+        self._save_point_bound: dict[str, set[str]] = {}
         # Job change tracking: detect when job actually changes
         self._last_job_name: dict[str, str] = {}  # bot_id -> previous job_name
         # Post-job-change: track if we need to reset maps after job change
@@ -1415,6 +1420,58 @@ class HeuristicService:
         if _kills_gained == 0 and _elapsed > 1800:
             logger.warning(f"[kills_hour] {bot_id}: ZERO kills in {_elapsed:.0f}s! Escalating.")
         return _rate
+
+    def _ensure_save_point(self, actions: list, bot_id: str, map_name: str) -> None:
+        """Bind the bot's save point at the nearest town Kafra, one-shot per town.
+
+        If the bot's current map is a town with a known Kafra and it has NOT yet
+        bound its save point there, emit the Kafra save interaction so deaths /
+        respawns (and Butterfly Wing returns) land in a SAFE town instead of a
+        hostile start field. This is the highest-efficiency save-point policy: bind
+        early (first town visit), never re-bind the same town, and never spam.
+
+        Kafra save = `talknpc <x> <y>` then menu option "Save" (r0) — per
+        ro_knowledge: this server's Kafra offers Save (r0) and Storage (r1).
+        """
+        _map = str(map_name or "").lower().replace(".gat", "")
+        if not _map:
+            return
+        try:
+            from ai_sidecar.kafra_teleport import KNOWN_KAFRA_LOCATIONS
+        except Exception:
+            KNOWN_KAFRA_LOCATIONS = {}
+        coords = KNOWN_KAFRA_LOCATIONS.get(_map)
+        if not coords:
+            return  # not a Kafra town
+        _bound = self._save_point_bound.get(bot_id, set())
+        if _map in _bound:
+            return  # already bound here — don't re-bind
+        _bound = set(_bound)
+        _bound.add(_map)
+        self._save_point_bound[bot_id] = _bound
+        # Also record into the Kafra teleport manager so the sidecar knows the
+        # authoritative save point for return-to-save / butterfly logic.
+        try:
+            from ai_sidecar.kafra_teleport import get_kafra_manager
+            get_kafra_manager().set_save_point(bot_id, _map, int(coords[0]), int(coords[1]))
+        except Exception:
+            pass
+        _x, _y = int(coords[0]), int(coords[1])
+        actions.append(HeuristicAction(
+            kind="command",
+            command=f"talknpc {_x} {_y}",
+            confidence=0.95,
+            reason=f"Adaptive: bind save point at {_map} Kafra ({_x},{_y}) so deaths respawn safely",
+            domain="navigation",
+        ))
+        actions.append(HeuristicAction(
+            kind="command",
+            command="talk resp 0",
+            confidence=0.90,
+            reason="Adaptive: choose Kafra 'Save' to bind the respawn point",
+            domain="navigation",
+        ))
+        logger.info("save_point: %s bound at %s Kafra (%d,%d)", bot_id, _map, _x, _y)
 
     def set_domain_weights(self, weights: dict) -> None:
         """Override domain execution priority weights.
@@ -2168,6 +2225,16 @@ class HeuristicService:
         job_name = signals.get("job_name", "novice").lower()
         self._adaptive._last_job = job_name  # Set for profit calculation delegate
         stat_points = signals.get("stat_points", 0) or 0
+
+        # ── SMART SAVE-POINT BINDING ──
+        # Bind the respawn point at the nearest town Kafra (one-shot per town)
+        # so deaths / Butterfly-Wing returns land in a SAFE town, never the
+        # hostile start field. Highest-efficiency policy: bind on first town
+        # visit, don't re-bind, don't spam.
+        try:
+            self._ensure_save_point(actions, bot_id, map_name)
+        except Exception as _sp_err:
+            logger.debug("ensure_save_point error: %s", _sp_err)
         skill_points = signals.get("skill_points", 0) or 0
         in_party = signals.get("in_party", False)
         inventory = signals.get("inventory_items", []) or []
