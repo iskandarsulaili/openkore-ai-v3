@@ -2374,17 +2374,34 @@ class HeuristicService:
                 logger.info(f"[cold_start] {bot_id}: farmed 50z on prt_fild05, step 1 -> 2")
             else:
                 if _cs_in_town:
-                    # In Prontera — walk to prt_fild05 via map-name move (AI handles portal routing)
-                    actions.append(HeuristicAction(
-                        kind="command", command="set lockMap prt_fild05",
-                        confidence=0.99, domain="economy",
-                        reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
-                    ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prt_fild05",
-                        confidence=0.99, domain="economy",
-                        reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
-                    ))
+                    # ── ACADEMY-FIRST (weapon-less bot in izlude) ──
+                    # A level-1 novice that just escaped the island to izlude has no
+                    # weapon and cannot farm prt_fild05 bare-handed. Before any
+                    # zeny-farming, it must register at the Cryptura Academy
+                    # receptionist (iz_ac01 100,39) for the free Novice_Knife + 300
+                    # potions. Override the prt_fild05 step-1 walk to send it to the
+                    # academy door (izlude 125,257 warp -> iz_ac01) instead.
+                    if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
+                        actions.append(HeuristicAction(
+                            kind="command", command="move izlude 125 257",
+                            confidence=0.99, domain="progression",
+                            reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
+                        ))
+                        # Registration completes on arrival at iz_ac01 (handled by the
+                        # academy block); do NOT advance the cold-start step here — the
+                        # academy kit (knife+potions) will move the flow forward naturally.
+                    else:
+                        # In Prontera/other town — walk to prt_fild05 via map-name move (AI handles portal routing)
+                        actions.append(HeuristicAction(
+                            kind="command", command="set lockMap prt_fild05",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prt_fild05",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
+                        ))
                 elif _cs_in_hunting:
                     # On prt_fild05 — enable AI and attack for farming
                     actions.append(HeuristicAction(
