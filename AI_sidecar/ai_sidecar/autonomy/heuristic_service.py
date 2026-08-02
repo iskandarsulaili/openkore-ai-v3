@@ -3355,7 +3355,13 @@ class HeuristicService:
             _rth_step = self._cold_start_step.get(_cs_stable_key, 0)
             _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
-            if not _rth_skip and _town_time > 15:
+            # int_land (Secluded Island) has NO route to prt_fild05; locking the
+            # hunt map there makes OpenKore spin on "Cannot calculate a route from
+            # int_land to prt_fild05" forever and never escape the island. The
+            # island escape (move 49 57 -> sail) must run instead, so never set
+            # the prt_fild05 lockMap / portal-recall while stranded there.
+            _is_island = str(signals.get("map", "") or "").lower().startswith("int_land")
+            if not _rth_skip and _town_time > 15 and not _is_island:
                 self._set_config_once(actions, bot_id, "lockMap", "prt_fild05", "hunting",
                     "Lock to hunting map")
                 self._set_config_once(actions, bot_id, "lockMap_randX", "30", "hunting",
