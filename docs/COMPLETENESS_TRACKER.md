@@ -242,6 +242,21 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       QuestStateMachine, ColdStartManager, LifecycleManager — ARE used via direct
       instantiation/calls: analyze=13/1/44/45/45, so only GearScorer was truly
       dead.) +0 new tests (existing combat-tactics suite still 10 passed). [this batch]
+- [x] SWEEP S24 (EXHAUSTIVE dead-subsystem resolution — ROUND 3): completed a
+      full-repo singleton-getter + method-call audit. Verified the remaining 7
+      zero-external-ref getters (get_positioning_system, get_market_seeder,
+      get_crafting_profitability, get_position_assigner, get_quest_sm,
+      get_lifecycle_manager, get_cold_start_manager) are REDUNDANT conveniences,
+      NOT dead subsystems — each exposes a class that IS exercised through a wired
+      channel (PositioningSystem/PositionAssigner via combat dispatcher,
+      QuestStateMachine via quest domain get_available_quests, LifecycleManager/
+      ColdStartManager via heuristic_service._connection_lifecycle/_cold_start_
+      manager, MarketSeeder via item_value_db, CraftingProfitability via economy).
+      No further genuinely-dead/ unwired code remains in the Python sidecar after
+      S19-S23. Server-side C3/C4 remain OPEN by the user's no-modify-rathena-ai-
+      world constraint (documented; openkore adapts via keep-alive C2 + resilience).
+      Final: Python 362 passed / 0 failed, Perl 1168/1168, HEAD 317f86265 clean.
+      [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
