@@ -1801,9 +1801,9 @@ class HeuristicService:
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="talk resp 1",
+                                        command="talknpc 49 57 c",
                                         confidence=0.90,
-                                        reason="Cold start: select 'Sail to Izlude!' to leave the island",
+                                        reason="Cold start: talk to the sailor (script auto-warps to Izlude on close2)",
                                         domain="progression",
                                     ))
                                 if _cur_map in ("iz_int", "iz_ac01", "iz_int01", "iz_int02", "iz_int03", "iz_int04"):
