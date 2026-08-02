@@ -5259,6 +5259,21 @@ sub _rewrite_runtime_command {
 		my $_target = lc($1);
 		my $_cur_map = $field ? lc($field->name()) : '';
 		$_cur_map =~ s/\.gat$//;
+		# ── ISLAND DEADLOCK GATE (fixes EVERY bot, present + future) ──
+		# A bot stranded on the Secluded Island (int_land) has NO route to
+		# prt_fild05 / any Prontera field — OpenKore emits "Cannot calculate a
+		# route from int_land to prt_fild05" and spins forever. The ONLY way out
+		# is the (49,57) sailor warp. Any OTHER `move <map>` from the island is
+		# a losing directive (from hunting-map defaults, cold-start econ step,
+		# survival fallback, etc.) and must be suppressed so it cannot fight the
+		# escape. This covers every bot: `move 49 57` is the ONLY move allowed
+		# while on int_land (matches the block above). This gate is map-based,
+		# so it works for all present AND future bots regardless of which code
+		# emitted the bad move.
+		if ($_cur_map =~ /^int_land/ && $_target !~ /^49$/) {
+			debug "[island_gate] on $_cur_map, suppressing 'move $_target' (only (49,57) escape is routable) -> let island escape proceed\n", 'aiSidecarBridge', 2;
+			return ('', 'island_move_suppressed');
+		}
 		# Secluded Island sailor escape: dedupe so OpenKore routes to the
 		# (49,57) OnTouch warp ONCE and actually walks there. Without this,
 		# PDCA re-issues `move 49 57` from every horizon (immediate/short/
@@ -5266,7 +5281,7 @@ sub _rewrite_runtime_command {
 		# the bot never reaches the warp ("Calculating route... : 49, 57"
 		# spam forever). Keyed on the command itself (the escape only ever
 		# targets (49,57) from the island), so it works regardless of $field.
-		if ($_target =~ /^49\s+57$/) {
+		if ($_target =~ /^49$/) {
 			my $_now_ms = _now_ms();
 			my $_key = 'move_int_land_sailor';
 			if (exists $_committed_commands{$_key} && $_now_ms - $_committed_commands{$_key} <= $COMMITTED_ACTION_COOLDOWN_MS) {
@@ -5571,10 +5586,20 @@ sub _rewrite_runtime_command {
 	# Handle 'set lockMap' - set lockMap to hunting map
 	if ($normalized =~ /^set\s+lockMap\s+(.+)$/i) {
 	    my $_lm_target = $1;
+	    # ── ISLAND LOCKMAP GATE ──
+	    # Setting lockMap (e.g. prt_fild05) while stranded on int_land makes
+	    # OpenKore spin on "Cannot calculate a route from int_land to prt_fild05"
+	    # forever, fighting the seabreaker escape. Suppress ANY lockMap write on
+	    # the island so the bot only does the escape. Map-based => all bots.
+	    my $_lc_cur = $field ? lc($field->name()) : '';
+	    if ($_lc_cur =~ /^int_land/) {
+		warning "[island_gate] on int_land, suppressing 'set lockMap $_lm_target' (no route off the island except the (49,57) escape)\n", 'aiSidecarBridge', 1;
+		return ('', 'island_lockmap_suppressed');
+	    }
 	    warning "[set_lockMap] setting lockMap to $_lm_target\n", 'aiSidecarBridge', 1;
-	    	    $::config{'lockMap'} = $_lm_target;
-	    	    $::config{'_sidecar_set_lockMap'} = 1;
-	    	    return ('', 'lockmap_set');
+	    $::config{'lockMap'} = $_lm_target;
+	    $::config{'_sidecar_set_lockMap'} = 1;
+	    return ('', 'lockmap_set');
 	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
 	# Use $trimmed (original case) to preserve config key case
