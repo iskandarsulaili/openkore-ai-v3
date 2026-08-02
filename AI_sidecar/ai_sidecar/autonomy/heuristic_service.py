@@ -2199,8 +2199,14 @@ class HeuristicService:
                     # Already on hunting map with no weapon — advance directly to step 1 (farm)
                     self._cold_start_step[_cs_stable_key] = 1
                     _cold_start_step = 1
-                elif not _cs_in_town:
-                    # On a different non-town map — portal walk to Prontera
+                elif not _cs_in_town and not str(signals.get("map", "") or "").lower().startswith("int_land"):
+                    # On a different non-town map — portal walk to Prontera.
+                    # NOTE: int_land (Secluded Island intro) is EXCLUDED — the
+                    # island has no route to Prontera; the int_land bailout
+                    # (sail to Izlude) handles it instead. Emitting `move
+                    # prontera` here fights that bailout and errors
+                    # ("Cannot calculate a route from int_land"), leaving the
+                    # bot stuck at spawn.
                     actions.append(HeuristicAction(
                         kind="command", command="ai manual",
                         confidence=0.99, domain="economy",
