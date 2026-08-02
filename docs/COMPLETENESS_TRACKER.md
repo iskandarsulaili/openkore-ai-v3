@@ -168,6 +168,22 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       horizon/cycle, constantly cancelling combat -> 0 kills/0 exp. Throttled
       the sail attempt (move 49 57 + talknpc 49 57) to once per 45s per bot
       (_last_island_escape) so bots grind Porings between attempts. [ea478202d]
+- [x] SWEEP S19 (UNWIRED SUBSYSTEMS WIRED): three fully-implemented intelligence
+      layers were NEVER imported/called anywhere in the tree (full-repo reference
+      scan confirmed each `get_*` singleton appears only at its definition):
+        * ConsciousDecisionEngine (conscious_engine.py)
+        * PreemptiveIntelligence (preemptive_intelligence.py)
+        * ProgressionDriver (progression_driver.py)
+      NEW ai_sidecar/autonomy/intelligence_integration.py wires all three into
+      the PDCA per-bot cycle (called alongside try_onboarding): feeds the live
+      BotStateSnapshot, runs each subsystem's evaluate/process_decisions, and
+      converts their Decisions/PreemptiveActions into real queued ActionProposals
+      (`skills_add`/`stats_add`/`buy`/`move`) via the runtime action_queue —
+      non-executable intents (request_heal/vendor_trash/etc.) are observed/logged
+      instead of emitting bogus commands. Empty-target commands are guarded.
+      +3 regression tests (test_intelligence_integration.py: queues real commands,
+      skips disconnected bots, no empty-target commands). Full suite 355 passed.
+      [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro

@@ -5760,6 +5760,16 @@ class PDCALoop:
                         _total_actions += try_onboarding(self._runtime, _cycle_bot_id, self._get_latest_snapshot())
                     except Exception:
                         pass
+                    # ── Unified intelligence subsystem wiring ──
+                    # Wire the three built-but-previously-unwired intelligence layers
+                    # (ConsciousDecisionEngine, PreemptiveIntelligence, ProgressionDriver)
+                    # into the per-bot cycle so their decisions reach the action queue.
+                    try:
+                        from ai_sidecar.autonomy.intelligence_integration import run_intelligence
+                        _total_actions += run_intelligence(
+                            self._runtime, _cycle_bot_id, self._get_latest_snapshot())
+                    except Exception:
+                        pass
                     try:
                         # Cold start cooldown: skip if less than 60s since last cold start for this bot
                         # OVERRIDDEN: heuristic's task-completion-triggered cold start handles this better
