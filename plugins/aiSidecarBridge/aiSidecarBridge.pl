@@ -5259,6 +5259,22 @@ sub _rewrite_runtime_command {
 		my $_target = lc($1);
 		my $_cur_map = $field ? lc($field->name()) : '';
 		$_cur_map =~ s/\.gat$//;
+		# Secluded Island sailor escape: dedupe so OpenKore routes to the
+		# (49,57) OnTouch warp ONCE and actually walks there. Without this,
+		# PDCA re-issues `move 49 57` from every horizon (immediate/short/
+		# medium) each cycle, cancelling the in-progress route each time —
+		# the bot never reaches the warp ("Calculating route... : 49, 57"
+		# spam forever). Fire it at most once per cooldown.
+		if ($_cur_map =~ /^int_land/ && $_target =~ /^49\s+57$/) {
+			my $_now_ms = _now_ms();
+			my $_key = 'move_int_land_sailor';
+			if (exists $_committed_commands{$_key} && $_now_ms - $_committed_commands{$_key} <= $COMMITTED_ACTION_COOLDOWN_MS) {
+				debug "[move_dedupe] Secluded Island sailor move already issued; letting route complete\n", 'aiSidecarBridge', 2;
+				return ('', 'move_int_land_sailor_deduped');
+			}
+			$_committed_commands{$_key} = $_now_ms;
+			debug "[move_rewrite] Secluded Island escape move 49 57 (deduped, cooldown=${COMMITTED_ACTION_COOLDOWN_MS}ms)\n", 'aiSidecarBridge', 2;
+		}
 		# Direct portal coordinate - always pass through
 		if ($_target eq '22 203') {
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
