@@ -146,7 +146,11 @@ start_sidecar() {
     info "Starting sidecar..."
     cd "$SIDECAR_DIR"
     source venv/bin/activate
-    nohup "$SIDECAR_DIR/venv/bin/python" -m ai_sidecar.app > "$SIDECAR_LOG" 2>&1 &
+    # --keep-alive: sidecar stays alive and auto-restarts stopped bots when
+    # the game server flaps (the rAthena char-server SEGVs after repeated
+    # char-selects; keep-alive polls it and relaunches the fleet so it
+    # converges in-game automatically — a human is never required).
+    nohup "$SIDECAR_DIR/venv/bin/python" -m ai_sidecar.app --keep-alive --keep-alive-poll 10 > "$SIDECAR_LOG" 2>&1 &
     local pid=$!
     _save_pid "$pid"
     deactivate

@@ -854,7 +854,14 @@ class RuntimeState:
 
 
     async def _keep_alive_loop(self) -> None:
-        """Keep-alive loop: poll game server, log status, auto-restart bots when server responds."""
+        """Keep-alive loop: poll game server, auto-restart dead bots.
+
+        When the game server is reachable AND one or more registered bots have
+        gone stale (stopped reporting ticks — i.e. their OpenKore process died
+        on a server flap and nothing reconnected them), relaunch the fleet via
+        start.sh. This is what makes the fleet converge in-game automatically
+        without a human, even though `autoRestart 0` is set in the bot configs.
+        """
         if not self.keep_alive_enabled:
             return
         ka_logger = logging.getLogger("ai_sidecar.lifecycle.keep_alive")
@@ -872,59 +879,63 @@ class RuntimeState:
                 "server": f"{host}:{port}",
             },
         )
+        stale_seconds = max(60.0, poll_s * 3)
         while True:
             try:
                 elapsed = _lifecycle_time.monotonic() - start_time
-                bot_count = self.bot_registry.count()
-                if bot_count > 0:
-                    ka_logger.debug("keep_alive_bots_connected", extra={"event": "keep_alive_bots_connected", "bot_count": bot_count})
-                    self.keep_alive_server_was_up = False
-                    self.keep_alive_bots_restarted = False
-                    await asyncio.sleep(poll_s)
-                    continue
                 if elapsed >= timeout_s:
                     ka_logger.info(
                         "keep_alive_timeout_reached",
                         extra={"event": "keep_alive_timeout_reached", "elapsed_s": elapsed, "timeout_s": timeout_s},
                     )
                     break
-                # Poll the game server
+
+                # Poll the game server.
                 server_up = await self._check_game_server(host, port)
-                if server_up:
-                    ka_logger.info(
-                        "keep_alive_server_responded",
-                        extra={"event": "keep_alive_server_responded", "server": f"{host}:{port}"},
-                    )
-                    if not self.keep_alive_server_was_up:
-                        self.keep_alive_server_was_up = True
-                        ka_logger.info(
-                            "keep_alive_server_back_online",
-                            extra={"event": "keep_alive_server_back_online"},
-                        )
-                    # Auto-restart bots if server just came back and we haven't restarted yet
-                    if not self.keep_alive_bots_restarted:
-                        self.keep_alive_bots_restarted = True
-                        ka_logger.info(
-                            "keep_alive_restarting_bots",
-                            extra={"event": "keep_alive_restarting_bots"},
-                        )
-                        await self._restart_bots()
-                else:
+                if not server_up:
                     if self.keep_alive_server_was_up:
                         self.keep_alive_server_was_up = False
                         ka_logger.info(
                             "keep_alive_server_went_down",
-                            extra={"event": "keep_alive_server_went_down"},
+                            extra={"event": "keep_alive_server_went_down", "server": f"{host}:{port}"},
                         )
+                    ka_logger.debug("keep_alive_waiting_for_server", extra={"event": "keep_alive_waiting_for_server"})
+                    await asyncio.sleep(poll_s)
+                    continue
+
+                if not self.keep_alive_server_was_up:
+                    self.keep_alive_server_was_up = True
                     ka_logger.info(
-                        "keep_alive_waiting_for_server",
-                        extra={
-                            "event": "keep_alive_waiting_for_server",
-                            "elapsed_s": round(elapsed, 1),
-                            "timeout_s": timeout_s,
-                            "remaining_s": round(timeout_s - elapsed, 1),
-                        },
+                        "keep_alive_server_up",
+                        extra={"event": "keep_alive_server_up", "server": f"{host}:{port}"},
                     )
+
+                # Server is up. Restart registered-but-stale (dead) bots.
+                import time as _time
+                now = _time.time()
+                records = self.bot_registry.list()
+                stale = self._list_stale_bots(records, stale_seconds, now)
+                if stale:
+                    if not self.keep_alive_bots_restarted:
+                        self.keep_alive_bots_restarted = True
+                        ka_logger.warning(
+                            "keep_alive_restarting_stale_bots",
+                            extra={
+                                "event": "keep_alive_restarting_stale_bots",
+                                "stale_bots": stale,
+                                "stale_seconds": stale_seconds,
+                            },
+                        )
+                        await self._restart_bots()
+                    else:
+                        ka_logger.debug(
+                            "keep_alive_stale_bots_already_restarting",
+                            extra={"event": "keep_alive_stale_bots_already_restarting", "stale_bots": stale},
+                        )
+                else:
+                    # All bots healthy.
+                    self.keep_alive_bots_restarted = False
+                    ka_logger.debug("keep_alive_bots_healthy", extra={"event": "keep_alive_bots_healthy"})
             except asyncio.CancelledError:
                 ka_logger.info("keep_alive_loop_cancelled", extra={"event": "keep_alive_loop_cancelled"})
                 break
@@ -934,6 +945,21 @@ class RuntimeState:
                     extra={"event": "keep_alive_loop_error", "error": str(exc)},
                 )
             await asyncio.sleep(poll_s)
+
+    def _list_stale_bots(self, records: list, stale_seconds: float, now: float) -> list[str]:
+        """Return bot_ids whose last_seen_at is older than stale_seconds.
+
+        `now` is wall-clock epoch seconds (time.time()); `last_seen_at` is a
+        UTC datetime, so last.timestamp() is the same clock domain.
+        """
+        stale: list[str] = []
+        for rec in records:
+            last = getattr(rec, "last_seen_at", None)
+            if last is None:
+                continue
+            if now - float(last.timestamp()) > stale_seconds:
+                stale.append(rec.bot_id)
+        return stale
 
     async def _check_game_server(self, host: str, port: int) -> bool:
         """Check if the game server is reachable via TCP connect."""

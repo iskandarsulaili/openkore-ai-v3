@@ -190,8 +190,12 @@ class SidecarSettings(BaseSettings):
     keep_alive_enabled: bool = False
     keep_alive_timeout_minutes: int = Field(default=30, ge=1, le=1440)
     keep_alive_poll_interval_s: float = Field(default=30.0, ge=5.0, le=300.0)
-    game_server_host: str = "asgardsglory.ddns.net"
-    game_server_port: int = 6900
+    # The rAthena char-server this fleet talks to via Poseidon. The
+    # game_server_keepalive watchdog proves it lives on localhost:6121 (that
+    # is the port it restarts on SEGV); polling that reachable endpoint is
+    # what lets the keep-alive loop know when it is safe to relaunch bots.
+    game_server_host: str = "127.0.0.1"
+    game_server_port: int = 6121
 
     # ── Bridge Reflex Config (pushed to bridge plugin) ──────────
     # These are read by the bridge plugin at runtime. The AI (conscious engine,
