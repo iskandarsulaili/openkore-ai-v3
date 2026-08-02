@@ -79,6 +79,7 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     of trying to route to prt_fild08 or fighting the island Poring."""
     cmds = _assess(base_level=1, map_name="int_land", lock_map="prt_fild08")
     assert "move 49 57" in cmds, f"must walk to sailor: {cmds}"
+    assert any("talknpc 49 57" in c for c in cmds), f"must open sailor dialog: {cmds}"
     assert "talk resp 1" in cmds, f"must select 'Sail to Izlude!' if prompted: {cmds}"
     assert "set attackAuto 0" in cmds, f"must run (attackAuto 0) on the island: {cmds}"
     # Must NOT force prt_fild08 lockMap OR move prontera while stranded (both

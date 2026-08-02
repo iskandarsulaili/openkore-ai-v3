@@ -5490,6 +5490,17 @@ sub _rewrite_runtime_command {
 		debug "[talknpc] Tool Dealer at (156,212): auto-completing buy sequence\n", 'aiSidecarBridge', 1;
 		return ("talknpc 156 212 c r0 n", 'tool_dealer_auto');
 	}
+	# Secluded Island sailor (#intro_to_izlude WARPNPC): the bot must step
+	# onto (49,57) to fire OnTouch, then advance the dialog. For a fresh
+	# academy-bound character quest 21008 is NOT active, so the script runs
+	# `mes "[Sailor] Let's head towards Izlude!"; close2;` which AUTO-WARPS
+	# to izlude once the dialog is advanced — a single `c` closes it and
+	# triggers the close2 warp. (If the quest ever is active, the dialog has
+	# a select; `talk resp 1` from the cold-start handles that branch.)
+	if ($normalized =~ /^talknpc\s+49\s+57/) {
+		debug "[talknpc] Secluded Island sailor (49,57): advancing dialog -> close2 warps to Izlude\n", 'aiSidecarBridge', 1;
+		return ("talknpc 49 57 c", 'izlude_sailor_auto');
+	}
 
 	if ($normalized =~ /^move\s+savepoint$/) {
 		return ('respawn', 'move_savepoint_rewritten');

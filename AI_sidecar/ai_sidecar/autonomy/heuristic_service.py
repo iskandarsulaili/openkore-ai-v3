@@ -1796,7 +1796,14 @@ class HeuristicService:
                                         kind="command",
                                         command="move 49 57",
                                         confidence=0.95,
-                                        reason="Cold start: walk onto the sailor warp cell — its OnTouch fires and sails to Izlude",
+                                        reason="Cold start: walk onto the sailor warp cell — its OnTouch fires",
+                                        domain="progression",
+                                    ))
+                                    _actions.append(HeuristicAction(
+                                        kind="command",
+                                        command="talknpc 49 57",
+                                        confidence=0.90,
+                                        reason="Cold start: open sailor dialog (bridge auto-completes to close2 -> warps to Izlude)",
                                         domain="progression",
                                     ))
                                     _actions.append(HeuristicAction(
