@@ -388,11 +388,13 @@ Batch 1 live-progression fixes (this sweep):
       packed field-by-field size (mailbox now parses). [in rathena-AI-world]
 
 Residual (post-sweep, infrastructure not code):
-- [ ] OPEN D5: bots still intermittently drop on the PUBLIC internet tunnel path
-      (209.25.142.24:1053/1063/1070) at char-select/map hops ("Timeout on
+- [ ] OPEN D5: bots still intermittently drop on the PUBLIC playit.gg tunnel path
+      (209.25.142.24:1053/1063/1070, the playit external ports advertised by
+      char_pub_port/map_pub_port) at char-select/map hops ("Timeout on
       Character Select" + "Incoming data left"). Server crash/gating/wiring are
-      fixed; this residual is the Cloudflare-tunnel round-trip reliability for
-      short-lived game TCP hops. openkore-ai-v3 adapts (keep-alive + re-catch),
-      but sustained multi-step in-game actions (registration walk, farming) need
-      the tunnel hop to hold ~consecutive minutes.
+      fixed; this residual is the playit.gg round-trip reliability for short-lived
+      game TCP hops. openkore-ai-v3 adapts (keep-alive + re-catch), but sustained
+      multi-step in-game actions (registration walk, farming) need the tunnel hop
+      to hold ~consecutive minutes. (Note: Cloudflare Tunnel serves the HTTP/web
+      side; the game TCP path is playit.gg.)
 
