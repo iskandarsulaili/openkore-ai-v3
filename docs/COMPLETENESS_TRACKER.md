@@ -257,6 +257,18 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       world constraint (documented; openkore adapts via keep-alive C2 + resilience).
       Final: Python 362 passed / 0 failed, Perl 1168/1168, HEAD 317f86265 clean.
       [this batch]
+- [x] LIVE-UPGRADE S25 (INT_LAND lockMap DEADLOCK FIXED): live bots were stuck
+      in "Cannot calculate a route from int_land (77,101) to prt_fild05" +
+      "Calculating lockMap route to: Prontera Field(prt_fild05)" (every cycle,
+      never escaping). The hunt-map config-audit `_set_config_once(lockMap,
+      prt_fild05,...)` fired even for bots stranded on the Secluded Island,
+      where there is NO route to prt_fild05 except the (49,57) sailor -> izlude.
+      Root cause: no int_land guard on the prt_fild05 hunt-map lock. FIX: gate
+      the hunt-map lock + portal-recall on `not signals.map.startswith("int_land")`,
+      so the island escape (move 49 57) runs instead. VERIFIED: on int_land the
+      fixed sidecar emits ZERO prt_fild05 lockMap/route and DOES emit the escape;
+      bot10 escaped to izlude.gat and the sidecar then correctly locks
+      prt_fild08 + attackAuto 3 (academy farm). [e758cd5d1]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
