@@ -159,3 +159,22 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       didn't fire. Bridge auto-completes `talknpc 49 57` -> `talknpc 49 57 c`
       (advance + close2 -> warps to iz_int03). LIVE-PROVEN: bot10 received the
       iz_int03.gat warp handoff. [ede0f4222]
+- [x] LIVE-PROGRESS FIX S17: island bot DEATHS were caused by the bot-side
+      "run (attackAuto 0)" fix leaving bots defenseless — they took hits
+      without fighting back ("bot attacks before death: 0"). Switched to
+      `attackAuto 2` + `attackAuto_inLockOnly 0` so bots fight the weak island
+      Porings; deaths dropped from death-loops to 0-2. [78ffc55ff]
+- [x] LIVE-PROGRESS FIX S18: island escape sequence was re-emitted every
+      horizon/cycle, constantly cancelling combat -> 0 kills/0 exp. Throttled
+      the sail attempt (move 49 57 + talknpc 49 57) to once per 45s per bot
+      (_last_island_escape) so bots grind Porings between attempts. [ea478202d]
+- [ ] OPEN BLOCKER (server design, not bot code): the Secluded Island spawns
+      40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
+      gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro
+      (drops to teleport-range in ~4s) and cannot land a kill, so the designed
+      island-grind (collect 6008 x2 -> Sailor 58,69 -> 100 exp -> sail) is not
+      reachable by an automated gear-less bot. Escape IS proven (iz_int03 warp
+      received); sustained live escape+level is blocked by this server-side
+      starting-experience design combined with a flapping char-server. Bot-side
+      logic is complete + suite-verified; requires a server-side starting-gear
+      grant or a non-hostile starting map to demonstrate live leveling.
