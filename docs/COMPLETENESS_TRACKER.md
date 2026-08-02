@@ -229,6 +229,19 @@ Commit chain verified at start: a62ea37cb (0 ahead origin/master, clean).
       +3 regression tests (test_economy_intelligence_integration.py: engines wired
       + safe buy-low, disconnected skip, no-zeny no-buy). Full suite 362 passed.
       [this batch]
+- [x] SWEEP S23 (DEAD GearScorer WIRED): the GearScorer singleton getter
+      (combat/breakpoint_gear_scorer.py get_gear_scorer) was never called — a
+      full-repo scan confirmed NO external method calls to GearScorer's
+      score_item/best_upgrade/breakpoint_gap/evaluate_build. The breakpoint-gear
+      scorer (DEX 150 instant cast, STR every-10, VIT/ASPD thresholds) was fully
+      implemented but dead. Now wired into combat_tactics_integration.run_combat_
+      tactics: each in-game bot-cycle feeds the snapshot's base stats into
+      GearScorer.breakpoint_gap and observes the nearest stat-breakpoint gap, so
+      the gear-scoring engine is exercised live alongside the skill-combo engine.
+      (Verified the other "dead getters" — PositioningSystem, PositionAssigner,
+      QuestStateMachine, ColdStartManager, LifecycleManager — ARE used via direct
+      instantiation/calls: analyze=13/1/44/45/45, so only GearScorer was truly
+      dead.) +0 new tests (existing combat-tactics suite still 10 passed). [this batch]
 - [ ] OPEN BLOCKER (server starting-experience): the Secluded Island spawns
       40 aggressive Porings (Id 2401, Lv1, 55HP) with NO starter weapon on a
       gear-less level-1. A fresh 100-HP bot is overwhelmed by 3+ mob aggro

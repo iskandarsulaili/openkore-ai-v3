@@ -78,6 +78,21 @@ def _snap_vitals(snapshot: Any) -> tuple[float, int, int, int, str]:
     return hp_pct, sp, hp, max_hp, job
 
 
+def _snap_stats(snapshot: Any) -> dict[str, int]:
+    """Extract the bot's base stats dict from the snapshot (safe defaults)."""
+    stats = {"str": 0, "agi": 0, "vit": 0, "int": 0, "dex": 0, "luk": 0}
+    try:
+        st = getattr(snapshot, "stats", None)
+        if st is not None:
+            for k in stats:
+                v = getattr(st, k, None)
+                if v is not None:
+                    stats[k] = int(v)
+    except Exception:
+        pass
+    return stats
+
+
 def _target_element(snapshot: Any) -> str:
     """Best-effort current target monster element from the snapshot's combat state."""
     try:
@@ -154,6 +169,22 @@ def run_combat_tactics(runtime: Any, bot_id: str | None, snapshot: Any = None) -
     element = _target_element(snapshot)
     aggro = _aggro(snapshot)
     total = 0
+
+    # ── Gear breakpoint analysis (GearScorer — was a dead subsystem) ──
+    # Evaluate the bot's current stats against DEX/STR/VIT/ASPD breakpoints and
+    # observe the gap-to-breakpoint so the gear-scoring engine is exercised.
+    try:
+        from ai_sidecar.combat.breakpoint_gear_scorer import get_gear_scorer
+        stats = _snap_stats(snapshot)
+        gaps = get_gear_scorer().breakpoint_gap(stats)
+        if gaps:
+            nearest = gaps[0]
+            total += _emit(runtime, bot_id,
+                           f"breakpoint:{getattr(nearest, 'stat_name', '?')}:{getattr(nearest, 'current_value', '?')}:{getattr(nearest, 'next_breakpoint', '?')}",
+                           getattr(nearest, "description", "gear breakpoint"),
+                           "gear_scorer", f"ct_gear_{bot_id}", obs=True)
+    except Exception as e:
+        logger.debug("gear_scorer_breakpoint_err: %s", e)
 
     # Kiting rule (ranged always kite; melee at low HP).
     try:
