@@ -5264,8 +5264,9 @@ sub _rewrite_runtime_command {
 		# PDCA re-issues `move 49 57` from every horizon (immediate/short/
 		# medium) each cycle, cancelling the in-progress route each time —
 		# the bot never reaches the warp ("Calculating route... : 49, 57"
-		# spam forever). Fire it at most once per cooldown.
-		if ($_cur_map =~ /^int_land/ && $_target =~ /^49\s+57$/) {
+		# spam forever). Keyed on the command itself (the escape only ever
+		# targets (49,57) from the island), so it works regardless of $field.
+		if ($_target =~ /^49\s+57$/) {
 			my $_now_ms = _now_ms();
 			my $_key = 'move_int_land_sailor';
 			if (exists $_committed_commands{$_key} && $_now_ms - $_committed_commands{$_key} <= $COMMITTED_ACTION_COOLDOWN_MS) {
