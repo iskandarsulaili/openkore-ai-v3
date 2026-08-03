@@ -1653,22 +1653,36 @@ class HeuristicService:
                             _cs_map_l = str(_cm or "").lower()
                             if _cs_map_l in ("izlude", "izlude_a") and not self._has_coldstart_weapon(signals):
                                 _target = "iz_ac01"
-                                # The academy door warp is at izlude (125,257) AND at
-                                # izlude_a (125,257 -> iz_ac01_a) — the sail-arrival sub-map
-                                # a level-1 uses after escaping the island.
-                                _acad_door = "move 125 257"
-                                # Throttle the academy-door move: issuing it every
-                                # PDCA cycle makes OpenKore recalculate the long route
-                                # continuously instead of walking it. Emit at most
-                                # once per 10s per bot so the move completes.
-                                _now = __import__("time").time()
-                                if _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
-                                    self._last_academy_move[_bot_id] = _now
-                                    _actions.append(HeuristicAction(
-                                        kind="command", command=_acad_door,
-                                        confidence=0.95,
-                                        reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
-                                        domain="progression"))
+                                # Phase 1 (server-agnostic): prefer the discovered portal
+                                # graph for routing to the academy. The Pathfinder computes
+                                # a route through whatever portals this server actually has,
+                                # so it works on ANY server — not just rathena-ai-world.
+                                # The literal academy-door coordinate is only a fallback for
+                                # a fresh server where the portal graph isn't discovered yet.
+                                _route_via_pathfinder = False
+                                if self._pathfinder:
+                                    try:
+                                        _apath = self._pathfinder.find_path(_cm, "iz_ac01")
+                                        if _apath:
+                                            _route_via_pathfinder = True
+                                            _actions.append(HeuristicAction(
+                                                kind="command", command=f"navigate iz_ac01",
+                                                confidence=0.90,
+                                                reason=f"Pathfinder (server-agnostic): {_cm} -> iz_ac01 via discovered portals",
+                                                domain="routing"))
+                                    except Exception:
+                                        _route_via_pathfinder = False
+                                if not _route_via_pathfinder:
+                                    # Fallback: academy door warp is at izlude (125,257) AND at
+                                    # izlude_a (125,257 -> iz_ac01_a). Emit at most once per 10s.
+                                    _now = __import__("time").time()
+                                    if _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
+                                        self._last_academy_move[_bot_id] = _now
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="move 125 257",
+                                            confidence=0.95,
+                                            reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
+                                            domain="progression"))
                             if _cm and _target and _cm != _target and _target != "iz_ac01":
                                 _path = self._pathfinder.find_path(_cm, _target)
                                 if _path:
