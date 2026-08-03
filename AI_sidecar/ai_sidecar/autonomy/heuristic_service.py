@@ -2043,6 +2043,7 @@ class HeuristicService:
                                         # floor" submenu and loops forever. So gate the
                                         # registration on NOT yet having the knife.
                                         _has_knife = False
+                                        _reg_n = self._reg_attempts.get(_bot_id, 0)
                                         _inv_items = signals.get("inventory_items", []) or []
                                         for _ii in _inv_items:
                                             if isinstance(_ii, dict):
