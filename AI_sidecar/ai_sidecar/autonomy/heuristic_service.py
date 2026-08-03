@@ -1931,7 +1931,15 @@ class HeuristicService:
                                     # otherwise suppress the escape forever and strand it).
                                     _is_isolated_intro = (_cur_map.startswith("int_land") and _bl <= 5)
                                     _force_exit = _is_isolated_intro or ((not _made_progress and _danger_sig > 0) or _died_recent)
-                                    _exit_cooldown = 6.0 if (_force_exit or _is_isolated_intro) else 20.0
+                                    # Re-emission cadence. The MapRoute fix (3a2db163d)
+                                    # made `move 49 57` actually walk, so re-issuing it too
+                                    # often (6s) restarts the in-progress route before the
+                                    # bot reaches the warp (30-tile trek through 40 Porings).
+                                    # 25s ~ matches the bridge's move_int_land_sailor dedupe
+                                    # (30s), so each fresh issue is not instantly deduped and
+                                    # the bot gets a real uninterrupted window to walk. The
+                                    # escape still fires reliably; it just isn't self-defeating.
+                                    _exit_cooldown = 25.0 if _is_isolated_intro else (6.0 if _force_exit else 20.0)
                                     if _esc_now - _esc_last >= _exit_cooldown:
                                         self._last_island_escape[_bot_id] = _esc_now
                                         # Potions are auto-used via the profile's
