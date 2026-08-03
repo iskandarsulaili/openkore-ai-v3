@@ -4406,6 +4406,48 @@ class PDCALoop:
                                             _rl2.train()
                                         except Exception:
                                             pass
+                                    # ── Subconscious behavior override (gated) ──
+                                    # Once the learner has enough experience (>= 100) and is
+                                    # in greedy mode, it may suggest a high-level behavior.
+                                    # Map the RL action to a concrete command and enqueue it
+                                    # as a low-confidence suggestion; the conscious/reflex
+                                    # tiers still own safety-critical + known-path decisions.
+                                    # On a fresh/undertrained learner behavior_override()
+                                    # returns None, so this is a no-op until trained.
+                                    try:
+                                        _rl_act = _rl2.behavior_override(_st, min_experiences=100)
+                                        if _rl_act:
+                                            _rl_cmd_map = {
+                                                "farm": "attackAuto 3",
+                                                "buy_potions": "buyAuto 1",
+                                                "sell_items": "sellAuto 1",
+                                                "level_skill": "stat_add 1 1",
+                                                "rest": "sit",
+                                                "socialize": "party 1",
+                                                "upgrade_gear": "storageAuto 1",
+                                            }
+                                            _rl_cmd = _rl_cmd_map.get(_rl_act)
+                                            if _rl_cmd and hasattr(self._runtime, "action_queue"):
+                                                from datetime import UTC, datetime as _dt, timedelta
+                                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                                self._runtime.action_queue.enqueue(
+                                                    _cycle_bot_id,
+                                                    _AP(
+                                                        action_id=f"rl-{int(_dt.now(UTC).timestamp())}",
+                                                        kind="command",
+                                                        command=_rl_cmd,
+                                                        conflict_key="",
+                                                        priority_tier=_APT.strategic,
+                                                        source="subconscious_rl",
+                                                        created_at=_dt.now(UTC),
+                                                        expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                                        idempotency_key=f"rl-{_rl_act}",
+                                                    ),
+                                                )
+                                                logger.info("subconscious_behavior_override bot=%s action=%s cmd=%s",
+                                                            _cycle_bot_id, _rl_act, _rl_cmd)
+                                    except Exception as _rl_bo:
+                                        logger.debug("subconscious_behavior_override_skipped: %s", _rl_bo)
                     except Exception as _rl_e:
                         logger.debug("reinforcement_learner_observe_skipped: %s", _rl_e)
 

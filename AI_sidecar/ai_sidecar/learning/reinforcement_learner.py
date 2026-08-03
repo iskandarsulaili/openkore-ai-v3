@@ -610,6 +610,38 @@ class ReinforcementLearner:
             self._stats.actions_taken[best_action] += 1
             return best_action
 
+    # -- Gated decision override (subconscious drives behavior once trained) --
+    # The subconscious tier only influences real decisions once it has enough
+    # experience (>= min_experiences) AND is in greedy mode (not cold random
+    # exploration) — otherwise it returns None and the conscious/reflex tiers
+    # keep authority. This makes the learned behavior a genuine decision source
+    # without injecting random noise on a fresh/undertrained learner.
+    def behavior_override(
+        self,
+        state: np.ndarray,
+        available_actions: list[str] | None = None,
+        min_experiences: int = 100,
+    ) -> str | None:
+        with self._lock:
+            n = int(getattr(self._stats, "total_experiences", 0) or 0)
+            if n < min_experiences:
+                return None
+            if random.random() < self._epsilon:  # exploring — don't drive decisions with random
+                return None
+            q_values = self._online_net.predict(state)
+            if available_actions is None:
+                available_actions = ACTIONS
+            best = None
+            best_val = float("-inf")
+            for a in available_actions:
+                idx = self._action_to_idx.get(a)
+                if idx is not None and idx < len(q_values):
+                    v = float(q_values[idx])
+                    if v > best_val:
+                        best_val = v
+                        best = a
+            return best if best is not None else None
+
     # -- Learning --
 
     def observe(self, state: np.ndarray, action: str, reward: float,
