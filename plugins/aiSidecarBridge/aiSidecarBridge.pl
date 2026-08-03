@@ -5360,11 +5360,16 @@ sub _rewrite_runtime_command {
 		my %_portal_coords = (
 			'prt_fild05' => 'move 22 203',  # Portal in Prontera to prt_fild05
 			# prt_fild08 (the academy farm) — prontera 156,26 -> prt_fild08 170,378.
-			# Without this entry a bot in Prontera locked to prt_fild08 got a bare
-			# `move prt_fild08` that never routed (missing portal coord), stranding
-			# it in town with 0 farming.
 			'prt_fild08' => 'move 156 26',
 		);
+		# izlude_c connects ONLY to prt_fild08c (izlude_c 20,98 <-> prt_fild08c 367,212).
+		# A bot on izlude_c locked to a prt_fild08 farm variant must cross into
+		# prt_fild08c (the actual academy farm) via the izlude_c->prt_fild08c portal,
+		# not get sent to prontera's prt_fild08 portal (unroutable from izlude_c).
+		if ($_cur_map eq 'izlude_c' && $_target =~ /^prt_fild08/) {
+			debug "[move_rewrite] izlude_c -> prt_fild08c portal (20,98)\n", 'aiSidecarBridge', 2;
+			return ('move 20 98', 'coordinate_move_raw');
+		}
 		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
 			my $_new_cmd = $_portal_coords{$_target};
 			debug "[move_rewrite] from Prontera: $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
