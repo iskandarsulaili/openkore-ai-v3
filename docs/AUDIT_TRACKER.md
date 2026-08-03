@@ -15,7 +15,7 @@
 | Batch | Finding | Status | Verification |
 |---|---|---|---|
 | B1 | mon_control.txt duplicate-append dedup gap | ✅ done | bridge `_append_mon_control_dedup` helper, both writers use it; live mon_control files deduped (each profile 559→8 lines). `make test` 1168/1168, bridge syntax OK |
-| B2 | supervisor sidecar-down gap (60s tick) | ⬜ pending | — |
+| B2 | supervisor sidecar-down gap (60s tick) | ✅ done | `fleet_supervisor.sh` self-heal tick 60s→15s to shrink the sidecar-down window; bash -n OK, service restarted |
 | B3 | bot_id_canonicalized noise / actions latency throttle (deep-incomplete?) | ⬜ pending | — |
 | B4 | ReinforcementLearner select_action not driving decisions; conscious LLM wiring | ⬜ pending | — |
 | B5 | (deep) any dormant/incomplete module reachable from the live path | ⬜ pending | — |

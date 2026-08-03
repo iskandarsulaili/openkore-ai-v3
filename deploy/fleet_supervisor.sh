@@ -34,8 +34,10 @@ done
 cd "$SCRIPT_DIR" || exit 1
 # Keep the unit active (Type=simple). On each tick, relaunch the sidecar if it
 # died AND relaunch any dead bot, so the whole fleet self-heals without a restart.
+# Tick is 15s (was 60s) to shrink the window where the sidecar is down and the
+# bots run disconnected — 60s was slow enough to leave a noticeable gap.
 while true; do
-    sleep 60
+    sleep 15
     # Sidecar self-heal
     if ! curl -sf "http://127.0.0.1:${SIDECAR_PORT}/health/live" > /dev/null 2>&1 \
        && ! pgrep -f "ai_sidecar\.app" > /dev/null 2>&1; then
