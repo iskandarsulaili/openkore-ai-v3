@@ -53,6 +53,7 @@ from ai_sidecar.domains.companions.mercenary import MercenaryManager
 from ai_sidecar.domains.environment.time import GameTimeTracker
 from ai_sidecar.domains.navigation.portals import PortalDB
 from ai_sidecar.domains.navigation.pathfinding import Pathfinder
+from ai_sidecar.combat.map_knowledge import get_hunting_maps as _mk_get_hunting_maps
 from ai_sidecar.domains.progression.lifecycle import LifecycleStateMachine
 from ai_sidecar.domains.progression.advancement import AdvancementDomain
 from ai_sidecar.domains.pvp.arenas import ArenaTactics
@@ -2097,7 +2098,20 @@ class HeuristicService:
                                     # bot has actually reached a playable field out of the
                                     # academy rooms / the port.
                                     if not _cur_map.startswith(("iz_int", "iz_ac", "izlude_a")):
-                                        _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
+                                        # Phase 1 (server-agnostic): resolve the hunting
+                                        # lockMap from the level-based map-knowledge layer,
+                                        # not a hardcoded prt_fild08. get_hunting_maps(level)
+                                        # returns the safest/most-suitable field for THIS
+                                        # character on THIS server; fall back to prt_fild08
+                                        # only if the knowledge layer has no level-1 field.
+                                        _hunt_map = "prt_fild08"
+                                        try:
+                                            _hunts = _mk_get_hunting_maps(int(_bl or 1))
+                                            if _hunts:
+                                                _hunt_map = str(_hunts[0][0])
+                                        except Exception:
+                                            pass
+                                        _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map})", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
                                 # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
