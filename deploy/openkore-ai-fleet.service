@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenKore AI v3 Fleet (sidecar + all bots, persistent)
+After=network.target
+Wants=rathena-login.service rathena-char.service rathena-map.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=lot399
+Group=lot399
+WorkingDirectory=/home/lot399/openkore-ai-v3
+# Start the sidecar + all bots fully detached so they persist across sessions.
+# The sidecar's --keep-alive auto-restarts stale bots when the game server flaps.
+ExecStart=/bin/bash -c 'bash /home/lot399/openkore-ai-v3/start.sh all > /home/lot399/openkore-ai-v3/logs/fleet-boot.log 2>&1'
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
