@@ -2017,7 +2017,23 @@ class HeuristicService:
                                         # is actually on iz_ac01 — firing it from an iz_int*
                                         # room coordinates the talknpc at a spot with no
                                         # receptionist and the dialog silently fails.
-                                        _actions.append(HeuristicAction(
+                                        # ALSO: once registered, the bot has the Novice_Knife
+                                        # (1243) in inventory and the Receptionist shows the
+                                        # already-registered menu (no "Register" option) —
+                                        # re-talking only lands in the "What's on the 1st
+                                        # floor" submenu and loops forever. So gate the
+                                        # registration on NOT yet having the knife.
+                                        _has_knife = False
+                                        _inv_items = signals.get("inventory_items", []) or []
+                                        for _ii in _inv_items:
+                                            if isinstance(_ii, dict):
+                                                _ii_id = str(_ii.get("id", ""))
+                                                _ii_name = str(_ii.get("name", ""))
+                                                if _ii_id == "1243" or "novice knife" in _ii_name.lower() or "knife" in _ii_name.lower():
+                                                    _has_knife = True
+                                                    break
+                                        if not _has_knife:
+                                            _actions.append(HeuristicAction(
                                             kind="command",
                                             # Register at the Academy. The Receptionist's
                                             # main menu is select("Register for the Academy:
