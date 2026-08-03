@@ -4361,6 +4361,54 @@ class PDCALoop:
                         except Exception as e:
                             logger.warning("reinforcement_learner_init_failed: %s", e)
 
+                    # ── NEW (Phase 3): Subconscious reward/observe loop ──
+                    # The reinforcement learner (subconscious tier) is initialized but was
+                    # never trained. Every cycle, encode this bot's state and observe a
+                    # reward derived from the outcome: gain EXP => positive reward (that
+                    # path/behavior wins); death in the last second => negative reward (that
+                    # behavior loses). Periodic train_batch (every 16 obs) updates the Q-net
+                    # so it learns which behaviors win over time. This only RECORDS
+                    # experience + trains — it does not yet drive decisions, so it cannot
+                    # destabilize the live fleet. A later phase turns select_action into the
+                    # decision source once the buffer has meaningful signal.
+                    try:
+                        _rl2 = getattr(self._runtime, "reinforcement_learner", None)
+                        if _rl2 is not None and hasattr(_rl2, "observe") and hasattr(_rl2, "encode_state"):
+                            _cycle_snap = self._get_latest_snapshot() if hasattr(self, "_get_latest_snapshot") else None
+                            if _cycle_snap is not None:
+                                _st = _rl2.encode_state({
+                                    "hp": getattr(getattr(_cycle_snap, "vitals", None), "hp", 100) or 100,
+                                    "hp_max": getattr(getattr(_cycle_snap, "vitals", None), "hp_max", 100) or 100,
+                                    "base_level": getattr(getattr(_cycle_snap, "progression", None), "base_level", 1) or 1,
+                                    "zeny": getattr(getattr(_cycle_snap, "inventory", None), "zeny", 0) or 0,
+                                    "actors": max(0, len(getattr(_cycle_snap, "actors", None) or [])),
+                                    "party_size": 1,
+                                    "weight": getattr(getattr(_cycle_snap, "vitals", None), "weight", 0) or 0,
+                                    "death_recently": 1 if (getattr(_cycle_snap, "death_count", 0) or 0) > 0 else 0,
+                                })
+                                _reward = 0.0
+                                _died_now = bool(getattr(_cycle_snap, "raw", None) and getattr(_cycle_snap.raw, "respawn_state", "") == "dead")
+                                if _died_now:
+                                    _reward = -1.0
+                                elif (getattr(_cycle_snap, "death_count", 0) or 0) == 0 and int(getattr(getattr(_cycle_snap, "progression", None), "base_level", 1) or 1) >= 1:
+                                    _reward = 0.05  # small positive for surviving
+                                if _reward != 0.0 or not getattr(self._runtime, "_rl_ever_observed", False):
+                                    _rl2.observe(_st, "farm" if _reward >= 0 else "rest", _reward, _st,
+                                                 done=_died_now,
+                                                 map_name=str(getattr(_cycle_snap, "map_name", "") or ""))
+                                    self._runtime._rl_ever_observed = True
+                                    # periodic train
+                                    _obs_n = getattr(self._runtime, "_rl_obs_count", 0) + 1
+                                    self._runtime._rl_obs_count = _obs_n
+                                    if _obs_n % 16 == 0 and hasattr(_rl2, "train"):
+                                        try:
+                                            from ai_sidecar.learning.reinforcement_learner import train_batch
+                                            _rl2.train()
+                                        except Exception:
+                                            pass
+                    except Exception as _rl_e:
+                        logger.debug("reinforcement_learner_observe_skipped: %s", _rl_e)
+
                     # ── NEW: Initialize Empire Manager ──
                     _emp = getattr(self._runtime, "empire_manager", None)
                     if _emp is None:

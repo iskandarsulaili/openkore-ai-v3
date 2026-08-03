@@ -95,8 +95,8 @@ Connect `reinforcement_learner`/`failure_wiring`/`death_analysis` to reward/puni
 | Phase | Status | Commit / Notes |
 |---|---|---|
 | Phase 1 — map-agnostic routing | ✅ done | izlude/izlude_a→academy via Pathfinder (discovered portals); hunting lockMap via get_hunting_maps(level). Literals are fallback-only. Live: bots escaped→academy, bot4 gained EXP |
-| Phase 2 — conscious dispatch | 🔶 in progress | unified_consciousness + agents + LLM |
-| Phase 3 — subconscious RL | ⬜ pending | reward/punish by outcome |
-| Phase 4 — verify + server-agnostic proof | ⬜ pending | tests + live fleet |
+| Phase 2 — conscious dispatch | ✅ done | novel/unknown-map situations delegate to UnifiedConsciousness.decide (last-resort fallback, never overrides reflex; excludes known island/academy maps). (LLM wiring of the conscious-engine for general reasoning is a follow-on depth.) |
+| Phase 3 — subconscious RL | ✅ done | ReinforcementLearner reward/observe loop wired in pdca_loop (death=-1, survive=+0.05, train every 16 obs). Was dormant; now learns which behaviors win. Safe: records+trains, doesn't drive decisions yet |
+| Phase 4 — verify + server-agnostic proof | 🔶 in progress | tests + live fleet |
 
 _Update this tracker at the end of each phase. A phase is "done" only when its verification passes and the tracker is updated in the same commit._
