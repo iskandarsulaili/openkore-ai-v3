@@ -64,7 +64,10 @@ sub on_char_screen {
         # afterward; forcing a return value prevented the game from loading.
         # We've already sent char_login above, so the flow proceeds to the map.
         $ran = 1;
-        Plugins::delHook('charSelectScreen', $hook) if $hook;
+        # Guard delHook: during global destruction a hook handle may already be
+        # removed; Plugins::delHook throws "Invalid hook handle" and would crash
+        # the bot. Wrap in eval (same pattern as aiSidecarBridge).
+        eval { Plugins::delHook('charSelectScreen', $hook) if $hook; 1; } or do { local $@; };
         return;
     }
     
@@ -91,8 +94,9 @@ sub on_char_screen {
         $count++;
         if ($count > 30) {
             message "[auto_fix] Relogging to pick up new character...\n", 'system';
-            Plugins::delHook('mainLoop', $relog_hook) if $relog_hook;
-            Plugins::delHook('charSelectScreen', $hook) if $hook;
+            # Guard delHook against global-destruction "Invalid hook handle" crash.
+            eval { Plugins::delHook('mainLoop', $relog_hook) if $relog_hook; 1; } or do { local $@; };
+            eval { Plugins::delHook('charSelectScreen', $hook) if $hook; 1; } or do { local $@; };
             relog(1);
         }
     };
@@ -103,7 +107,8 @@ sub on_char_screen {
 }
 
 sub unload {
-    Plugins::delHook('charSelectScreen', $hook) if $hook;
+    # Guard delHook against global-destruction "Invalid hook handle" crash.
+    eval { Plugins::delHook('charSelectScreen', $hook) if $hook; 1; } or do { local $@; };
 }
 
 1;
