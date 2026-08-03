@@ -9,9 +9,11 @@ RemainAfterExit=yes
 User=lot399
 Group=lot399
 WorkingDirectory=/home/lot399/openkore-ai-v3
-# Start the sidecar + all bots fully detached so they persist across sessions.
-# The sidecar's --keep-alive auto-restarts stale bots when the game server flaps.
+# Start the sidecar + all bots. KillMode=process keeps the nohup'd children
+# (sidecar + bots) alive when this oneshot script exits, so the fleet persists
+# across sessions instead of being reaped with the unit's cgroup.
 ExecStart=/bin/bash -c 'bash /home/lot399/openkore-ai-v3/start.sh all > /home/lot399/openkore-ai-v3/logs/fleet-boot.log 2>&1'
+KillMode=process
 Restart=on-failure
 RestartSec=10
 
