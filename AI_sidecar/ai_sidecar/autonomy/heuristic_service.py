@@ -2083,6 +2083,24 @@ class HeuristicService:
                                             reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register by text)",
                                             domain="progression",
                                         ))
+                                        else:
+                                            # Registered / attempt-capped: the kit is granted
+                                            # server-side (Novice_Knife + potions + 100 EXP).
+                                            # STOP re-talking and LEAVE the academy so the farm
+                                            # lockMap (set once the bot exits iz_ac01) can engage.
+                                            # The academy hall exits north at the izlude portal
+                                            # (iz_ac01 100 24 -> izlude 127 253). Walk there.
+                                            _ac_move = self._last_academy_move.get(_bot_id, 0.0)
+                                            _tnow = __import__("time").time()
+                                            if _tnow - _ac_move >= 15.0:
+                                                self._last_academy_move[_bot_id] = _tnow
+                                                _actions.append(HeuristicAction(
+                                                    kind="command",
+                                                    command="move 100 24",
+                                                    confidence=0.9,
+                                                    reason="Registered: walk out of the Academy hall (north exit to izlude) so the farm lockMap engages",
+                                                    domain="progression",
+                                                ))
                                     else:
                                         # On an Academy interior ROOM (iz_int/01/02/03/04).
                                         # These are tutorial intro rooms with the `nowarpto`
