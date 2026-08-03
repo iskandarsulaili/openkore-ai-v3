@@ -387,16 +387,22 @@ Batch 1 live-progression fixes (this sweep):
 - [x] D4 server C4: mail wire-size check corrected to match the char sender's
       packed field-by-field size (mailbox now parses). [in rathena-AI-world]
 
-Residual (post-sweep, infrastructure not code):
-- [ ] OPEN D5 (bot-side char->map handoff, NOT network): a NORMAL client (launcher.exe)
-      holds the connection fine; only OpenKore bots drop, so the network path
-      (playit.gg 209.25.142.24:1053/1063/1070) is NOT the cause. Live logs show the
-      real mechanism: after login + char-select complete ("PIN code is correct",
-      "Received character ID and Map IP", MAP Port 1070), the rAthena char server
-      sends the full map-enter/character block (1050-1926 bytes, header 0x0AC5) which
-      OpenKore leaves "unconsumed in the buffer"; the follow-up map connection (port
-      1070) then fails to establish in time -> "Timeout on Character Select" ->
-      reconnect -> bounce. OPENKORE-AI-SIDE char->map transition data-handling gap for
-      the 2025 serverType (real client drains it; OpenKore DirectConnection does not).
-      Fix target: map-connection/handoff data draining on received_character_ID_and_Map.
+Residual (post-sweep):
+- [x] D5 RESOLVED (bot-side char->map handoff, NOT network): the persistent char-select
+      bounce / map-hop drop. Root cause: rAthena-ai-world's char server appends the
+      map-enter/character block (~1050-1926 bytes, header 0x0AC5) to the SAME char
+      connection as the 0x0AC5 char->map redirect, and OpenKore's GLOBAL MessageTokenizer
+      ($incomingMessages) is REUSED across master->char->map stages, so the stale bytes
+      survived into the freshly-opened map connection and were mis-parsed -> the map
+      transition raced ("Timeout on Character Select" + reconnect). FIXED in
+      src/Network/DirectConnection.pm serverDisconnect: clear() the tokenizer after
+      dumping leftover. Verified: bots hold in-game, leftover ~0, no more bounce. [5fc692079]
+- [ ] OPEN D6 (custom academy-room tutorial nav): a level-1 bot that lands in an iz_int*
+      intro room (a nowarpto custom map) gets `move 51 30` (the room forward gate toward
+      iz_ac01) but OpenKore's static route table can't complete the path to/through the
+      HIDDEN_WARP_NPC gate, so it recalculates and never exits the room to reach the
+      iz_ac01 receptionist. The prt_fild08 farm lockMap is now deferred off academy maps
+      (9f84e6ae3), so this is the last micro-nav step before registration. Needs a way to
+      trigger the intro HIDDEN_WARP_NPC walk-onto (or direct exit) for the custom iz_int*
+      maps.
 
