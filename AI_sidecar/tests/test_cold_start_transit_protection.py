@@ -80,8 +80,11 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     (49,57) sailor + sail to Izlude (not grind a losing field)."""
     cmds = _assess(base_level=1, map_name="int_land", lock_map="prt_fild08")
     assert "move 49 57" in cmds, f"must walk to sailor: {cmds}"
-    assert any("talknpc 49 57" in c for c in cmds), f"must open sailor dialog: {cmds}"
-    assert "talk resp 1" in cmds, f"must select 'Sail to Izlude!' if prompted: {cmds}"
+    # WARPNPC #intro_to_izlude is a hidden warp-tile: walking ONTO (49,57) triggers
+    # OnTouch (no talkable NPC -> no talknpc). Its select is
+    #   select("Do not go to Izlude yet", "Sail to Izlude!")   <- Sail = option 2.
+    assert "talk resp 2" in cmds, f"must select 'Sail to Izlude!' (option 2): {cmds}"
+    assert not any("talknpc" in c for c in cmds), f"must NOT talknpc the warp tile: {cmds}"
     assert "set attackAuto 2" in cmds, f"must fight island Porings (attackAuto 2): {cmds}"
     assert "set attackAuto 0" not in cmds, f"attackAuto 0 leaves the bot defenseless (dies on island): {cmds}"
     # Must NOT force prt_fild08 lockMap OR move prontera while stranded (both

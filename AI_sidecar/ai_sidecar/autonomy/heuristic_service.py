@@ -1938,16 +1938,9 @@ class HeuristicService:
                                         ))
                                         _actions.append(HeuristicAction(
                                             kind="command",
-                                            command="talknpc 49 57",
-                                            confidence=0.90,
-                                            reason="Cold start: open island exit dialog (bridge auto-warps)",
-                                            domain="progression",
-                                        ))
-                                        _actions.append(HeuristicAction(
-                                            kind="command",
-                                            command="talk resp 1",
-                                            confidence=0.80,
-                                            reason="Cold start: if a select appears, pick the leave-island option",
+                                            command="talk resp 2",
+                                            confidence=0.95,
+                                            reason="Cold start: pick 'Sail to Izlude!' (option 2) on the #intro_to_izlude warp select (walking onto 49 57 triggers the OnTouch)",
                                             domain="progression",
                                         ))
                                     else:
