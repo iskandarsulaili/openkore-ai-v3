@@ -729,32 +729,6 @@ class ProRoPlayerProfile(BehaviorProfile):
             },
         }
 
-
-        return {
-            "kind": "command",
-            "command": f"move {early['first_map']}",
-            "confidence": 0.9,
-            "reason": f"Early-game guidance for level {level} {player_class}: recommended_hunt={hunting_grounds[0] if hunting_grounds else 'prt_fild08'}, buy_potions=Red_Potion, sell_at_50pct_weight",
-            "advice": "\n".join(advice_parts),
-            "build": early.get("stats", "agi_dex"),
-            "starting_map": early["first_map"],
-            "next_milestone": f"Reach level {early['level_range'][1]} on {early['first_map']}",
-            "hunting_grounds": hunting_grounds[:3] if hunting_grounds else [],
-            "stats": early["stats"],
-            "equipment": early["equipment"],
-            "npc_tips": [
-                "tool_dealer: buy potions/flywings (npc_steps: c r1 c r1)",
-                "kafra: storage/save (npc_steps: c r1)",
-                "healer: free healing (npc_steps: c r1)",
-            ],
-            "sustain_advice": {
-                "hp_warning": hp_ratio < 0.5,
-                "buy_potions": "",  # filled dynamically from GameKnowledgeService
-                "auto_use": "Set auto-use Red Potion at 50% HP",
-                "teleport_escape": "Set escape at 20% HP",
-            },
-        }
-
     def _handle_death_analysis(self, signals: dict[str, Any], player_class: str, level: int) -> dict[str, Any]:
         """Diagnose why the bot died and recommend behavioral changes."""
         death_report = signals.get("death_report", {})
