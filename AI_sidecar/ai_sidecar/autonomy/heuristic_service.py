@@ -1651,8 +1651,12 @@ class HeuristicService:
                             # map-default would make; override the hunt target to the
                             # academy door so registration (and real gear) follows.
                             _cs_map_l = str(_cm or "").lower()
-                            if _cs_map_l == "izlude" and not self._has_coldstart_weapon(signals):
+                            if _cs_map_l in ("izlude", "izlude_a") and not self._has_coldstart_weapon(signals):
                                 _target = "iz_ac01"
+                                # The academy door warp is at izlude (125,257) AND at
+                                # izlude_a (125,257 -> iz_ac01_a) — the sail-arrival sub-map
+                                # a level-1 uses after escaping the island.
+                                _acad_door = "move 125 257"
                                 # Throttle the academy-door move: issuing it every
                                 # PDCA cycle makes OpenKore recalculate the long route
                                 # continuously instead of walking it. Emit at most
@@ -1661,7 +1665,7 @@ class HeuristicService:
                                 if _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
                                     self._last_academy_move[_bot_id] = _now
                                     _actions.append(HeuristicAction(
-                                        kind="command", command="move 125 257",
+                                        kind="command", command=_acad_door,
                                         confidence=0.95,
                                         reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
                                         domain="progression"))
@@ -2044,13 +2048,14 @@ class HeuristicService:
                                 # above moves the bot off it first.
                                 if not _cur_map.startswith("int_land"):
                                     # Do NOT arm the academy-farm lockMap while the bot is
-                                    # still inside an Academy room (iz_int*/iz_ac01) — the
-                                    # bot is still registering for its free starter kit and
-                                    # a hunt lockMap there only fights the registration
-                                    # walk (walks to the iz_ac01 hall / gate, never arrives).
-                                    # Defer until the bot has actually reached a playable
-                                    # field out of the academy rooms.
-                                    if not _cur_map.startswith(("iz_int", "iz_ac")):
+                                    # still inside an Academy room (iz_int*/iz_ac01) or on the
+                                    # sail-arrival port (izlude_a) — the bot is still
+                                    # registering for its free starter kit and a hunt lockMap
+                                    # there only fights the registration walk (walks to the
+                                    # iz_ac01 hall / gate, never arrives). Defer until the
+                                    # bot has actually reached a playable field out of the
+                                    # academy rooms / the port.
+                                    if not _cur_map.startswith(("iz_int", "iz_ac", "izlude_a")):
                                         _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
