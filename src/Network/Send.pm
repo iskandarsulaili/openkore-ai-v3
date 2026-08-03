@@ -25,6 +25,9 @@ package Network::Send;
 
 use strict;
 use Time::HiRes qw(time);
+use FindBin qw($RealBin);
+use File::Spec;
+use Cwd qw(getcwd);
 use Network::PacketParser; # import
 use base qw(Network::PacketParser);
 use utf8;
@@ -354,7 +357,40 @@ sub sendMasterLogin {
 		&& $self->{packet_list}{$masterServer->{masterLogin_packet}}[0] eq 'master_login'
 		&& ($self->{packet_lut}{master_login} = $masterServer->{masterLogin_packet})
 	) {
-		$self->sendClientMD5Hash() unless $masterServer->{clientHash} eq ''; # this is a hack, just for testing purposes, it should be moved to the login algo later on
+		# Real-enforcement signing (private module). If the operator has the
+		# private shared secret (private/auth_secret.key, gitignored), send a
+		# time-stable HMAC-SHA256 signature (first 16 bytes) as the client_hash
+		# instead of a static marker. The server verifies it; an impostor bot
+		# without the secret cannot forge it. Falls back to the static
+		# $masterServer->{clientHash} marker when no secret is configured.
+		my $sig = '';
+		if ($masterServer->{clientHash} ne '') {
+			eval {
+				# Resolve the private secret robustly (FindBin install dir,
+				# then cwd). The file is gitignored and distributed OOB.
+				my $secret_path;
+				for my $base (($FindBin::RealBin || $RealBin || '.'),
+				                getcwd() || '.') {
+					my $p = File::Spec->catfile($base, 'private', 'auth_secret.key');
+					if (-f $p) { $secret_path = $p; last; }
+				}
+				if (defined $secret_path) {
+					# V3AuthSigner.pm ships alongside the secret in private/
+					my ($vol, $dir) = File::Spec->splitpath($secret_path);
+					my $priv_dir = File::Spec->catdir($vol, $dir);
+					$priv_dir =~ s{[\\/]+$}{};  # strip trailing slash
+					unshift @INC, $priv_dir if $priv_dir ne '' && !grep { $_ eq $priv_dir } @INC;
+				}
+				require V3AuthSigner;
+				my $full = V3AuthSigner::sign($secret_path, $username);
+				$sig = substr($full, 0, 32) if defined $full && length($full) >= 32;
+			};
+			if ($sig eq '') {
+				# No private secret -> fall back to the static marker.
+				$sig = $masterServer->{clientHash};
+			}
+		}
+		$self->sendClientMD5Hash($sig) if $sig ne '';
 
 		$msg = $self->reconstruct({
 			switch => 'master_login',
@@ -1010,10 +1046,14 @@ sub reconstruct_client_hash {
 
 # TODO: clientHash and secureLogin_requestCode is almost the same, merge
 sub sendClientMD5Hash {
-	my ($self) = @_;
+	my ($self, $sig) = @_;
+	# $sig is either a 64-char hex HMAC (private enforcement) or a 32-char hex
+	# static marker. Send only the first 16 bytes (32 hex chars) as the
+	# client_hash (0x0204), matching the server's verification.
+	$sig = substr($sig, 0, 32) if defined $sig && length($sig) > 32;
 	$self->sendToServer($self->reconstruct({
 		switch => 'client_hash',
-		hash => pack('H32', $masterServer->{clientHash}), # ex 82d12c914f5ad48fd96fcf7ef4cc492d (kRO sakray != kRO main)
+		hash => pack('H32', $sig), # ex 82d12c914f5ad48fd96fcf7ef4cc492d (kRO sakray != kRO main)
 	}));
 }
 
