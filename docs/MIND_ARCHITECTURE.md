@@ -94,7 +94,7 @@ Connect `reinforcement_learner`/`failure_wiring`/`death_analysis` to reward/puni
 
 | Phase | Status | Commit / Notes |
 |---|---|---|
-| Phase 1 — map-agnostic routing | 🔶 in progress | izlude/izlude_a→academy routing now prefers the Pathfinder (discovered portal graph), hardcoded door coord is fallback only |
+| Phase 1 — map-agnostic routing | 🔶 in progress | izlude/izlude_a→academy prefers Pathfinder (discovered portal graph); literal door coord is fallback for unmapped servers. Live: bot4 reached iz_ac01 (registration hall); bot5 uses fallback door until dynamic_portal_discovery maps izlude_a→iz_ac01_a |
 | Phase 2 — conscious dispatch | ⬜ pending | unified_consciousness + agents + LLM |
 | Phase 3 — subconscious RL | ⬜ pending | reward/punish by outcome |
 | Phase 4 — verify + server-agnostic proof | ⬜ pending | tests + live fleet |
