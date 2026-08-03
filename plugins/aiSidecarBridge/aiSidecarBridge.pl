@@ -5601,6 +5601,22 @@ sub _rewrite_runtime_command {
 	    $::config{'_sidecar_set_lockMap'} = 1;
 	    return ('', 'lockmap_set');
 	}
+
+	# ── ISLAND STUCK-LOCKMAP CLEAR (last line of defense) ──
+	# A bot stranded on int_land can carry a STALE farm lockMap (e.g. prt_fild05
+	# set by an earlier cold-start econ step before it was on the island). That
+	# stale value makes OpenKore's hunting brain spin "Cannot calculate a route
+	# from int_land to prt_fild05" instead of doing the (49,57) escape. Once we
+	# are inside this per-command rewrite (any command while the bot is on
+	# int_land), actively WIPE an unreachable lockMap so the only directive left
+	# is the sailor escape. Runs for every command issued while on the island, so
+	# it self-heals the stale value even if the sidecar never re-sets it.
+	my $_lc_field_cur = $field ? lc($field->name()) : '';
+	if ($_lc_field_cur =~ /^int_land/ && ($::config{lockMap} || '') ne '' && lc($::config{lockMap}) ne $_lc_field_cur) {
+		warning "[island_gate] wiping stale lockMap '$$::config{lockMap}' while on $_lc_field_cur (unreachable; escape-only)\n", 'aiSidecarBridge', 1;
+		delete $::config{lockMap};
+		delete $::config{'_sidecar_set_lockMap'};
+	}
 	# Handle set commands: "set <config_key> <value>" -> modify config directly
 	# Use $trimmed (original case) to preserve config key case
 	# Value can be empty (e.g. "set avoidList " to disable)

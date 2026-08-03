@@ -1881,6 +1881,21 @@ class HeuristicService:
                                 _danger_sig = float(signals.get("danger", signals.get("aggro_count", 0)) or 0)
                                 _died_recent = bool(signals.get("died", False)) or self._bot_deaths.get(_bot_id, 0) > 0
                                 if _cur_map.startswith("int_land"):
+                                    # CLEAR the stale farm lockMap (e.g. prt_fild05 set by
+                                    # an earlier cold-start econ step) so OpenKore's hunting
+                                    # brain stops trying to path to a field it cannot reach
+                                    # from the island ("Cannot calculate a route from
+                                    # int_land to prt_fild05" loop). With lockMap cleared and
+                                    # attackAuto limited, the ONLY winning directive left is
+                                    # the (49,57) sailor escape emitted below.
+                                    _lock_now = str(signals.get("lockMap", "") or "").lower()
+                                    if _lock_now and _lock_now not in ("int_land", "int_land01") and "49" not in _lock_now:
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="set lockMap 0",
+                                            confidence=0.95,
+                                            reason="Island: clear unreachable farm lockMap so the bot escapes via the (49,57) sailor",
+                                            domain="progression",
+                                        ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto 2",
