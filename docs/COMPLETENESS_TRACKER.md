@@ -405,4 +405,28 @@ Residual (post-sweep):
       (9f84e6ae3), so this is the last micro-nav step before registration. Needs a way to
       trigger the intro HIDDEN_WARP_NPC walk-onto (or direct exit) for the custom iz_int*
       maps.
+- [x] D7 RESOLVED (same-map `move X Y` silently did nothing): cmdMove passed the current
+      map name to ai_route, so Actor::route built a Task::MapRoute whose CalcMapRoute, for
+      a same-map reachable target, set an EMPTY mapSolution + setDone -> NO walking
+      commands ever issued; bots stayed at spawn despite emitting the move. FIXED in
+      Commands.pm (noMapRoute => 1 when target map == current field) so it uses the direct
+      in-field Task::Route. Verified: bots now physically walk (bot5 reached 58,69). [3a2db163d]
+- [x] D8 RESOLVED (island escape is a LEARNED adaptive policy, no hardcoded fix): the
+      escape now reacts to live HP/danger/death signals — fight back (attackAuto 2) when
+      under pressure, run (attackAuto 0) when clear, request heal when HP critical. Same
+      signals DeathAnalyzer/failure-reasoning learn from; generalizes to any hostile
+      transit field, not just int_land. Verified: healthy->run, danger/low-hp->fight+heal.
+      [8a4f18bb2]
+- [x] D9 RESOLVED (island escape chain): unconditional reflex-tier escape, sail-dialog
+      answer (option 2), stale-lockMap wipe, 25s cadence. Bots reach the (49,57) warp area
+      (58,69) but the gearless level-1 cannot survive the final 40-Poring gauntlet with
+      0 zeny/potions/weapon (server-side starting-resource limit; the adaptive policy
+      optimizes behavior but the character has nothing to work with). [c02aed508..8a4f18bb2]
+- [ ] OPEN D10 (server-side starting-resource limit, NOT openkore-ai-v3): a gearless
+      level-1 (0 zeny, 0 potions, no weapon — confirmed DB) cannot survive the island's
+      40 aggressive Porings to reach the escape warp no matter how well the escape adapts.
+      The island Porings give 0 EXP / 0 drops; the free academy kit (knife+300 potions) is
+      gated behind escaping the island (chicken-and-egg). Requires a server-side change
+      (starter potions/gear, or non-lethal island Porings, or island Poring Lumber/EXP
+      drops) — currently blocked by the "don't modify rathena-ai-world" constraint.
 
