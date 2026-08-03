@@ -29,11 +29,15 @@ def _assess(base_level: int, map_name: str, lock_map: str = "prontera"):
 
 def test_level1_on_fild_triggers_transit_protection() -> None:
     cmds = _assess(base_level=1, map_name="prt_fild05")
-    assert "set attackAuto 0" in cmds, f"transit protection missing: {cmds}"
-    assert "set attackAuto_inLockOnly 1" in cmds
-    # level 1-5 now targets the academy field prt_fild08 (rathena-ai-world
-    # starter zone), not the town map
-    assert "set lockMap prt_fild08" in cmds
+    # level 1-5 already ON a farmable field farms there (server-agnostic: the
+    # lockMap is the bot's actual current field, so it isn't stranded trying to
+    # route to an unroutable prt_fild08 — prt_fild05 has no direct portal there).
+    # When the bot is on its farm field (lockMap == current field), attacking is
+    # ENABLED (the elif below reverses transit protection), so transit-run
+    # (attackAuto 0) must NOT be emitted for the field it's about to farm.
+    assert "set lockMap prt_fild05" in cmds, f"must farm current field: {cmds}"
+    # It is NOT in transit-run on its own farm field.
+    assert "set attackAuto 0" not in cmds, f"on-farm-field must enable attack: {cmds}"
 
 
 def test_level5_on_academy_field_enables_attacking() -> None:

@@ -2160,6 +2160,36 @@ class HeuristicService:
                                                 _hunt_map = str(_hunts[0][0])
                                         except Exception:
                                             pass
+                                        # If the bot is ALREADY on a playable field
+                                        # (*_fild), farm THERE rather than forcing a
+                                        # lockMap (prt_fild08) that may be unroutable
+                                        # from the current location (e.g. prt_fild05 has
+                                        # no direct portal to prt_fild08; a stranded bot
+                                        # just toggles lockMap forever). A level-1 bot on
+                                        # prt_fild05 can fight Porings/Lunatics right where
+                                        # it stands. Server-agnostic: uses the bot's actual
+                                        # current field, not a hardcoded destination.
+                                        # BUT respect an explicit lockMap if the bot is
+                                        # already routed to a specific target (e.g. the test
+                                        # bot on prt_fild05 locked to prt_fild08 should RUN
+                                        # there, not farm prt_fild05).
+                                        _cur_field = str(_cur_map or "").lower()
+                                        _existing_lock = str(signals.get("lockMap", "") or "").lower()
+                                        _existing_lock = _existing_lock.replace(".gat", "")
+                                        # Only override to the current field if the bot has
+                                        # no real farm target: no lockMap, or a non-field
+                                        # (town/default) lockMap. An explicit *_fild/_dun
+                                        # lockMap means the bot is deliberately routed there
+                                        # (e.g. prt_fild08) and must run, not farm here.
+                                        _lock_is_townish = bool(_existing_lock) and "_fild" not in _existing_lock and "_dun" not in _existing_lock
+                                        if ("_fild" in _cur_field and _cur_field not in ("prt_fild08",)
+                                                and (not _existing_lock or _lock_is_townish)):
+                                            _hunt_map = _cur_field
+                                        # Persist to a member so the field-transit block
+                                        # below (a sibling block, out of lexical scope for
+                                        # _hunt_map) can recognize the bot is on its farm
+                                        # field even before the snapshot's lockMap syncs.
+                                        self._cold_start_hunt_map = _hunt_map
                                         _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map})", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
@@ -2183,10 +2213,14 @@ class HeuristicService:
                                 # UNLESS the field is the safe academy starter field
                                 # prt_fild08 (where level-1 Porings/Lunatics are the
                                 # intended target and fighting is correct).
-                                if "fild" in _cur_map and _bl <= 5 and _cur_map != "prt_fild08":
+                                # _cs_hunt is the resolved cold-start farm field (may be the
+                                # bot's current field for a stranded bot). If the bot is on
+                                # it, treat it as arrived (farm), not transit.
+                                _cs_hunt = str(getattr(self, "_cold_start_hunt_map", "") or "").lower()
+                                if "fild" in _cur_map and _bl <= 5 and _cur_map != "prt_fild08" and _cur_map != _lock and _cur_map != _cs_hunt:
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 0", confidence=0.90, reason=f"Cold start: transit through {_cur_map} at lvl {_bl} — run, don't fight", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 1", confidence=0.90, reason="Cold start: only attack on lockMap", domain="survival"))
-                                elif _cur_map and (_cur_map == _lock or _cur_map == "prt_fild08"):
+                                elif _cur_map and (_cur_map == _lock or _cur_map == "prt_fild08" or (_cs_hunt and _cur_map == _cs_hunt)):
                                     # ── ARRIVED AT THE ACADEMY FARM: re-enable attacking ──
                                     # Reverse the transit protection so the bot can
                                     # actually farm Porings/Lunatics once it reaches
