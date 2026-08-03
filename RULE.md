@@ -1,5 +1,27 @@
 # RULE.md — Developer Reference for openkore-ai-v3
 
+## The Three-Tier Mind (authoritative)
+
+openkore-ai-v3 is a **God-Tier, server-agnostic, zero-human-intervention AI** built as a
+**three-tier mind**: **conscious** (LLM + CrewAI agent orchestration, pre-emptive, solves
+novel situations), **subconscious** (trained ML from conscious action via an unsupervised
+punish/reward loop for success/failure), and **reflex** (basic/chain/complex rule set for
+instant action, updated by the conscious over time). The full spec is
+**`docs/MIND_ARCHITECTURE.md`** — it is authoritative and wins over this file and over any
+code that contradicts it.
+
+**Hard rule — `AI_sidecar/ai_sidecar/autonomy/heuristic_service.py` is OBSOLETE.**
+Do NOT remove it (it still carries reflex-tier cold-start logic and is the fallback), but:
+- Do NOT add any new hardcoded map/coordinate/NPC directives to it.
+- Its existing hardcoded island/academy knowledge is being moved into the server-agnostic
+  tiers per `docs/MIND_ARCHITECTURE.md` Phase 1–4.
+- Routing must go through the **discovered portal graph** (`dynamic_portal_discovery.py`,
+  `map_knowledge.py`, pathfinder) and decisions through `unified_consciousness` + the agents
+  + LLM, not through literals like `move 49 57` / `move 125 257` / `talknpc 100 39`.
+
+Every fix must be server-agnostic (works on any server via discovery + reasoning), never a
+per-server literal.
+
 ## Architecture: Three-Layer Separation
 
 ```
