@@ -200,17 +200,20 @@ def install_request_validation_logging(app: FastAPI) -> None:
             body_preview = f"<unavailable:{type(body_error).__name__}>"
 
         details = exc.errors()
-        # Structured WARNING per observability contract (RULE.md §20): request
-        # validation failures are ops signal (malformed payloads from bots), not
-        # noise — restored from DEBUG/"_ignored" silencing (03ed162c0) to match
-        # the contract test test_request_validation_logging_handler_emits_structured_warning.
+        # Include the actual validation error in the visible message text (not only the
+        # structured `extra` fields), so the exact failing field is actionable in the
+        # plain text log — otherwise a recurring 422 is a silent blindspot with no way to
+        # see which field/endpoint the bridge got wrong without structured-log plumbing.
+        _first_err = json.dumps(details[0] if details else {}, ensure_ascii=False)[:500]
+        _path = str(request.url.path)
         logger.warning(
-            "http_request_validation_failed",
+            "http_request_validation_failed path=%s method=%s first_error=%s body=%s",
+            _path, request.method, _first_err, body_preview[:400],
             extra={
                 "event": "http_request_validation_failed",
                 "trace_id": trace_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": _path,
                 "errors": details,
                 "errors_json": json.dumps(details, ensure_ascii=False)[:4096],
                 "body_preview": body_preview,

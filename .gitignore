@@ -120,6 +120,13 @@ data/quests.db
 data/quests.db-shm
 data/quests.db-wal
 data/sidecar_experience.sqlite
+# ── Subconscious-tier (ReinforcementLearner) runtime learned state ──
+data/reinforcement_experiences.db
+data/reinforcement_experiences.db-shm
+data/reinforcement_experiences.db-wal
+data/reinforcement_experiences.jsonl
+data/reinforcement_model.pkl
+data/reinforcement_stats.json
 control/ai_sidecar_macros.txt
 control/ai_sidecar_generated_macros.txt
 AI_sidecar/ai_sidecar/skills/.usage.json

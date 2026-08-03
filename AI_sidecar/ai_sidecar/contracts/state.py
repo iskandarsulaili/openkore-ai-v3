@@ -22,8 +22,12 @@ class Vitals(BaseModel):
     hp_max: int | None = None
     sp: int | None = None
     sp_max: int | None = None
-    weight: int | None = None
-    weight_max: int | None = None
+    # weight is legitimately fractional in RO (sum of per-item weights from the
+    # bridge), so it must be float — declaring it int caused the bridge's float
+    # weight (e.g. 370.6) to 422 (int_from_float) and drop the ENTIRE snapshot
+    # every poll, silently starving the sidecar of live bot state.
+    weight: float | None = None
+    weight_max: float | None = None
     weight_ratio: float | None = None
     hp_ratio: float | None = None
     sp_ratio: float | None = None
@@ -47,8 +51,10 @@ class InventoryDigest(BaseModel):
 
     zeny: int | None = None
     item_count: int | None = None
-    weight: int | None = None
-    weight_max: int | None = None
+    # weight/weight_max are fractional (sum of per-item weights from the bridge) —
+    # must be float or the bridge's 370.6 422s (int_from_float) and drops the snapshot.
+    weight: float | None = None
+    weight_max: float | None = None
     weight_ratio: float | None = None
 
 
