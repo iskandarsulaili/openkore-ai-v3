@@ -223,16 +223,25 @@ sub serverDisconnect {
 
 	if ($self->serverAlive) {
 		if ($incomingMessages && length(my $incoming = $incomingMessages->getBuffer)) {
-				warning TF("Incoming data left in the buffer:\n");
-				Misc::visualDump($incoming);
+						warning TF("Incoming data left in the buffer:\n");
+						Misc::visualDump($incoming);
 
-				if (defined(my $rplen = $incomingMessages->{rpackets}{my $switch = Network::MessageTokenizer::getMessageID($incoming)})) {
-					my $inlen = do { no encoding 'utf8'; use bytes; length $incoming };
-					if (($rplen->{length} > $inlen) || ($rplen->{minLength} > $inlen)) { # check for minLength too, if defined
-						warning TF("Only %d bytes in the buffer, when %s's packet length is supposed to be %d (wrong recvpackets?)\n", $inlen, $switch, $rplen);
-					}
+						if (defined(my $rplen = $incomingMessages->{rpackets}{my $switch = Network::MessageTokenizer::getMessageID($incoming)})) {
+							my $inlen = do { no encoding 'utf8'; use bytes; length $incoming };
+							if (($rplen->{length} > $inlen) || ($rplen->{minLength} > $inlen)) { # check for minLength too, if defined
+								warning TF("Only %d bytes in the buffer, when %s's packet length is supposed to be %d (wrong recvpackets?)\n", $inlen, $switch, $rplen);
+							}
+						}
+						# rAthena-ai-world fork sends the map-enter/character block appended to
+						# the 0x0AC5 char->map redirect on the SAME char connection. Before the
+						# new map connection (state CONNECTED_TO_CHAR_SERVER) is opened, this
+						# stale buffer must be DISCARDED so those bytes can never be mis-parsed
+						# as map/message packets on the fresh map socket. Without this, the
+						# char->map transition can race and the bot bounces ("Timeout on
+						# Character Select" + reconnect). Clearing is safe: serverDisconnect
+						# immediately closes this socket, so the data is dead regardless.
+						eval { $incomingMessages->clear(); 1 } or do { local $@; };
 				}
-		}
 
 		$messageSender->sendQuit() if ($self->getState() == Network::IN_GAME);
 
