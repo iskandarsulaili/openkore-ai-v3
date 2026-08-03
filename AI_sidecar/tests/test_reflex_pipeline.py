@@ -73,7 +73,10 @@ def test_reflex_escape_at_critical_hp():
         current_map="gef_fild01", zeny=50000, level=50,
     )
     assert cmd is not None, "check_and_act should return a command at 10% HP"
-    assert "ai manual" in cmd, f"Expected escape command at critical HP, got: {cmd}"
+    # Escape must NOT use 'ai manual' (freezes auto-attack forever, blocking EXP).
+    # It stops combat via attackAuto 0 so the bot can flee while staying navigable.
+    assert "ai manual" not in cmd, f"Escape must not freeze AI, got: {cmd}"
+    assert "attackAuto 0" in cmd, f"Expected escape to stop combat, got: {cmd}"
     print(f"  PASS: critical HP → '{cmd}'")
 
 

@@ -50,7 +50,7 @@ class EdgeCaseHandler:
                 trigger="gm_spotted",
                 priority=1,
                 actions=[
-                    "ai manual",
+                    "attackAuto 0",
                     "sit",
                     "log out",
                 ],
@@ -60,7 +60,7 @@ class EdgeCaseHandler:
                 trigger="pker_detected",
                 priority=2,
                 actions=[
-                    "ai manual",
+                    "attackAuto 0",
                     "tele",
                     "change map",
                 ],
@@ -70,7 +70,7 @@ class EdgeCaseHandler:
                 trigger="server_unstable",
                 priority=3,
                 actions=[
-                    "ai manual",
+                    "attackAuto 0",
                     "sit",
                     "wait 60s",
                 ],
@@ -80,7 +80,7 @@ class EdgeCaseHandler:
                 trigger="suspicious_player",
                 priority=4,
                 actions=[
-                    "ai manual",
+                    "attackAuto 0",
                     "observe",
                     "log if follows",
                 ],

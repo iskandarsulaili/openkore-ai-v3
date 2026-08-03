@@ -392,7 +392,7 @@ class DangerPredictor:
                 recommendations.append(SafetyRecommendation(
                     action_type="butterfly_wing",
                     priority=0,
-                    command="ai manual; use_butterfly_wing",
+                    command="attackAuto 0; use_butterfly_wing",
                     reason=(
                         f"DANGER: {danger.reason}. "
                         f"Using Butterfly Wing to escape {current_map}"
@@ -404,7 +404,7 @@ class DangerPredictor:
                 recommendations.append(SafetyRecommendation(
                     action_type="flywing",
                     priority=0,
-                    command="ai manual; use_fly_wing",
+                    command="attackAuto 0; use_fly_wing",
                     reason=(
                         f"DANGER: {danger.reason}. "
                         f"Using Fly Wing to escape {current_map}"
@@ -418,7 +418,7 @@ class DangerPredictor:
                 recommendations.append(SafetyRecommendation(
                     action_type="flee",
                     priority=0,
-                    command=f"ai manual; move {target_town}",
+                    command=f"attackAuto 0; move {target_town}",
                     reason=(
                         f"DANGER: {danger.reason}. "
                         f"No wings — walking to {target_town}"
@@ -453,7 +453,7 @@ class DangerPredictor:
             recommendations.append(SafetyRecommendation(
                 action_type="flee",
                 priority=0,  # Critical
-                command=f"ai manual; move {target_town}",
+                command=f"attackAuto 0; move {target_town}",
                 reason=(
                     f"EMERGENCY: HP={hp_ratio:.0%}, no potions, no wings. "
                     f"Walking to {target_town} immediately"
@@ -679,7 +679,7 @@ class SafetyEvaluator:
             recommendations.append(SafetyRecommendation(
                 action_type="retreat",
                 priority=0,
-                command=f"ai manual; move {target}",
+                command=f"attackAuto 0; move {target}",
                 reason=(
                     f"Safe tolerance {tolerance:.1f} hits < {self.safe_tolerance_min}. "
                     f"Would die to {self.safe_tolerance_min} hits at current HP "
@@ -700,7 +700,7 @@ class SafetyEvaluator:
             recommendations.append(SafetyRecommendation(
                 action_type="retreat",
                 priority=1,
-                command=f"ai manual; move {DangerPredictor._guess_nearest_town(current_map)}",
+                command=f"attackAuto 0; move {DangerPredictor._guess_nearest_town(current_map)}",
                 reason=(
                     f"Potion consumption {potion_rate:.1f}/min exceeds "
                     f"threshold ({self.potion_rate_threshold:.0f}/min). "
@@ -719,7 +719,7 @@ class SafetyEvaluator:
             recommendations.append(SafetyRecommendation(
                 action_type="flywing",
                 priority=0,
-                command="ai manual; use_fly_wing",
+                command="attackAuto 0; use_fly_wing",
                 reason=(
                     f"CRITICAL: HP={hp_ratio:.0%}, safe_tolerance={tolerance:.1f}. "
                     f"Would die to 1 hit. Using Fly Wing."

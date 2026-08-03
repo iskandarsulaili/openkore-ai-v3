@@ -2281,7 +2281,10 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
         "sit": "sit",
         "stand": "stand",
         "auto": "ai auto",
-        "manual": "ai manual",
+        # 'manual' mode must NOT emit 'ai manual' (permanently disables auto-attack,
+        # freezing all EXP) — map it to attackAuto 0, which stops combat but keeps
+        # the bot navigable; auto-attack re-enables on arrival at the farm.
+        "manual": "attackAuto 0",
     }
     
     # Dynamic map routing: if objective mentions a hunting map, route there

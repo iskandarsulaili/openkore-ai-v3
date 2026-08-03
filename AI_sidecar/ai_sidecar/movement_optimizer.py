@@ -68,7 +68,7 @@ class MovementOptimizer:
                 "method": "fly_wing",
                 "time_s": fly_time,
                 "cost": FLY_WING_COST,
-                "command": "ai manual",
+                "command": "attackAuto 0",
                 "score": 100.0 / max(fly_time, 1) * 0.8,  # 0.8 penalty for cost
             })
         
@@ -79,7 +79,7 @@ class MovementOptimizer:
                 "method": "butterfly_wing",
                 "time_s": bw_time,
                 "cost": BUTTERFLY_WING_COST,
-                "command": "ai manual",
+                "command": "attackAuto 0",
                 "score": 100.0 / max(bw_time, 1) * 0.6,
             })
         

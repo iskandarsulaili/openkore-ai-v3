@@ -266,7 +266,7 @@ class CombatOptimizer:
         
         # MVP tactics: party gather, coordinated attack
         return [
-            f"ai manual",  # Stop current AI
+            f"attackAuto 0",  # Stop current AI combat (never 'ai manual' — freezes auto-attack)
             f"move prontera",  # Party up in town (simplified)
         ]
     

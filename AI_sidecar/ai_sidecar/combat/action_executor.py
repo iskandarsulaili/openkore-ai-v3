@@ -234,7 +234,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="flee_to_safe_spot",
                 command_kind="ai_manual",
-                command_template="ai manual",
+                command_template="attackAuto 0",
                 priority_tier="reflex",
                 cooldown_ms=500,
             ),
@@ -249,7 +249,7 @@ class ActionExecutor:
             ActionMapping(
                 reflex_action="retreat_to_safe_spot",
                 command_kind="ai_manual",
-                command_template="ai manual",
+                command_template="attackAuto 0",
                 priority_tier="reflex",
                 cooldown_ms=3000,
             ),

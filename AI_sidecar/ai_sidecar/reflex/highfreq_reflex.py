@@ -411,7 +411,10 @@ class HighFreqReflex:
             logger.info("highfreq_reflex: bot=%s escape hp=%.0f%% aggro=%d%s", bot_id, hp_pct * 100, aggro_count, f' PREDICTIVE:{_predictive_reason}' if _predictive_flee else '')
             # TIER 0: Real escape for capable levels
             if level >= 10:
-                cmd = "ai manual"
+                # Never 'ai manual' (freezes auto-attack forever). attackAuto 0 stops
+                # combat so the bot can flee/teleport while staying navigable;
+                # auto-attack re-enables on arrival at safety.
+                cmd = "attackAuto 0"
             # TIER 1: Sit to regen (always available, no items needed)
             elif aggro_count <= 2:
                 cmd = "sit"

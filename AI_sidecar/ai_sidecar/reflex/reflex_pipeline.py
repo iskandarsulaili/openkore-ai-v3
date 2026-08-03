@@ -148,7 +148,7 @@ class ReflexPipeline:
             priority=80,
             trigger=ReflexTriggerClause(all=[]),
             action_template=ReflexActionTemplate(
-                command="ai manual",
+                command="stand",
                 kind="command",
                 conflict_key="",
                 priority_tier=ActionPriorityTier.reflex,

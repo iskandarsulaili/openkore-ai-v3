@@ -2469,9 +2469,9 @@ class HeuristicService:
                 _tx = _x + _rand.randint(-15, 15)
                 _ty = _y + _rand.randint(-15, 15)
                 stuck_actions.append(HeuristicAction(
-                    kind="command", command="ai manual",
+                    kind="command", command="stand",
                     confidence=0.90, domain="survival",
-                    reason=f"Stuck: position ({_x},{_y}) unchanged for {_elapsed:.0f}s — manual mode to unstick",
+                    reason=f"Stuck: position ({_x},{_y}) unchanged for {_elapsed:.0f}s — stand then random move to unstick (never 'ai manual' — it freezes auto-attack forever)",
                 ))
                 stuck_actions.append(HeuristicAction(
                     kind="command", command=f"move {_tx} {_ty}",
@@ -2642,9 +2642,9 @@ class HeuristicService:
                     # ("Cannot calculate a route from int_land"), leaving the
                     # bot stuck at spawn.
                     actions.append(HeuristicAction(
-                        kind="command", command="ai manual",
+                        kind="command", command="set attackAuto 0",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - disable AI for portal walk",
+                        reason="Cold start - disable attacking during portal walk (never 'ai manual' — that freezes auto-attack forever and blocks all EXP)",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",

@@ -537,7 +537,7 @@ MACRO_PATTERNS["combat_cast_cancel"] = MacroPattern(
     ],
     action_sequence=[
         _make_action("stop_cast", "Cancel interruptible cast", timeout=1.0),
-        _make_action("ai manual", "Disable AI briefly", timeout=1.0),
+        _make_action("attackAuto 0", "Disable AI briefly", timeout=1.0),
         _make_action("ai auto", "Re-enable AI", timeout=1.0),
     ],
     cooldown_seconds=3.0, exclusive=False,
@@ -1092,7 +1092,7 @@ MACRO_PATTERNS["safe_anti_stuck"] = MacroPattern(
         _make_trigger("navigation.is_stuck", "eq", True),
     ],
     action_sequence=[
-        _make_action("ai manual", "Disable AI for stuck recovery", timeout=1.0),
+        _make_action("attackAuto 0", "Disable AI for stuck recovery", timeout=1.0),
         _make_action("move {random_x} {random_y}", "Walk random direction", timeout=5.0),
         _make_action("ai auto", "Re-enable AI", timeout=1.0),
     ],
@@ -1111,7 +1111,7 @@ MACRO_PATTERNS["safe_aggro_escape"] = MacroPattern(
         _make_trigger("combat.is_in_combat", "eq", True),
     ],
     action_sequence=[
-        _make_action("ai manual", "Disable combat AI", timeout=1.0),
+        _make_action("attackAuto 0", "Disable combat AI", timeout=1.0),
         _make_action("move 0 0", "Run to safe position", timeout=5.0),
         _make_action("ai auto", "Re-enable AI", timeout=1.0),
     ],
@@ -1128,7 +1128,7 @@ MACRO_PATTERNS["safe_gm_detection"] = MacroPattern(
         _make_trigger("safety.gm_detected", "eq", True),
     ],
     action_sequence=[
-        _make_action("ai manual", "Disable AI for GM detection", timeout=1.0),
+        _make_action("attackAuto 0", "Disable AI for GM detection", timeout=1.0),
         _make_action("sit", "Sit to appear AFK", timeout=1.0),
         _make_action("log GM detected — hiding", "Log GM detection event", timeout=1.0),
     ],
@@ -1193,7 +1193,7 @@ MACRO_PATTERNS["safe_player_detection"] = MacroPattern(
         _make_trigger("safety.stealth_mode", "eq", True),
     ],
     action_sequence=[
-        _make_action("ai manual", "Disable AI for stealth", timeout=1.0),
+        _make_action("attackAuto 0", "Disable AI for stealth", timeout=1.0),
         _make_action("sit", "Sit to appear AFK", timeout=1.0),
     ],
     cooldown_seconds=30.0, exclusive=False,
