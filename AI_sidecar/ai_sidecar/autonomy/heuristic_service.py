@@ -1899,8 +1899,16 @@ class HeuristicService:
                                     # progress -> force the exit (risk-taking),
                                     # firing FASTER (every 6s) than the default
                                     # periodic retry (20s) but never spamming.
-                                    _force_exit = (not _made_progress and _danger_sig > 0) or _died_recent
-                                    _exit_cooldown = 6.0 if _force_exit else 20.0
+                                    # For the Secluded-Island INTRO specifically, a
+                                    # level<=5 bot CANNOT progress bare-handed (Porings
+                                    # are 55 HP / 12 dmg per hit), so escape is the ONLY
+                                    # winning move — force it regardless of the
+                                    # progress/danger probes (a probe returning "making
+                                    # progress" because the bot is TAKING hits would
+                                    # otherwise suppress the escape forever and strand it).
+                                    _is_isolated_intro = (_cur_map.startswith("int_land") and _bl <= 5)
+                                    _force_exit = _is_isolated_intro or ((not _made_progress and _danger_sig > 0) or _died_recent)
+                                    _exit_cooldown = 6.0 if (_force_exit or _is_isolated_intro) else 20.0
                                     if _esc_now - _esc_last >= _exit_cooldown:
                                         self._last_island_escape[_bot_id] = _esc_now
                                         # Potions are auto-used via the profile's
