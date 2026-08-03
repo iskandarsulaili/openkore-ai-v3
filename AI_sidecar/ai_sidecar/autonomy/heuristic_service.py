@@ -54,6 +54,7 @@ from ai_sidecar.domains.environment.time import GameTimeTracker
 from ai_sidecar.domains.navigation.portals import PortalDB
 from ai_sidecar.domains.navigation.pathfinding import Pathfinder
 from ai_sidecar.combat.map_knowledge import get_hunting_maps as _mk_get_hunting_maps
+from ai_sidecar.strategy.unified_consciousness import UnifiedConsciousness, DecisionDomain, DecisionUrgency
 from ai_sidecar.domains.progression.lifecycle import LifecycleStateMachine
 from ai_sidecar.domains.progression.advancement import AdvancementDomain
 from ai_sidecar.domains.pvp.arenas import ArenaTactics
@@ -1038,6 +1039,13 @@ class HeuristicService:
         # island Porings (exp + 6008 quest items + Knife drops) instead of
         # constantly re-targeting the sail attempt every horizon.
         self._last_island_escape: dict[str, float] = {}
+        # Academy registration attempt count: bot_id -> int. Once a bot has
+        # attempted the Receptionist registration a few times, stop re-talking —
+        # the snapshot's inventory/job signals can be stale (bot4 had the knife +
+        # job_level 2 in the DB but the snapshot showed empty/1), so relying on
+        # them alone left the bot looping at the receptionist. Cap the attempts
+        # so the bot always proceeds to farming after a bounded number of tries.
+        self._reg_attempts: dict[str, int] = {}
         # Academy-door walk throttle: bot_id -> last time we issued move 125 257.
         # The academy move (izlude -> iz_ac01 door) must be issued at most once
         # per ~10s, not every PDCA cycle, so OpenKore actually walks the long
@@ -1077,6 +1085,8 @@ class HeuristicService:
         self._experience_tracker: ExperienceTracker | None = None
         self._goal_manager: GoalManager | None = None
         self._task_scheduler: TaskScheduler | None = None
+        # ── Unified Consciousness (conscious tier: novel-situation reasoning) ──
+        self._consciousness: "UnifiedConsciousness | None" = None
         # ── Map rotation planner ──
         self._map_rotation: MapRotationPlanner | None = None
         # ── Danger predictor and safety evaluator ──
@@ -1527,6 +1537,14 @@ class HeuristicService:
                 self._map_rotation = MapRotationPlanner()
                 self._danger_predictor = DangerPredictor()
                 self._world_state = get_world_state()
+                # Conscious tier: unified reasoning across the strategic sub-systems.
+                # Instantiated lazily; if init fails (missing optional deps) the
+                # heuristic continues with reflex rules only.
+                self._consciousness = None
+                try:
+                    self._consciousness = UnifiedConsciousness()
+                except Exception as _uc_err:
+                    self._consciousness = None
                 self._combat_pressure = CombatPressureDomain()
                 self._kiting_v2 = TickBasedKiting()
                 self._inventory_policies = InventoryPolicies()
@@ -2034,6 +2052,18 @@ class HeuristicService:
                                                     _has_knife = True
                                                     break
                                         if not _has_knife:
+                                            # Also cap registration attempts: the snapshot
+                                            # can be stale (bot4 had the knife + job_level 2
+                                            # in DB but the snapshot showed empty/1), so don't
+                                            # loop forever if the knife signal is unreliable.
+                                            # After a few tries, move on to farming regardless.
+                                            _reg_n = self._reg_attempts.get(_bot_id, 0) + 1
+                                            self._reg_attempts[_bot_id] = _reg_n
+                                        # Fire registration ONLY while unregistered AND under
+                                        # the attempt cap. Once capped, stop re-talking so the
+                                        # bot proceeds to farming (the kit is likely already
+                                        # granted server-side even if the snapshot is stale).
+                                        if not _has_knife and _reg_n <= 6:
                                             _actions.append(HeuristicAction(
                                             kind="command",
                                             # Register at the Academy. The Receptionist's
@@ -2262,6 +2292,49 @@ class HeuristicService:
                             logger.debug(f"[heuristic] task scheduler: {_se}")
                 except Exception as _de:
                     logger.debug(f"[heuristic] domain delegation: {_de}")
+            # ── CONSCIOUS-TIER FALLBACK (Phase 2, server-agnostic) ──
+            # If the reflex/rule path produced NO progression directive and the bot is
+            # in-game on a map the rules don't recognize (a novel / unknown server map),
+            # delegate to the unified consciousness to reason the next action. This is
+            # the "conscious solves novel situations" behavior: it works for ANY server
+            # by reasoning from live observed state instead of matching literals. It
+            # never overrides a normal rule-driven action.
+            try:
+                if self._consciousness is not None:
+                    _had_progression = any(
+                        getattr(a, "domain", "") in ("progression", "routing") for a in _actions
+                    )
+                    _m = str(signals.get("map", "") or "").lower()
+                    _in_game = bool(signals.get("in_game", False))
+                    if _in_game and not _had_progression and _m and not _m.startswith(("int_land", "iz_int", "iz_ac")):
+                        _uc_ctx = {
+                            "bot_id": _bot_id,
+                            "map": _m,
+                            "level": _bl,
+                            "job": signals.get("job", "novice"),
+                            "base_level": _bl,
+                            "job_name": signals.get("job_name", "novice"),
+                            "hp": signals.get("hp", 1),
+                            "hp_max": signals.get("hp_max", 1),
+                            "lockMap": signals.get("lockMap", ""),
+                            "in_game": _in_game,
+                        }
+                        _ucd = self._consciousness.decide(
+                            DecisionDomain.PROGRESSION, DecisionUrgency.SHORT_TERM, _uc_ctx
+                        )
+                        if _ucd is not None and getattr(_ucd, "action", ""):
+                            _uc_act = str(_ucd.action)
+                            _uc_cmd = _uc_act
+                            if _uc_act.startswith("move "):
+                                _uc_cmd = f"move {_uc_act[5:].strip()}"
+                            _actions.append(HeuristicAction(
+                                kind="command", command=_uc_cmd,
+                                confidence=0.6,
+                                reason=f"Conscious (server-agnostic): {getattr(_ucd,'reason','') or 'decide'} on map {_m}",
+                                domain="progression",
+                            ))
+            except Exception as _uc_de:
+                logger.debug(f"[heuristic] conscious fallback: {_uc_de}")
             return assessment
         except Exception as e:
             logger.error(f"assess() crashed for {bot_id_override or 'unknown'}: {type(e).__name__}: {e}")
