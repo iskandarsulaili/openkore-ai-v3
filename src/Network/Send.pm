@@ -359,33 +359,31 @@ sub sendMasterLogin {
 	) {
 		# Real-enforcement signing (private module). If the operator has the
 		# private shared secret (private/auth_secret.key, gitignored), send a
-		# time-stable HMAC-SHA256 signature (first 16 bytes) as the client_hash
-		# instead of a static marker. The server verifies it; an impostor bot
-		# without the secret cannot forge it. Falls back to the static
-		# $masterServer->{clientHash} marker when no secret is configured.
+		# time-stable HMAC-SHA256 signature (first 16 bytes) as the client_hash.
+		# The server verifies it; an impostor bot without the secret cannot
+		# forge it. If no secret is present, fall back to the static
+		# $masterServer->{clientHash} marker (if configured), else send none.
 		my $sig = '';
-		if ($masterServer->{clientHash} ne '') {
-			eval {
-				# Resolve the private secret robustly (FindBin install dir,
-				# then cwd). The file is gitignored and distributed OOB.
-				my $secret_path;
-				for my $base (($FindBin::RealBin || $RealBin || '.'),
-				                getcwd() || '.') {
-					my $p = File::Spec->catfile($base, 'private', 'auth_secret.key');
-					if (-f $p) { $secret_path = $p; last; }
-				}
-				if (defined $secret_path) {
+		{
+			my $secret_path;
+			for my $base (($FindBin::RealBin || $RealBin || '.'),
+			                getcwd() || '.') {
+				my $p = File::Spec->catfile($base, 'private', 'auth_secret.key');
+				if (-f $p) { $secret_path = $p; last; }
+			}
+			if (defined $secret_path) {
+				eval {
 					# V3AuthSigner.pm ships alongside the secret in private/
 					my ($vol, $dir) = File::Spec->splitpath($secret_path);
 					my $priv_dir = File::Spec->catdir($vol, $dir);
 					$priv_dir =~ s{[\\/]+$}{};  # strip trailing slash
 					unshift @INC, $priv_dir if $priv_dir ne '' && !grep { $_ eq $priv_dir } @INC;
-				}
-				require V3AuthSigner;
-				my $full = V3AuthSigner::sign($secret_path, $username);
-				$sig = substr($full, 0, 32) if defined $full && length($full) >= 32;
-			};
-			if ($sig eq '') {
+					require V3AuthSigner;
+					my $full = V3AuthSigner::sign($secret_path, $username);
+					$sig = substr($full, 0, 32) if defined $full && length($full) >= 32;
+				};
+			}
+			if ($sig eq '' && defined $masterServer->{clientHash} && $masterServer->{clientHash} ne '') {
 				# No private secret -> fall back to the static marker.
 				$sig = $masterServer->{clientHash};
 			}

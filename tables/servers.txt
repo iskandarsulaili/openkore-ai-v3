@@ -32,4 +32,3 @@ serverType kRO_RagexeRE_2025_06_04
 serverEncoding Western
 addTableFolders kRO/RagexeRE_2025_06_04;translated/kRO_english;kRO
 secureLogin 0
-clientHash 71bbd7a75516b8c531c6b5d824f867b7
