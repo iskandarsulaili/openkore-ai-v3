@@ -1896,26 +1896,30 @@ class HeuristicService:
                                             reason="Island: clear unreachable farm lockMap so the bot escapes via the (49,57) sailor",
                                             domain="progression",
                                         ))
-                                    # Commit to the escape RUN, not combat. attackAuto 2
-                                    # (fight-if-attacked) is what strands the bot: the 40
-                                    # aggressive island Porings hit the level-1 novice, every
-                                    # counter-attack cancels the in-progress `move 49 57`
-                                    # route, so it never reaches the warp. For the escape we
-                                    # must RUN: attackAuto 0 (+ not-lock-only) so the bot
-                                    # prioritizes reaching (49,57); potions auto-use keep it
-                                    # alive through the few Poring hits it takes.
+                                    # Survival strategy for the island run. The bot must
+                                    # reach the (49,57) warp through 40 aggressive Porings.
+                                    # attackAuto 0 leaves it DEFENSELESS (no potions/zeny/gear
+                                    # to heal) so it dies to repeated Dmg-5 Poring hits before
+                                    # the last ~10 tiles (live: bot4 reached 58,69 then died).
+                                    # attackAuto 2 (fight when attacked) lets it clear the
+                                    # immediate Poring in a quick 1v1 (Poring 55HP vs ~12 dmg
+                                    # /hit, bot wins taking ~25 dmg), and the navigation fix
+                                    # (3a2db163d) + 25s re-emission lets `move 49 57` RESUME
+                                    # after each fight instead of looping (the pre-nav-fix
+                                    # fight-loop no longer applies). So: fight to survive,
+                                    # keep re-issuing the escape to resume the walk.
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="set attackAuto 0",
+                                        command="set attackAuto 2",
                                         confidence=0.98,
-                                        reason="Cold start: island escape RUN — attackAuto 0 so Porings cannot cancel the walk to (49,57)",
+                                        reason="Cold start: island escape — fight off the immediate Poring to survive the run, then resume walking to (49,57)",
                                         domain="combat",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto_inLockOnly 0",
                                         confidence=0.90,
-                                        reason="Cold start: allow the escape run anywhere (ignore combat)", 
+                                        reason="Cold start: allow fighting anywhere while escaping the island",
                                         domain="combat",
                                     ))
                                     # Danger flag for a disconnected field with no

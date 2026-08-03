@@ -85,11 +85,13 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     #   select("Do not go to Izlude yet", "Sail to Izlude!")   <- Sail = option 2.
     assert "talk resp 2" in cmds, f"must select 'Sail to Izlude!' (option 2): {cmds}"
     assert not any("talknpc" in c for c in cmds), f"must NOT talknpc the warp tile: {cmds}"
-    # The escape is a RUN: attackAuto 0. (Live proof: attackAuto 2 caused the 40
-    # aggressive island Porings to cancel every `move 49 57` counter-attack, so the
-    # bot never reached the warp. attackAuto 0 lets it run to (49,57).)
-    assert "set attackAuto 0" in cmds, f"escape must run (attackAuto 0): {cmds}"
-    assert "set attackAuto 2" not in cmds, f"attackAuto 2 strands the bot fighting Porings: {cmds}"
+    # Survival strategy: fight off the immediate Poring (attackAuto 2) to survive the
+    # run. (Live proof: attackAuto 0 left the bot DEFENSELESS — no potions/zeny/gear —
+    # and it died to repeated Dmg-5 Poring hits at 58,69 before the last 10 tiles to the
+    # warp. With the navigation fix, fighting clears the immediate Poring, then the
+    # escape re-emission resumes the walk to (49,57).)
+    assert "set attackAuto 2" in cmds, f"escape must fight to survive (attackAuto 2): {cmds}"
+    assert "set attackAuto 0" not in cmds, f"attackAuto 0 strands the bot defenseless (dies on island): {cmds}"
     # Must NOT force prt_fild08 lockMap OR move prontera while stranded (both
     # cannot route from int_land and would leave the bot stuck at spawn).
     assert not any("prt_fild08" in c for c in cmds), f"no lockMap on island: {cmds}"
