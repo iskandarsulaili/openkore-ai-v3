@@ -4193,11 +4193,27 @@ sub cmdMove {
 						message TF("Calculating route to: %s(%s)\n",
 							$map_name, $map_or_portal), "route";
 					}
+					# noMapRoute only when the target map IS the current field
+					# (a same-map coordinate move). Cross-map moves (`move <other>`,
+					# or `move <map> x y` where <map> != current) MUST keep the
+					# full Task::MapRoute inter-map router. Putting it
+					# unconditionally here would break inter-map moves.
+					my $_no_map_route = ($map_or_portal eq $field->baseName) ? 1 : 0;
 					main::ai_route($map_or_portal, $x, $y,
 					attackOnRoute => 1,
 					noSitAuto => 1,
 					notifyUponArrival => 1,
-					distFromGoal => $dist);
+					distFromGoal => $dist,
+					# Root-cause fix: Task::MapRoute runs Task::CalcMapRoute which,
+					# for a same-map REACHABLE target, marks the route DONE with an
+					# EMPTY mapSolution and issues NO walking commands — so `move X Y`
+					# on the current map silently did nothing (the bot's coordinates
+					# never changed). noMapRoute=>1 for the current map forces the
+					# direct in-field Task::Route that actually walks to (x,y).
+					# Verified live: island bots emitted `move 49 57` repeatedly but
+					# never left spawn until this.
+					noMapRoute => $_no_map_route,
+					);
 				} else {
 					error TF("Map %s does not exist\n", $map_or_portal);
 				}
