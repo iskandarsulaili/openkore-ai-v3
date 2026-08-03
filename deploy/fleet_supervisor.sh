@@ -32,10 +32,19 @@ for profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
 done
 
 cd "$SCRIPT_DIR" || exit 1
-# Keep the unit active (Type=simple). Sleep in a loop; on each tick, re-launch any
-# bot that died, so the fleet self-heals without needing a service restart.
+# Keep the unit active (Type=simple). On each tick, relaunch the sidecar if it
+# died AND relaunch any dead bot, so the whole fleet self-heals without a restart.
 while true; do
     sleep 60
+    # Sidecar self-heal
+    if ! curl -sf "http://127.0.0.1:${SIDECAR_PORT}/health/live" > /dev/null 2>&1 \
+       && ! pgrep -f "ai_sidecar\.app" > /dev/null 2>&1; then
+        cd "$SIDECAR_DIR"
+        setsid nohup "$SIDECAR_DIR/venv/bin/python" -m ai_sidecar.app --keep-alive --keep-alive-poll 10 \
+            > "$SIDECAR_LOG" 2>&1 < /dev/null &
+        cd "$SCRIPT_DIR"
+    fi
+    # Bot self-heal
     for profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
         [ -d "$profile_dir" ] || continue
         name="$(basename "$profile_dir")"
