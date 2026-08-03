@@ -2019,21 +2019,20 @@ class HeuristicService:
                                         # receptionist and the dialog silently fails.
                                         _actions.append(HeuristicAction(
                                             kind="command",
-                                            # Full registration dialog: talk, select
-                                            # "Register for the Academy" (r0 -> server
-                                            # option 1), then advance through ALL the
-                                            # mes/next screens until the kit (Novice_Knife
-                                            # + 300 potions) is granted and the dialog
-                                            # closes. A single 'n' only clicks past the
-                                            # first registration screen — the getitem
-                                            # fires on a LATER next, so we must send enough
-                                            # next clicks to reach it (script: mes -> next
-                                            # -> mes "basic equipment" -> next -> getitem
-                                            # -> next -> mes -> close). r0 = option 1 =
-                                            # "Register for the Academy".
-                                            command="talknpc 100 39 c r0 n n n n n",
+                                            # Register at the Academy. The Receptionist's
+                                            # main menu is select("Register for the Academy:
+                                            # Explanation about the Academy:Location for
+                                            # trainers:Conversation finished"). A previous
+                                            # cycle can leave the dialog stuck in a submenu
+                                            # ("What's on the 1st floor" etc), so first send
+                                            # "End Conversation" (cancel) to close ANY open
+                                            # dialog, then re-talk and select "Register" by
+                                            # TEXT (regex) — robust to menu ordering. Then
+                                            # advance through the registration mes/next
+                                            # screens to the getitem (kit) and close.
+                                            command="talknpc 100 39 c r/End Conversation/ c r/Register/ n n n n n",
                                             confidence=0.95,
-                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (advance full dialog to the kit)",
+                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register by text)",
                                             domain="progression",
                                         ))
                                     else:
