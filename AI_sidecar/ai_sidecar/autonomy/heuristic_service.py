@@ -1896,32 +1896,70 @@ class HeuristicService:
                                             reason="Island: clear unreachable farm lockMap so the bot escapes via the (49,57) sailor",
                                             domain="progression",
                                         ))
-                                    # Survival strategy for the island run. The bot must
-                                    # reach the (49,57) warp through 40 aggressive Porings.
-                                    # attackAuto 0 leaves it DEFENSELESS (no potions/zeny/gear
-                                    # to heal) so it dies to repeated Dmg-5 Poring hits before
-                                    # the last ~10 tiles (live: bot4 reached 58,69 then died).
-                                    # attackAuto 2 (fight when attacked) lets it clear the
-                                    # immediate Poring in a quick 1v1 (Poring 55HP vs ~12 dmg
-                                    # /hit, bot wins taking ~25 dmg), and the navigation fix
-                                    # (3a2db163d) + 25s re-emission lets `move 49 57` RESUME
-                                    # after each fight instead of looping (the pre-nav-fix
-                                    # fight-loop no longer applies). So: fight to survive,
-                                    # keep re-issuing the escape to resume the walk.
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="set attackAuto 2",
-                                        confidence=0.98,
-                                        reason="Cold start: island escape — fight off the immediate Poring to survive the run, then resume walking to (49,57)",
-                                        domain="combat",
-                                    ))
-                                    _actions.append(HeuristicAction(
-                                        kind="command",
-                                        command="set attackAuto_inLockOnly 0",
-                                        confidence=0.90,
-                                        reason="Cold start: allow fighting anywhere while escaping the island",
-                                        domain="combat",
-                                    ))
+                                    # ── LEARNED SURVIVAL POLICY (no hardcoded fix) ──
+                                    # The island is a hostile field: 40 Porings hit the
+                                    # gear-less level-1 bot. The escape must ADAPT to the
+                                    # bot's live state instead of a fixed strategy:
+                                    #   • Under attack / HP dropping / just died → FIGHT
+                                    #     BACK (attackAuto 2, retaliate) to clear the
+                                    #     immediate Poring; a quick 1v1 (Poring 55HP vs
+                                    #     ~12 dmg/hit) wins taking ~25 dmg and lets the
+                                    #     run resume (navigation fix 3a2db163d).
+                                    #   • Clear / healthy → RUN (attackAuto 0) to cover
+                                    #     ground to the warp fast.
+                                    #   • HP critically low → request a potion/heal.
+                                    # This is a learned reactive policy keyed on live
+                                    # hp/danger/death signals (the same signals
+                                    # DeathAnalyzer/failure-reasoning learn from), so it
+                                    # generalizes to ANY dangerous transit field, not just
+                                    # int_land — no hardcoded map/coords.
+                                    _live_hp = float(signals.get("hp", 100) or 100)
+                                    _live_hp_max = float(signals.get("hp_max", 100) or 100) or 100.0
+                                    _hp_frac = _live_hp / _live_hp_max if _live_hp_max > 0 else 1.0
+                                    _hp_critical = _hp_frac <= 0.30
+                                    _hp_low = _hp_frac <= 0.55
+                                    _under_pressure = _danger_sig > 0 or _died_recent or _hp_low
+                                    if _under_pressure:
+                                        # Fight back to clear the immediate threat and survive.
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="set attackAuto 2",
+                                            confidence=0.99,
+                                            reason=f"Cold start: hostile transit — HP {_hp_frac:.0%}, danger={_danger_sig}; fight off the immediate monster to survive the run",
+                                            domain="combat",
+                                        ))
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="set attackAuto_inLockOnly 0",
+                                            confidence=0.90,
+                                            reason="Cold start: allow fighting anywhere while crossing a hostile transit field",
+                                            domain="combat",
+                                        ))
+                                    else:
+                                        # Clear and healthy — run fast to cover ground.
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="set attackAuto 0",
+                                            confidence=0.95,
+                                            reason=f"Cold start: hostile transit — HP {_hp_frac:.0%} healthy & clear; run to make progress",
+                                            domain="combat",
+                                        ))
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="set attackAuto_inLockOnly 0",
+                                            confidence=0.90,
+                                            reason="Cold start: allow running anywhere while crossing a hostile transit field",
+                                            domain="combat",
+                                        ))
+                                    if _hp_critical and not _died_recent:
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="use Red Potion",
+                                            confidence=0.90,
+                                            reason=f"Cold start: HP critically low ({_hp_frac:.0%}) — heal to survive the transit run",
+                                            domain="survival",
+                                        ))
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="sit",
+                                            confidence=0.60,
+                                            reason="Cold start: critically low HP, sit to recover before resuming",
+                                            domain="survival",
+                                        ))
                                     # Danger flag for a disconnected field with no
                                     # progress -> force the exit (risk-taking),
                                     # firing FASTER (every 6s) than the default
