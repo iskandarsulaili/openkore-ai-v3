@@ -125,7 +125,13 @@ class RoutingDomain(BaseDomain):
         map_name: str,
         signals: dict[str, Any],
     ) -> None:
-        """If bot is at portal exit, move to center of hunting map."""
+        """If bot is at portal exit, move to center of hunting map.
+
+        Without this, a bot that crosses into a farm field sits at the portal edge
+        (where few mobs spawn) and either gets pulled back through the portal or
+        spins 'AI restarted for target reselection' with no monster in range. Moving
+        it to the field interior puts it where academy.txt spawns Porings/Lunatics.
+        """
         _x = int(signals.get("x", 0) or 0)
         _y = int(signals.get("y", 0) or 0)
         if (
@@ -136,6 +142,18 @@ class RoutingDomain(BaseDomain):
                 kind="command", command="move 200 200",
                 confidence=0.99, domain="hunting",
                 reason="At portal exit - move to center of hunting map",
+            ))
+        # prt_fild08c (academy farm) portal exits: prontera portal at (170,378) and
+        # izlude_c portal at (367,212). Move the bot to the field interior so it finds
+        # the Porings/Lunatics/Fabre academy spawns instead of lingering at the edge.
+        if map_name == "prt_fild08c" and (
+            (abs(_x - 170) < 10 and abs(_y - 378) < 10)
+            or (abs(_x - 367) < 10 and abs(_y - 212) < 10)
+        ):
+            actions.append(HeuristicAction(
+                kind="command", command="move 200 200",
+                confidence=0.99, domain="hunting",
+                reason="At prt_fild08c portal exit - move to field interior to reach academy mob spawns",
             ))
 
     def _check_spawn_circuit(

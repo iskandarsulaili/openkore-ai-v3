@@ -2193,6 +2193,27 @@ class HeuristicService:
                                         _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map})", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
                                         _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
+                                        # ── FARM-FIELD PORTAL-EXIT CENTERING ──
+                                        # A bot that crosses INTO the academy farm (prt_fild08c)
+                                        # at a portal edge lingers there (few mobs spawn at the
+                                        # edge) and either gets pulled back through the portal or
+                                        # spins "AI restarted for target reselection" with nothing
+                                        # in range — never killing. Move it to the field interior
+                                        # (200,200) where academy.txt spawns Porings/Lunatics.
+                                        _px = int(signals.get("x", 0) or 0)
+                                        _py = int(signals.get("y", 0) or 0)
+                                        if "_fild" in _cur_map and (
+                                            (str(_cur_map).startswith("prt_fild08") and
+                                             ((abs(_px - 170) < 12 and abs(_py - 378) < 12) or
+                                              (abs(_px - 367) < 12 and abs(_py - 212) < 12)))
+                                            or (str(_cur_map) == "prt_fild05" and
+                                                abs(_px - 367) < 12 and abs(_py - 205) < 12)
+                                        ):
+                                            _actions.append(HeuristicAction(
+                                                kind="command", command="move 200 200",
+                                                confidence=0.90, domain="hunting",
+                                                reason=f"Cold start: at {_cur_map} portal exit — move to field interior to reach mob spawns",
+                                            ))
                                 # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
                                 # A level-1 Novice cannot survive the tougher NON-
                                 # academy fields (prt_fild05 etc.) en route to the
