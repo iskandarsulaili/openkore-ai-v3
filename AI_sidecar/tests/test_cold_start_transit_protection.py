@@ -85,13 +85,14 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     #   select("Do not go to Izlude yet", "Sail to Izlude!")   <- Sail = option 2.
     assert "talk resp 2" in cmds, f"must select 'Sail to Izlude!' (option 2): {cmds}"
     assert not any("talknpc" in c for c in cmds), f"must NOT talknpc the warp tile: {cmds}"
-    # LEARNED survival policy (reactive, no hardcoded fix): under pressure/danger or
-    # low HP -> fight back (attackAuto 2) to clear the immediate Poring and survive
-    # the run; healthy & clear -> run (attackAuto 0). Both must be present depending
-    # on the live hp/danger signal. Live proof: a fixed attackAuto 0 left the bot
-    # defenseless (no potions/zeny/gear) and it died at 58,69; a fixed attackAuto 2
-    # fought every Poring. The learned policy picks per live state.
-    assert "set attackAuto 2" in cmds or "set attackAuto 0" in cmds, f"must pick a survival attack mode: {cmds}"
+    # LEARNED passive-transit policy: the island Porings are PASSIVE (live server
+    # db/re/mob_db.yml G_PORING Modes = FixedItemDrop only, no aggressive/chase/angry).
+    # A bot that never attacks them is never provoked, so it RUNS freely (attackAuto 0)
+    # to the escape warp. Fighting a passive Poring (attackAuto 2) provokes retaliation
+    # that kills a gearless level-1 (confirmed live: every "Poring attacks you" death is
+    # self-inflicted retaliation). So the escape must NOT fight.
+    assert "set attackAuto 0" in cmds, f"passive-field escape must not provoke (attackAuto 0): {cmds}"
+    assert "set attackAuto 2" not in cmds, f"attackAuto 2 provokes passive Porings and kills the gearless bot: {cmds}"
     assert not any("talknpc" in c for c in cmds), f"must NOT talknpc the warp tile: {cmds}"
     assert not any(c == "move prontera" for c in cmds), \
         f"must NOT move prontera from island (cannot route): {cmds}"

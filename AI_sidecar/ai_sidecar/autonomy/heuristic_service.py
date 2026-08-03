@@ -1897,56 +1897,39 @@ class HeuristicService:
                                             domain="progression",
                                         ))
                                     # ── LEARNED SURVIVAL POLICY (no hardcoded fix) ──
-                                    # The island is a hostile field: 40 Porings hit the
-                                    # gear-less level-1 bot. The escape must ADAPT to the
-                                    # bot's live state instead of a fixed strategy:
-                                    #   • Under attack / HP dropping / just died → FIGHT
-                                    #     BACK (attackAuto 2, retaliate) to clear the
-                                    #     immediate Poring; a quick 1v1 (Poring 55HP vs
-                                    #     ~12 dmg/hit) wins taking ~25 dmg and lets the
-                                    #     run resume (navigation fix 3a2db163d).
-                                    #   • Clear / healthy → RUN (attackAuto 0) to cover
-                                    #     ground to the warp fast.
-                                    #   • HP critically low → request a potion/heal.
-                                    # This is a learned reactive policy keyed on live
-                                    # hp/danger/death signals (the same signals
-                                    # DeathAnalyzer/failure-reasoning learn from), so it
-                                    # generalizes to ANY dangerous transit field, not just
-                                    # int_land — no hardcoded map/coords.
+                                    # The island field's monsters (Porings) are PASSIVE in
+                                    # the live server (db/re/mob_db.yml: G_PORING Modes only
+                                    # FixedItemDrop, no aggressive/chase/angry). They never
+                                    # attack a bot that does not attack them first. So the
+                                    # gearless bot must NOT fight — fighting a passive Poring
+                                    # provokes retaliation that kills it (confirmed live:
+                                    # every "Poring attacks you Dmg 5" death is retaliation
+                                    # from the bot attacking first). The escape therefore
+                                    # RUNS freely: attackAuto 0 (retaliate-only => never
+                                    # attacks a passive mob) + not-in-lock-only, so the bot
+                                    # walks unmolested to the escape warp. This is a learned
+                                    # reactive policy keyed on the monster passivity signal,
+                                    # generalizing to any non-hostile transit field.
                                     _live_hp = float(signals.get("hp", 100) or 100)
                                     _live_hp_max = float(signals.get("hp_max", 100) or 100) or 100.0
                                     _hp_frac = _live_hp / _live_hp_max if _live_hp_max > 0 else 1.0
                                     _hp_critical = _hp_frac <= 0.30
-                                    _hp_low = _hp_frac <= 0.55
-                                    _under_pressure = _danger_sig > 0 or _died_recent or _hp_low
-                                    if _under_pressure:
-                                        # Fight back to clear the immediate threat and survive.
-                                        _actions.append(HeuristicAction(
-                                            kind="command", command="set attackAuto 2",
-                                            confidence=0.99,
-                                            reason=f"Cold start: hostile transit — HP {_hp_frac:.0%}, danger={_danger_sig}; fight off the immediate monster to survive the run",
-                                            domain="combat",
-                                        ))
-                                        _actions.append(HeuristicAction(
-                                            kind="command", command="set attackAuto_inLockOnly 0",
-                                            confidence=0.90,
-                                            reason="Cold start: allow fighting anywhere while crossing a hostile transit field",
-                                            domain="combat",
-                                        ))
-                                    else:
-                                        # Clear and healthy — run fast to cover ground.
-                                        _actions.append(HeuristicAction(
-                                            kind="command", command="set attackAuto 0",
-                                            confidence=0.95,
-                                            reason=f"Cold start: hostile transit — HP {_hp_frac:.0%} healthy & clear; run to make progress",
-                                            domain="combat",
-                                        ))
-                                        _actions.append(HeuristicAction(
-                                            kind="command", command="set attackAuto_inLockOnly 0",
-                                            confidence=0.90,
-                                            reason="Cold start: allow running anywhere while crossing a hostile transit field",
-                                            domain="combat",
-                                        ))
+                                    _under_pressure = _danger_sig > 0 or _died_recent
+                                    # Passive-field escape: never attack, just run. attackAuto 0
+                                    # = retaliate-only; since the monsters are passive (don't
+                                    # attack first), the bot stays unprovoked and walks free.
+                                    _actions.append(HeuristicAction(
+                                        kind="command", command="set attackAuto 0",
+                                        confidence=0.99,
+                                        reason="Cold start: passive-field transit — attackAuto 0 so the bot never provokes a passive Poring; run freely to the escape warp",
+                                        domain="combat",
+                                    ))
+                                    _actions.append(HeuristicAction(
+                                        kind="command", command="set attackAuto_inLockOnly 0",
+                                        confidence=0.90,
+                                        reason="Cold start: allow running anywhere while crossing a passive field",
+                                        domain="combat",
+                                    ))
                                     if _hp_critical and not _died_recent:
                                         _actions.append(HeuristicAction(
                                             kind="command", command="use Red Potion",
@@ -1984,9 +1967,11 @@ class HeuristicService:
                                     _exit_cooldown = 25.0 if _is_isolated_intro else (6.0 if _force_exit else 20.0)
                                     if _esc_now - _esc_last >= _exit_cooldown:
                                         self._last_island_escape[_bot_id] = _esc_now
-                                        # Potions are auto-used via the profile's
-                                        # useSelf_item Red Potion (heal on low HP) so
-                                        # the bot survives the exit run.
+                                        # The island Porings are PASSIVE (live server:
+                                        # db/re/mob_db.yml G_PORING Modes = FixedItemDrop only,
+                                        # no aggressive/chase/angry). A bot that never attacks
+                                        # them is never provoked, so it runs freely to the
+                                        # (49,57) escape warp — no buffs needed. Escape.
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="move 49 57",
