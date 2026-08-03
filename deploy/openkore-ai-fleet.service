@@ -4,18 +4,17 @@ After=network.target
 Wants=rathena-login.service rathena-char.service rathena-map.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 User=lot399
 Group=lot399
 WorkingDirectory=/home/lot399/openkore-ai-v3
-# Start the sidecar + all bots. KillMode=process keeps the nohup'd children
-# (sidecar + bots) alive when this oneshot script exits, so the fleet persists
-# across sessions instead of being reaped with the unit's cgroup.
-ExecStart=/bin/bash -c 'bash /home/lot399/openkore-ai-v3/start.sh all > /home/lot399/openkore-ai-v3/logs/fleet-boot.log 2>&1'
-KillMode=process
+# Run a fleet supervisor that launches the sidecar + all bots with setsid so
+# they leave this unit's cgroup and survive session/systemd reaping. Type=simple
+# keeps the unit active while the supervisor sleeps, so it is never "exited".
+ExecStart=/home/lot399/openkore-ai-v3/deploy/fleet_supervisor.sh
 Restart=on-failure
 RestartSec=10
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
