@@ -2687,17 +2687,36 @@ class HeuristicService:
                         # academy block); do NOT advance the cold-start step here — the
                         # academy kit (knife+potions) will move the flow forward naturally.
                     else:
-                        # In Prontera/other town — walk to prt_fild05 via map-name move (AI handles portal routing)
-                        actions.append(HeuristicAction(
-                            kind="command", command="set lockMap prt_fild05",
-                            confidence=0.99, domain="economy",
-                            reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
-                        ))
-                        actions.append(HeuristicAction(
-                            kind="command", command="move prt_fild05",
-                            confidence=0.99, domain="economy",
-                            reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
-                        ))
+                        # In Prontera/other town. Prefer the academy-farm lockMap if the
+                        # level-1-5 academy block already resolved one (prt_fild08 or the
+                        # current field) — otherwise two competing cold-start blocks
+                        # oscillate lockMap between prt_fild05 and prt_fild08 every cycle,
+                        # leaving the bot stuck in town calculating routes and never
+                        # farming (verified live). Only fall back to the legacy prt_fild05
+                        # step-1 target when the academy block did NOT pick a hunt field.
+                        _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", "") or "").lower()
+                        if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"set lockMap {_cs_authority_hunt}",
+                                confidence=0.99, domain="economy",
+                                reason=f"Cold start step 1 - lockMap to academy hunt {_cs_authority_hunt}",
+                            ))
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"move {_cs_authority_hunt}",
+                                confidence=0.99, domain="economy",
+                                reason=f"Cold start step 1 - walk to academy hunt {_cs_authority_hunt}",
+                            ))
+                        else:
+                            actions.append(HeuristicAction(
+                                kind="command", command="set lockMap prt_fild05",
+                                confidence=0.99, domain="economy",
+                                reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
+                            ))
+                            actions.append(HeuristicAction(
+                                kind="command", command="move prt_fild05",
+                                confidence=0.99, domain="economy",
+                                reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
+                            ))
                 elif _cs_in_hunting:
                     # On prt_fild05 — enable AI and attack for farming
                     actions.append(HeuristicAction(
