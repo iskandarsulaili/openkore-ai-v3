@@ -1933,21 +1933,21 @@ class HeuristicService:
                                             kind="command",
                                             command="move 49 57",
                                             confidence=0.95,
-                                            reason="Adaptive: force the field exit (sailor warp)",
+                                            reason="Cold start: escape the Secluded Island (sailor warp 49 57) — forced reflex exit",
                                             domain="progression",
                                         ))
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="talknpc 49 57",
                                             confidence=0.90,
-                                            reason="Adaptive: open exit dialog (bridge auto-warps)",
+                                            reason="Cold start: open island exit dialog (bridge auto-warps)",
                                             domain="progression",
                                         ))
                                         _actions.append(HeuristicAction(
                                             kind="command",
                                             command="talk resp 1",
                                             confidence=0.80,
-                                            reason="Adaptive: if a select appears, pick the leave option",
+                                            reason="Cold start: if a select appears, pick the leave-island option",
                                             domain="progression",
                                         ))
                                     else:
