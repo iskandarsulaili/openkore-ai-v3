@@ -1896,18 +1896,26 @@ class HeuristicService:
                                             reason="Island: clear unreachable farm lockMap so the bot escapes via the (49,57) sailor",
                                             domain="progression",
                                         ))
+                                    # Commit to the escape RUN, not combat. attackAuto 2
+                                    # (fight-if-attacked) is what strands the bot: the 40
+                                    # aggressive island Porings hit the level-1 novice, every
+                                    # counter-attack cancels the in-progress `move 49 57`
+                                    # route, so it never reaches the warp. For the escape we
+                                    # must RUN: attackAuto 0 (+ not-lock-only) so the bot
+                                    # prioritizes reaching (49,57); potions auto-use keep it
+                                    # alive through the few Poring hits it takes.
                                     _actions.append(HeuristicAction(
                                         kind="command",
-                                        command="set attackAuto 2",
-                                        confidence=0.95,
-                                        reason="Adaptive: fight if profitable while working a field exit",
+                                        command="set attackAuto 0",
+                                        confidence=0.98,
+                                        reason="Cold start: island escape RUN — attackAuto 0 so Porings cannot cancel the walk to (49,57)",
                                         domain="combat",
                                     ))
                                     _actions.append(HeuristicAction(
                                         kind="command",
                                         command="set attackAuto_inLockOnly 0",
                                         confidence=0.90,
-                                        reason="Adaptive: allow fighting anywhere while abandoning a field",
+                                        reason="Cold start: allow the escape run anywhere (ignore combat)", 
                                         domain="combat",
                                     ))
                                     # Danger flag for a disconnected field with no

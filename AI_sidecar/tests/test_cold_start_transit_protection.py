@@ -85,8 +85,11 @@ def test_level1_on_secluded_island_sails_to_izlude() -> None:
     #   select("Do not go to Izlude yet", "Sail to Izlude!")   <- Sail = option 2.
     assert "talk resp 2" in cmds, f"must select 'Sail to Izlude!' (option 2): {cmds}"
     assert not any("talknpc" in c for c in cmds), f"must NOT talknpc the warp tile: {cmds}"
-    assert "set attackAuto 2" in cmds, f"must fight island Porings (attackAuto 2): {cmds}"
-    assert "set attackAuto 0" not in cmds, f"attackAuto 0 leaves the bot defenseless (dies on island): {cmds}"
+    # The escape is a RUN: attackAuto 0. (Live proof: attackAuto 2 caused the 40
+    # aggressive island Porings to cancel every `move 49 57` counter-attack, so the
+    # bot never reached the warp. attackAuto 0 lets it run to (49,57).)
+    assert "set attackAuto 0" in cmds, f"escape must run (attackAuto 0): {cmds}"
+    assert "set attackAuto 2" not in cmds, f"attackAuto 2 strands the bot fighting Porings: {cmds}"
     # Must NOT force prt_fild08 lockMap OR move prontera while stranded (both
     # cannot route from int_land and would leave the bot stuck at spawn).
     assert not any("prt_fild08" in c for c in cmds), f"no lockMap on island: {cmds}"
