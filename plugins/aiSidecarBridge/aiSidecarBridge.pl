@@ -5291,6 +5291,33 @@ sub _rewrite_runtime_command {
 			$_committed_commands{$_key} = $_now_ms;
 			debug "[move_rewrite] Secluded Island escape move 49 57 (deduped, cooldown=${COMMITTED_ACTION_COOLDOWN_MS}ms)\n", 'aiSidecarBridge', 2;
 		}
+		# ── ISLAND PORTAL STEP-ON ──
+		# The (49,57) #intro_to_izlude is a WARPNPC/portal (int_landX -> izlude).
+		# Once the MapRoute fix (3a2db163d) lets the bot walk to it, OpenKore's
+		# portal-avoidance keeps it ADJACENT ("Avoiding out of sight actor Portal")
+		# instead of stepping ONTO the tile, so the OnTouch warp never fires. When
+		# the bot is on an island and close to the warp tile, deliberately step onto
+		# the detected portal via `move <portal#>` (cmdMove's portal branch routes the
+		# bot ONTO the portal to warp through).
+		if ($_cur_map =~ /^int_land/ && $_target =~ /^49$/) {
+			my $_px = ($char && $char->{pos}{x}) ? $char->{pos}{x} : 0;
+			my $_py = ($char && $char->{pos}{y}) ? $char->{pos}{y} : 0;
+			# find a portal at/near (49,57)
+			my $_pidx;
+			for my $_pi (0..$#main::portalsID) {
+				next unless $main::portalsID[$_pi];
+				my $_p = $main::portals{$main::portalsID[$_pi]};
+				next unless $_p;
+				if ($_p->{pos}{x} == 49 && $_p->{pos}{y} == 57) {
+					$_pidx = $_pi;
+					last;
+				}
+			}
+			if (defined $_pidx && abs($_px-49) <= 4 && abs($_py-57) <= 4) {
+				debug "[island_portal] bot at ($_px,$_py) near warp portal idx=$_pidx -> stepping ONTO it to trigger OnTouch\n", 'aiSidecarBridge', 1;
+				return ("move $_pidx", 'island_portal_step');
+			}
+		}
 		# Direct portal coordinate - always pass through
 		if ($_target eq '22 203') {
 			debug "[move_rewrite] portal coordinate 22 203 - passing through\n", 'aiSidecarBridge', 2;
