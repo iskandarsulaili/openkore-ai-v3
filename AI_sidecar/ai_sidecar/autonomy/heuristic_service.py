@@ -1984,9 +1984,17 @@ class HeuristicService:
                                 # there's nothing to fight there; the island bailout
                                 # above moves the bot off it first.
                                 if not _cur_map.startswith("int_land"):
-                                    _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
-                                    _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
-                                    _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
+                                    # Do NOT arm the academy-farm lockMap while the bot is
+                                    # still inside an Academy room (iz_int*/iz_ac01) — the
+                                    # bot is still registering for its free starter kit and
+                                    # a hunt lockMap there only fights the registration
+                                    # walk (walks to the iz_ac01 hall / gate, never arrives).
+                                    # Defer until the bot has actually reached a playable
+                                    # field out of the academy rooms.
+                                    if not _cur_map.startswith(("iz_int", "iz_ac")):
+                                        _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild08", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl})", domain="progression"))
+                                        _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
+                                        _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
                                 # ── FIELD-TRANSIT PROTECTION (level 1-5) ──
                                 # A level-1 Novice cannot survive the tougher NON-
                                 # academy fields (prt_fild05 etc.) en route to the
