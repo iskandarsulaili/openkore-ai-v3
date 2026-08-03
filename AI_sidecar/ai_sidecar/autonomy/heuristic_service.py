@@ -2710,12 +2710,15 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start step 1 - enable attack for farming",
                     ))
-                    # Monsters to ignore while farming Porings (too tough or 0 value)
-                    for _cs_ignore in ["Thief Bug Egg", "Pupa", "Thief Bug", "Lunatic", "Fabre", "Condor"]:
+                    # Monsters to ignore while farming (too tough or 0 value) — only the
+                    # genuinely dangerous/useless ones. Lunatic/Fabre/Condor are farm-able
+                    # EXP targets (Lunatic=6, Fabre=3) and must NOT be ignored, or the bot
+                    # refuses to attack them and gets 0 kills / 0 EXP.
+                    for _cs_ignore in ["Thief Bug Egg", "Pupa", "Thief Bug"]:
                         actions.append(HeuristicAction(
                             kind="command", command=f"mon_control {_cs_ignore}	-1 0 0",
                             confidence=0.95, domain="economy",
-                            reason=f"Cold start step 1 - ignore {_cs_ignore} while farming Porings",
+                            reason=f"Cold start step 1 - ignore {_cs_ignore} while farming",
                         ))
         if _cold_start_step == 2:
             # Step 2: Buy Knife (item 1201) if no weapon and zeny >= 50
