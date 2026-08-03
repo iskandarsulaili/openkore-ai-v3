@@ -18,7 +18,7 @@
 | B2 | supervisor sidecar-down gap (60s tick) | ✅ done | `fleet_supervisor.sh` self-heal tick 60s→15s to shrink the sidecar-down window; bash -n OK, service restarted |
 | B3 | bot_id_canonicalized noise / actions latency throttle (deep-incomplete?) | ✅ done | Investigated at source: BOTH are by-design diagnostics, not incomplete impls. `actions_next_latency_budget_exceeded` logs poll latency but does NOT block real actions (delivery proceeds when first is not None). `bot_id_canonicalized` is correct id reconciliation on register (stable canonical id, no fragmentation). Verified non-issues. |
 | B4 | ReinforcementLearner select_action not driving decisions | ✅ done | Added gated `behavior_override(state, min_experiences)` to the learner (returns action only when >=100 exp AND greedy, else None) + wired it into pdca_loop to enqueue a mapped command (`farm`→attackAuto 3, `rest`→sit, etc.) as a strategic suggestion. No-op until trained (fresh learner = 1 exp → None). Verified: compile OK, 24 pdca/reinforcement/subconscious tests + 11 cold-start/save-point pass. |
-| B5 | (deep) any dormant/incomplete module reachable from the live path | ⬜ pending | — |
+| B5 | (deep) dormant/incomplete module scan | ✅ done | Scanned all NotImplementedError (13) + bare `pass` (366) + TODO/FIXME sites. All are IDIOMATIC: MemoryProvider ABC has 3 concrete impls (InMemory/SQLite/Open); `pass` are intentional no-ops (except-handlers, empty guarded branches, e.g. server_adaptation transcendent-class, progression_driver farm-more). No genuine incomplete implementation on the live path. Full suite: **362 passed / 0 failed**. |
 
 ## Completed fixes (this session, before this tracker)
 
