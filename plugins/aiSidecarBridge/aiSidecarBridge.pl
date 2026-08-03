@@ -85,6 +85,40 @@ sub _profile {
 	return $_behavior_profile{$bot_id};
 }
 
+# ── mon_control persistence (dedup) ──
+# Writes a `mon_control <entry>` line to every bot profile's mon_control.txt (and the
+# shared control/mon_control.txt) ONLY if the exact line isn't already present. Without
+# this, the sidecar re-emitting `mon_control <name> -1 0 0` every map/poll appended the
+# SAME line hundreds of times, ballooning the file. OpenKore uses last-match, so the
+# duplicates were harmless functionally but were unbounded config churn.
+sub _append_mon_control_dedup {
+	my ($entry) = @_;
+	$entry = '' if !defined $entry;
+	$entry =~ s/^\s+|\s+$//g;
+	return if $entry eq '';
+	my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
+	push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
+	for my $_mc_file (@_mc_files) {
+		my $_already = 0;
+		if (open my $_rfh, '<', $_mc_file) {
+			while (my $_rl = <$_rfh>) {
+				$_rl =~ s/[\r\n]+//g;
+				$_rl =~ s/^\s+|\s+$//g;
+				if ($_rl eq $entry) { $_already = 1; last; }
+			}
+			close $_rfh;
+		}
+		next if $_already;   # already present — skip (dedup)
+		if (open my $_wf, '>>', $_mc_file) {
+			print $_wf "$entry\n";
+			close $_wf;
+			debug "[mon_control] appended (dedup) '$entry' to $_mc_file\n", 'aiSidecarBridge', 1;
+		} else {
+			warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
+		}
+	}
+}
+
 # Human-like command delay with per-bot profile
 sub _human_cmd_delay_ms {
 	my $p = _profile();
@@ -1502,17 +1536,7 @@ sub on_command_intercept {
 	# Handle mon_control command - write to mon_control.txt and reload
 	if ($full_cmd =~ /^mon_control\s+(.+)$/i) {
 	    my $_mc_entry = $1;
-	    my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
-	    push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
-	    for my $_mc_file (@_mc_files) {
-	        if (open my $_mc_fh, '>>', $_mc_file) {
-	            print $_mc_fh "$_mc_entry\n";
-	            close $_mc_fh;
-	            debug "[command_intercept] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
-	        } else {
-	            warning "[command_intercept] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
-	        }
-	    }
+	    _append_mon_control_dedup($_mc_entry);
 	    eval { Commands::run("reload mon_control"); 1; };
 	    $args->{switch} = '';
 	    $args->{args} = '';
@@ -5579,17 +5603,7 @@ sub _rewrite_runtime_command {
 		# Writes to ALL bot profiles so the setting takes effect for all bots
 		if ($normalized =~ /^mon_control\s+(.+)$/) {
 			my $_mc_entry = $1;
-			my @_mc_files = glob(Cwd::cwd() . '/.bot_profiles/*/control/mon_control.txt');
-			push @_mc_files, Cwd::cwd() . '/control/mon_control.txt';
-			for my $_mc_file (@_mc_files) {
-				if (open my $_mc_fh, '>>', $_mc_file) {
-					print $_mc_fh "$_mc_entry\n";
-					close $_mc_fh;
-					debug "[mon_control] wrote '$_mc_entry' to $_mc_file\n", 'aiSidecarBridge', 1;
-				} else {
-					warning "[mon_control] cannot write to $_mc_file: $!\n", 'aiSidecarBridge', 1;
-				}
-			}
+			_append_mon_control_dedup($_mc_entry);
 			# Force reload of mon_control via internal parser (not Commands::run which is unreliable)
 		eval {
 		    require FileParsers;
