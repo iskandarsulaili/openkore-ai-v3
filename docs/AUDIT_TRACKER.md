@@ -22,7 +22,7 @@
 | C1 | Academy registration didn't grant the kit (bots had only basic Knife 1201, no potions → died on farm → 0 EXP) | ✅ done | Fixed registration dialog + `_has_knife` gate. **Verified: bot4 char has Novice_Knife 1243 + 300 Novice_Potions 569; bot10 gained REAL 150 EXP (killed a Poring, earned 'Exploring Poring's life' achievement) — DB base_exp=150.** `ea323b4da` |
 | C2 | Registered bot kept re-talking (stale inventory signal) instead of leaving academy | ✅ done | base_exp>=100 = registered signal; bot stops re-talking, leaves to farm. `8e9b79fd9` |
 | C3 | Wire LLM/crewAI to make gear/consumable decisions adaptively (RULE.md hard rule) | ✅ done | Added async `_llm_gear_advisory` to pdca_loop (every 30 cycles): gathers live map/HP/deaths/kills/potions/weapon, asks LLM (`runtime.llm_manager.complete_json`) for the best sustain action + command, enqueues it. Silent no-op if LLM down. RULE.md `b7f713f8d`, code `17b41ce7b`. 362/0 tests. |
-| C4 | Verify sustained kills (bot10 killed once; needs repeated kills to level) | 🔶 in progress | First kill+EXP proven (150 EXP); sustain is the remaining gap |
+| C4 | Verify sustained kills (bot10 killed once; needs repeated kills to level) | 🔶 in progress | bot10 EXP grew 150→300 (repeated kills); sustain improving. LLM conscious tier now LIVE (gear advisory reasoning). Remaining: LLM directive→concrete command mapping. |
 
 ## Completed fixes (this session, before this tracker)
 
