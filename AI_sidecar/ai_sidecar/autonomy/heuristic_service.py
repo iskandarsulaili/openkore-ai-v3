@@ -1625,16 +1625,22 @@ class HeuristicService:
                     _art = __import__("time").time()
                     if _art - self._last_academy_room_move.get(_abid, 0.0) >= 10.0:
                         self._last_academy_room_move[_abid] = _art
+                        # Force deterministic routing (not wandering randomWalk) so the bot
+                        # walks the direct path to the exit instead of looping the pathfinder.
+                        _guard_norw = HeuristicAction(
+                            kind="command", command="set route_randomWalk 0",
+                            confidence=0.99, domain="hunting",
+                            reason="Academy room (iz_ac01_a): deterministic route to exit, not randomWalk",
+                        )
                         _guard = HeuristicAction(
                             kind="command", command="move 100 24",
                             confidence=0.99, domain="hunting",
                             reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
                         )
-                        if not assessment.actions:
-                            assessment.actions = [_guard]
-                        else:
-                            # Prepend the exit move so it takes priority over any stand/hunt.
-                            assessment.actions.insert(0, _guard)
+                        # Prepend BOTH so the exit walk is unambiguous and deterministic.
+                        # Order: first disable randomWalk, THEN walk to the exit.
+                        assessment.actions.insert(0, _guard)
+                        assessment.actions.insert(0, _guard_norw)
             except Exception:
                 pass
             # ── SUPPLEMENTARY DOMAINS: only run when in-game (not during login) ──
