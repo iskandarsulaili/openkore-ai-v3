@@ -31,6 +31,8 @@
 | E2 | Renewal drop-rate formula not modeled (hardcoded constants ignored server item_rate_*) | ✅ done | profitability.py loads server drops.conf item_rate_* (server-agnostic) + server_adjusted_drop(). 9 profit/economy/drop tests pass. `b8e26a387` |
 | E3 | Pet capture missing (bot managed pets but couldn't acquire them) | ✅ done | pets.py loads server pet_db.yml capture data (107 pets) + get_capture_advice(). New test_pet_capture.py (3 tests). `bef0731af` |
 | F1 | Achievement DB incomplete (server 361 achievements, bot had 2 empty entries) | ✅ done | Synced server achievement_db.yml + knowledge.json now has 361 structured achievements (6380 pts). New achievements.py module + ingest_achievements(). New test_achievements.py (4 tests). `9ef66e7d0` |
+| G1 | Pass-5 audit: obscure mechanics (MVP boss skills, castle treasure, elemental spirits, mercenary types, homunculus evo, instance dungeons, card slots, SC_, damage types, skill levels, boss race) | ✅ no gaps | All covered by dedicated modules (mvp_mechanics, mercenary.py, homunculus.py, instances.py, gear_progression, skill_purpose, combat_intel, target_engine). Verified complete. |
+| G2 | Verify mechanics knowledge DRIVES live behavior (not dead knowledge) | ✅ verified | (1) Renewal formulas: app.py `set_server_mode('renewal')` at startup. (2) 3rd-job skills: `game_knowledge.get_skill_descriptions()` now returns 122 (incl. RK_HUNDREDSPEAR) → consumed by pro_ro_player_agent. (3) Gear awareness: `get_gear_scorer()` in combat_tactics_integration. 53 pro_ro/combat/tactics/gear/skill tests pass. |
 
 ## Completed fixes (this session, before this tracker)
 
