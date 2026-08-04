@@ -4912,6 +4912,33 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason="Enable party loot sharing",
                 ))
+                # ── POTION BUY: point the buy NPC at the TOWN with a shop (server-specific, from
+                # the DB-backed server_solutions store) so the bot actually buys potions — a buy
+                # NPC on a field (no merchant) silently never fires, leaving the bot to run dry
+                # and flee. The safe_town is learned/seeded per server (RULE.md: server-specific
+                # solutions live in DB/memory, not hardcoded).
+                try:
+                    # Read the server's learned safe_town from the DB-backed store (singleton
+                    # bound to the live DB at create_runtime). Server-specific: a different
+                    # server's shop is elsewhere.
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _sstore = get_server_solutions_store()
+                    _safe_town_buy = ""
+                    try:
+                        _safe_town_buy = str(_sstore.get("safe_town", "") or "")
+                    except Exception:
+                        _safe_town_buy = ""
+                    if not _safe_town_buy:
+                        _safe_town_buy = "prontera"
+                    # The buy NPC is the town Tool Dealer (prt_in 126 75 is Prontera's shop area).
+                    _buy_npc_coords = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set buyAuto_npc {_buy_npc_coords}",
+                        confidence=0.99, domain="economy",
+                        reason=f"Point potion buy at the town shop ({_safe_town_buy})",
+                    ))
+                except Exception:
+                    pass
                 # HP MANAGEMENT: Sit when low HP to prevent death (hunting map only)
                 # Ranged classes (Archer/Mage) get lower threshold (30%) since they're at range
                 _hp = signals.get("hp_ratio", 1.0) or 1.0
