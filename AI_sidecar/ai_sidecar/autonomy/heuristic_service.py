@@ -2167,12 +2167,14 @@ class HeuristicService:
                                             # ("What's on the 1st floor" etc), so first send
                                             # "End Conversation" (cancel) to close ANY open
                                             # dialog, then re-talk and select "Register" by
-                                            # TEXT (regex) — robust to menu ordering. Then
-                                            # advance through the registration mes/next
+                                            # MENU INDEX (r0 = the first/primary option),
+                                            # which OpenKore accepts (the old r/text/ regex
+                                            # form caused "Failed to add NPC talk sequence").
+                                            # Then advance through the registration mes/next
                                             # screens to the getitem (kit) and close.
-                                            command="talknpc 100 39 c r/Register for the Academy/ n n n n",
+                                            command="talknpc 100 39 c r0 n n n n",
                                             confidence=0.95,
-                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register by text)",
+                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register menu option 0)",
                                             domain="progression",
                                         ))
                                         else:
