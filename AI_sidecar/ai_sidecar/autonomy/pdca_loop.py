@@ -2578,6 +2578,17 @@ class PDCALoop:
         """Execute one PDCA cycle for the given horizon."""
         # Resolve current bot_id for cost gate
         _cycle_bot_id = self._resolve_cost_gate_bot_id()
+
+        # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, not hardcoded) ──
+        # Every so often, consult the LLM about the bot's gear/sustain state so the
+        # conscious tier can adapt (acquire potions/gear, change farm, retreat) based
+        # on live observation — the source of gear decisions is the LLM/agents, not a
+        # hardcoded item rule. Silent no-op if the LLM is unavailable.
+        if self._cycle_count % 30 == 0 and _cycle_bot_id:
+            try:
+                await self._llm_gear_advisory(_cycle_bot_id)
+            except Exception:
+                pass
         
         # ── Ensure all sub-services are initialized before any path ──
         if self._runtime is not None:
@@ -8645,6 +8656,76 @@ class PDCALoop:
                 _loop.close()
         except Exception:
             return None
+
+    # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, NOT hardcoded) ──
+    # The source of gear/sustain decisions is the LLM (conscious tier), not a hardcoded
+    # item rule. Given the bot's live state, the LLM reasons what the bot should do to
+    # survive and farm (acquire potions/gear, restock, retreat, change map) and we
+    # enqueue its directive. Falls back silently if the LLM is unavailable.
+    async def _llm_gear_advisory(self, bot_id: str) -> None:
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        # Gather the bot's live sustain/gear state from the world snapshot.
+        _map = ""
+        _hp_pct = -1.0
+        _deaths = 0
+        _has_potions = False
+        _has_weapon = False
+        _kills = 0
+        try:
+            _snap = getattr(_rt, "_last_snapshot", None) or {}
+            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+            if _snap is not None:
+                if isinstance(_snap, dict):
+                    _map = str(_snap.get("map", "") or "")
+                    _hp_pct = float(_snap.get("hp_ratio", -1.0) or -1.0)
+                    _deaths = int(_snap.get("death_count", 0) or 0)
+                    _kills = int(_snap.get("kills", 0) or 0)
+                    _inv = _snap.get("inventory_items") or []
+                    for _it in _inv:
+                        _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
+                        _i = str(_it.get("id", "")) if isinstance(_it, dict) else ""
+                        if "potion" in _n or _i == "569":
+                            _has_potions = True
+                        if "knife" in _n or "sword" in _n or "weapon" in _n:
+                            _has_weapon = True
+        except Exception:
+            pass
+        _prompt = (
+            f"Ragnarok bot {bot_id} is on map {_map}, HP {_hp_pct*100:.0f}%, "
+            f"deaths={_deaths}, kills={_kills}, has_potions={_has_potions}, "
+            f"has_weapon={_has_weapon}. Given this live state, decide the single best "
+            f"action to sustain farming and gain EXP. Respond as JSON with fields "
+            f"{{'action': <one of 'acquire_potions'|'restock'|'retreat'|'change_farm'|'keep_farming'|'equip'>, "
+            f"'command': <an OpenKore command or empty string>, 'reason': <short reason>}}. "
+            f"Do not reference specific server item IDs unless observed. Be adaptive."
+        )
+        try:
+            _res = await _llm.complete_json(_prompt, system_prompt="You are a Pro Ragnarok player AI deciding gear/sustain actions from live state.", temperature=0.2)
+            _action = str(_res.get("action", "") or "")
+            _cmd = str(_res.get("command", "") or "")
+            _reason = str(_res.get("reason", "") or "")
+            logger.info("llm_gear_advisory bot=%s action=%s cmd=%r reason=%s", bot_id, _action, _cmd, _reason)
+            if _cmd and hasattr(_rt, "action_queue"):
+                from datetime import UTC, datetime as _dt, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                _rt.action_queue.enqueue(bot_id, _AP(
+                    action_id=f"llm-gear-{int(_dt.now(UTC).timestamp())}",
+                    kind="command",
+                    command=_cmd,
+                    conflict_key="",
+                    priority_tier=_APT.strategic,
+                    source="conscious_llm_gear",
+                    created_at=_dt.now(UTC),
+                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                    idempotency_key=f"llm-gear-{_action}",
+                ))
+        except Exception as _llm_ge:
+            logger.debug("llm_gear_advisory_skipped: %s", _llm_ge)
 
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:
