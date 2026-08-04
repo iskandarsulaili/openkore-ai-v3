@@ -298,6 +298,33 @@ class GearScorer:
             rec_parts.append(f"+{contrib.matk} MATK")
         recommendation = "; ".join(rec_parts) if rec_parts else "No breakpoint effect"
 
+        # Renewal-gear awareness: on a Renewal server, weapons/armor can carry enchant
+        # grades (grade potential raises the item's value). Add a small, bounded bonus
+        # so gear scoring accounts for the server's enchant-grade system when present.
+        renewal_bonus = 0.0
+        renewal_note = ""
+        try:
+            from ai_sidecar.combat.renewal_gear import get_renewal_gear_knowledge as _rkg
+            _kg = _rkg()
+            _type = "Weapon" if "weapon" in str(item.slot_type).lower() else "Armor" if "armor" in str(item.slot_type).lower() else ""
+            if _type and _kg.enchantgrade.has_grade_system():
+                # Assume level 5 weapons / level 2 armor as a representative baseline.
+                _lv = 5 if _type == "Weapon" else 2
+                _grades = _kg.enchantgrade.grades_for(_type, _lv)
+                # Grades beyond "None" indicate upgrade potential; reward the presence
+                # of a grade system on this gear type modestly (no item-grade field yet,
+                # so we don't try to rank a specific grade).
+                if _grades:
+                    renewal_bonus = min(3.0, 0.5 * max(0, len(_grades) - 1))
+                    if renewal_bonus > 0:
+                        renewal_note = f"Enchant-grade potential (+{renewal_bonus:.1f})"
+        except Exception:  # noqa: BLE001 — never let gear-awareness break scoring
+            renewal_bonus = 0.0
+
+        total = total + renewal_bonus
+        if renewal_note:
+            recommendation = (recommendation + "; " + renewal_note) if recommendation else renewal_note
+
         return ItemScore(
             item=item,
             total_score=round(total, 2),
