@@ -2045,6 +2045,13 @@ class HeuristicService:
                                         _has_knife = False
                                         _has_potions = False
                                         _reg_n = self._reg_attempts.get(_bot_id, 0)
+                                        # A reliable registration signal even when the live
+                                        # inventory snapshot lags: registration grants 100
+                                        # base EXP (academy.txt getexp 100,100). If the bot's
+                                        # base_exp >= 100 it has registered, so treat it as
+                                        # having the kit and stop re-talking.
+                                        if int(signals.get("base_exp", 0) or 0) >= 100:
+                                            _has_knife = True
                                         _inv_items = signals.get("inventory_items", []) or []
                                         for _ii in _inv_items:
                                             if isinstance(_ii, dict):
