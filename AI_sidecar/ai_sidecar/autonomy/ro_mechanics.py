@@ -590,9 +590,14 @@ PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
         ("Thief Bug Egg",      -1, 0, 0), ("Lunatic",            0, 0, 0),
     ],
     "prt_fild08": [
-        ("Familiar",           1, 0, 0), ("Rocker",             1, 0, 0),
-        ("Creamy",             1, 0, 0), ("Poporing",           1, 0, 0),
-        ("Poring",             1, 0, 0), ("Thief Bug",          -1, 0, 0), ("Pupa",               -1, 0, 0),
+        # Server's actual spawns (fields/prontera.txt): Poring, Lunatic, Fabre, Little Poring
+        # + Familiar/Rocker/Creamy/Poporing. All low-HP and safe at level 1-3 — attack them so
+        # a bot on prt_fild08 doesn't default-ignore the mobs it sees (the no-fight failure).
+        ("Poring",             1, 0, 0), ("Lunatic",           1, 0, 0),
+        ("Fabre",              1, 0, 0), ("Little Poring",     1, 0, 0),
+        ("Familiar",           1, 0, 0), ("Rocker",            1, 0, 0),
+        ("Creamy",             1, 0, 0), ("Poporing",          1, 0, 0),
+        ("Thief Bug",          -1, 0, 0), ("Pupa",             -1, 0, 0),
     ],
     # prt_fild08c = the ACADEMY FARM server (academy.txt spawns Poring 110 / Lunatic 100 /
     # Fabre 100). These are low-HP, farmable at level 1-3. Without this entry the bot on
@@ -603,6 +608,7 @@ PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
         ("Poring",             1, 0, 0), ("Lunatic",            1, 0, 0),
         ("Fabre",              1, 0, 0), ("Pupa",               1, 0, 0),
         ("Thief Bug",          1, 0, 0), ("Thief Bug Egg",      1, 0, 0),
+        ("Little Poring",      1, 0, 0),
     ],
     "pay_fild01": [
         ("Steel Chonchon",     1, 0, 0), ("Poporing",           1, 0, 0),
