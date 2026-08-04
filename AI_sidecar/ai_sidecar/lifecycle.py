@@ -571,6 +571,10 @@ class RuntimeState:
     goal_decomposer: "GoalDecomposer | None" = None
     npc_discovery: "NPCDiscoveryEngine | None" = None
     server_adaptation: "ServerAdaptationEngine | None" = None
+    # DB-backed server-specific solution knowledge (potion item, safe town, farm map) —
+    # see ServerSolutionsStore; persists to the `server_solutions` SQLite table. NEVER
+    # hardcoded in *.py (RULE.md): the LLM/executor reads per-server facts from here.
+    server_solutions_store: "Any | None" = None
     p2p_node: "P2PKnowledgeNode | None" = None
     p2p_manager: "P2PNetworkManager | None" = None
     swarm_reflex: "SwarmReflexSystem | None" = None
@@ -5567,12 +5571,12 @@ def create_runtime() -> RuntimeState:
         try:
             from ai_sidecar.server_adaptation import get_server_solutions_store
             _srv_store = get_server_solutions_store(db=db, server_key="default")
-            # Seed only the server-identity-independent slots an LLM/executor will read
-            # later; values are filled as the AI observes the live server (never a literal
-            # farm/item rule). This mirrors the "server_adaptation" persistence pattern.
-            self.server_solutions_store = _srv_store
+            # Stored to a module-scope local; the caller attaches it to the RuntimeState
+            # instance (RuntimeState is created after this DB block, then returned).
+            servers_solutions_store = _srv_store
         except Exception as _srv_err:
             logger.warning("server_solutions_store_init_failed: %s", _srv_err)
+            servers_solutions_store = None
         telemetry_store = TelemetryStore(
             max_per_bot=settings.telemetry_max_per_bot,
             _ingestor=DurableTelemetryIngestor(
@@ -5978,6 +5982,11 @@ def create_runtime() -> RuntimeState:
         logger.info("efficiency_tracker_initialized")
     except Exception as e:
         logger.warning("efficiency_tracker_init_failed: %s", e)
+
+    # Attach the DB-backed server-solutions knowledge store to the runtime (the executor +
+    # LLM read per-server facts from here instead of hardcoded *.py literals).
+    if "servers_solutions_store" in locals() and servers_solutions_store is not None:
+        runtime.server_solutions_store = servers_solutions_store
 
     control_executor.runtime = runtime
     runtime._restore_goal_state_cache(limit=max(64, settings.persistence_snapshot_history_per_bot))
