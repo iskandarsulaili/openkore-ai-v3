@@ -19,6 +19,16 @@ Do NOT remove it (it still carries reflex-tier cold-start logic and is the fallb
   `map_knowledge.py`, pathfinder) and decisions through `unified_consciousness` + the agents
   + LLM, not through literals like `move 49 57` / `move 125 257` / `talknpc 100 39`.
 
+**Hard rule — gear/consumable/equipment decisions are AGENT-DRIVEN, never hardcoded.**
+Whether a bot carries a weapon, potions, armor, or any equipment — and how it acquires,
+equips, restocks, or upgrades them — MUST be decided by the **LLM and/or the CrewAI agents**
+(conscious tier), not by hardcoded if/else rules or baked-in item IDs. The reflex tier may
+only *act* on an agent/conscious decision with instant timing; it must not be the source of
+the *what/when/why* of gear. Rationale: gear needs are server-agnostic and situation-
+dependent (a fresh server may hand out a different starter kit; a Pro player adapts gear to
+the map/opponent). The conscious tier reasons "I lack sustain to kill X → acquire Y" from
+live observation; the subconscious RL learns which gear decisions lead to kills/rewards.
+
 Every fix must be server-agnostic (works on any server via discovery + reasoning), never a
 per-server literal.
 
