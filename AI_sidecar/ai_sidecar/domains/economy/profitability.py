@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import random
+import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ai_sidecar.domains.economy.database import ItemValueDB
@@ -30,6 +33,61 @@ UNCOMMON_DROP_RATE = 0.20
 RARE_DROP_RATE = 0.05
 CARD_DROP_RATE = 0.0001
 MVP_CARD_DROP_RATE = 0.00001
+
+# Server-aware drop-rate multipliers (rAthena drops.conf `item_rate_*`, default 100).
+# The server may boost/cut drop rates; the farm-profit model should reflect the real
+# server config, not assume stock 100%. Loaded once from the server's battle config
+# (server-agnostic: works for any rAthena server's drops.conf). Renewal mode also
+# applies the renewal drop-formula shape via these rates.
+_SERVER_DROP_RATES: dict[str, float] = {}
+_SERVER_DROP_RATES_LOADED = False
+
+
+def load_server_drop_rates(drops_conf_path: str | None = None) -> dict[str, float]:
+    """Load item_rate_* multipliers from the server's drops.conf (server-agnostic).
+
+    Returns a dict like {"common": 100, "card": 100, ...} (percent multipliers).
+    Falls back to all-100 (stock) if the config is unavailable. Safe to call
+    repeatedly; caches after first successful load.
+    """
+    global _SERVER_DROP_RATES, _SERVER_DROP_RATES_LOADED
+    if _SERVER_DROP_RATES_LOADED:
+        return dict(_SERVER_DROP_RATES)
+    if drops_conf_path is None:
+        candidates = [
+            Path.home() / "rathena-AI-world" / "conf" / "battle" / "drops.conf",
+            Path.home() / "rathena" / "conf" / "battle" / "drops.conf",
+            Path.home() / "openkore-ai-v3" / "knowledge" / "rathena_db" / "conf" / "battle" / "drops.conf",
+        ]
+        drops_conf_path = str(next((p for p in candidates if p.is_file()), ""))
+    rates: dict[str, float] = {}
+    if drops_conf_path and os.path.isfile(drops_conf_path):
+        try:
+            for _line in open(drops_conf_path, errors="replace"):
+                _s = _line.split("//")[0].strip()
+                _m = re.match(r"^item_rate_(\w+):\s*([\d.]+)", _s)
+                if _m:
+                    rates[_m.group(1)] = float(_m.group(2))
+        except Exception as _exc:  # noqa: BLE001
+            logger.debug("load_server_drop_rates failed: %s", _exc)
+    # Default to stock 100 for any missing category.
+    for _cat in ("common", "heal", "use", "equip", "card", "mvp", "add"):
+        rates.setdefault(_cat, 100.0)
+    _SERVER_DROP_RATES = rates
+    _SERVER_DROP_RATES_LOADED = True
+    return dict(rates)
+
+
+def server_drop_multiplier(category: str = "common") -> float:
+    """Return the server's drop-rate multiplier (fraction of base, e.g. 1.0 = 100%)."""
+    rates = load_server_drop_rates()
+    return rates.get(category, 100.0) / 100.0
+
+
+def server_adjusted_drop(base_rate: float, category: str = "common") -> float:
+    """Apply the server's drop-rate multiplier to a base drop chance."""
+    return base_rate * server_drop_multiplier(category)
+
 
 # ── Monster drop tables ──
 _MONSTER_DROPS: dict[str, list[tuple[str, float, int]]] = {
