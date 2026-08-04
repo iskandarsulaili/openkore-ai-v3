@@ -1611,6 +1611,32 @@ class HeuristicService:
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         try:
             assessment = self._assess_impl(signals, bot_id_override)
+            # ── ACADEMY-ROOM EXIT GUARD (universal, sidecar decision) ──
+            # iz_ac01_a is the academy tutorial ROOM with no portal to any field map,
+            # so any farm-bound bot there spams "Cannot calculate a route". Regardless
+            # of the state-gated sub-branch, a bot whose current map is iz_ac01_a must
+            # walk to the room's EXIT warp (iz_ac01_a 100,24 -> izlude_a 127,253) first.
+            # Emit that move (throttled 10s) so the bot always escapes the room. This is
+            # a SIDECAR decision — the bridge only passes the command (RULE.md).
+            try:
+                _amap = str(signals.get("map", "") or "").lower().replace(".gat", "")
+                if _amap == "iz_ac01_a":
+                    _abid = bot_id_override or str(signals.get("bot_id", "default"))
+                    _art = __import__("time").time()
+                    if _art - self._last_academy_room_move.get(_abid, 0.0) >= 10.0:
+                        self._last_academy_room_move[_abid] = _art
+                        _guard = HeuristicAction(
+                            kind="command", command="move 100 24",
+                            confidence=0.99, domain="hunting",
+                            reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
+                        )
+                        if not assessment.actions:
+                            assessment.actions = [_guard]
+                        else:
+                            # Prepend the exit move so it takes priority over any stand/hunt.
+                            assessment.actions.insert(0, _guard)
+            except Exception:
+                pass
             # ── SUPPLEMENTARY DOMAINS: only run when in-game (not during login) ──
             # Bot is in-game only if map_known=True (from snapshot) or base_level > 1
             _bl = signals.get("base_level", 0) or 0
