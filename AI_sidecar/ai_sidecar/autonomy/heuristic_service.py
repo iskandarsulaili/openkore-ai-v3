@@ -3137,6 +3137,34 @@ class HeuristicService:
         _audit_map = signals.get("map", "") or ""
         _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
         _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+        # ── COLD-START POTION ECONOMY (O3, runs for ALL bots incl. level 1-2) ──
+        # A low-level bot that can't buy potions runs dry and flees/wanders to town. Point the
+        # buyAuto potion at the TOWN shop and enable sellAuto so loot funds the potions. The
+        # potion command + safe_town come from the DB-backed server_solutions store (server-
+        # specific per RULE.md), NOT a hardcoded literal.
+        try:
+            from ai_sidecar.server_adaptation import get_server_solutions_store
+            _aum = str(_audit_map or "").lower().replace(".gat", "")
+            if _aum not in ("iz_ac01_a", "iz_ac01"):  # must not override the academy-room exit
+                _sstore = get_server_solutions_store()
+                try:
+                    _potion_buy = str(_sstore.get_json("potion_solution", {}).get("buy_command") or "").strip()
+                    _safe_town_buy = str(_sstore.get("safe_town", "") or "").strip() or "prontera"
+                except Exception:
+                    _potion_buy, _safe_town_buy = "", ""
+                if not _potion_buy:
+                    _potion_buy = "buy 501 30"
+                if _potion_buy:
+                    self._set_config_once(actions, bot_id, "buyAuto_Red_Potion", _potion_buy, "economy",
+                        f"Cold-start potion sustain: {_potion_buy} (from server_solutions DB)")
+                # Point the buy/sell NPC at the town shop (server-specific, DB-backed).
+                _town_npc = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
+                self._set_config_once(actions, bot_id, "buyAuto_npc", _town_npc, "economy",
+                    f"Buy potions at {_safe_town_buy} town shop (from server_solutions DB)")
+                self._set_config_once(actions, bot_id, "sellAuto", "1", "economy",
+                    "Cold-start: auto-sell loot to fund potions")
+        except Exception:
+            pass
         if _audit_is_hunting:
             # ── PER-MAP MON_CONTROL (config audit) ──
             # Apply mon_control for hunting maps when bot is on a new map
