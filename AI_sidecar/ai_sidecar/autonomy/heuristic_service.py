@@ -3306,18 +3306,29 @@ class HeuristicService:
                 for item in _audit_items
             )
             if not _audit_has_potions:
-                # Only queue move prontera — bridge auto-stand handles sitting bots
-                # Don't queue 'stand' or 'ai auto' as separate actions (bridge does both)
-                # Rate limit: 30s between sends to let route to Prontera complete
-                _audit_now = __import__("time").time()
-                _audit_last_return = self._last_return_to_town.get(bot_id, 0)
-                if _audit_now - _audit_last_return > 30:
-                    self._last_return_to_town[bot_id] = _audit_now
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
-                        confidence=0.99, domain="economy",
-                        reason="Zero potions on hunting map - return to town to buy potions",
-                    ))
+                # Only return to town if it is a REAL emergency — the bot is genuinely unable
+                # to continue (HP critical or bag full). A level 1-3 novice can farm the
+                # academy mobs (Poring/Lunatic/Fabre are low-HP and farmable bare-handed) and
+                # loot to buy potions on the spot; abandoning the farm for every potion gap is
+                # exactly the "no commitment" failure a Pro would never make. SO: leave the
+                # farm only when HP is critical (<30%) or overweight — not on potion drought.
+                _audit_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
+                _audit_weight = float(signals.get("weight_ratio", 0.0) or 0.0)
+                _audit_map_low = str(signals.get("map", "") or "").lower()
+                _audit_on_farm = any(x in _audit_map_low for x in ["prt_fild08", "prt_fild08c", "prt_fild05"])
+                _real_emergency = (_audit_hp < 0.30) or (_audit_weight > 0.70)
+                if _real_emergency and not _audit_on_farm:
+                    # Only emergency-return when NOT on a farm map (a farm bot should restock
+                    # in place / via buyAuto, not abandon the field unless truly critical).
+                    _audit_now = __import__("time").time()
+                    _audit_last_return = self._last_return_to_town.get(bot_id, 0)
+                    if _audit_now - _audit_last_return > 60:
+                        self._last_return_to_town[bot_id] = _audit_now
+                        actions.append(HeuristicAction(
+                            kind="command", command="move prontera",
+                            confidence=0.99, domain="economy",
+                            reason="Emergency: critical HP or bag full off-farm — return to town",
+                        ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
             _audit_rand = __import__("random").Random(_audit_seed)
