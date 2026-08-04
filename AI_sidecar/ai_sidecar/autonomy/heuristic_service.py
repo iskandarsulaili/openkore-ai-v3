@@ -1736,9 +1736,24 @@ class HeuristicService:
                                             reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
                                             domain="progression"))
                             if _cm and _target and _cm != _target and _target != "iz_ac01":
-                                _path = self._pathfinder.find_path(_cm, _target)
-                                if _path:
-                                    _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
+                                # ACADEMY-ROOM GATE (R3, server-agnostic): a bot inside the
+                                # academy room (iz_ac01_a) has NO portal to any field map —
+                                # routing to prt_fild05 from here is unroutable and just loops
+                                # "Cannot calculate a route". The exit guard's deterministic
+                                # 'move 100 24' handles leaving the room FIRST; only after the
+                                # bot reaches a routable map (izlude/izlude_a) should it
+                                # navigate to the hunt target.
+                                _cm_l2 = str(_cm or "").lower().replace(".gat", "")
+                                if _cm_l2 == "iz_ac01_a":
+                                    _actions.append(HeuristicAction(
+                                        kind="log", command=f"defer_hunt={_target}",
+                                        confidence=0.99, domain="routing",
+                                        reason=f"Academy room ({_cm}): defer hunting until bot exits the room (exit guard handles it)",
+                                    ))
+                                else:
+                                    _path = self._pathfinder.find_path(_cm, _target)
+                                    if _path:
+                                        _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
                     if self._lifecycle:
                         _phase = self._lifecycle.get_phase(_bot_id)
                         if _phase:
