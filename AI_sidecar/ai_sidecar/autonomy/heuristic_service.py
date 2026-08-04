@@ -996,6 +996,7 @@ class HeuristicService:
         self._last_progress: dict[str, dict] = {}
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
+        self._last_academy_room_move: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
         self._cold_start_step: dict[str, int] = {}  # default 0 = needs cold start
@@ -1886,6 +1887,24 @@ class HeuristicService:
                                 # (12 dmg/hit), so registration is the required first
                                 # step before prt_fild08 hunting.
                                 _cur_map = str(signals.get("map", "") or "").lower()
+                                # ── ACADEMY-ROOM EXIT GUARD (sidecar decision) ──
+                                # iz_ac01_a is the academy tutorial ROOM — it has no
+                                # portal to any field map, so `move <farm>` is unroutable
+                                # there. Any bot stuck in this room must first walk to the
+                                # room's EXIT warp (iz_ac01_a 100,24 -> izlude_a 127,253)
+                                # before it can reach the farm. Emit that move (at most
+                                # once per 10s) so a farm-bound bot always escapes the room
+                                # regardless of which sub-branch it is in. The bridge only
+                                # passes this command — the decision is made here (sidecar).
+                                if _cur_map == "iz_ac01_a":
+                                    _ac_room_t = __import__("time").time()
+                                    if _ac_room_t - self._last_academy_room_move.get(_bot_id, 0.0) >= 10.0:
+                                        self._last_academy_room_move[_bot_id] = _ac_room_t
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command="move 100 24",
+                                            confidence=0.99, domain="hunting",
+                                            reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
+                                        ))
                                 # ── SECLUDED ISLAND BAILOUT (rathena-ai-world intro) ──
                                 # New characters spawn on int_land (Secluded Island),
                                 # a disconnected intro map: char_athena.conf
