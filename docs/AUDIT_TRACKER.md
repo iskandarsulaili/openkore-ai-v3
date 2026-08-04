@@ -23,6 +23,10 @@
 | C2 | Registered bot kept re-talking (stale inventory signal) instead of leaving academy | ✅ done | base_exp>=100 = registered signal; bot stops re-talking, leaves to farm. `8e9b79fd9` |
 | C3 | Wire LLM/crewAI to make gear/consumable decisions adaptively (RULE.md hard rule) | ✅ done | Added async `_llm_gear_advisory` to pdca_loop (every 30 cycles): gathers live map/HP/deaths/kills/potions/weapon, asks LLM (`runtime.llm_manager.complete_json`) for the best sustain action + command, enqueues it. Silent no-op if LLM down. RULE.md `b7f713f8d`, code `17b41ce7b`. 362/0 tests. |
 | C4 | Verify sustained kills (bot10 killed once; needs repeated kills to level) | 🔶 in progress | bot10 EXP grew 150→300 (repeated kills); sustain improving. LLM conscious tier now LIVE (gear advisory reasoning). Remaining: LLM directive→concrete command mapping. |
+| D1 | Renewal combat formulas not wired (bot used pre-re formulas on a Renewal server) | ✅ done | app.py lifespan now auto-detects Renewal (via ro_mechanics._auto_detect_server_mode) + syncs BOTH damage_formulas.SERVER_MODE and ro_mechanics; env override AI_SERVER_MODE. Fixed str(Enum) bug. Verified: both sync to 'renewal'. `9265d1bf1` |
+| D2 | Elemental matrix loaded pre-re attr_fix.yml on a Renewal server | ✅ done | _load_elemental_tables now picks db/re/attr_fix.yml in renewal mode (Fire vs Water 50%→90%, Fire vs Poison 100%→150%). Verified: re table loads, differs from pre-re. `cdcdff5bd` |
+| D3 | Bot had only 26 classic job_classes; server has 165 incl. Renewal 3rd jobs | ✅ done | knowledge.json job_classes → 57 (added 31 Renewal 3rd/expanded jobs). _resolve_class handles all. 47 knowledge/combat tests pass. `c48152a8c` |
+| D4 | Renewal gear DBs (random options/enchant grade/item reform) — bot loads none | ⬜ pending | Server has randomopt_db (249), enchantgrade, item_reform. Bot lacks these gear systems. |
 
 ## Completed fixes (this session, before this tracker)
 
