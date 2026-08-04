@@ -2043,15 +2043,22 @@ class HeuristicService:
                                         # floor" submenu and loops forever. So gate the
                                         # registration on NOT yet having the knife.
                                         _has_knife = False
+                                        _has_potions = False
                                         _reg_n = self._reg_attempts.get(_bot_id, 0)
                                         _inv_items = signals.get("inventory_items", []) or []
                                         for _ii in _inv_items:
                                             if isinstance(_ii, dict):
                                                 _ii_id = str(_ii.get("id", ""))
                                                 _ii_name = str(_ii.get("name", ""))
-                                                if _ii_id == "1243" or "novice knife" in _ii_name.lower() or "knife" in _ii_name.lower():
+                                                # Only the academy Novice_Knife (1243) counts as
+                                                # "registered" — the basic Knife (1201) does NOT
+                                                # (a bot with just 1201 still needs the academy
+                                                # kit: Novice_Knife 1243 + 300 Novice_Potions 569,
+                                                # which are what let a level-1 actually farm).
+                                                if _ii_id == "1243" or "novice knife" in _ii_name.lower():
                                                     _has_knife = True
-                                                    break
+                                                if _ii_id == "569" or "novice potion" in _ii_name.lower() or "red potion" in _ii_name.lower():
+                                                    _has_potions = True
                                         if not _has_knife:
                                             # Also cap registration attempts: the snapshot
                                             # can be stale (bot4 had the knife + job_level 2
@@ -2078,7 +2085,7 @@ class HeuristicService:
                                             # TEXT (regex) — robust to menu ordering. Then
                                             # advance through the registration mes/next
                                             # screens to the getitem (kit) and close.
-                                            command="talknpc 100 39 c r/End Conversation/ c r/Register/ n n n n n",
+                                            command="talknpc 100 39 c r/Register for the Academy/ n n n n",
                                             confidence=0.95,
                                             reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register by text)",
                                             domain="progression",
