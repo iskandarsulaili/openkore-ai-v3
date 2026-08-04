@@ -26,7 +26,7 @@
 | D1 | Renewal combat formulas not wired (bot used pre-re formulas on a Renewal server) | ✅ done | app.py lifespan now auto-detects Renewal (via ro_mechanics._auto_detect_server_mode) + syncs BOTH damage_formulas.SERVER_MODE and ro_mechanics; env override AI_SERVER_MODE. Fixed str(Enum) bug. Verified: both sync to 'renewal'. `9265d1bf1` |
 | D2 | Elemental matrix loaded pre-re attr_fix.yml on a Renewal server | ✅ done | _load_elemental_tables now picks db/re/attr_fix.yml in renewal mode (Fire vs Water 50%→90%, Fire vs Poison 100%→150%). Verified: re table loads, differs from pre-re. `cdcdff5bd` |
 | D3 | Bot had only 26 classic job_classes; server has 165 incl. Renewal 3rd jobs | ✅ done | knowledge.json job_classes → 57 (added 31 Renewal 3rd/expanded jobs). _resolve_class handles all. 47 knowledge/combat tests pass. `c48152a8c` |
-| D4 | Renewal gear DBs (random options/enchant grade/item reform) — bot loads none | ⬜ pending | Server has randomopt_db (249), enchantgrade, item_reform. Bot lacks these gear systems. |
+| D4 | Renewal gear DBs (random options/enchant grade/item reform) — bot loads none | ✅ done | New renewal_gear.py loads ENCHANTGRADE/RANDOMOPT/ITEM_REFORM server-agnostically; GearScorer adds enchant-grade potential bonus to weapon/armor. Synced live enchantgrade + item_reform (131) into bundled knowledge. 18 gear/combat tests pass. `ef99fa05d` |
 
 ## Completed fixes (this session, before this tracker)
 
