@@ -9,6 +9,16 @@ SIDECAR_LOG="$SCRIPT_DIR/logs/sidecar.log"
 BOT_LOGS="$SCRIPT_DIR/logs"
 SIDECAR_PORT="${OPENKORE_AI_PORT:-18081}"
 
+# ── LLM gateway wiring (conscious tier) ──
+# Point an OpenAI-compatible provider at the local LLM gateway so the LLMManager has a
+# configured provider and the conscious tier (LLM gear/sustain advisory, agents) can
+# actually reason. The gateway serves deepseek-v4-flash over an OpenAI-compatible API.
+# Without these the LLMManager has no providers -> is_available()=False -> the conscious
+# tier silently no-ops (no LLM-driven decisions).
+export LLM_OPENAI_BASE_URL="${LLM_OPENAI_BASE_URL:-http://192.168.0.100:20128/v1}"
+export LLM_OPENAI_API_KEY="${LLM_OPENAI_API_KEY:-local}"
+export LLM_OPENAI_MODEL="${LLM_OPENAI_MODEL:-deepseek-v4-flash}"
+
 # --- Sidecar (fleet manager, keep-alive) ---
 if ! curl -sf "http://127.0.0.1:${SIDECAR_PORT}/health/live" > /dev/null 2>&1; then
     cd "$SIDECAR_DIR" || exit 1
