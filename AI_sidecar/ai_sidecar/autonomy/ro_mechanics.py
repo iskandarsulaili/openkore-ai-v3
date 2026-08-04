@@ -594,6 +594,16 @@ PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
         ("Creamy",             1, 0, 0), ("Poporing",           1, 0, 0),
         ("Poring",             1, 0, 0), ("Thief Bug",          -1, 0, 0), ("Pupa",               -1, 0, 0),
     ],
+    # prt_fild08c = the ACADEMY FARM server (academy.txt spawns Poring 110 / Lunatic 100 /
+    # Fabre 100). These are low-HP, farmable at level 1-3. Without this entry the bot on
+    # prt_fild08c gets NO mon_control and defaults to ignoring Lunatic/Poring/Fabre -> the
+    # endless 'target reselection' loop. All are attackable (1=attack). Drives the reflex
+    # actually engaging mobs on the live farm.
+    "prt_fild08c": [
+        ("Poring",             1, 0, 0), ("Lunatic",            1, 0, 0),
+        ("Fabre",              1, 0, 0), ("Pupa",               1, 0, 0),
+        ("Thief Bug",          1, 0, 0), ("Thief Bug Egg",      1, 0, 0),
+    ],
     "pay_fild01": [
         ("Steel Chonchon",     1, 0, 0), ("Poporing",           1, 0, 0),
         ("Familiar",           1, 0, 0), ("Wolf",               0, 0, 0), ("Thief Bug",          -1, 0, 0),
