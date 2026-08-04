@@ -30,6 +30,7 @@
 | E1 | Renewal 3rd-job combat skills not classified (recommend_rotation treated them as generic BURST) | ✅ done | Added 89 RENEWAL_3RD_JOB_SKILLS to skill_purpose.py (purpose/category/element/combo per class). Fixed lookup normalization (underscore keys now resolve). 20 skill/combat tests pass. `00474a8a3` |
 | E2 | Renewal drop-rate formula not modeled (hardcoded constants ignored server item_rate_*) | ✅ done | profitability.py loads server drops.conf item_rate_* (server-agnostic) + server_adjusted_drop(). 9 profit/economy/drop tests pass. `b8e26a387` |
 | E3 | Pet capture missing (bot managed pets but couldn't acquire them) | ✅ done | pets.py loads server pet_db.yml capture data (107 pets) + get_capture_advice(). New test_pet_capture.py (3 tests). `bef0731af` |
+| F1 | Achievement DB incomplete (server 361 achievements, bot had 2 empty entries) | ✅ done | Synced server achievement_db.yml + knowledge.json now has 361 structured achievements (6380 pts). New achievements.py module + ingest_achievements(). New test_achievements.py (4 tests). `9ef66e7d0` |
 
 ## Completed fixes (this session, before this tracker)
 
