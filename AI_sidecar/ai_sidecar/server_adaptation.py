@@ -536,6 +536,29 @@ class ServerSolutionsStore:
                 return default
         return default
 
+    def seed_from_server(self, *, potion_item: str = "", potion_id: str = "", potion_cost: int = 0,
+                         safe_town: str = "", farm_map: str = "") -> None:
+        """Populate the store from the server's OBSERVED/known facts (not decision literals).
+
+        Seeds server-specific solution facts (which potion to buy, the safe town, the
+        reachable farm) from what is known about THIS server — e.g. the server's own item
+        DB (Red Potion 501 etc.) and its academy layout. These are persisted to the
+        `server_solutions` DB so the executor reads the server's values, not constants
+        baked into decision branches. If a slot already has a learned value it is kept.
+        """
+        _now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with self._lock:
+            if potion_id:
+                _existing = self.get("potion_solution", None)
+                if _existing in (None, ""):
+                    _buy_cmd = f"buy {potion_id} 30"
+                    _pj = json.dumps({"buy_command": _buy_cmd, "potion_id": potion_id, "name": potion_item or "Potion", "cost": int(potion_cost or 0)})
+                    self.set("potion_solution", {"buy_command": _buy_cmd, "potion_id": potion_id}, origin="seeded", confidence=0.7, value_json=_pj)
+            if safe_town and self.get("safe_town", None) in (None, ""):
+                self.set("safe_town", safe_town, origin="seeded", confidence=0.7)
+            if farm_map and self.get("farm_map", None) in (None, ""):
+                self.set("farm_map", farm_map, origin="seeded", confidence=0.7)
+
 
 _def_store: ServerSolutionsStore | None = None
 _store_lock = RLock()
