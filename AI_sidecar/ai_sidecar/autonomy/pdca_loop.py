@@ -548,6 +548,16 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
         queued = 0
         for ha in assessment.actions:
+            # ── OBSERVE-ONLY GUARD (party doctrine / RULE.md) ──
+            # A HeuristicAction with kind="log" (or a party_* command that is observe-only)
+            # is an OBSERVATION, never an executable bot command. Dispatch it as a log only —
+            # emitting party_create/invite to the bot froze it in party-formation spam and
+            # starved the kill loop. Skip log intents here so they never reach the action queue.
+            _kind = str(getattr(ha, "kind", "") or "").lower()
+            _cmd = str(getattr(ha, "command", "") or "")
+            if _kind == "log" or "observe" in _kind or "party_invite_observe" in _cmd:
+                _log.debug("heuristic_action_observe_only skipped cmd=%s", _cmd)
+                continue
             import time as _t
             _now = datetime.now(UTC)
             # Cold start actions get reflex priority to avoid starvation by config audit

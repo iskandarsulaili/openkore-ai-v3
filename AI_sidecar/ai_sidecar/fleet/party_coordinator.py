@@ -46,11 +46,19 @@ class PartyCoordinator:
         my_role = bot.current_role
         for other in nearby:
             if self._roles_complement(my_role, other.current_role):
+                # RULE.md party doctrine: ZERO party commands from the sidecar except
+                # god_mode party_organize. Forming a party reflexively whenever two bots
+                # share a map distracts them from the kill loop (spams party_create/invite,
+                # bots stop farming). So this is OBSERVABLE-ONLY: the swarm DETECTS the
+                # complementary-role opportunity, but the actual party formation decision is
+                # the conscious tier's (LLM/CrewAI), not a reflexive side-effect. Emit a
+                # log intent so the opportunity is visible without freezing the bots.
                 return CoordinationAction(
-                    kind="party_invite", command=f"party_invite {other.bot_id}",
+                    kind="party_invite_observe", command=f"party_invite {other.bot_id}",
                     confidence=0.7, target_bot=other.bot_id,
-                    payload={"party_leader": bot_id, "members": [bot_id, other.bot_id]},
-                    reason=f"Complementary roles: {my_role} + {other.current_role}",
+                    payload={"party_leader": bot_id, "members": [bot_id, other.bot_id],
+                             "observe_only": True},
+                    reason=f"[OBSERVE] Complementary roles {my_role}+{other.current_role} — party formation is the conscious tier's call",
                 )
         return None
 
