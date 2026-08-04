@@ -46,6 +46,12 @@ class OpenAIProvider(BaseLLMProvider):
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            # Explicitly request a NON-streaming response. Some OpenAI-compatible
+            # gateways (e.g. Ollama-backed like the local deepseek-v4-flash gateway)
+            # stream by DEFAULT, returning SSE "data: {...}" chunks — response.json()
+            # then fails with "Expecting value: line 1 column 1". stream=false forces
+            # a single JSON body that response.json() can parse.
+            "stream": False,
         }
 
         if json_mode:
