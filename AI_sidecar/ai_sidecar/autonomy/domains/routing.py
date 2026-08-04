@@ -164,21 +164,46 @@ class RoutingDomain(BaseDomain):
         signals: dict[str, Any],
         service: Any,
     ) -> None:
-        """Use spawn heatmap to build optimized walking path."""
+        """Use spawn heatmap to build optimized walking path.
+
+        Also provides a ROAMING fallback: when the heatmap has not yet been learned (empty),
+        the bot must keep MOVING to find mobs (a Pro never stands idle — "flow"). It walks a
+        loose, server-agnostic search pattern from its current position toward unvisited
+        directions so it actively hunts instead of reselecting targets in place.
+        """
         _spawn_heatmap = service._adaptive.spawn_heatmap.get(map_name, {})
-        if not _spawn_heatmap or len(_spawn_heatmap) < 3:
-            return
         _x = int(signals.get("x", 0) or 0)
         _y = int(signals.get("y", 0) or 0)
-        _circuit = build_spawn_circuit(_spawn_heatmap, _x, _y, 5)
-        if _circuit and len(_circuit) >= 2:
-            _next_wp = _circuit[0]
+        if _spawn_heatmap and len(_spawn_heatmap) >= 3:
+            _circuit = build_spawn_circuit(map_name)
+            # Prefer adaptive heatmap hot zones if present.
+            _hot = sorted(_spawn_heatmap.items(), key=lambda kv: kv[1], reverse=True)[:4]
+            _waypoints = [(int(k[0]), int(k[1])) for k, _ in _hot] if _hot else _circuit
+            if _waypoints:
+                _next_wp = _waypoints[0]
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_next_wp[0]} {_next_wp[1]}",
+                    confidence=0.80, domain="hunting",
+                    reason=f"Spawn circuit: walk to hot zone ({_next_wp[0]}, {_next_wp[1]})",
+                ))
+            return
+        # ── ROAMING fallback (heatmap not yet learned): keep the bot hunting ──
+        # Deterministic, server-agnostic search sweep: from the current position, move
+        # toward a nearby grid point that is not the current spot, cycling through offsets
+        # so the bot never idles and eventually sweeps the map for spawns. This gives
+        # "flow" (continuous movement) even before the adaptive heatmap is populated.
+        _roam = [(60, 0), (0, 60), (-60, 0), (0, -60)]
+        _idx = int(_x + _y) % len(_roam)
+        _dx, _dy = _roam[_idx]
+        _nx, _ny = _x + _dx, _y + _dy
+        # Clamp to a sensible map region so we never wander off into a wall.
+        _nx = max(15, min(240, _nx))
+        _ny = max(15, min(240, _ny))
+        if (_nx, _ny) != (_x, _y):
             actions.append(HeuristicAction(
-                kind="command",
-                command=f"move {_next_wp[0]} {_next_wp[1]}",
-                confidence=0.80, domain="hunting",
-                reason=f"Spawn circuit: walk to hot zone "
-                       f"({_next_wp[0]}, {_next_wp[1]})",
+                kind="command", command=f"move {_nx} {_ny}",
+                confidence=0.55, domain="hunting",
+                reason=f"Roaming to find mobs ({_nx}, {_ny}) — heatmap not yet learned",
             ))
 
 
