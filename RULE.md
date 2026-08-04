@@ -29,6 +29,18 @@ dependent (a fresh server may hand out a different starter kit; a Pro player ada
 the map/opponent). The conscious tier reasons "I lack sustain to kill X → acquire Y" from
 live observation; the subconscious RL learns which gear decisions lead to kills/rewards.
 
+**Hard rule — the AI is self-deciding and independent; agents/LLM handle ANY agnostic issue.**
+The system's goal is full **self-* autonomy**: self-deciding, self-learning, self-healing,
+self-adapting, self-improving, self-aware. Every novel/unexpected/agnostic situation MUST be
+resolved by the **CrewAI agents and/or the LLM** reasoning from live observation — never by a
+hardcoded rule written for one server or one scenario. The agents' prompts and orchestration
+must be improved (not gutted) so they can reason about any server's maps, NPCs, economy,
+combat, gear, and progression from observed state. The reflex tier handles only
+instant-timing actions (skill combos, dodging, etc.) and is UPDATED BY the conscious tier
+over time, not the source of strategic/tactical decisions. If a heuristic/reflex rule is
+"hardcoded for a specific server," that is a BUG to be replaced by agent reasoning, not a
+feature.
+
 Every fix must be server-agnostic (works on any server via discovery + reasoning), never a
 per-server literal.
 
