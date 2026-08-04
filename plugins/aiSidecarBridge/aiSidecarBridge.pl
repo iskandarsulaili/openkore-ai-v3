@@ -5370,14 +5370,6 @@ sub _rewrite_runtime_command {
 			debug "[move_rewrite] izlude_c -> prt_fild08c portal (20,98)\n", 'aiSidecarBridge', 2;
 			return ('move 20 98', 'coordinate_move_raw');
 		}
-		# iz_ac01_a is the academy tutorial ROOM — a bot inside it cannot route to any
-		# field map directly (no portal). It must walk to the room's EXIT warp
-		# (iz_ac01_a 100,24 -> izlude_a 127,253) first, from where the farm fields are
-		# reachable. Route a farm-bound bot to that exit tile.
-		if ($_cur_map eq 'iz_ac01_a' && $_target =~ /_fild/) {
-			debug "[move_rewrite] iz_ac01_a (academy room) -> exit to izlude_a (100,24)\n", 'aiSidecarBridge', 2;
-			return ('move 100 24', 'coordinate_move_raw');
-		}
 		if ($_cur_map eq 'prontera' && exists $_portal_coords{$_target}) {
 			my $_new_cmd = $_portal_coords{$_target};
 			debug "[move_rewrite] from Prontera: $command -> $_new_cmd\n", 'aiSidecarBridge', 2;
