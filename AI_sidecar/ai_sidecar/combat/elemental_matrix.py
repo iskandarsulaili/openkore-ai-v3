@@ -147,8 +147,24 @@ def _load_elemental_tables() -> dict[int, list[list[int]]]:
         logger.warning("attr_fix.yml not found at %s", _ATTR_FIX_PATH)
         return {}
 
+    # Server-mode-aware element table: a Renewal server uses db/re/attr_fix.yml
+    # (renewal element multipliers), not the pre-re table. Select the correct file
+    # so elemental damage math matches the server the bot actually plays. Falls back
+    # to the loaded pre-re table if the re table is unavailable.
     try:
-        with open(_ATTR_FIX_PATH, "r") as f:
+        from ai_sidecar.combat import damage_formulas as _df
+        from ai_sidecar.autonomy.ro_mechanics import get_server_mode as _rm_mode
+        _is_renewal = (_df.SERVER_MODE == "renewal") or (str(_rm_mode()).lower() == "renewal")
+    except Exception:
+        _is_renewal = False
+    _attr_path = _ATTR_FIX_PATH
+    if _is_renewal:
+        _re_path = os.path.abspath(os.path.join(os.path.dirname(_ATTR_FIX_PATH), "..", "re", "attr_fix.yml"))
+        if os.path.isfile(_re_path):
+            _attr_path = _re_path
+
+    try:
+        with open(_attr_path, "r") as f:
             data = yaml.safe_load(f)
     except Exception as exc:
         logger.error("Failed to load attr_fix.yml: %s", exc)
