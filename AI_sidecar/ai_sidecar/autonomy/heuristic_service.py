@@ -2742,16 +2742,30 @@ class HeuristicService:
                                 reason=f"Cold start step 1 - walk to academy hunt {_cs_authority_hunt}",
                             ))
                         else:
+                            # SIDECAR routing decision (server-agnostic): the academy
+                            # tutorial ROOM (iz_ac01_a) has no portal to any field map,
+                            # so `move <farm>` is unroutable there. The bot must first
+                            # walk to the room's EXIT warp (iz_ac01_a 100,24 ->
+                            # izlude_a 127,253), from which the farm fields are reachable.
+                            # Route a farm-bound bot in the academy room to the exit tile
+                            # (a sidecar decision — the bridge only passes commands).
                             actions.append(HeuristicAction(
                                 kind="command", command="set lockMap prt_fild05",
                                 confidence=0.99, domain="economy",
                                 reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
                             ))
-                            actions.append(HeuristicAction(
-                                kind="command", command="move prt_fild05",
-                                confidence=0.99, domain="economy",
-                                reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
-                            ))
+                            if str(_cs_map).lower() == "iz_ac01_a":
+                                actions.append(HeuristicAction(
+                                    kind="command", command="move 100 24",
+                                    confidence=0.99, domain="economy",
+                                    reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
+                                ))
+                            else:
+                                actions.append(HeuristicAction(
+                                    kind="command", command="move prt_fild05",
+                                    confidence=0.99, domain="economy",
+                                    reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
+                                ))
                 elif _cs_in_hunting:
                     # On prt_fild05 — enable AI and attack for farming
                     actions.append(HeuristicAction(
