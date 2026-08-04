@@ -3293,11 +3293,11 @@ class HeuristicService:
                 "Config audit - disable avoid system on hunting maps (prevents running from monsters)")
             self._set_config_once(actions, bot_id, "avoidList_inLockOnly", "", "hunting",
                 "Config audit - disable avoid system in lockMap (prevents running from monsters)")
-            # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
-            # If bot is on a hunting map with 0 potions, force return to town to buy potions.
-            # This was previously handled by the bridge's Reflex #1, but that was stripped.
+            # ── ZERO POTIONS ON HUNTING MAP ──
+            # A bot on a hunting map with no potions used to be force-returned to town
+            # unconditionally — that abandoned the farm on every potion gap (no commitment).
+            # Now it STAYS and only returns to town on a real emergency (see gate below).
             # NOTE: inventory data is stored as 'inventory_items' in signals (from pdca_loop.py)
-            # NOTE: No rate limit on emergency return — 0 potions on hunting map = return NOW
             # The bridge's auto-stand handles sitting bots before executing 'move prontera'.
             # The portal exit check (in bridge) breaks the loop if bot arrives and turns back.
             _audit_items = signals.get("inventory_items", []) or []
