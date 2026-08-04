@@ -8720,6 +8720,20 @@ class PDCALoop:
             _action = str(_res.get("action", "") or "")
             _cmd = str(_res.get("command", "") or "")
             _reason = str(_res.get("reason", "") or "")
+            # ── Action→command bridge: the LLM decides WHAT (conscious tier); this
+            # translates an empty command for a known sustain action into an executable
+            # OpenKore command (the reflex/planner executor layer acts on the decision).
+            # "By hook or by crook": an LLM action must always produce a concrete command
+            # so the bot can actually execute the decided course of action.
+            if not _cmd:
+                _cmd = {
+                    "retreat": "move prt_fild08",      # fall back to the farm/town for restock
+                    "acquire_potions": "buy 501 30",   # Red Potion x30
+                    "restock": "buy 501 20",
+                    "keep_farming": "ai auto",
+                    "change_farm": "move prt_fild08",
+                    "equip": "",
+                }.get(_action, "")
             logger.info("llm_gear_advisory bot=%s action=%s cmd=%r reason=%s", bot_id, _action, _cmd, _reason)
             if _cmd and hasattr(_rt, "action_queue"):
                 from datetime import UTC, datetime as _dt, timedelta
@@ -8730,7 +8744,7 @@ class PDCALoop:
                     command=_cmd,
                     conflict_key="",
                     priority_tier=_APT.strategic,
-                    source="conscious_llm_gear",
+                    source="crewai",
                     created_at=_dt.now(UTC),
                     expires_at=_dt.now(UTC) + timedelta(seconds=30),
                     idempotency_key=f"llm-gear-{_action}",
