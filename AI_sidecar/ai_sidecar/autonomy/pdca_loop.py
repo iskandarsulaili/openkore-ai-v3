@@ -2589,7 +2589,18 @@ class PDCALoop:
                 await self._llm_gear_advisory(_cycle_bot_id)
             except Exception:
                 pass
-        
+
+        # ── Conscious-tier team-play: LLM decides whether THIS bot helps a teammate ──
+        # Driven by LLM/CrewAI assessment (not hardcoded rules): the swarm's real-time
+        # party state is summarized and the LLM decides pragmatically whether to move to
+        # help a struggling teammate (heal/resurrect/cover), or stay put. Self-*: aware,
+        # adaptive, server-agnostic. Silent no-op if no party state or LLM unavailable.
+        if self._cycle_count % 60 == 0 and _cycle_bot_id:
+            try:
+                await self._llm_help_coordination(_cycle_bot_id)
+            except Exception:
+                pass
+
         # ── Ensure all sub-services are initialized before any path ──
         if self._runtime is not None:
             if not self._services_initialized:
@@ -8726,6 +8737,90 @@ class PDCALoop:
                 ))
         except Exception as _llm_ge:
             logger.debug("llm_gear_advisory_skipped: %s", _llm_ge)
+
+    async def _llm_help_coordination(self, bot_id: str) -> None:
+        """Conscious-tier team-play: ask the LLM whether THIS bot should go help a teammate.
+
+        Driven by LLM/CrewAI assessment (not hardcoded rules) per the god-tier mandate:
+        the swarm's real-time party state is summarized, and the LLM decides whether the
+        bot should move to help (heal/resurrect/cover) a struggling teammate, or stay put.
+        Pragmatic + adaptive + server-agnostic: the LLM reasons from live state and emits
+        whatever command fits ("by hook or by crook").
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        # Gather live party/swarm state.
+        _members: list[dict] = []
+        try:
+            _snap = getattr(_rt, "_last_snapshot", None) or {}
+            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+            _my_map = str((_snap or {}).get("map", "") or "") if isinstance(_snap, dict) else ""
+            _party = (_snap or {}).get("party_members") if isinstance(_snap, dict) else None
+            if isinstance(_party, list):
+                _members = _party
+        except Exception:
+            pass
+        if not _members:
+            # No party/teammate state visible -> nothing to coordinate.
+            return
+        # Summarize each teammate's state for the LLM.
+        _summary_parts = []
+        for _m in _members:
+            _n = str(_m.get("name", "?") if isinstance(_m, dict) else "?")
+            _hp = float(_m.get("hp_ratio", 1.0) if isinstance(_m, dict) else 1.0)
+            _map = str(_m.get("map", "") if isinstance(_m, dict) else "")
+            _dead = bool(_m.get("dead", False) if isinstance(_m, dict) else False)
+            _summary_parts.append(
+                f"{_n}(map={_map or '?'}, hp={_hp*100:.0f}%, dead={_dead})"
+            )
+        _teammates = ", ".join(_summary_parts) or "none"
+        _prompt = (
+            f"Ragnarok bot {bot_id} is on map {_my_map or '?'}. Party/teammate state: "
+            f"{_teammates}. Decide whether THIS bot should go help a teammate right now, "
+            f"and how. Prefer helping only if it is pragmatic (a teammate is in real danger: "
+            f"low HP, dead, or outnumbered) and the help is achievable. Respond as JSON with "
+            f"fields {{'should_help': <true|false>, 'target': <teammate name or ''>, "
+            f"'command': <an OpenKore command to execute the help, e.g. 'move <x> <y>' to "
+            f"reach them, 'use_skill Heal <name>', 'use_skill Resurrection <name>', or '' if "
+            f"no action>, 'reason': <short reason>}}. Be pragmatic, adaptive, and never give "
+            f"up on a solvable rescue. Do not emit party-formation commands."
+        )
+        try:
+            _res = await _llm.complete_json(
+                _prompt,
+                system_prompt="You are a Pro Ragnarok team-play AI deciding, from live "
+                              "swarm state, whether and how a bot helps a struggling teammate "
+                              "(by hook or by crook, never giving up on a solvable rescue).",
+                temperature=0.2,
+            )
+            _should = bool(_res.get("should_help", False))
+            _cmd = str(_res.get("command", "") or "")
+            _target = str(_res.get("target", "") or "")
+            _reason = str(_res.get("reason", "") or "")
+            logger.info(
+                "llm_help_coordination bot=%s should_help=%s target=%r cmd=%r reason=%s",
+                bot_id, _should, _target, _cmd, _reason,
+            )
+            if _should and _cmd and hasattr(_rt, "action_queue"):
+                from datetime import UTC, datetime as _dt, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                _rt.action_queue.enqueue(bot_id, _AP(
+                    action_id=f"llm-help-{int(_dt.now(UTC).timestamp())}",
+                    kind="command",
+                    command=_cmd,
+                    conflict_key="",
+                    priority_tier=_APT.strategic,
+                    source="crewai",
+                    created_at=_dt.now(UTC),
+                    expires_at=_dt.now(UTC) + timedelta(seconds=45),
+                    idempotency_key=f"llm-help-{_target or _cmd}",
+                ))
+        except Exception as _llm_hc:
+            logger.debug("llm_help_coordination_skipped: %s", _llm_hc)
 
     def _context_overrides(self, snapshot: BotStateSnapshot | None) -> dict[str, object]:
         if snapshot is None:
