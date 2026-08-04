@@ -8719,17 +8719,34 @@ class PDCALoop:
         _prompt = (
             f"Ragnarok bot {bot_id} is on map {_map}, HP {_hp_pct*100:.0f}%, "
             f"deaths={_deaths}, kills={_kills}, has_potions={_has_potions}, "
-            f"has_weapon={_has_weapon}. Given this live state, decide the single best "
-            f"action to sustain farming and gain EXP. Respond as JSON with fields "
-            f"{{'action': <one of 'acquire_potions'|'restock'|'retreat'|'change_farm'|'keep_farming'|'equip'>, "
+            f"has_weapon={_has_weapon}. "
+            f"THINK DEEP, FROM THE WHOLE PICTURE: before deciding, analyze the SYSTEMIC "
+            f"situation — not just this instant. Consider: (1) root cause — WHY is this bot "
+            f"where it is and NOT gaining EXP steadily? (e.g. is it transiting maps, stuck in "
+            f"a routing loop, running dry, unable to engage the mobs it sees, disconnected/"
+            f"reconnecting, or actually farming fine?); (2) the whole picture — how does this "
+            f"bot's state relate to the fleet, the server's spawns, the economy loop, and the "
+            f"recurring pattern over many cycles, not just this one snapshot; (3) forward-"
+            f"looking — if I take the action you choose, what happens over the next several "
+            f"cycles? Pick the action that addresses the ROOT CAUSE, not a symptom. "
+            f"Respond as JSON with fields {{'analysis': <2-4 sentence deep reasoning>, "
+            f"'root_cause': <the single deepest systemic cause you identify>, "
+            f"'systemic_finding': <a whole-picture/cross-domain observation>, "
+            f"'action': <one of 'acquire_potions'|'restock'|'retreat'|'change_farm'|'keep_farming'|'equip'>, "
             f"'command': <an OpenKore command or empty string>, 'reason': <short reason>}}. "
             f"Do not reference specific server item IDs unless observed. Be adaptive."
         )
         try:
-            _res = await _llm.complete_json(_prompt, system_prompt="You are a Pro Ragnarok player AI deciding gear/sustain actions from live state.", temperature=0.2)
+            _res = await _llm.complete_json(_prompt, system_prompt="You are a top-tier Pro Ragnarok player AI and a SYSTEM ANALYST. You do not patch symptoms — you trace the ROOT CAUSE of a bot's failure (routing, sustain, combat engagement, connection, economy) and decide from the WHOLE PICTURE of the fleet + server, not one snapshot. You think forward: an action is correct only if it fixes the cause and keeps EXP climbing over time.", temperature=0.2)
             _action = str(_res.get("action", "") or "")
             _cmd = str(_res.get("command", "") or "")
             _reason = str(_res.get("reason", "") or "")
+            _analysis = str(_res.get("analysis", "") or "")
+            _root_cause = str(_res.get("root_cause", "") or "")
+            _systemic = str(_res.get("systemic_finding", "") or "")
+            if _root_cause or _analysis or _systemic:
+                logger.info("llm_gear_advisory bot=%s root_cause=%r systemic=%r analysis=%r",
+                            bot_id, _root_cause[:120], _systemic[:120], _analysis[:160])
             _from_sustain = (_hp_pct < 0.5) or (not _has_potions) or (not _has_weapon)
             # ── Action→command bridge (DB-backed, never hardcoded server values) ──
             # The LLM decides WHAT (conscious tier). The concrete server-specific execution
