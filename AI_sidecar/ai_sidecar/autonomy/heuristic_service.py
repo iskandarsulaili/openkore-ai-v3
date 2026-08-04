@@ -996,6 +996,7 @@ class HeuristicService:
         self._last_progress: dict[str, dict] = {}
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
+        self._last_economy_emit: dict[str, float] = {}  # rate-limit cold-start potion economy
         self._last_academy_room_move: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
@@ -3141,28 +3142,32 @@ class HeuristicService:
         # A low-level bot that can't buy potions runs dry and flees/wanders to town. Point the
         # buyAuto potion at the TOWN shop and enable sellAuto so loot funds the potions. The
         # potion command + safe_town come from the DB-backed server_solutions store (server-
-        # specific per RULE.md), NOT a hardcoded literal.
+        # specific per RULE.md), NOT a hardcoded literal. RATE-LIMITED to once per 20s per bot
+        # so it cannot flood the action queue and starve actual movement/routing.
         try:
             from ai_sidecar.server_adaptation import get_server_solutions_store
             _aum = str(_audit_map or "").lower().replace(".gat", "")
             if _aum not in ("iz_ac01_a", "iz_ac01"):  # must not override the academy-room exit
-                _sstore = get_server_solutions_store()
-                try:
-                    _potion_buy = str(_sstore.get_json("potion_solution", {}).get("buy_command") or "").strip()
-                    _safe_town_buy = str(_sstore.get("safe_town", "") or "").strip() or "prontera"
-                except Exception:
-                    _potion_buy, _safe_town_buy = "", ""
-                if not _potion_buy:
-                    _potion_buy = "buy 501 30"
-                if _potion_buy:
-                    self._set_config_once(actions, bot_id, "buyAuto_Red_Potion", _potion_buy, "economy",
-                        f"Cold-start potion sustain: {_potion_buy} (from server_solutions DB)")
-                # Point the buy/sell NPC at the town shop (server-specific, DB-backed).
-                _town_npc = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
-                self._set_config_once(actions, bot_id, "buyAuto_npc", _town_npc, "economy",
-                    f"Buy potions at {_safe_town_buy} town shop (from server_solutions DB)")
-                self._set_config_once(actions, bot_id, "sellAuto", "1", "economy",
-                    "Cold-start: auto-sell loot to fund potions")
+                _now_e = __import__("time").time()
+                if _now_e - self._last_economy_emit.get(bot_id, 0.0) >= 20.0:
+                    self._last_economy_emit[bot_id] = _now_e
+                    _sstore = get_server_solutions_store()
+                    try:
+                        _potion_buy = str(_sstore.get_json("potion_solution", {}).get("buy_command") or "").strip()
+                        _safe_town_buy = str(_sstore.get("safe_town", "") or "").strip() or "prontera"
+                    except Exception:
+                        _potion_buy, _safe_town_buy = "", ""
+                    if not _potion_buy:
+                        _potion_buy = "buy 501 30"
+                    if _potion_buy:
+                        self._set_config_once(actions, bot_id, "buyAuto_Red_Potion", _potion_buy, "economy",
+                            f"Cold-start potion sustain: {_potion_buy} (from server_solutions DB)")
+                    # Point the buy/sell NPC at the town shop (server-specific, DB-backed).
+                    _town_npc = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
+                    self._set_config_once(actions, bot_id, "buyAuto_npc", _town_npc, "economy",
+                        f"Buy potions at {_safe_town_buy} town shop (from server_solutions DB)")
+                    self._set_config_once(actions, bot_id, "sellAuto", "1", "economy",
+                        "Cold-start: auto-sell loot to fund potions")
         except Exception:
             pass
         if _audit_is_hunting:
