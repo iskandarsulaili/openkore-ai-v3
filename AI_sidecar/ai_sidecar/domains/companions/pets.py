@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 from dataclasses import dataclass, field
 
@@ -16,6 +18,76 @@ _PET_FOOD: dict[str, dict[str, Any]] = {
     "drops": {"food": "Jellopy", "food_id": "909", "intimacy_gain": 2},
     "chuk": {"food": "Banana", "food_id": "513", "intimacy_gain": 5},
 }
+
+
+# ── Pet-capture knowledge (server-agnostic, loaded from the server's pet_db.yml) ──
+# The server defines which monsters can be captured, with what TameItem, and the
+# CaptureRate (per-10000). This lets the bot acquire pets (use the tame item on the
+# monster to capture it), not just manage an already-owned pet. Loaded once; a server
+# without pet capture yields an empty table (no-op).
+_PET_CAPTURE: dict[str, dict[str, Any]] = {}
+_PET_CAPTURE_LOADED = False
+
+
+def _pet_db_paths() -> list[Path]:
+    base = Path(__file__).resolve().parent.parent.parent.parent  # AI_sidecar/
+    return [
+        Path.home() / "rathena-AI-world" / "db" / "re" / "pet_db.yml",
+        Path.home() / "rathena-AI-world" / "db" / "pre-re" / "pet_db.yml",
+        base / "knowledge" / "rathena_db" / "db" / "re" / "pet_db.yml",
+        base / "knowledge" / "rathena_db" / "db" / "pre-re" / "pet_db.yml",
+    ]
+
+
+def load_pet_capture() -> dict[str, dict[str, Any]]:
+    """Load capture data (Mob -> TameItem, CaptureRate) from the server's pet_db.yml.
+
+    Returns a dict keyed by lowercase mob name, e.g.
+    {"poring": {"tame_item": "Unripe_Apple", "tame_item_id": "6239",
+                "capture_rate": 2000, "egg_item": "Poring_Egg"}}.
+    Falls back to {} if the server configures no pet capture. Cached after load.
+    """
+    global _PET_CAPTURE, _PET_CAPTURE_LOADED
+    if _PET_CAPTURE_LOADED:
+        return dict(_PET_CAPTURE)
+    path = next((p for p in _pet_db_paths() if p.is_file()), None)
+    if path is not None:
+        try:
+            import yaml
+            data = yaml.safe_load(open(path, errors="replace"))
+            body = data.get("Body", []) or [] if isinstance(data, dict) else []
+            for entry in body:
+                if not isinstance(entry, dict):
+                    continue
+                mob = str(entry.get("Mob", "")).lower()
+                if not mob:
+                    continue
+                _PET_CAPTURE[mob] = {
+                    "tame_item": str(entry.get("TameItem", "") or ""),
+                    "tame_item_id": str(entry.get("TameItemId", "") or ""),
+                    "capture_rate": int(entry.get("CaptureRate", 0) or 0),
+                    "egg_item": str(entry.get("EggItem", "") or ""),
+                    "food_item": str(entry.get("FoodItem", "") or ""),
+                }
+            logger.info("pet_capture: loaded %d capturable pets from %s", len(_PET_CAPTURE), path)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("load_pet_capture failed: %s", exc)
+    _PET_CAPTURE_LOADED = True
+    return dict(_PET_CAPTURE)
+
+
+def get_capture_advice(monster_name: str) -> dict[str, Any] | None:
+    """Return capture advice for a monster (tame item + rate), or None if not capturable."""
+    capture = load_pet_capture()
+    info = capture.get(monster_name.lower())
+    if not info or not info.get("tame_item"):
+        return None
+    return info
+
+
+def capturable_monsters() -> list[str]:
+    """List monster names that can be captured on this server (lowercase)."""
+    return list(load_pet_capture().keys())
 
 
 @dataclass
