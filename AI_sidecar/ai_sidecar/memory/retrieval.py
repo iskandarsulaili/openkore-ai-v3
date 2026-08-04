@@ -25,7 +25,32 @@ logger = logging.getLogger(__name__)
 
 def _resolve_value(value: Any) -> Any:
     if inspect.isawaitable(value):
-        return asyncio.run(value)
+        try:
+            import asyncio as _asyncio
+            _asyncio.get_running_loop()
+            # Inside a running loop -> run on a fresh thread with its own loop to
+            # avoid "Cannot run the event loop while another loop is running".
+            _out: list = []
+            _err: list = []
+
+            def _runner():
+                try:
+                    _l = _asyncio.new_event_loop()
+                    _out.append(_l.run_until_complete(value))
+                    _l.close()
+                except Exception as _e:  # noqa: BLE001
+                    _err.append(_e)
+
+            import threading
+            _t = threading.Thread(target=_runner, daemon=True)
+            _t.start()
+            _t.join(timeout=30)
+            if _err:
+                raise _err[0]
+            return _out[0] if _out else None
+        except RuntimeError:
+            import asyncio as _a
+            return _a.run(value)
     return value
 
 

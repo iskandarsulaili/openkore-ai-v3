@@ -168,12 +168,12 @@ class LLMManager:
                     max_calls,
                     sleep_for,
                 )
-                import asyncio
-
-                # Clamp sleep to 60s max — after that we let calls through
-                asyncio.get_event_loop().run_until_complete(
-                    asyncio.sleep(min(sleep_for, 60.0))
-                )
+                # Clamp sleep to 60s max — after that we let calls through.
+                # Use a plain blocking time.sleep (this is a synchronous rate-limiter
+                # budget check); asyncio.get_event_loop().run_until_complete(asyncio.sleep)
+                # would raise "Cannot run the event loop while another loop is running"
+                # when called from within the sidecar's running event loop.
+                time.sleep(min(sleep_for, 60.0))
         self._hourly_calls.append(now)
 
     def _check_daily_budget(self, estimated_tokens: int = 0) -> bool:

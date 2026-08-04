@@ -58,6 +58,44 @@ class LongTermMemory:
     
     def __post_init__(self):
         self._init_memory()
+
+    @staticmethod
+    def _run_coro(coro: Any) -> Any:
+        """Run an async coroutine safely from sync code, even inside a running loop.
+
+        The sidecar runs an asyncio event loop; calling `asyncio.run()` /
+        `new_event_loop().run_until_complete()` from within that loop raises
+        "Cannot run the event loop while another loop is running". This helper
+        detects the running loop and, when present, runs the coroutine on a
+        dedicated thread with its own loop (safe and non-blocking); otherwise it
+        uses `asyncio.run()`.
+        """
+        import asyncio
+        import threading
+        try:
+            asyncio.get_running_loop()
+            # Already inside an event loop -> run on a fresh thread with its own loop.
+            _result: list = []
+            _err: list = []
+
+            def _runner():
+                try:
+                    _loop = asyncio.new_event_loop()
+                    _result.append(_loop.run_until_complete(coro))
+                    _loop.close()
+                except Exception as _e:  # noqa: BLE001
+                    _err.append(_e)
+
+            _t = threading.Thread(target=_runner, daemon=True)
+            _t.start()
+            _t.join(timeout=30)
+            if _err:
+                raise _err[0]
+            return _result[0] if _result else None
+        except RuntimeError:
+            # No running loop -> safe to use asyncio.run.
+            import asyncio as _a
+            return _a.run(coro)
     
     def _init_memory(self) -> bool:
         """Initialize OpenMemory backend."""
@@ -114,7 +152,7 @@ class LongTermMemory:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "metadata": metadata or {},
                 }
-                import asyncio; _loop = asyncio.new_event_loop(); asyncio.set_event_loop(_loop); _loop.run_until_complete(self._memory.add(json.dumps(payload))); _loop.close()
+                import asyncio; _coro = self._memory.add(json.dumps(payload)); _res = self._run_coro(_coro) if asyncio.iscoroutine(_coro) else _coro
                 return True
             except Exception as e:
                 logger.warning("long_term_memory_store_failed: %s", e)
@@ -150,7 +188,7 @@ class LongTermMemory:
                 # Handle both sync and async (coroutine) returns
                 import asyncio
                 if asyncio.iscoroutine(results):
-                    results = asyncio.run(results)
+                    results = self._run_coro(results)
                 memories = []
                 for r in results:
                     try:
