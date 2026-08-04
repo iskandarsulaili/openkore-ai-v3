@@ -950,7 +950,14 @@ sub on_mainLoop_post {
                 }
             } else {
                 # In town: ensure lockMap is set to hunting map
-                if (!defined $::config{lockMap} || $::config{lockMap} eq 'prontera' || $::config{lockMap} eq '') {
+                # RULE.md: the bridge must NOT override the sidecar's routing decisions.
+                # When the bot is in the academy room (iz_ac01_a), the sidecar's exit guard
+                # is deliberately deferring the hunt until the bot exits the room — forcing
+                # lockMap to prt_fild05 here would make the client loop an unroutable route.
+                # Respect the sidecar's deferral by leaving lockMap alone in that case.
+                if ($_sm_map eq 'iz_ac01_a' || $_sm_map eq 'iz_ac01') {
+                    # Sidecar owns this decision (academy room exit / registration).
+                } elsif (!defined $::config{lockMap} || $::config{lockMap} eq 'prontera' || $::config{lockMap} eq '') {
                     $::config{lockMap} = $_hunt_map;
                 }
                 # In town: disable random walk (prevents "move prontera" spam from OpenKore's AI)
