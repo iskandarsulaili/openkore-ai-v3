@@ -5560,6 +5560,19 @@ def create_runtime() -> RuntimeState:
             telemetry_operational_window_minutes=settings.telemetry_operational_window_minutes,
             audit_history=settings.persistence_audit_history,
         )
+        # Bind the server-solutions knowledge store to the live DB so server-specific
+        # solution facts (potion item, reachable farm, safe town, safe farm mobs) persist
+        # and are QUERIED at runtime — NOT hardcoded in *.py (RULE.md: no hardcoded
+        # server-specific solutions; per-server facts live in the database/memory).
+        try:
+            from ai_sidecar.server_adaptation import get_server_solutions_store
+            _srv_store = get_server_solutions_store(db=db, server_key="default")
+            # Seed only the server-identity-independent slots an LLM/executor will read
+            # later; values are filled as the AI observes the live server (never a literal
+            # farm/item rule). This mirrors the "server_adaptation" persistence pattern.
+            self.server_solutions_store = _srv_store
+        except Exception as _srv_err:
+            logger.warning("server_solutions_store_init_failed: %s", _srv_err)
         telemetry_store = TelemetryStore(
             max_per_bot=settings.telemetry_max_per_bot,
             _ingestor=DurableTelemetryIngestor(

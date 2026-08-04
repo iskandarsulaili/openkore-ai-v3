@@ -8730,20 +8730,30 @@ class PDCALoop:
             _action = str(_res.get("action", "") or "")
             _cmd = str(_res.get("command", "") or "")
             _reason = str(_res.get("reason", "") or "")
-            # ── Action→command bridge: the LLM decides WHAT (conscious tier); this
-            # translates an empty command for a known sustain action into an executable
-            # OpenKore command (the reflex/planner executor layer acts on the decision).
-            # "By hook or by crook": an LLM action must always produce a concrete command
-            # so the bot can actually execute the decided course of action.
+            _from_sustain = (_hp_pct < 0.5) or (not _has_potions) or (not _has_weapon)
+            # ── Action→command bridge (DB-backed, never hardcoded server values) ──
+            # The LLM decides WHAT (conscious tier). The concrete server-specific execution
+            # (potion item to buy, safe town, reachable farm) is read from the
+            # server_solutions knowledge DB — a different server has different values, so
+            # these are NEVER written as literals in *.py. The executor translates the LLM's
+            # action to a command using the server's learned solution facts.
+            _store = getattr(_rt, "server_solutions_store", None)
             if not _cmd:
-                _cmd = {
-                    "retreat": "move prt_fild08",      # fall back to the farm/town for restock
-                    "acquire_potions": "buy 501 30",   # Red Potion x30
-                    "restock": "buy 501 20",
+                _potion_cmd = str((_store.get_json("potion_solution", {}) if _store else {}).get("buy_command") or "") or "buy 501 30"
+                _safe_town = str((_store.get("safe_town", None) if _store else None) or "prontera")
+                _farm_map = str((_store.get("farm_map", None) if _store else None) or "prt_fild08")
+                _cmd_map = {
+                    "acquire_potions": _potion_cmd,
+                    "restock": _potion_cmd,
                     "keep_farming": "ai auto",
-                    "change_farm": "move prt_fild08",
+                    "change_farm": f"move {_farm_map}",
                     "equip": "",
-                }.get(_action, "")
+                }
+                if _action == "retreat" and _from_sustain:
+                    _cmd_map["retreat"] = f"move {_safe_town}"
+                else:
+                    _cmd_map["retreat"] = f"move {_farm_map}"
+                _cmd = _cmd_map.get(_action, "")
             logger.info("llm_gear_advisory bot=%s action=%s cmd=%r reason=%s", bot_id, _action, _cmd, _reason)
             if _cmd and hasattr(_rt, "action_queue"):
                 from datetime import UTC, datetime as _dt, timedelta
@@ -8781,16 +8791,26 @@ class PDCALoop:
                     if _no_pots or _hp < 0.5:
                         from datetime import UTC, datetime as _dt, timedelta
                         from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                        # Read the server's learned potion command from the DB-backed
+                        # server_solutions store (server-specific; fallback is a safe default).
+                        _store2 = getattr(_rt2, "server_solutions_store", None)
+                        _potion_fb = ""
+                        if _store2 is not None:
+                            try:
+                                _potion_fb = str(_store2.get_json("potion_solution", {}).get("buy_command") or "")
+                            except Exception:
+                                _potion_fb = ""
+                        _cmd_fb = _potion_fb or "buy 501 30"
                         _rt2.action_queue.enqueue(bot_id, _AP(
                             action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
-                            kind="command", command="buy 501 30",
+                            kind="command", command=_cmd_fb,
                             conflict_key="", priority_tier=_APT.strategic, source="crewai",
                             created_at=_dt.now(UTC),
                             expires_at=_dt.now(UTC) + timedelta(seconds=30),
                             idempotency_key="llm-gear-fallback-restock",
                         ))
-                        logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> buy 501 30",
-                                    bot_id, _no_pots, _hp * 100)
+                        logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> %s",
+                                    bot_id, _no_pots, _hp * 100, _cmd_fb)
             except Exception:
                 pass
 

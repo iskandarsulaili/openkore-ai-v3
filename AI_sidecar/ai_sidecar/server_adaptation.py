@@ -440,3 +440,111 @@ class ServerAdaptationEngine:
                 "npc_count": len(p.towns),
                 "towns": dict(p.towns),
             }
+
+
+class ServerSolutionsStore:
+    """DB-backed store of server SPECIFIC solution knowledge (never hardcoded in *.py).
+
+    Per the sandbox rules / RULE.md: different servers need different solutions, so
+    server-specific facts (which potion to buy, which farm map is reachable, which town
+    has a shop, which mobs are safe to attack) are LEARNED and persisted to the
+    `server_solutions` table, not written as literals in code. The LLM/CrewAI conscious
+    tier decides WHAT; this store supplies the server-agnostic FACTS the decision uses.
+
+    A fallback (non-DB) dict is used when no DB connection is provided, so the store is
+    safe to instantiate anywhere; the DB is preferred for persistence across restarts.
+    """
+
+    def __init__(self, db: Any | None = None, server_key: str = "default"):
+        self._db = db
+        self._server_key = str(server_key or "default")
+        self._lock = RLock()
+        # In-memory fallback so degenerate reads don't hit a closed DB.
+        self._fallback: dict[str, dict[str, Any]] = {}
+
+    def set(self, slot: str, value: Any, *, origin: str = "learned", confidence: float = 0.8, value_json: str | None = None) -> None:
+        """Persist a server-specific solution fact."""
+        slot = str(slot or "").strip()
+        if not slot:
+            return
+        _now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # If no explicit JSON string was supplied but value is dict/list, serialize it as JSON
+        # so a later get_json round-trips correctly (str(dict) would NOT be valid JSON).
+        if value_json is None and isinstance(value, (dict, list)):
+            try:
+                value_json = json.dumps(value)
+            except Exception:
+                value_json = None
+        # When a JSON payload is present, keep value_text empty so get()/get_json() prefer the JSON.
+        _vt = "" if value_json else ("" if value is None else str(value))
+        with self._lock:
+            if self._db is not None:
+                try:
+                    self._db.execute(
+                        "INSERT INTO server_solutions (server_key, slot, value_text, value_json, origin, confidence, last_observed_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(server_key, slot) DO UPDATE SET value_text=excluded.value_text, "
+                        "value_json=excluded.value_json, origin=excluded.origin, confidence=excluded.confidence, "
+                        "last_observed_at=excluded.last_observed_at, updated_at=excluded.updated_at",
+                        (self._server_key, slot, _vt, value_json or "{}", origin, float(confidence), _now, _now),
+                    )
+                except Exception as _e:
+                    logger.debug("server_solutions_set_db_failed slot=%s: %s", slot, _e)
+            self._fallback[slot] = {"value": value, "value_json": value_json or "{}", "origin": origin, "confidence": confidence, "updated_at": _now}
+
+    def get(self, slot: str, default: Any = None) -> Any:
+        """Read a server-specific solution fact (DB first, then in-memory fallback)."""
+        slot = str(slot or "").strip()
+        with self._lock:
+            if self._db is not None:
+                try:
+                    _row = self._db.fetchone(
+                        "SELECT value_text, value_json FROM server_solutions WHERE server_key=? AND slot=? LIMIT 1",
+                        (self._server_key, slot),
+                    )
+                    if _row is not None:
+                        _vt = _row["value_text"] if "value_text" in _row.keys() else (_row[0] if len(_row) > 0 else "")
+                        _vj = _row["value_json"] if "value_json" in _row.keys() else (_row[1] if len(_row) > 1 else "{}")
+                        try:
+                            _parsed = json.loads(_vj) if _vj and _vj != "{}" and _vt == "" else None
+                        except Exception:
+                            _parsed = None
+                        if _parsed is not None and _parsed != {}:
+                            return _parsed
+                        if _vt:
+                            return _vt
+                        return default
+                    return default
+                except Exception as _e:
+                    logger.debug("server_solutions_get_db_failed slot=%s: %s", slot, _e)
+            if slot in self._fallback:
+                _v = self._fallback[slot].get("value")
+                return default if _v is None else _v
+            return default
+
+    def get_json(self, slot: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Read a JSON-structured server solution fact."""
+        default = default if default is not None else {}
+        _raw = self.get(slot, None)
+        if isinstance(_raw, dict):
+            return _raw
+        if isinstance(_raw, str):
+            try:
+                _d = json.loads(_raw)
+                return _d if isinstance(_d, dict) else default
+            except Exception:
+                return default
+        return default
+
+
+_def_store: ServerSolutionsStore | None = None
+_store_lock = RLock()
+
+
+def get_server_solutions_store(db: Any | None = None, server_key: str = "default") -> ServerSolutionsStore:
+    """Singleton accessor for the server-solutions knowledge store."""
+    global _def_store
+    with _store_lock:
+        if _def_store is None or _def_store._server_key != server_key:
+            _def_store = ServerSolutionsStore(db=db, server_key=server_key)
+        return _def_store

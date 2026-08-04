@@ -215,6 +215,20 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_sidecar_operations_bot_updated ON sidecar_operations(bot_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_sidecar_operations_status_updated ON sidecar_operations(status, updated_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_sidecar_operations_idempotency ON sidecar_operations(bot_id, idempotency_key)",
+    """
+    CREATE TABLE IF NOT EXISTS server_solutions (
+        server_key TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        value_text TEXT NOT NULL DEFAULT '',
+        value_json TEXT NOT NULL DEFAULT '{}',
+        origin TEXT NOT NULL DEFAULT 'learned',
+        confidence REAL NOT NULL DEFAULT 0.5,
+        last_observed_at TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (server_key, slot)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_server_solutions_slot ON server_solutions(server_key, slot)",
 )
 
 

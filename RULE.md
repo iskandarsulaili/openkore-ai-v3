@@ -29,6 +29,23 @@ dependent (a fresh server may hand out a different starter kit; a Pro player ada
 the map/opponent). The conscious tier reasons "I lack sustain to kill X → acquire Y" from
 live observation; the subconscious RL learns which gear decisions lead to kills/rewards.
 
+**Hard rule — server-SPECIFIC solution facts live in the database/memory, NEVER in `*.py`.**
+Different servers have different solutions (which potion item to buy, which farm map is
+reachable, which town has a shop, which mobs are safe to attack, which starter kit is
+given). Therefore:
+- **Do NOT hardcode server-specific values as literals in `*.py`** — no `buy 501`, no
+  `move prontera`, no `prt_fild08c`, no `mon_control Thief Bug` baked into code.
+- Server-specific facts are **LEARNED and persisted** in the DB-backed
+  `server_solutions` knowledge store (`ServerSolutionsStore` → the `server_solutions`
+  SQLite table, wired into the runtime as `server_solutions_store`). The AI queries it at
+  runtime; values are filled in by observing the live server (the server's shops, maps,
+  mobs), NOT written as code constants.
+- The **LLM/CrewAI conscious tier decides WHAT** (e.g. "retreat to restock"); the executor
+  translates that to a command using the **server's learned** potion/town/farm from the
+  store. A different server yields a different command from the same decision.
+- When the store has not yet learned a fact, the executor MAY use a benign default so the
+  bot keeps moving, but the goal is to replace defaults with observed facts quickly.
+
 **Hard rule — the AI is self-deciding and independent; agents/LLM handle ANY agnostic issue.**
 The system's goal is full **self-* autonomy**: self-deciding, self-learning, self-healing,
 self-adapting, self-improving, self-aware. Every novel/unexpected/agnostic situation MUST be
