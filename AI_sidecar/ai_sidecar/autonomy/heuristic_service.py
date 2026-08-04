@@ -1737,15 +1737,26 @@ class HeuristicService:
                                             reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
                                             domain="progression"))
                             if _cm and _target and _cm != _target and _target != "iz_ac01":
-                                # ACADEMY-ROOM GATE (R3, server-agnostic): a bot inside the
-                                # academy room (iz_ac01_a) has NO portal to any field map —
-                                # routing to prt_fild05 from here is unroutable and just loops
-                                # "Cannot calculate a route". The exit guard's deterministic
-                                # 'move 100 24' handles leaving the room FIRST; only after the
-                                # bot reaches a routable map (izlude/izlude_a) should it
-                                # navigate to the hunt target.
-                                _cm_l2 = str(_cm or "").lower().replace(".gat", "")
-                                if _cm_l2 == "iz_ac01_a":
+                                # S18 STAY-COMMITTED GUARD: if the bot is ALREADY on a farm
+                                # map it can actually farm (a map with correct mon_control for
+                                # its spawned mobs), do NOT re-route it to a different target —
+                                # the cold-start default (prt_fild05 for level<10) would yank a
+                                # working bot off its current farm and break the kill loop. A
+                                # Pro picks a field and works it; commit to the farm it's on.
+                                _cm_farmable = str(_cm or "").lower().replace(".gat", "")
+                                _FARMS_OK = {"prt_fild08c", "prt_fild08", "prt_fild05", "prt_fild04"}
+                                if _cm_farmable in _FARMS_OK:
+                                    _actions.append(HeuristicAction(
+                                        kind="log", command=f"commit_farm={_cm_farmable}",
+                                        confidence=0.99, domain="routing",
+                                        reason=f"Already on farm {_cm_farmable} with combat config — stay and farm (S18)",
+                                    ))
+                                elif _cm_farmable == "iz_ac01_a":
+                                    # ACADEMY-ROOM GATE (R3, server-agnostic): a bot inside the
+                                    # academy room (iz_ac01_a) has NO portal to any field map —
+                                    # routing to prt_fild05 from here is unroutable and just loops
+                                    # "Cannot calculate a route". The exit guard's deterministic
+                                    # 'move 100 24' handles leaving the room FIRST.
                                     _actions.append(HeuristicAction(
                                         kind="log", command=f"defer_hunt={_target}",
                                         confidence=0.99, domain="routing",
