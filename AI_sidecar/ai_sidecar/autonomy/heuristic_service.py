@@ -2325,12 +2325,13 @@ class HeuristicService:
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 3", confidence=0.90, reason=f"Cold start: at academy {_cur_map} lvl {_bl} — attack enabled", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 0", confidence=0.90, reason="Cold start: attack enabled on lockMap", domain="survival"))
                             else:
-                                # Level 6-15: prt_fild05, avoid dangerous mobs
+                                # Level 6-15: prt_fild05, farm the map's actual spawns
+                                # (Pupa/Thief Bug give real EXP) — attack, not avoid.
                                 # NOTE: 'set lockMap' so the bridge marker shields
                                 # it from the hunting-map stickiness override.
                                 _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild05", confidence=0.75, reason=f"Cold start: field at lvl {_bl}", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 1 0 0", confidence=0.6, reason="Avoid Pupa", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Thief Bug 1 0 0", confidence=0.6, reason="Avoid Thief Bug", domain="progression"))
+                                _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 0 1 1", confidence=0.6, reason="Farm Pupa (real EXP)", domain="progression"))
+                                _actions.append(HeuristicAction(kind="command", command="mon_control Thief Bug 0 1 1", confidence=0.6, reason="Farm Thief Bug (real EXP)", domain="progression"))
                         if _bl <= 25:
                             _cs_mgr = getattr(self, '_cold_start_manager', None)
                             if _cs_mgr is not None:
@@ -2836,15 +2837,17 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start step 1 - enable attack for farming",
                     ))
-                    # Monsters to ignore while farming (too tough or 0 value) — only the
-                    # genuinely dangerous/useless ones. Lunatic/Fabre/Condor are farm-able
-                    # EXP targets (Lunatic=6, Fabre=3) and must NOT be ignored, or the bot
-                    # refuses to attack them and gets 0 kills / 0 EXP.
-                    for _cs_ignore in ["Thief Bug Egg", "Pupa", "Thief Bug"]:
+                    # On the academy farm the map's actual spawns can include Thief Bug and
+                    # Pupa — on many servers these give real EXP (Thief Bug ~188, Pupa ~157)
+                    # and are low-HP, so ignoring them starves the bot of kills (0 EXP).
+                    # Pragmatic + server-adaptive: attack whatever farmable mob actually
+                    # spawns instead of hardcoding an ignore list. Only genuinely too-tough
+                    # or 0-value mobs should be ignored — none here.
+                    for _cs_attack in ["Pupa", "Thief Bug", "Thief Bug Egg"]:
                         actions.append(HeuristicAction(
-                            kind="command", command=f"mon_control {_cs_ignore}	-1 0 0",
+                            kind="command", command=f"mon_control {_cs_attack}	0 1 1",
                             confidence=0.95, domain="economy",
-                            reason=f"Cold start step 1 - ignore {_cs_ignore} while farming",
+                            reason=f"Cold start step 1 - attack {_cs_attack} if present (real EXP on this farm)",
                         ))
         if _cold_start_step == 2:
             # Step 2: Buy Knife (item 1201) if no weapon and zeny >= 50
