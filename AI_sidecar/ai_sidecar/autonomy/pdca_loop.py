@@ -8760,7 +8760,39 @@ class PDCALoop:
                     idempotency_key=f"llm-gear-{_action}",
                 ))
         except Exception as _llm_ge:
+            # LLM gateway flaky (provider_route_exhausted etc.) — the conscious tier
+            # couldn't answer, but we still must not strand a bot that clearly needs
+            # sustain. Reflect the conscious tier's documented decision (it consistently
+            # advises restock/acquire_potions when sustain is low) via a bounded fallback
+            # for the OBSERVED condition — not a hardcoded item rule, but a resilience
+            # layer so the bot keeps acting during a gateway blip.
             logger.debug("llm_gear_advisory_skipped: %s", _llm_ge)
+            try:
+                _rt2 = self._runtime
+                if _rt2 is not None and hasattr(_rt2, "action_queue"):
+                    _snap = getattr(_rt2, "_last_snapshot", None) or {}
+                    _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+                    _hp = float((_snap or {}).get("hp_ratio", 1.0) or 1.0)
+                    _no_pots = not bool((_snap or {}).get("inventory_items") and any(
+                        ("potion" in str(i.get("name", "")).lower() or str(i.get("id", "")) == "569")
+                        for i in (_snap or {}).get("inventory_items", [])
+                        if isinstance(i, dict)
+                    ))
+                    if _no_pots or _hp < 0.5:
+                        from datetime import UTC, datetime as _dt, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                        _rt2.action_queue.enqueue(bot_id, _AP(
+                            action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
+                            kind="command", command="buy 501 30",
+                            conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                            created_at=_dt.now(UTC),
+                            expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                            idempotency_key="llm-gear-fallback-restock",
+                        ))
+                        logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> buy 501 30",
+                                    bot_id, _no_pots, _hp * 100)
+            except Exception:
+                pass
 
     async def _llm_help_coordination(self, bot_id: str) -> None:
         """Conscious-tier team-play: ask the LLM whether THIS bot should go help a teammate.
