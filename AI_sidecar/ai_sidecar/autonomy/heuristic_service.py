@@ -2241,8 +2241,21 @@ class HeuristicService:
                                         # lockMap means the bot is deliberately routed there
                                         # (e.g. prt_fild08) and must run, not farm here.
                                         _lock_is_townish = bool(_existing_lock) and "_fild" not in _existing_lock and "_dun" not in _existing_lock
-                                        if ("_fild" in _cur_field and _cur_field not in ("prt_fild08",)
-                                                and (not _existing_lock or _lock_is_townish)):
+                                        # Override to the current field if it's a farm map the
+                                        # bot can actually fight on. The bare prt_fild08 is
+                                        # excluded as a *target* (unroutable from izlude; the
+                                        # real academy farm is prt_fild08c), but a bot that is
+                                        # PHYSICALLY on a farm variant of its lock target
+                                        # (e.g. on prt_fild08c with lockMap prt_fild08 — same
+                                        # academy farm, different sub-map) should fight there
+                                        # rather than toggle a mismatched lockMap forever.
+                                        # A bot on a genuinely different farm (e.g. prt_fild05
+                                        # locked to prt_fild08) still transits (attackAuto 0).
+                                        _cur_base = _cur_field[:-1] if _cur_field.endswith(("a", "b", "c")) else _cur_field
+                                        _lock_base = _existing_lock[:-1] if _existing_lock.endswith(("a", "b", "c")) else _existing_lock
+                                        _same_farm = bool(_cur_base) and _cur_base == _lock_base
+                                        if "_fild" in _cur_field and _cur_field != "prt_fild08" \
+                                                and (not _existing_lock or _lock_is_townish or _same_farm):
                                             _hunt_map = _cur_field
                                         # Persist to a member so the field-transit block
                                         # below (a sibling block, out of lexical scope for
