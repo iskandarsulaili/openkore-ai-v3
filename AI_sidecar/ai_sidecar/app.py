@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -79,6 +80,46 @@ async def lifespan(app: FastAPI):
             logger.warning("api_auth_token is very short (<8 chars) — consider a stronger token")
     app.state.runtime = create_runtime()
     runtime = app.state.runtime
+
+    # ── Server-mode wiring (combat formulas + elements must match the server) ──
+    # Server-agnostic: auto-detect whether the connected server is Renewal or
+    # Pre-Renewal from observed monster stats (a Renewal server has high-HP/level
+    # mobs), then sync BOTH formula globals (damage_formulas.SERVER_MODE and
+    # ro_mechanics._server_mode) so damage/DEF/flee/ASPD/elemental math matches the
+    # server the bot actually plays. Explicit env override wins (AI_SERVER_MODE).
+    try:
+        from ai_sidecar.autonomy import ro_mechanics as _rm
+        from ai_sidecar.combat import damage_formulas as _df
+        _mode_env = (getattr(settings, "server_mode", "") or os.environ.get("AI_SERVER_MODE", "") or "").strip().lower()
+        if _mode_env in ("renewal", "pre_renewal", "classic"):
+            _mode = "renewal" if _mode_env == "renewal" else "pre_renewal"
+            _reason = "env"
+        else:
+            # Auto-detect from monster stats (Renewal mobs have high HP/level).
+            _max_hp = 0
+            try:
+                _md = getattr(runtime, "monster_db", None) or {}
+                if isinstance(_md, dict):
+                    for _m in list(_md.values())[:400]:
+                        _hp = int(_m.get("HP", 0) or _m.get("hp", 0) or 0) if isinstance(_m, dict) else 0
+                        if _hp > _max_hp:
+                            _max_hp = _hp
+            except Exception:
+                _max_hp = 0
+            _detected = _rm._auto_detect_server_mode(max_monster_hp=_max_hp)
+            # _detected is a ServerMode (str, Enum); use .value (NOT str(), which
+            # yields "ServerMode.RENEWAL" and never compares equal to "RENEWAL").
+            _mode = _detected.value
+            # damage_formulas only accepts 'pre_renewal'/'renewal'; collapse 'classic'
+            # to the closest supported formula mode.
+            if _mode not in ("renewal", "pre_renewal"):
+                _mode = "pre_renewal"
+            _reason = "auto_detect"
+        _df.set_server_mode(_mode)
+        _rm.set_server_mode(_mode)
+        logger.info("server_mode_wired: %s (via %s, max_monster_hp=%s)", _mode, _reason, _max_hp if _reason == "auto_detect" else "n/a")
+    except Exception as _sme:
+        logger.warning("server_mode_wiring_failed: %s", _sme)
 
     # Initialize and start PDCA loop
     from ai_sidecar.autonomy.pdca_loop import PDCALoop, PDCAConfig
