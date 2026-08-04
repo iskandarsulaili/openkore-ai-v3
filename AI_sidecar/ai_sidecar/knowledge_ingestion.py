@@ -156,6 +156,47 @@ def ingest_all_mobs(rathena_path: str) -> list[dict[str, Any]]:
     return all_mobs
 
 
+def ingest_achievements(rathena_path: str) -> list[dict[str, Any]]:
+    """Ingest ALL achievement data (re + pre-re) for achievement tracking.
+
+    Parses achievement_db.yml into structured entries (id, group, name, score,
+    condition, rewards, targets) so the AI can track achievement completion
+    (title/point rewards) as part of its progression knowledge.
+    """
+    all_ach: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    for mode in ["re", "pre-re"]:
+        fpath = os.path.join(rathena_path, "db", mode, "achievement_db.yml")
+        if os.path.exists(fpath):
+            parsed = _parse_yaml(fpath)
+            count = 0
+            for entry in parsed:
+                if not isinstance(entry, dict) or "Id" not in entry:
+                    continue
+                try:
+                    ach_id = int(entry["Id"])
+                except (TypeError, ValueError):
+                    continue
+                if ach_id in seen:
+                    continue
+                seen.add(ach_id)
+                all_ach.append({
+                    "id": ach_id,
+                    "group": str(entry.get("Group", "") or ""),
+                    "name": str(entry.get("Name", "") or ""),
+                    "score": int(entry.get("Score", 0) or 0),
+                    "condition": str(entry.get("Condition", "") or ""),
+                    "rewards": entry.get("Rewards", []) if isinstance(entry.get("Rewards"), list) else [],
+                    "targets": entry.get("Targets", []) if isinstance(entry.get("Targets"), list) else [],
+                    "title_id": entry.get("TitleId", entry.get("TitleID", 0) or 0),
+                })
+                count += 1
+            logger.info("  achievement_db/%s: %d achievements", mode, count)
+
+    return all_ach
+
+
 def ingest_job_stats(rathena_path: str) -> dict[str, Any]:
     """Ingest job stats — handles flattened 'Jobs.X' keys from _parse_yaml."""
     for mode in ["re", "pre-re"]:
