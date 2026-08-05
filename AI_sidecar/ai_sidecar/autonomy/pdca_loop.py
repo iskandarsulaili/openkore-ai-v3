@@ -4450,7 +4450,7 @@ class PDCALoop:
                                     # On a fresh/undertrained learner behavior_override()
                                     # returns None, so this is a no-op until trained.
                                     try:
-                                        _rl_act = _rl2.behavior_override(_st, min_experiences=100)
+                                        _rl_act = _rl2.behavior_override(_st, min_experiences=40)
                                         if _rl_act:
                                             _rl_cmd_map = {
                                                 "farm": "attackAuto 3",

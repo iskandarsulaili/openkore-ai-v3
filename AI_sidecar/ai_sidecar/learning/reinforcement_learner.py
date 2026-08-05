@@ -620,7 +620,7 @@ class ReinforcementLearner:
         self,
         state: np.ndarray,
         available_actions: list[str] | None = None,
-        min_experiences: int = 100,
+        min_experiences: int = 40,
     ) -> str | None:
         with self._lock:
             n = int(getattr(self._stats, "total_experiences", 0) or 0)
