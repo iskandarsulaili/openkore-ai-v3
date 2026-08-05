@@ -997,6 +997,7 @@ class HeuristicService:
         self._last_sell_time: dict[str, float] = {}
         self._last_buy_time: dict[str, float] = {}
         self._last_economy_emit: dict[str, float] = {}  # rate-limit cold-start potion economy
+        self._last_weapon_buy: dict[str, float] = {}  # rate-limit WEAPON_BUY shop-atom
         self._last_academy_room_move: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
@@ -4054,6 +4055,20 @@ class HeuristicService:
         if state == "WEAPON_BUY":
             _map = signals.get("map", "") or ""
             _is_hunting = any(x in _map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild"])
+            # SHIP FLOOD-FIX: WEAPON_BUY re-emits the same shop-routing commands EVERY
+            # cycle, flooding the action queue and pinning a bot in a buy-loop at town
+            # instead of farming. Rate-limit: run the shop-atom at most once per 15s per
+            # bot; on cooldown return an EMPTY assessment (no extra actions) so the state
+            # doesn't flood but the caller still gets a valid, actionable result.
+            _now_wb = __import__("time").time()
+            if _now_wb - self._last_weapon_buy.get(bot_id, 0.0) < 15.0:
+                _empty_wb = HeuristicAssessment(
+                    horizon=horizon, actions=[], confidence=0.1,
+                    actionable=False, top_domain="economy", signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = _empty_wb
+                return _empty_wb
+            self._last_weapon_buy[bot_id] = _now_wb
             if _is_hunting:
                 # On hunting map - go through portal to Prontera first
                 actions.append(HeuristicAction(
