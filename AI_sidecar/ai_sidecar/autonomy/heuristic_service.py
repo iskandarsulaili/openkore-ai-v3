@@ -1404,6 +1404,16 @@ class HeuristicService:
         controls = PER_MAP_MON_CONTROL.get(_map)
         if not controls:
             return
+        # GLOBAL RATE-LIMIT (A2 extension): regardless of map-dedup, only emit mon_control
+        # at most once per 60s per bot. The client RESTARTS its AI (state 2, target
+        # reselection) on EVERY mon_control apply — cancelling in-progress kills. If the
+        # bot's snapshot map flips (e.g. prt_fild08c <-> prt_fild08) the OLD map-dedup
+        # resets and mon_control re-emits, re-introducing the kill-interrupt that
+        # plateaued bot10. A hard 60s cooldown kills this permanently.
+        _now_g = __import__("time").time()
+        if _now_g - self._last_mon_emit.get(bot_id, 0.0) < 60.0:
+            return
+        self._last_mon_emit[bot_id] = _now_g
         # F3 (user directive): the attack decision must come from the GAME DB, not a
         # hardcoded 'always attack' tuple. Look up each monster in the real mob_db.yml
         # (via MonsterDB) — downgrade to ignore if it's a BOSS or far above the farmable
