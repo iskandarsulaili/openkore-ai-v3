@@ -1405,16 +1405,14 @@ class HeuristicService:
         controls = PER_MAP_MON_CONTROL.get(_map)
         if not controls:
             return
-        # GLOBAL RATE-LIMIT (A2 extension): regardless of map-dedup, only emit mon_control
-        # at most once per 60s per bot. The client RESTARTS its AI (state 2, target
-        # reselection) on EVERY mon_control apply — cancelling in-progress kills. If the
-        # bot's snapshot map flips (e.g. prt_fild08c <-> prt_fild08) the OLD map-dedup
-        # resets and mon_control re-emits, re-introducing the kill-interrupt that
-        # plateaued bot10. A hard 60s cooldown kills this permanently.
-        _now_g = __import__("time").time()
-        if _now_g - self._last_mon_emit.get(bot_id, 0.0) < 60.0:
-            return
-        self._last_mon_emit[bot_id] = _now_g
+        # EMIT-ON-MAP-CHANGE ONLY (completeness fix): the earlier GLOBAL 60s rate-limit
+        # here re-emitted mon_control on a 60s timer even on a STABLE farm map — and every
+        # mon_control apply makes the OpenKore client RESTART its AI (state 2), cancelling
+        # in-progress kills. That periodic reset is what still slowed compounding (45
+        # restarts). The CORRECT gate is the map-dedup below: emit mon_control ONLY when
+        # the bot's actual map CHANGES (which genuinely needs a fresh set, e.g.
+        # prt_fild08c<->prt_fild08). On a stable map, nothing re-emits -> zero AI resets.
+        # (handled by _last_mon_control_map check below)
         # F3 (user directive): the attack decision must come from the GAME DB, not a
         # hardcoded 'always attack' tuple. Look up each monster in the real mob_db.yml
         # (via MonsterDB) — downgrade to ignore if it's a BOSS or far above the farmable
@@ -1441,10 +1439,17 @@ class HeuristicService:
         if not _filtered:
             return
         # Check if we already sent mon_control for this map
+        # Normalize farm sub-map variants (prt_fild08c and prt_fild08 are the SAME farm)
+        # so a snapshot map-flip between them does NOT re-emit mon_control and reset the
+        # client's combat AI (which cancels in-progress kills). Only a TRUE map change
+        # (different farm/field) triggers a fresh emission.
+        _dedup_map = _map
+        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in PER_MAP_MON_CONTROL:
+            _dedup_map = _dedup_map[:-1]  # prt_fild08c -> prt_fild08 (same farm)
         _last_map = self._last_mon_control_map.get(bot_id, "")
-        if _last_map == _map:
-            return  # Already sent for this map
-        self._last_mon_control_map[bot_id] = _map
+        if _last_map == _dedup_map:
+            return  # Already sent for this (farm) map
+        self._last_mon_control_map[bot_id] = _dedup_map
         logger.info(f"[mon_control] {bot_id}: applying {len(_filtered)} entries for {_map}")
         for _monster, _attack, _lvl, _aggr in _filtered:
             actions.append(HeuristicAction(
