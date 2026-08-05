@@ -70,13 +70,40 @@ class CrewToolFacade:
         )
         result = self._runtime.ml_predict(payload)
         family_value = result.model_family.value if hasattr(result.model_family, "value") else str(result.model_family)
+        _recommendation = dict(getattr(result, "recommendation", {}) or {})
+        _confidence = float(getattr(result, "confidence", 0.0))
+        _shadow = dict(getattr(result, "shadow", {}) or {})
+        # ── SUBCONSCIOUS PROMOTION (re-tier) ──
+        # In real human cognition the subconscious DRIVES skilled action (trained
+        # muscle memory), it is NOT observe-only. Promote a high-confidence, SAFE
+        # recommendation to an active command. The recommendation is accepted only if:
+        #   (1) confidence is high enough (>= 0.7), and
+        #   (2) it maps to a SAFE, server-agnostic sustain/farm goal (never a lethal or
+        #       hardcoded-server action), and
+        #   (3) no REFLEX safety invariant is overridden (reflex is the hardwired floor:
+        #       never-die / don't-overextend stays authoritative regardless).
+        _SAFE_GOALS = {"attack", "keep_farming", "change_farm", "equip", "potion", "target",
+                       "move_to_farm", "loot", "rest"}
+        _goal = str(_recommendation.get("goal", "") or _recommendation.get("action", "") or "").lower()
+        _promoted_cmd = str(_recommendation.get("command", "") or "").strip()
+        _drives = bool(
+            _confidence >= 0.7
+            and _goal in _SAFE_GOALS
+            and _promoted_cmd
+        )
         return {
             "ok": bool(getattr(result, "ok", True)),
             "family": family_value,
             "model_version": getattr(result, "model_version", ""),
-            "recommendation": dict(getattr(result, "recommendation", {})),
-            "confidence": float(getattr(result, "confidence", 0.0)),
-            "shadow": dict(getattr(result, "shadow", {})),
+            "recommendation": _recommendation,
+            "confidence": _confidence,
+            "shadow": _shadow,
+            # Re-tier: when confident + safe, the subconscious DRIVES (emits the command),
+            # not just observes. The conscious remains the intent-setter of last resort.
+            "drives": _drives,
+            "promoted_command": _promoted_cmd if _drives else "",
+            "promotion_reason": ("high_confidence_safe_subconscious_drive" if _drives
+                                 else "shadow_only"),
         }
 
     def execute(
