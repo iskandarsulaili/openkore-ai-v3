@@ -48,23 +48,40 @@ cd "$SCRIPT_DIR" || exit 1
 # bots run disconnected — 60s was slow enough to leave a noticeable gap.
 while true; do
     sleep 15
-    # Sidecar self-heal
-    if ! curl -sf "http://127.0.0.1:${SIDECAR_PORT}/health/live" > /dev/null 2>&1 \
-       && ! pgrep -f "ai_sidecar\.app" > /dev/null 2>&1; then
+    # ── DECOUPLED SELF-HEAL (root-cause fix) ──
+    # A sidecar redeploy (pkill + restart) creates a brief sidecar-down window. During
+    # that window the bot process command line can transiently not match pgrep and the
+    # supervisor would relaunch otherwise-healthy bots -> every deploy reconnects the
+    # whole fleet (the churn that has kept bots off the farm). Decouple: when the sidecar
+    # just recovered from being down, suppress bot self-heal relaunches for a cooldown so
+    # a ~2s sidecar blip does NOT cascade into bot relaunches. Bots are only relaunched if
+    # genuinely dead for a sustained window.
+    _sidecar_was_down=0
+    if ! curl -sf "http://127.0.0.1:${SIDECAR_PORT}/health/live" > /dev/null 2>&1; then
+        _sidecar_was_down=1
+        _last_sidecar_down=$(date +%s)
+    fi
+    # Self-heal the sidecar if it died (and pgrep confirms no process).
+    if [ "$_sidecar_was_down" = "1" ] && ! pgrep -f "ai_sidecar\.app" > /dev/null 2>&1; then
         cd "$SIDECAR_DIR"
         setsid nohup "$SIDECAR_DIR/venv/bin/python" -m ai_sidecar.app --keep-alive --keep-alive-poll 10 \
             > "$SIDECAR_LOG" 2>&1 < /dev/null &
         cd "$SCRIPT_DIR"
     fi
-    # Bot self-heal
-    for profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
-        [ -d "$profile_dir" ] || continue
-        name="$(basename "$profile_dir")"
-        if ! pgrep -f "openkore\.pl.*\.bot_profiles/$name/" > /dev/null 2>&1; then
-            cd "$SCRIPT_DIR"
-            setsid nohup perl -I src openkore.pl --plugins=plugins --control=".bot_profiles/$name/control" \
-                < /dev/null > "$BOT_LOGS/$name.log" 2>&1 &
-            sleep 12
-        fi
-    done
+    # Bot self-heal — ONLY if the sidecar has been stable for >= 30s (a bot that is
+    # genuinely dead stays dead; a redeploy-sidecar blip does not churn the fleet).
+    _now=$(date +%s)
+    _since_down=$(( _now - ${_last_sidecar_down:-0} ))
+    if [ "$_since_down" -ge 30 ]; then
+        for profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
+            [ -d "$profile_dir" ] || continue
+            name="$(basename "$profile_dir")"
+            if ! pgrep -f "openkore\.pl.*\.bot_profiles/$name/" > /dev/null 2>&1; then
+                cd "$SCRIPT_DIR"
+                setsid nohup perl -I src openkore.pl --plugins=plugins --control=".bot_profiles/$name/control" \
+                    < /dev/null > "$BOT_LOGS/$name.log" 2>&1 &
+                sleep 12
+            fi
+        done
+    fi
 done
