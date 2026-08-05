@@ -4512,6 +4512,60 @@ class PDCALoop:
                     except Exception as _rl_e:
                         logger.debug("reinforcement_learner_observe_skipped: %s", _rl_e)
 
+                    # ── SUBCONSCIOUS PERSISTENT DRIVE (every cycle, re-tier S25) ──
+                    # The reward-gated block above only runs on kill/death events, so the
+                    # subconscious never drove on steady-state farming cycles. Evaluate the
+                    # trained DQN's high-level behavior EVERY cycle (decoupled from the
+                    # reward event) so the subconscious genuinely drives moment-to-moment
+                    # skilled action once trained — per the human-cognition re-tier.
+                    try:
+                        _rl3 = getattr(self._runtime, "reinforcement_learner", None)
+                        if _rl3 is not None and hasattr(_rl3, "behavior_override"):
+                            _st_any = getattr(self._runtime, "_rl_last_state", None)
+                            if _st_any is None and _cycle_snap is not None:
+                                try:
+                                    _st_any = _rl3.encode_state({
+                                        "hp": getattr(getattr(_cycle_snap, "vitals", None), "hp", 100) or 100,
+                                        "hp_max": getattr(getattr(_cycle_snap, "vitals", None), "hp_max", 100) or 100,
+                                        "base_level": getattr(getattr(_cycle_snap, "progression", None), "base_level", 1) or 1,
+                                        "zeny": getattr(getattr(_cycle_snap, "inventory", None), "zeny", 0) or 0,
+                                        "actors": max(0, len(getattr(_cycle_snap, "actors", None) or [])),
+                                        "weight": getattr(getattr(_cycle_snap, "vitals", None), "weight", 0) or 0,
+                                    })
+                                except Exception:
+                                    _st_any = None
+                            if _st_any is not None:
+                                _rl_persist = _rl3.behavior_override(_st_any, min_experiences=40)
+                                if _rl_persist:
+                                    _rl_persist_cmd = {
+                                        "farm": "attackAuto 3",
+                                        "buy_potions": "buyAuto 1",
+                                        "sell_items": "sellAuto 1",
+                                        "level_skill": "stat_add 1 1",
+                                        "rest": "sit",
+                                    }.get(_rl_persist)
+                                    if _rl_persist_cmd and hasattr(self._runtime, "action_queue"):
+                                        from datetime import UTC, datetime as _pdt, timedelta as _ptdl
+                                        from ai_sidecar.contracts.actions import ActionProposal as _PAP, ActionPriorityTier as _PAPT
+                                        self._runtime.action_queue.enqueue(
+                                            _cycle_bot_id,
+                                            _PAP(
+                                                action_id=f"rl-persist-{int(_pdt.now(UTC).timestamp())}",
+                                                kind="command",
+                                                command=_rl_persist_cmd,
+                                                conflict_key="",
+                                                priority_tier=_PAPT.strategic,
+                                                source="subconscious_rl",
+                                                created_at=_pdt.now(UTC),
+                                                expires_at=_pdt.now(UTC) + _ptdl(seconds=30),
+                                                idempotency_key=f"rl-persist:{_rl_persist}",
+                                            ),
+                                        )
+                                        logger.debug("subconscious_persistent_drive bot=%s action=%s cmd=%s",
+                                                     _cycle_bot_id, _rl_persist, _rl_persist_cmd)
+                    except Exception as _rl_pb:
+                        logger.debug("subconscious_persistent_drive_skipped: %s", _rl_pb)
+
                     # ── NEW: Initialize Empire Manager ──
                     _emp = getattr(self._runtime, "empire_manager", None)
                     if _emp is None:
