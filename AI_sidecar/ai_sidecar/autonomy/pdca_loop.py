@@ -4456,10 +4456,15 @@ class PDCALoop:
                                     # periodic train
                                     _obs_n = getattr(self._runtime, "_rl_obs_count", 0) + 1
                                     self._runtime._rl_obs_count = _obs_n
-                                    if _obs_n % 16 == 0 and hasattr(_rl2, "train"):
+                                    if _obs_n % 16 == 0 and hasattr(_rl2, "_train_from_replay"):
                                         try:
-                                            from ai_sidecar.learning.reinforcement_learner import train_batch
-                                            _rl2.train()
+                                            # SLEW-FIX: the training guard used
+                                            # `hasattr(_rl2, "train")` but the learner has NO
+                                            # method named `train` — so training NEVER ran and
+                                            # the DQN stayed untrained (training_steps=0), even
+                                            # after the experience buffer filled. Call the real
+                                            # training entry `_train_from_replay`.
+                                            _rl2._train_from_replay()
                                         except Exception:
                                             pass
                                     # ── Subconscious behavior override (gated) ──
