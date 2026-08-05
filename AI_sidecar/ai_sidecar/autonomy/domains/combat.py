@@ -95,10 +95,20 @@ class CombatDomain(BaseDomain):
         controls = PER_MAP_MON_CONTROL.get(map_name)
         if not controls:
             return
+        # COMPLETENESS FIX: this combat-domain emitter shared the SAME
+        # service._last_mon_control_map dedup key as heuristic_service._emit_mon_control_for_map
+        # but compared a RAW map_name while that one compared a NORMALIZED base (farm
+        # variant). prt_fild08c vs prt_fild08 -> the two emitters ping-ponged and each
+        # re-emitted mon_control on the other's write -> repeated client-AI restarts.
+        # Use the SAME normalized base-map dedup so both emitters agree and only ONE
+        # emits per true map change.
+        _dedup_map = map_name
+        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in PER_MAP_MON_CONTROL:
+            _dedup_map = _dedup_map[:-1]  # prt_fild08c -> prt_fild08 (same farm)
         _last_map = service._last_mon_control_map.get(bot_id, "")
-        if _last_map == map_name:
+        if _last_map == _dedup_map:
             return
-        service._last_mon_control_map[bot_id] = map_name
+        service._last_mon_control_map[bot_id] = _dedup_map
         logger.info(
             "[mon_control] %s: applying %d entries for %s",
             bot_id, len(controls), map_name,
