@@ -4428,7 +4428,28 @@ class PDCALoop:
                                 elif (getattr(_cycle_snap, "death_count", 0) or 0) == 0 and int(getattr(getattr(_cycle_snap, "progression", None), "base_level", 1) or 1) >= 1:
                                     _reward = 0.05  # small positive for surviving
                                 if _reward != 0.0 or not getattr(self._runtime, "_rl_ever_observed", False):
-                                    _rl2.observe(_st, "farm" if _reward >= 0 else "rest", _reward, _st,
+                                    # ── CONSCIOUS -> SUBCONSCIOUS TRANSFER (human model) ──
+                                    # The subconscious must learn the CONSCIOUS's actual
+                                    # cold-start plan (imitation), not a generic guess. Read
+                                    # the conscious tier's cold-start step and map it to the
+                                    # supervised behavior the learner records, so the learned
+                                    # Q-values inherit the conscious's winning plan.
+                                    _cs_step = 0
+                                    try:
+                                        _hsvc = getattr(self._runtime, "heuristic_service", None)
+                                        if _hsvc is not None:
+                                            _cs_map = getattr(_hsvc, "_cold_start_step", {}) or {}
+                                            _cs_step = int(_cs_map.get(_cycle_bot_id, 0) or 0)
+                                    except Exception:
+                                        _cs_step = 0
+                                    _observe_action = "farm"  # default: the goal of progress
+                                    if _reward < 0:
+                                        _observe_action = "rest"   # death -> the learner learns to avoid
+                                    elif _cs_step <= 1:
+                                        _observe_action = "buy_potions"  # cold-start: gear/sustain first
+                                    elif _cs_step >= 4:
+                                        _observe_action = "sell_items"    # trained: sell/monetize
+                                    _rl2.observe(_st, _observe_action, _reward, _st,
                                                  done=_died_now,
                                                  map_name=str(getattr(_cycle_snap, "map_name", "") or ""))
                                     self._runtime._rl_ever_observed = True
