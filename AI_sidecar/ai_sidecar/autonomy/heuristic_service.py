@@ -1449,6 +1449,10 @@ class HeuristicService:
         _last_map = self._last_mon_control_map.get(bot_id, "")
         if _last_map == _dedup_map:
             return  # Already sent for this (farm) map
+        # DIAG: log when re-emitting despite dedup (to catch the reset/flip)
+        logger.debug("mon_control_reemit bot=%s map=%s dedup_key=%s last=%s last_mon_emit_age=%.0f",
+                     bot_id, _map, _dedup_map, _last_map,
+                     __import__("time").time() - self._last_mon_emit.get(bot_id, 0.0))
         self._last_mon_control_map[bot_id] = _dedup_map
         logger.info(f"[mon_control] {bot_id}: applying {len(_filtered)} entries for {_map}")
         for _monster, _attack, _lvl, _aggr in _filtered:
@@ -3908,11 +3912,20 @@ class HeuristicService:
                 "Disable deadly teleport")
             # Only send move if on a different map
             if map_name != _cs_hunt_map:
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move {_cs_hunt_map}",
-                    confidence=0.99, domain="hunting",
-                    reason=f"Cold start - move to {_cs_hunt_map}",
-                ))
+                # RATE-LIMIT FIX (the park-in-town mechanism): this emitted `move <farm>`
+                # EVERY cycle the bot was off-farm, flooding the client's command queue —
+                # each move triggered a fresh route recalculation at the bot's spot (the
+                # 94x 'Calculating route to prontera' storm), so bot10 never committed to
+                # walking and stayed parked at 156,26 with EXP frozen. Send ONE move, let
+                # the client walk; re-send at most once per 20s.
+                _cs_mv_now = __import__("time").time()
+                if _cs_mv_now - self._last_return_to_farm.get(bot_id, 0.0) >= 20.0:
+                    self._last_return_to_farm[bot_id] = _cs_mv_now
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_cs_hunt_map}",
+                        confidence=0.99, domain="hunting",
+                        reason=f"Cold start - move to {_cs_hunt_map} (rate-limited once/20s)",
+                    ))
             # Party creation for leader — only at level 40+ (solo before 40 is faster)
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
