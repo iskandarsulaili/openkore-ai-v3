@@ -3318,26 +3318,22 @@ class PDCALoop:
                     _fo = getattr(self._runtime, "fleet_orchestrator", None)
                     if _fo is not None:
                         try:
-                            # Build fleet states robustly from the loop's actual bot list
-                            # (_all_bot_ids = short names), sourcing each snapshot from the
-                            # snapshot cache OR the fleet coordinator registry. This avoids
-                            # any single key-mismatch (full vs short) silently emptying the
-                            # state dict — which was why the orchestrator never directed a
-                            # parked bot back to the farm (S31).
+                            # ROOT-CAUSE (S31): the orchestrator was silent because this
+                            # tick referenced a local `_all_bot_ids` that is NOT assigned in
+                            # this scope before here — so the reference raised (caught by
+                            # the try) and the orchestrator NEVER actually built fleet
+                            # states → never issued a return-to-farm directive. Use the
+                            # reliable source: snapshot_cache.bot_ids() (the real cache
+                            # keys), which is always populated.
                             _fc = getattr(self._runtime, "snapshot_cache", None)
                             _fleet_states: dict[str, object] = {}
-                            for _fb in _all_bot_ids:
-                                _sn = None
-                                if _fc is not None:
-                                    _sn = _fc.get(str(_fb))
-                                    if _sn is None:
-                                        # Try the full-name cache key as a fallback.
-                                        for _k in _fc.bot_ids():
-                                            if str(_fb) in _k:
-                                                _sn = _fc.get(_k)
-                                                break
-                                _fleet_states[str(_fb)] = _sn
-                            _fo.tick(_fleet_states)
+                            if _fc is not None:
+                                for _fb in _fc.bot_ids():
+                                    _fsnap = _fc.get(_fb)
+                                    if _fsnap is not None:
+                                        _fleet_states[str(_fb)] = _fsnap
+                            if _fleet_states:
+                                _fo.tick(_fleet_states)
                         except Exception as _fo_e:
                             logger.debug("fleet_orchestrator_tick_failed: %s", _fo_e)
                 
