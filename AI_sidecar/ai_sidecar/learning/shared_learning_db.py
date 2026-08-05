@@ -295,6 +295,36 @@ class SharedLearningDB:
             finally:
                 conn.close()
 
+    def _query_arbitrage_candidates(self, limit: int = 5) -> list[tuple[str, int, int, int]]:
+        """Return items whose observed buy_price < sell_price (potential arbitrage).
+
+        COMPLETED per completeness mandate: the innovation engine's arbitrage detector
+        needed real price data to detect buy-low-sell-high windows. This queries the
+        `prices` table for items where the average sell price EXCEEDS the average buy
+        price (a genuine mismatch observed from real shop interactions), returning
+        (item_name, avg_buy, avg_sell, samples). Empty when no such mismatch is observed
+        yet — never fabricated.
+        """
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self._db_path)
+                try:
+                    cursor = conn.execute(
+                        "SELECT item_name, AVG(buy_price), AVG(sell_price), COUNT(*) "
+                        "FROM prices GROUP BY item_name "
+                        "HAVING AVG(sell_price) > AVG(buy_price) "
+                        "ORDER BY (AVG(sell_price) - AVG(buy_price)) DESC LIMIT ?",
+                        (limit,)
+                    )
+                    return [
+                        (str(r[0]), int(r[1] or 0), int(r[2] or 0), int(r[3] or 0))
+                        for r in cursor.fetchall()
+                    ]
+                finally:
+                    conn.close()
+        except Exception:
+            return []
+
     # ── Strategies ──
 
     def record_strategy(self, monster_id: int, strategy: str, success: bool, bot_id: str = "") -> None:

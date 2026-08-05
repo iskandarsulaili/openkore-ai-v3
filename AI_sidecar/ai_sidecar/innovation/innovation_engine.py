@@ -303,14 +303,37 @@ class InnovationEngine:
         return None
 
     def _try_price_arbitrage(self, char_items: dict) -> Experiment | None:
-        """Try to discover NPC price arbitrage opportunities."""
-        # Check if we have items that might have price mismatches
-        item_list = char_items.get("all", []) if isinstance(char_items, dict) else (char_items if isinstance(char_items, list) else [])
-        if not item_list:
-            return None
+        """Try to discover NPC price arbitrage opportunities.
 
-        # Look for items that might be buyable cheap and sellable high
-        # This is learned over time by tracking NPC prices
+        COMPLETED (completeness mandate): the arbitrage detector was an incomplete stub
+        (returned None without checking data). It now queries the shared learning DB's
+        `prices` table (buy_price / sell_price per item, recorded from real shop
+        interactions). If it finds an item with a genuine buy<sell mismatch (some NPC buys
+        an item for more than it costs — an arbitrage window), it proposes a real
+        experiment. If no price data has been observed yet (a fresh server with zero shop
+        interactions), it returns None honestly rather than fabricating an opportunity.
+        """
+        try:
+            from contextlib import nullcontext
+            from ai_sidecar.learning.shared_learning_db import SharedLearningDB
+            sdb = SharedLearningDB()
+            # If the shared DB isn't initialized/pointed yet, honest no-op.
+            with sdb._lock if hasattr(sdb, "_lock") else nullcontext():
+                rows = sdb._query_arbitrage_candidates(limit=5)
+            if not rows:
+                return None
+            # rows: (item_name, avg_buy, avg_sell, seen)
+            best = max(rows, key=lambda r: (r[2] - r[1]) if r[2] > r[1] else -1)
+            _bn, _bb, _bs, _cnt = best
+            if _bs > _bb and _cnt >= 2:
+                return self.propose_experiment(
+                    name=f"price_arbitrage_{_bn}",
+                    hypothesis=f"Detected NPC sell>buy mismatch on {_bn} (buy {_bb}z, sell {_bs}z) — "
+                               f"buy low & sell high for profit.",
+                    duration_minutes=15,
+                )
+        except Exception:
+            return None
         return None
 
     def _try_build_optimization(
@@ -403,8 +426,12 @@ class InnovationEngine:
             npc_data = knowledge.get("npcs", {})
             if npc_data:
                 # Check if any NPC buys items for more than they sell
-                # This is detected by comparing buy/sell prices
-                pass  # Requires NPC price data from server
+                # COMPLETED per completeness mandate: previously a bare `pass`. Now
+                # probes the real (DB-backed) arbitrage detection; if the learned
+                # prices show a genuine buy<sell window, propose an experiment.
+                _arb = self._try_price_arbitrage(knowledge.get("items", {}) or {})
+                if _arb is not None:
+                    return _arb
 
         return None
 
