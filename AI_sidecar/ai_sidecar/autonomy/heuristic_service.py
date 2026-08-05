@@ -998,6 +998,7 @@ class HeuristicService:
         self._last_buy_time: dict[str, float] = {}
         self._last_economy_emit: dict[str, float] = {}  # rate-limit cold-start potion economy
         self._last_weapon_buy: dict[str, float] = {}  # rate-limit WEAPON_BUY shop-atom
+        self._last_mon_emit: dict[str, float] = {}  # A2: rate-limit inline mon_control (resets client AI)
         self._last_academy_room_move: dict[str, float] = {}
         self._bot_deaths: dict[str, int] = {}
         self._cold_start_fired: dict[str, bool] = {}
@@ -2303,8 +2304,19 @@ class HeuristicService:
                                         # field even before the snapshot's lockMap syncs.
                                         self._cold_start_hunt_map = _hunt_map
                                         _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map})", domain="progression"))
-                                        _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only", domain="progression"))
-                                        _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too", domain="progression"))
+                                        # ── ROOT-CAUSE FIX (A2): inline mon_control re-emission ──
+                                        # These `mon_control` commands were emitted EVERY cycle this
+                                        # block ran. Each emission makes the OpenKore client RESTART
+                                        # its AI (state 2, target reselection) and CANCELS any
+                                        # in-progress attack — so a bot could never sustain a kill
+                                        # long enough to bank EXP (the plateau). Rate-limit to once
+                                        # per 60s per bot: the initial set is enough; re-sending just
+                                        # resets the client's combat AI.
+                                        _now_mc = __import__("time").time()
+                                        if _now_mc - self._last_mon_emit.get(bot_id, 0.0) >= 60.0:
+                                            self._last_mon_emit[bot_id] = _now_mc
+                                            _actions.append(HeuristicAction(kind="command", command="mon_control Poring 0 1 1", confidence=0.7, reason="Attack Porings only (rate-limited)", domain="progression"))
+                                            _actions.append(HeuristicAction(kind="command", command="mon_control Lunatic 0 1 1", confidence=0.7, reason="Attack Lunatics too (rate-limited)", domain="progression"))
                                         # ── FARM-FIELD PORTAL-EXIT CENTERING ──
                                         # A bot that crosses INTO the academy farm (prt_fild08c)
                                         # at a portal edge lingers there (few mobs spawn at the

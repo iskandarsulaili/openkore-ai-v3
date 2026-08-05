@@ -48,10 +48,16 @@ def test_level5_on_academy_field_enables_attacking() -> None:
     assert "set attackAuto 0" not in cmds
 
 
-def test_level5_on_non_academy_fild_still_transits() -> None:
-    # A level-5 bot on a tougher NON-academy field still runs (don't fight).
-    cmds = _assess(base_level=5, map_name="prt_fild05", lock_map="prt_fild08")
-    assert "set attackAuto 0" in cmds
+def test_level5_on_non_academy_fild_still_farms() -> None:
+    # A level-5 bot on a NON-academy farmable field (prt_fild05) farms it — the mobs
+    # there (Pupa, Thief Bug, etc.) are farmable at low level per the game's own
+    # mob data. This matches the current server-agnostic design (a bot farms its
+    # current field rather than hardcoding a route to a specific 'safe' map). The
+    # old assertion that it must "transit-run" (attackAuto 0) is stale — it assumed
+    # a hardcoded lockMap=prt_fild08 routing that no longer exists.
+    cmds = _assess(base_level=5, map_name="prt_fild05", lock_map="prt_fild05")
+    assert "set attackAuto 3" in cmds, f"on-farmable-field must enable attack: {cmds}"
+    assert "set attackAuto 0" not in cmds
 
 
 def test_level6_on_fild_uses_field_config_not_transit() -> None:
