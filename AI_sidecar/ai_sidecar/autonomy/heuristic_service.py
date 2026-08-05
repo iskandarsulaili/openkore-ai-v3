@@ -2348,7 +2348,17 @@ class HeuristicService:
                                         # _hunt_map) can recognize the bot is on its farm
                                         # field even before the snapshot's lockMap syncs.
                                         self._cold_start_hunt_map = _hunt_map
-                                        _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map})", domain="progression"))
+                                        # CONNECT-GRACE FIX (the reconnect-loop root cause):
+                                        # sending 'set lockMap' the INSTANT a bot connects to the
+                                        # map server triggers a client-side disconnect (observed:
+                                        # connect -> set_lockMap -> Disconnecting, every ~37s, so
+                                        # bot10 never left izlude_c and EXP stayed frozen at 782).
+                                        # Suppress lockMap emission while the client is freshly
+                                        # reconnected (reconnect_age_s < 15s) so it stabilizes
+                                        # in-game first. Purely additive — no state mutation.
+                                        _cs_reconn = float(signals.get("reconnect_age_s", 999.0) or 999.0)
+                                        if _cs_reconn >= 15.0:
+                                            _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace)", domain="progression"))
                                         # ── ROOT-CAUSE FIX (A2): inline mon_control re-emission ──
                                         # These `mon_control` commands were emitted EVERY cycle this
                                         # block ran. Each emission makes the OpenKore client RESTART
