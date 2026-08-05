@@ -1771,9 +1771,13 @@ class HeuristicService:
                         _phase = self._lifecycle.get_phase(_bot_id)
                         if _phase:
                             _actions.append(HeuristicAction(kind="log", command=f"lifecycle_phase={_phase}", confidence=0.5, reason=f"Phase: {_phase}", domain="progression"))
-                    if self._swarm_coordinator:
-                        _sa = self._swarm_coordinator.tick(_bot_id, signals)
-                        _actions.extend(_sa)
+                    # ORCHESTRATOR DECOUPLING (O3): fleet coordination must NOT run inside
+                    # the per-bot cycle. The former `SwarmCoordinator.tick(...)` here
+                    # polluted a farming bot with swarm-admin actions every cycle,
+                    # starving its movement (bot10 was flooded with heuristic_*_swarm).
+                    # Fleet intent is now decided by the SEPARATE coarse-cadence
+                    # FleetOrchestrator (fleet/fleet_orchestrator.py) on a slow pass,
+                    # decoupled from per-bot execution.
                     # ── Monster AI: per-monster behavior overrides ──
                     try:
                         _mon_name = str(signals.get("monster_name", "") or "")

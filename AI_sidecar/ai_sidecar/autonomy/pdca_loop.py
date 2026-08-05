@@ -3283,6 +3283,52 @@ class PDCALoop:
                             logger.info("fleet_coordinator_initialized")
                         except Exception as e:
                             logger.warning("fleet_coordinator_init_failed: %s", e)
+
+                    # ── SEPARATE FLEET ORCHESTRATOR (O2/O3) ──
+                    # A dedicated, coarse-cadence, conscious-only entity that issues
+                    # intent-level fleet directives — DECOUPLED from per-bot execution.
+                    # (The old SwarmCoordinator ran inside each bot's cycle and polluted
+                    # a farming bot with swarm-admin spam; that per-bot call is removed.
+                    # This orchestrator ticks slowly, reads the fleet, and nudges only
+                    # bots that clearly need a high-level directive.)
+                    _fo = getattr(self._runtime, "fleet_orchestrator", None)
+                    if _fo is None:
+                        try:
+                            from ai_sidecar.fleet.fleet_orchestrator import FleetOrchestrator
+                            _aqo = getattr(self._runtime, "action_queue", None)
+                            _enqueue_directive = None
+                            if _aqo is not None:
+                                from datetime import UTC, datetime as _fdt, timedelta as _ftd
+                                from ai_sidecar.contracts.actions import ActionProposal as _FAP, ActionPriorityTier as _FAPT
+                                def _enqueue_directive(bot_id, cmd):
+                                    _aqo.enqueue(bot_id, _FAP(
+                                        action_id=f"fleet-orch-{int(_fdt.now(UTC).timestamp())}",
+                                        kind="command", command=cmd, conflict_key="",
+                                        priority_tier=_FAPT.strategic, source="fleet_orchestrator",
+                                        created_at=_fdt.now(UTC),
+                                        expires_at=_fdt.now(UTC) + _ftd(seconds=30),
+                                        idempotency_key=f"fleet-orch-{cmd}",
+                                    ))
+                            _fo = FleetOrchestrator(coordinator=_fleet, enqueue_fn=_enqueue_directive)
+                            self._runtime.fleet_orchestrator = _fo
+                            logger.info("fleet_orchestrator_initialized")
+                        except Exception as e:
+                            logger.warning("fleet_orchestrator_init_failed: %s", e)
+                    # ── FleetOrchestrator per-cycle tick (coarse-cadence throttled) ──
+                    _fo = getattr(self._runtime, "fleet_orchestrator", None)
+                    if _fo is not None:
+                        try:
+                            _fc = getattr(self._runtime, "snapshot_cache", None)
+                            _fleet_states: dict[str, object] = {}
+                            if _fc is not None:
+                                for _fb in _all_bot_ids:
+                                    _fsnap = _fc.get(_fb)
+                                    if _fsnap is not None:
+                                        _fleet_states[str(_fb)] = _fsnap
+                            if _fleet_states:
+                                _fo.tick(_fleet_states)
+                        except Exception as _fo_e:
+                            logger.debug("fleet_orchestrator_tick_failed: %s", _fo_e)
                 
                     # ── NEW: Initialize Timing Awareness ──
                     _timing = getattr(self._runtime, "timing_awareness", None)
