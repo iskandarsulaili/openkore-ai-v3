@@ -18,30 +18,49 @@ openkore-ai-v3 is a **God-Tier RO AI** that is:
 ```
                      ┌─────────────────────────────────────────────┐
                      │  CONSCIOUS — LLM + CrewAI agent orchestration │
-                     │  Slow, deliberate, pre-emptive. Solves novel  │
-                     │  situations: unknown maps, quest chains, NPC/ │
-                     │  player interaction, cold-start strategy,     │
-                     │  delegating across the fleet. Updates reflex  │
-                     │  rules + trains the subconscious.             │
+                     │  SLOW, sparse, deliberate. ~the thin spotlight│
+                     │  of awareness, NOT the majority of skill.     │
+                     │  High-level INTENT + whole-picture ROOT-CAUSE │
+                     │  analysis (novel situations, quest chains,    │
+                     │  cold-start strategy, cross-fleet delegation).│
+                     │  Selects intent; for execution it RELIES on   │
+                     │  the subconscious — it does NOT micro-manage  │
+                     │  every per-cycle action. Understands WHY the  │
+                     │  bot is failing (deep, systemic), then points │
+                     │  intent. (Human: the deliberating 'I'.)       │
                      └───────────────────────┬───────────────────────┘
-                                             │ feedback (success/failure)
+                                             │ intent + trains
                      ┌───────────────────────▼───────────────────────┐
-                     │  SUBCONSCIOUS — trained ML from conscious action│
-                     │  Unsupervised punish/reward loop: learns which  │
-                     │  behaviors win. Speeds up decisions that the    │
-                     │  conscious already figured out, so they become  │
-                     │  automatic and don't need re-reasoning.         │
+                     │  SUBCONSCIOUS — trained ML (the skilled self)  │
+                     │  ~95% of actual skill. Learned/procedural from│
+                     │  reward/punish + observed experience. Where a │
+                     │  Pro's SPEED lives: potting at the right beat,│
+                     │  target cadence, route-feel, combo chains —   │
+                     │  automatic because TRAINED (muscle memory),   │
+                     │  not because rule-coded. DRIVES the majority  │
+                     │  of moment-to-moment skilled action.          │
+                     │  (Human: the body that knows without thinking)│
                      └───────────────────────┬───────────────────────┘
-                                             │ compiled rules
+                                             │ updated by conscious
                      ┌───────────────────────▼───────────────────────┐
-                     │  REFLEX — basic/chain/complex rule set          │
-                     │  Instant, zero-latency: skill combos, opponent  │
-                     │  skill cancelling, quick dodging, potion, sit.  │
-                     │  Updated by the conscious over time.            │
+                     │  REFLEX — HARDWIRED PRIMITIVES (baseline)     │
+                     │  IMMUTABLE, non-learned safety invariants:    │
+                     │  never die, don't overextend, flinch from     │
+                     │  lethal threat. The evolutionary / generic    │
+                     │  baseline that fires before ANY trained skill.│
+                     │  NOT the Pro's fast instinct (that is the    │
+                     │  subconscious trained skill, above). Reflex  │
+                     │  is the floor every tier respects.            │
                      └─────────────────────────────────────────────────┘
 ```
 
-**The three tiers are NOT separate bots.** They are one decision pipeline. A novel situation is reasoned by the conscious; if it recurs, the subconscious learns it; if it becomes repetitive and needs instant reaction, it is compiled into a reflex. This is exactly how a human expert plays: deliberate at first, automatic at mastery.
+**The three tiers are NOT separate bots and are NOT proficiency stages of one skill.** They are *three different kinds of processing that coexist*, mapped to real human cognition:
+
+- **Conscious** = high-level intent + systemic interpretation. Slow, sparse. It sees the WHOLE PICTURE and finds ROOT CAUSES, then sets intent. It does NOT have to (and must not) micromanage each action.
+- **Subconscious** = the TRAINED, learned skill — where a Pro's actual speed and craft live. This is the tier that should DRIVE most moment-to-moment combat because it is *trained from experience* (muscle memory), exactly like a veteran player's hands.
+- **Reflex** = the hardwired, non-learned safety baseline (flinch / withdraw / never-die). It is the *floor*, not the ceiling.
+
+Correction vs the earlier model: reflex is NOT "compiled mastery" (a proficiency endpoint). A human expert's automatic skill is *subconscious* (trained), not reflex (primitive hardwired). The tiers therefore do NOT form a "skill ladder"; consciousness interprets, the subconscious performs, and reflex sets immovable safety bounds.
 
 ---
 
