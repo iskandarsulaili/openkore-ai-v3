@@ -3328,10 +3328,13 @@ class PDCALoop:
                             _fc = getattr(self._runtime, "snapshot_cache", None)
                             _fleet_states: dict[str, object] = {}
                             if _fc is not None:
-                                for _fb in _fc.bot_ids():
+                                _bot_ids = _fc.bot_ids()
+                                for _fb in _bot_ids:
                                     _fsnap = _fc.get(_fb)
                                     if _fsnap is not None:
                                         _fleet_states[str(_fb)] = _fsnap
+                                if not _fleet_states:
+                                    logger.debug("fleet_orchestrator_tick: bot_ids=%s states=0 (empty)", list(_bot_ids)[:5])
                             if _fleet_states:
                                 _fo.tick(_fleet_states)
                         except Exception as _fo_e:
