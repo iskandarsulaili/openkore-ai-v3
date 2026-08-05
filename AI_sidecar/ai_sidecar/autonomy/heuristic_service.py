@@ -1014,6 +1014,7 @@ class HeuristicService:
         self._last_party_seen: dict[str, float] = {}
         self._all_bots_cache: dict[str, list] = {}
         self._last_force_return: dict[str, float] = {}
+        self._last_return_to_farm: dict[str, float] = {}  # return-to-farm after restock cooldown
         self._last_job_change_attempt: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
         # Config dedup cache: bot_id -> {config_key: last_set_value}
@@ -3727,6 +3728,27 @@ class HeuristicService:
                     kind="command", command="move 367 205",
                     confidence=0.99, domain="emergency",
                     reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
+                ))
+
+        # ── RETURN-TO-FARM AFTER RESTOCK (COMPLETED per completeness mandate) ──
+        # The inverse of force-return: a bot that went to town to restock (now HAS
+        # potions + weapon) but is IDLE on a non-farm map must deterministically be
+        # sent back to its farm — otherwise it parks in town forever (the compounding
+        # blocker: bot10 farming to level 4 then parking in prontera). This closes the
+        # farm -> restock -> return-to-farm loop that the orchestrator was meant to
+        # cover but which must also work per-bot (no silent dependency on the captain).
+        _audit_cs_hunt = getattr(self, "_cold_start_hunt_map", "prt_fild08c") or "prt_fild08c"
+        _audit_farm_for_return = _audit_cs_hunt
+        if _audit_is_town and _audit_has_potions and _audit_has_weapon and \
+           _audit_map not in ("iz_ac01_a", "iz_ac01") and state != "DEAD":
+            _audit_now2 = __import__("time").time()
+            _audit_last_return = self._last_return_to_farm.get(bot_id, 0)
+            if _audit_now2 - _audit_last_return > 45:  # 45s cooldown, then keep nudging home
+                self._last_return_to_farm[bot_id] = _audit_now2
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_audit_farm_for_return}",
+                    confidence=0.95, domain="hunting",
+                    reason=f"Return to farm {_audit_farm_for_return} after restock (has potions+weapon, idle in town)",
                 ))
 
         # ── DISABLE OPENCORE'S BUILT-IN POTION USE when 0 potions ──
