@@ -3321,7 +3321,13 @@ class PDCALoop:
                             _fc = getattr(self._runtime, "snapshot_cache", None)
                             _fleet_states: dict[str, object] = {}
                             if _fc is not None:
-                                for _fb in _all_bot_ids:
+                                # Use snapshot_cache.bot_ids() — the REAL cache keys are the
+                                # FULL bot names (e.g. 'Local rAthena AI World:kicapmasin10'),
+                                # not the short names in _all_bot_ids. Iterating _all_bot_ids
+                                # here returned None for every bot (key mismatch) so the
+                                # orchestrator never actually saw any state and fired
+                                # nothing — the silent-init bug.
+                                for _fb in _fc.bot_ids():
                                     _fsnap = _fc.get(_fb)
                                     if _fsnap is not None:
                                         _fleet_states[str(_fb)] = _fsnap

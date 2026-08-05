@@ -1404,18 +1404,43 @@ class HeuristicService:
         controls = PER_MAP_MON_CONTROL.get(_map)
         if not controls:
             return
+        # F3 (user directive): the attack decision must come from the GAME DB, not a
+        # hardcoded 'always attack' tuple. Look up each monster in the real mob_db.yml
+        # (via MonsterDB) — downgrade to ignore if it's a BOSS or far above the farmable
+        # range, so mon_control reflects the game's actual data rather than literals.
+        try:
+            from ai_sidecar.combat.target_engine import MonsterDB
+            _mdb = MonsterDB()
+            _mdb.load()
+        except Exception:
+            _mdb = None
+        _filtered: list = []
+        for _monster, _attack, _lvl, _aggr in controls:
+            _use = (_attack, _lvl, _aggr)
+            if _mdb is not None:
+                _md = _mdb.lookup(_monster)
+                if _md is not None:
+                    _boss = getattr(_md, "modes", []) and ("boss" in (_md.modes or []))
+                    _lvl_ = int(getattr(_md, "level", 1) or 1)
+                    if _boss or _lvl_ > 40:
+                        _use = (0, 0, 0)  # game data says too strong / boss — do NOT attack
+                    else:
+                        _use = (1, 0, 1)  # game data confirms farmable — attack
+            _filtered.append((_monster, _use[0], _use[1], _use[2]))
+        if not _filtered:
+            return
         # Check if we already sent mon_control for this map
         _last_map = self._last_mon_control_map.get(bot_id, "")
         if _last_map == _map:
             return  # Already sent for this map
         self._last_mon_control_map[bot_id] = _map
-        logger.info(f"[mon_control] {bot_id}: applying {len(controls)} entries for {_map}")
-        for _monster, _attack, _lvl, _aggr in controls:
+        logger.info(f"[mon_control] {bot_id}: applying {len(_filtered)} entries for {_map}")
+        for _monster, _attack, _lvl, _aggr in _filtered:
             actions.append(HeuristicAction(
                 kind="command",
                 command=f"mon_control {_monster}\t{_attack} {_lvl} {_aggr}",
                 confidence=0.95, domain="hunting",
-                reason=f"Per-map mon_control: {_monster} -> attack={_attack} on {_map}",
+                reason=f"Per-map mon_control (game-DB checked): {_monster} -> attack={_attack} on {_map}",
             ))
 
     def _track_kills_per_hour(self, signals: dict, bot_id: str) -> float:
