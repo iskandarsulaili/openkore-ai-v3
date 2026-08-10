@@ -3314,31 +3314,12 @@ class PDCALoop:
                             logger.info("fleet_orchestrator_initialized")
                         except Exception as e:
                             logger.warning("fleet_orchestrator_init_failed: %s", e)
-                    # ── FleetOrchestrator per-cycle tick (coarse-cadence throttled) ──
-                    _fo = getattr(self._runtime, "fleet_orchestrator", None)
-                    if _fo is not None:
-                        try:
-                            # ROOT-CAUSE (S31): the orchestrator was silent because this
-                            # tick referenced a local `_all_bot_ids` that is NOT assigned in
-                            # this scope before here — so the reference raised (caught by
-                            # the try) and the orchestrator NEVER actually built fleet
-                            # states → never issued a return-to-farm directive. Use the
-                            # reliable source: snapshot_cache.bot_ids() (the real cache
-                            # keys), which is always populated.
-                            _fc = getattr(self._runtime, "snapshot_cache", None)
-                            _fleet_states: dict[str, object] = {}
-                            if _fc is not None:
-                                _bot_ids = _fc.bot_ids()
-                                for _fb in _bot_ids:
-                                    _fsnap = _fc.get(_fb)
-                                    if _fsnap is not None:
-                                        _fleet_states[str(_fb)] = _fsnap
-                                if not _fleet_states:
-                                    logger.debug("fleet_orchestrator_tick: bot_ids=%s states=0 (empty)", list(_bot_ids)[:5])
-                            if _fleet_states:
-                                _fo.tick(_fleet_states)
-                        except Exception as _fo_e:
-                            logger.debug("fleet_orchestrator_tick_failed: %s", _fo_e)
+                    # NOTE: the FleetOrchestrator TICK is NOT here — it was nested
+                    # inside this `if not self._services_initialized:` init block, so
+                    # it ran only on the FIRST cycle and the captain never fired a
+                    # directive again (S39). The tick now lives AFTER the init block
+                    # (see `# ── FleetOrchestrator per-cycle tick` below) so it runs
+                    # every cycle; the orchestrator's own 15s cadence throttles it.
                 
                     # ── NEW: Initialize Timing Awareness ──
                     _timing = getattr(self._runtime, "timing_awareness", None)
@@ -4801,6 +4782,31 @@ class PDCALoop:
 
                     self._services_initialized = True
 
+                # ── FleetOrchestrator per-cycle tick (coarse-cadence throttled) ──
+                # S39-FIX (2026-08-10): this tick was previously nested INSIDE the
+                # `if not self._services_initialized:` init block above, so it ran
+                # only on the FIRST cycle and the captain never fired a directive
+                # again. Relocated here (after the init block, every cycle) — the
+                # orchestrator's own 15s cadence (FleetOrchestrator._tick_seconds)
+                # throttles it, so it stays coarse-cadence and decoupled from
+                # per-bot execution.
+                _fo = getattr(self._runtime, "fleet_orchestrator", None)
+                if _fo is not None:
+                    try:
+                        _fc = getattr(self._runtime, "snapshot_cache", None)
+                        _fleet_states: dict[str, object] = {}
+                        if _fc is not None:
+                            _bot_ids = _fc.bot_ids()
+                            for _fb in _bot_ids:
+                                _fsnap = _fc.get(_fb)
+                                if _fsnap is not None:
+                                    _fleet_states[str(_fb)] = _fsnap
+                            if not _fleet_states:
+                                logger.debug("fleet_orchestrator_tick: bot_ids=%s states=0 (empty)", list(_bot_ids)[:5])
+                        if _fleet_states:
+                            _fo.tick(_fleet_states)
+                    except Exception as _fo_e:
+                        logger.debug("fleet_orchestrator_tick_failed: %s", _fo_e)
 
                 # Get heuristic confidence
                 _hc = 0.0
