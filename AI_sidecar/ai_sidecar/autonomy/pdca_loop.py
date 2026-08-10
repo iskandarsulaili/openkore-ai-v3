@@ -2415,6 +2415,14 @@ class PDCALoop:
         # LLM bottleneck fix: once all sub-services are initialized, skip the
         # massive init block on subsequent cycles to reduce per-cycle overhead.
         self._services_initialized: bool = False
+        # B12-FIX (2026-08-10): the strategic-services init block (line ~2701)
+        # was gated by the SAME `_services_initialized` flag that the core
+        # combat/reflex block (line ~2616) sets True FIRST — so on the first
+        # cycle block1 ran, set the flag, and block2 (fleet_orchestrator,
+        # long_term_memory, reflex_engine, party/market/WoE intelligence, ~134
+        # services) was SKIPPED ENTIRELY. The whole strategic layer was dead
+        # code on the live path. Give block2 its own flag so both run once.
+        self._strategic_services_initialized: bool = False
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -2698,7 +2706,7 @@ class PDCALoop:
                 _tier = getattr(_settings, "llm_cost_tier", "standard")
                 _cost_mode = None  # initialize before conditional block
                 _cost_mode_str = getattr(_settings, "cost_mode", "standard")
-                if not self._services_initialized:
+                if not self._strategic_services_initialized:
                 
                     # ── LLM bottleneck fix: skip re-initialization of services ──
                     # On first cycle all 40+ services initialize. On subsequent cycles
@@ -4780,7 +4788,7 @@ class PDCALoop:
                     except Exception as e:
                         logger.warning("strategy_state_load_failed: %s", e)
 
-                    self._services_initialized = True
+                    self._strategic_services_initialized = True
 
                 # ── FleetOrchestrator per-cycle tick (coarse-cadence throttled) ──
                 # S39-FIX (2026-08-10): this tick was previously nested INSIDE the
