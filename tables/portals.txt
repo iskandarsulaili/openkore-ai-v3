@@ -1963,7 +1963,7 @@ prt_fild05 105 381 mjolnir_09 106 28
 prt_fild05 134 14 prt_fild07 132 381
 prt_fild05 255 14 prt_fild07 248 376
 prt_fild05 292 385 mjolnir_09 300 28
-prt_fild05 373 205 prontera 22 203
+prt_fild05 373 205 prontera 26 203
 prt_fild06 23 193 prontera 289 203
 prt_fild06 277 320 prt_fild02 305 17
 prt_fild07 13 64 gef_fild02 380 68

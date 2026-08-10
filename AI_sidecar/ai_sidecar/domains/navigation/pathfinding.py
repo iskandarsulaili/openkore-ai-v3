@@ -212,8 +212,22 @@ class Pathfinder:
                         _, from_x, from_y, to_x, to_y = route_step
                         previous[neighbor_map] = (current, from_x, from_y, to_x, to_y)
                     else:
-                        # Town shortcut or path without direct portal — use (0,0) as placeholder
-                        previous[neighbor_map] = (current, 0, 0, 0, 0)
+                        # HARDENED (completeness sweep 2026-08-10): a graph edge
+                        # with NO known portal coordinates cannot be routed — the
+                        # old code stored (0,0) as a "placeholder", which later
+                        # produced `move 0 0` commands sending the bot to a map
+                        # corner. get_neighbors() and get_route_step() currently
+                        # iterate the SAME _graph conns, so this branch is
+                        # unreachable today, but if the graph ever gains edges
+                        # without portal coords (e.g. Kafra/fly-wing shortcuts),
+                        # silently routing through (0,0) would strand the bot.
+                        # Skip the edge instead: Dijkstra finds an alternate
+                        # route, or honestly reports the goal unreachable.
+                        logger.debug(
+                            "pathfinding: edge %s -> %s has no portal coords; skipping (route may be lost)",
+                            current, neighbor_map,
+                        )
+                        continue
 
                     heapq.heappush(pq, (new_cost, neighbor_map))
 
