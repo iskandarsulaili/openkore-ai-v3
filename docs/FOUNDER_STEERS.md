@@ -131,4 +131,14 @@ instruction conflicts, the LATEST dated steer wins.
 - M3. Update docs (this file + ZERO_INTERVENTION docs) to reflect the
   launcher-driven config model.
 
+## N. ML + resource optimization (founder 2026-08-24)
+- N1. openkore-ai-v3 ML is OPTIONAL but ENABLED BY DEFAULT. GPU is the FIRST
+  choice when a compatible GPU is present; CPU is the SECOND choice; and it can
+  be DISABLED entirely.
+- N2. openkore-ai-v3 must be optimized for the LOWEST possible resource usage
+  (CPU, RAM, GPU, etc.) — no busy loops, no unbounded allocations, bounded
+  caches, async/non-blocking I/O.
+- N3. openkore-ai-v3 is USER-AGNOSTIC and config is set AUTOMATICALLY (no
+  per-user manual config; launcher drives it from login).
+
 
