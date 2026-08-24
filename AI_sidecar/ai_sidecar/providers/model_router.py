@@ -349,6 +349,21 @@ class ModelRouter:
                             },
                         )
                     self._emit_route_metric(workload=request.task, provider=actual_provider, model=actual_model)
+                    # P5.2: feed usage into the cost tracker so the fleet budget gate
+                    # actually counts real calls. Was DORMANT — record_call never called.
+                    try:
+                        _ct = getattr(self, "_cost_tracker", None)
+                        if _ct is not None and hasattr(_ct, "record_call"):
+                            _usage = response.usage if isinstance(response.usage, dict) else {}
+                            _tokens = int(_usage.get("total_tokens", 0) or _usage.get("completion_tokens", 0) or 0)
+                            _ct.record_call(
+                                tokens=_tokens,
+                                model=actual_model,
+                                tier=getattr(self, "_cost_tier", "standard"),
+                                bot_id=request.bot_id if hasattr(request, "bot_id") else "default",
+                            )
+                    except Exception:
+                        pass
                     return response, RoutingDecision(
                         workload=decision.workload,
                         provider_order=list(decision.provider_order),

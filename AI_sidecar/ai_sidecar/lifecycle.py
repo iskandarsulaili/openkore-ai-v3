@@ -6036,6 +6036,24 @@ def create_runtime() -> RuntimeState:
 
     runtime.heuristic_service = HeuristicService()
     runtime.cost_tracker = CostTracker(per_bot_budget=True)
+    # P5.2 fleet LLM budget: wire the CostTracker into the model router so the
+    # per-hour/daily budget gates actual LLM calls fleet-wide. This was DORMANT —
+    # set_cost_controls() was never called and record_call() never fed, so the budget
+    # never tripped. per_bot_budget=True means each bot has its own budget (bounded
+    # per-bot) — change to False for a single shared fleet budget.
+    try:
+        _cost_budget = int(getattr(settings, "llm_daily_budget_tokens", 0) or 0) or 100000
+        _cost_hourly = int(getattr(settings, "cost_mode_hourly_calls", 0) or 0) or 30
+        if hasattr(model_router, "set_cost_controls"):
+            model_router.set_cost_controls(
+                tracker=runtime.cost_tracker,
+                daily_budget=_cost_budget,
+                max_calls_per_hour=_cost_hourly,
+                tier=getattr(settings, "cost_mode", "standard"),
+            )
+            logger.info("cost_controls_wired: router budget daily=%d hourly=%d", _cost_budget, _cost_hourly)
+    except Exception as _ce:
+        logger.warning("cost_router_wiring_failed: %s", _ce)
     try:
         _exp_db = None
         _exp_db_path = sqlite_path if sqlite_path and "experience" in str(sqlite_path) else None

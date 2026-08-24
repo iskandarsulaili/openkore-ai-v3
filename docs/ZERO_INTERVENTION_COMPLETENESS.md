@@ -107,8 +107,15 @@ P5.1 [ ] LLM/conscious tier failure must NOT "fail-open to native AI"
      (aiSidecarBridge.pl:2089 / fail-open retained). FIX: fall back to a conservative
      verified-earning routine (stay on farm, drink, keep killing) — a fixed floor
      that provably yields EXP, so a 24/7 run never idles silently.
-P5.2 [ ] Fleet-level LLM budget gate so N bots can't burn a provider + degrade
+P5.2 [x] Fleet-level LLM budget gate so N bots can't burn a provider + degrade
      together.
+     DONE: CostTracker was DORMANT — instantiated (lifecycle:6038) but set_cost_controls
+     never called on the model router AND record_call never fed (usage always 0), so the
+     per-hour/daily budget never tripped. Wired: lifecycle now calls
+     model_router.set_cost_controls(tracker=daily/hourly/tier) and the router's success
+     path feeds response usage into CostTracker.record_call. per_bot_budget=True keeps
+     each bot bounded; change to False for one shared fleet budget. 2 regression tests
+     in test_zero_intervention_p52_cost_gate.py.
 
 ## PHASE 6 — END-GAME TIER (only on the Phase-5 floor)
 
