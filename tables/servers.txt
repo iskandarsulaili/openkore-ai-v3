@@ -18,12 +18,12 @@ serverEncoding Western
 addTableFolders kRO/RagexeRE_2020_04_01b;translated/kRO_english;kRO
 
 [Local rAthena AI World]
-ip raw-server.openkore-ai.com
-port 1053
-charServer_ip raw-server.openkore-ai.com
-charServer_port 1063
-mapServer_ip raw-server.openkore-ai.com
-mapServer_port 1070
+ip ipv6-raw-server.openkore-ai.com
+port 46019
+charServer_ip ipv6-raw-server.openkore-ai.com
+charServer_port 21544
+mapServer_ip ipv6-raw-server.openkore-ai.com
+mapServer_port 53378
 private 1
 master_version 0
 version 128
@@ -32,3 +32,4 @@ serverType kRO_RagexeRE_2025_06_04
 serverEncoding Western
 addTableFolders kRO/RagexeRE_2025_06_04;translated/kRO_english;kRO
 secureLogin 0
+messageIDEncryption 0

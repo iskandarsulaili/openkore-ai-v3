@@ -26,6 +26,13 @@ sub new {
 	# rathena-ai-world 20250604 login handshake
 	$self->{packet_list}{'01DC'} = ['secure_login_key', 'x2 a*', [qw(secure_key)]];
 
+	# HC_NOTIFY_ACCESSIBLE_MAPNAME (0x0840) — sent by rathena-ai-world
+	# 20250604 char-server when char-select is waiting on an available
+	# map-server (accessible-maps handshake). Without this handler the bot
+	# logged "Unknown switch: 0840" and timed out on char select instead of
+	# replying 0x0841 once a map-server becomes ready.
+	$self->{packet_list}{'0840'} = ['notify_accessible_mapname', 'v a*', [qw(len mapList)]];
+
 	return $self;
 }
 

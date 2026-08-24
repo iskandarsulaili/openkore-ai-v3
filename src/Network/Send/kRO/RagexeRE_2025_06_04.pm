@@ -33,6 +33,12 @@ sub new {
 		# CH_MAKE_CHAR — PACKETVER >= 20151001 layout: name[24], slot,
 		# hair_color u16, hair_style u16, job u32, sex u8 (36B w/ header)
 		'0A39' => ['char_create', 'a24 C v2 V C', [qw(name slot hair_color hair_style job_id sex)]],
+		# CH_SELECT_ACCESSIBLE_MAPNAME (0x0841) — replies to the char-server's
+		# HC_NOTIFY_ACCESSIBLE_MAPNAME (0x0840) "wait for map-server" packet.
+		# rathena-ai-world 20250604 char-server uses this Renewal handshake to
+		# finish char-select once a map-server is available. Without it the bot
+		# timed out on char select (the accessible-map reply never went out).
+		'0841' => ['select_accessible_mapname', 'C C', [qw(char_slot map_slot)]],
 	);
 
 	$self->{packet_list}{$_} = $packets{$_} for keys %packets;
