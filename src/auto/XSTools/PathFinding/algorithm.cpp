@@ -127,7 +127,19 @@ CalcPath_pathStep (CalcPath_session *session)
 	unsigned long timeout = (unsigned long) GetTickCount();
 	int loop = 0;
 
+	// Hard guarantee against non-termination: a correct A* can never expand
+	// more nodes than exist on the map (each node is popped from the heap at
+	// most once). If the openList ever exceeds that many pops, the heap or
+	// weight map is degenerate — bail out instead of spinning the AI loop.
+	// This is a provable upper bound (width*height), never a heuristic.
+	unsigned long maxPops = (unsigned long) session->width * (unsigned long) session->height;
+	unsigned long pops = 0;
+
 	while (1) {
+		if (++pops > maxPops) {
+			printf("[pathfinding run error] Exceeded maximum node expansions (%lu). Aborting pathfind.\n", maxPops);
+			return -1;
+		}
 		// If the openList is empty no path exists
 		if (session->openListSize == 0) {
 			return -1;
@@ -382,7 +394,17 @@ openListGetLowest (CalcPath_session *session)
 
 	long lastIndex = session->openListSize-1;
 
-	while (leftChildIndex <= lastIndex) {
+	// Guard against a degenerate/corrupted heap: a correct binary heap
+	// sifts down at most O(log2(size)) times. If openListIndex is ever
+	// inconsistent the while() below can loop forever (latent bug that a
+	// timeout at the pathStep boundary can't catch, since we're stuck
+	// inside this single call). Cap iterations so pathfinding can never
+	// hang the bot. Worst case this returns a suboptimal-but-valid node;
+	// it can NEVER make a correct heap return the wrong node.
+	long siftGuard = 0;
+	const long SIFT_MAX = 1024;
+
+	while (leftChildIndex <= lastIndex && siftGuard++ < SIFT_MAX) {
 
 		//There are 2 children
 		if (rightChildIndex <= lastIndex) {
