@@ -121,4 +121,14 @@ instruction conflicts, the LATEST dated steer wins.
   through 1st/2nd/3rd/4th (via real quests, per the RAW job-quest directive) toward
   a specialized 4th-job build.
 
+## M. Launcher config model (founder 2026-08-24)
+- M1. ALL core openkore-ai-v3 config is set AUTOMATICALLY based on the user's
+  login in the launcher (account/char/server/ports/credentials — no manual
+  config.txt editing).
+- M2. Only a MINIMAL set of common/customizable options (most common + core
+  only) is exposed as launcher Settings. Keep it minimal — do not surface the
+  full config surface.
+- M3. Update docs (this file + ZERO_INTERVENTION docs) to reflect the
+  launcher-driven config model.
+
 
