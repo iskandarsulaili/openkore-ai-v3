@@ -99,6 +99,8 @@ class ActionQueue:
                 )
                 self._actions_by_id[proposal.action_id] = expired
                 self._action_to_bot[proposal.action_id] = bot_id
+                # Clean up the expired record after a short TTL (it is never acked).
+                self._schedule_ack_cleanup(proposal.action_id, bot_id)
                 return False, ActionStatus.expired, proposal.action_id, "action_already_expired"
 
             superseded_ids: list[str] = []
@@ -376,6 +378,7 @@ class ActionQueue:
                     )
                     self._actions_by_id[proposal.action_id] = expired
                     self._action_to_bot[proposal.action_id] = bot_id
+                    self._schedule_ack_cleanup(proposal.action_id, bot_id)
                     continue
 
                 # P3.2 exactly-once: only a genuinely QUEUED (never-sent) action may
@@ -431,6 +434,8 @@ class ActionQueue:
                 expired = replace(queued, status=ActionStatus.expired)
                 self._actions_by_id[expired.proposal.action_id] = expired
                 self._clear_idempotency_index(bot_id, queued.proposal.idempotency_key, queued.proposal.action_id)
+                # Schedule cleanup of the expired record (never acked).
+                self._schedule_ack_cleanup(queued.proposal.action_id, bot_id)
                 continue
             kept.append(queued)
         self._by_bot[bot_id] = kept
