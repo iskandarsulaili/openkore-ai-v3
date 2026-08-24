@@ -1266,6 +1266,11 @@ sub map_loaded {
 	$syncMapSync = pack('V1',$args->{syncMapSync}); # unused, should we keep this for legacy compatibility?
 	main::initMapChangeVars();
 	%minimap_indicator_seen = ();
+	# Arm the periodic keepalive (ai_sync) unconditionally at map entry. Upstream
+	# only arms it inside the serverType == 1 branch of the 0187 handler, which
+	# never fires for string serverTypes like kRO_RagexeRE_2025_06_04 — without
+	# this the bot stops sending CZ_SYNC and the map-server's 60s stall drops it.
+	$timeout{ai_sync}{time} = time;
 
 	if ($net->version == 1) {
 		$net->setState(4);

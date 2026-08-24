@@ -300,8 +300,18 @@ openListAdd (CalcPath_session *session, Node* currentNode)
 	long parentIndex = (long)floor((currentNode->openListIndex - 1) / 2);
 	Node* parentNode;
 
+	// Guard against a degenerate/corrupted heap: a correct binary heap
+	// sifts UP at most O(log2(size)) times. If openListIndex is ever
+	// inconsistent the while() below can loop forever (latent bug that a
+	// timeout at the pathStep boundary can't catch, since we're stuck
+	// inside this single call). Cap iterations so pathfinding can never
+	// hang the bot. Worst case this returns a suboptimal-but-valid heap;
+	// it can NEVER make a correct heap return the wrong node.
+	long siftUpGuard = 0;
+	const long SIFT_UP_MAX = 1024;
+
 	// Repeat while currentNode still has a parent node, otherwise currentNode is the top node in the heap
-	while (parentIndex >= 0) {
+	while (parentIndex >= 0 && siftUpGuard++ < SIFT_UP_MAX) {
 
 		parentNode = &session->currentMap[session->openList[parentIndex]];
 
@@ -334,8 +344,18 @@ reajustOpenListItem (CalcPath_session *session, Node* currentNode)
 	long parentIndex = (long)floor((currentNode->openListIndex - 1) / 2);
 	Node* parentNode;
 
+	// Guard against a degenerate/corrupted heap: a correct binary heap
+	// sifts UP at most O(log2(size)) times. If openListIndex is ever
+	// inconsistent the while() below can loop forever (latent bug that a
+	// timeout at the pathStep boundary can't catch, since we're stuck
+	// inside this single call). Cap iterations so pathfinding can never
+	// hang the bot. Worst case this returns a suboptimal-but-valid heap;
+	// it can NEVER make a correct heap return the wrong node.
+	long siftUpGuard = 0;
+	const long SIFT_UP_MAX = 1024;
+
 	// Repeat while currentNode still has a parent node, otherwise currentNode is the top node in the heap
-	while (parentIndex >= 0) {
+	while (parentIndex >= 0 && siftUpGuard++ < SIFT_UP_MAX) {
 
 		parentNode = &session->currentMap[session->openList[parentIndex]];
 
