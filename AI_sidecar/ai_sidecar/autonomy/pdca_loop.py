@@ -8983,7 +8983,9 @@ class PDCALoop:
         Fault isolation: a domain that throws repeatedly for ONE bot opens only that
         bot's breaker (skipping its LLM/planning work for a bounded window) without
         halting the rest of the fleet. Uses the 'queue' family so the default 5-fail /
-        10s open window applies and self-heals.
+        10s open window applies and self-heals. Also feeds the degradation manager so
+        the module health surface reflects the failure (was a dormant stub — only
+        report_success was ever called).
         """
         if not bot_id or bot_id == "pdca":
             return
@@ -8996,6 +8998,12 @@ class PDCALoop:
             )
         except Exception:
             logger.warning("pdca_domain_breaker_record_failed bot=%s domain=%s", bot_id, domain)
+        try:
+            _dm = getattr(self._runtime, "degradation_manager", None)
+            if _dm is not None and hasattr(_dm, "report_failure"):
+                _dm.report_failure(f"domain.{domain}", str(exc)[:256])
+        except Exception:
+            pass
 
     def _check_progress_and_detect_stuck(self, bot_id: str) -> bool:
         """Detect 'alive but not progressing' for a bot (P2.1).
