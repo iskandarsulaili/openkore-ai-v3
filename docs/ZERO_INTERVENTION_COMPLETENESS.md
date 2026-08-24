@@ -27,11 +27,12 @@ P1.2 [ ] `_run_loop` runs ALL horizons + ALL bots sequentially in ONE async loop
      FIX: per-bot scheduling — gather/run each bot's eligible horizon independently.
      (NOTE: loop already iterates all bots inside one cycle at 5838; full task
      fan-out per bot deferred as it risks the live loop — see P1.5 below)
-P1.3 [ ] `_run_one_cycle` is ~3300-line single function, all domains inline; any one
+P1.3 [x] `_run_one_cycle` is ~3300-line single function, all domains inline; any one
      sub-domain exception fails the whole cycle. FIX: per-domain try/except that
      forwards the error (logs + counts toward that domain's breaker) and continues
-     the remaining domains for that bot. (The per-bot loop at 5838 already wraps each
-     domain emitter in try/except; audit remaining unwrapped sites.)
+     the remaining domains for that bot. DONE: all six domain emitters wrapped
+     (game_engine/heuristic/swarm/vendor/skill/combat) + _record_domain_failure() opens
+     only that bot's domain breaker. 36 pytest green.
 P1.4 [x] LLM advisory (`_llm_gear_advisory` every 30 cycles, `_llm_help_coordination`,
      `_generate_plan`) is awaited INLINE inside the single PDCA loop → a deep LLM
      round-trip stalls the entire fleet's short/med/long horizons. FIX: run these
@@ -55,6 +56,16 @@ P2.2 [ ] Outcome confirmation: acks currently mean "dispatched", not "effect hap
      intended-effect (exp ticked / moved / hp changed in snapshot window);
      no-effect → treat as failure and re-decide. Sidecar must not clear the intent
      on a blanked-noop ack.
+     AUDIT FINDING (this batch): the "blanked ack success=1" is PARTLY intentional —
+     condition-already-met rewrites (skill_on_cooldown, ai_auto_already_auto,
+     item_602_suppressed, party_leave_already_left) must ack success to prevent
+     sidecar retry-spam (comment aiSidecarBridge.pl:3424). The REAL intent-loss is
+     narrower: gate-blocked-but-still-needed commands. Since the PDCA re-decides from
+     a fresh snapshot every 5s, intents are not durably lost; the correct change is
+     genuine OUTCOME CONFIRMATION on the sidecar (compare ack'd action's intended
+     effect vs snapshot delta windows) — a real feature, not a one-line ack flip.
+     Do NOT flip cooldown to success=0 (that is a retry-spam regression, tested
+     intent).
 P2.3 [ ] Bridge ack_queue is FIFO, head-only retry, stale head >5s dropped
      (4467-4497). Lost ack → action expires 30s → idempotency cleared → re-emit or
      intent-loss. FIX: ack retry that does not silently drop; sidecar handles

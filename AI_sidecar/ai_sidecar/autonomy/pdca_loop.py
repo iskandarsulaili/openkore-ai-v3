@@ -5910,13 +5910,17 @@ class PDCALoop:
                             pass
                         # COMMITTED ACTION GUARD: check if bot already has a committed move action
                         _cat = getattr(self._runtime, "committed_action_tracker", None)
+                        _actions_queued_ge = 0
                         if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
-                            _actions_queued_ge = 0
                             logger.info("committed_action_guard: bot=%s has committed move, skipping game_engine_actions", _bid)
                         else:
-                            _actions_queued_ge = _emit_game_engine_actions(
-                                self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
-                            )
+                            try:
+                                _actions_queued_ge = _emit_game_engine_actions(
+                                    self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
+                                )
+                            except Exception as _ex_ge:
+                                logger.warning("pdca_domain_error bot=%s domain=game_engine err=%s", _bid, _ex_ge)
+                                _record_domain_failure(self, _bid, "game_engine", _ex_ge)
                         _actions_queued_hs = 0
                         try:
                             if _hs is not None:
@@ -5998,24 +6002,47 @@ class PDCALoop:
                                         logger.info("[god_mode] %d actions generated, %d enqueued for %d bots", len(_gm_actions), _gm_enqueued, len(_gm_snap_dict))
                         except Exception as e:
                             logger.warning("[god_mode] error: %s", e)
-                        _actions_queued_swarm = _emit_swarm_actions(
-                            self._runtime, horizon.value, bot_id=_bid
-                        )
-                        # COMMITTED ACTION GUARD: check if bot already has a committed move action
-                        _cat = getattr(self._runtime, "committed_action_tracker", None)
-                        if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
-                            _actions_queued_vendor = 0
-                            logger.info("committed_action_guard: bot=%s has committed move, skipping vendor_actions", _bid)
-                        else:
-                            _actions_queued_vendor = _emit_vendor_actions(
+                        # Per-domain fault isolation: an exception in ONE domain emitter
+                        # must not kill the whole bot cycle (which would then open the
+                        # bot's breaker and skip ALL horizons). Log + count toward the
+                        # per-bot breaker, then continue the remaining domains.
+                        _actions_queued_swarm = 0
+                        try:
+                            _actions_queued_swarm = _emit_swarm_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
-                        _actions_queued_skill = _emit_skill_actions(
-                            self._runtime, horizon.value, bot_id=_bid
-                        )
-                        _actions_queued_combat = _emit_combat_actions(
-                            self._runtime, horizon.value, bot_id=_bid
-                        )
+                        except Exception as _em_swarm:
+                            logger.warning("pdca_domain_error bot=%s domain=swarm err=%s", _bid, _em_swarm)
+                            _record_domain_failure(self, _bid, "swarm", _em_swarm)
+                        # COMMITTED ACTION GUARD: check if bot already has a committed move action
+                        _cat = getattr(self._runtime, "committed_action_tracker", None)
+                        _actions_queued_vendor = 0
+                        if _cat is not None and _cat.has_committed_move(_bid, cooldown_ms=25000):
+                            logger.info("committed_action_guard: bot=%s has committed move, skipping vendor_actions", _bid)
+                        else:
+                            try:
+                                _actions_queued_vendor = _emit_vendor_actions(
+                                    self._runtime, horizon.value, bot_id=_bid
+                                )
+                            except Exception as _ex_vendor:
+                                logger.warning("pdca_domain_error bot=%s domain=vendor err=%s", _bid, _ex_vendor)
+                                _record_domain_failure(self, _bid, "vendor", _ex_vendor)
+                        _actions_queued_skill = 0
+                        try:
+                            _actions_queued_skill = _emit_skill_actions(
+                                self._runtime, horizon.value, bot_id=_bid
+                            )
+                        except Exception as _ex_skill:
+                            logger.warning("pdca_domain_error bot=%s domain=skill err=%s", _bid, _ex_skill)
+                            _record_domain_failure(self, _bid, "skill", _ex_skill)
+                        _actions_queued_combat = 0
+                        try:
+                            _actions_queued_combat = _emit_combat_actions(
+                                self._runtime, horizon.value, bot_id=_bid
+                            )
+                        except Exception as _ex_combat:
+                            logger.warning("pdca_domain_error bot=%s domain=combat err=%s", _bid, _ex_combat)
+                            _record_domain_failure(self, _bid, "combat", _ex_combat)
                         _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill + _actions_queued_combat
                         
                         # ── Config push: heal resources + anti-detection (every cycle) ──
@@ -8896,6 +8923,26 @@ class PDCALoop:
                 self._advisory_inflight.discard(name)
 
         _loop.create_task(_reap(_task))
+
+    def _record_domain_failure(self, bot_id: str, domain: str, exc: Exception) -> None:
+        """Record a per-domain emitter failure against that bot's breaker.
+
+        Fault isolation: a domain that throws repeatedly for ONE bot opens only that
+        bot's breaker (skipping its LLM/planning work for a bounded window) without
+        halting the rest of the fleet. Uses the 'queue' family so the default 5-fail /
+        10s open window applies and self-heals.
+        """
+        if not bot_id or bot_id == "pdca":
+            return
+        try:
+            self._circuit_breaker.record_failure(
+                bot_id=bot_id,
+                key=f"domain.{domain}",
+                family="queue",
+                reason=f"{domain}_emitter_error: {exc}",
+            )
+        except Exception:
+            logger.warning("pdca_domain_breaker_record_failed bot=%s domain=%s", bot_id, domain)
 
     # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, NOT hardcoded) ──
     # The source of gear/sustain decisions is the LLM (conscious tier), not a hardcoded
