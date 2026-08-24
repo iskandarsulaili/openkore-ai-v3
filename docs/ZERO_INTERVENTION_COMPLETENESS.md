@@ -158,6 +158,23 @@ P6.2 [x] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallba
      detection + paced non-latched restart); cannot-route handled by deterministic
      sidecar guards + P2.1 stuck detector. CLOSED as covered.
 
+## ADVERSAIRIAL SWEEP LOG (defects found beyond the 6-phase plan, all fixed)
+
+- [x] P5.2 RESIDUAL: CostTracker(per_bot_budget=True) bounded each bot but the FLEET
+     total was unbounded (N bots x per-bot budget). Fixed: fleet-wide daily/hourly
+     accumulator consulted FIRST in check(), reset on rollover, persisted as _fleet.
+     (commit 42a1b3c02)
+- [x] _spawn_advisory leak: name added to _advisory_inflight BEFORE the loop-running
+     check; a not-running loop left the name stuck forever -> advisory never fired
+     again. Fixed ordering. (42a1b3c02)
+- [x] expired-action memory leak: enqueue/rehydrate/replay-prune stored EXPIRED actions
+     in _actions_by_id but never scheduled cleanup (only acked/dropped did). 30s-TTL
+     proposals polled continuously -> unbounded growth. Fixed all 3 sites. (2c9b42772)
+- [x] llm_manager NEVER attached to runtime: created (lifecycle:5825) but never
+     assigned -> pdca_loop `_rt.llm_manager` (gear/sustain/root-cause advisory LLM,
+     9090/9246) always resolved None -> the whole conscious 'whole-picture/systemic'
+     advisory path silently no-op'd. Fixed: runtime.llm_manager = llm_manager. (00f92c940)
+
 ---
 
 ## REGRESSION / VERIFICATION (run per batch)
