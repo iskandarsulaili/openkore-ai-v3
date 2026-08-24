@@ -970,6 +970,7 @@ sub initMapCalculator {
 		noWarpItemMaps => $self->{noWarpItemMaps},
 		noWarpItemIDs => $self->{noWarpItemIDs},
 		noAirship => $self->{noAirship},
+		maxTime => 0.1,
 	);
 	$self->setSubtask($task);
 }

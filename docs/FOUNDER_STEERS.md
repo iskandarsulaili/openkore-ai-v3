@@ -75,3 +75,17 @@ instruction conflicts, the LATEST dated steer wins.
   with identical output, CHANGE STRATEGY — don't re-grep the same file.
 - H2. Answer only when asked; plain language, honest limits. Verify against actual
   code/live endpoints, not memory/checklist claims.
+
+## I. Log / telemetry / ML crowdsource (founder directive 2026-08-24)
+- I1. openkore-ai-v3 MUST log/telemetry its runtime — designed to be easy to debug
+  AND to eventually train our own ML model from crowdsourced data.
+- I2. This especially (but not limited to) applies to AI bots running on user PCs
+  on WINDOWS later.
+- I3. Design implication: capture bot actions, decisions, outcomes, rewards,
+  positions, packet/state snapshots into a structured, anonymous, uploadable log
+  stream that can be aggregated server-side into a training dataset — mirroring
+  the RAW mobs-ML collector pattern (ai_responses/reward-confidence, watermark,
+  per-session). Zero PII; session-keyed; rate-limited; founder-reviewable.
+- I4. Do NOT let telemetry hurt the bot (fire-and-forget async, non-blocking,
+  bounded queue, offline-tolerant). This is a first-class feature, not a stub.
+

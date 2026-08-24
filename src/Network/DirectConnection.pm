@@ -594,6 +594,16 @@ sub checkConnection {
 			undef $conState_tries;
 		}
 	} elsif ($self->getState() == Network::CONNECTED_TO_CHAR_SERVER) {
+		if($self->{accessible_map_retry_pending} && timeOut($timeout{accessible_map_retry})) {
+			# All accessible maps were "not ready" (peer-host/central flap).
+			# Re-enter char-select so the char server sends a fresh 0840 with
+			# updated map statuses. The 'charlogin' timeout re-armed below is
+			# the bounded outage guard.
+			$self->{accessible_map_retry_pending} = 0;
+			$messageSender->sendCharLogin($config{'char'});
+			$timeout{'charlogin'}{'time'} = time;
+			# (debug) Accessible map retry: re-entered char-select
+		}
 		if(!$self->serverAlive() && !$conState_tries) {
 			if ($config{pauseMapServer}) {
 				return if($config{XKore} eq 1 || $config{XKore} eq 3);

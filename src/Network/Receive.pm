@@ -12880,10 +12880,46 @@ sub notify_accessible_mapname {
 
 	$map_index = $fallback_index if !defined $map_index;
 	if (!defined $map_index) {
+		# All accessible maps report "not ready" (status != 0). This happens
+		# when a peer-host / the central map-server's accessible-map ownership
+		# flaps (EVE model: a host disconnects/reconnects, briefly clearing the
+		# accessible-map list). The real client waits on char-select and is
+		# re-notified (HC_NOTIFY_ACCESSIBLE_MAPNAME re-sent) as soon as a map
+		# server owns maps again. We must NOT error/disconnect here — instead
+		# re-enter char-select (re-send the char-login) so the char server
+		# sends us a fresh 0840 with updated statuses, and keep retrying until
+		# a map becomes available. The existing 'charlogin' timeout (set on
+		# re-send) is the bounded safety net for a genuine long outage.
+		#
+		# Bound: re-request at most ACCESSIBLE_MAP_RETRY_MAX times, spaced
+		# ACCESSIBLE_MAP_RETRY_DELAY seconds apart. If still none after the
+		# cap, fall through to the connection error (surfaces the real outage).
+		my $retries = $self->{accessible_map_retries} // 0;
+		$retries++;
+		$self->{accessible_map_retries} = $retries;
+		my $max = $config{accessibleMapRetryMax} // 30;
+		my $delay = $config{accessibleMapRetryDelay} // 5;
+		if ($retries <= $max) {
+			# Re-arm the char-login timeout as the outage guard, then schedule
+			# the re-entry. The DirectConnection loop consumes 'charlogin' on
+			# timeout; here we re-enter char-select immediately so a fresh 0840
+			# (with updated map statuses) is requested.
+			Plugins::callHook('notify_accessible_mapname/retry');
+			$timeout{accessible_map_retry}{timeout} = $delay;
+			$timeout{accessible_map_retry}{time} = time;
+			$self->{accessible_map_retry_pending} = 1;
+			debug "Map server not ready (retry $retries/$max); re-entering char-select in ${delay}s\n", "connection";
+			return;
+		}
+		$self->{accessible_map_retries} = 0;
+		$self->{accessible_map_retry_pending} = 0;
 		error T("Map server is not ready for any accessible map. Staying on character selection.\n"), 'connection';
 		return;
 	}
 
+	# A map is available — reset the retry state and proceed.
+	$self->{accessible_map_retries} = 0;
+	$self->{accessible_map_retry_pending} = 0;
 	$messageSender->sendSelectAccessibleMapname($map_index);
 }
 
