@@ -141,4 +141,10 @@ instruction conflicts, the LATEST dated steer wins.
 - N3. openkore-ai-v3 is USER-AGNOSTIC and config is set AUTOMATICALLY (no
   per-user manual config; launcher drives it from login).
 
+## O. Char selection in launcher (founder 2026-08-24)
+- O1. WHICH chars (and HOW MANY) openkore-ai-v3 runs is fully configurable in
+  the launcher — the user picks the char(s) to bot, not a hardcoded list.
+- O2. Multi-char: the launcher can run several openkore-ai-v3 instances, one per
+  selected char, on the same account (RAW supports per-char multi-login).
+
 
