@@ -185,6 +185,14 @@ P6.2 [x] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallba
      module. NOT a live-failure path: the per-domain circuit breaker + cost gate ->
      earning floor is the real degradation. Documented as known-dormant (would need
      wiring report_failure at actual failure sites to become live).
+- [x] RESOLVED above: wired degradation_manager.report_failure AND self_healer.
+     heal_module at _record_domain_failure (per-domain failure sites). Both were
+     dormant stubs (report_failure zero callers; heal_module zero callers). Now they
+     run on every per-domain emitter failure — degradation marks the module health,
+     self-healer records the corrective action (reconnect/drain/restart/reset/fallback)
+     into its heal log (surfaced via get_heal_summary). Advisory (bridge executes the
+     actual recovery), real recovery via circuit breaker + stuck detector + health
+     monitor. (65e818486)
 
 ---
 
