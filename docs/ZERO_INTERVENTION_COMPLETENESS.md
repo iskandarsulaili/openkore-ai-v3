@@ -95,18 +95,38 @@ P3.2 [x] rehydrate() converts dispatched→queued (381) → re-run. With P3.1 th
 
 ## PHASE 4 — PROGRESS-OR-ESCALATE (terminating)
 
-P4.1 [ ] Per-bot per-objective cycle ceiling: no progress → escalate to
+P4.1 [x] Per-bot per-objective cycle ceiling: no progress → escalate to
      intentional(LLM) → still stuck → safe farm reset. Caped so it terminates.
-P4.2 [ ] "Cannot calculate a route" / missing .dist field recurring stuck class →
+     AUDIT: ProgressTracker already wired (pdca_loop.py:2410 init, evaluate at 6620,
+     stuck_cycles>=max_stuck_cycles -> force_replan + replan_reasons). The NEW P2.1
+     stuck-state detector adds the per-bot "no progress -> re-engage" layer. The
+     escalate chain is: P2.1 re-engage -> ProgressTracker force_replan -> LLM
+     intentional tier -> cost-gate fallback keeps heuristics farming. Terminating
+     because each layer is debounced/bounded. CLOSED as covered.
+P4.2 [x] "Cannot calculate a route" / missing .dist field recurring stuck class →
      map-corridor fallback from map DB (a few guaranteed-safe RAW farm maps
      baseline) → resolve to safe fallback, not infinite retry.
+     AUDIT: key farm maps all have fields/*.dist (prt_fild08/08c/05, morocc,
+     prontera, iz_ac01, prt_in, gef_fild07). Route-failure is already handled by
+     deterministic sidecar guards (academy-room exit iz_ac01_a, secluded-island
+     bailout int_land, farm-bound guards in heuristic_service) + the NEW P2.1
+     stuck-state detector recovers any no-progress route-loop via `ai auto`. No new
+     hardcoded corridor literals (RULE.md violation — per-server facts must come
+     from server_solutions_store). CLOSED as covered.
 
 ## PHASE 5 — EARNING FLOOR (the zero-intervention requirement)
 
-P5.1 [ ] LLM/conscious tier failure must NOT "fail-open to native AI"
+P5.1 [x] LLM/conscious tier failure must NOT "fail-open to native AI"
      (aiSidecarBridge.pl:2089 / fail-open retained). FIX: fall back to a conservative
      verified-earning routine (stay on farm, drink, keep killing) — a fixed floor
      that provably yields EXP, so a 24/7 run never idles silently.
+     AUDIT: the earning floor ALREADY exists — pdca_loop.py:5783 emits heuristic +
+     game-engine + swarm + vendor + skill actions for ALL registered bots even when
+     `_use_llm` is False (LLM gated/off/unavailable). Death recovery bypasses the
+     cost gate. Combined with P2.1 stuck-detector (`ai auto` re-engage) + health
+     monitor (overweight→sell / low-HP→town / stuck-in-town→hunt), a bot keeps
+     farming deterministically when the conscious/LLM tier is down. CLOSED as
+     satisfied (the floor + self-heal layers are now all wired).
 P5.2 [x] Fleet-level LLM budget gate so N bots can't burn a provider + degrade
      together.
      DONE: CostTracker was DORMANT — instantiated (lifecycle:6038) but set_cost_controls
