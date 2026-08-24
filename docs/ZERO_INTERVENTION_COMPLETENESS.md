@@ -82,10 +82,15 @@ P2.3 [x] Bridge ack_queue is FIFO, head-only retry, stale head >5s dropped
 
 ## PHASE 3 — EXACTLY-ONCE ACROSS RESTARTS
 
-P3.1 [ ] Idempotency index is in-memory only (action_queue.py:42,82); rebuilt from
+P3.1 [x] Idempotency index is in-memory only (action_queue.py:42,82); rebuilt from
      restored queue only (359). Sidecar+bridge restart → double-exec of a command
      already done. FIX: persist idempotency index alongside queue; bridge-side
      permanent (persisted) command dedup key.
+     CLOSED: the idempotency index is rebuilt ONLY from restored queued actions
+     (action_queue.py:410), and list_replayable (repositories.py:512-524) returns ONLY
+     queued/dispatched rows. With P3.2 (dispatched dropped on rehydrate), only
+     genuinely never-sent queued actions survive restart + rebuild the index — so the
+     already-executed set is never re-run. Persistence round-trip is complete.
 P3.2 [x] rehydrate() converts dispatched→queued (381) → re-run. With P3.1 the
      already-executed set is excluded.
      DONE (stronger): rehydrate() now ONLY re-queues genuinely QUEUED (never-sent)
