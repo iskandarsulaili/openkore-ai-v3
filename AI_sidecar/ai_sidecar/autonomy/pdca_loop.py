@@ -2379,6 +2379,7 @@ class PDCALoop:
         self._breaker_bot_id = "pdca"
         self._breaker_key = "queue.default"
         self._breaker_family = "queue"
+        self._advisory_inflight: set[str] = set()
         self._default_bot_id = "default"
         self._last_bot_id: str | None = None
         # Respawn cooldown tracking: bot_id -> timestamp when cooldown expires
@@ -2552,19 +2553,39 @@ class PDCALoop:
                             pass
 
                         if result.error:
-                            self._circuit_breaker.record_failure(
-                                bot_id=self._breaker_bot_id,
-                                key=self._breaker_key,
-                                family=self._breaker_family,
-                                reason=result.error,
-                            )
+                            # Attribute the failure to the ACTIVE bot (per-bot breaker
+                            # isolation), never the global "pdca" owner. A resolved active
+                            # bot keeps its own breaker state independent of siblings.
+                            _err_bot = self._resolve_bot_id(None) or ""
+                            if _err_bot and _err_bot != "pdca":
+                                self._circuit_breaker.record_failure(
+                                    bot_id=_err_bot,
+                                    key=self._breaker_key,
+                                    family=self._breaker_family,
+                                    reason=result.error,
+                                )
+                            else:
+                                self._circuit_breaker.record_failure(
+                                    bot_id=self._breaker_bot_id,
+                                    key=self._breaker_key,
+                                    family=self._breaker_family,
+                                    reason=result.error,
+                                )
                             logger.error("PDCA cycle error [%s]: %s", horizon.value, result.error)
                         else:
-                            self._circuit_breaker.record_success(
-                                bot_id=self._breaker_bot_id,
-                                key=self._breaker_key,
-                                family=self._breaker_family,
-                            )
+                            _ok_bot = self._resolve_bot_id(None) or ""
+                            if _ok_bot and _ok_bot != "pdca":
+                                self._circuit_breaker.record_success(
+                                    bot_id=_ok_bot,
+                                    key=self._breaker_key,
+                                    family=self._breaker_family,
+                                )
+                            else:
+                                self._circuit_breaker.record_success(
+                                    bot_id=self._breaker_bot_id,
+                                    key=self._breaker_key,
+                                    family=self._breaker_family,
+                                )
 
                         # Log cycle result
                         logger.info(
@@ -2604,7 +2625,12 @@ class PDCALoop:
         # hardcoded item rule. Silent no-op if the LLM is unavailable.
         if self._cycle_count % 30 == 0 and _cycle_bot_id:
             try:
-                await self._llm_gear_advisory(_cycle_bot_id)
+                # Background (not inline) — a slow LLM round-trip must not stall the
+                # whole fleet's horizons. In-flight-guarded to avoid pileup.
+                self._spawn_advisory(
+                    f"gear:{_cycle_bot_id}",
+                    self._llm_gear_advisory(_cycle_bot_id),
+                )
             except Exception:
                 pass
 
@@ -2615,7 +2641,12 @@ class PDCALoop:
         # adaptive, server-agnostic. Silent no-op if no party state or LLM unavailable.
         if self._cycle_count % 60 == 0 and _cycle_bot_id:
             try:
-                await self._llm_help_coordination(_cycle_bot_id)
+                # Background (not inline) — LLM team-play decision must not stall the
+                # loop. In-flight-guarded to avoid overlapping copies.
+                self._spawn_advisory(
+                    f"help:{_cycle_bot_id}",
+                    self._llm_help_coordination(_cycle_bot_id),
+                )
             except Exception:
                 pass
 
@@ -5494,7 +5525,7 @@ class PDCALoop:
                     if _use_llm:
                         try:
                             _cb = getattr(self, "_circuit_breaker", None)
-                            if _cb is not None and hasattr(_cb, 'can_pass') and not _cb.can_pass(key=self._breaker_key, family=self._breaker_family):
+                            if _cb is not None and hasattr(_cb, 'can_pass') and not _cb.can_pass(key=self._breaker_key, family=self._breaker_family, bot_id=_cycle_bot_id or None):
                                 _use_llm = False
                         except Exception:
                             pass
@@ -7223,7 +7254,7 @@ class PDCALoop:
             if _should_plan:
                 try:
                     _pl_cb = getattr(self, "_circuit_breaker", None)
-                    if _pl_cb is not None and hasattr(_pl_cb, 'can_pass') and not _pl_cb.can_pass(key=self._breaker_key, family=self._breaker_family):
+                    if _pl_cb is not None and hasattr(_pl_cb, 'can_pass') and not _pl_cb.can_pass(key=self._breaker_key, family=self._breaker_family, bot_id=_cycle_bot_id or None):
                         _should_plan = False
                 except Exception:
                     pass
@@ -7510,8 +7541,14 @@ class PDCALoop:
             return None
 
     def _circuit_breaker_tripped(self) -> bool:
+        # Per-bot isolation: resolve the ACTIVE bot for this gate so a single bot's
+        # breaker never halts the whole fleet. If no bot is known yet, default to the
+        # current breaker owner (legacy behavior) — but never the global "pdca" key.
+        _active = self._resolve_bot_id(None) or self._breaker_bot_id
+        if not _active or _active == "pdca":
+            _active = self._breaker_bot_id
         allowed, _state = self._circuit_breaker.allow(
-            bot_id=self._breaker_bot_id,
+            bot_id=_active,
             key=self._breaker_key,
             family=self._breaker_family,
         )
@@ -8824,6 +8861,41 @@ class PDCALoop:
                 _loop.close()
         except Exception:
             return None
+
+    def _spawn_advisory(self, name: str, coro) -> None:
+        """Run a slow background LLM advisory WITHOUT blocking the PDCA loop.
+
+        These advisories (gear/help) make an LLM round-trip; awaiting them inline in
+        the single loop would stall every bot's short/med/long horizons during the
+        call. Spawn as a tracked background task with an in-flight guard so a slow
+        provider never piles up overlapping copies of the same advisory for the same
+        name. Only reads snapshot + enqueues into the RLock-guarded ActionQueue, so it
+        is safe to run concurrently with the loop.
+        """
+        if getattr(self, "_advisory_inflight", None) is None:
+            object.__setattr__(self, "_advisory_inflight", set())
+        if name in self._advisory_inflight:
+            return
+        self._advisory_inflight.add(name)
+        try:
+            _loop = asyncio.get_event_loop()
+        except RuntimeError:
+            _loop = None
+        if _loop is None or not _loop.is_running():
+            return
+        _task = _loop.create_task(coro)
+
+        async def _reap(_t):
+            try:
+                await _t
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+            finally:
+                self._advisory_inflight.discard(name)
+
+        _loop.create_task(_reap(_task))
 
     # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, NOT hardcoded) ──
     # The source of gear/sustain decisions is the LLM (conscious tier), not a hardcoded

@@ -58,6 +58,39 @@ class ReflexCircuitBreaker:
 
             return True, state.state
 
+    def can_pass(self, *, key: str, family: str, bot_id: str | None = None) -> bool:
+        """Return True if an action/request with this key+family should proceed.
+
+        This is the guard used by the PDCA loop to skip LLM/planning work when a
+        breaker has tripped. It resolves the owning bot: if ``bot_id`` is given it is
+        used directly; otherwise the first registered bot is used so callers that do
+        not track a specific bot still get per-bot (never global-"pdca") isolation.
+
+        A breaker only trips for a SPECIFIC bot+key; other bots' breakers never block
+        this one. Unknown bot/key (never recorded) is always allowed.
+        """
+        owner = bot_id or self._primary_bot_id()
+        if not owner:
+            return True
+        allowed, _state = self.allow(bot_id=owner, key=key, family=family)
+        return allowed
+
+    def _primary_bot_id(self) -> str | None:
+        """Most-recently-updated registered bot id, or None if none exist."""
+        try:
+            with self._lock:
+                best: str | None = None
+                best_ts: datetime | None = None
+                for (owner_bot, _key), state in self._states.items():
+                    if state.updated_at is not None and (
+                        best_ts is None or state.updated_at > best_ts
+                    ):
+                        best = owner_bot
+                        best_ts = state.updated_at
+                return best
+        except Exception:
+            return None
+
     def record_success(self, *, bot_id: str, key: str, family: str) -> None:
         now = datetime.now(UTC)
         with self._lock:
