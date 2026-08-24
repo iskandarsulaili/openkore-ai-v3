@@ -6054,6 +6054,22 @@ def create_runtime() -> RuntimeState:
             logger.info("cost_controls_wired: router budget daily=%d hourly=%d", _cost_budget, _cost_hourly)
     except Exception as _ce:
         logger.warning("cost_router_wiring_failed: %s", _ce)
+    # Attach the LLMManager to the runtime so the conscious-tier advisory/root-cause
+    # LLM calls (pdca_loop `_rt.llm_manager`) actually resolve. It was created above
+    # (5825) but NEVER assigned to runtime -> those advisory calls silently no-op'd
+    # (dead wiring). Also route its usage through the SAME fleet cost tracker so the
+    # P5.2 budget covers these calls too.
+    try:
+        runtime.llm_manager = llm_manager
+        _ct2 = getattr(runtime, "cost_tracker", None)
+        if _ct2 is not None and llm_manager is not None and hasattr(llm_manager, "set_cost_tracker"):
+            try:
+                llm_manager.set_cost_tracker(_ct2)
+            except Exception:
+                pass
+        logger.info("llm_manager_attached: %s", "yes" if llm_manager is not None else "none")
+    except Exception as _le:
+        logger.warning("llm_manager_attach_failed: %s", _le)
     try:
         _exp_db = None
         _exp_db_path = sqlite_path if sqlite_path and "experience" in str(sqlite_path) else None
