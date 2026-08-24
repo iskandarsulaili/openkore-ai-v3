@@ -132,6 +132,7 @@ sub get_client_solution {
 		max_x        => $max_x,
 		min_y        => $min_y,
 		max_y        => $max_y,
+		timeout      => 100,
 	);
 
 	eval { $pf->run($solution); 1 } or return [];

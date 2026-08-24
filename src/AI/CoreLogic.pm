@@ -2442,6 +2442,7 @@ sub processRandomWalk {
 		&& (!$field->isCity || $config{route_randomWalk_inTown})
 		&& (!$config{route_randomWalk_inLockOnly} || ($config{'lockMap'} && $field->baseName eq $config{'lockMap'}))
 		&& length($field->{rawMap})
+		&& timeOut($timeout{ai_randomWalk_retry})
 		){
 		if ($char->{pos}{x} == $config{'lockMap_x'} && !($config{'lockMap_randX'} > 0) && ($char->{pos}{y} == $config{'lockMap_y'} && !($config{'lockMap_randY'} >0))) {
 			error T("Coordinate lockmap is used; randomWalk disabled\n");
@@ -2463,6 +2464,12 @@ sub processRandomWalk {
 			my $attackAuto = getAttackAutoMode();
 			my $attackOnRoute = (!defined $attackAuto || $attackAuto < 0) ? 0 : ($attackAuto >= 2 ? 2 : 1);
 			message TF("Calculating random route to: %s: %s, %s\n", $field->descString(), $cell->{x}, $cell->{y}), "route";
+			# Cooldown so a failed/unroutable random-walk target can never saturate
+			# the AI loop (which would starve the keepalive and stall the session).
+			# Safe value: long enough to let the main loop breathe, short enough
+			# to keep moving the bot (route_randomWalk_maxRouteTime=300).
+			$timeout{ai_randomWalk_retry}{time} = time;
+			$timeout{ai_randomWalk_retry}{timeout} = 2;
 			ai_route(
 				$field->baseName,
 				$cell->{x},

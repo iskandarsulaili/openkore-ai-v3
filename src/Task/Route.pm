@@ -943,7 +943,9 @@ sub getRoute {
 	$path_args{useManhattan} = $useManhattan;
 	# Bound the C A* so a pathological map never spins the AI loop (and stalls
 	# the keepalive). rAthena-style pathfinding returns -3 past time_max.
-	$path_args{timeout} = $path_args{timeout} // 1500;
+	# 100ms is the safe value: local in-map routes resolve in <50ms; any slower
+	# map is either huge or degenerate and must yield to the keepalive.
+	$path_args{timeout} = $path_args{timeout} // 100;
 
 	if ($addLimits) {
 		my ($min_x, $max_x, $min_y, $max_y) = getLimits($path_args{field}, $path_args{start}, $path_args{dest});
