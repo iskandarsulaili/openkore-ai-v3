@@ -99,4 +99,16 @@ instruction conflicts, the LATEST dated steer wins.
 - J3. Paths, process spawning, signals, socket/keepalive, file I/O, and telemetry
   upload must all use portable constructs.
 
+## K. P2P crowdsource: self-healing/self-learning/self-improving across peers (founder 2026-08-24)
+- K1. openkore-ai-v3 bots must crowdsource from EACH OTHER (other AI bot peers) —
+  P2P self-healing, self-learning, self-improving. Not just telemetry-to-server.
+- K2. Mechanism: bots exchange learned solutions / decision outcomes / route fixes /
+  economy+combat lessons over the same P2P mesh, aggregate, and improve each other
+  (a "bot swarm learning" layer over the RAW in-game P2P mesh).
+- K3. Keep it anonymous + bounded + rate-limited + fail-safe: a peer's bad/untrusted
+  lesson must never degrade the bot (weighted trust, majority/confidence aggregation,
+  rollback to known-good). Mirrors RAW mobs-ML champion-gate pattern.
+- K4. Do NOT let P2P crowdsourcing hurt the bot or the session (async, non-blocking,
+  offline-tolerant, never a hard dependency).
+
 
