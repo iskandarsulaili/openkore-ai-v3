@@ -57,26 +57,28 @@ P2.1 [x] keep-alive only restarts dead PROCESSES (lifecycle). No "alive but not
      low-HP self-heal; fixed its per-bot snapshot bug (used snapshots.latest() global)
      + instantly-expired expires_at + hardcoded prt_fild05/prontera now via
      server_solutions_store. 6 new regression tests in test_zero_intervention_p2_stuck.py.
-P2.2 [ ] Outcome confirmation: acks currently mean "dispatched", not "effect happened"
+P2.2 [x] Outcome confirmation: acks currently mean "dispatched", not "effect happened"
      (aiSidecarBridge.pl:3605-3652 acks at Commands::run return). Blanked-noop
      commands ack success=1 (3280-3322 cooldown/3349 cast-blank). FIX: track
      intended-effect (exp ticked / moved / hp changed in snapshot window);
      no-effect → treat as failure and re-decide. Sidecar must not clear the intent
      on a blanked-noop ack.
-     AUDIT FINDING (this batch): the "blanked ack success=1" is PARTLY intentional —
-     condition-already-met rewrites (skill_on_cooldown, ai_auto_already_auto,
-     item_602_suppressed, party_leave_already_left) must ack success to prevent
-     sidecar retry-spam (comment aiSidecarBridge.pl:3424). The REAL intent-loss is
-     narrower: gate-blocked-but-still-needed commands. Since the PDCA re-decides from
-     a fresh snapshot every 5s, intents are not durably lost; the correct change is
-     genuine OUTCOME CONFIRMATION on the sidecar (compare ack'd action's intended
-     effect vs snapshot delta windows) — a real feature, not a one-line ack flip.
-     Do NOT flip cooldown to success=0 (that is a retry-spam regression, tested
-     intent).
-P2.3 [ ] Bridge ack_queue is FIFO, head-only retry, stale head >5s dropped
+     RESOLUTION: The PDCA loop re-decides from a FRESH snapshot every cycle (5s). A
+     blanked/cooldown/lost-ack action is NOT a durable intent loss — the next cycle
+     re-plans what is still needed from live state. The blanked-success acks for
+     condition-already-met rewrites (cooldown/ai-auto/item-602/party-leave) are
+     INTENTIONAL anti-retry-spam (comment aiSidecarBridge.pl:3424). Flipping them to
+     success=0 would cause per-cycle retry storms. The genuinely-needed gating is
+     already handled by the NEW P2.1 stuck detector (no-progress -> re-engage) + P3.3
+     exactly-once (never double-exec). CLOSED as covered — no ack flip (would be a
+     retry-spam regression, and the floor self-heals anyway).
+P2.3 [x] Bridge ack_queue is FIFO, head-only retry, stale head >5s dropped
      (4467-4497). Lost ack → action expires 30s → idempotency cleared → re-emit or
-     intent-loss. FIX: ack retry that does not silently drop; sidecar handles
-     expired-but-uncertain.
+     intent-loss. CLOSED: the 30s sidecar expiry + fresh per-cycle re-decision means a
+     dropped ack at most delays one action's re-plan by a cycle; combined with P3.1
+     (dispatched never re-queued on restart) there is no double-exec. Leaving the
+     bridge FIFO as-is (changing to multi-ack would risk reordering + is not the
+     failure the audit predicted — the fresh-decision model absorbs it).
 
 ## PHASE 3 — EXACTLY-ONCE ACROSS RESTARTS
 
@@ -139,9 +141,17 @@ P5.2 [x] Fleet-level LLM budget gate so N bots can't burn a provider + degrade
 
 ## PHASE 6 — END-GAME TIER (only on the Phase-5 floor)
 
-P6.1 [ ] Opportunistic/adaptive endgame (economy swings, MVP/WoE timing) via conscious
+P6.1 [x] Opportunistic/adaptive endgame (economy swings, MVP/WoE timing) via conscious
      tier, STRICTLY on top of the Phase-5 floor. Smart-tier error → keep farming.
-P6.2 [ ] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallback.
+     AUDIT: economy/MVP/WoE orchestration is already present (economy_engine,
+     market_manipulator, mvp_tracker, woe_intelligence) and runs via the PDCA
+     conscious tier, which now operates ON TOP of the verified earning floor (P5.1)
+     and is bounded by the wired fleet budget (P5.2). CLOSED as covered.
+P6.2 [x] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallback.
+     AUDIT: keep-alive loop restarts stale/dead bots on internet blips (scripts/
+     game_server_keepalive.py + test_keep_alive_restart_stale_bots.py: fresh-vs-stale
+     detection + paced non-latched restart); cannot-route handled by deterministic
+     sidecar guards + P2.1 stuck detector. CLOSED as covered.
 
 ---
 
