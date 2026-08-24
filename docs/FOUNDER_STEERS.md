@@ -162,4 +162,18 @@ instruction conflicts, the LATEST dated steer wins.
   and NOT for in-game AI NPC/agent usage is NOT eligible for LLM Token Supporter.
 - Q2. Such a user instead gets a NEW role: "Openkore-AI User".
 
+## R. Windows .exe build (founder 2026-08-24)
+- R1. openkore-ai-v3 (Python or Perl) will be COMPILED and BUILT into a Windows
+  .exe so it is simpler for end users — no unnecessary dependencies need to be
+  installed on the user's PC.
+- R2. The .exe bundles everything (interpreter + deps) so a user just runs one
+  file. This is the delivery target for the launcher integration.
+
+## S. Public hostname only (founder 2026-08-24)
+- S1. ALWAYS use ipv6-raw-server.openkore-ai.com and the respective playit.gg
+  port (46019 login / 21544 char / 53378 map). Do NOT use any local / 127.0.0.1
+  address or port for the bot's server connections.
+- S2. The bot connects ONLY via the public playit hostname/ports; never a local
+  IP or loopback for the game server.
+
 
