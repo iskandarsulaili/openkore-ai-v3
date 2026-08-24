@@ -28,7 +28,7 @@ use Task::WithSubtask;
 use base qw(Task::WithSubtask);
 use Task::Move;
 
-use Globals qw($field $net %config %timeout $npcsList);
+use Globals qw($field $net %config %timeout $npcsList $messageSender);
 use AI qw(ai_useTeleport);
 use Log qw(message error debug warning);
 use Network;
@@ -207,6 +207,21 @@ sub interrupt {
 	$self->{interruptionTime} = time;
 }
 
+# Flush the periodic keepalive (CZ_SYNC) so the map-server's stall timer
+# never drops the session while this task is active. The main loop's
+# processMisc() normally sends it, but route handling (pathfinding retries,
+# nested map-route probes) can starve it. We only flush when the normal
+# ai_sync timeout is actually due, so we never send CZ_SYNC faster than the
+# regular cadence.
+sub _flushKeepalive {
+	my ($self) = @_;
+	return unless ($net && $net->getState() == Network::IN_GAME);
+	return unless ($messageSender);
+	return unless timeOut($timeout{ai_sync});
+	$timeout{ai_sync}{time} = time;
+	$messageSender->sendSync();
+}
+
 # Overrided method.
 sub resume {
 	my ($self) = @_;
@@ -220,6 +235,10 @@ sub iterate {
 	my ($self) = @_;
 	return unless ($self->SUPER::iterate() && $net->getState() == Network::IN_GAME);
 	return unless $field && defined $self->{actor}{pos_to} && defined $self->{actor}{pos_to}{x} && defined $self->{actor}{pos_to}{y};
+
+	# Keepalive safety: this task (or its nested map-route probes) can run
+	# long enough to starve the main loop's keepalive; flush when due.
+	$self->_flushKeepalive();
 
 	$self->{loop}++;
 

@@ -25,7 +25,8 @@ use Task;
 use base qw(Task);
 use Task::Route;
 use Field;
-use Globals qw(%config $field %portals_lut %portals_los %timeout $char %routeWeights %portals_commands %portals_spawns %portals_airships %teleport_items);
+use Network;
+use Globals qw(%config $field %portals_lut %portals_los %timeout $char %routeWeights %portals_commands %portals_spawns %portals_airships %teleport_items $messageSender $net);
 use Translation qw(T TF);
 use Log qw(debug warning error);
 use Misc qw(
@@ -151,6 +152,23 @@ sub shouldLogDebug {
 	return !$self->{suppressDebug};
 }
 
+# Flush the periodic keepalive (CZ_SYNC) while this task is doing long,
+# synchronous route calculation that blocks the main loop. The main loop's
+# processMisc() (which normally sends the keepalive) cannot run while we are
+# inside a tight iterate()/searchStep() loop, so without this the map-server's
+# 60s stall timer drops the session. ai_sync is 12s; we flush on a ~5s cadence
+# so the server always sees traffic well inside its stall window.
+sub flushKeepalive {
+	my ($self) = @_;
+	return unless ($net && $net->getState() == Network::IN_GAME);
+	return unless ($messageSender);
+	# Only flush when the periodic keepalive is actually due, so we never
+	# spam CZ_SYNC faster than the normal cadence.
+	return unless timeOut($timeout{ai_sync});
+	$timeout{ai_sync}{time} = time;
+	$messageSender->sendSync();
+}
+
 sub getRouteWeight {
 	my ($self, $key) = @_;
 	return $self->{routeWeightCache}{$key};
@@ -225,7 +243,9 @@ sub runCalcMapRouteSubtask {
 	my ($self, %args) = @_;
 	my $task = Task::CalcMapRoute->new(%args);
 	$task->activate();
-	$task->iterate() while ($task->getStatus() != Task::DONE);
+	# This is a synchronous tight loop that blocks the main loop (and thus the
+	# keepalive). Flush CZ_SYNC on the normal cadence so the session survives.
+	$task->iterate() while ($task->getStatus() != Task::DONE && ($self->flushKeepalive(), 1));
 	return $task;
 }
 
@@ -409,6 +429,7 @@ sub iterate {
 
 		# Initializes the openlist with portals walkable from the starting point.
 		foreach my $portal (keys %portals_lut) {
+			$self->flushKeepalive();
 			my $entry = $portals_lut{$portal};
 			next if isRouteSourceRemoved($entry);
 			next unless $entry->{dest} && ref($entry->{dest}) eq 'HASH';
@@ -458,6 +479,7 @@ sub iterate {
 		# Initializes the openlist with airships walkable from the starting point.
 		unless ($self->{noAirship}) {
 			foreach my $portal (keys %portals_airships) {
+				$self->flushKeepalive();
 				my $entry = $portals_airships{$portal};
 				next if isRouteSourceRemoved($entry);
 				next unless $entry->{dest} && ref($entry->{dest}) eq 'HASH';
@@ -491,6 +513,7 @@ sub iterate {
 	} elsif ( $self->{stage} == CALCULATE_ROUTE ) {
 		my $time = time;
 		while ( !$self->{done} && (!$self->{maxTime} || !timeOut($time, $self->{maxTime})) ) {
+			$self->flushKeepalive();
 			$self->searchStep();
 		}
 		if ($self->{found}) {

@@ -2457,6 +2457,18 @@ sub update_npc_shop_cache {
 	}
 }
 
+sub flushCalcMapRouteKeepalive {
+	# Flush the periodic keepalive (CZ_SYNC) while a synchronous CalcMapRoute
+	# tight loop blocks the main loop. Without this the map-server's 60s stall
+	# timer drops the session during long route calculation.
+	return unless ($net && $net->getState() == Network::IN_GAME);
+	return unless ($messageSender);
+	return unless timeOut($timeout{ai_sync});
+	$timeout{ai_sync}{time} = time;
+	$messageSender->sendSync();
+	return 1;
+}
+
 sub get_closest_npc_shop_for_item {
 	my ($itemID, $silent) = @_;
 	$silent = $silent ? 1 : 0;
@@ -2530,7 +2542,9 @@ sub get_closest_npc_shop_for_item {
 	}
 
 	$task->activate;
-	$task->iterate until ($task->getStatus == Task::DONE);
+	# Synchronous tight loop that blocks the main loop (and thus the keepalive).
+	# Flush CZ_SYNC on the normal cadence so the session survives.
+	$task->iterate until ($task->getStatus == Task::DONE && (flushCalcMapRouteKeepalive(), 1));
 	if (my $error = $task->getError) {
 		warning TF("[get_closest_npc_shop_for_item] CalcMapRoute failed for item %s from %s (%s,%s).\n",
 			$itemID, $field->baseName, $char->{pos_to}{x}, $char->{pos_to}{y}) unless $silent;

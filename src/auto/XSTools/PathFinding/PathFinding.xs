@@ -151,6 +151,19 @@ PathFinding__reset(session, weight_map, avoidWalls, customWeights, secondWeightM
 		session->width = (int) SvUV (width);
 		session->height = (int) SvUV (height);
 
+		// Sanity-guard the map dimensions BEFORE any coordinate check that indexes
+		// into map_base_weight: a garbage width/height (corrupt field) would make the
+		// "in bounds" checks pass and then index far past the weight buffer (segfault).
+		// Bound the PRODUCT too: two individually-sane dims (e.g. 100000x100000) would
+		// make calloc overcommit a huge block and memset(NULL/huge) hang the bot.
+		// Real RO maps are at most ~512x512 (262144 cells); 4M cells is generous.
+		if (session->width <= 0 || session->height <= 0 ||
+		    session->width > 100000 || session->height > 100000 ||
+		    (long)session->width * (long)session->height > 4000000) {
+			printf("[pathfinding reset error] invalid map dimensions %d x %d\n", session->width, session->height);
+			XSRETURN_NO;
+		}
+
 		session->startX = (int) SvUV (startx);
 		session->startY = (int) SvUV (starty);
 		session->endX = (int) SvUV (destx);

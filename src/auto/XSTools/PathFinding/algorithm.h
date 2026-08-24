@@ -56,6 +56,8 @@ typedef struct {
 	Node *currentMap;
 
 	long *openList;
+
+	int failed;
 } CalcPath_session;
 
 CalcPath_session *CalcPath_new ();

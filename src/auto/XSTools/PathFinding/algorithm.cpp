@@ -42,6 +42,7 @@ CalcPath_new ()
 
 	session->initialized = 0;
 	session->run = 0;
+	session->failed = 0;
 
 	return session;
 }
@@ -51,11 +52,37 @@ CalcPath_new ()
 void
 CalcPath_init (CalcPath_session *session)
 {
+	// Sanity-guard the map dimensions before allocating: a garbage width/height
+	// (e.g. from a corrupt field) would make calloc request a huge block, return
+	// NULL, and then memset(NULL) would hang the whole bot. Treat it as "no path".
+	// Bound the PRODUCT too (two sane dims can still overcommit a huge block).
+	session->failed = 0;
+	if (session->width <= 0 || session->height <= 0 ||
+	    session->width > 100000 || session->height > 100000 ||
+	    (long)session->width * (long)session->height > 4000000) {
+		printf("[pathfinding init error] invalid map dimensions %d x %d\n", session->width, session->height);
+		session->failed = 1;
+		return;
+	}
+
 	// Allocate enough memory in currentMap to hold all nodes in the map
 	// Here we use calloc instead of malloc (calloc sets all memory allocated to 0's) so all uninitialized cells have whichlist set to NONE
 	session->currentMap = (Node*) calloc(session->height * session->width, sizeof(Node));
+	if (session->currentMap == NULL) {
+		printf("[pathfinding init error] calloc failed for currentMap (%d x %d)\n", session->width, session->height);
+		session->failed = 1;
+		return;
+	}
+	// Mark initialized as soon as currentMap is owned so CalcPath_destroy frees it
+	// even if a later allocation in this function fails.
+	session->initialized = 1;
 	if (session->customWeights) {
 		session->second_weight_map = (unsigned int*) calloc(session->height * session->width, sizeof(unsigned int));
+		if (session->second_weight_map == NULL) {
+			printf("[pathfinding init error] calloc failed for second_weight_map (%d x %d)\n", session->width, session->height);
+			session->failed = 1;
+			return;
+		}
 	}
 
 	long goalAdress = (session->endY * session->width) + session->endX;
@@ -88,6 +115,12 @@ CalcPath_pathStep (CalcPath_session *session)
 		return -2;
 	}
 
+	// If init failed (garbage dims / allocation failure), report "no path" cleanly
+	// instead of dereferencing a NULL currentMap.
+	if (session->failed) {
+		return -1;
+	}
+
 	Node* start = &session->currentMap[((session->startY * session->width) + session->startX)];
 	Node* goal = &session->currentMap[((session->endY * session->width) + session->endX)];
 
@@ -96,6 +129,11 @@ CalcPath_pathStep (CalcPath_session *session)
 		session->openListSize = 0;
 		// Allocate enough memory in openList to hold the adress of all nodes in the map
 		session->openList = (long*) malloc((session->height * session->width) * sizeof(long));
+		if (session->openList == NULL) {
+			printf("[pathfinding run error] malloc failed for openList (%d x %d)\n", session->width, session->height);
+			session->failed = 1;
+			return -1;
+		}
 
 		// To initialize the pathfinding add only the start node to openList
 		openListAdd (session, start);
@@ -125,7 +163,6 @@ CalcPath_pathStep (CalcPath_session *session)
 	unsigned int g_score = 0;
 
 	unsigned long timeout = (unsigned long) GetTickCount();
-	int loop = 0;
 
 	// Hard guarantee against non-termination: a correct A* can never expand
 	// more nodes than exist on the map (each node is popped from the heap at
@@ -145,14 +182,15 @@ CalcPath_pathStep (CalcPath_session *session)
 			return -1;
 		}
 
-		// Every 100th loop check if we have ran out if time
-		loop++;
-		if (loop == 100) {
-			if (GetTickCount() - timeout > session->time_max) {
-				printf("[pathfinding run error] Pathfinding ended before provided time.\n");
-				return -3;
-			} else
-				loop = 0;
+		// Check the wall-clock timeout EVERY pop, not every 100th. On a fast
+		// machine 100 pops complete in well under 1ms, so a "every 100th loop"
+		// check never fires and pathStep runs the FULL width*height expansions
+		// (each with up to 1024-iteration sift-ups) = minutes of blocked main
+		// loop -> keepalive starvation -> session drop. Checking every pop
+		// guarantees the time_max bound regardless of per-pop speed.
+		if (GetTickCount() - timeout > session->time_max) {
+			printf("[pathfinding run error] Pathfinding ended before provided time.\n");
+			return -3;
 		}
 
 		// Set currentNode to the top node in openList, and remove it from openList.
