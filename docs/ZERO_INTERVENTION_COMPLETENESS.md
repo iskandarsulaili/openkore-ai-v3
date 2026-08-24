@@ -174,6 +174,17 @@ P6.2 [x] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallba
      assigned -> pdca_loop `_rt.llm_manager` (gear/sustain/root-cause advisory LLM,
      9090/9246) always resolved None -> the whole conscious 'whole-picture/systemic'
      advisory path silently no-op'd. Fixed: runtime.llm_manager = llm_manager. (00f92c940)
+- [x] LLMManager daily token budget was a DEAD GATE: `_check_daily_budget` read
+     `_daily_tokens` but it was NEVER incremented (only the hourly list tracked), so
+     the conscious-tier daily cap never tripped. And no 24h rollover existed (once
+     tripped it stayed tripped until restart). Fixed: `_record_usage()` increments
+     estimated tokens on each success; `_rollover_daily()` resets per 24h. 4 tests.
+     (92bb0315a)
+- [!] degradation_manager.report_failure has ZERO callers — only report_success is
+     wired (pdca_loop:10315). The degradation manager can never actually degrade a
+     module. NOT a live-failure path: the per-domain circuit breaker + cost gate ->
+     earning floor is the real degradation. Documented as known-dormant (would need
+     wiring report_failure at actual failure sites to become live).
 
 ---
 
