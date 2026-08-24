@@ -46,10 +46,17 @@ P1.5 [ ] Spider a remaining inline awaits in _run_one_cycle that can block (the 
 
 ## PHASE 2 — SELF-HEAL STUCK STATE (not just dead processes)
 
-P2.1 [ ] keep-alive only restarts dead PROCESSES (lifecycle). No "alive but not
+P2.1 [x] keep-alive only restarts dead PROCESSES (lifecycle). No "alive but not
      progressing" detection. FIX: stuck-state detector — bot registered+safe but no
      exp/kill/level/position delta for N min → emit recovery (return-to-safe-town →
      re-approach farm) rather than reboot.
+     DONE: _check_progress_and_detect_stuck() anchored per-bot (kills/exp/level,
+     progress resets anchor, 120s configurable window via PDCAConfig.stuck_detect_window_s,
+     debounced, in-game gate). ALSO wired the dormant bot_health_monitor.py (was DEAD
+     CODE — never imported/called) into the SHORT_TERM loop for overweight/stuck-in-town/
+     low-HP self-heal; fixed its per-bot snapshot bug (used snapshots.latest() global)
+     + instantly-expired expires_at + hardcoded prt_fild05/prontera now via
+     server_solutions_store. 6 new regression tests in test_zero_intervention_p2_stuck.py.
 P2.2 [ ] Outcome confirmation: acks currently mean "dispatched", not "effect happened"
      (aiSidecarBridge.pl:3605-3652 acks at Commands::run return). Blanked-noop
      commands ack success=1 (3280-3322 cooldown/3349 cast-blank). FIX: track

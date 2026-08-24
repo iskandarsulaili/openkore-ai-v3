@@ -7,7 +7,7 @@ Architecture rule: this runs inside the sidecar PDCA loop, NOT in the bridge plu
 The bridge only reports state — the sidecar decides what to fix.
 """
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime, timedelta
 
 _log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
         return corrections
     
     try:
-        latest = snapshots.latest()
+        latest = snapshots.get(bot_id)
     except Exception:
         return corrections
     if latest is None:
@@ -87,11 +87,13 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
             "source": "health_monitor",
             "metadata": {"reason": f"Weight {weight_ratio:.0%} > {MAX_WEIGHT_RATIO:.0%}, enabling auto-sell"},
         })
-        # Also set the sell NPC if not already
+        # Also set the sell NPC if not already (via server_solutions_store, RULE.md)
+        _store = getattr(runtime_state, "server_solutions_store", None)
+        _sell_npc = str((_store.get("sell_npc", None) if _store else None) or "prt_in 126 76")
         corrections.append({
             "action_id": f"health_sellnpc_{bot_id}",
             "kind": "command",
-            "command": 'set sellAuto_npc prt_in 126 76',
+            "command": f"set sellAuto_npc {_sell_npc}",
             "priority_tier": "tactical",
             "source": "health_monitor",
             "metadata": {"reason": "Setting sell NPC for overweight bot"},
@@ -118,29 +120,35 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
         town_cycles = state.get("town_cycles", 0) + 1 if prev_map == map_name else 1
         
         if town_cycles >= 3:  # 3+ cycles in town = stuck
-            _log.info("health_monitor: %s stuck in town (%s, %d cycles), sending to hunt", 
-                      bot_id, map_name, town_cycles)
+            # Route through server_solutions_store (RULE.md: never hardcode server maps)
+            _store = getattr(runtime_state, "server_solutions_store", None)
+            _farm_map = str((_store.get("farm_map", None) if _store else None) or "prt_fild08")
+            _log.info("health_monitor: %s stuck in town (%s, %d cycles), sending to hunt (%s)",
+                      bot_id, map_name, town_cycles, _farm_map)
             corrections.append({
                 "action_id": f"health_move_hunt_{bot_id}",
                 "kind": "command",
-                "command": "move prt_fild05",
+                "command": f"move {_farm_map}",
                 "priority_tier": "tactical",
                 "source": "health_monitor",
-                "metadata": {"reason": f"Stuck in {map_name} for {town_cycles} cycles, sending to hunt"},
+                "metadata": {"reason": f"Stuck in {map_name} for {town_cycles} cycles, sending to hunt {_farm_map}"},
             })
         
         check_bot_health._state[now_key] = {"prev_map": map_name, "town_cycles": town_cycles}
     
     # ── Low HP check ──
     if hp_ratio < 0.20 and map_name and "prontera" not in map_name.lower() and "prt_in" not in map_name.lower():
-        _log.info("health_monitor: %s critically low HP (%.0f%%), sending to town", bot_id, hp_ratio * 100)
+        # Route through server_solutions_store (RULE.md: never hardcode server towns)
+        _store = getattr(runtime_state, "server_solutions_store", None)
+        _safe_town = str((_store.get("safe_town", None) if _store else None) or "prontera")
+        _log.info("health_monitor: %s critically low HP (%.0f%%), sending to town (%s)", bot_id, hp_ratio * 100, _safe_town)
         corrections.append({
             "action_id": f"health_town_{bot_id}",
             "kind": "command",
-            "command": "move prontera",
+            "command": f"move {_safe_town}",
             "priority_tier": "reflex",
             "source": "health_monitor",
-            "metadata": {"reason": f"HP critically low ({hp_ratio:.0%}), retreating to town"},
+            "metadata": {"reason": f"HP critically low ({hp_ratio:.0%}), retreating to {_safe_town}"},
         })
     
     return corrections
@@ -163,7 +171,9 @@ def run_health_checks(runtime_state, action_queue, bot_ids: list[str]) -> int:
                         command=corr["command"],
                         priority_tier=tier,
                         source=corr.get("source", "health_monitor"),
-                        expires_at=datetime.now(UTC),
+                        created_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(seconds=30),
+                        idempotency_key=corr["action_id"],
                         metadata=corr.get("metadata", {}),
                     )
                     action_queue.enqueue(bot_id, proposal)

@@ -38,6 +38,36 @@ from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
 
 logger = logging.getLogger(__name__)
 
+def _snapshot_progress_fields(snapshot: Any) -> dict:
+    """Extract (kills, exp, level) from a pydantic snapshot or plain dict.
+
+    Handles BotStateSnapshot / ProgressionDigest models and raw dicts (bridge v2 may
+    carry kills at top level, progression.base_exp nested). Missing fields -> 0.
+    This is the 'alive but not progressing' detector's input.
+    """
+    kills = 0
+    exp = 0
+    level = 0
+    try:
+        if isinstance(snapshot, dict):
+            kills = int(snapshot.get("kills", 0) or 0)
+            exp = int(snapshot.get("base_exp", 0) or snapshot.get("exp", 0) or 0)
+            level = int(snapshot.get("base_level", 0) or 0)
+            _prog = snapshot.get("progression")
+            if isinstance(_prog, dict):
+                exp = int(_prog.get("base_exp", exp) or exp)
+                level = int(_prog.get("base_level", level) or level)
+        else:
+            kills = int(getattr(snapshot, "kills", 0) or 0)
+            _prog = getattr(snapshot, "progression", None)
+            if _prog is not None:
+                exp = int(getattr(_prog, "base_exp", 0) or 0)
+                level = int(getattr(_prog, "base_level", 1) or 1)
+    except Exception:
+        return {"kills": 0, "exp": 0, "level": 0}
+    return {"kills": kills, "exp": exp, "level": level}
+
+
 def _snapshot_disconnected_safe(snapshot: Any) -> bool:
     """Module-level check: is this snapshot for a disconnected / logged-out bot?
 
@@ -1774,6 +1804,9 @@ class PDCAConfig:
     circuit_breaker_reset_s: float = 60.0
     plan_timeout_s: float = 30.0
     max_actions_per_cycle: int = 5
+    # Stuck-state detector window (P2.1): a bot with no kills/exp/level delta for this
+    # many seconds is considered stuck and a re-engage recovery is enqueued.
+    stuck_detect_window_s: float = 120.0
 
 
 def _emit_exploration_scout(runtime_state, bot_id: str, map_name: str, base_level: int) -> int:
@@ -2390,6 +2423,10 @@ class PDCALoop:
         self._last_known_hp: dict[str, int] = {}
         # Last known death timestamp per bot to debounce repeated triggers
         self._last_death_ts: dict[str, float] = {}
+        # Progress anchor for stuck-state detection (P2.1): bot_id -> snapshot of
+        # (observed_at, kills/exp/level) used to detect "alive but not progressing".
+        self._progress_anchor: dict[str, dict] = {}
+        self._stuck_declared: dict[str, float] = {}
         self._startup_gate_defaults = {
             "grace_s": max(20.0, self._policy_float("reconnect_grace_s", 20.0)),
             "min_events": _STARTUP_GATE_MIN_EVENTS,
@@ -6043,8 +6080,24 @@ class PDCALoop:
                         except Exception as _ex_combat:
                             logger.warning("pdca_domain_error bot=%s domain=combat err=%s", _bid, _ex_combat)
                             _record_domain_failure(self, _bid, "combat", _ex_combat)
+                        # ── STUCK-STATE DETECTOR (P2.1): alive but no progress -> recovery ──
+                        # Keep-alive only restarts dead processes; this detects a bot that is
+                        # registered + in-game but makes no kills/exp/level progress over a
+                        # window, and enqueues a re-engage recovery. Only on the SHORT_TERM
+                        # horizon so the anchor advances at a sensible cadence.
+                        if horizon == Horizon.SHORT_TERM:
+                            try:
+                                self._check_progress_and_detect_stuck(_bid)
+                            except Exception as _stuck_e:
+                                logger.warning("stuck_detector_error bot=%s err=%s", _bid, _stuck_e)
+                        # ── BOT HEALTH MONITOR (dead code -> wired): overweight / stuck-in-town / low-HP self-heal ──
+                        if horizon == Horizon.SHORT_TERM:
+                            try:
+                                from ai_sidecar.autonomy.bot_health_monitor import run_health_checks
+                                run_health_checks(self._runtime, self._runtime.action_queue, [_bid])
+                            except Exception as _health_e:
+                                logger.warning("health_monitor_error bot=%s err=%s", _bid, _health_e)
                         _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill + _actions_queued_combat
-                        
                         # ── Config push: heal resources + anti-detection (every cycle) ──
                         try:
                             _hrl = getattr(self._runtime, "heal_resource_loader", None)
@@ -8943,6 +8996,87 @@ class PDCALoop:
             )
         except Exception:
             logger.warning("pdca_domain_breaker_record_failed bot=%s domain=%s", bot_id, domain)
+
+    def _check_progress_and_detect_stuck(self, bot_id: str) -> bool:
+        """Detect 'alive but not progressing' for a bot (P2.1).
+
+        A bot that is registered + in-game but makes NO kills/exp/level progress over a
+        bounded window is STUCK — keep-alive only restarts dead processes, so this is
+        the missing self-heal. Returns True when a recovery action was enqueued.
+
+        Mechanism: anchor the (observed_at, kills/exp/level) when first seen; when the
+        elapsed time passes STUCK_DETECT_WINDOW_S (default 120s) with ZERO delta, enqueue
+        a recovery (return to farm / re-approach) once (debounced), then re-anchor so it
+        can self-clear once progress resumes.
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return False
+        _sc = getattr(_rt, "snapshot_cache", None)
+        if _sc is None or not hasattr(_sc, "get"):
+            return False
+        _snap = None
+        try:
+            _snap = _sc.get(bot_id)
+        except Exception:
+            return False
+        if _snap is None:
+            return False
+        # Only apply to bots that are actually in-game and on a real map (not logged out).
+        _raw = getattr(_snap, "raw", None) if not isinstance(_snap, dict) else _snap.get("raw", {})
+        _in_game = None
+        if isinstance(_raw, dict):
+            _in_game = _raw.get("in_game", _raw.get("is_logged_in", None))
+        if _in_game is False:
+            self._progress_anchor.pop(bot_id, None)
+            return False
+        _now = time.time()
+        _fields = _snapshot_progress_fields(_snap)
+        _anchor = self._progress_anchor.get(bot_id)
+        if _anchor is None:
+            _anchor = {"t": _now, "kills": _fields["kills"], "exp": _fields["exp"], "level": _fields["level"]}
+            self._progress_anchor[bot_id] = _anchor
+            return False
+        _elapsed = _now - _anchor["t"]
+        # Progress: any kill/exp/level delta resets the anchor.
+        if (_fields["kills"] != _anchor["kills"]) or (_fields["exp"] != _anchor["exp"]) or (_fields["level"] != _anchor["level"]):
+            self._progress_anchor[bot_id] = {"t": _now, "kills": _fields["kills"], "exp": _fields["exp"], "level": _fields["level"]}
+            self._stuck_declared.pop(bot_id, None)
+            return False
+        _window = float(getattr(self._config, "stuck_detect_window_s", 0) or 0) or 120.0
+        if _elapsed < _window:
+            return False
+        # No progress for the window -> stuck. Debounce: only fire once per STUCK_DEBOUNCE.
+        _last = self._stuck_declared.get(bot_id, 0.0)
+        if _now - _last < _window:
+            return False
+        self._stuck_declared[bot_id] = _now
+        # Re-anchor so the next stuck window starts fresh after recovery.
+        self._progress_anchor[bot_id] = {"t": _now, "kills": _fields["kills"], "exp": _fields["exp"], "level": _fields["level"]}
+        logger.warning("stuck_detector: bot=%s no progress for %.0fs (kills=%d exp=%d lvl=%d) -> recovery",
+                       bot_id, _elapsed, _fields["kills"], _fields["exp"], _fields["level"])
+        try:
+            from datetime import UTC, datetime as _dt, timedelta as _td
+            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+            _aq = getattr(_rt, "action_queue", None)
+            if _aq is None:
+                return False
+            _aq.enqueue(bot_id, _AP(
+                action_id=f"stuck-recover-{int(_now)}",
+                kind="command",
+                command="ai auto",
+                conflict_key="stuck_recovery",
+                priority_tier=_APT.tactical,
+                source="stuck_detector",
+                created_at=_dt.now(UTC),
+                expires_at=_dt.now(UTC) + _td(seconds=30),
+                idempotency_key=f"stuck-recover:{bot_id}",
+                metadata={"reason": f"No kills/exp/level progress for {_window:.0f}s — self-heal re-engage"},
+            ))
+            return True
+        except Exception as _stuck_exc:
+            logger.warning("stuck_detector_enqueue_failed bot=%s err=%s", bot_id, _stuck_exc)
+            return False
 
     # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, NOT hardcoded) ──
     # The source of gear/sustain decisions is the LLM (conscious tier), not a hardcoded
