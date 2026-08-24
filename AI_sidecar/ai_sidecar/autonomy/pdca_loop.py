@@ -9004,6 +9004,18 @@ class PDCALoop:
                 _dm.report_failure(f"domain.{domain}", str(exc)[:256])
         except Exception:
             pass
+        # Wire the SelfHealer too (was a dormant stub — heal_module had no callers).
+        # The healer diagnoses the error and records the corrective action into its
+        # heal log (reconnect / drain_queue / reset_state / etc.), which is surfaced
+        # via get_heal_summary() in the status payload. It cannot execute the action
+        # itself (bridge executes) — the recorded action is advisory; the actual
+        # recovery runs via the circuit breaker + stuck detector + health monitor.
+        try:
+            _sh = getattr(self._runtime, "self_healer", None)
+            if _sh is not None and hasattr(_sh, "heal_module"):
+                _sh.heal_module(f"domain.{domain}", str(exc)[:256])
+        except Exception:
+            pass
 
     def _check_progress_and_detect_stuck(self, bot_id: str) -> bool:
         """Detect 'alive but not progressing' for a bot (P2.1).
