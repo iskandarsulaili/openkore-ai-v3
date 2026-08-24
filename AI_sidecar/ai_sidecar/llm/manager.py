@@ -178,6 +178,7 @@ class LLMManager:
 
     def _check_daily_budget(self, estimated_tokens: int = 0) -> bool:
         """Check daily token budget. Returns False if budget exceeded."""
+        self._rollover_daily()
         budget = self._config.daily_budget_tokens
         if budget <= 0:
             return True
@@ -189,6 +190,29 @@ class LLMManager:
             )
             return False
         return True
+
+    def _rollover_daily(self) -> None:
+        """Reset the daily token counter after 24h (per-day, not per-process)."""
+        now = time.time()
+        if not hasattr(self, "_daily_start_ts"):
+            object.__setattr__(self, "_daily_start_ts", now)
+        if now - self._daily_start_ts >= 86400:
+            self._daily_tokens = 0
+            self._daily_start_ts = now
+
+    def _record_usage(self, prompt: str, result: str) -> None:
+        """Record estimated token usage after a successful completion.
+
+        The daily budget gate reads _daily_tokens but it was NEVER incremented, so the
+        daily cap never tripped (dead gate). Estimate tokens (prompt + completion) to
+        keep the daily budget meaningful and bounded.
+        """
+        self._rollover_daily()
+        if not self._config or self._config.daily_budget_tokens <= 0:
+            return
+        estimated = len(prompt) // 4 + len(result) // 4
+        if estimated > 0:
+            self._daily_tokens += estimated
 
     # ── Public API ──
 
@@ -252,6 +276,7 @@ class LLMManager:
                     provider_name,
                     provider.model,
                 )
+                self._record_usage(prompt, str(result) if result is not None else "")
                 return result
             except LLMProviderError as e:
                 logger.warning(
@@ -336,6 +361,7 @@ class LLMManager:
                     provider_name,
                     provider.model,
                 )
+                self._record_usage(prompt, str(result) if result is not None else "")
                 return result
             except LLMProviderError as e:
                 logger.warning(
