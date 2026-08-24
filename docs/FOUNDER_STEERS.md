@@ -155,4 +155,11 @@ instruction conflicts, the LATEST dated steer wins.
   decision/action + outcome, so the crowdsource/ML loop can learn from real
   agent behavior, not just raw game data.
 
+## Q. Discord roles (founder 2026-08-24)
+- Q1. LLM Token Supporter role: eligible ONLY if the user's contributed LLM key is
+  used for the server's in-game AI NPC/agent usage / LLM (i.e. the pool actually
+  serves the game). A user who set their LLM ONLY for their own bot (openkore-ai-v3)
+  and NOT for in-game AI NPC/agent usage is NOT eligible for LLM Token Supporter.
+- Q2. Such a user instead gets a NEW role: "Openkore-AI User".
+
 
