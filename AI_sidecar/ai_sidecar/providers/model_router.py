@@ -552,6 +552,42 @@ class ModelRouter:
 
     CONTEXT_BUDGETS: dict[str, int] = {"off": 0, "economy": 512, "standard": 2048, "premium": 8192}
 
+    async def generate_text(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str = "",
+        bot_id: str = "default",
+        workload: str = "conversation",
+        timeout_seconds: float = 30.0,
+    ) -> str:
+        """Async LLM text completion adapter (blocks on the router + cost gate).
+
+        This is the method the PDCA loop's NPCDialogEngine/MacroIntelligence wiring
+        references via hasattr(_mr, 'generate_text') — it NEVER existed, so those
+        subsystems silently ran WITHOUT an LLM (dead wiring). Provide it here so the
+        adapter contract `async (prompt) -> str` is honored through the fleet budget
+        gate. Returns the raw text; raises/exceptions fall through to the caller's
+        fallback.
+        """
+        from ai_sidecar.providers.base import PlannerModelRequest
+        response, _decision = await self.generate_with_fallback(
+            request=PlannerModelRequest(
+                bot_id=bot_id,
+                trace_id="generate_text",
+                task=workload,
+                model="",
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                schema={},
+                timeout_seconds=timeout_seconds,
+                max_retries=1,
+            )
+        )
+        if response.ok:
+            return response.raw_text or str(response.content or "")
+        return ""
+
     def max_context_tokens(self, tier: str = "standard") -> int:
         """Return max context tokens allowed for the given cost tier."""
         return self.CONTEXT_BUDGETS.get(tier, 2048)
