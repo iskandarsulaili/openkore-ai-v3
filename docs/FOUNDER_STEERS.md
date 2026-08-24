@@ -89,3 +89,14 @@ instruction conflicts, the LATEST dated steer wins.
 - I4. Do NOT let telemetry hurt the bot (fire-and-forget async, non-blocking,
   bounded queue, offline-tolerant). This is a first-class feature, not a stub.
 
+## J. OS agnostic (founder directive 2026-08-24)
+- J1. ALL openkore-ai-v3 code must be OS agnostic (Linux dev host + Windows user
+  PCs). No Windows-only / Linux-only assumptions in bot, sidecar, bridge, launcher
+  integration, pathfinding, or telemetry.
+- J2. Any Windows API shim (e.g. GetTickCount in the C A* pathfinder) must have a
+  correct cross-platform equivalent — the Linux shim already returns real ms, but
+  every such call must be verified cross-platform before relying on it.
+- J3. Paths, process spawning, signals, socket/keepalive, file I/O, and telemetry
+  upload must all use portable constructs.
+
+
