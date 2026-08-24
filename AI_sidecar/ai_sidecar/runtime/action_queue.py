@@ -378,8 +378,21 @@ class ActionQueue:
                     self._action_to_bot[proposal.action_id] = bot_id
                     continue
 
-                restored_status = ActionStatus.queued if item.status == ActionStatus.dispatched else item.status
-                restored_dispatched_at = item.dispatched_at if restored_status == ActionStatus.dispatched else None
+                # P3.2 exactly-once: only a genuinely QUEUED (never-sent) action may
+                # survive restart. DISPATCHED was handed to the bridge and may have
+                # executed (its in-memory dedup is gone too) -> re-queuing double-execs.
+                # ACKNOWLEDGED/EXPIRED/DROPPED/SUPERSEDED are terminal -> drop. The PDCA
+                # re-decides from a fresh snapshot every cycle, so nothing is "lost".
+                if item.status != ActionStatus.queued:
+                    self._actions_by_id[proposal.action_id] = replace(
+                        item, status=ActionStatus.dropped,
+                        ack_message=f"rehydrate_not_requeued:{item.status.value}",
+                    )
+                    self._action_to_bot[proposal.action_id] = bot_id
+                    continue
+
+                restored_status = ActionStatus.queued
+                restored_dispatched_at = None
 
                 restored_item = QueuedAction(
                     proposal=proposal,

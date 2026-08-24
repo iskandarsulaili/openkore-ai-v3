@@ -84,8 +84,14 @@ P3.1 [ ] Idempotency index is in-memory only (action_queue.py:42,82); rebuilt fr
      restored queue only (359). Sidecar+bridge restart → double-exec of a command
      already done. FIX: persist idempotency index alongside queue; bridge-side
      permanent (persisted) command dedup key.
-P3.2 [ ] rehydrate() converts dispatched→queued (381) → re-run. With P3.1 the
+P3.2 [x] rehydrate() converts dispatched→queued (381) → re-run. With P3.1 the
      already-executed set is excluded.
+     DONE (stronger): rehydrate() now ONLY re-queues genuinely QUEUED (never-sent)
+     actions. DISPATCHED (may have executed, bridge dedup gone) + ACKNOWLEDGED/EXPIRED/
+     DROPPED/SUPERSEDED all drop (marked rehydrate_not_requeued). PDCA re-decides from
+     a fresh snapshot every cycle so nothing is lost — this closes the double-exec
+     window (potion spent twice, move duplicated) across a sidecar+bridge restart.
+     2 regression tests in test_zero_intervention_p32_exactly_once.py.
 
 ## PHASE 4 — PROGRESS-OR-ESCALATE (terminating)
 
