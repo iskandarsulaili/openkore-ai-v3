@@ -147,4 +147,12 @@ instruction conflicts, the LATEST dated steer wins.
 - O2. Multi-char: the launcher can run several openkore-ai-v3 instances, one per
   selected char, on the same account (RAW supports per-char multi-login).
 
+## P. AI-agent + prompt telemetry (founder 2026-08-24)
+- P1. The AI agent's decisions AND the prompts sent to the LLM are ALSO logged /
+  telemetry'd — on top of the ML crowdsource data. This is a first-class
+  telemetry surface, not a stub.
+- P2. Log/telemetry: the full prompt (or a bounded/redacted form) + the agent's
+  decision/action + outcome, so the crowdsource/ML loop can learn from real
+  agent behavior, not just raw game data.
+
 
