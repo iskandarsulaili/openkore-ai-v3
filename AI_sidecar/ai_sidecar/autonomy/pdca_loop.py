@@ -5955,6 +5955,7 @@ class PDCALoop:
                                 _actions_queued_ge = _emit_game_engine_actions(
                                     self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
                                 )
+                                _record_domain_success(self, _bid, "game_engine")
                             except Exception as _ex_ge:
                                 logger.warning("pdca_domain_error bot=%s domain=game_engine err=%s", _bid, _ex_ge)
                                 _record_domain_failure(self, _bid, "game_engine", _ex_ge)
@@ -5962,6 +5963,7 @@ class PDCALoop:
                         try:
                             if _hs is not None:
                                 _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
+                                _record_domain_success(self, _bid, "heuristic")
                         except Exception:
                             pass
                         # ── UNIFIED CONSCIOUSNESS: primary decision-maker (runs every cycle) ──
@@ -6048,6 +6050,7 @@ class PDCALoop:
                             _actions_queued_swarm = _emit_swarm_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
+                            _record_domain_success(self, _bid, "swarm")
                         except Exception as _em_swarm:
                             logger.warning("pdca_domain_error bot=%s domain=swarm err=%s", _bid, _em_swarm)
                             _record_domain_failure(self, _bid, "swarm", _em_swarm)
@@ -6061,6 +6064,7 @@ class PDCALoop:
                                 _actions_queued_vendor = _emit_vendor_actions(
                                     self._runtime, horizon.value, bot_id=_bid
                                 )
+                                _record_domain_success(self, _bid, "vendor")
                             except Exception as _ex_vendor:
                                 logger.warning("pdca_domain_error bot=%s domain=vendor err=%s", _bid, _ex_vendor)
                                 _record_domain_failure(self, _bid, "vendor", _ex_vendor)
@@ -6069,6 +6073,7 @@ class PDCALoop:
                             _actions_queued_skill = _emit_skill_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
+                            _record_domain_success(self, _bid, "skill")
                         except Exception as _ex_skill:
                             logger.warning("pdca_domain_error bot=%s domain=skill err=%s", _bid, _ex_skill)
                             _record_domain_failure(self, _bid, "skill", _ex_skill)
@@ -6077,6 +6082,7 @@ class PDCALoop:
                             _actions_queued_combat = _emit_combat_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
+                            _record_domain_success(self, _bid, "combat")
                         except Exception as _ex_combat:
                             logger.warning("pdca_domain_error bot=%s domain=combat err=%s", _bid, _ex_combat)
                             _record_domain_failure(self, _bid, "combat", _ex_combat)
@@ -8976,6 +8982,27 @@ class PDCALoop:
                 self._advisory_inflight.discard(name)
 
         _loop.create_task(_reap(_task))
+
+    def _record_domain_success(self, bot_id: str, domain: str) -> None:
+        """Clear per-domain failure state when an emitter succeeds (self-healing telemetry).
+
+        Mirrors _record_domain_failure: on a clean emitter run we record success so the
+        degradation_manager / self_healer surfaces don't show a domain as degraded
+        forever. The circuit breaker itself self-heals via record_success on the gate
+        key (2601/2615); this keeps the advisory module-health view coherent.
+        """
+        try:
+            _dm = getattr(self._runtime, "degradation_manager", None)
+            if _dm is not None and hasattr(_dm, "report_success"):
+                _dm.report_success(f"domain.{domain}")
+        except Exception:
+            pass
+        try:
+            _cb = getattr(self, "_circuit_breaker", None)
+            if _cb is not None and bot_id and bot_id != "pdca" and hasattr(_cb, "record_success"):
+                _cb.record_success(bot_id=bot_id, key=f"domain.{domain}", family="queue")
+        except Exception:
+            pass
 
     def _record_domain_failure(self, bot_id: str, domain: str, exc: Exception) -> None:
         """Record a per-domain emitter failure against that bot's breaker.
