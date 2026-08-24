@@ -8954,15 +8954,15 @@ class PDCALoop:
         """
         if getattr(self, "_advisory_inflight", None) is None:
             object.__setattr__(self, "_advisory_inflight", set())
-        if name in self._advisory_inflight:
-            return
-        self._advisory_inflight.add(name)
         try:
             _loop = asyncio.get_event_loop()
         except RuntimeError:
             _loop = None
         if _loop is None or not _loop.is_running():
             return
+        if name in self._advisory_inflight:
+            return
+        self._advisory_inflight.add(name)
         _task = _loop.create_task(coro)
 
         async def _reap(_t):

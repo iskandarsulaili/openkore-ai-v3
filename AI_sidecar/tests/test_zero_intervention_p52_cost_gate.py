@@ -39,3 +39,29 @@ def test_record_call_feeds_tracker() -> None:
                                tier="standard", bot_id="botA")
     assert allowed is False
     assert "daily" in reason
+
+
+def test_fleet_gate_binds_across_bots() -> None:
+    """Fleet gate: N bots cannot collectively exceed the shared budget."""
+    ct = CostTracker(per_bot_budget=True)
+    # Each bot individually under budget, but fleet total over -> gate blocks.
+    ct.record_call(tokens=700, model="m", tier="standard", bot_id="botA")
+    ct.record_call(tokens=700, model="m", tier="standard", bot_id="botB")
+    allowed, reason = ct.check(daily_budget_tokens=1000, max_calls_per_hour=100,
+                               tier="standard", bot_id="botA")
+    assert allowed is False
+    assert "fleet_daily" in reason, reason
+
+
+def test_fleet_gate_resets_on_day_rollover() -> None:
+    ct = CostTracker(per_bot_budget=True)
+    ct.record_call(tokens=1500, model="m", tier="standard", bot_id="botA")
+    allowed, _ = ct.check(daily_budget_tokens=1000, max_calls_per_hour=100,
+                          tier="standard", bot_id="botA")
+    assert allowed is False
+    # Simulate day rollover (force _day_start into the past).
+    ct._day_start = int(__import__("time").time()) - 90000
+    ct._check_day_rollover()
+    allowed, _ = ct.check(daily_budget_tokens=1000, max_calls_per_hour=100,
+                          tier="standard", bot_id="botA")
+    assert allowed is True

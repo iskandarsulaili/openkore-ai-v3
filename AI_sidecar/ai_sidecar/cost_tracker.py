@@ -35,6 +35,13 @@ class CostTracker:
     def __init__(self, per_bot_budget: bool = False):
         self._lock = RLock()
         self._per_bot = per_bot_budget
+        # Fleet-wide totals, always accumulated regardless of per_bot mode. This is the
+        # true fleet gate: per_bot_budget=True bounds each bot, but N bots × per-bot
+        # budget would otherwise be unbounded at the fleet level. check() consults
+        # fleet totals + the per-bot totals so a single shared cap applies fleet-wide.
+        self._fleet_daily_tokens = 0
+        self._fleet_daily_calls = 0
+        self._fleet_hourly_calls: list[float] = []
         # Shared counters (used when per_bot_budget=False)
         self._daily_tokens = 0
         self._daily_calls = 0
@@ -67,6 +74,12 @@ class CostTracker:
         """Record an LLM call and its token usage for a specific bot."""
         with self._lock:
             self._check_day_rollover()
+            # Fleet-wide totals always accumulate (the true fleet gate).
+            self._fleet_daily_tokens += tokens
+            self._fleet_daily_calls += 1
+            self._fleet_hourly_calls.append(time.time())
+            cutoff = time.time() - 3600
+            self._fleet_hourly_calls = [t for t in self._fleet_hourly_calls if t > cutoff]
             if self._per_bot:
                 self._bot_tokens[bot_id] = self._bot_tokens.get(bot_id, 0) + tokens
                 self._bot_calls[bot_id] = self._bot_calls.get(bot_id, 0) + 1
@@ -88,12 +101,27 @@ class CostTracker:
                 self._monthly_cost += (tokens / 1_000_000) * price_per_m
 
     def check(self, *, daily_budget_tokens: int, max_calls_per_hour: int, tier: str, bot_id: str = "default") -> tuple[bool, str]:
-        """Returns (allowed: bool, reason: str) for a specific bot or globally."""
+        """Returns (allowed: bool, reason: str) for a specific bot or globally.
+
+        Enforces BOTH the fleet-wide cap (always) AND the per-bot cap (when
+        per_bot_budget=True). Fleet-first: a shared daily/hourly budget applies across
+        all bots so N bots cannot collectively exceed it.
+        """
         with self._lock:
             self._check_day_rollover()
             if tier == "off":
                 return False, "cost_tier_off"
 
+            # Fleet-wide gate (always).
+            if daily_budget_tokens > 0 and self._fleet_daily_tokens >= daily_budget_tokens:
+                return False, f"fleet_daily_token_budget_exceeded:{self._fleet_daily_tokens}/{daily_budget_tokens}"
+            if max_calls_per_hour > 0:
+                cutoff = time.time() - 3600
+                fleet_recent = sum(1 for t in self._fleet_hourly_calls if t > cutoff)
+                if fleet_recent >= max_calls_per_hour:
+                    return False, f"fleet_hourly_call_limit_exceeded:{fleet_recent}/{max_calls_per_hour}"
+
+            # Per-bot gate (when enabled).
             if self._per_bot:
                 tokens = self._bot_tokens.get(bot_id, 0)
                 calls = self._bot_calls.get(bot_id, 0)
@@ -143,6 +171,9 @@ class CostTracker:
         if now - self._day_start >= 86400:
             self._daily_tokens = 0
             self._daily_calls = 0
+            self._fleet_daily_tokens = 0
+            self._fleet_daily_calls = 0
+            self._fleet_hourly_calls = []
             self._day_start = now
             if self._per_bot:
                 self._bot_tokens.clear()
@@ -170,6 +201,11 @@ class CostTracker:
                            ("_shared", "daily_tokens", self._daily_tokens, time.time()))
                 db.execute("INSERT OR REPLACE INTO cost_budget (bot_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
                            ("_shared", "daily_calls", self._daily_calls, time.time()))
+            # Fleet totals persist so a restart does not silently reset the fleet budget.
+            db.execute("INSERT OR REPLACE INTO cost_budget (bot_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
+                       ("_fleet", "daily_tokens", self._fleet_daily_tokens, time.time()))
+            db.execute("INSERT OR REPLACE INTO cost_budget (bot_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
+                       ("_fleet", "daily_calls", self._fleet_daily_calls, time.time()))
             db.commit()
             db.close()
         except Exception:
@@ -186,7 +222,13 @@ class CostTracker:
             now = time.time()
             for bot_id, key, value, updated_at in cursor.fetchall():
                 if now - updated_at < 86400:
-                    if bot_id == "_shared":
+                    if bot_id == "_fleet":
+                        if key == "daily_tokens":
+                            self._fleet_daily_tokens = int(value)
+                        elif key == "daily_calls":
+                            self._fleet_daily_calls = int(value)
+                        self._day_start = int(updated_at)
+                    elif bot_id == "_shared":
                         if key == "daily_tokens":
                             self._daily_tokens = int(value)
                         elif key == "daily_calls":
