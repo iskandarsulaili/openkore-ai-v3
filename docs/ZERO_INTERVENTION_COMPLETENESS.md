@@ -193,6 +193,13 @@ P6.2 [x] RAW-over-internet reconnect/cannot-route bounded by map-corridor fallba
      into its heal log (surfaced via get_heal_summary). Advisory (bridge executes the
      actual recovery), real recovery via circuit breaker + stuck detector + health
      monitor. (65e818486)
+- [x] COHERENCE FIX: the domain self-heal telemetry was one-way — report_failure wrote
+     domain.<domain> but the success path used a DISJOINT hardcoded module set
+     (knowledge_loader/action_executor/reflex_combat/predictive_threat), so a degraded
+     domain stayed 'degraded' forever. Added _record_domain_success (wired at
+     game_engine/heuristic/swarm/vendor/skill/combat success) that reports success to
+     the degradation manager + clears the domain breaker — failure/recovery now
+     self-heals coherently. (bbb1dd72d)
 
 ---
 
