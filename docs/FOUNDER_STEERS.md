@@ -111,4 +111,14 @@ instruction conflicts, the LATEST dated steer wins.
 - K4. Do NOT let P2P crowdsourcing hurt the bot or the session (async, non-blocking,
   offline-tolerant, never a hard dependency).
 
+## L. 4th-job end-game build (founder 2026-08-24)
+- L1. openkore-ai-v3 bots must be specialized, job-agnostic, and target 4th-job in
+  their end-game build — i.e. the AI can play ANY job (no hardcoded job literals)
+  and its long-term progression/goal is a 4th-job end-game build.
+- L2. Job choice/gear/skill/stat decisions come from the AI/LLM sidecar, never
+  hardcoded job IDs or per-job item lists (mirrors RAW's agnostic directive).
+- L3. Progression planner must know the 4th-job end-game target and route the char
+  through 1st/2nd/3rd/4th (via real quests, per the RAW job-quest directive) toward
+  a specialized 4th-job build.
+
 
