@@ -1253,10 +1253,18 @@ class HeuristicService:
     def _cold_start_academy_door(self, map_name: str, now: float) -> str | None:
         try:
             _pf = __import__("pathlib").Path
-            _tables = _pf(AI_sidecar_base_dir if False else _tables_root_cache()) / "portals.txt"
-            if not _tables.exists():
-                logger.debug("_cold_start_academy_door: no portals.txt")
+            # Resolve the OpenKore repo root (which owns tables/portals.txt):
+            # the sidecar runs from AI_sidecar/... — walk up until we find tables/.
+            _base = _pf(__file__)
+            _tables_root = None
+            for _anc in [_base, *_base.parents]:
+                if (_anc / "tables" / "portals.txt").exists():
+                    _tables_root = _anc / "tables"
+                    break
+            if _tables_root is None:
+                logger.debug("_cold_start_academy_door: no tables/portals.txt found")
                 return None
+            _tables = _tables_root / "portals.txt"
             _mtime = _tables.stat().st_mtime
             _last, _cache = self._PORTALS_FILE_CACHE.get("mtime", 0.0), self._PORTALS_FILE_CACHE.get("rows") or []
             if _last != _mtime or not _cache:
