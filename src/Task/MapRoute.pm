@@ -985,6 +985,12 @@ sub subtaskDone {
 				$code = CANNOT_LOAD_FIELD;
 			} elsif ($error->{code} == Task::CalcMapRoute::CANNOT_CALCULATE_ROUTE) {
 				$code = CANNOT_CALCULATE_ROUTE;
+				# ── ROUTE-FAIL COOLDOWN (2026-08-25): arm so processLockMap
+				# doesn't re-attempt the same failed cross-map route each cycle
+				# (re-loads Fields -> Perl SV heap leak ~40MB/s).
+				if ($self->{isToLockMap}) {
+					$AI::Timeouts::lockMapRouteFail = time;
+				}
 			}
 			$self->setError($code, $error->{message});
 

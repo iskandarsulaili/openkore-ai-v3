@@ -331,6 +331,13 @@ sub iterate {
 
 		} else {
 			debug "Something's wrong; there is no path from " . $self->{dest}{map}->baseName . "($calc_pos->{x},$calc_pos->{y}) to " . $self->{dest}{map}->baseName . "($self->{dest}{pos}{x},$self->{dest}{pos}{y}).\n", "route";
+			# ── ROUTE-FAIL COOLDOWN (2026-08-25, leak/churn root cause) ──
+			# When routing to lockMap fails, arm a cooldown so processLockMap
+			# doesn't re-attempt the SAME failed route every cycle (which
+			# re-loads Field objects + grows Perl SV heap -> 40MB/s leak).
+			if ($self->{isToLockMap}) {
+				$AI::Timeouts::lockMapRouteFail = time;
+			}
 			$self->setError(CANNOT_CALCULATE_ROUTE, "Unable to calculate a route.");
 		}
 

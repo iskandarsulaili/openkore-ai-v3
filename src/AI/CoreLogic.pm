@@ -2326,6 +2326,14 @@ sub processAutoCart {
 }
 
 ##### LOCKMAP #####
+# ── ROUTE-FAIL COOLDOWN (2026-08-25, leak/churn root cause) ──
+# processLockMap re-routes to lockMap every cycle while AI::isIdle(). If the
+# cross-map route to lockMap cannot be calculated (CalcMapRoute fail), the bot
+# spins: retry -> fail -> retry every cycle, re-loading Field objects (~5MB)
+# + Perl SV heap -> the 40MB/s RAM leak observed on a bot stuck routing to an
+# unreachable lockMap. Add a cooldown so a failed route isn't retried for
+# AI_CALCROUTE_FAIL_COOLDOWN (default 15s). The AI loop still runs (attacks,
+# items, potions) — only the failed cross-map re-route is throttled.
 sub processLockMap {
 	if (AI::isIdle() && $config{'lockMap'}
 		&& !$ai_v{'sitAuto_forcedBySitCommand'}
@@ -2341,6 +2349,14 @@ sub processLockMap {
 			my %args;
 			Plugins::callHook('AI/lockMap', \%args);
 			unless ($args{'return'}) {
+				# ── ROUTE-FAIL COOLDOWN GATE ──
+				# Skip re-route attempts within the cooldown window after a
+				# FAILED lockMap route calc. Without this, an unreachable
+				# lockMap spins the bot (retry->fail every cycle) and leaks RAM.
+				my $rtcooldown = $config{'AI_routeFailCooldown'} || 15;
+				if (defined $AI::Timeouts::lockMapRouteFail && time - $AI::Timeouts::lockMapRouteFail < $rtcooldown) {
+					return;
+				}
 				my ($cell, $i);
 				if ($config{'lockMap_x'} || $config{'lockMap_y'}) {
 					eval {
@@ -2360,13 +2376,18 @@ sub processLockMap {
 				} else {
 					message TF("Calculating lockMap route to: %s(%s)\n", $maps_lut{$config{'lockMap'}.'.rsw'}, $config{'lockMap'}), "route";
 				}
-				ai_route(
+				my $rt_ok = ai_route(
 					$config{'lockMap'},
 					$cell->{x},
 					$cell->{y},
 					attackOnRoute => $attackOnRoute,
 					isToLockMap => 1
 				);
+				# On FAILURE, arm the cooldown so we don't re-attempt every cycle.
+				if (!$rt_ok) {
+					$AI::Timeouts::lockMapRouteFail = time;
+					debug TF("lockMap route to %s failed; cooldown %ss armed\n", $config{'lockMap'}, $rtcooldown), "route", 1;
+				}
 			}
 		}
 	}
