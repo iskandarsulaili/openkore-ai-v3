@@ -103,6 +103,40 @@
       (getPacket/process) or bridge queue accumulation. NEXT: instrument
       PathFinding.xs with a live-object counter to PROVE it's not pathfinding, then
       audit OpenKore core loop buffers + bridge queues with gdb x/growth.
+- [x] 2.26 ADVERSARIAL AUDIT (deleg_dea5892c, 12 findings) — 5 REAL defects FIXED:
+  (a) #1 HIGH cold-start keying — _get_state read _cold_start_step with FULL bot_id
+      while all writes used stable key -> COLD_START never exited (the live
+      receptionist-loop root cause). Fixed: bot_id normalized to stable key at
+      _assess_impl entry (88efbaaf5). ALSO the revert (288354884) had undone the
+      earlier 833c42f9a fix — this is the definitive re-fix.
+  (b) #2 HIGH route_randomWalk 1 defeat — _apply_mimicry_config forced randomWalk 1
+      every cycle, undoing the academy's randomWalk 0 (last-write-wins) -> C A* spin.
+      Gated on cold-start step >= 4 (88efbaaf5).
+  (c) #6 HIGH _cold_start_hunt_map SCALAR shared across bots -> per-bot dict
+      (88efbaaf5). Also fixed a latent NameError: block-scope sites used bare
+      'bot_id' (undefined in assess(); only _bot_id exists) silently swallowed by
+      try/except -> skipped the whole academy-farm lockMap block.
+  (d) #4 HIGH start.sh substring pkill — 'openkore.pl.*kicapmasin' matched
+      kicapmasin2/3. Anchored on .bot_profiles/<name>/control (961f401c2).
+  (e) #5 HIGH snapshot double-ingest — REVIEWED + REJECTED: the sync forward must
+      stay (immediate navigation population is a hard guarantee; removing it
+      re-blinds the pipeline). Documented in lifecycle.py (961f401c2).
+  PLUS a 6th defect the audit MISSED (found live): _record_domain_success/failure
+  MISSING self in the defs (a prior regex refactor stripped it) -> EVERY PDCA cycle
+  crashed in the game_engine domain block (pdca_domain_error in live log), silently
+  disabling per-domain health tracking. Fixed + regression test (437a9618f).
+- [ ] 2.27 OPEN (audit #3): un-gated move emitters during cold-start (steps<4):
+  pdca_loop.py:2342 'move prt_fild08', pdca_loop.py:2359 'move 22 203',
+  goal_decomposer.py:126/151 'move prt_fild08', heuristic 2316/2450. Gate at the
+  call site pdca_loop.py:7057 (skip planner command emission when cold-start step<4).
+- [ ] 2.28 OPEN (audit #8): _restart_stale_bots blocks the event loop up to 45s
+  (sync Popen.communicate in async loop) -> restart cascade risk. Fix:
+  run_in_executor.
+- [ ] 2.29 OPEN: bot physically CANNOT route izlude->prt_fild08 in OpenKore
+  ('Cannot calculate a route' persists even for the 1-hop target; izlude field data
+  verified correct). The DECISION layer is fixed (locks the reachable farm) but the
+  OpenKore client cross-map A* fails. Research-backed fix: precomputed map-gateway
+  distance table (docs/PATHFINDING_RESEARCH_DIGEST.md recommendation #2).
 - [x] 2.25 Reachable-farm + portal data fixes verified live: bot locks prt_fild08
       (reachable 1-hop) from izlude, no 'Cannot calculate a route to prt_fild08c'
       decision failure. Bot warps into iz_ac01 + talks to Academy Receptionist
