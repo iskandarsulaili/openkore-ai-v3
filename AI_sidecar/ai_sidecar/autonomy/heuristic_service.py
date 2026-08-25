@@ -1779,15 +1779,17 @@ class HeuristicService:
                                     except Exception:
                                         _route_via_pathfinder = False
                                 if not _route_via_pathfinder:
-                                    # Fallback: academy door warp is at izlude (125,257) AND at
-                                    # izlude_a (125,257 -> iz_ac01_a). Emit at most once per 10s.
+                                    # Fallback: resolve the academy-door warp from the
+                                    # portal graph (FACT, data-driven — not a hardcoded
+                                    # coordinate literal). Emit at most once per 10s.
+                                    _ac_door = self._resolve_academy_door(_cm or "")
                                     _now = __import__("time").time()
-                                    if _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
+                                    if _ac_door and _now - self._last_academy_move.get(_bot_id, 0.0) >= 10.0:
                                         self._last_academy_move[_bot_id] = _now
                                         _actions.append(HeuristicAction(
-                                            kind="command", command="move 125 257",
+                                            kind="command", command=f"move {_ac_door}",
                                             confidence=0.95,
-                                            reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit",
+                                            reason="Cold start: walk to Academy door (warp to iz_ac01) — register for starter kit (resolved from portal graph)",
                                             domain="progression"))
                             if _cm and _target and _cm != _target and _target != "iz_ac01":
                                 # S18 STAY-COMMITTED GUARD: if the bot is ALREADY on a farm
@@ -2632,6 +2634,35 @@ class HeuristicService:
                 actionable=False, top_domain="survival", signals=dict(signals),
             )
 
+    def _resolve_academy_door(self, current_map: str) -> str:
+        """Resolve the warp tile on `current_map` that leads to the Academy map
+        (iz_ac01 / iz_ac01_a) by READING portals.txt — a FACT from the server's
+        portal graph, never a hardcoded coordinate literal. Returns a 'x y'
+        string or '' if the current map has no academy warp.
+
+        This mirrors the LLM cold-start advisory's resolution (pdca_loop
+        `_llm_cold_start_advisory`) so the reflex/fallback path uses the same
+        data-driven source — honoring the founder rule that cold-start
+        coordinates are FACTS from the portal graph, not baked literals.
+        """
+        _m = str(current_map or "").lower().replace(".gat", "")
+        try:
+            _here = Path(__file__)
+            for _anc in [_here, *_here.parents]:
+                _pf = _anc / "tables" / "portals.txt"
+                if not _pf.exists():
+                    continue
+                for _ln in _pf.read_text(errors="ignore").splitlines():
+                    _f = _ln.split()
+                    if (len(_f) >= 5
+                            and _f[0].lower().replace(".gat", "") == _m
+                            and _f[3].lower() in ("iz_ac01", "iz_ac01_a")):
+                        return f"{_f[1]} {_f[2]}"
+                break
+        except Exception:
+            pass
+        return ""
+
     def _has_coldstart_weapon(self, signals: dict) -> bool:
         """Whether the bot holds/carries any starter weapon (used to decide if the
         academy-first cold-start step is still needed). Robust to both inventory
@@ -2923,15 +2954,18 @@ class HeuristicService:
                     # potions. Override the prt_fild05 step-1 walk to send it to the
                     # academy door (izlude 125,257 warp -> iz_ac01) instead.
                     if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
+                        # Resolve the academy-door warp tile from the portal graph
+                        # (FACT, data-driven — NOT a hardcoded coordinate literal).
                         # Throttle the academy-door move (at most once per 10s) so
                         # OpenKore walks the long izlude route instead of recalculating.
+                        _ac_door = self._resolve_academy_door(_cs_map)
                         _now = __import__("time").time()
-                        if _now - self._last_academy_move.get(bot_id, 0.0) >= 10.0:
+                        if _ac_door and _now - self._last_academy_move.get(bot_id, 0.0) >= 10.0:
                             self._last_academy_move[bot_id] = _now
                             actions.append(HeuristicAction(
-                                kind="command", command="move 125 257",
+                                kind="command", command=f"move {_ac_door}",
                                 confidence=0.99, domain="progression",
-                                reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
+                                reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit (resolved from portal graph)",
                             ))
                         # Registration completes on arrival at iz_ac01 (handled by the
                         # academy block); do NOT advance the cold-start step here — the
