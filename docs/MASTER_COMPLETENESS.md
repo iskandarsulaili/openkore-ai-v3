@@ -82,6 +82,16 @@
       x/y columns (+idempotent ALTER) — data-driven, never decision literals
       (f1f292368).
 - [x] 2.20 Full suite 405+ passed (only the academy test was stale, now 8/8 green).
+- [x] 2.21 REACHABLE-FARM resolution (4e1a78133 + c0e32f1c1): a level-1 bot locks a
+      farm OpenKore can actually ROUTE to. Root cause: get_hunting_maps(1) returned
+      [] (no level-1 maps in MAP_KNOWLEDGE) -> hardcoded fallback that may be
+      unroutable from the current town. Added prt_fild08c/prt_fild05 level-1 entries +
+      reachable_hunting_maps() (BFS over the bidirect portal graph, depth-2 cap —
+      OpenKore chains only ~1-2 hops). izlude lvl1 -> prt_fild08 (1-hop); once in
+      prt_fild08 -> re-lock prt_fild08c. prontera lvl1 -> prt_fild05. 9 transit tests.
+- [x] 2.22 Portal DATA completeness (799945f36): prt_fild07 -> prt_fild08{a,b,c,d}
+      reverse portals (OpenKore routes by edges; missing reverse = 'Cannot calculate
+      a route'). Server-agnostic table data.
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
