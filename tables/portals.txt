@@ -1977,6 +1977,17 @@ prt_fild07 383 239 prt_fild08 16 239
 prt_fild07 385 186 prt_fild08 16 187
 prt_fild08 16 187 prt_fild07 385 186
 prt_fild08 16 239 prt_fild07 383 239
+# Reverse portals for the prt_fild08 clones (a/b/c/d): OpenKore routes by portal
+# edges — without prt_fild07 -> prt_fild08c, a bot locked to the academy clone
+# gets 'Cannot calculate a route from izlude to prt_fild08c' and spins.
+prt_fild07 383 239 prt_fild08a 16 239
+prt_fild07 383 239 prt_fild08b 16 239
+prt_fild07 383 239 prt_fild08c 16 239
+prt_fild07 383 239 prt_fild08d 16 239
+prt_fild07 385 186 prt_fild08a 16 187
+prt_fild07 385 186 prt_fild08b 16 187
+prt_fild07 385 186 prt_fild08c 16 187
+prt_fild07 385 186 prt_fild08d 16 187
 prt_fild08 55 21 moc_fild01 56 384
 prt_fild08 170 378 prontera 156 26
 prt_fild08 233 16 moc_fild01 239 382
