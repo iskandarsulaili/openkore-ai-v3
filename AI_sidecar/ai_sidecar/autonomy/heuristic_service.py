@@ -1017,6 +1017,12 @@ class HeuristicService:
         self._last_return_to_farm: dict[str, float] = {}  # return-to-farm after restock cooldown
         self._last_job_change_attempt: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
+        # Rate-limit 'set lockMap' emission: re-sending the SAME lockMap every
+        # cycle resets the client's route task -> re-triggers C A* -> 92% CPU
+        # spin + Perl heap growth (58GB observed) + the bot never walks. Emit
+        # at most once per 60s per bot (the initial set is enough; the client
+        # keeps the lockMap until changed). (2026-08-25)
+        self._last_lockmap_emit: dict[str, float] = {}
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
         self._last_config_set: dict[str, dict[str, str]] = {}
@@ -2358,7 +2364,12 @@ class HeuristicService:
                                         # in-game first. Purely additive — no state mutation.
                                         _cs_reconn = float(signals.get("reconnect_age_s", 999.0) or 999.0)
                                         if _cs_reconn >= 15.0:
-                                            _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace)", domain="progression"))
+                                            # RATE-LIMIT: re-sending the same lockMap every cycle
+                                            # resets the client route task -> C A* spin + heap leak.
+                                            _now_lm = __import__("time").time()
+                                            if _now_lm - self._last_lockmap_emit.get(bot_id, 0.0) >= 60.0:
+                                                self._last_lockmap_emit[bot_id] = _now_lm
+                                                _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace, rate-limited)", domain="progression"))
                                         # ── ROOT-CAUSE FIX (A2): inline mon_control re-emission ──
                                         # These `mon_control` commands were emitted EVERY cycle this
                                         # block ran. Each emission makes the OpenKore client RESTART
@@ -2908,11 +2919,16 @@ class HeuristicService:
                             _cs_authority_hunt = "prt_fild08c"
                             self._cold_start_hunt_map = "prt_fild08c"
                         if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
-                            actions.append(HeuristicAction(
-                                kind="command", command=f"set lockMap {_cs_authority_hunt}",
-                                confidence=0.99, domain="economy",
-                                reason=f"Cold start step 1 - lockMap to academy hunt {_cs_authority_hunt}",
-                            ))
+                            # RATE-LIMIT lockMap (same as the academy block): re-sending
+                            # every cycle resets the client route task -> C A* spin + heap leak.
+                            _now_lm2 = __import__("time").time()
+                            if _now_lm2 - self._last_lockmap_emit.get(bot_id, 0.0) >= 60.0:
+                                self._last_lockmap_emit[bot_id] = _now_lm2
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"set lockMap {_cs_authority_hunt}",
+                                    confidence=0.99, domain="economy",
+                                    reason=f"Cold start step 1 - lockMap to academy hunt {_cs_authority_hunt} (rate-limited)",
+                                ))
                             actions.append(HeuristicAction(
                                 kind="command", command=f"move {_cs_authority_hunt}",
                                 confidence=0.99, domain="economy",
