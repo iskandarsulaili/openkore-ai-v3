@@ -278,6 +278,19 @@ sub iterate {
 		$extra_time = 0 unless (defined $extra_time);
 
 		my $calc_pos = calcPosFromPathfinding($field, $self->{actor}, $extra_time);
+		# At the CALCULATE_ROUTE stage (a fresh move dispatch), the route solution
+		# is ALWAYS empty and calcPosFromPathfinding returns $actor->{pos_to} —
+		# which is the DESTINATION (Actor::route set it the instant the move was
+		# dispatched). Feeding that as the route start makes getRoute build an
+		# EMPTY solution (start==dest) -> "reached the destination" with ZERO walk
+		# packets -> the bot never steps onto the izlude->iz_ac01 warp tile.
+		# The route must start from the server-confirmed $pos, not the stale
+		# pos_to-derived calc_pos.
+		my $_fresh_solution = $self->{actor}{solution};
+		if (!defined $calc_pos
+			|| !(defined $_fresh_solution && ref $_fresh_solution eq 'ARRAY' && @{$_fresh_solution})) {
+			$calc_pos = $pos;
+		}
 		
 		debug "Route $self->{actor}: Calculating. Your pos ($pos->{x} $pos->{y}). Your pos_to ($pos_to->{x} $pos_to->{y}). calcPosFromPathfinding ($calc_pos->{x} $calc_pos->{y})\n", "route";
 		
