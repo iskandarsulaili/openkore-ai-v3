@@ -92,6 +92,23 @@
 - [x] 2.22 Portal DATA completeness (799945f36): prt_fild07 -> prt_fild08{a,b,c,d}
       reverse portals (OpenKore routes by edges; missing reverse = 'Cannot calculate
       a route'). Server-agnostic table data.
+- [x] 2.23 PathFinding reset-path leak (8b443fada): CalcPath_init now frees the prior
+      map buffer before re-calloc. VERIFIED in isolation (500 resets +4.9MB). NOTE:
+      PathFinding.xs ALREADY freed on reset (lines 48-52) — the .cpp fix was
+      redundant for the reset path; the DESTROY fix (d5e635cc6) is the real
+      create/destroy-path fix (verified 300 objects flat at 52MB).
+- [ ] 2.24 OPEN: live bot STILL leaks ~47MB/s steady (1.6GB -> 13.7GB while idle,
+      even with no route calcs — only 0360 syncs). NOT pathfinding churn (reset path
+      was already freed; idle = no CalcPath). Suspect: OpenKore CORE Perl main loop
+      (getPacket/process) or bridge queue accumulation. NEXT: instrument
+      PathFinding.xs with a live-object counter to PROVE it's not pathfinding, then
+      audit OpenKore core loop buffers + bridge queues with gdb x/growth.
+- [x] 2.25 Reachable-farm + portal data fixes verified live: bot locks prt_fild08
+      (reachable 1-hop) from izlude, no 'Cannot calculate a route to prt_fild08c'
+      decision failure. Bot warps into iz_ac01 + talks to Academy Receptionist
+      (menu captured by bridge). Full progression to farming still blocked by the
+      snapshot-completeness gap (sidecar sees base_level=0/hp=0/1 -> cold-start
+      fires character-creation on the in-game bot).
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
