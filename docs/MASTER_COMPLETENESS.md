@@ -36,6 +36,14 @@
       old 60s churn point.
 - [x] 2.10 NEW: `_record_domain_success/_record_domain_failure` NameError FIXED (13 bare call sites → self.).
       Was firing every PDCA cycle (cost_gate_check_failed). +0 tests (covered by pdca suite).
+- [x] 2.11 NEW: rate-limit `set lockMap` + authority-hunt `move` re-emission. Re-sending the SAME lockMap/
+      hunt-move every autonomy cycle resets the client route task → re-triggers C A* → main-loop starvation
+      (keepalive/snapshot starved → keep-alive churn → Perl heap grows to tens of GB). Gate both with per-bot
+      rate limits (lockMap 30s, hunt-move 15s). commit e28a43453. RAM bloat root-caused to this churn.
+- [x] 2.12 NEW: diagnosis — bots at spawn CAN route (BFS verified 7 cells izlude (127,253)→(125,257), all
+      walkable) and position decodes CORRECT (map_changed 0091 = izlude 127 253). Snapshot wiring confirmed
+      working via manual POST (state → izlude). Robots weren't sending snapshots because their main loop was
+      saturated re-routing (churn), NOT an unwiring.
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).

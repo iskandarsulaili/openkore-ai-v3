@@ -2661,6 +2661,15 @@ class HeuristicService:
         """Detect if bot is stuck (hasn't moved >5 tiles in 30 seconds).
         Returns a list of unstuck actions if stuck is detected.
         Tracks position from signals 'x', 'y' and compares to last known position."""
+        # Skip during cold-start / academy phase (steps 0-3): the academy walk
+        # across izlude to (125,257) legitimately takes >30s of near-stillness,
+        # and the cold-start plan already issues its own move (throttled 10s).
+        # Firing the random-unstick move here dequeues that route task every
+        # cycle -> C A* spin + main-loop starvation + Perl heap growth.
+        _cs_step = self._cold_start_step.get(
+            bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id, 0)
+        if _cs_step < 4:
+            return []
         stuck_actions: list[HeuristicAction] = []
         _now = __import__("time").time()
         _x = signals.get("x", 0) or 0
@@ -4038,8 +4047,14 @@ class HeuristicService:
                 ))
             # Return to hunt via portal after 15s in town
             # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
+            # AND during the academy/cold-start steps (0-3): the cold-start plan
+            # owns movement until the bot has a weapon + 50z. Re-emitting the
+            # portal-return move (22 203) + lockMap prt_fild05 while the cold-start
+            # academy plan (move 125 257) is active dequeues the route task every
+            # cycle -> C A* spin + main-loop starvation + Perl heap growth.
             _rth_step = self._cold_start_step.get(_cs_stable_key, 0)
-            _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
+            _rth_in_cold_start = _rth_step < 4
+            _rth_skip = _rth_in_cold_start or (_rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50)
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
             # int_land (Secluded Island) has NO route to prt_fild05; locking the
             # hunt map there makes OpenKore spin on "Cannot calculate a route from
