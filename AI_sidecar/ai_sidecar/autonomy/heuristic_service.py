@@ -2669,10 +2669,14 @@ class HeuristicService:
                 # Bot hasn't moved significantly — queue unstuck actions
                 logger.info(f"[stuck_detector] {bot_id}: position ({_lx},{_ly}) -> ({_x},{_y}) "
                            f"dist={_dist} over {_elapsed:.0f}s — sending unstuck")
-                # Random target within ~20 tiles to break stuck
+                # Random target within ~20 tiles to break stuck — CLAMPED to the
+                # map bounds: a negative/off-map target makes OpenKore's A* fail
+                # from an invalid destination (move 0 -10 observed) and re-spins.
                 _rand = __import__("random").Random(hash(bot_id + str(_now)) & 0xFFFFFFFF)
-                _tx = _x + _rand.randint(-15, 15)
-                _ty = _y + _rand.randint(-15, 15)
+                _mw = int(signals.get("field_width", signals.get("map_width", 300)) or 300)
+                _mh = int(signals.get("field_height", signals.get("map_height", 300)) or 300)
+                _tx = max(0, min(_mw - 1, _x + _rand.randint(-15, 15)))
+                _ty = max(0, min(_mh - 1, _y + _rand.randint(-15, 15)))
                 stuck_actions.append(HeuristicAction(
                     kind="command", command="stand",
                     confidence=0.90, domain="survival",
