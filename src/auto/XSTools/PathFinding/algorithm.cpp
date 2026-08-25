@@ -291,9 +291,21 @@ CalcPath_pathStep (CalcPath_session *session)
 					neighborNode->g = g_score;
 					neighborNode->f = neighborNode->g + neighborNode->h;
 					if (neighborNode->whichlist == CLOSED) {
-						//if (session->useManhattan) {
-							openListAdd(session, neighborNode);
-						//}
+						// REOPEN IS SKIPPED (2026-08-26): this A* uses a CONSISTENT
+						// (admissible) octile heuristic (10/14, 10·(dx+dy)−4·min).
+						// With a consistent heuristic a node is already optimal the
+						// moment it is POPPED, so a strictly-better g for a CLOSED
+						// node cannot occur in a correct run — it only fires on
+						// duplicate heap entries created by the legacy reopen path,
+						// which re-added a CLOSED node (setting whichlist=OPEN) while
+						// the node's stale slot remained, causing repeated same-node
+						// re-adding -> unbounded openListSize -> the openList
+						// overflow/churn that froze pathfinding and disconnected the
+						// bot (keepalive starvation). Classic A* never reopens with a
+						// consistent heuristic, so the correct fix is to SKIP closed
+						// nodes — correctness (optimality) is preserved and the
+						// pathological growth is gone. OPEN nodes still re-adjust below.
+						// (path stayed optimal; closed node's g is already minimal)
 					} else {
 						// Here we could remove neighborNode from openList and add it again to get it to the right position, but reajusting it saves time.
 						reajustOpenListItem(session, neighborNode);
