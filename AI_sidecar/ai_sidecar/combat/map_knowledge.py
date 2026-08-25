@@ -127,7 +127,15 @@ def _init_map_db():
     
     _add(MapKnowledge("izlude", safety=MapSafety.SAFE, is_town=True,
                        has_healer=True, has_shop=False, has_save_point=True,
-                       connected_maps=["izlude_in", "izlude_in02", "izlude_boat"]))
+                       # Connected maps from the RAW server portal table
+                       # (tables/portals.txt): izlude_town center reaches
+                       # prt_fild08 (20,98 -> 367,212), the Novice Academy
+                       # iz_ac01 (100,39), izlude_in, and izlude_c (via its own
+                       # portals) reaches prt_fild08c. These are the real
+                       # reachable farm maps a level-1 bot can route to.
+                       connected_maps=["izlude_in", "izlude_in02", "izlude_boat",
+                                       "prt_fild08", "iz_ac01", "izlu2dun",
+                                       "izlude_c"]))
     
     _add(MapKnowledge("morroc", safety=MapSafety.CAUTIOUS, is_town=True,
                        has_healer=True, has_shop=True, has_save_point=True,
@@ -177,6 +185,43 @@ def _init_map_db():
                        ],
                        connected_maps=["prontera", "prt_fild07", "prt_fild09",
                                        "prt_sewb1"]))
+    
+    # ── Academy / early-game fields (level 1-10) ──
+    # prt_fild08c is the Novice-Academy farm reachable from izlude_c (the
+    # satellite-town variant). A level-1 bot spawns in izlude and must reach a
+    # farm it can actually ROUTE to — without these entries get_hunting_maps(1)
+    # returns [] and the cold-start falls back to a hardcoded map.
+    _add(MapKnowledge("prt_fild08c", safety=MapSafety.CAUTIOUS,
+                       recommended_level=(1, 12),
+                       monsters=[
+                           MapMonster("Poring", 1, 14, SpawnType.PASSIVE,
+                                      element="water", size="small", race="slime"),
+                           MapMonster("Lunatic", 1, 10, SpawnType.PASSIVE,
+                                      element="neutral", size="small", race="brute"),
+                           MapMonster("Pupa", 2, 8, SpawnType.PASSIVE,
+                                      element="neutral", size="small", race="insect"),
+                           MapMonster("Thief Bug Egg", 1, 8, SpawnType.PASSIVE,
+                                      element="neutral", size="small", race="insect"),
+                           MapMonster("Thief Bug", 3, 6, SpawnType.AGGRESSIVE,
+                                      element="neutral", size="small", race="insect",
+                                      aggro_radius=3),
+                       ],
+                       connected_maps=["izlude_c", "prt_fild07"]))
+    
+    _add(MapKnowledge("prt_fild05", safety=MapSafety.CAUTIOUS,
+                       recommended_level=(1, 12),
+                       monsters=[
+                           MapMonster("Poring", 1, 14, SpawnType.PASSIVE,
+                                      element="water", size="small", race="slime"),
+                           MapMonster("Lunatic", 1, 10, SpawnType.PASSIVE,
+                                      element="neutral", size="small", race="brute"),
+                           MapMonster("Pupa", 2, 8, SpawnType.PASSIVE,
+                                      element="neutral", size="small", race="insect"),
+                           MapMonster("Thief Bug", 3, 6, SpawnType.AGGRESSIVE,
+                                      element="neutral", size="small", race="insect",
+                                      aggro_radius=3),
+                       ],
+                       connected_maps=["prontera", "mjolnir_09"]))
     
     _add(MapKnowledge("pay_fild04", safety=MapSafety.DANGEROUS,
                        recommended_level=(40, 70),
@@ -330,6 +375,57 @@ def get_hunting_maps(char_level: int, max_danger: MapSafety = MapSafety.DANGEROU
     
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored
+
+
+def reachable_hunting_maps(from_map: str, char_level: int, max_danger: MapSafety = MapSafety.DANGEROUS) -> list[tuple[str, float]]:
+    """Hunting maps REACHABLE from `from_map` via the portal graph, scored.
+
+    The raw `get_hunting_maps` ranks every map by level-fit, but a level-1 bot
+    in izlude cannot walk to prt_fild05 (no portal). Locking an unreachable
+    farm makes OpenKore's A* fail -> 'Unable to calculate a route' -> spin.
+    This filters the candidates through a BFS over the connected_maps portal
+    graph (the same facts the client uses) so the returned farm is ACTUALLY
+    routable from the bot's current map. Falls back to the raw ranking when
+    the portal graph has no entry for the current map.
+    """
+    try:
+        _norm = lambda m: (m or "").lower().rstrip(".gat")
+        _from = _norm(from_map)
+        if not _from:
+            return get_hunting_maps(char_level, max_danger)
+        _graph: dict[str, set[str]] = {}
+        for _name, _mk in MAP_KNOWLEDGE.items():
+            _nm = _norm(_name)
+            for _c in (_mk.connected_maps or []):
+                _cn = _norm(_c)
+                _graph.setdefault(_nm, set()).add(_cn)
+                # RO portals are bidirectional — add the reverse edge so a
+                # map without its own entry (e.g. izlude_c) still traverses.
+                _graph.setdefault(_cn, set()).add(_nm)
+        # BFS over the portal graph, bounded depth (2 hops = town->field).
+        _seen = {_from}
+        _frontier = [_from]
+        _reachable: set[str] = set()
+        for _hop in range(3):
+            _next: list[str] = []
+            for _m in _frontier:
+                for _n in _graph.get(_m, ()):
+                    if _n not in _seen:
+                        _seen.add(_n)
+                        _next.append(_n)
+                        if _n in _graph:  # known map
+                            _reachable.add(_n)
+            if not _next:
+                break
+            _frontier = _next
+        if not _reachable:
+            return get_hunting_maps(char_level, max_danger)
+        _all = get_hunting_maps(char_level, max_danger)
+        _reach_norm = {_norm(n) for n in _reachable}
+        _filtered = [(n, s) for n, s in _all if _norm(n) in _reach_norm]
+        return _filtered or _all
+    except Exception:
+        return get_hunting_maps(char_level, max_danger)
 
 
 def get_mvp_maps() -> list[tuple[str, list[str]]]:

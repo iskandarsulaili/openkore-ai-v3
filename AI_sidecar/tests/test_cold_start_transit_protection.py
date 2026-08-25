@@ -75,6 +75,23 @@ def test_level1_in_town_enables_attacking() -> None:
     assert any("prt_fild08" in c for c in cmds), f"must navigate to academy: {cmds}"
 
 
+def test_reachable_hunting_maps_from_izlude(tmp_path):
+    """A level-1 bot in izlude must resolve a REACHABLE farm (prt_fild08c via
+    izlude_c) — NOT an unroutable one. Root-cause regression for the
+    'Calculating lockMap route to prt_fild08' spin when the bot locks an
+    unreachable field."""
+    from ai_sidecar.combat.map_knowledge import reachable_hunting_maps, get_hunting_maps
+    # Level-1 hunting maps exist (data fact)
+    assert get_hunting_maps(1), "level-1 hunting maps must be defined"
+    # From izlude the top-scored REACHABLE farm is prt_fild08c (academy farm)
+    top = reachable_hunting_maps("izlude", 1)[0][0]
+    assert top == "prt_fild08c", f"izlude lvl1 must pick prt_fild08c, got {top}"
+    # prt_fild08c must be reachable from izlude; a non-adjacent map must NOT
+    reach = {m for m, _ in reachable_hunting_maps("izlude", 1)}
+    assert "prt_fild08c" in reach
+    assert "pay_fild04" not in reach  # payon field is far away, not reachable
+
+
 def test_level1_in_academy_registers_at_receptionist() -> None:
     """A level-1 bot spawned in the Izlude Academy must register for starter
     gear (Novice_Knife + potions) before hunting prt_fild08."""

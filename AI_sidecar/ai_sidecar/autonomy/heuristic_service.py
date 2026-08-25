@@ -54,6 +54,7 @@ from ai_sidecar.domains.environment.time import GameTimeTracker
 from ai_sidecar.domains.navigation.portals import PortalDB
 from ai_sidecar.domains.navigation.pathfinding import Pathfinder
 from ai_sidecar.combat.map_knowledge import get_hunting_maps as _mk_get_hunting_maps
+from ai_sidecar.combat.map_knowledge import reachable_hunting_maps as _mk_reachable_hunting_maps
 from ai_sidecar.strategy.unified_consciousness import UnifiedConsciousness, DecisionDomain, DecisionUrgency
 from ai_sidecar.domains.progression.lifecycle import LifecycleStateMachine
 from ai_sidecar.domains.progression.advancement import AdvancementDomain
@@ -2304,7 +2305,15 @@ class HeuristicService:
                                         # only if the knowledge layer has no level-1 field.
                                         _hunt_map = "prt_fild08"
                                         try:
-                                            _hunts = _mk_get_hunting_maps(int(_bl or 1))
+                                            # REACHABLE-FARM resolution: pick the best
+                                            # hunt map that is ACTUALLY routable from the
+                                            # bot's current map (BFS over the portal
+                                            # graph). Locking an unreachable farm
+                                            # (e.g. prt_fild05 from izlude) makes OpenKore
+                                            # A* fail -> 'Unable to calculate a route'.
+                                            _hunts = _mk_reachable_hunting_maps(_cur_map, int(_bl or 1))
+                                            if not _hunts:
+                                                _hunts = _mk_get_hunting_maps(int(_bl or 1))
                                             if _hunts:
                                                 _hunt_map = str(_hunts[0][0])
                                         except Exception:
