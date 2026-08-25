@@ -4414,7 +4414,12 @@ class HeuristicService:
                     confidence=0.99, domain="hunting",
                     reason="Weapon-less town bot - stand; academy door walk handled by routing (starter kit)",
                 ))
-                return
+                _th_assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=0.99,
+                    actionable=len(actions) > 0, top_domain="hunting", signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = _th_assessment
+                return _th_assessment
             # Stand up and enable AI
             actions.append(HeuristicAction(
                 kind="command", command="stand",
