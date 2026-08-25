@@ -97,12 +97,24 @@
       PathFinding.xs ALREADY freed on reset (lines 48-52) — the .cpp fix was
       redundant for the reset path; the DESTROY fix (d5e635cc6) is the real
       create/destroy-path fix (verified 300 objects flat at 52MB).
-- [ ] 2.24 OPEN: live bot STILL leaks ~47MB/s steady (1.6GB -> 13.7GB while idle,
-      even with no route calcs — only 0360 syncs). NOT pathfinding churn (reset path
-      was already freed; idle = no CalcPath). Suspect: OpenKore CORE Perl main loop
-      (getPacket/process) or bridge queue accumulation. NEXT: instrument
-      PathFinding.xs with a live-object counter to PROVE it's not pathfinding, then
-      audit OpenKore core loop buffers + bridge queues with gdb x/growth.
+- [x] 2.24 RESOLVED (2026-08-25, multi-pass diagnosis): the "steady idle leak" was a
+      SINGLE long CalcPath_pathStep run on a 400x400 map (prt_fild08) growing the Perl
+      SV heap (~47MB/s, 1.6->17GB in 5min). PROVEN by: PathFinding live-object counter
+      (pf_live=0 balanced), C A* isolated tests flat, Field counter flat, leakdiag
+      freeze (main loop blocked in pathStep while RSS grew). THREE fixes:
+      (1) route-fail cooldown (625fdb7f1) — processLockMap no longer re-attempts a
+      failed lockMap route every cycle (Task::Route + Task::MapRoute arm
+      $AI::Timeouts::lockMapRouteFail on CANNOT_CALCULATE_ROUTE; gate skips re-route
+      for AI_routeFailCooldown 15s). Verified: route_calcs flat at 52/59.
+      (2) CACHED PathFinding (199666761) — new PathFinding() per route calc malloc'd
+      +free'd ~5.6MB 50k+ times, fragmenting the C arena to GBs even with live=0.
+      Reuse ONE per (w x h) dims. Verified: pf_created=1.
+      (3) HARD openList bound (f25dcf740) — openListAdd refuses writes past
+      width*height (CLOSED-reopen churn OOB risk); pathStep bails on overflow +
+      maxPops. Verified: A* flat (48->58MB on 50 runs).
+      REMAINING: the FIRST prt_fild08 calc can still grow SV heap (~17GB) — mitigated
+      by cooldown (only 1 attempt per 15s). Deeper fix = reduce prt_fild08 route calc
+      cost / cap solution size (see 2.29).
 - [x] 2.26 ADVERSARIAL AUDIT (deleg_dea5892c, 12 findings) — 5 REAL defects FIXED:
   (a) #1 HIGH cold-start keying — _get_state read _cold_start_step with FULL bot_id
       while all writes used stable key -> COLD_START never exited (the live
@@ -129,14 +141,18 @@
   pdca_loop.py:2342 'move prt_fild08', pdca_loop.py:2359 'move 22 203',
   goal_decomposer.py:126/151 'move prt_fild08', heuristic 2316/2450. Gate at the
   call site pdca_loop.py:7057 (skip planner command emission when cold-start step<4).
-- [ ] 2.28 OPEN (audit #8): _restart_stale_bots blocks the event loop up to 45s
-  (sync Popen.communicate in async loop) -> restart cascade risk. Fix:
-  run_in_executor.
-- [ ] 2.29 OPEN: bot physically CANNOT route izlude->prt_fild08 in OpenKore
-  ('Cannot calculate a route' persists even for the 1-hop target; izlude field data
-  verified correct). The DECISION layer is fixed (locks the reachable farm) but the
-  OpenKore client cross-map A* fails. Research-backed fix: precomputed map-gateway
-  distance table (docs/PATHFINDING_RESEARCH_DIGEST.md recommendation #2).
+- [x] 2.28 RESOLVED (audit #8, ad7c533b0): _restart_stale_bots no longer blocks the
+      event loop — made async + Popen.communicate wrapped in asyncio.to_thread.
+      7 keep-alive restart tests pass.
+- [x] 2.29 ROUTE-CALC DIAGNOSED (2026-08-25): the cross-map izlude->prt_fild08 route
+      WORKS in isolation (2 legs, diag_route2.pl) — the live 'Cannot calculate a
+      route' was the route-fail CHURN from the cold-start never progressing, NOT a
+      broken cross-map A*. The root cause was the 2.24 churn (now fixed by the
+      route-fail cooldown + cached PathFinding). The FIRST long prt_fild08 calc can
+      still grow SV heap (~17GB over 5min) — remaining: cap the prt_fild08 route cost
+      / solution-size (a single pathfind on a 400x400 map with randomFactor builds a
+      huge solution array in Perl). Recommended next: cap solution array size in the
+      XS run() materialization (only emit every Nth step when solution_size is huge).
 - [x] 2.25 Reachable-farm + portal data fixes verified live: bot locks prt_fild08
       (reachable 1-hop) from izlude, no 'Cannot calculate a route to prt_fild08c'
       decision failure. Bot warps into iz_ac01 + talks to Academy Receptionist
