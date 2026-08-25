@@ -4409,11 +4409,11 @@ class HeuristicService:
             _th_has_weapon = self._has_coldstart_weapon(signals)
             _th_academy_door = self._resolve_academy_door(map_name)
             if not _th_has_weapon and _th_academy_door:
-                actions.append(HeuristicAction(
-                    kind="command", command="stand",
-                    confidence=0.99, domain="hunting",
-                    reason="Weapon-less town bot - stand; academy door walk handled by routing (starter kit)",
-                ))
+                # NO stand here — emitting `stand` (even once) resets OpenKore's
+                # AI and cancels the academy-door walk the routing domain just
+                # dispatched (2.27: 'move 125 257' dispatched but never walked,
+                # bot sat 4 tiles from the door). The routing domain's move IS
+                # the action; this block adds NOTHING so the walk proceeds.
                 _th_assessment = HeuristicAssessment(
                     horizon=horizon, actions=actions, confidence=0.99,
                     actionable=len(actions) > 0, top_domain="hunting", signals=dict(signals),

@@ -5589,9 +5589,15 @@ sub _rewrite_runtime_command {
 	$_last_reflex_fire_ms{'portal_walk_lock'} = 0 unless exists $_last_reflex_fire_ms{'portal_walk_lock'};
 	my $_pl_check = $_last_reflex_fire_ms{'portal_walk_lock'} || 0;
 	if ($_pl_check > 0 && _now_ms() < $_pl_check) {
-		# Only block move commands - let ai auto/stand pass through
-		if ($normalized =~ /^move\s+/) {
-			debug "[portal_lock] blocking move $command - portal walk in progress\n", 'aiSidecarBridge', 2;
+		# Block move commands AND the stand/ai-auto resets that cancel a
+		# coordinate walk mid-route. The hunting domain emits `stand` every
+		# cycle while the bot is in TOWN_HUNT; firing it right after a
+		# portal/coordinate move (academy-door walk) restarts OpenKore's AI
+		# which then random-walks instead of completing the route (2.27
+		# defect — the move was dispatched but never walked). Suppress both
+		# during the 5s walk lock.
+		if ($normalized =~ /^move\s+/ || $normalized eq 'stand' || $normalized eq 'ai auto') {
+			debug "[portal_lock] blocking $command - portal walk in progress\n", 'aiSidecarBridge', 2;
 			return ('', 'portal_walk_lock');
 		}
 	}
