@@ -284,14 +284,15 @@ sub iterate {
 		my $begin = time;
 
 		# Root-cause fix (2026-08-25, 2.27 academy-door warp): the arrival check
-		# MUST use the predicted ACTUAL position ($calc_pos, derived from the
-		# server-confirmed $pos), NOT $pos_to. $pos_to is set to the destination
-		# by Actor::route the moment a move is dispatched, so `pos_to == dest` is
-		# ALWAYS true -> Task::Route short-circuits to "reached the destination"
-		# with ZERO walk packets, and the bot never actually steps onto the warp
-		# tile (izlude -> iz_ac01 door at 125,257). calc_pos reflects where the
-		# char really is, so a genuinely-not-there bot routes + walks.
-		if ($calc_pos->{x} == $self->{dest}{pos}{x} && $calc_pos->{y} == $self->{dest}{pos}{y}) {
+		# MUST use the server-confirmed $pos, NOT $pos_to (the dest, set by
+		# Actor::route the instant a move is dispatched) and NOT $calc_pos
+		# (calcPosFromPathfinding returns $pos_to when the route solution is
+		# still empty — which is ALWAYS the case at CALCULATE_ROUTE, so it too
+		# reads == dest). Both made a fresh 'move 125 257' short-circuit to
+		# "reached the destination" with ZERO walk packets, so the bot never
+		# stepped onto the izlude->iz_ac01 warp tile. $pos is where the server
+		# last confirmed the char, so a genuinely-not-there bot routes + walks.
+		if ($pos->{x} == $self->{dest}{pos}{x} && $pos->{y} == $self->{dest}{pos}{y}) {
 			debug "Route $self->{actor}: Current position and destination are the same.\n", "route";
 			$self->setDone();
 		
