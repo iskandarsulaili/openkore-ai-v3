@@ -259,11 +259,24 @@ class CombatDomain(BaseDomain):
         service: Any,
     ) -> None:
         """Per-bot randomized config for human-like combat behavior."""
+        # COLD-START GATE (audit #2): during academy cold-start (steps 0-3) the
+        # bot must WALK the academy route — route_randomWalk 1 defeats the
+        # academy block's 'set route_randomWalk 0' (last-write-wins per cycle)
+        # and re-triggers the random-walk C A* spin. Skip the randomWalk part
+        # until the bot has a weapon (step >= 4).
+        _cs_step = 0
+        try:
+            _key = service._cs_stable_key(bot_id) if hasattr(service, "_cs_stable_key") else bot_id.split(":")[-1]
+            _cs_step = int(service._cold_start_step.get(_key, 0) or 0)
+        except Exception:
+            _cs_step = 0
         _seed = hash(bot_id) & 0xFFFFFFFF
         _rand = __import__("random").Random(_seed)
         _step = _rand.randint(2, 5)
         _walk = _rand.choice(["1", "2"])
         _pause = _rand.randint(0, 2)
+        if _cs_step < 4:
+            return
         service._set_config_once(
             actions, bot_id, "route_randomWalk", "1", "hunting",
             "Enable random walk for human-like movement",

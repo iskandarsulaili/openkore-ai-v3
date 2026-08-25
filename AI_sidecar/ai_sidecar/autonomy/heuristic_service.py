@@ -1057,6 +1057,11 @@ class HeuristicService:
         # per ~10s, not every PDCA cycle, so OpenKore actually walks the long
         # route instead of continuously recalculating a fresh path each cycle.
         self._last_academy_move: dict[str, float] = {}
+        # Per-bot cold-start hunt map. Was a SCALAR (audit finding #6): bot A
+        # (izlude_c) set prt_fild08c, bot B (prt_fild05) overwrote it, so bot A's
+        # transit-protection + step-1 authority used B's wrong map. Now keyed by
+        # stable bot id so concurrent bots don't clobber each other's target.
+        self._cold_start_hunt_map: dict[str, str] = {}
         # Save-point binding: bot_id -> set of town maps already bound there.
         # Once a bot visits a town's Kafra and binds its save point, it is NOT
         # re-bound on every visit (a one-shot per town). This keeps deaths/
@@ -2360,7 +2365,7 @@ class HeuristicService:
                                         # below (a sibling block, out of lexical scope for
                                         # _hunt_map) can recognize the bot is on its farm
                                         # field even before the snapshot's lockMap syncs.
-                                        self._cold_start_hunt_map = _hunt_map
+                                        self._cold_start_hunt_map[_bot_id] = _hunt_map
                                         # CONNECT-GRACE FIX (the reconnect-loop root cause):
                                         # sending 'set lockMap' the INSTANT a bot connects to the
                                         # map server triggers a client-side disconnect (observed:
@@ -2429,7 +2434,7 @@ class HeuristicService:
                                 # _cs_hunt is the resolved cold-start farm field (may be the
                                 # bot's current field for a stranded bot). If the bot is on
                                 # it, treat it as arrived (farm), not transit.
-                                _cs_hunt = str(getattr(self, "_cold_start_hunt_map", "") or "").lower()
+                                _cs_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(_bot_id, "") or "").lower()
                                 if "fild" in _cur_map and _bl <= 5 and _cur_map != "prt_fild08" and _cur_map != _lock and _cur_map != _cs_hunt:
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 0", confidence=0.90, reason=f"Cold start: transit through {_cur_map} at lvl {_bl} — run, don't fight", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 1", confidence=0.90, reason="Cold start: only attack on lockMap", domain="survival"))
@@ -2726,8 +2731,13 @@ class HeuristicService:
             )
 
         # Normalize to stable key (character name only) — bridge sends different
-        # account prefixes per cycle (openkoreai: vs Asgards Glory:)
+        # account prefixes per cycle (openkoreai: vs Asgards Glory:). Reassign
+        # bot_id so EVERY downstream keyed dict (_cold_start_step, _last_*,
+        # _bot_state, _get_state read at 1277, writes at 4438) uses the SAME
+        # stable key. The inconsistency (full-id reads vs stable-id writes) kept
+        # COLD_START state permanently stuck at step 0 — the #1 live defect.
         _track_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        bot_id = _track_key
         _now_t = __import__("time").time()
         # Auto-save state every 60 seconds
         try:
@@ -2912,7 +2922,7 @@ class HeuristicService:
                         # leaving the bot stuck in town calculating routes and never
                         # farming (verified live). Only fall back to the legacy prt_fild05
                         # step-1 target when the academy block did NOT pick a hunt field.
-                        _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", "") or "").lower()
+                        _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(_bot_id, "") or "").lower()
                         # ── SERVER-AGNOSTIC REACHABLE-FARM RESOLUTION (sidecar decision) ──
                         # A farm target that is UNROUTABLE from the bot's current map makes
                         # the bot loop forever ("Calculating route..."), never farming. Resolve
@@ -2923,7 +2933,7 @@ class HeuristicService:
                         _cs_cur = str(signals.get("map", "") or "").lower().replace(".gat", "")
                         if _cs_cur == "izlude_c" and _cs_authority_hunt == "prt_fild08":
                             _cs_authority_hunt = "prt_fild08c"
-                            self._cold_start_hunt_map = "prt_fild08c"
+                            self._cold_start_hunt_map[_bot_id] = "prt_fild08c"
                         if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
                             actions.append(HeuristicAction(
                                 kind="command", command=f"set lockMap {_cs_authority_hunt}",
@@ -3773,7 +3783,7 @@ class HeuristicService:
         # blocker: bot10 farming to level 4 then parking in prontera). This closes the
         # farm -> restock -> return-to-farm loop that the orchestrator was meant to
         # cover but which must also work per-bot (no silent dependency on the captain).
-        _audit_cs_hunt = getattr(self, "_cold_start_hunt_map", "prt_fild08c") or "prt_fild08c"
+        _audit_cs_hunt = getattr(self, "_cold_start_hunt_map", {}).get(bot_id, "prt_fild08c") or "prt_fild08c"
         _audit_farm_for_return = _audit_cs_hunt
         if _audit_is_town and _audit_has_potions and _audit_has_weapon and \
            _audit_map not in ("iz_ac01_a", "iz_ac01") and state != "DEAD":
