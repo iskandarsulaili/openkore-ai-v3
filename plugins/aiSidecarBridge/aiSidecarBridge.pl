@@ -286,6 +286,7 @@ my $hooks = Plugins::addHooks(
 	['packet/area_spell', \&on_packet_hook, 'packet.area_spell'],
 	['packet/area_spell_disappears', \&on_packet_hook, 'packet.area_spell_disappears'],
 	['packet_privMsg', \&on_chat_message, 'pm'],
+	['pre/npc_talk_responses', \&on_npc_menu, undef],
 	['packet_pubMsg', \&on_chat_message, 'publicchat'],
 	['packet_partyMsg', \&on_chat_message, 'partychat'],
 	['packet_guildMsg', \&on_chat_message, 'guildchat'],
@@ -1140,6 +1141,34 @@ sub on_legacy_packet_hook {
 		{},
 		'info',
 	);
+}
+
+sub on_npc_menu {
+	my ($hook, $args) = @_;
+	return if !_bridge_enabled();
+	my $responses = $args->{responses};
+	return if !$responses || ref($responses) ne 'ARRAY';
+	# Capture the ACTUAL NPC menu options so the conscious-tier LLM dialog
+	# responder (_llm_npc_dialog_response) can read them and pick the response
+	# agnostically (founder 2026-08-25: no hardcoded talknpc sequences).
+	my @opts = map { defined($_) ? _trim(_scalarize($_), 200) : () } @$responses;
+	# The last entry is "Cancel Chat" — keep it (it is a real option).
+	$_npc_dialog_state{menu_options} = \@opts;
+	$_npc_dialog_state{in_dialog} = 1;
+	$_npc_dialog_state{last_interaction_ms} = _now_ms();
+	# NPC identity: if we're talking to a known NPC, set npc_x/npc_y from the
+	# talk target so the LLM can build the talknpc command.
+	my $_nid = $args->{ID} || '';
+	if ($_nid ne '') {
+		my $aid = unpack('V', substr($_nid, 0, 4));
+		my $npc = $main::npcs{$aid};
+		if ($npc && ref($npc) eq 'HASH' && $npc->{pos}) {
+			$_npc_dialog_state{npc_x} = $npc->{pos}{x} || 0;
+			$_npc_dialog_state{npc_y} = $npc->{pos}{y} || 0;
+			$_npc_dialog_state{npc_name} = $npc->{name} || '';
+		}
+	}
+	debug "[npc_menu] captured " . scalar(@opts) . " options for " . ($_npc_dialog_state{npc_name} || 'unknown') . "\n", 'aiSidecarBridge', 2;
 }
 
 sub on_chat_message {
@@ -2155,6 +2184,15 @@ sub _build_snapshot_payload {
 		respawn_state => _trim($respawn_state, 32),
 		route_churn_count => 0 + $route_churn_count,
 		route_failure_count => 0 + $route_failure_count,
+		# ── NPC DIALOG STATE (conscious-tier LLM dialog responder input) ──
+		# The LLM (_llm_npc_dialog_response) reads the ACTUAL menu options and
+		# NPC identity to pick the response agnostically (founder 2026-08-25:
+		# no hardcoded talknpc sequences). Feed the live dialog state through.
+		npc_name => _trim($_npc_dialog_state{npc_name} || '', $max_raw),
+		npc_x    => 0 + ($_npc_dialog_state{npc_x} || 0),
+		npc_y    => 0 + ($_npc_dialog_state{npc_y} || 0),
+		last_npc_text => _trim($_npc_dialog_state{last_text} || '', $max_raw),
+		menu_options => [ map { _trim($_, 200) } @{$_npc_dialog_state{menu_options} || []} ],
 	};
 
 	# --- Progression digest (job, level, exp) ---
