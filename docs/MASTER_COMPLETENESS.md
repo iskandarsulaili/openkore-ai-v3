@@ -135,10 +135,20 @@
   MISSING self in the defs (a prior regex refactor stripped it) -> EVERY PDCA cycle
   crashed in the game_engine domain block (pdca_domain_error in live log), silently
   disabling per-domain health tracking. Fixed + regression test (437a9618f).
-- [ ] 2.27 OPEN (audit #3): un-gated move emitters during cold-start (steps<4):
-  pdca_loop.py:2342 'move prt_fild08', pdca_loop.py:2359 'move 22 203',
-  goal_decomposer.py:126/151 'move prt_fild08', heuristic 2316/2450. Gate at the
-  call site pdca_loop.py:7057 (skip planner command emission when cold-start step<4).
+- [~] 2.27 PARTIALLY RESOLVED (2026-08-25): un-gated move emitters during cold-start.
+  FIXED: academy-door now resolved data-driven from portals.txt (no hardcoded 125 257
+  literal — a2c1a64f0); SOLO-BOT guard (1-bot fleet no longer stuck in PARTY state,
+  e70d5e7eb); academy-first routing (462361fd5); TOWN_HUNT academy-defer stops
+  'move int_land' race (9299b2050 + 4ecb59385 crash fix); ROBUST cold_start in-game gate
+  never char-creates a live bot (39a667e46); bridge route-loop dist<5 -> dist<2 so the
+  4-tile-away warp is no longer suppressed as 'already there' (ca6b1521e); walkability-
+  snap to a walkable warp-trigger neighbor (bad9e0fb2); split-regex fix (ba787a5f1);
+  same-cycle stand/ai-auto no longer cancels the walk (a35da9634). VERIFIED LIVE: bot
+  now ROUTES + walks to the academy door ('You reached the destination') instead of
+  random-walking at spawn. REMAINING: the izlude->iz_ac01 warp does NOT fire on arrival —
+  OpenKore's internal char pos desyncs to (125,257) so it sends 0 walk packets (thinks
+  already there) and never steps onto the warp trigger tile; bot loops move-to-door.
+  Next: force-walk the final tile / resync char pos before the warp.
 - [x] 2.28 RESOLVED (audit #8, ad7c533b0): _restart_stale_bots no longer blocks the
       event loop — made async + Popen.communicate wrapped in asyncio.to_thread.
       7 keep-alive restart tests pass.
