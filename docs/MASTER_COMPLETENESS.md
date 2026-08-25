@@ -101,20 +101,18 @@
       SINGLE long CalcPath_pathStep run on a 400x400 map (prt_fild08) growing the Perl
       SV heap (~47MB/s, 1.6->17GB in 5min). PROVEN by: PathFinding live-object counter
       (pf_live=0 balanced), C A* isolated tests flat, Field counter flat, leakdiag
-      freeze (main loop blocked in pathStep while RSS grew). THREE fixes:
+      freeze (main loop blocked in pathStep while RSS grew). FOUR fixes:
       (1) route-fail cooldown (625fdb7f1) — processLockMap no longer re-attempts a
-      failed lockMap route every cycle (Task::Route + Task::MapRoute arm
-      $AI::Timeouts::lockMapRouteFail on CANNOT_CALCULATE_ROUTE; gate skips re-route
-      for AI_routeFailCooldown 15s). Verified: route_calcs flat at 52/59.
-      (2) CACHED PathFinding (199666761) — new PathFinding() per route calc malloc'd
-      +free'd ~5.6MB 50k+ times, fragmenting the C arena to GBs even with live=0.
-      Reuse ONE per (w x h) dims. Verified: pf_created=1.
+      failed lockMap route every cycle.
+      (2) CACHED PathFinding (199666761) — reuse ONE per (w x h), pf_created=1.
       (3) HARD openList bound (f25dcf740) — openListAdd refuses writes past
       width*height (CLOSED-reopen churn OOB risk); pathStep bails on overflow +
       maxPops. Verified: A* flat (48->58MB on 50 runs).
-      REMAINING: the FIRST prt_fild08 calc can still grow SV heap (~17GB) — mitigated
-      by cooldown (only 1 attempt per 15s). Deeper fix = reduce prt_fild08 route calc
-      cost / cap solution size (see 2.29).
+      (4) SOLUTION MATERIALIZATION CAP (423d2f590) — THE ACTUAL LEAK FIX: run()
+      built a Perl hash per path step (newHV+av_store x160k on a 400x400 map),
+      blowing up the SV heap to GBs. Cap at 8000 steps (every Nth). 
+      VERIFIED LIVE 2026-08-25: RSS FLAT at 206MB for 6+ min (was 7MB CPU /
+      17GB RSS), pf_created=1, route_calcs capped by cooldown. 2.24 CLOSED.
 - [x] 2.26 ADVERSARIAL AUDIT (deleg_dea5892c, 12 findings) — 5 REAL defects FIXED:
   (a) #1 HIGH cold-start keying — _get_state read _cold_start_step with FULL bot_id
       while all writes used stable key -> COLD_START never exited (the live
