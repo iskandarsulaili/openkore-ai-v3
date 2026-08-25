@@ -1241,6 +1241,45 @@ class HeuristicService:
         except Exception:
             return None
 
+    # Data-driven resolver for the Academy door (MAP-AGNOSTIC): instead of
+    # hardcoding "izlude 125 257", scan the bot's tables/portals.txt for any
+    # portal that STARTS on the current map and leads to the academy map
+    # (iz_ac01). If RAW ever changes academy location, or the bot spawns on a
+    # different town that also portals to the academy, this still resolves.
+    # Returns "x y" for a move command, or None if no portal path exists.
+    _ACADEMY_MAP = "iz_ac01"
+    _PORTALS_FILE_CACHE: dict[float, dict] = {}
+
+    def _cold_start_academy_door(self, map_name: str, now: float) -> str | None:
+        try:
+            _pf = __import__("pathlib").Path
+            _tables = _pf(AI_sidecar_base_dir if False else _tables_root_cache()) / "portals.txt"
+            if not _tables.exists():
+                logger.debug("_cold_start_academy_door: no portals.txt")
+                return None
+            _mtime = _tables.stat().st_mtime
+            _last, _cache = self._PORTALS_FILE_CACHE.get("mtime", 0.0), self._PORTALS_FILE_CACHE.get("rows") or []
+            if _last != _mtime or not _cache:
+                _rows = []
+                with open(_tables, "r", encoding="utf-8", errors="ignore") as _fh:
+                    for _ln in _fh:
+                        _ln = _ln.strip()
+                        if not _ln or _ln.startswith("#"):
+                            continue
+                        _f = _ln.split()
+                        if len(_f) >= 5 and _f[3] == self._ACADEMY_MAP:
+                            # portal: from_map x y to_map tx ty [rest]
+                            _rows.append((_f[0].lower(), _f[1], _f[2]))
+                self._PORTALS_FILE_CACHE.update({"mtime": _mtime, "rows": _rows})
+                _cache = _rows
+            _m = (map_name or "").lower().split(".gat")[0].rstrip()
+            for _from, _x, _y in _cache:
+                if _from == _m:
+                    return f"{_x} {_y}"
+            return None
+        except Exception:
+            return None
+
     def _load_towns(self) -> None:
         """Load town map names from database (server-agnostic).
 
@@ -2685,10 +2724,22 @@ class HeuristicService:
                 # Bot hasn't moved significantly — queue unstuck actions
                 logger.info(f"[stuck_detector] {bot_id}: position ({_lx},{_ly}) -> ({_x},{_y}) "
                            f"dist={_dist} over {_elapsed:.0f}s — sending unstuck")
-                # Random target within ~20 tiles to break stuck
+                # Random target within ~20 tiles to break stuck — CLAMPED to the
+                # map bounds: a negative/off-map target makes OpenKore's A* fail
+                # from an invalid dest every retry -> route-calc spin + heap growth.
                 _rand = __import__("random").Random(hash(bot_id + str(_now)) & 0xFFFFFFFF)
+                _map_w = int(signals.get("map_width", 0) or 0)
+                _map_h = int(signals.get("map_height", 0) or 0)
                 _tx = _x + _rand.randint(-15, 15)
                 _ty = _y + _rand.randint(-15, 15)
+                if _map_w > 0:
+                    _tx = max(0, min(_map_w - 1, _tx))
+                else:
+                    _tx = max(0, _tx)
+                if _map_h > 0:
+                    _ty = max(0, min(_map_h - 1, _ty))
+                else:
+                    _ty = max(0, _ty)
                 stuck_actions.append(HeuristicAction(
                     kind="command", command="stand",
                     confidence=0.90, domain="survival",
@@ -2893,14 +2944,23 @@ class HeuristicService:
                     # receptionist (iz_ac01 100,39) for the free Novice_Knife + 300
                     # potions. Override the prt_fild05 step-1 walk to send it to the
                     # academy door (izlude 125,257 warp -> iz_ac01) instead.
-                    if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
+                    # MAP-AGNOSTIC academy-door resolution: scan tables/portals.txt
+                    # for the warp from the CURRENT map into iz_ac01 (Novice
+                    # Academy) instead of hardcoding izlude/125 257. Returns
+                    # "x y" (move target) or None when this map has no academy
+                    # warp — the bot then falls through to the town-farm path.
+                    _academy_door = (
+                        self._cold_start_academy_door(_cs_map, _now_t)
+                        if not self._has_coldstart_weapon(signals) else None
+                    )
+                    if _academy_door:
                         # Throttle the academy-door move (at most once per 10s) so
-                        # OpenKore walks the long izlude route instead of recalculating.
+                        # OpenKore walks the long route instead of recalculating.
                         _now = __import__("time").time()
                         if _now - self._last_academy_move.get(bot_id, 0.0) >= 10.0:
                             self._last_academy_move[bot_id] = _now
                             actions.append(HeuristicAction(
-                                kind="command", command="move 125 257",
+                                kind="command", command=f"move {_academy_door}",
                                 confidence=0.99, domain="progression",
                                 reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
                             ))
