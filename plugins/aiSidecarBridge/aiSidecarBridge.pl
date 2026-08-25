@@ -5811,6 +5811,15 @@ sub _rewrite_runtime_command {
 	# Handle map-name moves: "move <map>" -> set lockMap + ai auto
 	if ($normalized =~ /^move\s+(.+)$/) {
 		my $target = $1;
+		# ── INVALID-DESTINATION GUARD (2026-08-25, spin/leak root cause) ──
+		# 'move 0 0' is an invalid destination (map origin is usually a wall).
+		# It makes OpenKore A* fail -> route-fail spin -> ~45MB/s RAM leak.
+		# Suppress it at the chokepoint so NO emitter (sidecar survival, macro,
+		# stuck-detector) can ever send the bot to (0,0).
+		if ($target eq '0 0') {
+			debug "[invalid_move] suppressing move 0 0 (invalid destination)\n", 'aiSidecarBridge', 1;
+			return ('', 'invalid_move_suppressed');
+		}
 		# Direct portal coordinates - pass through immediately
 		if ($target eq '22 203') {
 		    return ($trimmed, 'coordinate_move_raw');
