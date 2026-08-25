@@ -73,6 +73,15 @@
       REMOVED (founder: no hardcoded dialog solutions).
 - [x] 2.18 LLM cold-start advisory (81c850951): conscious LLM decides the agnostic
       cold-start plan from FACTS (level/inventory/map/academy-warp/server solutions).
+- [x] 2.19 Hardcoded 'move 22 203' (Prontera portal, non-walkable on izlude → A* spin)
+      REMOVED from all fallbacks (f1f292368 + ec530e075) — the return-to-hunt block
+      now skips during cold-start steps<4 and emits only when the knowledge DB has a
+      REAL portal fact for the CURRENT map. Stuck-detector random move clamped to map
+      bounds (3e28803f7 — was 'move 0 -10'). NPC/portal coords (weapon_shop,
+      academy_receptionist, portal_to_town/hunt) seeded as knowledge-DB FACTS with
+      x/y columns (+idempotent ALTER) — data-driven, never decision literals
+      (f1f292368).
+- [x] 2.20 Full suite 405+ passed (only the academy test was stale, now 8/8 green).
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
