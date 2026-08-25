@@ -2413,6 +2413,7 @@ class PDCALoop:
         self._breaker_key = "queue.default"
         self._breaker_family = "queue"
         self._advisory_inflight: set[str] = set()
+        self._llm_cold_start_cache: dict[str, float] = {}
         self._default_bot_id = "default"
         self._last_bot_id: str | None = None
         # Respawn cooldown tracking: bot_id -> timestamp when cooldown expires
@@ -2667,6 +2668,21 @@ class PDCALoop:
                 self._spawn_advisory(
                     f"gear:{_cycle_bot_id}",
                     self._llm_gear_advisory(_cycle_bot_id),
+                )
+            except Exception:
+                pass
+
+        # ── Conscious-tier: LLM cold-start advisory (AGNOSTIC, STEERS_T2) ──
+        # The LLM is the conscious mind that solves cold-start on ANY server from
+        # FACTS (level/inventory/map/learned server solutions + reachable academy
+        # warp) — NOT hardcoded izlude/academy/prt_fild rules. The deterministic
+        # heuristic branches stay as REFLEX only. Consulted on a coarse cadence
+        # (every 15 cycles) + cached per bot-state inside the advisory.
+        if self._cycle_count % 15 == 0 and _cycle_bot_id:
+            try:
+                self._spawn_advisory(
+                    f"coldstart:{_cycle_bot_id}",
+                    self._llm_cold_start_advisory(_cycle_bot_id),
                 )
             except Exception:
                 pass
@@ -9277,6 +9293,148 @@ class PDCALoop:
                                     bot_id, _no_pots, _hp * 100, _cmd_fb)
             except Exception:
                 pass
+
+    async def _llm_cold_start_advisory(self, bot_id: str) -> None:
+        """CONSCIOUS-tier (LLM) cold-start decision — AGNOSTIC.
+
+        Per STEERS_T2: the LLM is the conscious mind that solves cold-start on ANY
+        server/situation from FACTS (level, inventory, map, reachable academy warp,
+        server_solutions DB) — NOT hardcoded izlude/academy/prt_fild rules. The
+        deterministic heuristic branches in heuristic_service remain the REFLEX
+        safety floor (emit nothing strategic), while THIS is the strategy.
+
+        Data-driven facts are injected; the LLM picks an agnostic plan. Server-
+        specific execution (safe town / farm map / academy-door coordinate) comes
+        from the server_solutions knowledge store, never a *.py literal. Cached
+        per bot per cold-start state so it does not re-fire the LLM every cycle.
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        _store = getattr(_rt, "server_solutions_store", None)
+        # Gather facts for the current bot from the live snapshot.
+        _map = ""
+        _bl = 1
+        _has_weapon = False
+        _has_potions = False
+        _inv_names: list[str] = []
+        try:
+            _snap = getattr(_rt, "_last_snapshot", None) or {}
+            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+            if _snap is not None:
+                _map = str(_snap.get("map", "") or "").lower().replace(".gat", "")
+                _bl = int(_snap.get("base_level", 1) or 1)
+                _inv = _snap.get("inventory_items") or []
+                for _it in _inv:
+                    _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
+                    _i = str(_it.get("id", "")) if isinstance(_it, dict) else ""
+                    _inv_names.append(_n or _i)
+                    if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n or "mace" in _n or "bow" in _n or "rod" in _n:
+                        _has_weapon = True
+                    if "potion" in _n or _i in ("569", "501"):
+                        _has_potions = True
+        except Exception:
+            pass
+        # A bot is in cold-start only when it genuinely needs it (no weapon + low level).
+        if _bl > 10 or _has_weapon:
+            return
+        # Cache guard: consult the LLM once per (bot, cold-start state). The state is
+        # "still no weapon at level<10" — re-ask only when something materially changes
+        # (level bucket + weapon/potion flags), preventing LLM spam while letting it
+        # adapt as the bot progresses.
+        _bucket = f"{min(_bl // 3, 3)}/{int(_has_potions)}/{int(_has_weapon)}"
+        _ckey = f"cs:{bot_id}:{_bucket}"
+        import time as _time
+        _last = self._llm_cold_start_cache.get(_ckey, 0)
+        if _time.time() - _last < 600:
+            return
+        # Read server-specific solution facts (AGNOSTIC — never hardcoded).
+        _safe_town = str((_store.get("safe_town", None) if _store else None) or "")
+        _farm_map = str((_store.get("farm_map", None) if _store else None) or "")
+        _academy_door = ""
+        # Resolve the reachable academy warp (a FACT, not a decision) from portals.txt.
+        try:
+            import pathlib
+            _here = pathlib.Path(__file__)
+            _tables_root = None
+            for _anc in [_here, *_here.parents]:
+                if (_anc / "tables" / "portals.txt").exists():
+                    _tables_root = _anc / "tables"
+                    break
+            if _tables_root and _map:
+                for _ln in (_tables_root / "portals.txt").read_text(errors="ignore").splitlines():
+                    _f = _ln.split()
+                    if len(_f) >= 5 and _f[0].lower() == _map and _f[3].lower() == "iz_ac01":
+                        _academy_door = f"{_f[1]} {_f[2]}"
+                        break
+        except Exception:
+            pass
+        _prompt = (
+            f"Ragnarok bot {bot_id}: base_level={_bl}, in-game, has_weapon={_has_weapon}, "
+            f"has_potions={_has_potions}, on map '{_map}'. "
+            f"FACTS (server-specific, from the knowledge DB): safe_town='{_safe_town}', "
+            f"learned_farm_map='{_farm_map}', academy_warp_on_current_map='{_academy_door}' "
+            f"(the warp leading to the Novice Academy free starter kit). "
+            f"THINK LIKE A TOP PRO RO PLAYER and a SYSTEM ANALYST. The bot is a fresh low-level "
+            f"novice with NO weapon — it CANNOT farm effectively until it gets one (many servers "
+            f"give novices a free starter weapon + potions at their academy). Your job: decide the "
+            f"single best AGNOSTIC next step from the WHOLE PICTURE, NOT server-specific names. "
+            f"Respond as JSON: "
+            f"{{'analysis': <2-4 sentence deep reasoning>, 'root_cause': <deepest cause>, "
+            f"'plan': <one of 'academy_kit'|'farm_zeny'|'talk_helper'|'idle'>, "
+            f"'command': <an OpenKore command, empty ok>, 'reason': <short reason>}}. "
+            f"Choose 'academy_kit' ONLY when academy_warp_on_current_map is non-empty. "
+            f"'farm_zeny' when no academy warp but a learned_farm_map exists and is reachable. "
+            f"Never invent item IDs or map names beyond the facts given."
+        )
+        try:
+            _res = await _llm.complete_json(
+                _prompt,
+                system_prompt=(
+                    "You are the CONSCIOUS tier of an autonomous RO farming bot. You decide the "
+                    "cold-start strategy AGNOSTICALLY from FACTS (level/inventory/map/learned "
+                    "server solutions). You do NOT hardcode server-specific names — you reason "
+                    "from the facts injected. Tool/disciplined: pick ONE action, output a valid "
+                    "OpenKore command, keep it minimal."
+                ),
+                temperature=0.2,
+                max_tokens=800,
+            )
+            self._llm_cold_start_cache[_ckey] = _time.time()
+            _plan = str(_res.get("plan", "") or "")
+            _cmd = str(_res.get("command", "") or "")
+            _reason = str(_res.get("reason", "") or "")
+            _analysis = str(_res.get("analysis", "") or "")
+            logger.info("llm_cold_start bot=%s plan=%s cmd=%r reason=%s analysis=%r",
+                        bot_id, _plan, _cmd, _reason, _analysis[:160])
+            # Translate the LLM plan → command using FACTS only (server-agnostic execution).
+            if not _cmd:
+                if _plan == "academy_kit" and _academy_door:
+                    _cmd = f"move {_academy_door}"
+                elif _plan == "farm_zeny" and _farm_map:
+                    _cmd = f"move {_farm_map}"
+                else:
+                    _cmd = "ai auto"
+            if _cmd and hasattr(_rt, "action_queue"):
+                from datetime import UTC, datetime as _dt, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                _rt.action_queue.enqueue(bot_id, _AP(
+                    action_id=f"llm-cs-{int(_dt.now(UTC).timestamp())}",
+                    kind="command", command=_cmd,
+                    conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                    created_at=_dt.now(UTC),
+                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                    idempotency_key=f"llm-cs-{_plan}-{_bucket}",
+                ))
+                logger.info("llm_cold_start_queued bot=%s cmd=%r", bot_id, _cmd)
+        except Exception as _lce:
+            # LLM unavailable — the REFLEX/fallback layers in heuristic_service still run
+            # (deterministic academy/hunt branch as the safety floor). Never log as error
+            # (LLM flakiness is expected); silent fallback keeps the bot acting.
+            logger.debug("llm_cold_start_skipped bot=%s: %s", bot_id, _lce)
 
     async def _llm_help_coordination(self, bot_id: str) -> None:
         """Conscious-tier team-play: ask the LLM whether THIS bot should go help a teammate.
