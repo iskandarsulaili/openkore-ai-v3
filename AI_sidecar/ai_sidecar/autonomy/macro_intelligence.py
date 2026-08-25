@@ -1527,6 +1527,26 @@ class MacroIntelligence:
             # Fill in template values from context
             for key, val in ctx.items():
                 cmd = cmd.replace(f"{{{key}}}", str(val))
+            # ── SAFE-POSITION SUBSTITUTION (2026-08-25, spin/leak root cause) ──
+            # Several safety macros hardcode 'move 0 0' ("run to safe position")
+            # as a placeholder. 'move 0 0' is an INVALID destination (map origin
+            # is usually a wall) -> OpenKore A* fails -> route-fail spin -> the
+            # ~45MB/s RAM leak. Substitute the bot's ACTUAL position + a small
+            # offset (clamped to map bounds) so the escape is a real, walkable
+            # move. Agnostic — no hardcoded coordinates.
+            if cmd.strip() == "move 0 0":
+                _px = int(ctx.get("x", 0) or 0)
+                _py = int(ctx.get("y", 0) or 0)
+                _mw = int(ctx.get("field_width", ctx.get("map_width", 300)) or 300)
+                _mh = int(ctx.get("field_height", ctx.get("map_height", 300)) or 300)
+                if _px > 0 and _py > 0:
+                    # Move a few tiles away from the current spot (escape).
+                    _nx = max(1, min(_mw - 1, _px + 3))
+                    _ny = max(1, min(_mh - 1, _py + 3))
+                    cmd = f"move {_nx} {_ny}"
+                else:
+                    # No position known — don't emit an invalid move at all.
+                    continue
 
             h = hashlib.md5(f"{bot_id}_{monotonic_ns}_{i}".encode()).hexdigest()[:8]
 
