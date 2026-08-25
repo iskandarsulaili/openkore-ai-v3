@@ -2962,6 +2962,17 @@ class HeuristicService:
                         if not self._has_coldstart_weapon(signals) else None
                     )
                     if _academy_door:
+                        # Disable random-walk during the academy walk: with
+                        # route_randomWalk 2 + route_randomWalk_inTown 1 the bot
+                        # random-walks OVER the academy move, re-calculating a new
+                        # random route every few seconds (C A* spin + heap growth,
+                        # verified live: 'Calculating random route to izlude 60,98'
+                        # while the academy door move was pending). One coherent
+                        # destination at a time.
+                        self._set_config_once(actions, bot_id, "route_randomWalk", "0", "progression",
+                                              "Cold start - disable randomWalk during academy walk")
+                        self._set_config_once(actions, bot_id, "route_randomWalk_inTown", "0", "progression",
+                                              "Cold start - disable in-town randomWalk during academy walk")
                         # Throttle the academy-door move (at most once per 10s) so
                         # OpenKore walks the long route instead of recalculating.
                         _now = __import__("time").time()
