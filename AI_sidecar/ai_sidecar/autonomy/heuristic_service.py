@@ -2297,11 +2297,25 @@ class HeuristicService:
                                     # still inside an Academy room (iz_int*/iz_ac01) or on the
                                     # sail-arrival port (izlude_a) — the bot is still
                                     # registering for its free starter kit and a hunt lockMap
-                                    # there only fights the registration walk (walks to the
+                                    # a hunt lockMap there only fights the registration walk (walks to the
                                     # iz_ac01 hall / gate, never arrives). Defer until the
                                     # bot has actually reached a playable field out of the
                                     # academy rooms / the port.
-                                    if not _cur_map.startswith(("iz_int", "iz_ac", "izlude_a")):
+                                    _cs_defer_academy = _cur_map.startswith(("iz_int", "iz_ac", "izlude_a"))
+                                    # ── ACADEMY-FIRST DEFER (2.27, 2026-08-25) ──
+                                    # A weapon-less bot on the TOWN map (izlude/izlude_a/etc.) is
+                                    # still headed to the academy door (2 tiles away) for its free
+                                    # starter kit. Arming the farm lockMap HERE makes OpenKore
+                                    # cross-map-route to the far field, overriding the academy walk
+                                    # and leaving the bot stuck in town calculating routes forever
+                                    # (verified live: EXP frozen at 547, 'Calculating lockMap route'
+                                    # every cycle). Defer farm lockMap until the bot has a weapon
+                                    # (i.e. has actually completed academy registration).
+                                    _cs_weaponless_town = (
+                                        not self._has_coldstart_weapon(signals)
+                                        and _cur_map.startswith(("izlude", "prontera"))
+                                    )
+                                    if not _cs_defer_academy and not _cs_weaponless_town:
                                         # Phase 1 (server-agnostic): resolve the hunting
                                         # lockMap from the level-based map-knowledge layer,
                                         # not a hardcoded prt_fild08. get_hunting_maps(level)
