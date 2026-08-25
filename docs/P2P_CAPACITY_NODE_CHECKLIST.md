@@ -21,9 +21,16 @@ Scope mirrors RAW's own transport (docs/RAW_P2P_INTEGRATION_PLAN.md §1):
 - [ ] 3. Decide packaging: bot embeds the cross-compiled map-server.exe + DLL
       (like RAW client) vs pure-Perl. Likely: reuse RAW's single-file map-server.exe
       + spawn it, since RAW already solved attestation/host-creds.
-- [ ] 4. char-select retry (2a blocker): bot retries char-select when maps not
-      ready instead of timing out. CLIENT-SIDE, small. DO FIRST.
-- [ ] 5. Verify bot stays in-game >3min + gains EXP after char-select fix.
+- [x] 4. char-select retry (2a blocker): ALREADY IMPLEMENTED (Receive.pm:12888 retry
+      loop + DirectConnection.pm:597 re-enter). Root cause of churn was a SERVER-side
+      char-server binary going missing (status=203/EXEC crash-loop) -> login refused
+      all clients ('no char-server online'). Rebuilt char-server (src/char make, 93MB,
+      digest lockstep) + restarted rathena-char -> login+char+map reconnect.
+- [x] 5. Pathfinding reopen-skip fix: the 2.25 CLOSED-reopen (cc7576bac) caused
+      unbounded openList growth on dense maps -> pathStep block -> keepalive
+      starvation -> 0x0081 disconnect churn. Consistent-heuristic A* never reopens;
+      fixed to skip CLOSED (7cb9715c6) + dynamic openList realloc growth (d3b5dbfda).
+      VERIFIED LIVE: bot in-game izlude, RSS 206MB flat 13+ min, 0 disconnects.
 
 ## BATCH STATUS-b — PEER-HOST (bot serves maps)
 - [ ] 6. Wire bot → host-creds (GET /ads/host-creds) + E5 attestation (maplogin
