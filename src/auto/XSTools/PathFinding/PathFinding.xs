@@ -456,10 +456,25 @@ PathFinding_run(session, solution_array)
 			size = (session->solution_size + 1);
  			array = (AV *) SvRV (solution_array);
 			av_clear (array);
-			av_extend (array, size);
+			// ── SOLUTION MATERIALIZATION CAP (2026-08-25, SV-heap leak) ──
+			// A long A* path (400x400 map, up to width*height=160k steps) made
+			// run() build a Perl hash object per step (newHV+av_store x160k),
+			// blowing up the Perl SV heap to GBs (the 47MB/s "idle" leak was
+			// actually this). Emit at most MAX_SOLUTION_STEPS by taking every
+			// Nth step — OpenKore walks between consecutive emitted points, so
+			// sub-sampling a straight-ish path is safe and keeps the array
+			// bounded regardless of path length.
+			const long MAX_SOLUTION_STEPS = 8000;
+			av_extend (array, (size > MAX_SOLUTION_STEPS) ? MAX_SOLUTION_STEPS : size);
 
 			Node currentNode = session->currentMap[(session->endY * session->width) + session->endX];
 			long current = session->solution_size;
+			// If the path is longer than the cap, keep every Nth step.
+			long stride = 1;
+			if (size > MAX_SOLUTION_STEPS) {
+				stride = (size / MAX_SOLUTION_STEPS) + 1;
+			}
+			long emit_count = 0;
 
 			while (1)
 			{
@@ -469,7 +484,9 @@ PathFinding_run(session, solution_array)
 
 				hv_store(rh, "y", 1, newSViv(currentNode.y), 0);
 
-				av_store(array, current, newRV((SV *)rh));
+				if ((current % stride) == 0 || current == 0 || current == session->solution_size) {
+					av_store(array, emit_count++, newRV((SV *)rh));
+				}
 
 				if (current == 0) {
 					break;
@@ -478,7 +495,8 @@ PathFinding_run(session, solution_array)
 					current--;
 				}
 			}
-
+			// Retain the true per-node count as size (callers use the count to
+			// decide whether a route exists) but the array only holds the cap.
 			RETVAL = size;
 		}
 	OUTPUT:
