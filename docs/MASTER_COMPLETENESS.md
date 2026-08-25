@@ -154,9 +154,15 @@
 - [x] 2.25 Reachable-farm + portal data fixes verified live: bot locks prt_fild08
       (reachable 1-hop) from izlude, no 'Cannot calculate a route to prt_fild08c'
       decision failure. Bot warps into iz_ac01 + talks to Academy Receptionist
-      (menu captured by bridge). Full progression to farming still blocked by the
-      snapshot-completeness gap (sidecar sees base_level=0/hp=0/1 -> cold-start
-      fires character-creation on the in-game bot).
+      (menu captured by bridge).
+      SNAPSHOT COMPLETENESS RESOLVED (2026-08-25): state now flows to the sidecar
+      correctly (map=izlude base_level=1 hp=45/45 via /v2/state); cold_start
+      in-game gate works (no relog/char_create spam on the live bot). Also fixed
+      SessionManager avoid_peak_hours (e1b11e943) — was default True (20-23) so
+      it quit the bot every evening at peak; now False (24/7 farm). Bot is STABLE
+      (RSS flat 206MB, CPU ~5%, no churn/leak/relog). Remaining: the bot still
+      must WALK the izlude academy route to reach prt_fild08 and grow EXP (cold
+      -start walk-through thread).
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
