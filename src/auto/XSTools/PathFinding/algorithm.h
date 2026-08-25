@@ -52,6 +52,7 @@ typedef struct {
 	int run;
 
 	long openListSize;
+	long openListCapacity;
 
 	Node *currentMap;
 

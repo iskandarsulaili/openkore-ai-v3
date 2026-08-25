@@ -140,6 +140,8 @@ CalcPath_pathStep (CalcPath_session *session)
 	if (!session->run) {
 		session->run = 1;
 		session->openListSize = 0;
+		session->openListOverflow = 0;
+		session->openListCapacity = 0;
 		// Allocate enough memory in openList to hold the adress of all nodes in the map
 		session->openList = (long*) malloc((session->height * session->width) * sizeof(long));
 		if (session->openList == NULL) {
@@ -147,6 +149,7 @@ CalcPath_pathStep (CalcPath_session *session)
 			session->failed = 1;
 			return -1;
 		}
+		session->openListCapacity = (session->height * session->width);
 
 		// To initialize the pathfinding add only the start node to openList
 		openListAdd (session, start);
@@ -344,18 +347,29 @@ reconstruct_path(CalcPath_session *session, Node* goal, Node* start)
 void 
 openListAdd (CalcPath_session *session, Node* currentNode)
 {
-	// ── HARD OPENLIST BOUND (2026-08-25, C-side heap-corruption leak) ──
-	// openList is preallocated to exactly width*height entries. A correct A*
-	// never holds more than that many nodes OPEN at once. But the CLOSED-reopen
-	// path (pathStep line 283-286) can re-add a node repeatedly when weights
-	// oscillate (avoidWalls + randomFactor on a pathological map), driving
-	// openListSize past width*height and writing OUT OF BOUNDS of the array —
-	// corrupting the malloc heap and inflating process RSS to GBs while the
-	// main loop is blocked in pathStep. Refuse the add past the bound; the
-	// caller's pathStep then exhausts maxPops and bails with -1.
-	if (session->openListSize >= (unsigned long)(session->width * session->height)) {
-		session->openListOverflow = 1;
-		return;
+	// ── HARD OPENLIST BOUND, DYNAMIC-GROWTH (2026-08-26) ──
+	// openList is preallocated to width*height entries (the theoretical max
+	// distinct nodes OPEN at once). The CLOSED-reopen path (pathStep 290-293)
+	// can legitimately push openListSize past that ceiling on a dense/pathological
+	// map (a node re-added while still in closed). Aborting there is wrong — it
+	// kills valid routes (bot gets stuck). Instead GROW the array (realloc) so
+	// we keep the OOB safety (never write past a valid buffer -> no heap
+	// corruption -> no RSS blowup) AND never fail a real route. Growth is bounded
+	// (x2 until 64M entries) so a genuine infinite reopen-churn still bails.
+	if (session->openListSize >= session->openListCapacity) {
+		long newCap = session->openListCapacity * 2;
+		if (newCap <= session->openListCapacity || newCap > (1 << 26)) {
+			// overflow guard / pathological growth — bail cleanly.
+			session->openListOverflow = 1;
+			return;
+		}
+		long *grown = (long*) realloc(session->openList, newCap * sizeof(long));
+		if (grown == NULL) {
+			session->openListOverflow = 1;
+			return;
+		}
+		session->openList = grown;
+		session->openListCapacity = newCap;
 	}
 	// Index will be 1 + last index in openList, which is also its size
 	// Save in currentNode its index in openList
