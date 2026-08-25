@@ -649,6 +649,24 @@ sub on_mainLoop_pre {
     # This created a deadlock: can't attack → can't earn zeny → can't buy potions.
     # The heuristic's cold start pipeline handles potion buying and attack config.
     my $now = _now_ms();
+    # ── LEAK DIAGNOSTIC (throttled, always-fires) ──
+    # Correlate RSS growth with Field/PathFinding object leaks. Runs on the
+    # main-loop tick. ~5MB/Field, ~5.6MB/PathFinding session.
+    state $_last_leaklog_ms = 0;
+    if ($now - $_last_leaklog_ms > 10000) {
+        $_last_leaklog_ms = $now;
+        my $_fs = (Field->can('stats') ? Field->stats() : {});
+        my $_ps = (PathFinding->can('stats') ? PathFinding->stats() : {});
+        my $_rss = 0;
+        if (open my $_fh, '<', "/proc/self/status") {
+            while (<$_fh>) { $_rss = $1/1024 if /^VmRSS:\s+(\d+)/; }
+        }
+        warning sprintf(
+            "[leakdiag] rss_mb=%.0f fields_live=%d fields_created=%d pf_live=%d pf_created=%d\n",
+            $_rss, 0+($_fs->{live}||0), 0+($_fs->{created}||0),
+            0+($_ps->{live}||0), 0+($_ps->{created}||0),
+        ), 'aiSidecarBridge', 1;
+    }
 
 	if (_cfg_bool('aiSidecar_snapshotEnabled', 1) && $now >= $next_snapshot_at_ms) {
 	    my $snap_base = _cfg_int('aiSidecar_snapshotIntervalMs', 500);
@@ -2117,25 +2135,6 @@ sub _send_snapshot {
     if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
         _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
         _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
-    }
-    # ── LEAK DIAGNOSTIC (throttled): Field/PathFinding live-object counts ──
-    # Correlate RSS growth with object leaks. ~5MB/Field, ~5.6MB/PathFinding
-    # session. If live grows while RSS grows, objects leak.
-    state $_last_leaklog_ms = 0;
-    my $_nowms = _now_ms();
-    if ($_nowms - $_last_leaklog_ms > 10000) {
-        $_last_leaklog_ms = $_nowms;
-        my $_fs = (Field->can('stats') ? Field->stats() : {});
-        my $_ps = (PathFinding->can('stats') ? PathFinding->stats() : {});
-        my $_rss = 0;
-        if (open my $_fh, '<', "/proc/self/status") {
-            while (<$_fh>) { $_rss = $1/1024 if /^VmRSS:\s+(\d+)/; }
-        }
-        debug sprintf(
-            "[leakdiag] rss_mb=%.0f fields_live=%d fields_created=%d pf_live=%d pf_created=%d\n",
-            $_rss, 0+($_fs->{live}||0), 0+($_fs->{created}||0),
-            0+($_ps->{live}||0), 0+($_ps->{created}||0),
-        ), 'aiSidecarBridge', 1;
     }
 
     # ── Send 17 specialized state builder snapshots (disabled — sidecar uses ingest/snapshot) ──
