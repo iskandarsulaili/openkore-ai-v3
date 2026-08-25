@@ -1017,12 +1017,6 @@ class HeuristicService:
         self._last_return_to_farm: dict[str, float] = {}  # return-to-farm after restock cooldown
         self._last_job_change_attempt: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
-        # Rate-limit 'set lockMap' emission: re-sending the SAME lockMap every
-        # cycle resets the client's route task -> re-triggers C A* -> 92% CPU
-        # spin + Perl heap growth (58GB observed) + the bot never walks. Emit
-        # at most once per 60s per bot (the initial set is enough; the client
-        # keeps the lockMap until changed). (2026-08-25)
-        self._last_lockmap_emit: dict[str, float] = {}
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
         self._last_config_set: dict[str, dict[str, str]] = {}
@@ -1241,53 +1235,6 @@ class HeuristicService:
         except Exception:
             return None
 
-    # Data-driven resolver for the Academy door (MAP-AGNOSTIC): instead of
-    # hardcoding "izlude 125 257", scan the bot's tables/portals.txt for any
-    # portal that STARTS on the current map and leads to the academy map
-    # (iz_ac01). If RAW ever changes academy location, or the bot spawns on a
-    # different town that also portals to the academy, this still resolves.
-    # Returns "x y" for a move command, or None if no portal path exists.
-    _ACADEMY_MAP = "iz_ac01"
-    _PORTALS_FILE_CACHE: dict[float, dict] = {}
-
-    def _cold_start_academy_door(self, map_name: str, now: float) -> str | None:
-        try:
-            _pf = __import__("pathlib").Path
-            # Resolve the OpenKore repo root (which owns tables/portals.txt):
-            # the sidecar runs from AI_sidecar/... — walk up until we find tables/.
-            _base = _pf(__file__)
-            _tables_root = None
-            for _anc in [_base, *_base.parents]:
-                if (_anc / "tables" / "portals.txt").exists():
-                    _tables_root = _anc / "tables"
-                    break
-            if _tables_root is None:
-                logger.debug("_cold_start_academy_door: no tables/portals.txt found")
-                return None
-            _tables = _tables_root / "portals.txt"
-            _mtime = _tables.stat().st_mtime
-            _last, _cache = self._PORTALS_FILE_CACHE.get("mtime", 0.0), self._PORTALS_FILE_CACHE.get("rows") or []
-            if _last != _mtime or not _cache:
-                _rows = []
-                with open(_tables, "r", encoding="utf-8", errors="ignore") as _fh:
-                    for _ln in _fh:
-                        _ln = _ln.strip()
-                        if not _ln or _ln.startswith("#"):
-                            continue
-                        _f = _ln.split()
-                        if len(_f) >= 5 and _f[3] == self._ACADEMY_MAP:
-                            # portal: from_map x y to_map tx ty [rest]
-                            _rows.append((_f[0].lower(), _f[1], _f[2]))
-                self._PORTALS_FILE_CACHE.update({"mtime": _mtime, "rows": _rows})
-                _cache = _rows
-            _m = (map_name or "").lower().split(".gat")[0].rstrip()
-            for _from, _x, _y in _cache:
-                if _from == _m:
-                    return f"{_x} {_y}"
-            return None
-        except Exception:
-            return None
-
     def _load_towns(self) -> None:
         """Load town map names from database (server-agnostic).
 
@@ -1325,13 +1272,8 @@ class HeuristicService:
         if not _cold_fired and _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
-        # Stay in COLD_START until cold start sequence completes (step >= 4).
-        # NOTE: the cold-start STEP is written with the STABLE key (char name,
-        # not the varying account prefix the bridge sends per cycle) at the
-        # sequencing block — read it with the SAME key or COLD_START never exits
-        # for prefixed bot_ids (audit HIGH, heuristic_service.py:1329).
-        _cs_read_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
-        if _prev_state == "COLD_START" and self._cold_start_step.get(_cs_read_key, 0) < 4:
+        # Stay in COLD_START until cold start sequence completes (step >= 4)
+        if _prev_state == "COLD_START" and self._cold_start_step.get(bot_id, 0) < 4:
             return "COLD_START"
         # DEATH: if bot just died and respawned
         # Only trigger DEATH if bot actually died (HP was 0 or very low)
@@ -2416,12 +2358,7 @@ class HeuristicService:
                                         # in-game first. Purely additive — no state mutation.
                                         _cs_reconn = float(signals.get("reconnect_age_s", 999.0) or 999.0)
                                         if _cs_reconn >= 15.0:
-                                            # RATE-LIMIT: re-sending the same lockMap every cycle
-                                            # resets the client route task -> C A* spin + heap leak.
-                                            _now_lm = __import__("time").time()
-                                            if _now_lm - self._last_lockmap_emit.get(bot_id, 0.0) >= 60.0:
-                                                self._last_lockmap_emit[bot_id] = _now_lm
-                                                _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace, rate-limited)", domain="progression"))
+                                            _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace)", domain="progression"))
                                         # ── ROOT-CAUSE FIX (A2): inline mon_control re-emission ──
                                         # These `mon_control` commands were emitted EVERY cycle this
                                         # block ran. Each emission makes the OpenKore client RESTART
@@ -2713,15 +2650,6 @@ class HeuristicService:
         """Detect if bot is stuck (hasn't moved >5 tiles in 30 seconds).
         Returns a list of unstuck actions if stuck is detected.
         Tracks position from signals 'x', 'y' and compares to last known position."""
-        # Skip during cold-start / academy phase (steps 0-3): the academy walk
-        # across izlude to (125,257) legitimately takes >30s of near-stillness,
-        # and the cold-start plan already issues its own move (throttled 10s).
-        # Firing the random-unstick move here dequeues that route task every
-        # cycle -> C A* spin + main-loop starvation + Perl heap growth.
-        _cs_step = self._cold_start_step.get(
-            bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id, 0)
-        if _cs_step < 4:
-            return []
         stuck_actions: list[HeuristicAction] = []
         _now = __import__("time").time()
         _x = signals.get("x", 0) or 0
@@ -2737,22 +2665,10 @@ class HeuristicService:
                 # Bot hasn't moved significantly — queue unstuck actions
                 logger.info(f"[stuck_detector] {bot_id}: position ({_lx},{_ly}) -> ({_x},{_y}) "
                            f"dist={_dist} over {_elapsed:.0f}s — sending unstuck")
-                # Random target within ~20 tiles to break stuck — CLAMPED to the
-                # map bounds: a negative/off-map target makes OpenKore's A* fail
-                # from an invalid dest every retry -> route-calc spin + heap growth.
+                # Random target within ~20 tiles to break stuck
                 _rand = __import__("random").Random(hash(bot_id + str(_now)) & 0xFFFFFFFF)
-                _map_w = int(signals.get("map_width", 0) or 0)
-                _map_h = int(signals.get("map_height", 0) or 0)
                 _tx = _x + _rand.randint(-15, 15)
                 _ty = _y + _rand.randint(-15, 15)
-                if _map_w > 0:
-                    _tx = max(0, min(_map_w - 1, _tx))
-                else:
-                    _tx = max(0, _tx)
-                if _map_h > 0:
-                    _ty = max(0, min(_map_h - 1, _ty))
-                else:
-                    _ty = max(0, _ty)
                 stuck_actions.append(HeuristicAction(
                     kind="command", command="stand",
                     confidence=0.90, domain="survival",
@@ -2957,34 +2873,14 @@ class HeuristicService:
                     # receptionist (iz_ac01 100,39) for the free Novice_Knife + 300
                     # potions. Override the prt_fild05 step-1 walk to send it to the
                     # academy door (izlude 125,257 warp -> iz_ac01) instead.
-                    # MAP-AGNOSTIC academy-door resolution: scan tables/portals.txt
-                    # for the warp from the CURRENT map into iz_ac01 (Novice
-                    # Academy) instead of hardcoding izlude/125 257. Returns
-                    # "x y" (move target) or None when this map has no academy
-                    # warp — the bot then falls through to the town-farm path.
-                    _academy_door = (
-                        self._cold_start_academy_door(_cs_map, _now_t)
-                        if not self._has_coldstart_weapon(signals) else None
-                    )
-                    if _academy_door:
-                        # Disable random-walk during the academy walk: with
-                        # route_randomWalk 2 + route_randomWalk_inTown 1 the bot
-                        # random-walks OVER the academy move, re-calculating a new
-                        # random route every few seconds (C A* spin + heap growth,
-                        # verified live: 'Calculating random route to izlude 60,98'
-                        # while the academy door move was pending). One coherent
-                        # destination at a time.
-                        self._set_config_once(actions, bot_id, "route_randomWalk", "0", "progression",
-                                              "Cold start - disable randomWalk during academy walk")
-                        self._set_config_once(actions, bot_id, "route_randomWalk_inTown", "0", "progression",
-                                              "Cold start - disable in-town randomWalk during academy walk")
+                    if _cs_map == "izlude" and not self._has_coldstart_weapon(signals):
                         # Throttle the academy-door move (at most once per 10s) so
-                        # OpenKore walks the long route instead of recalculating.
+                        # OpenKore walks the long izlude route instead of recalculating.
                         _now = __import__("time").time()
                         if _now - self._last_academy_move.get(bot_id, 0.0) >= 10.0:
                             self._last_academy_move[bot_id] = _now
                             actions.append(HeuristicAction(
-                                kind="command", command=f"move {_academy_door}",
+                                kind="command", command="move 125 257",
                                 confidence=0.99, domain="progression",
                                 reason="Cold start - walk to Academy door (warp to iz_ac01) for free starter kit",
                             ))
@@ -3012,16 +2908,11 @@ class HeuristicService:
                             _cs_authority_hunt = "prt_fild08c"
                             self._cold_start_hunt_map = "prt_fild08c"
                         if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
-                            # RATE-LIMIT lockMap (same as the academy block): re-sending
-                            # every cycle resets the client route task -> C A* spin + heap leak.
-                            _now_lm2 = __import__("time").time()
-                            if _now_lm2 - self._last_lockmap_emit.get(bot_id, 0.0) >= 60.0:
-                                self._last_lockmap_emit[bot_id] = _now_lm2
-                                actions.append(HeuristicAction(
-                                    kind="command", command=f"set lockMap {_cs_authority_hunt}",
-                                    confidence=0.99, domain="economy",
-                                    reason=f"Cold start step 1 - lockMap to academy hunt {_cs_authority_hunt} (rate-limited)",
-                                ))
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"set lockMap {_cs_authority_hunt}",
+                                confidence=0.99, domain="economy",
+                                reason=f"Cold start step 1 - lockMap to academy hunt {_cs_authority_hunt}",
+                            ))
                             actions.append(HeuristicAction(
                                 kind="command", command=f"move {_cs_authority_hunt}",
                                 confidence=0.99, domain="economy",
@@ -4131,14 +4022,8 @@ class HeuristicService:
                 ))
             # Return to hunt via portal after 15s in town
             # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
-            # AND during the academy/cold-start steps (0-3): the cold-start plan
-            # owns movement until the bot has a weapon + 50z. Re-emitting the
-            # portal-return move (22 203) + lockMap prt_fild05 while the cold-start
-            # academy plan (move 125 257) is active dequeues the route task every
-            # cycle -> C A* spin + main-loop starvation + Perl heap growth.
             _rth_step = self._cold_start_step.get(_cs_stable_key, 0)
-            _rth_in_cold_start = _rth_step < 4
-            _rth_skip = _rth_in_cold_start or (_rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50)
+            _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
             # int_land (Secluded Island) has NO route to prt_fild05; locking the
             # hunt map there makes OpenKore spin on "Cannot calculate a route from
