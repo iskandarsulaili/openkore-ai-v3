@@ -65,6 +65,19 @@ CalcPath_init (CalcPath_session *session)
 		return;
 	}
 
+	// Free any PREVIOUSLY allocated map buffers BEFORE re-allocating.
+	// reset() -> CalcPath_init is called repeatedly by the bot; without this,
+	// every reset orphans the old currentMap (calloc'd below) and leaks
+	// ~width*height*sizeof(Node) per reset (observed: 206MB -> 2.5GB while
+	// idle on a 220x200 map). Guard on `initialized` so the first call (no
+	// buffer yet) doesn't free garbage.
+	if (session->initialized) {
+		free_currentMap(session);
+		session->currentMap = NULL;
+		session->second_weight_map = NULL;
+	}
+	session->initialized = 0;
+
 	// Allocate enough memory in currentMap to hold all nodes in the map
 	// Here we use calloc instead of malloc (calloc sets all memory allocated to 0's) so all uninitialized cells have whichlist set to NONE
 	session->currentMap = (Node*) calloc(session->height * session->width, sizeof(Node));
