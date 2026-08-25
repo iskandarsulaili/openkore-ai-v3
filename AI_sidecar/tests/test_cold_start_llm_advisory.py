@@ -98,3 +98,41 @@ def test_cold_start_advisory_llm_down_no_crash(tmp_path):
     loop = _pdca(fake_rt, tmp_path)
     asyncio.run(loop._llm_cold_start_advisory("bot:x"))
     assert fake_rt.action_queue.queued == []
+
+
+def test_llm_npc_dialog_selects_option_from_menu(tmp_path):
+    """CONSCIOUS-tier dialog responder must read the ACTUAL menu and pick the
+    option that advances the goal (AGNOSTIC — no hardcoded r<idx> for a specific
+    NPC). The fake LLM returns option_index=2 (matching 'Register for the
+    Academy' text at [2]) and the responder emits talknpc r2."""
+    fake_rt = FakeRuntime(llm_manager=FakeLLM(_plan={
+        "analysis": "register option advances the starter-kit goal",
+        "choice": "option", "option_index": 2, "reason": "Register for the Academy"}))
+    fake_rt._last_snapshot = {
+        "bot:m": {
+            "map": "iz_ac01",
+            "base_level": 1,
+            "inventory_items": [],
+            "raw": {
+                "menu_options": ["Explanation about academy", "Location for trainers",
+                                 "Register for the Academy", "Conversation finished"],
+                "npc_name": "Academy Receptionist#1",
+                "npc_x": 100, "npc_y": 39,
+                "goal": "register",
+            },
+        }
+    }
+    loop = _pdca(fake_rt, tmp_path)
+    asyncio.run(loop._llm_npc_dialog_response("bot:m"))
+    assert fake_rt.action_queue.queued, "expected the LLM dialog response to be enqueued"
+    _bid, _p = fake_rt.action_queue.queued[0]
+    assert _p.command == "talknpc 100 39 c r2 n"
+
+
+def test_llm_npc_dialog_no_menu_skips(tmp_path):
+    """No open menu -> the responder does nothing (no fabricuated command)."""
+    fake_rt = FakeRuntime(llm_manager=FakeLLM())
+    fake_rt._last_snapshot = {"bot:no": {"map": "prt_fild08", "raw": {}}}
+    loop = _pdca(fake_rt, tmp_path)
+    asyncio.run(loop._llm_npc_dialog_response("bot:no"))
+    assert fake_rt.action_queue.queued == []

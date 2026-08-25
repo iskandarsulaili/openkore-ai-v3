@@ -2687,6 +2687,19 @@ class PDCALoop:
             except Exception:
                 pass
 
+        # ── Conscious-tier: LLM NPC-dialog responder (AGNOSTIC, SELF-LEARNING) ──
+        # NO hardcoded talknpc sequences (founder 2026-08-25). The LLM reads the
+        # ACTUAL menu options / text and picks the response, or chats free-text
+        # for AI NPCs. Learned responses are reused from subconscious memory.
+        if self._cycle_count % 10 == 0 and _cycle_bot_id:
+            try:
+                self._spawn_advisory(
+                    f"npcdialog:{_cycle_bot_id}",
+                    self._llm_npc_dialog_response(_cycle_bot_id),
+                )
+            except Exception:
+                pass
+
         # ── Conscious-tier team-play: LLM decides whether THIS bot helps a teammate ──
         # Driven by LLM/CrewAI assessment (not hardcoded rules): the swarm's real-time
         # party state is summarized and the LLM decides pragmatically whether to move to
@@ -9435,6 +9448,155 @@ class PDCALoop:
             # (deterministic academy/hunt branch as the safety floor). Never log as error
             # (LLM flakiness is expected); silent fallback keeps the bot acting.
             logger.debug("llm_cold_start_skipped bot=%s: %s", bot_id, _lce)
+
+    async def _llm_npc_dialog_response(self, bot_id: str) -> None:
+        """CONSCIOUS-tier (LLM) NPC-dialog responder — AGNOSTIC, SELF-LEARNING.
+
+        Per founder directive (2026-08-25): NO hardcoded dialog solutions.
+        RAW's NPCs are CUSTOMIZED — some are AI NPCs that need free-text chat,
+        some have dynamic menus. The LLM reads the ACTUAL menu options +
+        dialogue text (fed by the bridge via signals['menu_options']) and the
+        bot's current goal, then decides: select an option (r<N>) or send a
+        free-text reply. Works for ANY NPC on ANY server; nothing is baked.
+
+        SELF-LEARNING: the chosen response + outcome is recorded into the
+        subconscious memory (dialog_memory) so future identical dialogs reuse
+        the response that WORKED (reward) and avoid ones that failed (punish)
+        — the ML/subconscious tier, not a rule.
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        _store = getattr(_rt, "server_solutions_store", None)
+        # Gather the live dialog state for this bot (menu options + NPC identity).
+        _npc_name = ""
+        _npc_x = _npc_y = 0
+        _npc_map = ""
+        _options: list[str] = []
+        _dialogue_text = ""
+        _goal = ""
+        try:
+            _snap = getattr(_rt, "_last_snapshot", None) or {}
+            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+            if _snap is not None:
+                _raw = _snap.get("raw") or {}
+                _options = [str(o) for o in (_raw.get("menu_options") or [])]
+                _npc_name = str(_raw.get("npc_name") or _snap.get("npc_name") or "")
+                _npc_x = int(_raw.get("npc_x") or 0)
+                _npc_y = int(_raw.get("npc_y") or 0)
+                _npc_map = str(_snap.get("map") or _raw.get("npc_map") or "")
+                _dialogue_text = str(_raw.get("last_npc_text") or "")
+                _goal = str(_snap.get("goal") or _raw.get("goal") or "")
+        except Exception:
+            pass
+        # Only act when a dialog is actually open with a menu (or text to reply to).
+        if not _npc_name or not _options:
+            return
+        # ── SELF-LEARNING lookup (subconscious memory): have we solved this NPC
+        # dialog before? Reuse the winning response (reward) or the one that
+        # still has attempts left (learned). This is the trained layer.
+        _mem_key = f"npc_dialog:{_npc_name}:{_goal}"
+        try:
+            _learned = {}
+            if _store is not None:
+                _learned = _store.get_json(_mem_key, {}) or {}
+            _learned_idx = _learned.get("option_index")
+            _learned_ok = _learned.get("outcome") == "success"
+            if _learned_idx is not None and _learned_ok:
+                # Subconscious memory already solved it — reuse (no LLM needed).
+                _cmd = f"talknpc {_npc_x} {_npc_y} c r{_learned_idx} n"
+                if _npc_x and _npc_y:
+                    if hasattr(_rt, "action_queue"):
+                        from datetime import UTC, datetime as _dt, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                        _rt.action_queue.enqueue(bot_id, _AP(
+                            action_id=f"llm-npc-mem-{int(_dt.now(UTC).timestamp())}",
+                            kind="command", command=_cmd,
+                            conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                            created_at=_dt.now(UTC),
+                            expires_at=_dt.now(UTC) + timedelta(seconds=20),
+                            idempotency_key=_mem_key,
+                        ))
+                        logger.info("llm_npc_dialog_memory bot=%s npc=%s reuse r%d", bot_id, _npc_name, _learned_idx)
+                return
+        except Exception:
+            pass
+        # ── CONSCIOUS decision: LLM picks the option/reply from the ACTUAL menu.
+        _opt_text = "\n".join(f"[{i}] {o}" for i, o in enumerate(_options))
+        _prompt = (
+            f"Ragnarok bot {bot_id} is in a dialog with NPC '{_npc_name}' on map "
+            f"'{_npc_map}' at ({_npc_x},{_npc_y}). Current goal: '{_goal or 'unknown'}'. "
+            f"The NPC just said: \"{_dialogue_text[:200]}\". "
+            f"The NPC menu shows these options:\n{_opt_text}\n"
+            f"Decide the single correct response to ADVANCE the goal. If the goal is "
+            f"to register/buy/accept/get a starter kit/advance a quest, pick the menu "
+            f"option whose TEXT matches that intent. If NO option matches and the NPC "
+            f"is conversational/AI (free-text), reply with a short in-character line. "
+            f"Respond as JSON: {{'analysis': <1-2 sentence>, "
+            f"'choice': <'option'|'reply'>, "
+            f"'option_index': <int, only when choice=option>, "
+            f"'reply_text': <string, only when choice=reply>, 'reason': <short>}}. "
+            f"Options are 1-based in the game menu but indices above are 0-based — "
+            f"report the 0-based index that maps to the chosen option text."
+        )
+        try:
+            _res = await _llm.complete_json(
+                _prompt,
+                system_prompt=(
+                    "You are the CONSCIOUS tier of an autonomous RO bot handling NPC "
+                    "dialogs. You NEVER hardcode dialog sequences — you read the actual "
+                    "menu/text and pick the response that advances the bot's goal, for "
+                    "ANY NPC (vanilla menus, customized NPCs, AI chat NPCs). Be precise "
+                    "about the option index."
+                ),
+                temperature=0.1,
+                max_tokens=400,
+            )
+            _choice = str(_res.get("choice", "") or "")
+            _reason = str(_res.get("reason", "") or "")
+            logger.info("llm_npc_dialog bot=%s npc=%s choice=%s reason=%s",
+                        bot_id, _npc_name, _choice, _reason[:120])
+            _cmd = ""
+            if _choice == "option":
+                _idx = int(_res.get("option_index", -1) or -1)
+                if 0 <= _idx < len(_options) and _npc_x and _npc_y:
+                    _cmd = f"talknpc {_npc_x} {_npc_y} c r{_idx} n"
+                    # Record the chosen response into subconscious memory (reward
+                    # will be applied when the goal completes; a failure will
+                    # punish and unset the learned entry).
+                    if _store is not None:
+                        try:
+                            _store.set_json(_mem_key, {"option_index": _idx,
+                                                       "outcome": "pending",
+                                                       "npc": _npc_name,
+                                                       "goal": _goal})
+                        except Exception:
+                            pass
+            elif _choice == "reply":
+                _reply = str(_res.get("reply_text", "") or "").strip()
+                if _reply and _npc_x and _npc_y:
+                    # AI/chat NPC: type the reply into the dialog. OpenKore's
+                    # `chat <text>` sends a chat line; in an active NPC dialog
+                    # (AI NPCs use the built-in chat input) this is the reply.
+                    _cmd = f"chat {_reply}"
+                    logger.info("llm_npc_dialog_reply bot=%s npc=%s reply=%r",
+                                bot_id, _npc_name, _reply[:80])
+            if _cmd and hasattr(_rt, "action_queue"):
+                from datetime import UTC, datetime as _dt, timedelta
+                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                _rt.action_queue.enqueue(bot_id, _AP(
+                    action_id=f"llm-npc-{int(_dt.now(UTC).timestamp())}",
+                    kind="command", command=_cmd,
+                    conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                    created_at=_dt.now(UTC),
+                    expires_at=_dt.now(UTC) + timedelta(seconds=20),
+                    idempotency_key=f"llm-npc-{_npc_name}-{_goal}",
+                ))
+        except Exception as _nde:
+            logger.debug("llm_npc_dialog_skipped bot=%s npc=%s: %s", bot_id, _npc_name, _nde)
 
     async def _llm_help_coordination(self, bot_id: str) -> None:
         """Conscious-tier team-play: ask the LLM whether THIS bot should go help a teammate.

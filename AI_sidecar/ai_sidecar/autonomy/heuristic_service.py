@@ -2207,27 +2207,25 @@ class HeuristicService:
                                         # the attempt cap. Once capped, stop re-talking so the
                                         # bot proceeds to farming (the kit is likely already
                                         # granted server-side even if the snapshot is stale).
+                                        # NOTE (founder 2026-08-25): NO hardcoded dialog
+                                        # sequences. The CONSCIOUS-tier LLM responder
+                                        # (_llm_npc_dialog_response) reads the ACTUAL menu
+                                        # options from the bridge signal and selects the
+                                        # Register option agnostically — RAW NPCs are
+                                        # customized, some need free-text chat. This block only
+                                        # ensures the bot STAYS on iz_ac01 near the receptionist
+                                        # so the LLM can talk; the canned 'r0' sequence is gone.
                                         if not _has_knife and _reg_n <= 6:
+                                            # Let the LLM conscious responder own the dialog.
+                                            # No hardcoded talknpc sequence; the bot stays put
+                                            # while the LLM reads the menu and registers.
                                             _actions.append(HeuristicAction(
-                                            kind="command",
-                                            # Register at the Academy. The Receptionist's
-                                            # main menu is select("Register for the Academy:
-                                            # Explanation about the Academy:Location for
-                                            # trainers:Conversation finished"). A previous
-                                            # cycle can leave the dialog stuck in a submenu
-                                            # ("What's on the 1st floor" etc), so first send
-                                            # "End Conversation" (cancel) to close ANY open
-                                            # dialog, then re-talk and select "Register" by
-                                            # MENU INDEX (r0 = the first/primary option),
-                                            # which OpenKore accepts (the old r/text/ regex
-                                            # form caused "Failed to add NPC talk sequence").
-                                            # Then advance through the registration mes/next
-                                            # screens to the getitem (kit) and close.
-                                            command="talknpc 100 39 c r0 n n n n",
-                                            confidence=0.95,
-                                            reason="Cold start: register at Academy Receptionist for Novice_Knife + potions (close stuck dialog, then select Register menu option 0)",
-                                            domain="progression",
-                                        ))
+                                                kind="log",
+                                                command="cold_start: waiting for LLM academy registration (menu-driven)",
+                                                confidence=0.95,
+                                                reason="Cold start: near Academy Receptionist; the conscious LLM reads the actual menu and registers (agnostic). No hardcoded r-sequence.",
+                                                domain="progression",
+                                            ))
                                         else:
                                             # Registered / attempt-capped: the kit is granted
                                             # server-side (Novice_Knife + potions + 100 EXP).
