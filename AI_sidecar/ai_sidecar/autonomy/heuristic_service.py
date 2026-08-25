@@ -1325,8 +1325,13 @@ class HeuristicService:
         if not _cold_fired and _prev_state == "UNKNOWN" and _total_kills == 0 and _total_zeny == 0:
             self._cold_start_fired[bot_id] = True
             return "COLD_START"
-        # Stay in COLD_START until cold start sequence completes (step >= 4)
-        if _prev_state == "COLD_START" and self._cold_start_step.get(bot_id, 0) < 4:
+        # Stay in COLD_START until cold start sequence completes (step >= 4).
+        # NOTE: the cold-start STEP is written with the STABLE key (char name,
+        # not the varying account prefix the bridge sends per cycle) at the
+        # sequencing block — read it with the SAME key or COLD_START never exits
+        # for prefixed bot_ids (audit HIGH, heuristic_service.py:1329).
+        _cs_read_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        if _prev_state == "COLD_START" and self._cold_start_step.get(_cs_read_key, 0) < 4:
             return "COLD_START"
         # DEATH: if bot just died and respawned
         # Only trigger DEATH if bot actually died (HP was 0 or very low)
