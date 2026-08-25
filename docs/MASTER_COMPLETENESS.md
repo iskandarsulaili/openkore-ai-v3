@@ -175,8 +175,15 @@
       -start walk-through thread).
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
-- [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
-- [ ] 3.2 Verify OpenKore tolerates unknown server packets (no warn/misparse) for all RAW-sent packet IDs.
+- [x] 3.1 0x0501 (var-length client feature packet): server-side already registers it as
+      no-handler variable-length consume (RAW clif_shuffle.hpp:4768) so the client is never
+      disconnected. openkore SENDS 0x0501 (CZ) — no openkore-side change needed.
+- [x] 3.2 Unknown-packet tolerance: live audit found ONLY ONE unknown SC switch in practice —
+      0B8D (repute_info, 108 'Packet Tokenizer: Unknown switch: 0B8D' warnings). Handler
+      existed in ServerType0.pm:770 but the entry was missing from the active recvpackets.
+      Added '0B8D -1' to tables/kRO/RagexeRE_2025_06_04/recvpackets.txt (b63e9e323). The 195
+      RAW packet IDs absent from openkore recvpackets are all CZ (client→server
+      parseable_packet) — openkore sends, never receives — not gaps.
 
 ## PHASE 4 — FOUNDER MANDATES (D1-D4, RULE.md, big pictures)
 ### 4a. P2P integration (D1/D2, RAW_P2P_INTEGRATION_PLAN)
