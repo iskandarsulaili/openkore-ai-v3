@@ -5906,10 +5906,23 @@ sub _rewrite_runtime_command {
 			        return ('', 'route_loop_suppressed');
 			}
 			my $dist = sqrt(($cx - $tx)**2 + ($cy - $ty)**2);
-			if ($dist < 5) {
+			# Suppress ONLY when the bot is essentially ON the target tile (dist < 2,
+			# i.e. within the 4-neighbor cell) — a warp trigger (academy door, portal
+			# exit) needs the bot to actually STEP on/adjacent to the tile, so a
+			# coarse dist < 5 would treat a 4-tile-away warp as "already there" and
+			# strand the cold-start bot 4 tiles from the door forever (2.27 defect).
+			# Dist 2 still covers the standard "standing on the tile" case.
+			if ($dist < 2) {
 				debug "[route_loop] already at target ($tx,$ty), current=($cx,$cy) dist=$dist, suppressing\n", 'aiSidecarBridge', 1;
 				return ('', 'route_loop_suppressed');
 			}
+			# Arm the portal-walk lock so a same-batch `stand`/`ai auto` (or the
+			# immediate-hunting reset) does NOT cancel this coordinate route before
+			# the bot walks. Without this a cold-start academy-door move is
+			# dispatched then instantly overwritten by the next action in the batch
+			# -> the bot never actually walks onto the warp tile (2.27 defect).
+			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
+			debug "[route_loop] arming portal_walk_lock (5s) for coordinate move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
 			return ($trimmed, 'coordinate_move_raw');
 		}
 		# If already on target map, "move <map>" is a no-op random walk
