@@ -69,27 +69,31 @@ def test_level6_on_fild_uses_field_config_not_transit() -> None:
 
 def test_level1_in_town_enables_attacking() -> None:
     cmds = _assess(base_level=1, map_name="prontera", lock_map="prt_fild08")
-    # Level 1-5 targets the academy field prt_fild08. A bot still in town is
-    # navigating toward it (not stuck idle); it does NOT set attackAuto 0 —
-    # transit protection only fires while on a *_fild map en route.
-    assert any("prt_fild08" in c for c in cmds), f"must navigate to academy: {cmds}"
+    # A level-1 bot in prontera navigates to the REACHABLE 1-hop farm
+    # (prt_fild05, direct portal from prontera) — NOT an unroutable academy
+    # clone. It does NOT set attackAuto 0 (transit protection only fires on a
+    # *_fild map en route).
+    assert any("prt_fild05" in c for c in cmds), f"must navigate to reachable farm: {cmds}"
 
 
 def test_reachable_hunting_maps_from_izlude(tmp_path):
-    """A level-1 bot in izlude must resolve a REACHABLE farm (prt_fild08c via
-    izlude_c) — NOT an unroutable one. Root-cause regression for the
-    'Calculating lockMap route to prt_fild08' spin when the bot locks an
-    unreachable field."""
+    """A level-1 bot in izlude must resolve a REACHABLE farm (prt_fild08, 1-hop
+    via the 20,98 portal) — NOT a map OpenKore can't route to (prt_fild08c is a
+    3-hop clone only reachable via izlude_c, and izlude does NOT connect to
+    izlude_c). Root-cause regression for the 'Cannot calculate a route to
+    prt_fild08c' spin."""
     from ai_sidecar.combat.map_knowledge import reachable_hunting_maps, get_hunting_maps
     # Level-1 hunting maps exist (data fact)
     assert get_hunting_maps(1), "level-1 hunting maps must be defined"
-    # From izlude the top-scored REACHABLE farm is prt_fild08c (academy farm)
+    # From izlude the top-scored REACHABLE farm is prt_fild08 (1-hop)
     top = reachable_hunting_maps("izlude", 1)[0][0]
-    assert top == "prt_fild08c", f"izlude lvl1 must pick prt_fild08c, got {top}"
-    # prt_fild08c must be reachable from izlude; a non-adjacent map must NOT
+    assert top == "prt_fild08", f"izlude lvl1 must pick prt_fild08, got {top}"
+    # Once inside prt_fild08, re-lock resolves the academy clone prt_fild08c
+    top2 = reachable_hunting_maps("prt_fild08", 3)[0][0]
+    assert top2 == "prt_fild08c", f"inside prt_fild08 must pick prt_fild08c, got {top2}"
+    # A far map (payon field) is NOT reachable
     reach = {m for m, _ in reachable_hunting_maps("izlude", 1)}
-    assert "prt_fild08c" in reach
-    assert "pay_fild04" not in reach  # payon field is far away, not reachable
+    assert "pay_fild04" not in reach
 
 
 def test_level1_in_academy_registers_at_receptionist() -> None:

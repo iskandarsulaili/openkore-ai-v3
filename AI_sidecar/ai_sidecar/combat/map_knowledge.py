@@ -128,14 +128,14 @@ def _init_map_db():
     _add(MapKnowledge("izlude", safety=MapSafety.SAFE, is_town=True,
                        has_healer=True, has_shop=False, has_save_point=True,
                        # Connected maps from the RAW server portal table
-                       # (tables/portals.txt): izlude_town center reaches
-                       # prt_fild08 (20,98 -> 367,212), the Novice Academy
-                       # iz_ac01 (100,39), izlude_in, and izlude_c (via its own
-                       # portals) reaches prt_fild08c. These are the real
-                       # reachable farm maps a level-1 bot can route to.
+                       # (tables/portals.txt): izlude town reaches prt_fild08
+                       # (20,98 -> 367,212), the Novice Academy iz_ac01, and
+                       # izlude_in. izlude does NOT connect to izlude_c (that
+                       # sub-map is reachable only via the boat/prontera side),
+                       # so the REACHABLE farm from izlude is prt_fild08 — the
+                       # bot re-locks to prt_fild08c once inside prt_fild08.
                        connected_maps=["izlude_in", "izlude_in02", "izlude_boat",
-                                       "prt_fild08", "iz_ac01", "izlu2dun",
-                                       "izlude_c"]))
+                                       "prt_fild08", "iz_ac01", "izlu2dun"]))
     
     _add(MapKnowledge("morroc", safety=MapSafety.CAUTIOUS, is_town=True,
                        has_healer=True, has_shop=True, has_save_point=True,
@@ -402,11 +402,14 @@ def reachable_hunting_maps(from_map: str, char_level: int, max_danger: MapSafety
                 # RO portals are bidirectional — add the reverse edge so a
                 # map without its own entry (e.g. izlude_c) still traverses.
                 _graph.setdefault(_cn, set()).add(_nm)
-        # BFS over the portal graph, bounded depth (2 hops = town->field).
+        # BFS over the portal graph. Depth cap 2: OpenKore's route calc chains
+        # only ~1-2 portal hops — a 3+-hop "reachable" map (e.g. the prt_fild08c
+        # clone) makes it fail 'Cannot calculate a route' and spin. Restrict to
+        # directly-reachable (1-2 hop) maps the client can actually traverse.
         _seen = {_from}
         _frontier = [_from]
-        _reachable: set[str] = set()
-        for _hop in range(3):
+        _reachable: dict[str, int] = {}  # map -> hop distance
+        for _hop in range(2):
             _next: list[str] = []
             for _m in _frontier:
                 for _n in _graph.get(_m, ()):
@@ -414,16 +417,33 @@ def reachable_hunting_maps(from_map: str, char_level: int, max_danger: MapSafety
                         _seen.add(_n)
                         _next.append(_n)
                         if _n in _graph:  # known map
-                            _reachable.add(_n)
+                            # keep the SHORTEST distance to each reachable map
+                            if _n not in _reachable or _hop + 1 < _reachable[_n]:
+                                _reachable[_n] = _hop + 1
             if not _next:
                 break
             _frontier = _next
         if not _reachable:
             return get_hunting_maps(char_level, max_danger)
         _all = get_hunting_maps(char_level, max_danger)
-        _reach_norm = {_norm(n) for n in _reachable}
-        _filtered = [(n, s) for n, s in _all if _norm(n) in _reach_norm]
-        return _filtered or _all
+        # Score: level-fit MINUS hop distance (a 1-hop farm beats a 3-hop clone
+        # so OpenKore's portal-chain route calc can actually reach it).
+        _scored = []
+        for _n, _s in _all:
+            _d = _reachable.get(_norm(_n))
+            if _d is not None:
+                _scored.append((_n, round(_s - (_d - 1) * 0.35, 3)))
+        _scored.sort(key=lambda x: x[1], reverse=True)
+        if _scored:
+            return _scored
+        # No level-appropriate reachable HUNT map. OpenKore's route calc can only
+        # chain ~1-2 portal hops, so return the closest reachable FIELD map (any
+        # level) as a transit/fallback target the bot CAN actually route to —
+        # the academy/level progression logic re-locks once the bot is there.
+        _closest: list[tuple[str, int]] = sorted(_reachable.items(), key=lambda kv: kv[1])
+        _field_opts = [(_n, round(1.0 - (_d - 1) * 0.35, 3))
+                       for _n, _d in _closest if "_fild" in _n or "_dun" in _n or "_sewb" in _n]
+        return _field_opts or _all
     except Exception:
         return get_hunting_maps(char_level, max_danger)
 
