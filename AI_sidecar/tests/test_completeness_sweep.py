@@ -56,7 +56,12 @@ def test_list_npcs_on_map_returns_rows(tmp_path) -> None:
     _seed_npc(db_path, npc_name="B", map_name="prontera", task_type="sell")
     _seed_npc(db_path, npc_name="C", map_name="izlude", task_type="heal")
     rows = db.list_npcs_on_map("prontera")
-    assert {r["npc_name"] for r in rows} == {"A", "B"}
+    names = {r["npc_name"] for r in rows}
+    # Baseline facts are seeded (Weapon Shop/Kafra/Townsfolk/field gate); the
+    # test's own rows must be present (superset, not exact equality).
+    assert "A" in names and "B" in names, f"seeded rows must be listed: {names}"
+    # izlude-only NPC must NOT leak into prontera
+    assert "C" not in names
 
 
 def test_get_npcs_on_map_service_no_longer_stub(tmp_path) -> None:
