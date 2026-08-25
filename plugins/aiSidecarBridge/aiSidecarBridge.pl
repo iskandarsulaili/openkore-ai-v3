@@ -662,9 +662,12 @@ sub on_mainLoop_pre {
             while (<$_fh>) { $_rss = $1/1024 if /^VmRSS:\s+(\d+)/; }
         }
         warning sprintf(
-            "[leakdiag] rss_mb=%.0f fields_live=%d fields_created=%d pf_live=%d pf_created=%d\n",
+            "[leakdiag] rss_mb=%.0f fields_live=%d fields_created=%d pf_live=%d pf_created=%d | Perl: ai_seq=%d monsters=%d players=%d items=%d npcs=%d portals=%d chars=%d friends=%d\n",
             $_rss, 0+($_fs->{live}||0), 0+($_fs->{created}||0),
             0+($_ps->{live}||0), 0+($_ps->{created}||0),
+            0+scalar(@Globals::ai_seq), 0+scalar(keys %Globals::monsters), 0+scalar(keys %Globals::players),
+            0+scalar(@Globals::itemsID), 0+scalar(@Globals::npcsID), 0+scalar(keys %Globals::portals_lut),
+            0+scalar(@Globals::chars), 0+scalar(@Globals::friendsID),
         ), 'aiSidecarBridge', 1;
     }
 
