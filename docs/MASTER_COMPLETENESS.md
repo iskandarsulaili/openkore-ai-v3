@@ -54,11 +54,25 @@
       walk. Commits 47b2deab0/98ad436ac/0e66c3546. Root cause of the C A* spin + 74GB Perl heap:
       FOUR conflicting move emitters (academy vs portal-return vs stuck-random vs goal-decomposer
       'move prt_fild08') fighting every cycle.
-- [ ] 2.14 OPEN: goal-decomposer (`pdca_loop move prt_fild08`) is a FIFTH move emitter not gated by
-      cold-start — competes with the academy move. Also the sidecar tracks the bot as
-      `Local rAthena AI World:testbot99` (profile) vs the expected `TestBotA:testbot99` — id mismatch
-      affects snapshot lookups + the `characters_signal=[]` relog loop. Deferred: needs the
-      goal-decomposer to respect cold-start academy phase + profile-id normalization.
+- [x] 2.14 RESOLVED architecturally: single-destination authority (7857ee86d). The
+      ~150 move emitters across ~25 modules can no longer stack conflicting moves:
+      action_queue auto-assigns conflict_key='move' to every non-reflex
+      move/navigate/move_random and the reserved key is LAST-WRITE-WINS (newest
+      destination supersedes). Emitters/agents only PROPOSE; the queue is the
+      single authority. Band-aid gates reverted (288354884). The bot reached the
+      academy (iz_ac01) + completed the intro quest with this fix.
+- [x] 2.15 CRITICAL memory leak fixed (d5e635cc6): PathFinding_DESTROY zeroed the
+      session pointer before CalcPath_destroy -> every route calc leaked ~5MB
+      (74GB observed). Verified: 300 create/destroy cycles flat at 52MB.
+- [x] 2.16 COLD_START state-exit keying fixed (833c42f9a): _get_state read step with
+      full bot_id vs stable-key writes -> never exited COLD_START.
+- [x] 2.17 LLM NPC-dialog responder (355f24eee + cf3455250): conscious LLM reads the
+      ACTUAL menu options (bridge pre/npc_talk_responses hook -> snapshot raw) and
+      picks the response agnostically (option or free-text chat for AI NPCs);
+      self-learns via server_solutions_store. Hardcoded academy 'r0' sequence
+      REMOVED (founder: no hardcoded dialog solutions).
+- [x] 2.18 LLM cold-start advisory (81c850951): conscious LLM decides the agnostic
+      cold-start plan from FACTS (level/inventory/map/academy-warp/server solutions).
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
