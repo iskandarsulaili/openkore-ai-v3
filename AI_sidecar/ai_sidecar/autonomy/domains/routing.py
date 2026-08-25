@@ -70,6 +70,26 @@ class RoutingDomain(BaseDomain):
         service: Any,
     ) -> None:
         """Stand up and move from town to hunting map."""
+        # ── ACADEMY-FIRST (data-driven, 2026-08-25) ──
+        # A weapon-less bot on a town map must register at its server's Academy
+        # (free starter weapon + potions) BEFORE any field hunt. Route it to the
+        # academy warp tile — resolved from the portal graph (a FACT), never a
+        # hardcoded coordinate. The conscious-tier LLM cold-start advisory makes
+        # this same resolution; this reflex honors it so a weapon-less town bot
+        # is not sent bare-handed to a field.
+        _has_weapon = getattr(service, "_has_coldstart_weapon", lambda s: False)(signals)
+        _academy_door = getattr(service, "_resolve_academy_door", lambda m: "")(map_name)
+        if not _has_weapon and _academy_door:
+            actions.append(HeuristicAction(
+                kind="command", command=f"move {_academy_door}",
+                confidence=0.99, domain="hunting",
+                reason="Weapon-less town bot - walk to Academy door (warp to starter kit) resolved from portal graph",
+            ))
+            logger.info(
+                "[routing] %s: TOWN_HUNT -> academy door %s (weapon-less, level %d)",
+                bot_id, _academy_door, base_level,
+            )
+            return
         target_map = service._adaptive.get_best_map(bot_id, base_level)
         if not target_map:
             if base_level >= 20:
