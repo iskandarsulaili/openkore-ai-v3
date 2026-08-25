@@ -3571,6 +3571,25 @@ sub _execute_action {
 			($success, $result_code, $msg) = $ok ? (1, 'ok', 'ai toggled to manual to force route recalculation') : (0, 'dispatch_error', $@);
 		}
 	} elsif ($rewrite_kind eq 'coordinate_move_raw') {
+		# ── pos_to DESYNC RESYNC (agnostic, data-driven, 2026-08-25) ──
+		# Task::Route short-circuits to "reached the destination" with ZERO walk
+		# packets when $char->{pos_to} already equals the dest (Route.pm:286). If
+		# a prior partial walk set pos_to = target but the server never moved us
+		# (e.g. the old dist<5 route-loop suppression armed pos_to without a send),
+		# every subsequent move to that target "arrives" instantly without walking
+		# -> the bot never steps onto the warp tile. When the char's real pos
+		# differs from pos_to, reset pos_to = pos so the route recomputes from the
+		# ACTUAL position and actually sends the walk. Uses the char's own
+		# position FACT, no hardcoded coordinate.
+		if ($char && $char->{pos} && $char->{pos_to}
+			&& ref $char->{pos} eq 'HASH' && ref $char->{pos_to} eq 'HASH'
+			&& (($char->{pos}{x} || 0) != ($char->{pos_to}{x} || 0)
+				|| ($char->{pos}{y} || 0) != ($char->{pos_to}{y} || 0))) {
+			my $_old = "(" . ($char->{pos_to}{x} || 0) . "," . ($char->{pos_to}{y} || 0) . ")";
+			%{$char->{pos_to}} = %{$char->{pos}};
+			$char->{solution} = [];
+			debug "[move_resync] pos_to desync ($_old -> ($char->{pos}{x},$char->{pos}{y})) reset before coordinate move\n", 'aiSidecarBridge', 1;
+		}
 		my $ok = eval { Commands::run($effective_command); 1; };
 		($success, $result_code, $msg) = $ok ? (1, 'ok', 'coordinate move executed') : (0, 'dispatch_error', $@);
 	} elsif ($rewrite_kind eq 'chat_sent') {
