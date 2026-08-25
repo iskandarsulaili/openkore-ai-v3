@@ -2922,7 +2922,7 @@ class HeuristicService:
                         # leaving the bot stuck in town calculating routes and never
                         # farming (verified live). Only fall back to the legacy prt_fild05
                         # step-1 target when the academy block did NOT pick a hunt field.
-                        _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(_bot_id, "") or "").lower()
+                        _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(bot_id, "") or "").lower()
                         # ── SERVER-AGNOSTIC REACHABLE-FARM RESOLUTION (sidecar decision) ──
                         # A farm target that is UNROUTABLE from the bot's current map makes
                         # the bot loop forever ("Calculating route..."), never farming. Resolve
@@ -2933,7 +2933,7 @@ class HeuristicService:
                         _cs_cur = str(signals.get("map", "") or "").lower().replace(".gat", "")
                         if _cs_cur == "izlude_c" and _cs_authority_hunt == "prt_fild08":
                             _cs_authority_hunt = "prt_fild08c"
-                            self._cold_start_hunt_map[_bot_id] = "prt_fild08c"
+                            self._cold_start_hunt_map[bot_id] = "prt_fild08c"
                         if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
                             actions.append(HeuristicAction(
                                 kind="command", command=f"set lockMap {_cs_authority_hunt}",
