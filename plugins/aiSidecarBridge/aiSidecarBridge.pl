@@ -5861,7 +5861,7 @@ sub _rewrite_runtime_command {
 			# suppress the move to prevent infinite route recalculation.
 			# Also suppress if bot is already on a hunting map and target is a portal
 			# (the bot is already on the hunting map, no need to go to portal)
-			my ($tx, $ty) = split(/\\s+/, $target);
+			my ($tx, $ty) = split(/\s+/, $target);
 						# WALKABILITY SNAP: OpenKore cannot route to an unwalkable tile (a
 						# wall), but rAthena warps are 2x2 AREA triggers — the anchor tile the
 						# sidecar resolved from portals.txt (e.g. the Academy door at izlude
