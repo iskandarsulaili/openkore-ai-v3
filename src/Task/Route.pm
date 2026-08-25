@@ -40,6 +40,11 @@ use Utils::Exceptions;
 use Utils::Set;
 use Utils::PathFinding;
 
+# ── CACHED PathFinding singletons (2026-08-25, arena-churn leak fix) ──
+# One PathFinding per (width x height) dimension set. Reusing the C buffers
+# avoids the malloc-arena fragmentation from a fresh object per route calc.
+our %pathfinding_cache = ();
+
 # Stage constants.
 use constant {
 	NOT_INITIALIZED => 1,
@@ -983,7 +988,14 @@ sub getRoute {
 
 	Plugins::callHook('getRoute' => \%path_args);
 
-	my $pathfinding = new PathFinding();
+	# ── CACHED PathFinding (2026-08-25, arena-churn leak root cause) ──
+	# A fresh `new PathFinding()` per route calc malloc'd ~5.6MB (currentMap +
+	# openList) and free'd it at DESTROY — 50k+ route calcs fragmented the C
+	# malloc arena to GBs even though live objects stayed 0. Reuse ONE cached
+	# PathFinding; only re-init (which frees+reallocs) when the map dims change.
+	my $pf_key = ($path_args{width} // 0) . 'x' . ($path_args{height} // 0);
+	$pathfinding_cache{$pf_key} //= new PathFinding();
+	my $pathfinding = $pathfinding_cache{$pf_key};
 	my %reset_args = (
 		field => $path_args{field},
 		start => $path_args{start},
