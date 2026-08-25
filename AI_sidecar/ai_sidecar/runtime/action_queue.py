@@ -47,6 +47,30 @@ class ActionQueue:
     def enqueue(self, bot_id: str, proposal: ActionProposal) -> tuple[bool, ActionStatus, str, str]:
         now = datetime.now(UTC)
         with self._lock:
+            # ── SINGLE-DESTINATION AUTHORITY (root-cause fix, 3-tier design) ──
+            # The sidecar has ~150 move emitters across ~25 modules (heuristic,
+            # goal-decomposer, domains, planner, reflex...). Without a shared
+            # conflict key, each could stack a DIFFERENT move for the same bot in
+            # the same cycle — the newest dequeues the old route, the bot never
+            # walks anywhere, C A* re-spins, and the Perl heap grows (observed
+            # 74GB / 2GB-per-20s). The permanent fix is HERE, at the queue
+            # chokepoint: any `move`/`move_random`/`navigate` command shares
+            # conflict_key="move" so the queue keeps ONE destination per bot
+            # (newest supersedes old — enqueue is the single authority; emitters
+            # only propose). Reflex-tier moves (emergency retreat) keep their own
+            # key so they still override. This replaces all per-emitter gates.
+            _cmd_norm = (proposal.command or "").strip().lower()
+            if (
+                not proposal.conflict_key
+                and proposal.priority_tier != ActionPriorityTier.reflex
+                and (
+                    _cmd_norm.startswith("move ")
+                    or _cmd_norm == "move"
+                    or _cmd_norm == "move_random"
+                    or _cmd_norm.startswith("navigate ")
+                )
+            ):
+                proposal.conflict_key = "move"
             # ── Enqueue-side disconnected gate ──
             # Reject non-reflex actions for bots that are KNOWN to be logged
             # out (a snapshot exists with map_known=False from char-select /
@@ -110,6 +134,15 @@ class ActionQueue:
                     if queued.status != ActionStatus.queued:
                         continue
                     if queued.proposal.conflict_key != proposal.conflict_key:
+                        continue
+
+                    # SINGLE-DESTINATION AUTHORITY: the reserved "move" conflict key
+                    # is LAST-WRITE-WINS — the newest destination always supersedes
+                    # any older queued move (agents/emitters only propose; the queue
+                    # is the authority). Non-move conflict keys keep their original
+                    # priority ordering.
+                    if proposal.conflict_key == "move":
+                        superseded_ids.append(queued.proposal.action_id)
                         continue
 
                     existing_order = self._ordering_key(queued.proposal, enqueue_seq=queued.enqueue_seq)

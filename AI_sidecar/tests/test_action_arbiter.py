@@ -388,3 +388,34 @@ def test_action_arbiter_respawn_command_injects_session_precondition() -> None:
     snapshot = queue.snapshot().get("bot:respawn:normalize") or []
     assert snapshot
     assert "session.in_game" in snapshot[0].proposal.preconditions
+
+
+def test_single_destination_authority_move_dedupes() -> None:
+    """ROOT-CAUSE regression: two move commands for the same bot in one cycle
+    must collapse to ONE queued move (conflict_key='move' auto-assigned) so
+    ~150 emitters cannot stack conflicting destinations (C A* spin + heap leak).
+    The newest supersedes the old; only one remains queued."""
+    queue = ActionQueue(max_per_bot=8)
+    p1 = _make_proposal("m1", command="move 125 257", created_at=datetime.now(UTC))
+    p2 = _make_proposal("m2", command="move prt_fild08",
+                        created_at=datetime.now(UTC) + timedelta(milliseconds=10))
+    ok1, _, _, _ = queue.enqueue("bot:one", p1)
+    ok2, _, _, reason2 = queue.enqueue("bot:one", p2)
+    # Last-write-wins: the newest move supersedes the older one and is queued.
+    assert ok1 and ok2
+    assert reason2 != "conflict_key_blocked"
+    snap = queue.snapshot().get("bot:one") or []
+    queued = [q for q in snap if q.status == ActionStatus.queued]
+    assert len(queued) == 1, f"expected exactly ONE queued move, got {len(queued)}"
+    assert queued[0].proposal.command == "move prt_fild08"  # newest wins
+    assert queued[0].proposal.conflict_key == "move"
+
+
+def test_single_destination_non_move_untouched() -> None:
+    """A non-move command must NOT get the move conflict key (no over-dedupe)."""
+    queue = ActionQueue(max_per_bot=8)
+    p = _make_proposal("sit1", command="sit")
+    ok, _, _, _ = queue.enqueue("bot:sit", p)
+    assert ok
+    snap = queue.snapshot().get("bot:sit") or []
+    assert snap and snap[0].proposal.conflict_key is None
