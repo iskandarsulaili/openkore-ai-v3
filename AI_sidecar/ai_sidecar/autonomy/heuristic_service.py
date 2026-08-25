@@ -4399,6 +4399,22 @@ class HeuristicService:
 
         # ── STATE: TOWN_HUNT (in town, ready to hunt — walk to hunting map every cycle) ──
         if state == "TOWN_HUNT":
+            # ── ACADEMY-FIRST DEFER (2026-08-25, founder rule) ──
+            # A weapon-less town bot must register at its Academy for the free
+            # starter kit BEFORE any field hunt. Skip the farm lockMap/move here
+            # so the data-driven academy-door routing (routing domain) is the
+            # single authority — otherwise this block emits `move int_land`
+            # (a stale adaptive get_best_map result) that races the academy
+            # door walk and leaves the bot stuck in town.
+            _th_has_weapon = self._has_coldstart_weapon(signals)
+            _th_academy_door = self._resolve_academy_door(map_name)
+            if not _th_has_weapon and _th_academy_door:
+                actions.append(HeuristicAction(
+                    kind="command", command="stand",
+                    confidence=0.99, domain="hunting",
+                    reason="Weapon-less town bot - stand; academy door walk handled by routing (starter kit)",
+                ))
+                return
             # Stand up and enable AI
             actions.append(HeuristicAction(
                 kind="command", command="stand",
