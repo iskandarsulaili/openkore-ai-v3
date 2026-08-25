@@ -5272,14 +5272,11 @@ class HeuristicService:
                 if _town_time > 30:
                     _portal = self._get_npc("portal_to_hunt", map_name)
                     if _portal:
-                        _portal_cmd = f"move {_portal['x']} {_portal['y']}"
-                    else:
-                        _portal_cmd = "move 22 203"  # fallback
-                    actions.append(HeuristicAction(
-                        kind="command", command=_portal_cmd,
-                        confidence=0.95, domain="hunting",
-                        reason=f"Been in town {_town_time:.0f}s with zeny - return to hunt",
-                    ))
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_portal['x']} {_portal['y']}",
+                            confidence=0.95, domain="hunting",
+                            reason=f"Been in town {_town_time:.0f}s with zeny - return to hunt (knowledge-DB fact)",
+                        ))
             # No move here - let next cycle handle it after shop dialog completes
             total_confidence = 0.95
             top_domain = "hunting"
