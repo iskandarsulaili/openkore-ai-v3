@@ -1059,7 +1059,7 @@ class RuntimeState:
                 extra={"event": "keep_alive_restart_bots_failed", "error": str(exc)},
             )
 
-    def _restart_stale_bots(self, stale_bot_ids: list[str], ka_logger) -> None:
+    async def _restart_stale_bots(self, stale_bot_ids: list[str], ka_logger) -> None:
         """Targeted restart: relaunch ONLY the stale bot profiles.
 
         The old path called `start.sh stop` + `start.sh all` — which KILLS AND
@@ -1149,18 +1149,31 @@ class RuntimeState:
                 extra={"event": "keep_alive_restarting_bot", "bot_id": bot_id, "profile": profile},
             )
             try:
-                proc = _sp.Popen(
-                    ["bash", str(start_sh), "bot", profile],
-                    stdout=_sp.PIPE,
-                    stderr=_sp.PIPE,
-                )
-                try:
-                    _out, _err = proc.communicate(timeout=45.0)
-                except Exception:
-                    proc.kill()
+                # Audit #8 (2026-08-25): the blocking Popen.communicate(45s) ran
+                # ON the event-loop thread (this was a sync fn awaited from the
+                # keep-alive loop) — a stale-bot restart stalled ALL snapshot
+                # ingest + polls for up to 45s, making remaining bots look
+                # staler and triggering a restart cascade. Run it in a worker
+                # thread so the loop keeps breathing.
+                import asyncio as _asio
+
+                async def _run_restart():
+                    proc = _sp.Popen(
+                        ["bash", str(start_sh), "bot", profile],
+                        stdout=_sp.PIPE,
+                        stderr=_sp.PIPE,
+                    )
+                    try:
+                        _o, _e = await _asio.to_thread(proc.communicate, 45.0)
+                        return _o, _e, proc.returncode
+                    except Exception:
+                        proc.kill()
+                        return None, None, -1
+
+                _out, _err, _rc = await _run_restart()
                 ka_logger.info(
                     "keep_alive_restarted_bot",
-                    extra={"event": "keep_alive_restarted_bot", "bot_id": bot_id, "profile": profile, "rc": proc.returncode},
+                    extra={"event": "keep_alive_restarted_bot", "bot_id": bot_id, "profile": profile, "rc": _rc},
                 )
             except Exception as exc:
                 ka_logger.warning(
