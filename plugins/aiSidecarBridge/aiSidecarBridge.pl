@@ -5357,6 +5357,47 @@ sub _rewrite_runtime_command {
 			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
 			return ($command, 'coordinate_move_raw');
 		}
+		# ── ACADEMY-DOOR WALK LOCK (map-agnostic, data-driven) ──
+		# A fresh level-1 weapon-less novice walking to the academy door (the warp
+		# into iz_ac01 from ANY town) must not have its route cancelled by the
+		# goal-decomposer's zone moves (`move prt_fild08`) or any other emitter.
+		# Resolve the academy warp for the CURRENT map from the portal table —
+		# exactly what the sidecar's _cold_start_academy_door does — and apply the
+		# same portal_walk_lock when the target IS that warp, so conflicting moves
+		# are suppressed for the walk window.
+		{
+			my $_tables_root = '';
+			# Resolve repo root by walking up from this file's dir (plugins/aiSidecarBridge/)
+			my $_here = __FILE__;
+			for (my $i = 0; $i < 6; $i++) {
+				$_here =~ s#/[^/]+$##;
+				last if -f "$_here/tables/portals.txt";
+			}
+			$_tables_root = "$_here/tables" if -f "$_here/tables/portals.txt";
+			if ($_tables_root ne '' && $_cur_map ne '') {
+				my $_academy_door_coords;
+				open my $_pfh, '<', "$_tables_root/portals.txt" or undef;
+				if ($_pfh) {
+					while (my $_pline = <$_pfh>) {
+						$_pline =~ s/^\s+|\s+$//g;
+						next if $_pline eq '' || $_pline =~ /^#/;
+						my @_f = split /\s+/, $_pline;
+						next if @_f < 5;
+						# portal: from_map x y to_map tx ty
+						if (lc($_f[0]) eq $_cur_map && lc($_f[3]) eq 'iz_ac01') {
+							$_academy_door_coords = "$_f[1] $_f[2]";
+							last;
+						}
+					}
+					close $_pfh;
+				}
+				if (defined $_academy_door_coords && $_target eq $_academy_door_coords) {
+					debug "[move_rewrite] academy-door warp $_academy_door_coords ($_cur_map -> iz_ac01) - locking portal walk\n", 'aiSidecarBridge', 1;
+					$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
+					return ($command, 'coordinate_move_raw');
+				}
+			}
+		}
 
 		# If already on target map, ignore the move (already there)
 		if ($_cur_map eq $_target && $_target =~ /^[a-z]+_fild/) {
