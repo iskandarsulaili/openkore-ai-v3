@@ -2118,6 +2118,25 @@ sub _send_snapshot {
         _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
         _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
     }
+    # ── LEAK DIAGNOSTIC (throttled): Field/PathFinding live-object counts ──
+    # Correlate RSS growth with object leaks. ~5MB/Field, ~5.6MB/PathFinding
+    # session. If live grows while RSS grows, objects leak.
+    state $_last_leaklog_ms = 0;
+    my $_nowms = _now_ms();
+    if ($_nowms - $_last_leaklog_ms > 10000) {
+        $_last_leaklog_ms = $_nowms;
+        my $_fs = (Field->can('stats') ? Field->stats() : {});
+        my $_ps = (PathFinding->can('stats') ? PathFinding->stats() : {});
+        my $_rss = 0;
+        if (open my $_fh, '<', "/proc/self/status") {
+            while (<$_fh>) { $_rss = $1/1024 if /^VmRSS:\s+(\d+)/; }
+        }
+        debug sprintf(
+            "[leakdiag] rss_mb=%.0f fields_live=%d fields_created=%d pf_live=%d pf_created=%d\n",
+            $_rss, 0+($_fs->{live}||0), 0+($_fs->{created}||0),
+            0+($_ps->{live}||0), 0+($_ps->{created}||0),
+        ), 'aiSidecarBridge', 1;
+    }
 
     # ── Send 17 specialized state builder snapshots (disabled — sidecar uses ingest/snapshot) ──
     if (0 && $_state_builders && _cfg_bool('aiSidecar_stateBuildersEnabled', 1)) {
@@ -2204,6 +2223,16 @@ sub _build_snapshot_payload {
 				created   => 0 + ($pfs->{created} || 0),
 				destroyed => 0 + ($pfs->{destroyed} || 0),
 				live      => 0 + ($pfs->{live} || 0),
+			} : undef;
+		},
+		# Field objects hold the full map data (~5MB each). If live grows while
+		# RSS grows, Fields are leaking (route calc loads a Field per map attempt).
+		fields => eval {
+			my $fs = Field->can('stats') ? Field->stats() : undef;
+			$fs ? {
+				created   => 0 + ($fs->{created} || 0),
+				destroyed => 0 + ($fs->{destroyed} || 0),
+				live      => 0 + ($fs->{live} || 0),
 			} : undef;
 		},
 	};

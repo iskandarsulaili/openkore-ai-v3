@@ -163,7 +163,9 @@ sub new {
 	my $class = shift;
 	my %args = @_;
 	my $self = bless {}, $class;
-
+	$Field::created++;
+	$Field::live++;
+	$self->{__live_key} = $Field::created;   # unique id for leak counting
 	if ($args{file}) {
 		$self->loadFile($args{file}, $args{loadWeightMap});
 	} elsif ($args{name}) {
@@ -917,6 +919,25 @@ sub image {
 	$image->SaveFile($file, $wxImageType{$format});
 
 	return $file;
+}
+
+# ── LEAK DIAGNOSTIC: Field create/destroy counters ──
+# Field objects hold the FULL map data (~5MB each: fld2 + weight + dist). If
+# they leak (never destroyed), RSS grows ~5MB per lost object. Expose live
+# count so the bridge/sidecar can correlate RSS growth with Field leaks.
+sub DESTROY {
+	my ($self) = @_;
+	$Field::live-- if $self->{__live_key};
+	$Field::destroyed++;
+}
+
+sub stats {
+	my ($class) = @_;
+	return {
+		created   => 0 + ($Field::created || 0),
+		destroyed => 0 + ($Field::destroyed || 0),
+		live      => 0 + ($Field::live || 0),
+	};
 }
 
 1;
