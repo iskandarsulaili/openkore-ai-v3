@@ -5861,8 +5861,31 @@ sub _rewrite_runtime_command {
 			# suppress the move to prevent infinite route recalculation.
 			# Also suppress if bot is already on a hunting map and target is a portal
 			# (the bot is already on the hunting map, no need to go to portal)
-			my ($tx, $ty) = split(/\s+/, $target);
-			my $cx = 0; my $cy = 0;
+			my ($tx, $ty) = split(/\\s+/, $target);
+						# WALKABILITY SNAP: OpenKore cannot route to an unwalkable tile (a
+						# wall), but rAthena warps are 2x2 AREA triggers — the anchor tile the
+						# sidecar resolved from portals.txt (e.g. the Academy door at izlude
+						# 125,257) may itself be a wall in the client GAT, with the walkable
+						# trigger tile on an ADJACENT cell (126,257). Snap the target to the
+						# nearest walkable 4-neighbor so the bot actually walks INTO the warp
+						# trigger zone. Uses the client Field walkability FACT — no hardcoded
+						# coordinate (founder rule).
+						if ($field && !$field->isWalkable($tx, $ty)) {
+							my ($snap_x, $snap_y, $snap_d);
+							for my $_d ([0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]) {
+								my ($nx, $ny) = ($tx + $_d->[0], $ty + $_d->[1]);
+								next if $nx < 0 || $ny < 0 || $nx >= $field->{width} || $ny >= $field->{height};
+								next unless $field->isWalkable($nx, $ny);
+								my $d = abs($nx - $tx) + abs($ny - $ty);
+								if (!defined $snap_d || $d < $snap_d) { ($snap_x, $snap_y, $snap_d) = ($nx, $ny, $d); }
+							}
+							if (defined $snap_x) {
+								debug "[walkability] target ($tx,$ty) unwalkable -> snap to ($snap_x,$snap_y)\n", 'aiSidecarBridge', 1;
+								($tx, $ty) = ($snap_x, $snap_y);
+								$target = "$tx $ty";
+							}
+						}
+						my $cx = 0; my $cy = 0;
 			# Use the bot's ACTUAL CURRENT position ($char->{pos}), not its pending
 			# destination ($char->{pos_to}). If pos_to is the first-choice the dist
 			# check below compares the new move target against the bot's CURRENT
@@ -5923,7 +5946,8 @@ sub _rewrite_runtime_command {
 			# -> the bot never actually walks onto the warp tile (2.27 defect).
 			$_last_reflex_fire_ms{'portal_walk_lock'} = _now_ms() + 5000;
 			debug "[route_loop] arming portal_walk_lock (5s) for coordinate move to ($tx,$ty)\n", 'aiSidecarBridge', 1;
-			return ($trimmed, 'coordinate_move_raw');
+			# Return the (possibly snapped) target so the walk actually executes.
+			return ("move $target", 'coordinate_move_raw');
 		}
 		# If already on target map, "move <map>" is a no-op random walk
 		# BUT: if bot is in Prontera and target is Prontera, rewrite to portal coords
