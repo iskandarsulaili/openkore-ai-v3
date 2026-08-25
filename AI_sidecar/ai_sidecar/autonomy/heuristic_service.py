@@ -2672,6 +2672,14 @@ class HeuristicService:
         _now = __import__("time").time()
         _x = signals.get("x", 0) or 0
         _y = signals.get("y", 0) or 0
+        # ── UNKNOWN-POSITION GUARD (2026-08-25, leak/spin root cause) ──
+        # When the snapshot has no position (x=0,y=0 = no signal yet), the
+        # stuck-detector would fire 'move 0 0' (an invalid destination) every
+        # cycle -> OpenKore A* fails -> route-fail spin -> the ~45MB/s leak.
+        # Never treat an unknown position as "stuck". Also skip if the bot is
+        # not in-game (no map).
+        if (_x == 0 and _y == 0) or not signals.get("map_known", False):
+            return stuck_actions
         _last_pos = self._last_position.get(bot_id)
         if _last_pos is not None:
             _lx, _ly, _ltime = _last_pos
