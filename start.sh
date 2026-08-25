@@ -403,8 +403,11 @@ case "${1:-all}" in
             err "Available bots: ${BOT_NAMES[*]}"
             exit 1
         fi
-        # Kill any existing bot with this name
-        pkill -f "openkore.pl.*$2" 2>/dev/null || true
+        # Kill any existing bot with this name — ANCHORED on the control folder
+        # (audit #4): a bare "openkore.pl.*kicapmasin" pattern matches
+        # kicapmasin2/kicapmasin3 too (substring), killing healthy bots on a
+        # targeted restart. The profile dir uniquely identifies the bot.
+        pkill -f "openkore\.pl.*\.bot_profiles/$2/control" 2>/dev/null || true
         sleep 1
         start_bot "$2"
         show_status

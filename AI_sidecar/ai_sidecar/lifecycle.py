@@ -1472,6 +1472,15 @@ class RuntimeState:
         # normalizer_bus.ingest_snapshot() converts the snapshot into a
         # snapshot.compact event -> world_state.observe_event() ->
         # _apply_snapshot() sets operational.map/x/y + navigation.map/x/y.
+        # Wired in the 2026-08-18 snapshot-forward fix. Audit #5 (2026-08-25) noted a
+        # possible double-ingest with the background ingest_batch. REVERTED: the
+        # SYNC forward must stay — world_state.observe_event() -> _apply_snapshot
+        # sets operational.map/x/y SYNCHRONOUSLY, which the navigation pipeline
+        # reads on the NEXT cycle (tests + live nav assert immediate population;
+        # removing it re-blinds the pipeline to bot position). The background
+        # ingest_batch additionally carries the rich deltas + reflex eval; two
+        # idempotent position applies (same state) are acceptable, the navigation
+        # guarantee is not negotiable.
         try:
             if self.normalizer_bus is not None:
                 self.normalizer_bus.ingest_snapshot(snapshot)
