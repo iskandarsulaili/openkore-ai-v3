@@ -311,7 +311,14 @@ class ColdStartManager:
         # the bridge has no $char so base_level is 0.
         _map_known = bool(signals.get("map_known", False))
         _bl = int(signals.get("base_level", 0) or 0)
-        if _map_known or _bl > 0:
+        # ROBUST IN-GAME GATE: also skip when the snapshot carries a real in-game
+        # map (the bridge sets `map` to the current map name, and `in_game` to a
+        # truthy flag) or a non-empty char_name. A live bot (izlude, level 1)
+        # must NEVER have char-creation fired against it just because the
+        # `characters` list is empty (it's only populated at char-select).
+        _map_name = str(signals.get("map", "") or "").strip()
+        _in_game_flag = bool(signals.get("in_game", False))
+        if _map_known or _bl > 0 or _in_game_flag or _map_name:
             return
         # Check if we already have a character
         characters = self._get_characters(signals)
