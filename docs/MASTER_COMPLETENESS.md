@@ -35,7 +35,7 @@
       `start.sh stop`+`all` (which killed healthy bots). +3 regression tests. VERIFIED: bots survive past
       old 60s churn point.
 - [x] 2.10 NEW: `_record_domain_success/_record_domain_failure` NameError FIXED (13 bare call sites → self.).
-      Was firing every PDCA cycle (cost_gate_check_failed). +0 tests (covered by pdca suite).
+      Was firing every PDCA cycle (cost_gate_check_failed). +0 tests (covered by pdca suite). commit 9da748f6e.
 - [x] 2.11 NEW: rate-limit `set lockMap` + authority-hunt `move` re-emission. Re-sending the SAME lockMap/
       hunt-move every autonomy cycle resets the client route task → re-triggers C A* → main-loop starvation
       (keepalive/snapshot starved → keep-alive churn → Perl heap grows to tens of GB). Gate both with per-bot
@@ -44,6 +44,21 @@
       walkable) and position decodes CORRECT (map_changed 0091 = izlude 127 253). Snapshot wiring confirmed
       working via manual POST (state → izlude). Robots weren't sending snapshots because their main loop was
       saturated re-routing (churn), NOT an unwiring.
+- [x] 2.13 NEW: MAP-AGNOSTIC academy-door resolution. Wired the dormant `_cold_start_academy_door`
+      (data-driven: reads tables/portals.txt for the warp from the CURRENT map → iz_ac01) into the
+      step-1 academy block, replacing the hardcoded `if _cs_map=="izlude"` + `move 125 257` literal.
+      Fixes: (a) the helper referenced UNDEFINED symbols `_tables_root_cache()`/`AI_sidecar_base_dir`
+      → NameError → always-None (silently broken); (b) hardcoded izlude. Verified: 'izlude'→'125 257',
+      'prontera'→None. Also clamp stuck-detector random target to map bounds (was 'move -15 3'),
+      gate portal-return + stuck-detector during cold-start steps<4, disable randomWalk during academy
+      walk. Commits 47b2deab0/98ad436ac/0e66c3546. Root cause of the C A* spin + 74GB Perl heap:
+      FOUR conflicting move emitters (academy vs portal-return vs stuck-random vs goal-decomposer
+      'move prt_fild08') fighting every cycle.
+- [ ] 2.14 OPEN: goal-decomposer (`pdca_loop move prt_fild08`) is a FIFTH move emitter not gated by
+      cold-start — competes with the academy move. Also the sidecar tracks the bot as
+      `Local rAthena AI World:testbot99` (profile) vs the expected `TestBotA:testbot99` — id mismatch
+      affects snapshot lookups + the `characters_signal=[]` relog loop. Deferred: needs the
+      goal-decomposer to respect cold-start academy phase + profile-id normalization.
 
 ## PHASE 3 — 0x0501 / PACKET COMPLETENESS
 - [ ] 3.1 Implement the pending 0x0501 var-length recvpackets.txt patch (defensive; RAW already registers server-side).
