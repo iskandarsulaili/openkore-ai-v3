@@ -7,6 +7,18 @@
 #include "algorithm.h"
 typedef CalcPath_session * PathFinding;
 
+/* ── LIVE-OBJECT COUNTERS (leak diagnostics, 2026-08-25) ──
+   The live bot showed a steady ~47MB/s RAM growth even while idle with no
+   route calcs. To PROVE whether PathFinding objects are being created but
+   never destroyed (leak) vs the leak being elsewhere, count creates vs
+   destroys and expose them via a tiny accessor the Perl side can print. */
+static unsigned long long _pf_created = 0;
+static unsigned long long _pf_destroyed = 0;
+
+unsigned long long PathFinding_get_created(void) { return _pf_created; }
+unsigned long long PathFinding_get_destroyed(void) { return _pf_destroyed; }
+long long PathFinding_get_live(void) { return (long long)(_pf_created - _pf_destroyed); }
+
 MODULE = PathFinding		PACKAGE = PathFinding		PREFIX = PathFinding_
 PROTOTYPES: ENABLE
 
@@ -14,6 +26,7 @@ PathFinding
 PathFinding_create()
 	CODE:
 		RETVAL = CalcPath_new ();
+		_pf_created++;
 
 	OUTPUT:
 		RETVAL
@@ -493,6 +506,21 @@ PathFinding_DESTROY(session)
 	PathFinding session
 	CODE:
 		CalcPath_destroy (session);
+		_pf_destroyed++;
+
+SV *
+PathFinding_stats(...)
+	PREINIT:
+		HV *h;
+	CODE:
+		/* Accept an optional leading class name (PathFinding->stats()). */
+		h = newHV();
+		hv_store(h, "created", 7, newSVuv((UV)_pf_created), 0);
+		hv_store(h, "destroyed", 9, newSVuv((UV)_pf_destroyed), 0);
+		hv_store(h, "live", 4, newSVnv((NV)((long long)_pf_created - (long long)_pf_destroyed)), 0);
+		RETVAL = newRV_noinc((SV*)h);
+	OUTPUT:
+		RETVAL
 
 int
 PathFinding_checkTile(ix, iy, itile, iwidth, iheight, rawMap)

@@ -2193,6 +2193,19 @@ sub _build_snapshot_payload {
 		npc_y    => 0 + ($_npc_dialog_state{npc_y} || 0),
 		last_npc_text => _trim($_npc_dialog_state{last_text} || '', $max_raw),
 		menu_options => [ map { _trim($_, 200) } @{$_npc_dialog_state{menu_options} || []} ],
+		# ── PATHFINDING LIVE-OBJECT COUNTERS (leak diagnostics 2026-08-25) ──
+		# The live bot showed steady RAM growth; expose the XS create/destroy
+		# counters so the sidecar can tell an OBJECT leak (live grows) from a
+		# core-loop leak (live flat, RSS grows). Guarded — PathFinding->stats()
+		# is only present in the instrumented .so.
+		pathfinding => eval {
+			my $pfs = PathFinding->can('stats') ? PathFinding->stats() : undef;
+			$pfs ? {
+				created   => 0 + ($pfs->{created} || 0),
+				destroyed => 0 + ($pfs->{destroyed} || 0),
+				live      => 0 + ($pfs->{live} || 0),
+			} : undef;
+		},
 	};
 
 	# --- Progression digest (job, level, exp) ---
