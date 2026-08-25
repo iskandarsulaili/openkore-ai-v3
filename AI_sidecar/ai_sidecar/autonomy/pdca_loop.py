@@ -5955,15 +5955,15 @@ class PDCALoop:
                                 _actions_queued_ge = _emit_game_engine_actions(
                                     self._runtime, horizon.value, bot_id=_bid, map_name=_map_name
                                 )
-                                _record_domain_success(self, _bid, "game_engine")
+                                self._record_domain_success( _bid, "game_engine")
                             except Exception as _ex_ge:
                                 logger.warning("pdca_domain_error bot=%s domain=game_engine err=%s", _bid, _ex_ge)
-                                _record_domain_failure(self, _bid, "game_engine", _ex_ge)
+                                self._record_domain_failure( _bid, "game_engine", _ex_ge)
                         _actions_queued_hs = 0
                         try:
                             if _hs is not None:
                                 _actions_queued_hs = _emit_heuristic_actions(self._runtime, horizon.value, bot_id=_bid)
-                                _record_domain_success(self, _bid, "heuristic")
+                                self._record_domain_success( _bid, "heuristic")
                         except Exception:
                             pass
                         # ── UNIFIED CONSCIOUSNESS: primary decision-maker (runs every cycle) ──
@@ -6050,10 +6050,10 @@ class PDCALoop:
                             _actions_queued_swarm = _emit_swarm_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
-                            _record_domain_success(self, _bid, "swarm")
+                            self._record_domain_success( _bid, "swarm")
                         except Exception as _em_swarm:
                             logger.warning("pdca_domain_error bot=%s domain=swarm err=%s", _bid, _em_swarm)
-                            _record_domain_failure(self, _bid, "swarm", _em_swarm)
+                            self._record_domain_failure( _bid, "swarm", _em_swarm)
                         # COMMITTED ACTION GUARD: check if bot already has a committed move action
                         _cat = getattr(self._runtime, "committed_action_tracker", None)
                         _actions_queued_vendor = 0
@@ -6064,28 +6064,28 @@ class PDCALoop:
                                 _actions_queued_vendor = _emit_vendor_actions(
                                     self._runtime, horizon.value, bot_id=_bid
                                 )
-                                _record_domain_success(self, _bid, "vendor")
+                                self._record_domain_success( _bid, "vendor")
                             except Exception as _ex_vendor:
                                 logger.warning("pdca_domain_error bot=%s domain=vendor err=%s", _bid, _ex_vendor)
-                                _record_domain_failure(self, _bid, "vendor", _ex_vendor)
+                                self._record_domain_failure( _bid, "vendor", _ex_vendor)
                         _actions_queued_skill = 0
                         try:
                             _actions_queued_skill = _emit_skill_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
-                            _record_domain_success(self, _bid, "skill")
+                            self._record_domain_success( _bid, "skill")
                         except Exception as _ex_skill:
                             logger.warning("pdca_domain_error bot=%s domain=skill err=%s", _bid, _ex_skill)
-                            _record_domain_failure(self, _bid, "skill", _ex_skill)
+                            self._record_domain_failure( _bid, "skill", _ex_skill)
                         _actions_queued_combat = 0
                         try:
                             _actions_queued_combat = _emit_combat_actions(
                                 self._runtime, horizon.value, bot_id=_bid
                             )
-                            _record_domain_success(self, _bid, "combat")
+                            self._record_domain_success( _bid, "combat")
                         except Exception as _ex_combat:
                             logger.warning("pdca_domain_error bot=%s domain=combat err=%s", _bid, _ex_combat)
-                            _record_domain_failure(self, _bid, "combat", _ex_combat)
+                            self._record_domain_failure( _bid, "combat", _ex_combat)
                         # ── STUCK-STATE DETECTOR (P2.1): alive but no progress -> recovery ──
                         # Keep-alive only restarts dead processes; this detects a bot that is
                         # registered + in-game but makes no kills/exp/level progress over a
@@ -8983,7 +8983,7 @@ class PDCALoop:
 
         _loop.create_task(_reap(_task))
 
-    def _record_domain_success(self, bot_id: str, domain: str) -> None:
+    def _record_domain_success( bot_id: str, domain: str) -> None:
         """Clear per-domain failure state when an emitter succeeds (self-healing telemetry).
 
         Mirrors _record_domain_failure: on a clean emitter run we record success so the
@@ -9004,7 +9004,7 @@ class PDCALoop:
         except Exception:
             pass
 
-    def _record_domain_failure(self, bot_id: str, domain: str, exc: Exception) -> None:
+    def _record_domain_failure( bot_id: str, domain: str, exc: Exception) -> None:
         """Record a per-domain emitter failure against that bot's breaker.
 
         Fault isolation: a domain that throws repeatedly for ONE bot opens only that

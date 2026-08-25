@@ -187,6 +187,7 @@ async def lifespan(app: FastAPI):
     runtime.keep_alive_enabled = settings.keep_alive_enabled
     runtime.keep_alive_timeout_minutes = settings.keep_alive_timeout_minutes
     runtime.keep_alive_poll_interval_s = settings.keep_alive_poll_interval_s
+    runtime.keep_alive_map_load_grace_s = settings.keep_alive_map_load_grace_s
     if runtime.keep_alive_enabled:
         runtime.start_keep_alive()
         logger.info(

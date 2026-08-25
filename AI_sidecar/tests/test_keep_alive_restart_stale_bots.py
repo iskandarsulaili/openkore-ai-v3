@@ -93,3 +93,64 @@ def test_stale_restart_is_paced_not_latched() -> None:
     cooldown_left2 = rt._stale_restart_interval - (now - rt._last_stale_restart)
     # Even with the legacy latch True, the new pacing logic governs.
     assert cooldown_left2 <= rt._stale_restart_interval
+
+
+class _RegWithFirst(_Reg):
+    """BotRegistry record stand-in carrying first_seen_at (map-load grace)."""
+
+    def __init__(self, bot_id: str, last_seen_at, first_seen_at) -> None:
+        super().__init__(bot_id, last_seen_at)
+        self.first_seen_at = first_seen_at
+
+
+def test_fresh_bot_within_map_load_grace_never_stale() -> None:
+    """Regression (2026-08-25): a bot that just registered is usually still
+    loading the 1294-map field table (1-4 min, high CPU) before its first
+    snapshot tick. The keep-alive loop must NOT nuke it mid-load — a bot
+    younger than the grace window is never stale even if it has not ticked."""
+    import time
+
+    rt = _runtime()
+    now = time.time()
+    # Registered 30s ago, last tick 30s ago (still loading, has not ticked
+    # since registering). Old code: stale at 60s silent -> fleet nuked mid-load.
+    loading = _RegWithFirst(
+        "bot:loading",
+        datetime.now(UTC) - timedelta(seconds=30),
+        datetime.now(UTC) - timedelta(seconds=30),
+    )
+    out = rt._list_stale_bots([loading], stale_seconds=60, now=now)
+    assert out == [], f"bot in map-load grace must never be stale: {out}"
+
+
+def test_bot_past_grace_silent_is_stale() -> None:
+    """A bot that has been alive PAST the grace window and is silent IS stale."""
+    import time
+
+    rt = _runtime()
+    now = time.time()
+    # Registered 10 min ago, last tick 5 min ago: past grace (240s) + silent
+    # past the 60s stale window -> stale, must be restarted.
+    dead = _RegWithFirst(
+        "bot:dead",
+        datetime.now(UTC) - timedelta(seconds=300),
+        datetime.now(UTC) - timedelta(seconds=600),
+    )
+    out = rt._list_stale_bots([dead], stale_seconds=60, now=now)
+    assert "bot:dead" in out, f"past-grace silent bot must be stale: {out}"
+
+
+def test_grace_window_respected_with_short_interval() -> None:
+    """Grace must win even when the stale window is short (fast polls)."""
+    import time
+
+    rt = _runtime()
+    now = time.time()
+    loading = _RegWithFirst(
+        "bot:fastload",
+        datetime.now(UTC) - timedelta(seconds=10),
+        datetime.now(UTC) - timedelta(seconds=10),
+    )
+    out = rt._list_stale_bots([loading], stale_seconds=5, now=now)
+    assert out == [], f"grace must protect fresh bots even at 5s stale window: {out}"
+

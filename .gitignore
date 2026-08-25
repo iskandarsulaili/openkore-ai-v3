@@ -116,6 +116,7 @@ data/swarm_state_*.json
 data/learning.db
 data/learning.db-shm
 data/learning.db-wal
+data/experience.db
 data/quests.db
 data/quests.db-shm
 data/quests.db-wal

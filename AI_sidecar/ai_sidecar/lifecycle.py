@@ -944,7 +944,7 @@ class RuntimeState:
                             },
                         )
                         try:
-                            await self._restart_bots()
+                            await self._restart_stale_bots(stale, ka_logger)
                         except Exception as exc:
                             ka_logger.warning(
                                 "keep_alive_restart_error",
@@ -975,12 +975,30 @@ class RuntimeState:
 
         `now` is wall-clock epoch seconds (time.time()); `last_seen_at` is a
         UTC datetime, so last.timestamp() is the same clock domain.
+
+        MAP-LOAD GRACE (2026-08-25): a bot that just registered is usually
+        still loading the 1294-map field table (takes 1-4 minutes at high CPU)
+        BEFORE it can tick its first snapshot. Treating it as stale at 60s
+        made the keep-alive loop relaunch the whole fleet mid-load forever
+        (start.sh stop -> start.sh all -> re-load -> never converges). A bot
+        younger than the grace window is NEVER stale — only bots that have
+        been alive past the grace AND gone silent are restarted.
         """
+        grace_seconds = float(getattr(self, "keep_alive_map_load_grace_s", 240.0))
         stale: list[str] = []
         for rec in records:
             last = getattr(rec, "last_seen_at", None)
             if last is None:
                 continue
+            first = getattr(rec, "first_seen_at", None)
+            if first is not None:
+                try:
+                    age = now - float(first.timestamp())
+                except Exception:
+                    age = 0.0
+                if age < grace_seconds:
+                    # Still in the map-load / connect grace window: not stale.
+                    continue
             if now - float(last.timestamp()) > stale_seconds:
                 stale.append(rec.bot_id)
         return stale
@@ -1040,6 +1058,115 @@ class RuntimeState:
                 "keep_alive_restart_bots_failed",
                 extra={"event": "keep_alive_restart_bots_failed", "error": str(exc)},
             )
+
+    def _restart_stale_bots(self, stale_bot_ids: list[str], ka_logger) -> None:
+        """Targeted restart: relaunch ONLY the stale bot profiles.
+
+        The old path called `start.sh stop` + `start.sh all` — which KILLS AND
+        RESPAWNS EVERY bot whenever ANY single registered bot goes silent. With
+        a 60s stale window and 1-4 min map-load times, that meant the fleet was
+        perpetually nuking its own still-loading bots and never converging
+        in-game. This method restarts only the stale bot's own profile via
+        `start.sh bot <name>`, leaving healthy in-game bots untouched.
+
+        bot_id -> profile mapping: the registration attributes carry
+        `control_folder` (e.g. ".bot_profiles/testbotA/control"); fall back to
+        matching the identity/user half of the bot_id against the profile
+        config's username (the first profile whose username matches, preferring
+        a char-name match). If no profile resolves, skip (log-only).
+        """
+        import subprocess as _sp
+
+        workspace = self.workspace_root
+        start_sh = workspace / "start.sh"
+        if not start_sh.exists():
+            ka_logger.warning(
+                "keep_alive_start_sh_not_found",
+                extra={"event": "keep_alive_start_sh_not_found", "path": str(start_sh)},
+            )
+            return
+
+        # Build a profile-name lookup from the persisted bot records
+        # (attributes.control_folder) + the on-disk profiles (username match).
+        profile_by_bot: dict[str, str] = {}
+        try:
+            if self.repositories is not None:
+                records = self._safe_persist(
+                    "list_persisted_bots_for_restart",
+                    lambda: self.repositories.bots.list_all(),
+                    default=[],
+                    bot_id=None,
+                )
+                for item in records:
+                    bid = getattr(item, "bot_id", None)
+                    attrs = dict(getattr(item, "attributes", None) or {})
+                    cf = str(attrs.get("control_folder") or "")
+                    if bid and cf:
+                        # ".bot_profiles/testbotA/control" -> "testbotA"
+                        parts = cf.replace("\\", "/").strip("/").split("/")
+                        if len(parts) >= 3 and parts[-1] == "control" and parts[-2] == "bot_profiles":
+                            profile_by_bot[str(bid)] = parts[-3]
+        except Exception as exc:
+            ka_logger.debug("keep_alive_restart_profile_lookup_failed: %s", exc)
+
+        # Fallback: scan profile configs for a username matching the bot_id's
+        # user half (":username" suffix).
+        def _profile_for_bot(bot_id: str) -> str | None:
+            if bot_id in profile_by_bot:
+                return profile_by_bot[bot_id]
+            user_half = ""
+            if ":" in bot_id:
+                user_half = bot_id.rsplit(":", 1)[1].lower()
+            try:
+                for pd in sorted((workspace / ".bot_profiles").glob("*")):
+                    cfg = pd / "control" / "config.txt"
+                    if not cfg.exists():
+                        continue
+                    try:
+                        for line in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
+                            line = line.strip()
+                            if line.startswith("username "):
+                                uname = line.split(None, 1)[1].strip().lower()
+                                if user_half and uname == user_half:
+                                    return pd.name
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return None
+
+        for bot_id in stale_bot_ids:
+            profile = _profile_for_bot(str(bot_id))
+            if not profile:
+                ka_logger.warning(
+                    "keep_alive_stale_profile_not_resolved",
+                    extra={"event": "keep_alive_stale_profile_not_resolved", "bot_id": bot_id},
+                )
+                continue
+            ka_logger.info(
+                "keep_alive_restarting_bot",
+                extra={"event": "keep_alive_restarting_bot", "bot_id": bot_id, "profile": profile},
+            )
+            try:
+                proc = _sp.Popen(
+                    ["bash", str(start_sh), "bot", profile],
+                    stdout=_sp.PIPE,
+                    stderr=_sp.PIPE,
+                )
+                try:
+                    _out, _err = proc.communicate(timeout=45.0)
+                except Exception:
+                    proc.kill()
+                ka_logger.info(
+                    "keep_alive_restarted_bot",
+                    extra={"event": "keep_alive_restarted_bot", "bot_id": bot_id, "profile": profile, "rc": proc.returncode},
+                )
+            except Exception as exc:
+                ka_logger.warning(
+                    "keep_alive_restart_bot_failed",
+                    extra={"event": "keep_alive_restart_bot_failed", "bot_id": bot_id, "error": str(exc)},
+                )
 
     def start_highfreq_reflex(self) -> None:
         """Start the 50ms reflex monitor. Safe to call multiple times — redundant."""
@@ -1336,6 +1463,20 @@ class RuntimeState:
         self.bot_registry.upsert(bot_id, snapshot.tick_id)
         previous_snapshot = self.snapshot_cache.get(bot_id)
         self.snapshot_cache.set(snapshot)
+
+        # ── FORWARD TO NORMALIZER_BUS / WORLD_STATE ──
+        # The snapshot must ALSO feed world_state (the store that
+        # enriched_state()/PDCA/heuristics/state_v2 read). Without this, the
+        # bot's live position/map lives ONLY in snapshot_cache and the entire
+        # decision pipeline sees map=None/x=None/y=None (blind navigation).
+        # normalizer_bus.ingest_snapshot() converts the snapshot into a
+        # snapshot.compact event -> world_state.observe_event() ->
+        # _apply_snapshot() sets operational.map/x/y + navigation.map/x/y.
+        try:
+            if self.normalizer_bus is not None:
+                self.normalizer_bus.ingest_snapshot(snapshot)
+        except Exception:
+            logger.warning("normalizer_bus_snapshot_forward_failed: bot_id=%s", bot_id)
         
         # ── IMMEDIATE HEURISTIC ACTIONS: don't wait for PDCA cycle ──
         # The PDCA loop runs every 5s, but bots disconnect in 3s.

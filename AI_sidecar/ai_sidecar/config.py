@@ -190,6 +190,10 @@ class SidecarSettings(BaseSettings):
     keep_alive_enabled: bool = False
     keep_alive_timeout_minutes: int = Field(default=30, ge=1, le=1440)
     keep_alive_poll_interval_s: float = Field(default=30.0, ge=5.0, le=300.0)
+    # A freshly-registered bot is usually still loading the field table
+    # (1-4 min at high CPU). Below this age it is NEVER considered stale, so
+    # the keep-alive loop cannot nuke a bot mid-load. (2026-08-25)
+    keep_alive_map_load_grace_s: float = Field(default=240.0, ge=60.0, le=3600.0)
     # The rAthena char-server this fleet talks to via Poseidon. The
     # game_server_keepalive watchdog proves it lives on localhost:6121 (that
     # is the port it restarts on SEGV); polling that reachable endpoint is
