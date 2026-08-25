@@ -519,3 +519,34 @@ def test_pdca_startup_gate_opens_in_degraded_mode_when_optional_subsystems_are_u
     assert "fleet_central_unavailable" in reason
     assert ("planner_stale" in reason) or ("planner_status_unavailable" in reason)
     assert "crewai_unavailable" in reason
+
+
+def test_record_domain_success_failure_signatures() -> None:
+    """Regression: _record_domain_success/_record_domain_failure MUST be bound
+    methods (self as first param). A prior regex refactor stripped 'self' from
+    the defs, so every PDCA cycle crashed with 'takes 2 positional arguments
+    but 3 were given' in the game_engine domain block — silently degrading the
+    whole per-domain health/circuit-breaker tracking.
+    """
+    import asyncio
+    import inspect
+
+    from ai_sidecar.autonomy.pdca_loop import PDCALoop
+
+    class _RT:
+        """Minimal runtime_state stub (mirrors the _Runtime helper used above)."""
+        def __getattr__(self, name):
+            return _Stub()
+
+    class _Stub:
+        def __call__(self, *a, **k):
+            return None
+        def __getattr__(self, name):
+            return self
+
+    loop = PDCALoop(runtime_state=_RT())
+    assert inspect.ismethod(loop._record_domain_success)
+    assert inspect.ismethod(loop._record_domain_failure)
+    # The methods are SYNC (called from async context via the domain blocks).
+    loop._record_domain_success("bot:domtest", "game_engine")
+    loop._record_domain_failure("bot:domtest", "game_engine", RuntimeError("x"))

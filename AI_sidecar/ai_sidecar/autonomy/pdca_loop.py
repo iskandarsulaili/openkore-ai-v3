@@ -9012,7 +9012,7 @@ class PDCALoop:
 
         _loop.create_task(_reap(_task))
 
-    def _record_domain_success( bot_id: str, domain: str) -> None:
+    def _record_domain_success(self, bot_id: str, domain: str) -> None:
         """Clear per-domain failure state when an emitter succeeds (self-healing telemetry).
 
         Mirrors _record_domain_failure: on a clean emitter run we record success so the
@@ -9033,7 +9033,7 @@ class PDCALoop:
         except Exception:
             pass
 
-    def _record_domain_failure( bot_id: str, domain: str, exc: Exception) -> None:
+    def _record_domain_failure(self, bot_id: str, domain: str, exc: Exception) -> None:
         """Record a per-domain emitter failure against that bot's breaker.
 
         Fault isolation: a domain that throws repeatedly for ONE bot opens only that
