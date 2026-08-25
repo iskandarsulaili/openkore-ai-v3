@@ -190,6 +190,13 @@ CalcPath_pathStep (CalcPath_session *session)
 			printf("[pathfinding run error] Exceeded maximum node expansions (%lu). Aborting pathfind.\n", maxPops);
 			return -1;
 		}
+		// ── OPENLIST OVERFLOW BAIL (2026-08-25): openListAdd refuses writes past
+		// width*height. Bail the run instead of spinning forever (avoids the
+		// heap-corruption RSS blowup on pathological reopen-churn maps).
+		if (session->openListOverflow) {
+			printf("[pathfinding run error] openList overflow (pathological reopen-churn) — aborting.\n");
+			return -1;
+		}
 		// If the openList is empty no path exists
 		if (session->openListSize == 0) {
 			return -1;
@@ -337,6 +344,19 @@ reconstruct_path(CalcPath_session *session, Node* goal, Node* start)
 void 
 openListAdd (CalcPath_session *session, Node* currentNode)
 {
+	// ── HARD OPENLIST BOUND (2026-08-25, C-side heap-corruption leak) ──
+	// openList is preallocated to exactly width*height entries. A correct A*
+	// never holds more than that many nodes OPEN at once. But the CLOSED-reopen
+	// path (pathStep line 283-286) can re-add a node repeatedly when weights
+	// oscillate (avoidWalls + randomFactor on a pathological map), driving
+	// openListSize past width*height and writing OUT OF BOUNDS of the array —
+	// corrupting the malloc heap and inflating process RSS to GBs while the
+	// main loop is blocked in pathStep. Refuse the add past the bound; the
+	// caller's pathStep then exhausts maxPops and bails with -1.
+	if (session->openListSize >= (unsigned long)(session->width * session->height)) {
+		session->openListOverflow = 1;
+		return;
+	}
 	// Index will be 1 + last index in openList, which is also its size
 	// Save in currentNode its index in openList
 	currentNode->openListIndex = session->openListSize;

@@ -58,6 +58,7 @@ typedef struct {
 	long *openList;
 
 	int failed;
+	int openListOverflow;
 } CalcPath_session;
 
 CalcPath_session *CalcPath_new ();
