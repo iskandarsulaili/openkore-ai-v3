@@ -62,8 +62,11 @@ class SessionConfig:
     peak_hour_end: int = 23
     """Server peak hour end (24h)."""
 
-    avoid_peak_hours: bool = True
-    """If True, avoid botting during server peak hours."""
+    avoid_peak_hours: bool = False
+    """If True, avoid botting during server peak hours. Default False: a 24/7
+    private-server farm bot should KEEP FARMING during peak (most valuable
+    window). Enable only when the operator explicitly wants to blend in during
+    the busiest hours (e.g. low-pop detection avoidance)."""
 
     gaussian_jitter_sigma: float = 0.3
     """Sigma for Gaussian jitter on login delay (fraction of base delay)."""
