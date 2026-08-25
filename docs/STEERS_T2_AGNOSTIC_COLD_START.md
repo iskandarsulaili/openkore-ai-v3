@@ -10,17 +10,25 @@
 > from success/fail reward/punish from AI bot behavior or LLM) and reflex
 > (rule-based that need instant action)."
 
-## What this means
+## What this means (founder-corrected 3-tier split)
 
-- **Conscious (LLM)** = the DECISION-MAKER for cold-start. Given FACTS (level, inventory,
-  current map, portals.txt/DB, server name) the LLM reasons _agnostically_: "nova
-  no weapon, town has an academy warp -> go get the free starter kit" — works on ANY
-  server, NOT this server's specific academy/izlude layout.
-- **Subconscious (ML/DQN)** = learns WHICH cold-start decision WORKED across bots/servers
-  via reward/punish (success/fail from bot behavior or LLM outcomes) — the trained
-  "what usually works" layer.
-- **Reflex (hardcoded)** = INSTANT-action safety floor ONLY (never-die, portal_walk_lock
-  during an active portal walk). NOT the source of strategy.
+- **Conscious (LLM)** = the DECISION-MAKER, driven by **specialized AI AGENTS inside
+  openkore-ai-v3** (CrewAI agents: pro_ro_player, economy, combat, mission, world —
+  NOT Hermes, NOT generic). These agents are **issue/solution agnostic**: they reason
+  from FACTS (level, inventory, map, portals.txt/DB, server name) to produce the plan
+  on ANY server — they are NOT hardcoded rules for a specific issue/map. Examples:
+  cold-start advisory, gear/sustain advisory, team-play, farm choice.
+- **Subconscious (ML/RL)** = learns from **success/fail reward/punish** of the bot's
+  own actions (or the LLM's decisions) — the trained "what usually works" layer
+  (DQN/reinforcement learning, promotion pipeline). Facts alone; no strategy.
+- **Reflex (hardcoded rule-based)** = INSTANT-action safety floor ONLY (never-die,
+  sit on low HP, portal_walk_lock during an active warp walk). Immediate, never
+  strategic, never decides the plan.
+
+A rule that bakes a server-specific decision (e.g. "izlude academy door 125 257",
+"farm prt_fild08", "buy item 501") is a VIOLATION — it must live as a FACT in the
+knowledge store / server_solutions DB and be consumed by the LLM agents (conscious)
+or a generic reflex, never hardcoded as the decision.
 
 ## Current-state gap (verified 2026-08-25, file:line)
 
