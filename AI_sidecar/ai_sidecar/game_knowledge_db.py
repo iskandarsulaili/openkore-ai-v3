@@ -71,6 +71,8 @@ class GameKnowledgeDB:
                     npc_name TEXT NOT NULL,
                     map_name TEXT NOT NULL DEFAULT '',
                     task_type TEXT NOT NULL DEFAULT '',
+                    x INTEGER NOT NULL DEFAULT 0,
+                    y INTEGER NOT NULL DEFAULT 0,
                     steps_json TEXT NOT NULL DEFAULT '[]'
                 );
                 CREATE TABLE IF NOT EXISTS player_memory (
@@ -123,11 +125,26 @@ class GameKnowledgeDB:
                     conn.commit()
             except Exception:
                 pass
+            # Migration: npc_interactions gained x/y coordinates (data-driven
+            # NPC/portal resolution). Add if missing (idempotent).
+            try:
+                _ncols = [r[1] for r in conn.execute("PRAGMA table_info(npc_interactions)").fetchall()]
+                if _ncols and "x" not in _ncols:
+                    conn.execute("ALTER TABLE npc_interactions ADD COLUMN x INTEGER NOT NULL DEFAULT 0")
+                    conn.execute("ALTER TABLE npc_interactions ADD COLUMN y INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+            except Exception:
+                pass
             # Seed only when the DB is genuinely empty (first run)
             empty = conn.execute("SELECT COUNT(*) AS c FROM zone_ladder").fetchone()[0] == 0
             if empty:
                 self._seed_from_knowledge(conn)
                 conn.commit()
+            # Always ensure the baseline NPC facts exist (idempotent — the bot
+            # needs these coordinates for data-driven portal/shop resolution on
+            # ANY server; they are FACTS, never decision logic).
+            self._seed_npc_interaction_facts(conn)
+            conn.commit()
         except Exception as e:
             logger.warning("game_knowledge_db_seed_failed: %s", e)
 
@@ -227,6 +244,35 @@ class GameKnowledgeDB:
             "game_knowledge_db_seeded: %d zones, %d skill builds, %d job paths",
             n_zones, n_skills, order_idx,
         )
+
+    def _seed_npc_interaction_facts(self, conn: sqlite3.Connection) -> None:
+        """Seed baseline NPC-interaction FACTS (data-driven, idempotent).
+
+        These are DATA (server-agnostic baseline facts for common tasks) — NOT
+        decision logic. On this server the observation layer can refine them;
+        a different server would learn its own. The conscious LLM + the
+        knowledge-DB-driven blocks consume them. INSERT OR IGNORE keeps it
+        idempotent (bot-learned refinements are never overwritten).
+        """
+        try:
+            _facts = [
+                # (task_type, map_name, npc_name, x, y)
+                ("weapon_shop",  "prontera", "Weapon Shop",  160, 133),
+                ("academy_receptionist", "iz_ac01", "Academy Receptionist", 100, 39),
+                ("portal_to_town", "prt_fild05", "Prontera gate", 22, 203),
+                ("portal_to_hunt", "prontera", "Prontera field gate", 156, 164),
+                ("portal_to_town", "izlude", "Izlude dock", 128, 260),
+                ("kafra",         "prontera", "Kafra Employee", 145, 122),
+                ("healer",        "prontera", "Townsfolk", 154, 177),
+            ]
+            for _task, _map, _name, _x, _y in _facts:
+                conn.execute(
+                    "INSERT OR IGNORE INTO npc_interactions "
+                    "(npc_name, map_name, task_type, x, y) VALUES (?,?,?,?,?)",
+                    (_name, _map, _task, _x, _y),
+                )
+        except Exception:
+            pass
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""

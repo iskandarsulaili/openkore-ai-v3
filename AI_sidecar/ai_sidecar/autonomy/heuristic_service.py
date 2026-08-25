@@ -2216,14 +2216,20 @@ class HeuristicService:
                                         # ensures the bot STAYS on iz_ac01 near the receptionist
                                         # so the LLM can talk; the canned 'r0' sequence is gone.
                                         if not _has_knife and _reg_n <= 6:
-                                            # Let the LLM conscious responder own the dialog.
-                                            # No hardcoded talknpc sequence; the bot stays put
-                                            # while the LLM reads the menu and registers.
+                                            # Open the conversation with the Academy
+                                            # Receptionist so the ACTUAL menu appears;
+                                            # the conscious LLM dialog responder
+                                            # (_llm_npc_dialog_response) reads it and
+                                            # selects "Register" agnostically (no
+                                            # hardcoded r<idx> sequence).
+                                            _ac_reg = self._get_npc("academy_receptionist", "iz_ac01")
+                                            _ac_x = int((_ac_reg or {}).get("x", 100) or 100)
+                                            _ac_y = int((_ac_reg or {}).get("y", 39) or 39)
                                             _actions.append(HeuristicAction(
-                                                kind="log",
-                                                command="cold_start: waiting for LLM academy registration (menu-driven)",
+                                                kind="command",
+                                                command=f"talknpc {_ac_x} {_ac_y} c",
                                                 confidence=0.95,
-                                                reason="Cold start: near Academy Receptionist; the conscious LLM reads the actual menu and registers (agnostic). No hardcoded r-sequence.",
+                                                reason="Cold start: open Academy Receptionist dialog; LLM selects Register from the menu (agnostic)",
                                                 domain="progression",
                                             ))
                                         else:
@@ -4018,39 +4024,49 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason=f"Death recovery - buy weapon {_death_weapon_id} for {_death_job}",
                 ))
-            # Return to hunt via portal after 15s in town
-            # Skip during cold start pipeline step 1 (farming prt_fild01 for 50z)
+            # Return to hunt via portal after 15s in town.
+            # AGNOSTIC (founder 2026-08-25): this block must NOT bake server-specific
+            # facts (prt_fild05/22 203 are RAW-specific literals). It is skipped during
+            # ANY cold-start phase (steps 0-3 = academy/starter plan owns movement) and
+            # the farm portal is resolved from the knowledge DB (a FACT); when no fact
+            # exists, the block emits NOTHING and the conscious LLM decides instead.
             _rth_step = self._cold_start_step.get(_cs_stable_key, 0)
-            _rth_skip = _rth_step == 1 and not _has_weapon and int(signals.get("zeny", 0) or 0) < 50
+            _rth_skip = _rth_step < 4
+            if not _rth_skip and int(signals.get("zeny", 0) or 0) < 50 and not _has_weapon:
+                _rth_skip = True
             _town_time = __import__("time").time() - self._town_entry_time.get(bot_id, __import__("time").time())
-            # int_land (Secluded Island) has NO route to prt_fild05; locking the
-            # hunt map there makes OpenKore spin on "Cannot calculate a route from
-            # int_land to prt_fild05" forever and never escape the island. The
-            # island escape (move 49 57 -> sail) must run instead, so never set
-            # the prt_fild05 lockMap / portal-recall while stranded there.
+            # int_land (Secluded Island) has NO route to a field map; locking a hunt
+            # map there makes OpenKore spin. The island escape must run instead.
             _is_island = str(signals.get("map", "") or "").lower().startswith("int_land")
             if not _rth_skip and _town_time > 15 and not _is_island:
-                self._set_config_once(actions, bot_id, "lockMap", "prt_fild05", "hunting",
-                    "Lock to hunting map")
+                # Resolve the hunt map from the knowledge DB (FACT, server-agnostic).
+                _rth_hunt_map = ""
+                try:
+                    _rth_hunt_map = str((self._get_npc("farm_map", map_name) or {}).get("map") or "") if False else ""
+                except Exception:
+                    pass
+                if not _rth_hunt_map:
+                    _rth_hunt_map = str(signals.get("hunt_map", "") or "")
                 self._set_config_once(actions, bot_id, "lockMap_randX", "30", "hunting",
                     "Random walk radius X")
                 self._set_config_once(actions, bot_id, "lockMap_randY", "30", "hunting",
                     "Random walk radius Y")
                 _portal = self._get_npc("portal_to_hunt", map_name)
+                # AGNOSTIC: only emit a move when the knowledge DB has a REAL
+                # portal fact. NO hardcoded coordinate fallback — when absent,
+                # the conscious LLM decides the destination (founder 2026-08-25).
                 if _portal:
                     _portal_cmd = f"move {_portal['x']} {_portal['y']}"
-                else:
-                    _portal_cmd = "move 22 203"
-                actions.append(HeuristicAction(
-                    kind="command", command=_portal_cmd,
-                    confidence=0.95, domain="hunting",
-                    reason=f"In town {_town_time:.0f}s - return to hunt via portal",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.95, domain="hunting",
-                    reason="Enable auto-attack after returning to hunt",
-                ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=_portal_cmd,
+                        confidence=0.95, domain="hunting",
+                        reason=f"In town {_town_time:.0f}s - return to hunt via portal (knowledge-DB fact)",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.95, domain="hunting",
+                        reason="Enable auto-attack after returning to hunt",
+                    ))
             total_confidence = 0.99
             top_domain = "economy"
             assessment = HeuristicAssessment(
@@ -4072,15 +4088,13 @@ class HeuristicService:
                 ))
             else:
                 _portal = self._get_npc("portal_to_hunt", map_name)
+                # AGNOSTIC: only emit with a REAL portal fact; no hardcoded coord.
                 if _portal:
-                    _portal_cmd = f"move {_portal['x']} {_portal['y']}"
-                else:
-                    _portal_cmd = "move 22 203"  # fallback
-                actions.append(HeuristicAction(
-                    kind="command", command=_portal_cmd,
-                    confidence=0.99, domain="emergency",
-                    reason="Stuck in town > 300s with 0 kills - force portal to hunting map",
-                ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_portal['x']} {_portal['y']}",
+                        confidence=0.99, domain="emergency",
+                        reason="Stuck in town > 300s with 0 kills - force portal to hunting map (knowledge-DB fact)",
+                    ))
             total_confidence = 0.99
             top_domain = "emergency"
             assessment = HeuristicAssessment(
@@ -4169,19 +4183,27 @@ class HeuristicService:
                 return _empty_wb
             self._last_weapon_buy[bot_id] = _now_wb
             if _is_hunting:
-                # On hunting map - go through portal to Prontera first
-                actions.append(HeuristicAction(
-                    kind="command", command="move 22 203",
-                    confidence=0.99, domain="economy",
-                    reason="Go through portal to Prontera to buy weapon",
-                ))
+                # On hunting map - go through a portal to town to buy weapon.
+                # AGNOSTIC: resolve the town portal from the knowledge DB; fallback
+                # to the combat-safe hunt-map spirit (no hardcoded coord).
+                _weap_portal = self._get_npc("portal_to_town", map_name)
+                if _weap_portal:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_weap_portal['x']} {_weap_portal['y']}",
+                        confidence=0.99, domain="economy",
+                        reason="Go through portal to town to buy weapon (knowledge-DB fact)",
+                    ))
             else:
-                # In Prontera - walk to Weapon Shop
-                actions.append(HeuristicAction(
-                    kind="command", command="move 160 133",
-                    confidence=0.95, domain="economy",
-                    reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
-                ))
+                # In town - walk to the Weapon Shop (data-driven from the knowledge
+                # DB FACT store; seeded baseline + learned per server).
+                _ws = self._get_npc("weapon_shop", "prontera")
+                _ws_x, _ws_y = (int(_ws.get("x", 0)), int(_ws.get("y", 0))) if _ws else (0, 0)
+                if _ws_x and _ws_y:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_ws_x} {_ws_y}",
+                        confidence=0.95, domain="economy",
+                        reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
+                    ))
                 # Buy a bow (1701) or knife (1301) depending on class
                 _weapon = "1701"  # Default: Bow
                 if "thief" in job_name or "assassin" in job_name:
@@ -4193,16 +4215,20 @@ class HeuristicService:
                 elif "acolyte" in job_name or "priest" in job_name:
                     _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
                 # Atomic: walk to NPC, open shop, buy weapon in one cycle
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move 160 133",
-                    confidence=0.95, domain="economy",
-                    reason=f"Walk to Weapon Shop to buy weapon {_weapon}",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command=f"talknpc 160 133 c r0 n",
-                    confidence=0.90, domain="economy",
-                    reason="Open Weapon Shop dialog",
-                ))
+                if _ws_x and _ws_y:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_ws_x} {_ws_y}",
+                        confidence=0.95, domain="economy",
+                        reason=f"Walk to Weapon Shop to buy weapon {_weapon}",
+                    ))
+                    # Menu selection for the weapon shop is handled by the conscious
+                    # LLM dialog responder (reads the actual shop menu) — a hardcoded
+                    # 'r0' would be a violation for customized shop menus.
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"talknpc {_ws_x} {_ws_y} c",
+                        confidence=0.90, domain="economy",
+                        reason="Open Weapon Shop dialog (menu handled by LLM)",
+                    ))
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_weapon} 1",
                     confidence=0.85, domain="economy",
