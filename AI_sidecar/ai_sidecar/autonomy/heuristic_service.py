@@ -1344,6 +1344,13 @@ class HeuristicService:
             # If no stat points, skip STATS entirely to avoid wasted cycles
             if skill_points > 0:
                 return "SKILLS"
+            # SOLO-BOT GUARD: a fleet with only ONE bot (no teammates to party
+            # with) must NOT enter the PARTY state machine — it would emit party
+            # ops forever and never reach TOWN_HUNT/HUNT (the academy/farm
+            # progression). Only enter PARTY when there are other bots to join.
+            _fleet_bots = signals.get("all_bots", []) or []
+            if not in_party and len(_fleet_bots) <= 1:
+                return "TOWN_HUNT"
             if not in_party:
                 return "PARTY"
             return "TOWN_HUNT"
