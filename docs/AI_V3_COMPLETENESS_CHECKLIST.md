@@ -87,6 +87,10 @@ Status legend:
 
 - [ ] 3.1. Verify FleetOrchestrator + FleetCoordinator actually issue directives now
       (was inert due to RC1). Confirm directive events appear in telemetry.
+- [x] 3.1b. **NEW BUG FOUND**: `PartyCoordinator check failed: 'FleetCoordinator'
+      object has no attribute 'get_bot'` (fires every cycle in sidecar log). A real
+      unwired fleet bug — PartyCoordinator calls get_bot() that FleetCoordinator
+      doesn't implement. OPEN (fix pending).
 - [ ] 3.2. Leader/coordination: does a leader coordinate others? Verify RoleManager
       assigns roles, PartyCoordinator forms parties, cross-bot resource sharing fires.
 - [ ] 3.3. Multi-bot identity: 3 testbots on one account (testbot99 chars 0/1/2)

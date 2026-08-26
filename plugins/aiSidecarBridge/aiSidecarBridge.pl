@@ -2234,7 +2234,7 @@ sub _build_snapshot_payload {
 			my $_inv_type = $_inv_item->{type} || 0;
 			my $_inv_name = $_inv_item->{name} || '';
 			push @inventory_items_digest, {
-				item_id  => ($_inv_item->{nameID} // 0) + 0,
+				item_id  => (($_inv_item->{nameID} // 0) + 0) . '',  # contract: str
 				name     => $_inv_name,
 				quantity => ($_inv_item->{amount} // 0) + 0,
 				type     => $_inv_type,
