@@ -600,6 +600,7 @@ class RuntimeState:
     positioning_system: object | None = None  # PositioningSystem — spatial combat awareness
     behavior_engine: object | None = None  # BehaviorEngine — human-like anti-detection imperfections
     conscious_engine: object | None = None  # ConsciousDecisionEngine — class build decisions
+    party_coordinator: object | None = None  # PartyCoordinator — fleet-based coordination
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6457,6 +6458,13 @@ def create_runtime() -> RuntimeState:
         role_rotation_cooldown_s=120,
     )
     runtime.fleet_coordinator = FleetCoordinator()
+    # PartyCoordinator (fleet-based coordination) — needs fleet_coordinator, so init AFTER it
+    try:
+        from ai_sidecar.fleet.party_coordinator import PartyCoordinator
+        runtime.party_coordinator = PartyCoordinator(fleet_coordinator=runtime.fleet_coordinator)
+        logger.info("party_coordinator_initialized")
+    except Exception as _pce_e:
+        logger.warning("party_coordinator_init_failed: %s", _pce_e)
     # Restore persisted budget state
     if sqlite_path is not None:
         runtime.cost_tracker.restore(str(sqlite_path))
