@@ -110,8 +110,11 @@ class InventoryState(BaseModel):
 
     zeny: int | None = None
     item_count: int = 0
-    weight: int | None = None
-    weight_max: int | None = None
+    # weight/weight_max are fractional (sum of per-item weights from the bridge,
+    # e.g. 370.6) — must be float or pydantic 422s (int_from_float) and drops
+    # the whole snapshot (mirrors contracts/state.py).
+    weight: float | None = None
+    weight_max: float | None = None
     overweight_ratio: float | None = None
     weight_pressure: float = 0.0
     consumables: dict[str, int] = Field(default_factory=dict)
