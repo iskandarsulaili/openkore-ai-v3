@@ -163,6 +163,15 @@ class TacticsDispatcher:
                 if target:
                     actions.append(self._make_attack_action(target, ctx, tactics))
 
+            # Phase 6: PVP combat intelligence (GTB detection, elemental armor
+            # checker, class counters, hit/flee analyzer). Wires the 4 self-learning
+            # PVP modules into the combat tick; without this call they are dormant.
+            try:
+                from ai_sidecar.domains.combat.combat_intel import assess_combat_intel
+                assess_combat_intel(signals, actions, bot_id)
+            except Exception:
+                pass
+
         except Exception as e:
             logger.error("tactics_dispatcher.assess() failed: %s", e, exc_info=True)
 

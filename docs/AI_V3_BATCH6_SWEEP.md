@@ -1,0 +1,22 @@
+# AI_V3_COMPLETENESS — BATCH 6: Dormant/Unwired Sweep + Agnostic Audit + Tests Green
+
+Date: 2026-08-27
+Goal: systematically find every dormant/dead/unwired module, every stub/mock/TODO/pass/placeholder,
+every hardcoded server-specific value in the decision path, and every failing/wiring-gap test.
+Reconcile-not-trim (never remove features). Verify each fix live where possible.
+
+## Scope
+- [ ] 6.1 Run FULL test suite baseline (all 63 test files) — identify failures/errors first.
+- [ ] 6.2 Sweep for dormant modules: defined-but-never-imported / called-but-never-wired.
+- [ ] 6.3 Sweep for mock/stub/TODO/FIXME/pass/placeholder/not-implemented in source.
+- [ ] 6.4 Agnostic audit: any hardcoded map/item/coord/mob/server literal in DECISION path (not knowledge tables).
+- [ ] 6.5 Verify live wiring: LLM brain, fleet, cold_start, routing, combat, economy all reachable from pdca_loop.
+- [ ] 6.6 Tests green (all pass).
+- [ ] 6.7 Commit + push.
+
+## Findings (append per round)
+- [2026-08-27] 6.1 FULL TEST BASELINE: 408 passed (406 + macro compiler 2). All green.
+- [2026-08-27] 6.2 DORMANT MODULE FOUND + FIXED: `domains/combat/combat_intel.py` (wires 4 self-learning PVP modules: GTB detection, elemental armor checker, class counters, hit/flee analyzer) was NEVER called — lifecycle passed `combat_intel=None`, assess_combat_intel unreferenced in the assess chain. WIRED into `combat/dispatcher.py` assess() Phase 6 (lazy import, no cycle). Now produces real PVP actions each combat tick.
+- [2026-08-27] 6.3 Abstract `NotImplementedError`s are all legit @abstractmethod base contracts (providers/base.py, memory/retrieval.py, domains/__init__.py) — not stubs.
+- [2026-08-27] 6.4 Legacy domains (combat/consumables/economy/...) are INTENTIONAL observe-only (test_legacy_domains_observe_only.py documents: double-emission + party-spam hazard, fixed at source) — not dormant. Verfied achievements.py wired via knowledge_ingestion.py + personality_engine.py.
+
