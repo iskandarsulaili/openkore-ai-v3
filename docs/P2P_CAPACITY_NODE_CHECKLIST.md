@@ -51,7 +51,14 @@ system_prompt.py:827 volatile-parts injection) to match the real pattern.
 - [x] SA-5. LessonsHub (4e2229248): SQLite central sink shared by all fleet bots —
       the "central sink now" (push/pull round-trip proven, boot-time cross-bot
       merge). Remote RAW-style HTTP sink (memory_sink_endpoint) optional.
-- [ ] SA-6. Mesh gossip (WebRTC) — deferred until Batch D in-game mesh lands.
+- [x] SA-6. P2P knowledge mesh (ad39cfe09): was DORMANT (buried in a fragile
+      pdca strategic-init block wrapped in except:pass; an earlier unguarded
+      service threw and aborted before P2P init, so no node ever started).
+      Now GUARANTEED-init in create_runtime: P2PKnowledgeNode + P2PNetworkManager,
+      wired experience_db/npc_discovery/server_adaptation, HTTP server started,
+      peers connected. VERIFIED LIVE: listener on 18428, health
+      {"status":"ok","bot_id":"sidecar:default"}. Config p2p_bot_id/p2p_listen_port.
+      This is the BOT-TO-BOT LEARNING channel — NOT the launcher's transport mesh.
 
 ## DESIGN RULE — COMPLEMENT, NEVER CONFLICT (founder directive 2026-08-26)
 openkore-ai-v3 is delivered as part of the PlayRAW-launcher-downloaded client
