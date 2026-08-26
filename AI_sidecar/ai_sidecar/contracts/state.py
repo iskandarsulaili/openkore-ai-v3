@@ -67,6 +67,7 @@ class InventoryItemDigest(BaseModel):
     name: str | None = Field(default=None, max_length=128)
     quantity: int = Field(default=0, ge=0)
     category: str | None = Field(default=None, max_length=64)
+    type: int | None = Field(default=None)
     equipped: bool = False
     marketable: bool = False
     buy_price: int | None = Field(default=None, ge=0)
