@@ -7,3 +7,6 @@ private/
 AI_sidecar/ai_sidecar/memory/MEMORY.md
 AI_sidecar/ai_sidecar/memory/*.bak
 AI_sidecar/ai_sidecar/memory/lessons_hub.db
+# Per-server/per-character runtime state (user/char-agnostic) — never commit.
+# Contains ':' which is illegal on Windows and breaks clone/checkout.
+data/swarm_state_*.json
