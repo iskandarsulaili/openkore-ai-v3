@@ -4404,6 +4404,12 @@ class PDCALoop:
                                 _cl.set_build_manager(_bm)
                                 logger.debug("combat_loop_wired: build_manager")
 
+                            # ── Wire positioning system (was unwired) ──
+                            _ps = getattr(self._runtime, "positioning_system", None)
+                            if _ps is not None:
+                                _cl.set_positioning_system(_ps)
+                                logger.debug("combat_loop_wired: positioning_system")
+
                             # Wire action queue
                             _aq = getattr(self._runtime, "action_queue", None)
                             if _aq is not None:
