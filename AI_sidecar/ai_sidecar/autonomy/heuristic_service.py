@@ -1194,6 +1194,7 @@ class HeuristicService:
                 "_team_levels": dict(self._team_levels),
                 "_team_jobs_assigned": dict(self._team_jobs_assigned),
                 "_last_job_change_time": dict(self._last_job_change_time),
+                "_weapon_latch": dict(self._weapon_latch),
             "_assigned_jobs": dict(self._assigned_jobs),
                 "_assigned_jobs": dict(self._assigned_jobs),
                 "_saved_at": time.time(),
@@ -1236,6 +1237,7 @@ class HeuristicService:
                 ("_last_move_time",), ("_potion_tier",),
                 ("_last_mon_control_map",), ("_last_job_name",),
                 ("_post_job_change_reset",),
+                ("_weapon_latch",),
             ]
             for key in [m[0] for m in mappings]:
                 if key in data:
@@ -2730,6 +2732,12 @@ class HeuristicService:
         _stable = str(bot_id or "default").split(":")[-1].split("/")[-1] or "default"
         if has_weapon:
             self._weapon_latch[_stable] = True
+            # Persist so a sidecar restart doesn't forget the bot already owns a weapon
+            # (the intermittent 0B09 inventory parse may not re-report it for a long time).
+            try:
+                self.save_state()
+            except Exception:
+                pass
         return self._weapon_latch.get(_stable, False)
 
     def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
