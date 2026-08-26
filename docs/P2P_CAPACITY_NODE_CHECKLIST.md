@@ -79,20 +79,40 @@ NOT conflict with or duplicate them:
   launcher-downloaded client tree (client/peer-host/ or client/<bot>/); the
   manifest pins + self-update already cover the host binary.
 
-## BATCH STATUS-b — PEER-HOST (bot serves maps)
-- [ ] 6. Wire bot → host-creds (GET /ads/host-creds) + E5 attestation (maplogin
-      with host session creds) → char register → claim empty maps (host_assignable).
-- [ ] 7. Spawn + supervise the map-server.exe capacity process (lifecycle: boot,
-      heartbeat, host-secs, kill on quit).
-- [ ] 8. Host reward telemetry (seed-stats / game_host_seconds).
+## BATCH STATUS-b — PEER-HOST (bot serves maps) — DONE
+- [x] 6. Bot → host-creds + E5 attestation: REUSED the launcher's
+      linux-host-map-server binary (manifest-pinned sha256, 2-file standalone
+      id.conf mode -> self-fetches ephemeral DB creds + self-reports
+      host-seconds to p2p_hall_of_fame). PeerHostSupervisor.ensure_binary()
+      downloads + sha256-verifies + atomic-swaps. Complementarity: NEVER ships
+      a second host binary.
+- [x] 7. Spawn + supervise: PeerHostSupervisor.start()/supervise()/stop() —
+      detached spawn, liveness thread with bounded respawn, SIGTERM-group kill.
+      Single-writer EVE guard: box_is_central() refuses to spawn if the map
+      port (5121) is owned (central box or another host). Default OFF
+      (p2p_host_enabled=false) — only peer boxes enable it.
+- [x] 8. Host reward telemetry: the 2-file standalone binary self-reports
+      game_host_seconds to /ads/seed-stats under id.conf's account — same
+      reward path as a launcher-spawned host. No extra bot code needed.
 
-## BATCH C — RELAY
-- [ ] 9. Register bot as relay member (coordinator), honest capacity, TTL keepalive.
+## BATCH C — RELAY — OUT OF SCOPE for the bot (complementarity rule)
+- [ ] 9. (RECONCILED — NOT trimming, per founder 2026-08-26 complementarity
+      directive) The P2P relay (coordinator relay_list, TURN, zone-scoped
+      forwarding of 0x035F/0x0361) is the LAUNCHER's DLL's job. The bot
+      integrating as a transport relay would DUPLICATE + conflict with the
+      launcher on the same distributed box (the bot ships inside the launcher
+      bundle). The bot's P2P capacity contributions are the knowledge mesh
+      (SA-6, bot-to-bot learning) + peer-host (STATUS-b, map serving) — these
+      COMPLEMENT the launcher's relay/mesh.
 
-## BATCH D — IN-GAME MESH
-- [ ] 10. WebRTC data channel in Perl (libdatachannel bindings) for 0x035F/0x0361
-      position/state to peers. (LARGE — evaluate feasibility before build.)
+## BATCH D — IN-GAME MESH — OUT OF SCOPE for the bot (complementarity rule)
+- [ ] 10. (RECONCILED — NOT trimming) The in-game WebRTC mesh (libdatachannel
+      0x035F/0x0361 position/state to peers) is the LAUNCHER's DLL's job. A
+      Perl/WebRTC transport in the bot would conflict with the launcher mesh on
+      the same box. The bot's p2p_knowledge.py mesh is the bot-to-bot LEARNING
+      channel (experiences/hunting-zones/prices/failures) — separate concern,
+      never carries 0x035F.
 
-## BATCH E — VERIFY
+## BATCH E — VERIFY (deferred per founder directive: implement+wire now, push in batches)
 - [ ] 11. Two-node E2E (bot + RAW client peer), EXP growth, host serves a map,
       relay relays, mesh passes 0x035F. Update checklist + commit per batch.
