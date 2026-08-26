@@ -591,6 +591,7 @@ class RuntimeState:
     llm_manager: Any = None  # LLMManager — multi-provider LLM system
     self_awareness: object | None = None  # SelfAwareness — SOUL.md + MEMORY.md injection
     peer_host: object | None = None  # PeerHostSupervisor — bot serves maps (capacity)
+    web_research: object | None = None  # WebResearchEngine — SearXNG research
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6351,7 +6352,18 @@ def create_runtime() -> RuntimeState:
     except Exception as _ph_e:
         logger.warning("peer_host_supervisor_init_failed: %s", _ph_e)
     
-    # runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)  # [disabled] web research requires SearXNG
+    # ── WebResearchEngine (SearXNG-backed research) — WIRED ──
+    # Was disabled with a comment ("requires SearXNG"); SearXNG is up on this
+    # box (127.0.0.1:8080). The engine is complete + self-contained (falls back
+    # to its own local SearXNG JSON search), so enable it and feed shared
+    # knowledge for cross-bot learning.
+    try:
+        from ai_sidecar.web_research import WebResearchEngine
+        runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)
+        logger.info("web_research_initialized")
+    except Exception as _wr_e:
+        logger.warning("web_research_init_failed: %s", _wr_e)
+
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
         max_bots=256,
