@@ -5109,6 +5109,29 @@ class PDCALoop:
                                             logger.info("death_analysis_recorded: bot=%s cause=%s map=%s monster=%s",
                                                         _reflex_bot_id, _death_record_da.cause_of_death,
                                                         _conscious_snap.get("map", ""), _killer_name_da)
+                                            # ── ComebackEngine hook (was dormant — now wired to deaths) ──
+                                            _cb = getattr(self._runtime, "comeback_engine", None)
+                                            if _cb is not None:
+                                                try:
+                                                    _plan = _cb.record_failure(
+                                                        "death",
+                                                        {
+                                                            "bot_id": _reflex_bot_id,
+                                                            "map": _conscious_snap.get("map", ""),
+                                                            "monster": _killer_name_da,
+                                                            "hp_before": _bot_prev_hp,
+                                                            "aggro_count": _combat_da.get("aggro_count", 0),
+                                                            "max_hp": int(_vitals_da.get("max_hp", 1) or 1),
+                                                        },
+                                                    )
+                                                    self._runtime.last_comeback_plan = {
+                                                        "timestamp": time.time(),
+                                                        "bot_id": _reflex_bot_id,
+                                                        "plan": _plan,
+                                                    }
+                                                    logger.info("comeback_plan_generated: bot=%s", _reflex_bot_id)
+                                                except Exception:
+                                                    logger.warning("comeback_plan_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                         except Exception:
                                             logger.warning("death_analysis_call_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                 _prev_hp[_reflex_bot_id] = _current_hp
@@ -5360,6 +5383,16 @@ class PDCALoop:
                                                 _dpd.record_portal_exit(_reflex_bot_id, _map, _new_x, _new_y)
                                         _last_pos[_reflex_bot_id] = (_map, _new_x, _new_y)
                                         object.__setattr__(self, "_last_pos", _last_pos)
+                                        # ── PORTAL VERIFIER FEED (was dormant) ──
+                                        # The map transition proves a real portal
+                                        # (source_map -> dest_map). Record it so the
+                                        # routing engine only uses verified portals.
+                                        try:
+                                            _pv = getattr(self._runtime, "portal_verifier", None)
+                                            if _pv is not None and _prev_map_p and _prev_map_p != _map:
+                                                _pv.record_observed_portal(_prev_map_p, _map)
+                                        except Exception:
+                                            pass
                                     except Exception:
                                         pass
                                     # ── FLEET LEARNING FEED ──
@@ -10221,9 +10254,27 @@ class PDCALoop:
         try:
             _da = getattr(self._runtime, "death_analysis", None)
             _tt = getattr(self._runtime, "threat_targeting", None)
+            _mt = getattr(self._runtime, "meta_tracker", None)
             if _da is not None and _tt is not None and snapshot:
                 _snap = snapshot if isinstance(snapshot, dict) else {}
                 _actors = _snap.get("actors", [])
+                # ── MetaTracker observation (was dormant — now fed per snapshot) ──
+                if _mt is not None:
+                    try:
+                        for _actor in _actors:
+                            _an = str(_actor.get("name", "") or "")
+                            _job = str(_actor.get("job", "") or "")
+                            if _an and _an != self._resolve_cost_gate_bot_id():
+                                _gear = _actor.get("gear", []) or []
+                                _skills = _actor.get("skills", []) or []
+                                if _gear:
+                                    _mt.observe_player_gear(_an, list(_gear))
+                                if _skills:
+                                    _mt.observe_player_skills(_an, list(_skills))
+                                if _snap.get("map"):
+                                    _mt.observe_player_map(_an, str(_snap.get("map")))
+                    except Exception:
+                        logger.warning("meta_tracker_observe_failed", exc_info=True)
                 for _actor in _actors:
                     _mid = int(_actor.get("name_id", 0) or 0)
                     if _mid > 0 and _da.is_monster_avoided(_mid):

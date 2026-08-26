@@ -590,6 +590,10 @@ class RuntimeState:
     self_awareness: object | None = None  # SelfAwareness — SOUL.md + MEMORY.md injection
     peer_host: object | None = None  # PeerHostSupervisor — bot serves maps (capacity)
     web_research: object | None = None  # WebResearchEngine — SearXNG research
+    comeback_engine: object | None = None  # ComebackEngine — post-failure recovery
+    meta_tracker: object | None = None  # MetaTracker — observes evolving meta
+    preemptive_manager: object | None = None  # PreemptiveResourceManager — restock before depletion
+    portal_verifier: object | None = None  # PortalVerifier — validates portals.txt vs observed
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -1500,6 +1504,17 @@ class RuntimeState:
                 self.normalizer_bus.ingest_snapshot(snapshot)
         except Exception:
             logger.warning("normalizer_bus_snapshot_forward_failed: bot_id=%s", bot_id)
+
+        # ── PREEMPTIVE RESOURCE MANAGER (was dormant — now fed every snapshot) ──
+        # Tracks consumable usage rates (potions/arrows/fly wings), HP/SP/weight
+        # trends, and pre-emptively schedules restock/vendor/heal BEFORE the
+        # bridge reflex (last resort) fires.
+        try:
+            _pm = getattr(self, "preemptive_manager", None)
+            if _pm is not None:
+                _pm.update_from_snapshot(bot_id, snapshot)
+        except Exception:
+            logger.warning("preemptive_update_failed: bot_id=%s", bot_id)
         
         # ── IMMEDIATE HEURISTIC ACTIONS: don't wait for PDCA cycle ──
         # The PDCA loop runs every 5s, but bots disconnect in 3s.
@@ -6361,6 +6376,32 @@ def create_runtime() -> RuntimeState:
         logger.info("web_research_initialized")
     except Exception as _wr_e:
         logger.warning("web_research_init_failed: %s", _wr_e)
+
+    # ── Dormant-but-needed engines — WIRED (were complete code with zero callers) ──
+    try:
+        from ai_sidecar.combat.comeback_engine import get_comeback_engine
+        runtime.comeback_engine = get_comeback_engine()
+        logger.info("comeback_engine_initialized")
+    except Exception as _ce_e:
+        logger.warning("comeback_engine_init_failed: %s", _ce_e)
+    try:
+        from ai_sidecar.combat.meta_tracker import get_meta_tracker
+        runtime.meta_tracker = get_meta_tracker()
+        logger.info("meta_tracker_initialized")
+    except Exception as _mt_e:
+        logger.warning("meta_tracker_init_failed: %s", _mt_e)
+    try:
+        from ai_sidecar.preemptive_manager import get_preemptive_manager
+        runtime.preemptive_manager = get_preemptive_manager()
+        logger.info("preemptive_manager_initialized")
+    except Exception as _pm_e:
+        logger.warning("preemptive_manager_init_failed: %s", _pm_e)
+    try:
+        from ai_sidecar.combat.portal_verifier import get_portal_verifier
+        runtime.portal_verifier = get_portal_verifier()
+        logger.info("portal_verifier_initialized")
+    except Exception as _pv_e:
+        logger.warning("portal_verifier_init_failed: %s", _pv_e)
 
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
