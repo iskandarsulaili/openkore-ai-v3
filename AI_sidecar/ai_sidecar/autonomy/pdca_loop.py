@@ -9269,6 +9269,7 @@ class PDCALoop:
         _has_potions = False
         _has_weapon = False
         _kills = 0
+        _snap: dict | None = None
         try:
             _snap = getattr(_rt, "_last_snapshot", None) or {}
             _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
@@ -9286,6 +9287,17 @@ class PDCALoop:
                             _has_potions = True
                         if "knife" in _n or "sword" in _n or "weapon" in _n:
                             _has_weapon = True
+        except Exception:
+            pass
+        # Apply the SAME latched weapon decision as the reflex tier so an intermittent
+        # 0B09 inventory parse never reports a weapon-less bot to the LLM (which would
+        # then advise gear acquisition the bot already has).
+        try:
+            _hsvc = getattr(_rt, "heuristic_service", None)
+            if _hsvc is not None and hasattr(_hsvc, "_has_coldstart_weapon"):
+                _has_weapon = bool(_hsvc._has_coldstart_weapon(
+                    {"inventory_items": _snap.get("inventory_items") or [] if _snap else [],
+                     "has_weapon_in_inventory": bool(_snap.get("has_weapon_in_inventory")) if _snap else False}))
         except Exception:
             pass
         _prompt = (
@@ -9430,6 +9442,7 @@ class PDCALoop:
         _has_weapon = False
         _has_potions = False
         _inv_names: list[str] = []
+        _snap: dict | None = None
         try:
             _snap = getattr(_rt, "_last_snapshot", None) or {}
             _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
@@ -9445,6 +9458,19 @@ class PDCALoop:
                         _has_weapon = True
                     if "potion" in _n or _i in ("569", "501"):
                         _has_potions = True
+        except Exception:
+            pass
+        # Use the SAME latched weapon decision as the reflex tier (heuristic_service
+        # latches once a weapon is ever observed, so an intermittent 0B09 inventory
+        # parse never reverts the bot to "weapon-less"). Without this, the raw
+        # snapshot's intermittently-empty inventory_items would re-fire academy-door
+        # routing (move 125 257) on a bot that already owns its starter knife.
+        try:
+            _hsvc = getattr(_rt, "heuristic_service", None)
+            if _hsvc is not None and hasattr(_hsvc, "_has_coldstart_weapon"):
+                _has_weapon = bool(_hsvc._has_coldstart_weapon(
+                    {"inventory_items": _snap.get("inventory_items") or [] if _snap else [],
+                     "has_weapon_in_inventory": bool(_snap.get("has_weapon_in_inventory")) if _snap else False}))
         except Exception:
             pass
         # A bot is in cold-start only when it genuinely needs it (no weapon + low level).
