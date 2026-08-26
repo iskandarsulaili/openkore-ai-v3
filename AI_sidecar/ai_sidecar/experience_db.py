@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import threading
 from threading import RLock
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class ExperienceDB:
 
     def _init_db(self) -> None:
         try:
-            db = sqlite3.connect(self._db_path, timeout=5.0)
+            db = _hardened_connect(self._db_path)
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=NORMAL")
             db.execute("""CREATE TABLE IF NOT EXISTS exp_snapshots (
@@ -79,7 +80,7 @@ class ExperienceDB:
         """Record an EXP snapshot for a bot."""
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 db.execute(
                     """INSERT INTO exp_snapshots
                        (bot_id, base_level, job_level, base_exp, job_exp, zeny, map_name, timestamp)
@@ -129,7 +130,7 @@ class ExperienceDB:
         """
         path = sqlite_path or self._db_path
         try:
-            db = sqlite3.connect(path, timeout=5.0)
+            db = _hardened_connect(path)
             row = db.execute(
                 "SELECT COUNT(*) FROM exp_snapshots"
             ).fetchone()
@@ -142,7 +143,7 @@ class ExperienceDB:
     def _prune(self, bot_id: str) -> None:
         """Remove oldest snapshots for a bot when over the limit."""
         try:
-            db = sqlite3.connect(self._db_path, timeout=5.0)
+            db = _hardened_connect(self._db_path)
             count = db.execute(
                 "SELECT COUNT(*) FROM exp_snapshots WHERE bot_id = ?", (bot_id,)
             ).fetchone()[0]
@@ -173,7 +174,7 @@ class ExperienceDB:
         """
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 cutoff = time.time() - window_minutes * 60
                 rows = db.execute(
                     """SELECT base_level, job_level, base_exp, job_exp, zeny, map_name, timestamp
@@ -215,7 +216,7 @@ class ExperienceDB:
         """
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 rows = db.execute(
                     """SELECT base_level, job_level, base_exp, job_exp, timestamp
                        FROM exp_snapshots
@@ -291,7 +292,7 @@ class ExperienceDB:
         """
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 if bot_id:
                     rows = db.execute(
                         """SELECT base_exp, job_exp, map_name, timestamp
@@ -363,7 +364,7 @@ class ExperienceDB:
         warnings: list[dict[str, Any]] = []
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 rows = db.execute(
                     """SELECT base_level, job_level, map_name, timestamp
                        FROM exp_snapshots
@@ -426,7 +427,7 @@ class ExperienceDB:
         """
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 rows = db.execute(
                     """SELECT map_name, base_exp, job_exp, zeny, timestamp
                        FROM exp_snapshots
@@ -476,7 +477,7 @@ class ExperienceDB:
         """Get the most recent EXP snapshot for a bot, or None."""
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 row = db.execute(
                     """SELECT bot_id, base_level, job_level, base_exp, job_exp,
                               zeny, map_name, timestamp
@@ -506,7 +507,7 @@ class ExperienceDB:
         """Return aggregate statistics."""
         with self._lock:
             try:
-                db = sqlite3.connect(self._db_path, timeout=5.0)
+                db = _hardened_connect(self._db_path)
                 total = db.execute("SELECT COUNT(*) FROM exp_snapshots").fetchone()[0]
                 unique_bots = db.execute(
                     "SELECT COUNT(DISTINCT bot_id) FROM exp_snapshots"
@@ -676,8 +677,7 @@ class ExperienceDatabase:
         if not sqlite_path:
             return
         try:
-            import sqlite3
-            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            db = _hardened_connect(sqlite_path)
             db.execute("""CREATE TABLE IF NOT EXISTS experience (
                 bot_id TEXT, timestamp REAL, context_type TEXT, map_name TEXT,
                 monster_name TEXT, role TEXT, action_taken TEXT, success INTEGER,
@@ -700,8 +700,7 @@ class ExperienceDatabase:
         if not sqlite_path:
             return 0
         try:
-            import sqlite3
-            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            db = _hardened_connect(sqlite_path)
             cursor = db.execute("SELECT * FROM experience")
             loaded = 0
             for row in cursor:

@@ -10,12 +10,12 @@ from __future__ import annotations
 import json
 import logging
 import math
-import sqlite3
 import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class FleetLearningSystem:
 
     def _init_db(self) -> None:
         try:
-            db = sqlite3.connect(self._db_path, timeout=5.0)
+            db = _hardened_connect(self._db_path)
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("""CREATE TABLE IF NOT EXISTS zone_outcomes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,7 +136,7 @@ class FleetLearningSystem:
         if not self._db_path:
             return
         try:
-            db = sqlite3.connect(self._db_path, timeout=3.0)
+            db = _hardened_connect(self._db_path)
             db.execute(
                 """INSERT INTO zone_outcomes
                    (bot_id, map_name, bot_level, duration_minutes,
@@ -161,7 +161,7 @@ class FleetLearningSystem:
         if not self._db_path:
             return
         try:
-            db = sqlite3.connect(self._db_path, timeout=5.0)
+            db = _hardened_connect(self._db_path)
             # Load recent outcomes
             cursor = db.execute(
                 "SELECT * FROM zone_outcomes ORDER BY timestamp DESC LIMIT 5000"
@@ -550,7 +550,7 @@ class FleetLearningSystem:
             if not stats:
                 return
         try:
-            db = sqlite3.connect(self._db_path, timeout=3.0)
+            db = _hardened_connect(self._db_path)
             db.execute(
                 """INSERT OR REPLACE INTO zone_elo
                    (map_name, elo_score, total_outcomes,
@@ -574,7 +574,7 @@ class FleetLearningSystem:
         with self._lock:
             comps = list(self._party_compositions.get(map_name, []))
         try:
-            db = sqlite3.connect(self._db_path, timeout=3.0)
+            db = _hardened_connect(self._db_path)
             # Delete old entries for this map, insert current ones
             db.execute(
                 "DELETE FROM party_compositions WHERE map_name = ?", (map_name,)
@@ -632,7 +632,7 @@ class FleetLearningSystem:
 
         if self._db_path:
             try:
-                db = sqlite3.connect(self._db_path, timeout=3.0)
+                db = _hardened_connect(self._db_path)
                 db.execute("DELETE FROM zone_elo WHERE map_name = ?", (map_name,))
                 db.execute("DELETE FROM zone_outcomes WHERE map_name = ?", (map_name,))
                 db.execute(

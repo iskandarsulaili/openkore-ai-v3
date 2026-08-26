@@ -26,6 +26,8 @@ import sqlite3
 import time
 from pathlib import Path
 from threading import RLock
+
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -138,7 +140,7 @@ class LessonsHub:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with _hardened_connect(self.db_path) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS lessons (
@@ -159,7 +161,7 @@ class LessonsHub:
             return 0
         added = 0
         with self._lock:
-            with sqlite3.connect(self.db_path) as conn:
+            with _hardened_connect(self.db_path) as conn:
                 for l in lessons:
                     content = (l.get("content") or "").strip()
                     if not content:
@@ -187,18 +189,19 @@ class LessonsHub:
 
     def pull(self, limit: int = 200) -> list[dict[str, Any]]:
         """Return shared lessons newest-first, capped."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT id, content, importance, source, created_at, updated_at "
-                "FROM lessons ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+        with self._lock:
+            with _hardened_connect(self.db_path) as conn:
+                rows = conn.execute(
+                    "SELECT id, content, importance, source, created_at, updated_at "
+                    "FROM lessons ORDER BY updated_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def count(self) -> int:
-        with sqlite3.connect(self.db_path) as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0])
+        with self._lock:
+            with _hardened_connect(self.db_path) as conn:
+                return int(conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0])
 
 
 class SelfAwareness:
