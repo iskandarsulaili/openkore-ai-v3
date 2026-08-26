@@ -569,6 +569,35 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             signals["consumable_depletion_score"] = float(_dep)
         except Exception:
             pass
+        # ── FLEET STATUS SYNC: feed live bot state into FleetCoordinator ──
+        # PartyCoordinator + FleetOrchestrator coordinate against per-bot
+        # map/HP/weight/zeny/level/role. Without this push, the fleet only has
+        # the registration defaults and every coordination check is a no-op.
+        try:
+            if bot_id and runtime_state is not None:
+                _fleet = getattr(runtime_state, "fleet_coordinator", None)
+                if _fleet is not None:
+                    _f_map = str(signals.get("map_name") or signals.get("map") or "")
+                    _f_hp = int(signals.get("hp") or 0)
+                    _f_maxhp = int(signals.get("hp_max") or signals.get("max_hp") or 1)
+                    _f_weight = float(signals.get("weight_ratio") or 0.0)
+                    _f_zeny = int(signals.get("zeny") or 0)
+                    _f_lvl = int(signals.get("level") or 0)
+                    _f_role = str(signals.get("role") or signals.get("current_role") or "farmer")
+                    _f_status = "fighting" if signals.get("in_combat") else (
+                        "farming" if _f_map else "idle")
+                    _fleet.update_bot_status(
+                        bot_id=bot_id, map=_f_map, status=_f_status, level=_f_lvl)
+                    _fb = _fleet.get_bot(bot_id)
+                    if _fb is not None:
+                        _fb.hp = _f_hp
+                        _fb.max_hp = max(_f_maxhp, 1)
+                        _fb.weight = _f_weight
+                        _fb.zeny = _f_zeny
+                        _fb.current_role = _f_role
+                        _fb.last_seen = _time_module.time()
+        except Exception:
+            pass
         assessment = hs.assess(signals, bot_id_override=bot_id)
         if not assessment.actions:
             _log.info("heuristic_no_actions horizon=%s signals=%s", horizon, str(signals)[:200])
@@ -6609,8 +6638,8 @@ class PDCALoop:
                             _fallback_skill += 1
                             logger.info("party_coordination: bot=%s action=%s reason=%s",
                                       _bid, _coord_action.kind, _coord_action.reason)
-            except Exception:
-                pass
+            except Exception as _pc_e:
+                logger.warning("party_coordination_failed: bot=%s err=%s", _bid, _pc_e)
             
             # ── Progression decisions handled by LLM CrewAI agents ──
             # All economy, survival, progression decisions flow through

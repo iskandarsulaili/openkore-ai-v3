@@ -40,6 +40,28 @@ class BotRole:
     map: str = ""
     status: str = "idle"  # idle, farming, following, trading, scouting, fighting
     last_seen: float = 0.0
+    # ── Live state (populated by update_bot_status / fleet snapshot) ──
+    # PartyCoordinator reads these; defaults keep bots safe (no phantom data).
+    position: tuple[float, float] = (0.0, 0.0)
+    party_id: str = ""
+    current_role: str = "farmer"  # PartyCoordinator uses current_role for complement/team checks
+    hp: int = 0
+    max_hp: int = 1
+    weight: float = 0.0
+    weight_max: float = 1.0
+    zeny: int = 0
+    active_objective: str = ""
+
+    @property
+    def map_name(self) -> str:
+        """PartyCoordinator reads bot.map_name; alias to the canonical `map` field."""
+        return self.map
+
+    def hp_pct(self) -> float:
+        return self.hp / self.max_hp if self.max_hp > 0 else 0.0
+
+    def weight_pct(self) -> float:
+        return self.weight / self.weight_max if self.weight_max > 0 else 0.0
 
 
 @dataclass
@@ -106,6 +128,29 @@ class FleetCoordinator:
         """Get all bots with a specific role."""
         with self._lock:
             return [b for b in self._bots.values() if b.role == role]
+
+    def get_bot(self, bot_id: str) -> BotRole | None:
+        """Get a single bot by id (None if not registered)."""
+        with self._lock:
+            return self._bots.get(bot_id)
+
+    def list_bots(self, online_only: bool = False) -> list[BotRole]:
+        """List all registered bots. When online_only, only bots seen within the
+        last 60s are returned (matches PartyCoordinator's expectation)."""
+        now = time.time()
+        with self._lock:
+            bots = list(self._bots.values())
+        if online_only:
+            bots = [b for b in bots if now - b.last_seen < 60]
+        return bots
+
+    def party_members(self, party_id: str | None = None) -> list[BotRole]:
+        """Return all bots in the current party (or all bots if no party id)."""
+        with self._lock:
+            bots = list(self._bots.values())
+        if party_id and party_id != self._party_id:
+            return []
+        return bots
     
     def get_bots_by_map(self, map_name: str) -> list[BotRole]:
         """Get all bots on a specific map."""
