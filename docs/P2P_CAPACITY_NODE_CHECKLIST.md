@@ -53,6 +53,25 @@ system_prompt.py:827 volatile-parts injection) to match the real pattern.
       merge). Remote RAW-style HTTP sink (memory_sink_endpoint) optional.
 - [ ] SA-6. Mesh gossip (WebRTC) — deferred until Batch D in-game mesh lands.
 
+## DESIGN RULE — COMPLEMENT, NEVER CONFLICT (founder directive 2026-08-26)
+openkore-ai-v3 is delivered as part of the PlayRAW-launcher-downloaded client
+bundle. Its "bot serves maps" capacity must COMPLEMENT the launcher's existing
+P2P stack (peer-host map-server.exe, P2P relay, in-game WebRTC mesh) — it must
+NOT conflict with or duplicate them:
+- The launcher ALREADY spawns the peer-host map-server.exe (single-file, E5
+  attestation, host-creds, seed-stats reward). The bot must REUSE that same
+  binary as its capacity process — never ship a second/competing host.
+- Single-writer per map is sacred (EVE model): central owns all, a host claims
+  ONLY empty maps via the char JIT assigner. The bot host must observe the same
+  assigner rule so it never fights the launcher/another host for a map.
+- Relay membership + in-game mesh (0x035F/0x0361) are the LAUNCHER's DLL's job.
+  The bot's P2P knowledge mesh (p2p_knowledge.py gossip) is a SEPARATE
+  bot-to-bot learning channel (experiences/hunting-zones/prices/failures), NOT
+  the transport mesh — it must not try to also carry 0x035F position/state.
+- Distribution: the capacity host + id.conf/token are bundled into the
+  launcher-downloaded client tree (client/peer-host/ or client/<bot>/); the
+  manifest pins + self-update already cover the host binary.
+
 ## BATCH STATUS-b — PEER-HOST (bot serves maps)
 - [ ] 6. Wire bot → host-creds (GET /ads/host-creds) + E5 attestation (maplogin
       with host session creds) → char register → claim empty maps (host_assignable).
