@@ -224,7 +224,11 @@ class ModelRouter:
         # Self-awareness injection: prepend SOUL + MEMORY to every reasoning call.
         if self._self_awareness is not None:
             try:
+                _pre = len(request.system_prompt)
                 request.system_prompt = self._self_awareness.inject(request.system_prompt)
+                logger.debug(
+                    "self_awareness_injected delta=%d", len(request.system_prompt) - _pre
+                )
             except Exception:
                 pass  # never let memory injection break an LLM call
 
