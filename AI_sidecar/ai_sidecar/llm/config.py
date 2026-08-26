@@ -12,6 +12,49 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
+def _settings() -> Any:
+    """Lazily import SidecarSettings so LLM_* env is the primary source.
+
+    The sidecar's canonical provider config lives in SidecarSettings
+    (OPENKORE_AI_PROVIDER_OPENAI_*). Historically llm/config.py only read
+    LLM_* env, so the two config systems never connected and the LLMManager
+    (the conscious brain) saw NO provider -> every reasoning call dead.
+    This helper lets from_env() fall back to SidecarSettings when LLM_* env
+    is absent, making the single source of truth reach the LLMManager.
+    """
+    try:
+        from ai_sidecar.config import settings
+        return settings
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _openai_from_settings(s: Any) -> dict[str, Any]:
+    """Map SidecarSettings provider_openai_* fields onto env-style values."""
+    return {
+        "base_url": getattr(s, "provider_openai_base_url", "") or os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        "api_key": getattr(s, "provider_openai_api_key", "") or os.getenv("LLM_OPENAI_API_KEY", ""),
+        "default_model": getattr(s, "provider_openai_default_model", "") or os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini"),
+        "timeout_seconds": float(getattr(s, "llm_timeout_seconds", None) or os.getenv("LLM_OPENAI_TIMEOUT", "30.0")),
+        "max_retries": int(getattr(s, "llm_max_retries", None) or os.getenv("LLM_OPENAI_MAX_RETRIES", "2")),
+        "requests_per_minute": int(os.getenv("LLM_OPENAI_RPM", "60")),
+        "enabled": getattr(s, "provider_openai_enabled", None) if getattr(s, "provider_openai_enabled", None) is not None else os.getenv("LLM_OPENAI_ENABLED", "true").lower() == "true",
+    }
+
+
+def _deepseek_from_settings(s: Any) -> dict[str, Any]:
+    """Map SidecarSettings provider_deepseek_* fields onto env-style values."""
+    return {
+        "base_url": getattr(s, "provider_deepseek_base_url", "") or os.getenv("LLM_DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+        "api_key": getattr(s, "provider_deepseek_api_key", "") or os.getenv("LLM_DEEPSEEK_API_KEY", ""),
+        "default_model": getattr(s, "provider_deepseek_default_model", "") or os.getenv("LLM_DEEPSEEK_MODEL", "deepseek-chat"),
+        "timeout_seconds": float(getattr(s, "llm_timeout_seconds", None) or os.getenv("LLM_DEEPSEEK_TIMEOUT", "30.0")),
+        "max_retries": int(getattr(s, "llm_max_retries", None) or os.getenv("LLM_DEEPSEEK_MAX_RETRIES", "2")),
+        "requests_per_minute": int(os.getenv("LLM_DEEPSEEK_RPM", "60")),
+        "enabled": getattr(s, "provider_deepseek_enabled", None) if getattr(s, "provider_deepseek_enabled", None) is not None else os.getenv("LLM_DEEPSEEK_ENABLED", "true").lower() == "true",
+    }
+
+
 class ProviderEndpoint(BaseModel):
     """Connection details for one LLM provider."""
 
@@ -35,15 +78,7 @@ class ProviderConfig(BaseModel):
 
     # Per-provider endpoint configs
     openai: ProviderEndpoint = Field(
-        default_factory=lambda: ProviderEndpoint(
-            base_url=os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-            api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
-            default_model=os.getenv("LLM_OPENAI_MODEL", "gpt-4o-mini"),
-            timeout_seconds=float(os.getenv("LLM_OPENAI_TIMEOUT", "30.0")),
-            max_retries=int(os.getenv("LLM_OPENAI_MAX_RETRIES", "2")),
-            requests_per_minute=int(os.getenv("LLM_OPENAI_RPM", "60")),
-            enabled=os.getenv("LLM_OPENAI_ENABLED", "true").lower() == "true",
-        )
+        default_factory=lambda: ProviderEndpoint(**_openai_from_settings(_settings()))
     )
 
     azure: ProviderEndpoint = Field(
@@ -60,15 +95,7 @@ class ProviderConfig(BaseModel):
     )
 
     deepseek: ProviderEndpoint = Field(
-        default_factory=lambda: ProviderEndpoint(
-            base_url=os.getenv("LLM_DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-            api_key=os.getenv("LLM_DEEPSEEK_API_KEY", ""),
-            default_model=os.getenv("LLM_DEEPSEEK_MODEL", "deepseek-chat"),
-            timeout_seconds=float(os.getenv("LLM_DEEPSEEK_TIMEOUT", "30.0")),
-            max_retries=int(os.getenv("LLM_DEEPSEEK_MAX_RETRIES", "2")),
-            requests_per_minute=int(os.getenv("LLM_DEEPSEEK_RPM", "60")),
-            enabled=os.getenv("LLM_DEEPSEEK_ENABLED", "true").lower() == "true",
-        )
+        default_factory=lambda: ProviderEndpoint(**_deepseek_from_settings(_settings()))
     )
 
     anthropic: ProviderEndpoint = Field(
