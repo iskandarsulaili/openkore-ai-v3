@@ -1257,6 +1257,26 @@ class HeuristicService:
         except Exception:
             return None
 
+    def _resolve_safe_town(self) -> str:
+        """Resolve a safe town to portal-walk to, AGNOSTICALLY (RC3a).
+
+        Prefers the learned server_solutions safe_town, else a known town from the
+        DB-loaded town set, else the true last-resort 'prontera'. Never emits a
+        broken map prefix (e.g. the 'prt' of prt_fild05 is NOT a town).
+        """
+        _town = ""
+        try:
+            from ai_sidecar.server_adaptation import get_server_solutions_store
+            _town = str(get_server_solutions_store().get("safe_town", None) or "")
+        except Exception:
+            _town = ""
+        if not _town:
+            # Use a real town from the DB-loaded set (server-agnostic), never a
+            # field-map prefix.
+            _towns = [t for t in _HUNT_TOWNS if isinstance(t, str)]
+            _town = _towns[0] if _towns else "prontera"
+        return _town
+
     def _load_towns(self) -> None:
         """Load town map names from database (server-agnostic).
 
@@ -3028,28 +3048,9 @@ class HeuristicService:
                         reason="Cold start - disable attacking during portal walk (never 'ai manual' — that freezes auto-attack forever and blocks all EXP)",
                     ))
                     # AGNOSTIC town target (RC3a): resolve a safe town to portal-walk
-                    # to. Prefer the learned server_solutions safe_town, else the
-                    # portal-graph reachable-hunting resolver's first map's town, else
-                    # fall back to the portal map itself. Never a hardcoded 'prontera'.
-                    _town_target = ""
-                    try:
-                        from ai_sidecar.server_adaptation import get_server_solutions_store
-                        _learned_town = str(get_server_solutions_store().get("safe_town", None) or "")
-                        if _learned_town:
-                            _town_target = _learned_town
-                    except Exception:
-                        _town_target = ""
-                    if not _town_target:
-                        try:
-                            _mk_lvl = int(signals.get("base_level", 1) or 1)
-                            _mk_towns = [m for m, _s in _mk_get_hunting_maps(_mk_lvl) if any(
-                                t in m for t in ("fild", "dun"))]
-                            if _mk_towns:
-                                _town_target = _mk_towns[0].split("_fild")[0].split("_dun")[0]
-                        except Exception:
-                            _town_target = ""
-                    if not _town_target:
-                        _town_target = "prontera"  # true last-resort cold-start fallback
+                    # to via the shared helper (learned safe_town -> derived town ->
+                    # last-resort). Never a hardcoded 'prontera' at decision time.
+                    _town_target = self._resolve_safe_town()
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_town_target}",
                         confidence=0.99, domain="economy",
@@ -3375,35 +3376,42 @@ class HeuristicService:
                             reason=f"Step 7 - talk to {_assigned_job} job change NPC",
                         ))
                     else:
+                        _town7 = self._resolve_safe_town()
                         actions.append(HeuristicAction(
-                            kind="command", command="move prontera",
+                            kind="command", command=f"move {_town7}",
                             confidence=0.99, domain="progression",
-                            reason="Step 7 - go to Prontera for job change",
+                            reason=f"Step 7 - go to {_town7} for job change",
                         ))
             else:
                 # No assigned job yet — go to town and wait
                 if not _cs_in_town:
+                    _town7b = self._resolve_safe_town()
                     actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
+                        kind="command", command=f"move {_town7b}",
                         confidence=0.99, domain="progression",
-                        reason="Step 7 - go to town, waiting for job assignment",
+                        reason=f"Step 7 - go to town {_town7b}, waiting for job assignment",
                     ))
         if _cold_start_step == 8:
-            # Step 8: Post-job-change first hunt on appropriate map
-            # Determine map by job class
-            _job_hunt_maps = {
-                "acolyte": "pay_fild01",
-                "mage": "pay_fild01",
-                "swordman": "prt_fild05",
-                "hunter": "pay_fild01",
-                "thief": "mjolnir_04",
-                "merchant": "prt_fild05",
-            }
-            _hunt_map = "prt_fild05"
-            for _j, _m in _job_hunt_maps.items():
-                if _j in job_name:
-                    _hunt_map = _m
-                    break
+            # Step 8: Post-job-change first hunt on appropriate map.
+            # AGNOSTIC: resolve from game_knowledge_db by job class hint, else the
+            # reachable_hunting_maps resolver — never a hardcoded job->map dict.
+            _hunt_map = ""
+            try:
+                _gkd = GameKnowledgeDB()
+                _zone = _gkd.get_hunting_zone(int(base_level or 1), class_hint=str(job_name or "all"))
+                if _zone and _zone.get("map_name"):
+                    _hunt_map = str(_zone["map_name"])
+            except Exception:
+                _hunt_map = ""
+            if not _hunt_map:
+                try:
+                    _reach8 = _mk_reachable_hunting_maps(str(_cs_map or ""), int(base_level or 1))
+                    if _reach8:
+                        _hunt_map = _reach8[0][0]
+                except Exception:
+                    _hunt_map = ""
+            if not _hunt_map:
+                _hunt_map = "prt_fild05"  # true last-resort cold-start fallback
             if _cs_in_hunting:
                 # On hunting map — farm
                 actions.append(HeuristicAction(
