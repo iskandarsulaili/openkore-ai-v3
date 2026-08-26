@@ -116,3 +116,25 @@ NOT conflict with or duplicate them:
 ## BATCH E — VERIFY (deferred per founder directive: implement+wire now, push in batches)
 - [ ] 11. Two-node E2E (bot + RAW client peer), EXP growth, host serves a map,
       relay relays, mesh passes 0x035F. Update checklist + commit per batch.
+
+## DORMANT-WIRING SWEEP (2026-08-26) — 12 engines wired, all pushed
+A systematic `getattr(self._runtime, X)` read vs `runtime.X =` write scan surfaced
+engines that were referenced-but-never-instantiated (silent no-op wiring blocks)
+or complete-but-zero-callers. All wired in create_runtime with graceful fallback:
+
+- comeback_engine (post-death comeback plan, fired on death)
+- meta_tracker (observes evolving meta, fed every actor/snapshot)
+- preemptive_manager (restock/heal/vendor BEFORE bridge reflex, fed every snapshot)
+- portal_verifier (validates portals.txt vs observed, records every map transition)
+- competitive_intelligence (empire/theory_of_mind/unified_consciousness dep)
+- crisis_manager (failure diagnosis/recovery)
+- social_engine (conversation/theory_of_mind/stealth wiring, was read at 5 sites)
+- positioning_system (spatial combat, wired into combat_loop.set_positioning_system)
+- behavior_engine (anti-detection human-like imperfections -> stealth_engine)
+- conscious_engine (class-build decisions -> unified_consciousness)
+- party_coordinator (fleet-based, init AFTER fleet_coordinator dep)
+- WebResearchEngine (SearXNG research, was disabled by comment)
+
+Also: fixed Windows clone blocker — removed 4 tracked `data/swarm_state_*:*.json`
+colon-in-name files + gitignored data/swarm_state_*.json (illegal on Windows).
+Repo Windows-cloneable (verified 0 illegal chars across 5185 tracked files).
