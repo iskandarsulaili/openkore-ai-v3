@@ -91,7 +91,11 @@ class ProgressionDigest(BaseModel):
     skill_points: int | None = None
     stat_points: int | None = None
     zeny: int | None = None
-    weight: int | None = None
+    # weight/weight_max are fractional (sum of per-item weights from the bridge,
+    # e.g. 7600.0) — must be float or pydantic 422s (int_from_float) and drops
+    # the whole snapshot. Mirrors contracts/state_graph.py InventoryState.
+    weight: float | None = None
+    weight_max: float | None = None
 
 
 class SkillDigest(BaseModel):
