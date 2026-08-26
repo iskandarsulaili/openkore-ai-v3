@@ -598,6 +598,8 @@ class RuntimeState:
     crisis_manager: object | None = None  # CrisisManager — failure diagnosis/recovery
     social_engine: object | None = None  # SocialEngine — chat/relationship engine
     positioning_system: object | None = None  # PositioningSystem — spatial combat awareness
+    behavior_engine: object | None = None  # BehaviorEngine — human-like anti-detection imperfections
+    conscious_engine: object | None = None  # ConsciousDecisionEngine — class build decisions
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6436,6 +6438,18 @@ def create_runtime() -> RuntimeState:
         logger.info("positioning_system_initialized")
     except Exception as _ps_e:
         logger.warning("positioning_system_init_failed: %s", _ps_e)
+    try:
+        from ai_sidecar.anti_detection.behavior_engine import get_behavior_engine
+        runtime.behavior_engine = get_behavior_engine()
+        logger.info("behavior_engine_initialized")
+    except Exception as _be_e:
+        logger.warning("behavior_engine_init_failed: %s", _be_e)
+    try:
+        from ai_sidecar.conscious_engine import get_conscious_engine
+        runtime.conscious_engine = get_conscious_engine()
+        logger.info("conscious_engine_initialized")
+    except Exception as _ce_e:
+        logger.warning("conscious_engine_init_failed: %s", _ce_e)
 
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
