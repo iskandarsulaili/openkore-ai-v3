@@ -59,6 +59,15 @@ Status legend:
       + 300 potions). All 3 testbots stuck at Lv1/2 on izlude for hours. lockMap must
       defer while heading INTO the academy; academy-first must complete before farm
       lockMap engages.
+- [ ] RC3a. **LOCKMAP MUST BE AGNOSTIC + LLM/AGENT-DECIDED (user directive 2026-08-26)**:
+      `lockMap` is currently HARDCODED in multiple sites (heuristic_service.py emits
+      `set lockMap prt_fild05` / `set lockMap {_hunt_map}` with hardcoded fallbacks;
+      bridge aiSidecarBridge.pl:943 defaults `aiSidecar_huntingMap` to 'prt_fild05';
+      configs hardcode lockMap prontera/izlude). NO hardcoded map literals in the
+      decision. lockMap must be decided by the LLM/CrewAI conscious tier (from live
+      server map knowledge + server_solutions + reachable-farm resolution) and persisted
+      as a learned fact, NOT baked into *.py or config. The farm-map decision is a
+      WHAT that belongs to the conscious brain, translated via learned facts.
 - [ ] 2.1. cold_start relog loop: `ColdStartManager.assess` emits `relog` on LIVE
       in-game bots (log: "[cold_start] ... emitting relog (cooldown 120s)" while bot
       is Lv1 on izlude). The in-game guard (cold_start.py:312-322) checks
@@ -124,5 +133,6 @@ Status legend:
 
 ────────────────────────────────────────────────────────────────────────────
 ## Progress log (append per batch)
-- [2026-08-26] RC1 fixed (llm/config.py fallback) + sidecar restarted + LLM brain
-  verified alive. UNCOMMITTED. Started campaign; created this checklist.
+- [2026-08-26] RC1 fixed (llm/config.py fallback openai+deepseek) + sidecar restarted + LLM brain verified alive. Committed 95e1230d4. Created this checklist.
+- [2026-08-26] BATCH 1 DONE: LLMManager wired to SidecarSettings. LLM conscious brain alive (verified: available=True, openai enabled, _post_json firing).
+- [2026-08-26] VERIFIED live snapshot: TestBotA at izlude (127,253) = iz_ac01 exit warp tile, inventory empty, lvl 1, zeny 0. Bot reached academy but did NOT register (no weapon). lockMap hardcode (prt_fild05/08) is the root blocker. User directive: lockMap + ALL config must be agnostic, LLM/agent-decided, never hardcoded. RC3a added. BATCH 2 in progress (agnostic lockMap).
