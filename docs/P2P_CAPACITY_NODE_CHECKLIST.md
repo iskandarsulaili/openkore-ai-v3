@@ -32,6 +32,27 @@ Scope mirrors RAW's own transport (docs/RAW_P2P_INTEGRATION_PLAN.md §1):
       fixed to skip CLOSED (7cb9715c6) + dynamic openList realloc growth (d3b5dbfda).
       VERIFIED LIVE: bot in-game izlude, RSS 206MB flat 13+ min, 0 disconnects.
 
+## BATCH B6-aw — SELF-AWARENESS (SOUL.md + MEMORY.md, Hermes memory pattern)
+The conscious tier now has the Hermes-style curated in-context memory so it can
+self-learn / self-heal / self-improve coherently across every reasoning call.
+Reverse-engineered hermes-agent source first (tools/memory_tool.py MemoryStore,
+system_prompt.py:827 volatile-parts injection) to match the real pattern.
+- [x] SA-1. SOUL.md (a53c8c646): curated identity + decision doctrine injected
+      verbatim into every conscious-tier LLM call (Hermes has no identity doc;
+      this is OUR addition).
+- [x] SA-2. MEMORY.md (a53c8c646): LLM-curated durable lessons (Hermes memory-tool
+      contract — the agent decides what to remember, NOT a DB dump). Char-bounded
+      (100k), injected verbatim each call. Gitignored as runtime-learned state.
+- [x] SA-3. Injection wired into BOTH LLM paths: LLMManager.complete/complete_json
+      + model_router.generate_with_fallback (every reasoning call). Proven via
+      /tmp/test_sa_direct.py PASS.
+- [x] SA-4. API: /v1/self/{status,lesson,soul,hub} — conscious LLM writes lessons,
+      fleet observes pool. LIVE: status soul=2953, hub round-trip verified.
+- [x] SA-5. LessonsHub (4e2229248): SQLite central sink shared by all fleet bots —
+      the "central sink now" (push/pull round-trip proven, boot-time cross-bot
+      merge). Remote RAW-style HTTP sink (memory_sink_endpoint) optional.
+- [ ] SA-6. Mesh gossip (WebRTC) — deferred until Batch D in-game mesh lands.
+
 ## BATCH STATUS-b — PEER-HOST (bot serves maps)
 - [ ] 6. Wire bot → host-creds (GET /ads/host-creds) + E5 attestation (maplogin
       with host session creds) → char register → claim empty maps (host_assignable).
