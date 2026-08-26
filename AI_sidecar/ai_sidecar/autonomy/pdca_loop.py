@@ -490,6 +490,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["skills"] = [s.get("skill_id", "") for s in raw_skills if isinstance(s, dict)]
                         signals["base_level"] = int(getattr(prog, "base_level", 1) or 1)
                         signals["inventory_items"] = getattr(latest, "inventory_items", []) or []
+                        signals["has_weapon_in_inventory"] = bool(getattr(latest, "has_weapon_in_inventory", False))
                         signals["zeny"] = int(getattr(prog, "zeny", 0) or 0)
                         signals["characters"] = getattr(latest, "characters", []) or []
                         if not signals["characters"]:
