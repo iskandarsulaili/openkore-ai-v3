@@ -556,7 +556,6 @@ class RuntimeState:
     cost_tracker: CostTracker | None = None
     experience_db: ExperienceDatabase | None = None
     npc_dialog: NPCDialogEngine | None = None
-    # web_research: removed — requires SearXNG, disabled
     # ── New god-tier AI systems ──
     role_manager: "RoleManager | None" = None
     goal_stack: "GoalStackComputation | None" = None
