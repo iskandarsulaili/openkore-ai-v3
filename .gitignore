@@ -6,3 +6,4 @@ private/
 # Runtime self-curated memory (bot-learned lessons) — not committed; SOUL.md stays tracked.
 AI_sidecar/ai_sidecar/memory/MEMORY.md
 AI_sidecar/ai_sidecar/memory/*.bak
+AI_sidecar/ai_sidecar/memory/lessons_hub.db

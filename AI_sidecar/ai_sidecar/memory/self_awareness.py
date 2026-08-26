@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sqlite3
 import time
 from pathlib import Path
 from threading import RLock
@@ -121,6 +122,85 @@ class MemorySink:
             return []
 
 
+class LessonsHub:
+    """Local central sink for the fleet's shared durable lessons (SQLite).
+
+    Serves as the "central sink now" — every bot on the same box pushes lessons
+    here and pulls them back, so the fleet cross-improves even before the
+    external RAW-hosted mesh/HTTP sink is live. The remote MemorySink remains
+    available (config memory_sink_endpoint) for cross-box RAW-style telemetry.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lessons (
+                    id TEXT PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    importance INTEGER NOT NULL DEFAULT 5,
+                    source TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.commit()
+
+    def push(self, lessons: list[dict[str, Any]]) -> int:
+        """Upsert lessons (idempotent by id). Returns number stored/updated."""
+        if not lessons:
+            return 0
+        added = 0
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                for l in lessons:
+                    content = (l.get("content") or "").strip()
+                    if not content:
+                        continue
+                    lid = l.get("id") or _lesson_id(content)
+                    now = int(time.time())
+                    try:
+                        conn.execute(
+                            """
+                            INSERT INTO lessons(id, content, importance, source, created_at, updated_at)
+                            VALUES(?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(id) DO UPDATE SET
+                              content=excluded.content,
+                              importance=excluded.importance,
+                              updated_at=excluded.updated_at
+                            """,
+                            (lid, content, int(l.get("importance", 5) or 5),
+                             l.get("source", ""), now, now),
+                        )
+                    except sqlite3.Error as e:  # pragma: no cover
+                        logger.warning("lessons_hub_push_err %s", e)
+                conn.commit()
+                added = conn.total_changes
+        return added
+
+    def pull(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Return shared lessons newest-first, capped."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT id, content, importance, source, created_at, updated_at "
+                "FROM lessons ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count(self) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0])
+
+
 class SelfAwareness:
     """Wires SOUL.md + MEMORY.md into every conscious-tier LLM call."""
 
@@ -132,6 +212,7 @@ class SelfAwareness:
         sink_token: str = "",
         sink_enabled: bool = False,
         memory_char_limit: int = MEMORY_CHAR_LIMIT,
+        hub: Any | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -148,8 +229,61 @@ class SelfAwareness:
             token=sink_token,
             enabled=sink_enabled,
         )
+        # Local shared fleet hub (SQLite) — the working "central sink now".
+        self.hub = hub
 
         self.load_from_disk()
+        # Boot-time cross-bot learning: pull shared lessons from the hub.
+        if self.hub is not None:
+            try:
+                n = self.pull_shared_from_hub()
+                if n:
+                    logger.info("self_awareness_hub_pulled merged=%d", n)
+            except Exception as e:  # pragma: no cover
+                logger.warning("self_awareness_hub_pull_failed %s", e)
+
+    # ── Hub (fleet cross-learning) ────────────────────────────────────
+    def push_to_hub(self, content: str) -> bool:
+        """Push a single lesson to the shared fleet hub (idempotent)."""
+        if self.hub is None:
+            return False
+        try:
+            self.hub.push(
+                [{"id": _lesson_id(content), "content": content, "importance": 5,
+                  "source": "self_awareness"}]
+            )
+            return True
+        except Exception as e:  # pragma: no cover
+            logger.warning("self_awareness_hub_push_failed %s", e)
+            return False
+
+    def pull_shared_from_hub(self) -> int:
+        """Merge hub lessons into local MEMORY.md (dedup by lesson id)."""
+        if self.hub is None:
+            return 0
+        try:
+            shared = self.hub.pull(limit=500)
+        except Exception as e:  # pragma: no cover
+            logger.warning("self_awareness_hub_pull_failed %s", e)
+            return 0
+        if not shared:
+            return 0
+        with self._lock:
+            existing = set(_lesson_id(e) for e in self._memory_entries)
+            added = 0
+            for l in shared:
+                content = (l.get("content") or "").strip()
+                if not content or _lesson_id(content) in existing:
+                    continue
+                new_total = self.memory_char_count + len(content) + len(ENTRY_DELIMITER)
+                if new_total > self.memory_char_limit:
+                    continue
+                self._memory_entries.append(content)
+                existing.add(_lesson_id(content))
+                added += 1
+            if added:
+                self.save_to_disk()
+        return added
 
     # ── Disk ──────────────────────────────────────────────────────────
     def load_from_disk(self) -> None:
@@ -241,13 +375,18 @@ class SelfAwareness:
             self._memory_entries = entries
             self.save_to_disk()
 
-        # Crowdsource: push the new lesson to the central sink.
+        # Crowdsource: push the new lesson to the fleet hub + central sink.
         lesson = {
             "id": _lesson_id(content),
             "content": content,
             "importance": 5,
             "updated_at": time.time(),
         }
+        if self.hub is not None:
+            try:
+                self.hub.push([lesson])
+            except Exception:  # pragma: no cover
+                pass
         if self.sink.available:
             self.sink.push_lessons([lesson])
 

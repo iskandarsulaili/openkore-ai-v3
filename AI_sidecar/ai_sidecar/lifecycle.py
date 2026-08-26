@@ -6011,20 +6011,25 @@ def create_runtime() -> RuntimeState:
     self_awareness = None
     if getattr(settings, "self_awareness_enabled", True):
         try:
-            from ai_sidecar.memory.self_awareness import SelfAwareness
+            from ai_sidecar.memory.self_awareness import LessonsHub, SelfAwareness
             sa_dir = getattr(settings, "self_awareness_dir", "") or (workspace_root / "AI_sidecar" / "ai_sidecar" / "memory")
+            # Fleet-shared central sink (SQLite) — the working "central sink now".
+            hub_path = Path(sa_dir) / "lessons_hub.db"
+            hub = LessonsHub(db_path=hub_path)
             self_awareness = SelfAwareness(
                 Path(sa_dir),
                 sink_endpoint=getattr(settings, "memory_sink_endpoint", ""),
                 sink_token=getattr(settings, "memory_sink_token", ""),
                 sink_enabled=getattr(settings, "memory_sink_enabled", False),
                 memory_char_limit=getattr(settings, "memory_char_limit", 100_000),
+                hub=hub,
             )
             logger.info(
                 "self_awareness_initialized",
                 extra={"event": "self_awareness_initialized", "dir": str(sa_dir),
                        "soul_chars": len(self_awareness.soul),
-                       "memory_entries": len(self_awareness.memory_entries)},
+                       "memory_entries": len(self_awareness.memory_entries),
+                       "hub_count": hub.count()},
             )
         except Exception:
             logger.exception("self_awareness_init_failed", extra={"event": "self_awareness_init_failed"})

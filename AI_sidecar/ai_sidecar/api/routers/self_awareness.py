@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ai_sidecar.api.deps import get_runtime
@@ -83,3 +83,12 @@ def get_soul(runtime: RuntimeState = Depends(get_runtime)) -> dict[str, Any]:
     if sa is None:
         raise HTTPException(status_code=503, detail="self_awareness_disabled")
     return {"ok": True, "soul": sa.soul}
+
+
+@router.get("/hub", response_model=dict[str, Any])
+def hub_lessons(limit: int = Query(default=100, ge=1, le=1000), runtime: RuntimeState = Depends(get_runtime)) -> dict[str, Any]:
+    """Return the fleet's shared lesson pool (central sink / cross-bot learning)."""
+    sa = getattr(runtime, "self_awareness", None)
+    if sa is None or getattr(sa, "hub", None) is None:
+        raise HTTPException(status_code=503, detail="hub_disabled")
+    return {"ok": True, "lessons": sa.hub.pull(limit=limit), "count": sa.hub.count()}
