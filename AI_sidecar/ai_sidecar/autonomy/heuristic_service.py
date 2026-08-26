@@ -3552,8 +3552,8 @@ class HeuristicService:
                 "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
                 for item in _audit_items
             )
+            _audit_zeny = signals.get("zeny", 0) or 0  # init before any branch references it
             if not _audit_has_potions:
-                _audit_zeny = signals.get("zeny", 0) or 0
                 _audit_potion_id = self._get_potion_id(base_level)
                 _audit_potion_cost = self._get_potion_cost(_audit_potion_id)
                 _audit_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_audit_potion_id, "Red")
