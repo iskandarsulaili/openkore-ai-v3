@@ -96,7 +96,11 @@ Status legend:
 - [x] 3.1b. **NEW BUG FOUND**: `PartyCoordinator check failed: 'FleetCoordinator'
       object has no attribute 'get_bot'` (fires every cycle in sidecar log). A real
       unwired fleet bug — PartyCoordinator calls get_bot() that FleetCoordinator
-      doesn't implement. OPEN (fix pending).
+      doesn't implement. FIXED 454084e95: added get_bot/list_bots/party_members to
+      FleetCoordinator, BotRole live fields (position/party_id/current_role/hp/
+      weight/zeny/map_name/hp_pct/weight_pct), feed live bot state into fleet each
+      cycle, coordination failures now logged (was silent dead code). 22 fleet
+      tests pass. VERIFIED tank+healer -> party_invite_observe.
 - [ ] 3.2. Leader/coordination: does a leader coordinate others? Verify RoleManager
       assigns roles, PartyCoordinator forms parties, cross-bot resource sharing fires.
 - [ ] 3.3. Multi-bot identity: 3 testbots on one account (testbot99 chars 0/1/2)
