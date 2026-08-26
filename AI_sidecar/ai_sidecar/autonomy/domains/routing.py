@@ -92,12 +92,28 @@ class RoutingDomain(BaseDomain):
             return
         target_map = service._adaptive.get_best_map(bot_id, base_level)
         if not target_map:
-            if base_level >= 20:
-                target_map = "pay_fild01"
-            elif base_level >= 15:
-                target_map = "prt_fild08"
-            else:
-                target_map = "prt_fild05"
+            # AGNOSTIC farm-map resolution (RULE.md / SPEC §4): never bake
+            # server-specific map literals into the decision. Prefer (1) the
+            # learned server_solutions farm_map fact, then (2) the data-driven
+            # reachable_hunting_maps resolver (level-scored + portal-graph
+            # filtered). The hardcoded level ladder is removed.
+            try:
+                from ai_sidecar.server_adaptation import get_server_solutions_store
+                _farm = str((get_server_solutions_store().get("farm_map", None) or "") or "").strip()
+                if _farm and any(s in _farm for s in ("_fild", "_dun", "_sewb")):
+                    target_map = _farm
+            except Exception:
+                pass
+            if not target_map:
+                try:
+                    from ai_sidecar.combat.map_knowledge import reachable_hunting_maps
+                    _rl = reachable_hunting_maps(map_name, base_level)
+                    if _rl:
+                        # Prefer the top candidate that is a real field/dungeon.
+                        target_map = next((m for m, _ in _rl if any(
+                            s in m for s in ("_fild", "_dun", "_sewb"))), _rl[0][0])
+                except Exception:
+                    pass
 
         actions.append(HeuristicAction(
             kind="command", command="stand",
