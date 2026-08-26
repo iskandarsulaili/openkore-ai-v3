@@ -594,6 +594,10 @@ class RuntimeState:
     meta_tracker: object | None = None  # MetaTracker — observes evolving meta
     preemptive_manager: object | None = None  # PreemptiveResourceManager — restock before depletion
     portal_verifier: object | None = None  # PortalVerifier — validates portals.txt vs observed
+    competitive_intelligence: object | None = None  # CompetitiveIntelligence — meta/opponent tracking
+    crisis_manager: object | None = None  # CrisisManager — failure diagnosis/recovery
+    social_engine: object | None = None  # SocialEngine — chat/relationship engine
+    positioning_system: object | None = None  # PositioningSystem — spatial combat awareness
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6402,6 +6406,36 @@ def create_runtime() -> RuntimeState:
         logger.info("portal_verifier_initialized")
     except Exception as _pv_e:
         logger.warning("portal_verifier_init_failed: %s", _pv_e)
+
+    # ── Referenced-but-never-instantiated engines — WIRED ──
+    # These were read via getattr(self._runtime, ...) across pdca_loop
+    # (dependency wiring: empire_manager/theory_of_mind/unified_consciousness/
+    # competitive_evaluator all do `_ci = getattr(...); if _ci is not None`)
+    # but NEVER set, so every wiring block silently no-op'd. Dormant-but-needed.
+    try:
+        from ai_sidecar.strategy.competitive_intelligence import get_competitive_intelligence
+        runtime.competitive_intelligence = get_competitive_intelligence()
+        logger.info("competitive_intelligence_initialized")
+    except Exception as _ci_e:
+        logger.warning("competitive_intelligence_init_failed: %s", _ci_e)
+    try:
+        from ai_sidecar.strategy.crisis_manager import get_crisis_manager
+        runtime.crisis_manager = get_crisis_manager()
+        logger.info("crisis_manager_initialized")
+    except Exception as _cm_e:
+        logger.warning("crisis_manager_init_failed: %s", _cm_e)
+    try:
+        from ai_sidecar.social.social_engine import get_social_engine
+        runtime.social_engine = get_social_engine()
+        logger.info("social_engine_initialized")
+    except Exception as _se_e:
+        logger.warning("social_engine_init_failed: %s", _se_e)
+    try:
+        from ai_sidecar.combat.spatial_combat import get_positioning_system
+        runtime.positioning_system = get_positioning_system()
+        logger.info("positioning_system_initialized")
+    except Exception as _ps_e:
+        logger.warning("positioning_system_init_failed: %s", _ps_e)
 
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
