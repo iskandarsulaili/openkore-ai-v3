@@ -1771,7 +1771,39 @@ class HeuristicService:
                     if self._portal_db and self._pathfinder and _gs.map_state:
                         _cm = _gs.map_state.name
                         if _gs.character and hasattr(_gs.character, 'base_level') and _gs.character.base_level:
-                            _target = "prt_fild05" if _gs.character.base_level < 10 else "pay_dun00" if _gs.character.base_level < 20 else "orcsdun01"
+                            # AGNOSTIC farm-target resolution (RC3a): prefer the learned
+                            # server_solutions farm_map, else the portal-graph + level-scored
+                            # reachable_hunting_maps resolver, else fall back to the adaptive
+                            # get_best_map. No hardcoded map literal decides the farm.
+                            _target = ""
+                            _bl_c = int(_gs.character.base_level or 1)
+                            try:
+                                from ai_sidecar.server_adaptation import get_server_solutions_store
+                                _learned = str(get_server_solutions_store().get("farm_map", None) or "")
+                                if _learned:
+                                    # Use the learned farm ONLY if it's reachable from the
+                                    # current map (portal-graph verified). A learned farm that
+                                    # is a 2-hop clone (e.g. prt_fild08c from izlude) is
+                                    # unroutable and would spin "Cannot calculate a route".
+                                    _reach_set = {m for m, _s in _mk_reachable_hunting_maps(str(_cm or ""), _bl_c)}
+                                    if _learned in _reach_set:
+                                        _target = _learned
+                            except Exception:
+                                _target = ""
+                            if not _target:
+                                try:
+                                    _reach = _mk_reachable_hunting_maps(str(_cm or ""), _bl_c)
+                                    if _reach:
+                                        _target = _reach[0][0]
+                                except Exception:
+                                    _target = ""
+                            if not _target:
+                                try:
+                                    _adaptive = getattr(self, "_adaptive", None)
+                                    if _adaptive is not None and hasattr(_adaptive, "get_best_map"):
+                                        _target = str(_adaptive.get_best_map(_bot_id, _bl_c) or "")
+                                except Exception:
+                                    _target = ""
                             # CONSCIOUS/REFLEX FALLBACK: a weapon-less cold-start novice
                             # that just escaped to izlude must complete ACADEMY FIRST
                             # (free Novice_Knife + 300 potions at iz_ac01 receptionist)
@@ -1822,8 +1854,16 @@ class HeuristicService:
                                 # working bot off its current farm and break the kill loop. A
                                 # Pro picks a field and works it; commit to the farm it's on.
                                 _cm_farmable = str(_cm or "").lower().replace(".gat", "")
-                                _FARMS_OK = {"prt_fild08c", "prt_fild08", "prt_fild05", "prt_fild04"}
-                                if _cm_farmable in _FARMS_OK:
+                                # AGNOSTIC S18 stay-committed check: a bot is already on a
+                                # farmable hunting map if the portal-graph hunting-map resolver
+                                # classifies it as a hunting map (never a hardcoded set).
+                                _is_farmable = False
+                                try:
+                                    _is_farmable = _cm_farmable in {m for m, _s in _mk_get_hunting_maps(_bl_c)}
+                                except Exception:
+                                    _is_farmable = _cm_farmable in {
+                                        "prt_fild08c", "prt_fild08", "prt_fild05", "prt_fild04"}
+                                if _is_farmable:
                                     _actions.append(HeuristicAction(
                                         kind="log", command=f"commit_farm={_cm_farmable}",
                                         confidence=0.99, domain="routing",
@@ -2955,11 +2995,10 @@ class HeuristicService:
         # Use stable key based on character name only (not account prefix)
         _cs_stable_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
         _cold_start_step = self._cold_start_step.get(_cs_stable_key, 0)
-        _has_weapon = any(
-            "knife" in str(item).lower() or "sword" in str(item).lower() or "mace" in str(item).lower() or
-            "bow" in str(item).lower() or "dagger" in str(item).lower() or "rod" in str(item).lower()
-            for item in inventory
-        )
+        # AGNOSTIC + LATCHED weapon detection (RC3a / 0B09-parse gap): use the
+        # latched decision so an intermittent inventory snapshot never reports a
+        # weapon-less bot. Raw item-name matching below is a fallback only.
+        _has_weapon = self._has_coldstart_weapon(signals)
         _has_potions = any(
             "potion" in str(item).lower() or "red" in str(item).lower() or "orange" in str(item).lower() or "white" in str(item).lower()
             for item in inventory
@@ -2988,10 +3027,33 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start - disable attacking during portal walk (never 'ai manual' — that freezes auto-attack forever and blocks all EXP)",
                     ))
+                    # AGNOSTIC town target (RC3a): resolve a safe town to portal-walk
+                    # to. Prefer the learned server_solutions safe_town, else the
+                    # portal-graph reachable-hunting resolver's first map's town, else
+                    # fall back to the portal map itself. Never a hardcoded 'prontera'.
+                    _town_target = ""
+                    try:
+                        from ai_sidecar.server_adaptation import get_server_solutions_store
+                        _learned_town = str(get_server_solutions_store().get("safe_town", None) or "")
+                        if _learned_town:
+                            _town_target = _learned_town
+                    except Exception:
+                        _town_target = ""
+                    if not _town_target:
+                        try:
+                            _mk_lvl = int(signals.get("base_level", 1) or 1)
+                            _mk_towns = [m for m, _s in _mk_get_hunting_maps(_mk_lvl) if any(
+                                t in m for t in ("fild", "dun"))]
+                            if _mk_towns:
+                                _town_target = _mk_towns[0].split("_fild")[0].split("_dun")[0]
+                        except Exception:
+                            _town_target = ""
+                    if not _town_target:
+                        _town_target = "prontera"  # true last-resort cold-start fallback
                     actions.append(HeuristicAction(
-                        kind="command", command="move prontera",
+                        kind="command", command=f"move {_town_target}",
                         confidence=0.99, domain="economy",
-                        reason="Cold start - walk to Prontera portal",
+                        reason=f"Cold start - walk to safe town ({_town_target})",
                     ))
                 else:
                     # In Prontera — advance to next step based on inventory
