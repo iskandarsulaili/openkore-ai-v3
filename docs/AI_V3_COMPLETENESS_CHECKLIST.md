@@ -109,6 +109,15 @@ Status legend:
 - [ ] 5.2. Verify heuristic_service / reflex tier holds only generic safety rules
       (never per-server).
 - [ ] 5.3. Bridge (Perl) passes commands only — never the source of strategy.
+- [x] 5.4. **Inventory-snapshot false-empty FIXED** [committed, restart pending]:
+      bridge read `$char->{inventory}` (dead hash key — OpenKore stores inventory
+      at `$char->inventory()` tied-list). ALL 34 bridge reads returned empty →
+      item_count=0 / inventory_items=[] / has_weapon=0 every snapshot even when
+      the char owned a knife → cold-start academy believed every bot "weapon-less"
+      → never advanced. FIX: `_char_inventory()` helper + full inventory_items
+      digest (id/name/qty/type/equipped) + has_weapon_in_inventory in snapshot
+      payload; sidecar reads top-level inventory_items; `_has_coldstart_weapon`
+      robust to all forms. NEEDS: restart sidecar + bots to load.
 
 ## 6. DORMANT / DEAD / UNWIRED SWEEP (reconcile, never trim)
 

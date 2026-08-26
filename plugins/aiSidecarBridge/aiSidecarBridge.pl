@@ -2126,8 +2126,27 @@ sub _char_inventory {
     return [] if !$char;
     my $inv = eval { $char->inventory() } || undef;
     return [] if !$inv;
-    # Tied InventoryList derefs as an array of Actor::Item objects.
-    my @items = eval { @{$inv} } || ();
+    # Use the DOCUMENTED ObjectList iteration API. This fork's `@{}` overload
+    # is unreliable (deref failed → raw=err), so prefer getItems() which returns
+    # the real Actor::Item array (OL_cItems). Fall back to get($binID) when the
+    # deref yields binID integers (older fork semantics).
+    my @items;
+    my $_gi = eval { $inv->getItems() } || undef;
+    if (ref($_gi) eq 'ARRAY' && @{$_gi}) {
+        for my $el (@{$_gi}) {
+            push @items, $el if ref($el) && eval { $el->isa('Actor::Item') };
+        }
+    }
+    if (!@items) {
+        for my $el (eval { @{$inv} } || ()) {
+            if (ref($el) && eval { $el->isa('Actor::Item') }) {
+                push @items, $el;
+            } else {
+                my $obj = eval { $inv->get($el) } || undef;
+                push @items, $obj if $obj;
+            }
+        }
+    }
     return \@items;
 }
 

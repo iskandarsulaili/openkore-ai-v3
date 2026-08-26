@@ -208,6 +208,7 @@ class BotStateSnapshot(BaseModel):
     combat: CombatState = Field(default_factory=CombatState)
     inventory: InventoryDigest = Field(default_factory=InventoryDigest)
     inventory_items: list[InventoryItemDigest] = Field(default_factory=list)
+    has_weapon_in_inventory: bool = False
     progression: ProgressionDigest = Field(default_factory=ProgressionDigest)
     skills: list[SkillDigest] = Field(default_factory=list)
     quests: list[QuestDigest] = Field(default_factory=list)
