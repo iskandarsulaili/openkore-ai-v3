@@ -763,8 +763,8 @@ sub on_mainLoop_post {
             my $_fs_is_town = grep { $_fs_map =~ /\Q$_/ } @_fs_town_maps;
             # Check if bot has 0 potions (cold start or emergency)
             my $_fs_has_potions = 0;
-            if ($char->{inventory}) {
-                for my $_fi (@{$char->{inventory}}) {
+            if (@{_char_inventory($char)}) {
+                for my $_fi (@{_char_inventory($char)}) {
                     next unless $_fi;
                     my $_fn = $_fi->{name} || '';
                     if ($_fn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -837,8 +837,8 @@ sub on_mainLoop_post {
                 if ($_pm =~ /_fild|_dun/i) {
                     # Just arrived on a hunting map — check potions
                     my $_hp = 0;
-                    if ($char->{inventory}) {
-                        for my $_hi (@{$char->{inventory}}) {
+                    if (@{_char_inventory($char)}) {
+                        for my $_hi (@{_char_inventory($char)}) {
                             next unless $_hi;
                             my $_hn = $_hi->{name} || '';
                             if ($_hn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -1509,8 +1509,8 @@ sub on_command_intercept {
 	    # On hunting map: block "move prontera" unless bot has 0 potions
 	    # (0 potions = need to return to town to buy)
 	    my $_ic_has_potions = 0;
-	    if ($char && $char->{inventory}) {
-	        for my $_gi (@{$char->{inventory}}) {
+	    if ($char && @{_char_inventory($char)}) {
+	        for my $_gi (@{_char_inventory($char)}) {
 	            next unless $_gi;
 	            my $_gi_name = $_gi->{name} || '';
 	            if ($_gi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -1530,8 +1530,8 @@ sub on_command_intercept {
 	    # In Prontera: if bot has 0 potions, DO NOT redirect to portal
 	    # Bot needs to buy potions first. Only redirect if bot has potions.
 	    my $_ic_has_potions = 0;
-	    if ($char && $char->{inventory}) {
-	        for my $_gi (@{$char->{inventory}}) {
+	    if ($char && @{_char_inventory($char)}) {
+	        for my $_gi (@{_char_inventory($char)}) {
 	            next unless $_gi;
 	            my $_gi_name = $_gi->{name} || '';
 	            if ($_gi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -2114,6 +2114,23 @@ sub _attempt_register {
 	_emit_telemetry('warning', 'bridge', 'register_failed', 'sidecar registration failed');
 }
 
+# ── Inventory accessor ─────────────────────────────────────────────────────
+# OpenKore stores the character inventory in an InventoryList tied-array at
+# $char->inventory() (method), NOT at the hash key $char->{inventory}. All the
+# bridge's old reads used the dead hash key, so every snapshot reported an
+# EMPTY inventory (item_count=0, inventory_items=[], has_weapon=0) even when
+# the character owned items — which made the cold-start academy logic believe
+# every bot was "weapon-less" forever. This helper returns the real list.
+sub _char_inventory {
+    my ($char) = @_;
+    return [] if !$char;
+    my $inv = eval { $char->inventory() } || undef;
+    return [] if !$inv;
+    # Tied InventoryList derefs as an array of Actor::Item objects.
+    my @items = eval { @{$inv} } || ();
+    return \@items;
+}
+
 sub _send_snapshot {
     return if !_bridge_enabled();
     return if !$registered;  # Don't send snapshots until registered
@@ -2185,8 +2202,30 @@ sub _build_snapshot_payload {
 	my $in_combat = defined $ai_top && $ai_top =~ /^(?:attack|skill_use|route|follow)/ ? 1 : 0;
 
 	my $item_count;
-	if ($char && $char->{inventory} && ref $char->{inventory} eq 'ARRAY') {
-		$item_count = scalar @{$char->{inventory}};
+	my @inventory_items_digest;
+	my $has_weapon_in_inventory = 0;
+	if ($char) {
+		my $_inv = _char_inventory($char);
+		$item_count = scalar @{$_inv};
+		# Build a compact inventory digest (id + name + qty + equipped + type) so
+		# the sidecar's cold-start / gear logic sees REAL items (not the dead
+		# hash-key reads that always returned empty).
+		for my $_inv_item (@{$_inv}) {
+			next unless defined $_inv_item;
+			my $_inv_type = $_inv_item->{type} || 0;
+			my $_inv_name = $_inv_item->{name} || '';
+			push @inventory_items_digest, {
+				item_id  => ($_inv_item->{nameID} // 0) + 0,
+				name     => $_inv_name,
+				quantity => ($_inv_item->{amount} // 0) + 0,
+				type     => $_inv_type,
+				equipped => (($_inv_item->{equipped} || 0) ? 1 : 0),
+			} if $_inv_name || ($_inv_item->{nameID} // 0);
+			# type 4 = weapon, type 5 = armor, type 6 = card, type 7 = pet, type 8 = accessory
+			if ($_inv_type == 4 || $_inv_type == 5 || $_inv_type == 8) {
+				$has_weapon_in_inventory = 1;
+			}
+		}
 	}
 
 	my $raw = {
@@ -2407,8 +2446,8 @@ sub _build_snapshot_payload {
 			# inventory weapon check: do we have any weapon in inventory?
 			$p{has_weapon_in_inventory} = 0;
 			$p{inventory_items} = [];
-			if ($char->{inventory}) {
-				for my $_inv_item (@{$char->{inventory}}) {
+			if (@{_char_inventory($char)}) {
+				for my $_inv_item (@{_char_inventory($char)}) {
 					next unless defined $_inv_item;
 					my $_inv_type = $_inv_item->{type} || 0;
 					my $_inv_name = $_inv_item->{name} || '';
@@ -2836,6 +2875,8 @@ sub _build_snapshot_payload {
 			weight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 			overweight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 		},
+		inventory_items => \@inventory_items_digest,
+		has_weapon_in_inventory => $has_weapon_in_inventory,
 		progression => $progression,
 		skills      => \@skills_list,
 		actors      => \@actors,
@@ -3144,9 +3185,9 @@ sub _poll_next_action {
 	# Also force-set attackAuto_inLockOnly=0 and attackAuto_routeToLock=0
 	# because OpenKore's getAttackAutoModeForContext returns 1 when
 	# attackAuto_inLockOnly==1 regardless of attackAuto value.
-	if ($char && $char->{inventory}) {
+	if ($char && @{_char_inventory($char)}) {
 		my $_pa_has_potions = 0;
-		for my $_pai (@{$char->{inventory}}) {
+		for my $_pai (@{_char_inventory($char)}) {
 			next unless $_pai;
 			my $_pan = $_pai->{name} || '';
 			if ($_pan =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -5933,8 +5974,8 @@ sub _rewrite_runtime_command {
 			if ($_cm =~ /_fild|_dun/i && (($tx == 373 && $ty == 205) || ($tx == 22 && $ty == 203))) {
 			        # Check if bot has 0 potions — if so, allow portal move to reach town
 			        my $_rp_has_potions = 0;
-			        if ($char && $char->{inventory}) {
-			            for my $_rpi (@{$char->{inventory}}) {
+			        if ($char && @{_char_inventory($char)}) {
+			            for my $_rpi (@{_char_inventory($char)}) {
 			                next unless $_rpi;
 			                my $_rpn = $_rpi->{name} || '';
 			                if ($_rpn =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -5984,8 +6025,8 @@ sub _rewrite_runtime_command {
 		    # BUT: if bot has 0 potions, block the redirect — bot needs to buy potions first
 		    if ($_current_map eq 'prontera') {
 		        my $_pr_has_potions = 0;
-		        if ($char && $char->{inventory}) {
-		            for my $_pr_gi (@{$char->{inventory}}) {
+		        if ($char && @{_char_inventory($char)}) {
+		            for my $_pr_gi (@{_char_inventory($char)}) {
 		                next unless $_pr_gi;
 		                my $_pr_name = $_pr_gi->{name} || '';
 		                if ($_pr_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -6011,8 +6052,8 @@ sub _rewrite_runtime_command {
 		if ($_current_map =~ /^[a-z]+_fild/ && lc($target) eq 'prontera') {
 		        # Check if bot has any potions
 		        $_guard_has_potions = 0;
-			if ($char && $char->{inventory}) {
-				for my $_gi (@{$char->{inventory}}) {
+			if ($char && @{_char_inventory($char)}) {
+				for my $_gi (@{_char_inventory($char)}) {
 					next unless $_gi;
 					my $_gi_name = $_gi->{name} || '';
 					if ($_gi_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green/i) {
@@ -6059,8 +6100,8 @@ sub _rewrite_runtime_command {
 		my $last_attempt = $_last_reflex_fire_ms{$cooldown_key} || 0;
 		# Check if bot has ANY potions in inventory
 		my $total_potions = 0;
-		if ($char && $char->{inventory}) {
-			for my $_pi (@{$char->{inventory}}) {
+		if ($char && @{_char_inventory($char)}) {
+			for my $_pi (@{_char_inventory($char)}) {
 				if ($_pi && $_pi->{name} =~ /potion|herb|fruit|berry/i) {
 					$total_potions += $_pi->{amount} || 1;
 				}
@@ -6072,8 +6113,8 @@ sub _rewrite_runtime_command {
 			return ('', "use_item_cooldown_$item_name");
 		}
 		my $found = 0;
-		if ($char && $char->{inventory}) {
-			for my $item (@{$char->{inventory}}) {
+		if ($char && @{_char_inventory($char)}) {
+			for my $item (@{_char_inventory($char)}) {
 				if ($item && lc($item->{name}) eq lc($item_name)) {
 					$found = 1;
 					last;
@@ -6990,9 +7031,9 @@ sub _discover_portals_sync {
 # ── Safe inventory list ──
 sub _safe_inventory_list {
 	my $cr = _safe_char();
-	return [] if !$cr || !$cr->{inventory};
+	return [] if !$cr;
 	my @items;
-	foreach my $_i (@{$cr->{inventory}}) {
+	foreach my $_i (@{_char_inventory($cr)}) {
 	    next unless ref($_i) eq 'HASH';
 	    push @items, { name => $_i->{name} || '', amount => $_i->{amount} || 0 };
 	}
@@ -7716,8 +7757,8 @@ sub _apply_ml_config_guard {
 	        # Find item in inventory by name
 	        my $_item_idx = 0;
 	        my $_found = 0;
-	        if ($char && $char->{inventory}) {
-	            for my $_inv_item (@{$char->{inventory}}) {
+	        if ($char && @{_char_inventory($char)}) {
+	            for my $_inv_item (@{_char_inventory($char)}) {
 	                next unless ref($_inv_item) eq 'HASH';
 	                my $_inv_name = $_inv_item->{name} || '';
 	                if (lc($_inv_name) eq lc($_item->{name})) {
@@ -7851,8 +7892,8 @@ sub _apply_ml_config_guard {
 	            # Find item in inventory
 	            my $_inv_idx = 0;
 	            my $_found = 0;
-	            if ($char && $char->{inventory}) {
-	                for my $_inv_item (@{$char->{inventory}}) {
+	            if ($char && @{_char_inventory($char)}) {
+	                for my $_inv_item (@{_char_inventory($char)}) {
 	                    next unless ref($_inv_item) eq 'HASH';
 	                    my $_inv_name = $_inv_item->{name} || '';
 	                    if (lc($_inv_name) eq lc($_item->{name})) {
@@ -8166,8 +8207,8 @@ sub _apply_ml_config_guard {
 	            # Find item in inventory
 	            my $_inv_idx = 0;
 	            my $_found = 0;
-	            if ($char && $char->{inventory}) {
-	                for my $_inv_item (@{$char->{inventory}}) {
+	            if ($char && @{_char_inventory($char)}) {
+	                for my $_inv_item (@{_char_inventory($char)}) {
 	                    next unless ref($_inv_item) eq 'HASH';
 	                    my $_inv_name = $_inv_item->{name} || '';
 	                    if (lc($_inv_name) eq lc($item_name)) {
@@ -8300,8 +8341,8 @@ sub _apply_ml_config_guard {
 	    # Add our item to the trade window
 	    my $_inv_idx = 0;
 	    my $_found = 0;
-	    if ($char && $char->{inventory}) {
-	        for my $_inv_item (@{$char->{inventory}}) {
+	    if ($char && @{_char_inventory($char)}) {
+	        for my $_inv_item (@{_char_inventory($char)}) {
 	            next unless ref($_inv_item) eq 'HASH';
 	            my $_inv_name = $_inv_item->{name} || '';
 	            if (lc($_inv_name) eq lc($item_give)) {

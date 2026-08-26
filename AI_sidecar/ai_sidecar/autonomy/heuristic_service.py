@@ -2672,13 +2672,30 @@ class HeuristicService:
 
     def _has_coldstart_weapon(self, signals: dict) -> bool:
         """Whether the bot holds/carries any starter weapon (used to decide if the
-        academy-first cold-start step is still needed). Robust to both inventory
-        item-name and attack-power signals."""
+        academy-first cold-start step is still needed). Robust to inventory-item
+        digest (id+name), legacy name list, attack-power, and the bridge's
+        has_weapon_in_inventory signal."""
         try:
-            inv = signals.get("inventory", []) or []
+            # Direct bridge signal (top-level snapshot).
+            if signals.get("has_weapon_in_inventory"):
+                return True
+            inv = signals.get("inventory_items", []) or signals.get("inventory", []) or []
             for item in inv:
-                name = str(item.get("name", "") if isinstance(item, dict) else item).lower()
+                if isinstance(item, dict):
+                    # Digest form: {name, item_id, quantity, type, equipped}
+                    name = str(item.get("name", "") or "").lower()
+                    _iid = item.get("item_id", 0) or item.get("id", 0)
+                    _itype = item.get("type", 0) or 0
+                else:
+                    name = str(item).lower()
+                    _iid = 0
+                    _itype = 0
+                # type 4 = weapon, type 5 = armor, type 8 = accessory
+                if _itype in (4, 5, 8):
+                    return True
                 if any(w in name for w in ("knife", "sword", "mace", "bow", "dagger", "rod", "cutter")):
+                    return True
+                if _iid and str(_iid) in ("1201", "1243", "1244", "1301", "1302", "1303", "1601", "1701"):
                     return True
             if int(signals.get("attack_power", 0) or 0) > 30:
                 return True
