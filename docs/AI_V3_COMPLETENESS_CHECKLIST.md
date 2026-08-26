@@ -68,6 +68,12 @@ Status legend:
       server map knowledge + server_solutions + reachable-farm resolution) and persisted
       as a learned fact, NOT baked into *.py or config. The farm-map decision is a
       WHAT that belongs to the conscious brain, translated via learned facts.
+- [ ] RC3b. **adaptive get_best_map can return NON-FARM maps**: map_performance records
+      kills/deaths/visits for ANY map the bot is on (incl. int_land intro island, town
+      maps). get_best_map picks the highest kills/deaths-ratio candidate → returned
+      `int_land` (a no-mob intro map) as a farm target. Must gate to farm-capable maps
+      (from map_knowledge hunting set / *_fild / *_dun), never intro/island/town maps.
+      This is part of the agnostic lockMap fix (RC3a).
 - [ ] 2.1. cold_start relog loop: `ColdStartManager.assess` emits `relog` on LIVE
       in-game bots (log: "[cold_start] ... emitting relog (cooldown 120s)" while bot
       is Lv1 on izlude). The in-game guard (cold_start.py:312-322) checks
@@ -113,15 +119,16 @@ Status legend:
 - [ ] 5.2. Verify heuristic_service / reflex tier holds only generic safety rules
       (never per-server).
 - [ ] 5.3. Bridge (Perl) passes commands only — never the source of strategy.
-- [x] 5.4. **Inventory-snapshot false-empty FIXED** [committed, restart pending]:
-      bridge read `$char->{inventory}` (dead hash key — OpenKore stores inventory
-      at `$char->inventory()` tied-list). ALL 34 bridge reads returned empty →
-      item_count=0 / inventory_items=[] / has_weapon=0 every snapshot even when
-      the char owned a knife → cold-start academy believed every bot "weapon-less"
-      → never advanced. FIX: `_char_inventory()` helper + full inventory_items
-      digest (id/name/qty/type/equipped) + has_weapon_in_inventory in snapshot
-      payload; sidecar reads top-level inventory_items; `_has_coldstart_weapon`
-      robust to all forms. NEEDS: restart sidecar + bots to load.
+- [x] 5.4. **Inventory-snapshot false-empty FIXED + LIVE-VERIFIED**: bridge read
+      `$char->{inventory}` (dead hash key — OpenKore stores inventory at
+      `$char->inventory()` InventoryList). All 34 read-sites dead → empty snapshot →
+      false "weapon-less" → cold-start never advanced. FIX: `_char_inventory()`
+      (getItems()/get(binID) — fork's @{} overload errors), full inventory_items
+      digest + has_weapon_in_inventory in snapshot payload; sidecar reads top-level;
+      _has_coldstart_weapon robust; InventoryItemDigest contract gains type field
+      (extra_forbid rejected it) + item_id stringified. VERIFIED LIVE: snapshot
+      has_weapon=True, 9 items (Novice Potion 569 x300, knife). Commits
+      d9117f163, 91e7e9d25, [type-field commit].
 
 ## 6. DORMANT / DEAD / UNWIRED SWEEP (reconcile, never trim)
 

@@ -930,12 +930,22 @@ class AdaptiveDataStore:
             return score
 
     def get_best_map(self, bot_id: str, base_level: int) -> str | None:
-        """Get the best hunting map for this bot's level from adaptive data."""
+        """Get the best hunting map for this bot's level from adaptive data.
+
+        Only returns FARM-CAPABLE maps (fields/dungeons). Intro islands (int_land),
+        towns, and other non-farm maps recorded in map_performance are excluded —
+        otherwise adaptive data pollution makes the bot "farm" a no-mob intro map.
+        """
         with self._lock:
             if not self.map_performance:
                 return None
             candidates = []
             for map_name, perf in self.map_performance.items():
+                _n = str(map_name or "").lower().replace(".gat", "")
+                # FARM GATE: only actual hunting maps. Intro islands / towns /
+                # rooms / dungeons with no farmable spawns are never valid targets.
+                if "_fild" not in _n and "_dun" not in _n:
+                    continue
                 avg_level = perf.get("avg_level", base_level)
                 if abs(avg_level - base_level) <= 5:
                     candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))
