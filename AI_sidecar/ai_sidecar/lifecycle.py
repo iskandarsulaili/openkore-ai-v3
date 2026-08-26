@@ -6288,6 +6288,42 @@ def create_runtime() -> RuntimeState:
     # Seed initial hunting knowledge for common maps
     _seed_db(runtime.experience_db)
     runtime.npc_dialog = NPCDialogEngine(experience_db=runtime.experience_db)
+
+    # ── P2P knowledge mesh (bot-to-bot learning gossip) — GUARANTEED INIT ──
+    # Previously only attempted inside a fragile pdca strategic-init block
+    # wrapped in `except: pass`; when an earlier unguarded service threw, the
+    # whole block aborted and the P2P node never started (silent dormant).
+    # Initialize here in create_runtime so it reliably comes up. This is the
+    # BOT-TO-BOT LEARNING channel (experiences/hunting-zones/prices/failures),
+    # NOT the launcher's in-game transport mesh — it never carries 0x035F.
+    try:
+        from ai_sidecar.p2p_knowledge import P2PKnowledgeNode, P2PNetworkManager
+        if getattr(runtime, "p2p_node", None) is None:
+            _p2p_bot = getattr(settings, "p2p_bot_id", "") or "sidecar:default"
+            _p2p_node = P2PKnowledgeNode(
+                bot_id=_p2p_bot,
+                listen_port=int(getattr(settings, "p2p_listen_port", 0) or 0),
+                server_id=_p2p_bot.split(":")[0] if ":" in _p2p_bot else "default",
+            )
+            if runtime.experience_db is not None:
+                _p2p_node.set_experience_db(runtime.experience_db)
+            if getattr(runtime, "npc_discovery", None) is not None:
+                _p2p_node.set_npc_discovery(runtime.npc_discovery)
+            if getattr(runtime, "server_adaptation", None) is not None:
+                _p2p_node.set_server_adaptation(runtime.server_adaptation)
+            _p2p_started = _p2p_node.start_server()
+            runtime.p2p_node = _p2p_node
+            _p2p_mgr = P2PNetworkManager()
+            _p2p_mgr.register_node(_p2p_bot, _p2p_node)
+            runtime.p2p_manager = _p2p_mgr
+            _p2p_mgr.connect_all()
+            logger.info(
+                "p2p_knowledge_initialized bot=%s port=%d started=%s",
+                _p2p_bot, _p2p_node._listen_port, _p2p_started,
+            )
+    except Exception as _p2p_e:
+        logger.warning("p2p_knowledge_init_failed: %s", _p2p_e)
+
     # runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)  # [disabled] web research requires SearXNG
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(

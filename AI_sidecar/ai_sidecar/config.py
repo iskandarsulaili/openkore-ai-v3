@@ -45,6 +45,10 @@ class SidecarSettings(BaseSettings):
     memory_sink_enabled: bool = False
     memory_char_limit: int = 100_000
 
+    # ── P2P knowledge mesh (bot-to-bot learning gossip) ──
+    p2p_bot_id: str = "sidecar:default"
+    p2p_listen_port: int = 0  # 0 = auto (18090 + hash(bot_id) % 1000)
+
     action_default_ttl_seconds: int = Field(default=120, ge=1, le=600)
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)
     snapshot_cache_ttl_seconds: int = Field(default=120, ge=1, le=3600)
