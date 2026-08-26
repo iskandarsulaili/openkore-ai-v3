@@ -670,6 +670,7 @@ class RuntimeState:
     counters: dict[str, int] = field(default_factory=dict)
     _action_kind_index: dict[str, str] = field(default_factory=dict)
     _bot_plan_family: dict[str, str] = field(default_factory=dict)
+    _actor_state_lock: RLock = field(default_factory=RLock)
     _actor_presence_by_bot: dict[str, set[str]] = field(default_factory=dict)
     _actor_last_revision_fingerprint: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = field(default_factory=dict)
     _background_tasks: list[asyncio.Task[None]] = field(default_factory=list)
@@ -1722,7 +1723,8 @@ class RuntimeState:
 
     def _snapshot_actor_delta_payload(self, *, snapshot: BotStateSnapshot) -> ActorDeltaPushRequest | None:
         bot_id = snapshot.meta.bot_id
-        known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
+        with self._actor_state_lock:
+            known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
         observed_ids: set[str] = set()
         observations: list[ActorObservation] = []
         default_map = snapshot.position.map
@@ -1826,7 +1828,8 @@ class RuntimeState:
         bot_id = payload.meta.bot_id
         observed_actor_ids = {str(item.actor_id).strip() for item in payload.actors if str(item.actor_id).strip()}
         removed_actor_ids = {str(item).strip() for item in payload.removed_actor_ids if str(item).strip()}
-        known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
+        with self._actor_state_lock:
+            known_actor_ids = set(self._actor_presence_by_bot.get(bot_id, set()))
         hostile_count = sum(
             1
             for item in payload.actors
@@ -1849,7 +1852,9 @@ class RuntimeState:
 
         revision = str(payload.revision or "").strip()
         revision_fingerprint = (revision, tuple(sorted(observed_actor_ids)), tuple(sorted(removed_actor_ids)))
-        if revision and self._actor_last_revision_fingerprint.get(bot_id) == revision_fingerprint:
+        with self._actor_state_lock:
+            _dup = bool(revision and self._actor_last_revision_fingerprint.get(bot_id) == revision_fingerprint)
+        if _dup:
             logger.info(
                 "actor_delta_duplicate_revision_skipped",
                 extra={
@@ -1913,7 +1918,8 @@ class RuntimeState:
                 next_presence.add(actor_id)
             elif event.event_type in {"actor.removed", "actor.disappeared"}:
                 next_presence.discard(actor_id)
-        self._actor_presence_by_bot[bot_id] = next_presence
+        with self._actor_state_lock:
+            self._actor_presence_by_bot[bot_id] = next_presence
         
         # ── Sync NPC actors into snapshot cache for NPCDiscoveryEngine ──
         if payload.actors:
@@ -1939,12 +1945,15 @@ class RuntimeState:
                         _existing = list(getattr(_snap, "actors", []) or [])
                         _existing = [a for a in _existing if str(getattr(a, "actor_type", "")).strip().lower() != "npc"]
                         _existing.extend(_npc_list)
-                        object.__setattr__(_snap, "actors", _existing[:64])
+                        _updated_snap = _snap.model_copy(update={"actors": _existing[:64]})
+                        if self.snapshot_cache is not None:
+                            self.snapshot_cache.set(_updated_snap)
             except Exception:
                 pass
         
         if revision and accepted_events:
-            self._actor_last_revision_fingerprint[bot_id] = revision_fingerprint
+            with self._actor_state_lock:
+                self._actor_last_revision_fingerprint[bot_id] = revision_fingerprint
 
         logger.info(
             "actor_delta_ingested",
