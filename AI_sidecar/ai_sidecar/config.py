@@ -49,6 +49,13 @@ class SidecarSettings(BaseSettings):
     p2p_bot_id: str = "sidecar:default"
     p2p_listen_port: int = 0  # 0 = auto (18090 + hash(bot_id) % 1000)
 
+    # ── RAW peer-host (bot serves maps, complementarity rule) ──
+    p2p_host_enabled: bool = False  # default OFF; only peer boxes set true
+    p2p_host_dir: str = ""  # empty = <data_dir>/peer-host
+    p2p_host_respawn_delay_s: int = 60
+    p2p_host_max_respawns: int = 3
+    p2p_manifest_base: str = "https://rathena-ai.openkore-ai.com"
+
     action_default_ttl_seconds: int = Field(default=120, ge=1, le=600)
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)
     snapshot_cache_ttl_seconds: int = Field(default=120, ge=1, le=3600)

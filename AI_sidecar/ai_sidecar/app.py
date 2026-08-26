@@ -43,6 +43,7 @@ from ai_sidecar.api.routers import (
     party,
     planner_v2,
     providers_v2,
+    peer_host,
     self_awareness,
     reflex,
     state_v2,
@@ -305,6 +306,7 @@ def create_app() -> FastAPI:
     app.include_router(macros.router)
     app.include_router(telemetry.router)
     app.include_router(fleet.router)
+    app.include_router(peer_host.router)
     app.include_router(self_awareness.router)
     app.include_router(ingest_v2.router)
     app.include_router(state_v2.router)

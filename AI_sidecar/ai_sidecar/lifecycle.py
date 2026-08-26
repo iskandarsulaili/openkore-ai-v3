@@ -590,6 +590,7 @@ class RuntimeState:
     model_router: ModelRouter | None = None
     llm_manager: Any = None  # LLMManager — multi-provider LLM system
     self_awareness: object | None = None  # SelfAwareness — SOUL.md + MEMORY.md injection
+    peer_host: object | None = None  # PeerHostSupervisor — bot serves maps (capacity)
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6324,6 +6325,32 @@ def create_runtime() -> RuntimeState:
     except Exception as _p2p_e:
         logger.warning("p2p_knowledge_init_failed: %s", _p2p_e)
 
+    # ── RAW peer-host (bot serves maps — capacity contribution) ──
+    # Complementarity rule (2026-08-26): REUSES the launcher's manifest-pinned
+    # linux-host-map-server binary; refuses to spawn on the central box or any
+    # box already owning the map port (single-writer EVE). Default OFF — only
+    # peer boxes where the bot is distributed enable p2p_host_enabled.
+    try:
+        from ai_sidecar.peer_host import PeerHostSupervisor
+        _ph_dir = Path(getattr(settings, "p2p_host_dir", "") or (settings.data_dir + "/peer-host"))
+        runtime.peer_host = PeerHostSupervisor(
+            data_dir=_ph_dir,
+            manifest_base=getattr(settings, "p2p_manifest_base", "https://rathena-ai.openkore-ai.com"),
+            enabled=bool(getattr(settings, "p2p_host_enabled", False)),
+            respawn_delay_s=int(getattr(settings, "p2p_host_respawn_delay_s", 60)),
+            max_respawns=int(getattr(settings, "p2p_host_max_respawns", 3)),
+        )
+        _ok, _why = runtime.peer_host.can_host()
+        logger.info(
+            "peer_host_supervisor_initialized enabled=%s can_host=%s reason=%s",
+            bool(getattr(settings, "p2p_host_enabled", False)), _ok, _why,
+        )
+        if _ok:
+            _h_ok, _h_why = runtime.peer_host.start()
+            logger.info("peer_host_start_attempt: ok=%s detail=%s", _h_ok, _h_why)
+    except Exception as _ph_e:
+        logger.warning("peer_host_supervisor_init_failed: %s", _ph_e)
+    
     # runtime.web_research = WebResearchEngine(experience_db=runtime.experience_db)  # [disabled] web research requires SearXNG
     # Initialize fleet coordinator for multi-bot shared state & auto-coordination
     fleet_coordinator_service = FleetCoordinatorService(
