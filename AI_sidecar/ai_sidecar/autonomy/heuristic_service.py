@@ -1067,6 +1067,10 @@ class HeuristicService:
         # per ~10s, not every PDCA cycle, so OpenKore actually walks the long
         # route instead of continuously recalculating a fresh path each cycle.
         self._last_academy_move: dict[str, float] = {}
+        # Per-bot weapon latch: once a weapon/kit is observed (or registered), it
+        # is latched so an intermittent inventory snapshot never reverts the bot to
+        # "weapon-less" (which ping-pongs it back to the academy door).
+        self._weapon_latch: dict[str, bool] = {}
         # Per-bot cold-start hunt map. Was a SCALAR (audit finding #6): bot A
         # (izlude_c) set prt_fild08c, bot B (prt_fild05) overwrote it, so bot A's
         # transit-protection + step-1 authority used B's wrong map. Now keyed by
@@ -2684,11 +2688,14 @@ class HeuristicService:
         """Whether the bot holds/carries any starter weapon (used to decide if the
         academy-first cold-start step is still needed). Robust to inventory-item
         digest (id+name), legacy name list, attack-power, and the bridge's
-        has_weapon_in_inventory signal."""
+        has_weapon_in_inventory signal. Once a weapon is ever observed for a bot,
+        it is latched so an intermittent inventory snapshot never reverts it."""
+        _bot = self._resolve_bot_id(signals)
         try:
+            _now = False
             # Direct bridge signal (top-level snapshot).
             if signals.get("has_weapon_in_inventory"):
-                return True
+                _now = True
             inv = signals.get("inventory_items", []) or signals.get("inventory", []) or []
             for item in inv:
                 if isinstance(item, dict):
@@ -2702,16 +2709,28 @@ class HeuristicService:
                     _itype = 0
                 # type 4 = weapon, type 5 = armor, type 8 = accessory
                 if _itype in (4, 5, 8):
-                    return True
+                    _now = True
                 if any(w in name for w in ("knife", "sword", "mace", "bow", "dagger", "rod", "cutter")):
-                    return True
+                    _now = True
                 if _iid and str(_iid) in ("1201", "1243", "1244", "1301", "1302", "1303", "1601", "1701"):
-                    return True
+                    _now = True
             if int(signals.get("attack_power", 0) or 0) > 30:
-                return True
+                _now = True
+            return self._latch_weapon_seen(_bot, _now)
         except Exception:
-            pass
-        return False
+            return self._latch_weapon_seen(_bot, False)
+
+    def _latch_weapon_seen(self, bot_id: str, has_weapon: bool) -> bool:
+        """Persist a per-bot weapon latch so an intermittent inventory snapshot
+        (OpenKore parses the 2025 client's 0B09 item list inconsistently) never
+        makes the bot 'forget' it already owns a weapon and ping-pong back to the
+        academy door. A character does not lose its starter knife mid-session, and
+        once registered the kit is granted server-side, so a positive observation
+        is latched permanently for the process lifetime."""
+        _stable = str(bot_id or "default").split(":")[-1].split("/")[-1] or "default"
+        if has_weapon:
+            self._weapon_latch[_stable] = True
+        return self._weapon_latch.get(_stable, False)
 
     def _set_config_once(self, actions: list, bot_id: str, key: str, value: str, domain: str, reason: str, confidence: float = 0.95) -> None:
         """Emit a 'set' command only if the value has changed since last set.
