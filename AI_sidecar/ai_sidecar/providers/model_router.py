@@ -69,10 +69,12 @@ class ModelRouter:
         providers: dict[str, LLMProvider],
         initial_rules: dict[str, dict[str, Any]] | None = None,
         route_metric_observer: Callable[[str, str, str], None] | None = None,
+        self_awareness: Any | None = None,
     ) -> None:
         self._providers = providers
         self._lock = RLock()
         self._route_metric_observer = route_metric_observer
+        self._self_awareness = self_awareness  # SelfAwareness — SOUL/MEMORY injection
         seed_rules = initial_rules if initial_rules is not None else DEFAULT_POLICY_RULES
         self._policy = RoutePolicy(
             version=f"bootstrap-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",
@@ -218,6 +220,13 @@ class ModelRouter:
                 ),
                 decision,
             )
+
+        # Self-awareness injection: prepend SOUL + MEMORY to every reasoning call.
+        if self._self_awareness is not None:
+            try:
+                request.system_prompt = self._self_awareness.inject(request.system_prompt)
+            except Exception:
+                pass  # never let memory injection break an LLM call
 
         provider_order = [decision.selected_provider, *decision.fallback_chain]
         last_response: PlannerModelResponse | None = None

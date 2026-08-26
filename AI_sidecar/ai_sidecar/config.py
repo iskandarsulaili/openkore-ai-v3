@@ -37,6 +37,14 @@ class SidecarSettings(BaseSettings):
     # every startup, zero persistent EXP tracking).
     data_dir: str = "data"
 
+    # ── Self-awareness (SOUL.md + MEMORY.md) ──
+    self_awareness_enabled: bool = True
+    self_awareness_dir: str = ""  # empty = <data_dir>/../memory (sidecar-adjacent)
+    memory_sink_endpoint: str = ""
+    memory_sink_token: str = ""
+    memory_sink_enabled: bool = False
+    memory_char_limit: int = 100_000
+
     action_default_ttl_seconds: int = Field(default=120, ge=1, le=600)
     action_max_queue_per_bot: int = Field(default=128, ge=1, le=4096)
     snapshot_cache_ttl_seconds: int = Field(default=120, ge=1, le=3600)

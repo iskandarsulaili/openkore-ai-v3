@@ -589,6 +589,7 @@ class RuntimeState:
     sqlite_path: Path | None = None
     model_router: ModelRouter | None = None
     llm_manager: Any = None  # LLMManager — multi-provider LLM system
+    self_awareness: object | None = None  # SelfAwareness — SOUL.md + MEMORY.md injection
     planner_service: PlannerService | None = None
     leveling_planner: object | None = None
     gear_progression_planner: object | None = None
@@ -6006,6 +6007,40 @@ def create_runtime() -> RuntimeState:
         logger.exception("llm_manager_startup_failed", extra={"event": "llm_manager_startup_failed"})
         llm_manager = None
 
+    # ── Self-awareness (SOUL.md + MEMORY.md) ──
+    self_awareness = None
+    if getattr(settings, "self_awareness_enabled", True):
+        try:
+            from ai_sidecar.memory.self_awareness import SelfAwareness
+            sa_dir = getattr(settings, "self_awareness_dir", "") or (workspace_root / "AI_sidecar" / "ai_sidecar" / "memory")
+            self_awareness = SelfAwareness(
+                Path(sa_dir),
+                sink_endpoint=getattr(settings, "memory_sink_endpoint", ""),
+                sink_token=getattr(settings, "memory_sink_token", ""),
+                sink_enabled=getattr(settings, "memory_sink_enabled", False),
+                memory_char_limit=getattr(settings, "memory_char_limit", 100_000),
+            )
+            logger.info(
+                "self_awareness_initialized",
+                extra={"event": "self_awareness_initialized", "dir": str(sa_dir),
+                       "soul_chars": len(self_awareness.soul),
+                       "memory_entries": len(self_awareness.memory_entries)},
+            )
+        except Exception:
+            logger.exception("self_awareness_init_failed", extra={"event": "self_awareness_init_failed"})
+            self_awareness = None
+
+    # Attach self-awareness to the already-built LLMManager + model_router so
+    # every LLM reasoning call gets SOUL + MEMORY injected (Hermes memory pattern).
+    if self_awareness is not None:
+        try:
+            if llm_manager is not None:
+                llm_manager._self_awareness = self_awareness
+            if model_router is not None:
+                model_router._self_awareness = self_awareness
+        except Exception:
+            logger.warning("self_awareness_attach_llm_failed", extra={"event": "self_awareness_attach_llm_failed"})
+
     ml_registry = ModelRegistry(workspace_root=workspace_root)
     ml_registry.prune_orphaned_artifacts()
     ml_observer = ObservationCapture(workspace_root=workspace_root)
@@ -6146,6 +6181,7 @@ def create_runtime() -> RuntimeState:
         planner_stale_threshold_s=float(settings.autonomy_stale_plan_threshold_s),
         control_domain=control_domain,
         llm_manager=llm_manager,
+        self_awareness=self_awareness,
     )
 
     # ── Initialize efficiency tracker (zero-config, works on any server) ──

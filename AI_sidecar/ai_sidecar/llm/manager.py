@@ -60,9 +60,11 @@ class LLMManager:
         self,
         config: LLMConfig | None = None,
         provider_overrides: dict[str, BaseLLMProvider] | None = None,
+        self_awareness: Any | None = None,
     ) -> None:
         self._config = config or LLMConfig.from_env()
         self._providers: dict[str, BaseLLMProvider] = {}
+        self._self_awareness = self_awareness  # SelfAwareness — SOUL/MEMORY injection
 
         if provider_overrides:
             self._providers.update(provider_overrides)
@@ -246,6 +248,13 @@ class LLMManager:
         if not self._check_daily_budget(estimated_tokens=len(prompt) // 4):
             raise LLMProviderError("Daily token budget exceeded", provider="manager")
 
+        # Self-awareness injection: prepend SOUL + MEMORY to every reasoning call.
+        if self._self_awareness is not None:
+            try:
+                system_prompt = self._self_awareness.inject(system_prompt)
+            except Exception:
+                pass  # never let memory injection break an LLM call
+
         temperature = temperature if temperature is not None else self._config.temperature
         max_tokens = max_tokens if max_tokens is not None else self._config.max_tokens
 
@@ -331,6 +340,13 @@ class LLMManager:
         self._check_hourly_budget()
         if not self._check_daily_budget(estimated_tokens=len(prompt) // 4):
             raise LLMProviderError("Daily token budget exceeded", provider="manager")
+
+        # Self-awareness injection: prepend SOUL + MEMORY to every reasoning call.
+        if self._self_awareness is not None:
+            try:
+                system_prompt = self._self_awareness.inject(system_prompt)
+            except Exception:
+                pass  # never let memory injection break an LLM call
 
         temperature = temperature if temperature is not None else 0.2
         max_tokens = max_tokens if max_tokens is not None else 4096
