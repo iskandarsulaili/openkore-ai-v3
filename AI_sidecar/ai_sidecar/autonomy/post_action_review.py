@@ -17,6 +17,52 @@ from ai_sidecar.crewai.agents.base_agent import maybe_create_skill
 logger = logging.getLogger(__name__)
 
 
+def record_lesson(
+    self_awareness,
+    content: str,
+    *,
+    importance: int = 5,
+    dedupe: bool = True,
+) -> Dict[str, Any]:
+    """Persist a durable lesson into MEMORY.md via the SelfAwareness layer.
+
+    This is the self-learning write-path of the loop: the conscious tier, after
+    a verified action/outcome, records what it learned so future reasoning calls
+    (which have SOUL + MEMORY injected by ``SelfAwareness.inject``) honor it.
+
+    Fully server-agnostic: ``content`` must be a general lesson (a decision
+    heuristic, a routing fact derived from live discovery, an anti-pattern), NOT
+    a hardcoded map/item/coord literal. Server-specific facts belong in the
+    DB-backed ``server_solutions`` store, not MEMORY.md.
+
+    Args:
+        self_awareness: The runtime's SelfAwareness instance (SOUL/MEMORY owner).
+        content: The lesson text (general, agnostic).
+        importance: 1-10; >=8 shortlists for the curated top block.
+        dedupe: If True, skip when an identical lesson already exists.
+
+    Returns:
+        Dict with success/error + usage stats, mirroring add_lesson's contract.
+    """
+    if self_awareness is None or not hasattr(self_awareness, "add_lesson"):
+        return {"success": False, "error": "self_awareness_unavailable"}
+
+    content = (content or "").strip()
+    if not content:
+        return {"success": False, "error": "Content cannot be empty."}
+
+    # Dedupe: never let the same lesson accumulate across cycles.
+    if dedupe:
+        existing = {e.strip().lower() for e in self_awareness.memory_entries}
+        if content.lower() in existing:
+            return {"success": False, "error": "duplicate_lesson", "duplicate": True}
+
+    result = self_awareness.add_lesson(content)
+    if result.get("success"):
+        logger.info("Lesson recorded to MEMORY.md (importance=%d)", importance)
+    return result
+
+
 def review_action(
     agent_name: str,
     action_type: str,

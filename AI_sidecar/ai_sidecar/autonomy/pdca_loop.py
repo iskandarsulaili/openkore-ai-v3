@@ -5463,6 +5463,32 @@ class PDCALoop:
                                                     importance=4,
                                                     metadata=_ca,
                                                 )
+                                            # ── Self-learning: curate a MEMORY.md lesson from a
+                                            # learning-worthy outcome (failure/refusal/notable ack).
+                                            # Deduped + rate-capped so it never floods the budget.
+                                            # Server-agnostic: we record a general heuristic, never a
+                                            # hardcoded map/item/coord literal.
+                                            try:
+                                                _sa = getattr(self._runtime, "self_awareness", None)
+                                                _st = str(_ca.get("status", "") or "")
+                                                _ack = str(_ca.get("ack_message", "") or "")
+                                                _cmd = str(_ca.get("command", "") or "")
+                                                _learn = False
+                                                if "fail" in _st or "refus" in _st or "error" in _st or "denied" in _st:
+                                                    _learn = True
+                                                if "rejected" in _ack.lower() or "refused" in _ack.lower() or "cannot" in _ack.lower():
+                                                    _learn = True
+                                                if _learn and _cmd and _sa is not None and hasattr(_sa, "add_lesson"):
+                                                    from ai_sidecar.autonomy.post_action_review import record_lesson
+                                                    record_lesson(
+                                                        _sa,
+                                                        f"Command {_cmd!r} on {_map} came back {_st} ({_ack}). "
+                                                        "Re-evaluate before retrying; do not repeat a refused command verbatim.",
+                                                        importance=4,
+                                                        dedupe=True,
+                                                    )
+                                            except Exception:
+                                                pass
                         except Exception:
                             pass
                         
