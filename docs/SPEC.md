@@ -73,6 +73,13 @@ SOUL.md + MEMORY.md are injected **verbatim into every conscious LLM call**.
 Skills are injected by domain relevance. All three files may be updated by the
 learning loop; the injected snapshot must reflect the current file contents.
 
+### 3.3 LLM COST TIER (user directive 2026-08-26)
+The LLM cost tier is **MAX / UNLIMITED** for the conscious-brain reasoning purpose.
+Do NOT throttle/trim conscious-tier LLM reasoning for cost — the cost budget is
+not a limiting constraint here. (Applies to the sidecar conscious reasoning path;
+the existing per-task max_tokens budgets that guarantee OUTPUT SHAPE are separate
+and remain — this directive removes cost-driven throttling, not output-shape caps.)
+
 ### 3.3 ServerSolutionsStore (the growth surface)
 - `set/get/get_json` CRUD on `server_solutions` table (server_key, slot,
   value_text, value_json, origin, confidence, timestamps).
