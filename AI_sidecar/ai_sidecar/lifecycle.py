@@ -182,7 +182,6 @@ from ai_sidecar.reflex.rule_engine import ReflexRuleEngine
 from ai_sidecar.autonomy.heuristic_service import HeuristicService
 from ai_sidecar.cost_tracker import CostTracker
 from ai_sidecar.npc_dialog import NPCDialogEngine
-# from ai_sidecar.web_research import WebResearchEngine  # [disabled] web research requires SearXNG
 from ai_sidecar.experience_db import (
     ExperienceDatabase,
     ExperienceEntry,
