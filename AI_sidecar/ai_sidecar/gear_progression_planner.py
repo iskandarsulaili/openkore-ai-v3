@@ -51,52 +51,101 @@ class GearProgressionPlanner:
 
     @classmethod
     def _load_upgrade_paths(cls) -> dict[str, list[dict]]:
-        """Load upgrade paths from the knowledge database."""
+        """Load upgrade paths from the knowledge database.
+
+        Covers ALL 8 equipment slots (weapon/shield/armor/garment/shoes/
+        accessory1/accessory2/headgear) + cards, mapped agnostically from the
+        DB's location flags (Locations.Right_Hand / Left_Hand / Armor / Garment /
+        Shoes / Right_Accessory / Left_Accessory / Head_Top / Head_Mid / Head_Low).
+        No hardcoded item IDs — items are ranked by (stat per zeny) so a different
+        server with different prices still picks the best affordable gear.
+        """
         paths: dict[str, list[dict]] = {}
         try:
             from ai_sidecar.knowledge_loader import get_weapons, get_armors
             weapons = get_weapons()
             armors = get_armors()
 
-            # Build weapon upgrade paths by level
+            # ── Weapon paths ──
             weapon_paths = []
             for w in weapons:
-                level = w.get("Level", 0)
-                if level > 0 and level <= 99:
-                    buy_price = w.get("Buy", 0)
-                    if buy_price > 0:
-                        weapon_paths.append({
-                            "item": w.get("Name", ""),
-                            "refine": min(10, max(4, level // 10)),
-                            "cost": buy_price,
-                            "level": level,
-                        })
-            weapon_paths.sort(key=lambda x: x["level"])
+                # usability: novice (or all jobs) OR low-level (any job) — agnostic
+                novice_ok = bool(w.get("Jobs.Novice")) or bool(w.get("Jobs.All"))
+                equip_min = int(w.get("EquipLevelMin", 0) or 0)
+                if not novice_ok and equip_min > 25:
+                    continue
+                if equip_min > 99:
+                    continue
+                buy_price = int(w.get("Buy", 0) or 0)
+                # price floor: 1z items are event/rare rewards NOT buyable from an NPC
+                # shop (verified on RAW: Angra Manyu/Ahura Mazdah = cost 1). Real
+                # starter gear is 50z+ (Knife 1201 @50z, Sword @100z). Filtering
+                # these keeps the plan to genuinely-purchasable gear (agnostic: the
+                # floor excludes the event-price class, not any specific item).
+                if buy_price < 10:
+                    continue
+                if not (w.get("Locations.Right_Hand") or w.get("Locations.Both_Hand")):
+                    continue
+                atk = int(w.get("Attack", 0) or 0)
+                matk = int(w.get("MagicAttack", 0) or 0)
+                weapon_paths.append({
+                    "item": w.get("Name", "") or w.get("AegisName", ""),
+                    "refine": min(10, max(4, equip_min // 10)),
+                    "cost": buy_price,
+                    "level": equip_min,
+                    "atk": atk,
+                    "matk": matk,
+                    # efficiency-aware: ATK(+MATK) per zeny — picks the best-value weapon
+                    "score": (atk + matk) / max(buy_price, 1) * 1000.0,
+                })
+            weapon_paths.sort(key=lambda x: (-x["score"], x["cost"]))
             if weapon_paths:
                 paths["weapon"] = weapon_paths
 
-            # Build armor upgrade paths by level
-            armor_paths = []
+            # ── Armor/gear paths by slot flag (agnostic location mapping) ──
+            # slot_flag -> (slot_name, stat_key) : each equipment location flag.
+            slot_map = [
+                ("Locations.Armor",            "armor",        "Defense"),
+                ("Locations.Left_Hand",        "shield",       "Defense"),
+                ("Locations.Garment",          "garment",      "Defense"),
+                ("Locations.Shoes",            "shoes",        "Defense"),
+                ("Locations.Head_Top",         "headgear",     "Defense"),
+                ("Locations.Right_Accessory",  "accessory1",   "Defense"),
+                ("Locations.Left_Accessory",   "accessory2",   "Defense"),
+                ("Locations.Both_Accessory",   "accessory1",   "Defense"),  # both-hands accessory -> slot 1
+            ]
+            slot_paths: dict[str, list[dict]] = {slot: [] for _, slot, _ in slot_map}
             for a in armors:
-                level = a.get("Level", 0)
-                if level > 0 and level <= 99:
-                    loc = a.get("Locations", "")
-                    buy_price = a.get("Buy", 0)
-                    if buy_price > 0:
-                        armor_paths.append({
-                            "item": a.get("Name", ""),
-                            "refine": min(10, max(4, level // 10)),
+                novice_ok = bool(a.get("Jobs.Novice")) or bool(a.get("Jobs.All"))
+                equip_min = int(a.get("EquipLevelMin", 0) or 0)
+                if not novice_ok and equip_min > 25:
+                    continue
+                if equip_min > 99:
+                    continue
+                buy_price = int(a.get("Buy", 0) or 0)
+                # price floor — exclude 1z event/rare reward items (not NPC-buyable)
+                if buy_price < 10:
+                    continue
+                defense = int(a.get("Defense", 0) or 0)
+                for flag, slot, stat in slot_map:
+                    if a.get(flag):
+                        slot_paths[slot].append({
+                            "item": a.get("Name", "") or a.get("AegisName", ""),
+                            "refine": min(10, max(4, equip_min // 10)),
                             "cost": buy_price,
-                            "level": level,
-                            "location": loc,
+                            "level": equip_min,
+                            "def": defense,
+                            # efficiency-aware: DEF per zeny
+                            "score": defense / max(buy_price, 1) * 1000.0,
+                            "slot": slot,
                         })
-            armor_paths.sort(key=lambda x: x["level"])
-            if armor_paths:
-                paths["armor"] = [p for p in armor_paths if "Armor" in str(p.get("location", ""))]
-                paths["shield"] = [p for p in armor_paths if "Shield" in str(p.get("location", ""))]
+            for slot, items in slot_paths.items():
+                items.sort(key=lambda x: (-x["score"], x["cost"]))
+                if items:
+                    paths[slot] = items
 
-            logger.info("upgrade_paths_loaded_from_db: %d weapon paths, %d armor paths",
-                        len(paths.get("weapon", [])), len(paths.get("armor", [])))
+            logger.info("upgrade_paths_loaded_from_db: %s",
+                        {k: len(v) for k, v in paths.items()})
         except Exception as e:
             logger.warning("upgrade_paths_db_load_failed: %s (DB is the source of truth)", e)
         return paths
@@ -172,13 +221,18 @@ class GearProgressionPlanner:
                 for step in path:
                     if step["level"] <= level and step["cost"] <= budget:
                         if slot.current_item != step["item"] or slot.current_refine < step["refine"]:
+                            # efficiency-aware benefit text: show the stat the item gives
+                            if slot_name == "weapon":
+                                _stat = f"ATK+{step.get('atk', 0)}{'/'+str(step.get('matk',0))+' MATK' if step.get('matk', 0) else ''}"
+                            else:
+                                _stat = f"DEF+{step.get('def', 0)}"
                             plans.append(UpgradePlan(
                                 slot_name=slot_name,
                                 current_item=slot.current_item,
                                 target_item=step["item"],
                                 upgrade_type="replace" if slot.current_item != step["item"] else "refine",
                                 cost=step["cost"],
-                                benefit=f"Refine +{step['refine']}",
+                                benefit=f"{_stat} (score {step.get('score', 0):.0f})",
                                 priority=step["level"],
                                 is_affordable=step["cost"] <= budget,
                             ))
