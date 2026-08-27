@@ -65,7 +65,7 @@ sub sendMapLogin {
 	);
 
 	$self->sendToServer($msg);
-	debug(sprintf("Sent sendMapLogin (0x0436, 23 bytes) acct=%s char=%s sess=%s sex=%d\n", unpack('V',$accountID), unpack('V',$charID), unpack('V',$sessionID), $sex), "sendPacket", 2);
+	debug "Sent sendMapLogin (0x0436, 23 bytes)\n", "sendPacket", 2;
 }
 
 1;
