@@ -1470,7 +1470,7 @@ class HeuristicService:
         _max_buy = min(_max_by_zeny, _max_by_weight, 30)  # Cap at 30 total
         return max(0, _max_buy)
 
-    def _emit_mon_control_for_map(self, actions: list, bot_id: str, map_name: str) -> None:
+    def _emit_mon_control_for_map(self, actions: list, bot_id: str, map_name: str, base_level: int = 1) -> None:
         """Emit mon_control commands for the current map.
         
         Uses PER_MAP_MON_CONTROL table to set per-monster attack/ignore behavior.
@@ -1507,10 +1507,21 @@ class HeuristicService:
                 if _md is not None:
                     _boss = getattr(_md, "modes", []) and ("boss" in (_md.modes or []))
                     _lvl_ = int(getattr(_md, "level", 1) or 1)
+                    _atk_ = int(getattr(_md, "attack", 0) or 0)
                     if _boss or _lvl_ > 40:
                         _use = (0, 0, 0)  # game data says too strong / boss — do NOT attack
                     else:
-                        _use = (1, 0, 1)  # game data confirms farmable — attack
+                        # SURVIVABILITY GATE (Task-1 ground truth): RAW has ZERO aggressive
+                        # mobs, so the real danger model is mob ATK vs the bot's HP. A
+                        # low-level bot (base_level <= 5) must only attack mobs it can
+                        # out-trade (atk <= 8 = Poring/Lunatic atk1, Fabre atk17 is a
+                        # one-hit risk barehanded). DB-backed, agnostic — no hardcoded
+                        # mob names. Higher-level bots may attack stronger mobs.
+                        _bl = int(base_level or 1)
+                        if _bl <= 5 and _atk_ > 8:
+                            _use = (0, 0, 0)  # too strong for a low-level bot — do NOT attack
+                        else:
+                            _use = (1, 0, 1)  # game data confirms farmable — attack
             _filtered.append((_monster, _use[0], _use[1], _use[2]))
         if not _filtered:
             return
@@ -3268,13 +3279,30 @@ class HeuristicService:
                 self._cold_start_step[_cs_stable_key] = 4
                 logger.info(f"[cold_start] {bot_id}: potions confirmed, step 3 -> 4")
         if _cold_start_step == 4:
-            # Step 4: Return to hunting map with weapon and potions
-            # 'move prt_fild05' rewrite handles lockMap + routing.
+            # Step 4: Return to hunting map with weapon and potions.
+            # AGNOSTIC: use the SAME farm-map resolution as the routing domain
+            # (get_best_map -> server_solutions farm_map) so cold-start and routing
+            # never compete on different targets (verified live: step-4 hardcoded
+            # prt_fild05 while routing emitted prt_fild08 -> oscillation, bot never
+            # committed to one farm and died). Fall back to the learned farm_map.
+            _cs4_farm = ""
+            try:
+                _cs4_farm = str(self._adaptive.get_best_map(bot_id, base_level) or "").lower()
+            except Exception:
+                pass
+            if not _cs4_farm:
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _cs4_farm = str((get_server_solutions_store().get("farm_map", None) or "") or "").strip().lower()
+                except Exception:
+                    pass
+            if not _cs4_farm:
+                _cs4_farm = "prt_fild05"
             if not _cs_in_hunting or _cs_map == "prt_fild01":
                 actions.append(HeuristicAction(
-                    kind="command", command="move prt_fild05",
+                    kind="command", command=f"move {_cs4_farm}",
                     confidence=0.99, domain="hunting",
-                    reason="Cold start - return to hunting map with weapon and potions",
+                    reason=f"Cold start - return to hunting map {_cs4_farm} with weapon and potions",
                 ))
             elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete, advance to step 5
@@ -3522,7 +3550,7 @@ class HeuristicService:
         if _audit_is_hunting:
             # ── PER-MAP MON_CONTROL (config audit) ──
             # Apply mon_control for hunting maps when bot is on a new map
-            self._emit_mon_control_for_map(actions, bot_id, _audit_map)
+            self._emit_mon_control_for_map(actions, bot_id, _audit_map, int(signals.get("base_level", 1) or 1))
             # Ensure attack config is optimal for Novice-level combat
             self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
                 "Config audit - increase chase distance to 30 for Novice attack range")
@@ -4952,7 +4980,7 @@ class HeuristicService:
 
             # ── PER-MAP MON_CONTROL ──
             # Emit mon_control commands when entering a new map
-            self._emit_mon_control_for_map(actions, bot_id, map_name)
+            self._emit_mon_control_for_map(actions, bot_id, map_name, int(signals.get("base_level", 1) or 1))
 
             # ── COMBAT CONFIG: Set once per value change (dedup via _set_config_once) ──
             _job_name = signals.get("job_name", "novice") or "novice"
