@@ -642,6 +642,8 @@ class RuntimeState:
     party_intelligence: object | None = None
     market_intelligence: object | None = None
     woe_intelligence: object | None = None
+    # Live party-status relay store (bridge POSTs /v2/party/status every 30s).
+    party_status_store: dict[str, dict] = field(default_factory=dict)
     navigation_intuition: object | None = None
     mechanical_intuition: object | None = None
     opportunity_cost: object | None = None
