@@ -2572,10 +2572,16 @@ class HeuristicService:
                                 # bot's current field for a stranded bot). If the bot is on
                                 # it, treat it as arrived (farm), not transit.
                                 _cs_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(_bot_id, "") or "").lower()
-                                if "fild" in _cur_map and _bl <= 5 and _cur_map != "prt_fild08" and _cur_map != _lock and _cur_map != _cs_hunt:
+                                # TRANSIT PROTECTION (level 1-5): a low-level bot must RUN to
+                                # its farm, not fight en route. Covers BOTH fields AND towns —
+                                # verified live: the bot died to Lunatic (atk9) on izlude (a
+                                # town) because this only fired on *_fild maps, leaving
+                                # attackAuto on in town. Now: if not on the lockMap/farm, run.
+                                _on_farm = bool(_cur_map and (_cur_map == _lock or _cur_map == "prt_fild08" or (_cs_hunt and _cur_map == _cs_hunt)))
+                                if _bl <= 5 and not _on_farm:
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 0", confidence=0.90, reason=f"Cold start: transit through {_cur_map} at lvl {_bl} — run, don't fight", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 1", confidence=0.90, reason="Cold start: only attack on lockMap", domain="survival"))
-                                elif _cur_map and (_cur_map == _lock or _cur_map == "prt_fild08" or (_cs_hunt and _cur_map == _cs_hunt)):
+                                elif _on_farm:
                                     # ── ARRIVED AT THE ACADEMY FARM: re-enable attacking ──
                                     # Reverse the transit protection so the bot can
                                     # actually farm Porings/Lunatics once it reaches
