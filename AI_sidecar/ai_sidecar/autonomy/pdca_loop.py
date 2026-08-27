@@ -2493,6 +2493,9 @@ class PDCALoop:
         # services) was SKIPPED ENTIRELY. The whole strategic layer was dead
         # code on the live path. Give block2 its own flag so both run once.
         self._strategic_services_initialized: bool = False
+        # PAST LAYER: per-bot last-seen snapshot for significant-delta memory
+        # store (kills/deaths/EXP/gear). Populated by _remember_significant_deltas.
+        self._memory_snapshot_state: dict = {}
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -2686,6 +2689,17 @@ class PDCALoop:
         """Execute one PDCA cycle for the given horizon."""
         # Resolve current bot_id for cost gate
         _cycle_bot_id = self._resolve_cost_gate_bot_id()
+
+        # ── PAST LAYER: long-term memory store on significant deltas ──
+        # The bot must REMEMBER what happened (kills, deaths, EXP jumps, gear
+        # changes) so the Conscious brain can see the past and act PREEMPTIVELY
+        # (G2 in docs/BIG_PICTURE_CONSCIOUS_BRAIN_CHECKLIST.md). Delta-detect
+        # against the last-seen snapshot per bot; store only on material change.
+        if _cycle_bot_id:
+            try:
+                self._remember_significant_deltas(_cycle_bot_id)
+            except Exception:
+                logger.debug("memory_delta_store_failed", exc_info=True)
 
         # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, not hardcoded) ──
         # Every so often, consult the LLM about the bot's gear/sustain state so the
@@ -9441,6 +9455,25 @@ class PDCALoop:
             f"'command': <an OpenKore command or empty string>, 'reason': <short reason>}}. "
             f"Do not reference specific server item IDs unless observed. Be adaptive."
         )
+        # ── PAST LAYER: long-term memory recall (2026-08-28, G4) ──
+        # Inject what the bot REMEMBERS (past deaths on this map, farm spots that
+        # yielded kills, gear history) so the gear/sustain decision is PREEMPTIVE
+        # (learned from history) rather than reactive to one snapshot.
+        try:
+            _ltm = getattr(_rt, "long_term_memory", None)
+            if _ltm is not None:
+                _recall = _ltm.get_relevant_context(
+                    current_map=_map, current_time=time.strftime("%H:%M"),
+                    current_activity="farming", limit=5,
+                )
+                if _recall:
+                    _prompt = _prompt.replace(
+                        "Be adaptive.",
+                        f"PAST MEMORY (what the bot learned from history): {_recall} Be adaptive.",
+                    )
+                    logger.info("llm_gear_recall bot=%s memories_loaded", bot_id)
+        except Exception:
+            logger.debug("llm_gear_recall_failed", exc_info=True)
         try:
             _res = await _llm.complete_json(_prompt, system_prompt="You are a top-tier Pro Ragnarok player AI and a SYSTEM ANALYST. You do not patch symptoms — you trace the ROOT CAUSE of a bot's failure (routing, sustain, combat engagement, connection, economy) and decide from the WHOLE PICTURE of the fleet + server, not one snapshot. You think forward: an action is correct only if it fixes the cause and keeps EXP climbing over time.", temperature=0.2)
             _action = str(_res.get("action", "") or "")
@@ -9535,6 +9568,90 @@ class PDCALoop:
                                     bot_id, _no_pots, _hp * 100, _cmd_fb)
             except Exception:
                 pass
+
+    # ── PAST LAYER: remember significant deltas (G2) ──
+    # Delta-detects kills (EXP jumps), deaths, gear changes, and level-ups from
+    # the live snapshot and stores them into long-term memory so the Conscious
+    # brain's recall sees the bot's own history (preemption over reaction).
+    def _memory_snapshot_key(self, bot_id: str) -> dict:
+        return self._memory_snapshot_state.setdefault(bot_id, {})
+
+    def _remember_significant_deltas(self, bot_id: str) -> None:
+        from datetime import datetime, timezone
+
+        if self._runtime is None:
+            return
+        _ltm = getattr(self._runtime, "long_term_memory", None)
+        if _ltm is None:
+            return
+        _snap = getattr(self._runtime, "_last_snapshot", None) or {}
+        _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+        if not _snap:
+            return
+        _prev = self._memory_snapshot_key(bot_id)
+
+        _map = str(_snap.get("map", "") or "").lower().replace(".gat", "")
+        _deaths = int(_snap.get("death_count", 0) or 0)
+        _kills = int(_snap.get("kills", 0) or 0)
+        _hp_ratio = float(_snap.get("hp_ratio", 1.0) or 1.0)
+        _inv = _snap.get("inventory_items") or []
+        _has_weapon = False
+        for _it in _inv:
+            _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
+            if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
+                    or "gauche" in _n or "mace" in _n or "axe" in _n:
+                _has_weapon = True
+
+        _prev_deaths = int(_prev.get("deaths", 0))
+        _prev_kills = int(_prev.get("kills", 0))
+        _prev_weapon = bool(_prev.get("weapon", False))
+        _prev_map = str(_prev.get("map", "") or "")
+
+        _now = datetime.now(timezone.utc).isoformat()
+
+        # Death: store personal_history + danger_zone for the map
+        if _deaths > _prev_deaths:
+            _ltm.store(
+                category="personal_history",
+                content=f"bot {bot_id} died on map '{_map}' (death #{_deaths}, hp_ratio {_hp_ratio:.2f})",
+                tags=[bot_id, "death", _map],
+                importance=9,
+                metadata={"map": _map, "deaths": _deaths, "hp_ratio": _hp_ratio, "at": _now},
+            )
+            _ltm.store(
+                category="danger_zone",
+                content=f"map '{_map}' is dangerous — bot {bot_id} died there (death #{_deaths})",
+                tags=[bot_id, "danger", _map],
+                importance=7,
+                metadata={"map": _map, "at": _now},
+            )
+            logger.info("memory_store: death bot=%s map=%s deaths=%s", bot_id, _map, _deaths)
+
+        # Kill banked: store farming_spot quality signal
+        _kill_delta = _kills - _prev_kills
+        if _kill_delta > 0 and _map:
+            _ltm.store(
+                category="farming_spot",
+                content=f"map '{_map}' yielded {_kill_delta} kills for bot {bot_id} (total {_kills})",
+                tags=[bot_id, "kills", _map],
+                importance=5,
+                metadata={"map": _map, "kill_delta": _kill_delta, "kills": _kills, "at": _now},
+            )
+
+        # Weapon acquisition (gear milestone)
+        if _has_weapon and not _prev_weapon:
+            _ltm.store(
+                category="personal_history",
+                content=f"bot {bot_id} acquired a weapon (first time observed on '{_map}')",
+                tags=[bot_id, "gear"],
+                importance=8,
+                metadata={"map": _map, "at": _now},
+            )
+            logger.info("memory_store: weapon bot=%s map=%s", bot_id, _map)
+
+        # Persist the new baseline for next cycle
+        _prev.update({"deaths": _deaths, "kills": _kills,
+                      "weapon": _has_weapon, "map": _map})
 
     async def _llm_cold_start_advisory(self, bot_id: str) -> None:
         """CONSCIOUS-tier (LLM) cold-start decision — AGNOSTIC.
@@ -9679,6 +9796,28 @@ class PDCALoop:
                     )
         except Exception:
             pass
+        # ── PAST LAYER: long-term memory recall (2026-08-28, G1/G3) ──
+        # Inject what the bot REMEMBERS (past deaths/danger maps, farm spots that
+        # yielded kills, gear milestones) so the Conscious brain can act
+        # PREEMPTIVELY from history, not just react to the present snapshot.
+        # get_relevant_context() was DEAD CODE before this wiring — recall never
+        # reached any LLM prompt.
+        try:
+            _ltm = getattr(_rt, "long_term_memory", None)
+            if _ltm is not None:
+                _recall = _ltm.get_relevant_context(
+                    current_map=_map, current_time=time.strftime("%H:%M"),
+                    current_activity="farming", limit=5,
+                )
+                if _recall:
+                    _prompt = _prompt.replace(
+                        "Never invent item IDs or map names beyond the facts given.",
+                        f"PAST MEMORY (what the bot learned from history): {_recall} "
+                        "Never invent item IDs or map names beyond the facts given.",
+                    )
+                    logger.info("llm_cold_start_recall bot=%s memories_loaded", bot_id)
+        except Exception:
+            logger.debug("llm_cold_start_recall_failed", exc_info=True)
         try:
             _res = await _llm.complete_json(
                 _prompt,
