@@ -2190,6 +2190,21 @@ sub _best_available_heal_name {
     return $owned_heal[0][1];
 }
 
+# ── Inventory slot for an owned item (for 'equip <slot> <name>') ──
+# OpenKore cmdEquip accepts 'equip <slot> <item-name>'. Returns the equip slot
+# (e.g. 'weapon', 'armor', 'head_top') or undef if the item has no equip slot.
+sub _inventory_slot_for_item {
+    my ($item) = @_;
+    return undef unless ref($item);
+    my $_slot = $item->{slot} || $item->{equipSlot} || '';
+    return $_slot if $_slot;
+    # Fall back: derive from item type (Actor::Item type_equip / type)
+    my $_type = $item->{type} || 0;
+    return 'weapon' if ($_type == 4 || ($item->{type_equip} && $item->{type_equip} == 4));
+    return 'armor'  if ($_type == 5 || ($item->{type_equip} && $item->{type_equip} == 5));
+    return undef;  # no slot mapping — caller falls back to 'equip <name>'
+}
+
 sub _send_snapshot {
     return if !_bridge_enabled();
     return if !$registered;  # Don't send snapshots until registered
@@ -6591,6 +6606,33 @@ sub _rewrite_runtime_command {
 		}
 		my $ok = eval { Commands::run("is $item_name"); 1 };
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
+	}
+
+	# Handle 'equip <nameID>' -> 'equip <item name>' (nameID -> inventory name)
+	# OpenKore's cmdEquip treats a NUMERIC arg as an inventory BINID index, not the
+	# item's nameID (item_db id). The sidecar emits `equip 1243` (item_db id) which
+	# cmdEquip fails to find -> the weapon never equips -> the bot fights with bare
+	# fists (Dmg 1-2, verified live). Resolve the nameID to the owned item's NAME.
+	if ($normalized =~ /^equip\s+(\d+)$/ && $char) {
+		my $_want_id = $1;
+		my $_item = undef;
+		for my $_eq (@{_char_inventory($char)}) {
+			next unless ref($_eq);
+			if ((($_eq->{nameID} // 0) + 0) == ($_want_id + 0)) {
+				$_item = $_eq;
+				last;
+			}
+		}
+		if ($_item) {
+			my $_eq_name = $_item->{name} || '';
+			my $_eq_slot = _inventory_slot_for_item($_item);
+			debug "[equip] nameID $_want_id -> '$_eq_name' (slot $_eq_slot)\n", 'aiSidecarBridge', 1;
+			my $cmd = defined $_eq_slot ? "equip $_eq_slot $_eq_name" : "equip $_eq_name";
+			my $_eq_ok = eval { Commands::run($cmd); 1 };
+			return ('', $_eq_ok ? "equip_ok_$_eq_name" : "equip_failed_$_eq_name");
+		}
+		warning "[equip] item nameID $_want_id not in inventory, skipping\n", 'aiSidecarBridge', 1;
+		return ('', "equip_item_not_found_$_want_id");
 	}
 
 	# Handle sit/stand
