@@ -537,3 +537,29 @@ async def conscious_health(
         ),
         "template_count": len(_SYNERGY_TEMPLATES),
     }
+
+
+@router.get("/brain-rewards", response_model=dict)
+async def brain_rewards(
+    bot_id: str = "",
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """Reward/punish ledger for ALL brains (conscious, heuristic, reflex,
+    subconscious, goal, memory, strategy) — self-* feedback observability.
+
+    User directive (2026-08-28): punish/reward system for all the brains.
+    """
+    try:
+        from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
+        _ledger = get_brain_reward_ledger()
+        if bot_id:
+            scores = _ledger.scores(bot_id)
+            return {"ok": True, "bot_id": bot_id, "scores": [s.__dict__ for s in scores]}
+        # No bot_id → aggregate across all bots seen.
+        bots = sorted({s.bot_id for s in _ledger._scores.values() for s in s.values()})
+        out = {}
+        for bid in bots:
+            out[bid] = [s.__dict__ for s in _ledger.scores(bid)]
+        return {"ok": True, "bots": out}
+    except Exception as exc:  # pragma: no cover
+        return {"ok": False, "error": str(exc)}

@@ -9474,6 +9474,19 @@ class PDCALoop:
                     logger.info("llm_gear_recall bot=%s memories_loaded", bot_id)
         except Exception:
             logger.debug("llm_gear_recall_failed", exc_info=True)
+        # ── REWARD/PUNISH LEDGER (2026-08-28): self-aware brain feedback ──
+        try:
+            from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
+            _ledger = get_brain_reward_ledger()
+            _brain_ctx = _ledger.context_for_llm(bot_id)
+            if _brain_ctx:
+                _prompt = _prompt.replace(
+                    "Be adaptive.",
+                    f"{_brain_ctx} Be adaptive.",
+                )
+                logger.info("llm_gear_brain_feedback bot=%s", bot_id)
+        except Exception:
+            logger.debug("llm_gear_brain_feedback_failed", exc_info=True)
         try:
             _res = await _llm.complete_json(_prompt, system_prompt="You are a top-tier Pro Ragnarok player AI and a SYSTEM ANALYST. You do not patch symptoms — you trace the ROOT CAUSE of a bot's failure (routing, sustain, combat engagement, connection, economy) and decide from the WHOLE PICTURE of the fleet + server, not one snapshot. You think forward: an action is correct only if it fixes the cause and keeps EXP climbing over time.", temperature=0.2)
             _action = str(_res.get("action", "") or "")
@@ -9609,6 +9622,33 @@ class PDCALoop:
 
         _now = datetime.now(timezone.utc).isoformat()
 
+        _kill_delta = _kills - _prev_kills
+
+        # ── REWARD/PUNISH LEDGER (2026-08-28): score ALL brains on outcomes ──
+        # Same deltas as memory, now crediting/punishing the whole brain stack
+        # (conscious_llm, heuristic, reflex, subconscious_ml, goal_decomposer,
+        # memory, strategy). The Conscious brain then SEES this history in its
+        # prompt (self-aware, preemptive). Unknown attribution → the conscious
+        # brain is scored (it owns strategy).
+        try:
+            from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
+            _ledger = get_brain_reward_ledger()
+            if _deaths > _prev_deaths:
+                _ledger.record(bot_id, "conscious_llm", "death", f"map={_map}")
+                _ledger.record(bot_id, "heuristic", "death", f"map={_map}")
+                _ledger.record(bot_id, "reflex", "death", f"map={_map}")
+                _ledger.record(bot_id, "subconscious_ml", "death", f"map={_map}")
+                _ledger.record(bot_id, "goal_decomposer", "death", f"map={_map}")
+            if _kill_delta > 0:
+                _ledger.record(bot_id, "conscious_llm", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "heuristic", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "subconscious_ml", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "goal_decomposer", "kill", f"map={_map} n={_kill_delta}")
+            if _hp_ratio <= 0.30:
+                _ledger.record(bot_id, "reflex", "hp_critical", f"ratio={_hp_ratio:.2f}")
+        except Exception:
+            logger.debug("brain_reward_record_failed", exc_info=True)
+
         # Death: store personal_history + danger_zone for the map
         if _deaths > _prev_deaths:
             _ltm.store(
@@ -9628,7 +9668,6 @@ class PDCALoop:
             logger.info("memory_store: death bot=%s map=%s deaths=%s", bot_id, _map, _deaths)
 
         # Kill banked: store farming_spot quality signal
-        _kill_delta = _kills - _prev_kills
         if _kill_delta > 0 and _map:
             _ltm.store(
                 category="farming_spot",
@@ -9818,6 +9857,22 @@ class PDCALoop:
                     logger.info("llm_cold_start_recall bot=%s memories_loaded", bot_id)
         except Exception:
             logger.debug("llm_cold_start_recall_failed", exc_info=True)
+        # ── REWARD/PUNISH LEDGER (2026-08-28): self-aware brain feedback ──
+        # The Conscious brain sees its OWN + every other brain's track record
+        # (what plans worked / got the bot killed) → preemptive, not reactive.
+        try:
+            from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
+            _ledger = get_brain_reward_ledger()
+            _brain_ctx = _ledger.context_for_llm(bot_id)
+            if _brain_ctx:
+                _prompt = _prompt.replace(
+                    "Never invent item IDs or map names beyond the facts given.",
+                    f"{_brain_ctx} "
+                    "Never invent item IDs or map names beyond the facts given.",
+                )
+                logger.info("llm_cold_start_brain_feedback bot=%s", bot_id)
+        except Exception:
+            logger.debug("llm_cold_start_brain_feedback_failed", exc_info=True)
         try:
             _res = await _llm.complete_json(
                 _prompt,

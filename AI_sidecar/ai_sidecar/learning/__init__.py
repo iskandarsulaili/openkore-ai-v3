@@ -27,6 +27,12 @@ from ai_sidecar.learning.failure_reasoning import (
 from ai_sidecar.learning.failure_wiring import (
     wire_failure_pipeline,
 )
+from ai_sidecar.learning.brain_reward_ledger import (
+    BrainRewardLedger,
+    BrainScore,
+    BRAINS,
+    get_brain_reward_ledger,
+)
 
 __all__ = [
     "SharedLearningDB",
@@ -43,5 +49,9 @@ __all__ = [
     "FailureReasoningEngine",
     "FailureRecord",
     "get_failure_reasoning_engine",
+    "BrainRewardLedger",
+    "BrainScore",
+    "BRAINS",
+    "get_brain_reward_ledger",
     "wire_failure_pipeline",
 ]

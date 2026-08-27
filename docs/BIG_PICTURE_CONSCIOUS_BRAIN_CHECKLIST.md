@@ -35,7 +35,13 @@ dormant/dead code allowed.
 ## BATCHES
 - [x] B1 (G1+G2+G3): wire memory store (kill/death/EXP deltas) + recall injection
       into cold-start advisory. Unit test + sidecar restart + live verify.
-- [ ] B2 (G4): gear advisory past context + preemptive sustain trigger.
+- [x] B2 (G4): gear advisory past context + preemptive sustain trigger.
+- [x] B2.5 (NEW 2026-08-28, user directive): BrainRewardLedger — unified
+      punish/reward for ALL brains (conscious_llm, heuristic, reflex,
+      subconscious_ml, goal_decomposer, memory, strategy). Kills/deaths/HP-
+      critical score every brain; ledger context injected into BOTH LLM
+      advisories (self-aware, preemptive); GET /v1/conscious/brain-rewards
+      observability; JSONL persisted; 7 unit tests green.
 - [ ] B3 (G5): verify preemptive paths live (death-loop, danger pre-escape,
       potion pre-stock). Fix any dormant.
 - [ ] B4: full test suite (413+), commit, push. Live EXP/kill verification.
