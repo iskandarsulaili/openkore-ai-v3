@@ -2483,19 +2483,18 @@ class HeuristicService:
                                         # (e.g. prt_fild08) and must run, not farm here.
                                         _lock_is_townish = bool(_existing_lock) and "_fild" not in _existing_lock and "_dun" not in _existing_lock
                                         # Override to the current field if it's a farm map the
-                                        # bot can actually fight on. The bare prt_fild08 is
-                                        # excluded as a *target* (unroutable from izlude; the
-                                        # real academy farm is prt_fild08c), but a bot that is
-                                        # PHYSICALLY on a farm variant of its lock target
-                                        # (e.g. on prt_fild08c with lockMap prt_fild08 — same
-                                        # academy farm, different sub-map) should fight there
-                                        # rather than toggle a mismatched lockMap forever.
-                                        # A bot on a genuinely different farm (e.g. prt_fild05
-                                        # locked to prt_fild08) still transits (attackAuto 0).
+                                        # bot can actually fight on. NOTE (verified live
+                                        # 2026-08-28): prt_fild08 IS accessible on this server
+                                        # (present in 0x0840) and prt_fild08c is NOT (absent
+                                        # from maps_athena.conf) — the old "prt_fild08
+                                        # unroutable / real farm is prt_fild08c" assumption is
+                                        # inverted vs the live server. A bot physically on any
+                                        # farm variant of its lock target fights there rather
+                                        # than toggle a mismatched lockMap forever.
                                         _cur_base = _cur_field[:-1] if _cur_field.endswith(("a", "b", "c")) else _cur_field
                                         _lock_base = _existing_lock[:-1] if _existing_lock.endswith(("a", "b", "c")) else _existing_lock
                                         _same_farm = bool(_cur_base) and _cur_base == _lock_base
-                                        if "_fild" in _cur_field and _cur_field != "prt_fild08" \
+                                        if "_fild" in _cur_field \
                                                 and (not _existing_lock or _lock_is_townish or _same_farm):
                                             _hunt_map = _cur_field
                                         # Persist to a member so the field-transit block
@@ -3150,14 +3149,18 @@ class HeuristicService:
                         # ── SERVER-AGNOSTIC REACHABLE-FARM RESOLUTION (sidecar decision) ──
                         # A farm target that is UNROUTABLE from the bot's current map makes
                         # the bot loop forever ("Calculating route..."), never farming. Resolve
-                        # the hunt target to the reachable variant for the current location:
-                        #   izlude_c connects ONLY to prt_fild08c (not prt_fild08) — a bot on
-                        #   izlude_c must target prt_fild08c, the actual academy farm it can
-                        #   reach, so it lands on a killable spot instead of routing endlessly.
+                        # the hunt target to the reachable variant for the current location.
+                        # NOTE (verified live 2026-08-28): prt_fild08c exists in map_index
+                        # + has a GAT, but is NOT loaded by the server's maps_athena.conf
+                        # (only prt_fild08/08a/08b are) → it is absent from the 0x0840
+                        # accessible-map list → OpenKore refuses to enter it ("Map server
+                        # not ready" / routes back to town forever). The old izlude_c→
+                        # prt_fild08c remap locked the bot to a map the server never serves.
+                        # Always target the BASE farm map (prt_fild08), which IS accessible.
                         _cs_cur = str(signals.get("map", "") or "").lower().replace(".gat", "")
-                        if _cs_cur == "izlude_c" and _cs_authority_hunt == "prt_fild08":
-                            _cs_authority_hunt = "prt_fild08c"
-                            self._cold_start_hunt_map[bot_id] = "prt_fild08c"
+                        if _cs_cur == "izlude_c" and _cs_authority_hunt == "prt_fild08c":
+                            _cs_authority_hunt = "prt_fild08"
+                            self._cold_start_hunt_map[bot_id] = "prt_fild08"
                         if _cs_authority_hunt and "_fild" in _cs_authority_hunt:
                             actions.append(HeuristicAction(
                                 kind="command", command=f"set lockMap {_cs_authority_hunt}",
