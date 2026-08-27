@@ -917,17 +917,18 @@ sub on_mainLoop_post {
 	    for my $_eq (@{_char_inventory($char)}) {
 	        next unless ref($_eq);
 	        next if $_eq->{equipped};
-	        my $_t = $_eq->{type} || 0;
-	        # type 4 = weapon, 5 = armor. Only auto-equip weapons (safe).
-	        next unless $_t == 4;
+	        # Identify a weapon by NAME pattern (agnostic). The fork's `type`/
+	        # `type_equip` fields are unreliable across versions (charstatus shows
+	        # Main-Gauche type=5, armor type=4 — inverted vs stock). Equip by name
+	        # only; OpenKore cmdEquip resolves 'equip <name>' via Actor::Item::get.
+	        my $_eq_name = $_eq->{name} || '';
+	        next unless $_eq_name =~ /(knife|dagger|sword|blade|rapier|mace|rod|staff|bow|gauche|gladius|claw|katar|axe|hammer|spear|pole|lance|halberd|jitte|huuma|whip|gun|katana|talon|kukri|bagger|main.?gauche)/i;
 	        $_ae_item = $_eq;
-	        $_ae_slot = _inventory_slot_for_item($_eq);
 	        last;
 	    }
 	    if ($_ae_item) {
 	        my $_ae_name = $_ae_item->{name} || '';
-	        my $cmd = defined $_ae_slot ? "equip $_ae_slot $_ae_name" : "equip $_ae_name";
-	        my $_ae_ok = eval { Commands::run($cmd); 1 };
+	        my $_ae_ok = eval { Commands::run("equip $_ae_name"); 1 };
 	        warning "[autoequip] equipping held weapon '$_ae_name' on $_ae_map (${\\($_ae_ok ? 'OK' : 'FAILED')})\n", 'aiSidecarBridge', 1;
 	    }
 	}
