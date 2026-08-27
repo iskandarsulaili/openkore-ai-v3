@@ -28,7 +28,7 @@ use Task::WithSubtask;
 use base qw(Task::WithSubtask);
 use Task::Move;
 
-use Globals qw($field $net %config %timeout $npcsList $messageSender);
+use Globals qw($field $net %config %timeout $npcsList $messageSender $monstersList);
 use AI qw(ai_useTeleport);
 use Log qw(message error debug warning);
 use Network;
@@ -1039,6 +1039,40 @@ sub getRoute {
 	}
 
 	Plugins::callHook('getRoute' => \%path_args);
+
+	# ── RISK-AWARE WEIGHTING (2026-08-27, grounded in SRAH arxiv 2605.02862) ──
+	# The client A* supports a second weight map (customWeights/secondWeightMap)
+	# added to each expanded neighbor's cost. We encode LIVE risk-zone costs into
+	# it so the bot's route leans away from aggressive monsters on-screen,
+	# mirroring the Semantic Risk-Aware Heuristic pattern (penalise high-risk
+	# cells inside an A* search). Agnostic: reads the actual monster list, never
+	# hardcodes mob names/maps. Gated OFF by default so it cannot regress the
+	# verified walker; enable via route_risk_avoid_aggressive config.
+	my $risk_cfg = $config{route_risk_avoid_aggressive} // 0;
+	if ($risk_cfg && defined $monstersList) {
+		my $risk_radius = $config{route_risk_radius} // 3;
+		my @sw;
+		for my $m (@$monstersList) {
+			next unless $m && $m->{pos} && defined $m->{pos}{x} && defined $m->{pos}{y};
+			# Only avoid monsters that are (or will be) a real threat.
+			next unless Misc::is_aggressive($m, $config{mon_control}, 0, 0);
+			for my $dx (-$risk_radius .. $risk_radius) {
+				for my $dy (-$risk_radius .. $risk_radius) {
+					my $d = abs($dx) + abs($dy);
+					next if $d > $risk_radius;
+					my $wx = $m->{pos}{x} + $dx;
+					my $wy = $m->{pos}{y} + $dy;
+					next if $wx < 0 || $wy < 0 || $wx >= ($path_args{width} // 0) || $wy >= ($path_args{height} // 0);
+					# Cost rises toward the monster centre (chebyshev-ish falloff).
+					push @sw, { x => $wx, y => $wy, weight => ($risk_radius - $d + 1) * 5 };
+				}
+			}
+		}
+		if (@sw) {
+			$path_args{customWeights} = 1;
+			$path_args{secondWeightMap} = \@sw;
+		}
+	}
 
 	# ── CACHED PathFinding (2026-08-25, arena-churn leak root cause) ──
 	# A fresh `new PathFinding()` per route calc malloc'd ~5.6MB (currentMap +
