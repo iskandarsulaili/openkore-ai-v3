@@ -1417,6 +1417,19 @@ class HeuristicService:
                 return True
         return False
 
+    def _get_potion_name(self, potion_id: int) -> str:
+        """Return the display name for a potion item — AGNOSTIC (DB-backed)."""
+        try:
+            from ai_sidecar.knowledge_loader import get_items
+            for _it in get_items():
+                if str(_it.get("Id", "")) == str(potion_id):
+                    _nm = str(_it.get("Name", "") or "")
+                    if _nm:
+                        return _nm.replace(" Potion", "")
+        except Exception:
+            pass
+        return {501: "Red", 502: "Orange", 504: "White"}.get(potion_id, "Red")
+
     def _get_potion_id(self, base_level: int) -> int:
         """Return the best potion item ID for a given base level.
         Scales from Red (501) -> Orange (502) -> White (504) as level increases."""
@@ -1428,9 +1441,23 @@ class HeuristicService:
             return 504  # White Potion (heals 250 HP)
 
     def _get_potion_cost(self, potion_id: int) -> int:
-        """Return the cost of a potion by item ID."""
-        costs = {501: 50, 502: 200, 504: 500}
-        return costs.get(potion_id, 50)
+        """Return the cost of a potion by item ID — AGNOSTIC (DB-backed, RULE.md).
+
+        Reads the REAL buy price from the server's knowledge DB; falls back to a
+        conservative estimate only if the DB is unavailable. Never hardcodes prices
+        (RAW real prices differ: Red 501=10z, Orange 502=50z, White 504=1200z).
+        """
+        try:
+            from ai_sidecar.knowledge_loader import get_items
+            for _it in get_items():
+                if str(_it.get("Id", "")) == str(potion_id) or str(_it.get("id", "")) == str(potion_id):
+                    _cost = int(_it.get("Buy", 0) or 0)
+                    if _cost > 0:
+                        return _cost
+        except Exception:
+            pass
+        # Fallback only (server DB unavailable) — level-scaled estimates.
+        return {501: 10, 502: 50, 504: 1200}.get(potion_id, 50)
 
     def _get_potion_max_buy(self, potion_id: int, zeny: int, weight: float, weight_capacity: int) -> int:
         """Calculate max potions to buy considering zeny and remaining weight capacity.
@@ -3175,18 +3202,41 @@ class HeuristicService:
                             reason=f"Cold start step 1 - attack {_cs_attack} if present (real EXP on this farm)",
                         ))
         if _cold_start_step == 2:
-            # Step 2: Buy Knife (item 1201) if no weapon and zeny >= 50
+            # Step 2: Buy a starter weapon if none equipped — AGNOSTIC (gear planner picks
+            # the best-affordable weapon by stat/zeny; fallback to a knife if planner empty).
             if not _has_weapon:
+                _cs2_weapon_id = ""
+                _cs2_weapon_name = ""
+                try:
+                    from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                    _gpp_cs2 = get_gear_progression_planner()
+                    _cs2_plan = _gpp_cs2.get_best_upgrade(base_level, zeny)
+                    if _cs2_plan is not None and _cs2_plan.slot_name == "weapon" and _cs2_plan.is_affordable:
+                        from ai_sidecar.knowledge_loader import get_weapons
+                        for _w_cs2 in get_weapons():
+                            if str(_w_cs2.get("Name", "") or _w_cs2.get("AegisName", "")).lower() == str(_cs2_plan.target_item).lower():
+                                _cs2_weapon_id = str(_w_cs2.get("Id", ""))
+                                _cs2_weapon_name = str(_cs2_plan.target_item)
+                                break
+                except Exception:
+                    pass
+                if not _cs2_weapon_id:
+                    _cs2_opt = self._adaptive.get_optimal_weapon(job_name, base_level, zeny)
+                    if _cs2_opt:
+                        _cs2_weapon_id, _cs2_weapon_name = _cs2_opt
+                if not _cs2_weapon_id:
+                    _cs2_weapon_id = "1201"
+                    _cs2_weapon_name = "Knife"
                 if zeny >= 50:
                     actions.append(HeuristicAction(
-                        kind="command", command="buy 1201 1",
+                        kind="command", command=f"buy {_cs2_weapon_id} 1",
                         confidence=0.99, domain="economy",
-                        reason="Cold start step 2 - buy Knife (no weapon detected)",
+                        reason=f"Cold start step 2 - buy {_cs2_weapon_name} (no weapon detected)",
                     ))
                     actions.append(HeuristicAction(
-                        kind="command", command="equip 1201",
+                        kind="command", command=f"equip {_cs2_weapon_id}",
                         confidence=0.99, domain="economy",
-                        reason="Cold start step 2 - equip Knife after purchase",
+                        reason=f"Cold start step 2 - equip {_cs2_weapon_name} after purchase",
                     ))
             else:
                 # Weapon confirmed — move to step 3 (buy potions)
@@ -4077,7 +4127,7 @@ class HeuristicService:
             _cs_zeny = signals.get("zeny", 0) or 0
             _cs_potion_id = self._get_potion_id(base_level)
             _cs_potion_cost = self._get_potion_cost(_cs_potion_id)
-            _cs_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_cs_potion_id, "Red")
+            _cs_potion_name = self._get_potion_name(_cs_potion_id)
             if _cs_zeny >= _cs_potion_cost * 10:
                 # Buy 10 potions for survival
                 actions.append(HeuristicAction(
@@ -4101,21 +4151,43 @@ class HeuristicService:
                     confidence=0.99, domain="economy",
                     reason="Buy 200 arrows (harmless for non-archers, critical for archers)",
                 ))
-            # Buy weapon if any zeny available
+            # Buy weapon if any zeny available — AGNOSTIC: pick the best-affordable
+            # weapon from the DB-backed gear progression planner (stat/zeny ranked),
+            # NOT a hardcoded item ID (RULE.md). Fall back to the level/job-aware
+            # get_optimal_weapon only if the gear planner is unavailable.
             _cs_job = signals.get("job_name", "novice") or "novice"
-            if _cs_zeny >= 50:
-                # Use rAthena-corrected weapon ID from equipment_progression
-                _cs_weapon_id = "1201"  # Knife (ATK 17, 3 slots) — cheapest weapon, all classes can equip
+            _cs_weapon_id = None
+            _cs_weapon_name = ""
+            try:
+                from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                _gpp_cs = get_gear_progression_planner()
+                _cs_plan = _gpp_cs.get_best_upgrade(base_level, _cs_zeny)
+                if _cs_plan is not None and _cs_plan.slot_name == "weapon" and _cs_plan.is_affordable:
+                    # resolve the chosen item's real ID from the knowledge DB (by name)
+                    from ai_sidecar.knowledge_loader import get_weapons
+                    for _w_cs in get_weapons():
+                        _w_nm = str(_w_cs.get("Name", "") or _w_cs.get("AegisName", "")).lower()
+                        if _w_nm == str(_cs_plan.target_item).lower():
+                            _cs_weapon_id = str(_w_cs.get("Id", ""))
+                            _cs_weapon_name = str(_cs_plan.target_item)
+                            break
+            except Exception:
+                pass
+            if not _cs_weapon_id:
+                _cs_opt = self._adaptive.get_optimal_weapon(_cs_job, base_level, _cs_zeny)
+                if _cs_opt:
+                    _cs_weapon_id, _cs_weapon_name = _cs_opt
+            if _cs_weapon_id and _cs_zeny >= 50:
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_cs_weapon_id} 1",
                     confidence=0.99, domain="economy",
-                    reason=f"Cold start - buy weapon {_cs_weapon_id} for {_cs_job}",
+                    reason=f"Cold start - buy weapon {_cs_weapon_name} (id {_cs_weapon_id}) for {_cs_job}",
                 ))
                 # Equip the weapon after buying — bare fists do 1-5 damage
                 actions.append(HeuristicAction(
-                    kind="command", command="equip 1201",
+                    kind="command", command=f"equip {_cs_weapon_id}",
                     confidence=0.99, domain="economy",
-                    reason="Cold start - equip weapon after purchase",
+                    reason=f"Cold start - equip weapon {_cs_weapon_name} after purchase",
                 ))
             # Attack config: increase chase distance, disable avoid system
             self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
