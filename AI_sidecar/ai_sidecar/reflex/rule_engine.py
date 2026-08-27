@@ -751,7 +751,12 @@ class ReflexRuleEngine:
                         ReflexPredicate(fact="vitals.hp_ratio", op="lte", value=0.30),
                     ]
                 ),
-                guards=[],
+                guards=[
+                    # Only fire while actually connected — offline HP reads 0 → ratio 0.0
+                    # would otherwise re-emit lethal_escape every cycle during a
+                    # reconnect loop (bridge blocks it, but the sidecar still spams).
+                    ReflexPredicate(fact="state.is_disconnected", op="eq", value=False),
+                ],
                 action_template=ReflexActionTemplate(
                     kind="command",
                     command="sit",
