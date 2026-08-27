@@ -322,6 +322,7 @@ my $next_chat_ingest_at_ms = 0;
 my $next_config_ingest_at_ms = 0;
 my $next_keepalive_at_ms = 0;
 my $next_party_status_at_ms = 0;
+my $next_autoequip_at_ms = 0;
 
 # ── charstatus.json real-time state file (2026-08-27) ──
 # Monotonic snapshot sequence per bot (rejects stale/out-of-order reads).
@@ -899,6 +900,36 @@ sub on_mainLoop_post {
 		if (!$registered && $now >= $next_register_at_ms) {
 	    $next_register_at_ms = $now + _cfg_int('aiSidecar_registerRetryMs', 1000);
 	    _attempt_register('retry');
+	}
+
+	# ── AUTO-EQUIP UNEQUIPPED WEAPON (reflex, commands-only) ──
+	# The sidecar's cold-start latches "weapon present" once any weapon is ever
+	# observed, so it never re-emits `equip`. But if the weapon is in inventory
+	# yet UNEQUIPPED (verified live: Dmg 1-2 = bare fists), the bot can't kill
+	# anything. Periodically (10s) auto-equip the best unequipped weapon held.
+	# Commands-only (per RULE.md): never touches config.
+	if ($char && $net && $net->getState() == Network::IN_GAME && $now >= ($next_autoequip_at_ms || 0)) {
+	    $next_autoequip_at_ms = $now + 10000;  # every 10s
+	    my $_ae_map = $field ? lc($field->name()) : '';
+	    $_ae_map =~ s/\.gat$//;
+	    my $_ae_slot = undef;
+	    my $_ae_item = undef;
+	    for my $_eq (@{_char_inventory($char)}) {
+	        next unless ref($_eq);
+	        next if $_eq->{equipped};
+	        my $_t = $_eq->{type} || 0;
+	        # type 4 = weapon, 5 = armor. Only auto-equip weapons (safe).
+	        next unless $_t == 4;
+	        $_ae_item = $_eq;
+	        $_ae_slot = _inventory_slot_for_item($_eq);
+	        last;
+	    }
+	    if ($_ae_item) {
+	        my $_ae_name = $_ae_item->{name} || '';
+	        my $cmd = defined $_ae_slot ? "equip $_ae_slot $_ae_name" : "equip $_ae_name";
+	        my $_ae_ok = eval { Commands::run($cmd); 1 };
+	        warning "[autoequip] equipping held weapon '$_ae_name' on $_ae_map (${\\($_ae_ok ? 'OK' : 'FAILED')})\n", 'aiSidecarBridge', 1;
+	    }
 	}
 
 	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
