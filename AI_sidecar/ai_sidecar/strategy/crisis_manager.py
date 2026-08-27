@@ -630,6 +630,11 @@ class CrisisManager:
         with self._lock:
             return dict(self._stats)
 
+    def set_enqueue_fn(self, fn: Callable) -> None:
+        """Wire the recovery-step execution hook (so execute_recovery can push commands to the bot)."""
+        with self._lock:
+            self._enqueue_fn = fn
+
     # ── Persistence ──
 
     def save_state(self) -> int:

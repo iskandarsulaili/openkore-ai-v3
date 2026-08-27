@@ -4386,9 +4386,52 @@ class PDCALoop:
                             from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                             _gpp = get_gear_progression_planner()
                             self._runtime.gear_progression_planner = _gpp
+                            # Wire the gear planner into the action queue (was DEAD: set_enqueue_fn never called,
+                            # so the bot could never buy/refine gear — root cause of the level-2 no-weapon death loop).
+                            _aq = getattr(self._runtime, "action_queue", None)
+                            if _aq is not None:
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _gpp.set_enqueue_fn(lambda _bid, _cmd: _aq.enqueue(_bid, _AP(
+                                    action_id=f"gear-{int(_dt.now(UTC).timestamp()*1000)}",
+                                    kind="command",
+                                    command=_cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.tactical,
+                                    source="gear_progression",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"gear-{_cmd}-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                                logger.info("gear_progression_planner_enqueue_wired")
                             logger.info("gear_progression_planner_initialized")
                         except Exception as e:
                             logger.warning("gear_progression_planner_init_failed: %s", e)
+
+                    # ── NEW: Wire Crisis Manager recovery execution ──
+                    # (was DEAD: detect_crisis never called AND _enqueue_fn never set, so a death
+                    # could never escalate into an executed recovery — the bot died endlessly.)
+                    _cm_w = getattr(self._runtime, "crisis_manager", None)
+                    if _cm_w is not None:
+                        try:
+                            _cm_aq = getattr(self._runtime, "action_queue", None)
+                            if _cm_aq is not None and not getattr(_cm_w, "_enqueue_fn", None):
+                                from datetime import UTC, datetime as _dt, timedelta
+                                from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                                _cm_w.set_enqueue_fn(lambda _bid, _cmd: _cm_aq.enqueue(_bid, _AP(
+                                    action_id=f"crisis-{int(_dt.now(UTC).timestamp()*1000)}",
+                                    kind="command",
+                                    command=_cmd,
+                                    conflict_key="",
+                                    priority_tier=_APT.strategic,
+                                    source="crisis_manager",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key=f"crisis-{_cmd}-{int(_dt.now(UTC).timestamp())}",
+                                )))
+                                logger.info("crisis_manager_enqueue_wired")
+                        except Exception as e:
+                            logger.warning("crisis_manager_enqueue_wire_failed: %s", e)
 
                     # ── NEW: Initialize Exploration Driver ──
                     _ed = getattr(self._runtime, "exploration_driver", None)
@@ -5169,6 +5212,68 @@ class PDCALoop:
                                                     logger.info("comeback_plan_generated: bot=%s", _reflex_bot_id)
                                                 except Exception:
                                                     logger.warning("comeback_plan_failed: bot=%s", _reflex_bot_id, exc_info=True)
+                                            # ── CrisisManager hook (was DEAD: detect_crisis never called) ──
+                                            # Feed the death into the crisis_manager so it can escalate (recurring
+                                            # deaths -> safer zone / gear/potion recovery) AND learn a lesson, all
+                                            # agnostic. The blacklist thresholds stay ENDURANCE-AWARE (see
+                                            # _diagnose_death: recurrence>=3 map blacklist, >=5 safe mode) so the
+                                            # bot can still brute-force-learn lethal/aggressive zones instead of
+                                            # over-blacklisting on a single death.
+                                            _cm_d = getattr(self._runtime, "crisis_manager", None)
+                                            if _cm_d is not None:
+                                                try:
+                                                    _cm_event = _cm_d.detect_crisis(_reflex_bot_id, {
+                                                        "hp": _current_hp,
+                                                        "hp_max": int(_vitals_da.get("max_hp", 1) or 1),
+                                                        "hp_ratio": float(_bot_prev_hp) / max(int(_vitals_da.get("max_hp", 1) or 1), 1),
+                                                        "recent_death": True,
+                                                        "map": str(_conscious_snap.get("map", "") or ""),
+                                                        "combat.aggro_count": int(_combat_da.get("aggro_count", 0) or 0),
+                                                    })
+                                                    if _cm_event is not None:
+                                                        _cm_diag = _cm_d.diagnose(_cm_event)
+                                                        _cm_rec = _cm_d.create_recovery_plan(_cm_diag)
+                                                        _cm_d.execute_recovery(_reflex_bot_id, _cm_event, _cm_diag, _cm_rec)
+                                                        logger.info("crisis_recovery_executed: bot=%s type=%s root=%s steps=%s",
+                                                                    _reflex_bot_id, _cm_event.crisis_type,
+                                                                    _cm_diag.root_cause, _cm_rec.steps[:2])
+                                                except Exception:
+                                                    logger.warning("crisis_detect_failed: bot=%s", _reflex_bot_id, exc_info=True)
+                                            # ── Gear Progression hook (was DEAD: get_best_upgrade/execute_upgrade never called) ──
+                                            # On a death, evaluate whether the bot is under-geared for its level and, if it
+                                            # can afford an upgrade, buy it — the AGNOSTIC acquisition path (gear comes from
+                                            # the DB-backed knowledge loader, not hardcoded IDs). Reflex on deaths; the
+                                            # per-cycle gear check (no death) is handled separately so the bot still gears up
+                                            # while actively farming.
+                                            _gpp_d = getattr(self._runtime, "gear_progression_planner", None)
+                                            if _gpp_d is not None:
+                                                try:
+                                                    _gear_level = int(_conscious_snap.get("base_level", _conscious_snap.get("level", 1)) or 1)
+                                                    _gear_inv = _conscious_snap.get("inventory", {}) or {}
+                                                    _gear_zeny = int(_gear_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
+                                                    # Feed current equipment into the planner so replace-vs-refine is accurate.
+                                                    _gear_equip = _conscious_snap.get("equipment", None) or (_conscious_snap.get("raw", {}) or {}).get("equipment", None)
+                                                    if _gear_equip and isinstance(_gear_equip, list):
+                                                        for _ge_idx, _ge_item in enumerate(_gear_equip):
+                                                            if not isinstance(_ge_item, dict):
+                                                                continue
+                                                            _ge_name = str(_ge_item.get("name", "") or "")
+                                                            if _ge_name:
+                                                                # weapon=first equip slot; others slot-matched by item name
+                                                                _ge_slot = "weapon" if _ge_idx == 0 else ""
+                                                                if _ge_slot:
+                                                                    _gpp_d.update_equipment(_ge_slot, _ge_name)
+                                                    _gear_plan = _gpp_d.get_best_upgrade(_gear_level, _gear_zeny)
+                                                    if _gear_plan is not None and _gear_plan.is_affordable:
+                                                        _gpp_d.execute_upgrade(_gear_plan)
+                                                        logger.info("gear_upgrade_after_death: bot=%s slot=%s target=%s cost=%dz",
+                                                                    _reflex_bot_id, _gear_plan.slot_name, _gear_plan.target_item, _gear_plan.cost)
+                                                    elif _gear_plan is not None:
+                                                        logger.debug("gear_upgrade_unaffordable: bot=%s slot=%s target=%s cost=%dz zeny=%dz",
+                                                                     _reflex_bot_id, _gear_plan.slot_name, _gear_plan.target_item,
+                                                                     _gear_plan.cost, _gear_zeny)
+                                                except Exception:
+                                                    logger.warning("gear_upgrade_check_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                         except Exception:
                                             logger.warning("death_analysis_call_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                 _prev_hp[_reflex_bot_id] = _current_hp
