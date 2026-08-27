@@ -520,7 +520,7 @@ class ReflexRuleEngine:
             event_family=event.event_family.value,
             event_type=event.event_type,
             matched_at=datetime.now(UTC),
-            latency_ms=float(elapsed_ms),
+            latency_ms=float(min(elapsed_ms, 600000.0)),
             suppressed=suppressed,
             suppression_reason=suppression_reason,
             emitted=emitted,
