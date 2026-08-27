@@ -137,6 +137,45 @@ def bot_state(
     }
 
 
+@router.get("/charstatus/{bot_id}")
+def bot_charstatus(
+    bot_id: str,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict[str, Any]:
+    """Get the complete real-time charstatus contract for a bot.
+
+    This is the authoritative INPUT for all three brains (Conscious/LLM,
+    Subconscious/ML, Reflex). It prefers the durable charstatus.json file the
+    bridge writes (full enriched contract: identity, vitals, position,
+    inventory, stats/skills, combat, environment, party, economy, AI
+    internals, telemetry) and falls back to the in-memory snapshot cache.
+    Read-only for brains.
+
+    Args:
+        bot_id: Bot identifier.
+
+    Returns:
+        Full charstatus contract dict.
+    """
+    reader = getattr(runtime, "charstatus_reader", None)
+    if reader is not None:
+        data = reader.get(bot_id)
+        if data is not None:
+            return {"ok": True, "bot_id": bot_id, "source": "charstatus.json", **data}
+    snap = None
+    if runtime.snapshot_cache is not None:
+        snap = runtime.snapshot_cache.get(bot_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"no charstatus for bot: {bot_id}")
+    return {
+        "ok": True,
+        "bot_id": bot_id,
+        "source": "snapshot_cache",
+        "schema_version": 1,
+        "snapshot": snap.model_dump(mode="json"),
+    }
+
+
 @router.post("/claim/{role}")
 def claim_role(
     role: str,

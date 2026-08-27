@@ -323,6 +323,14 @@ my $next_config_ingest_at_ms = 0;
 my $next_keepalive_at_ms = 0;
 my $next_party_status_at_ms = 0;
 
+# ── charstatus.json real-time state file (2026-08-27) ──
+# Monotonic snapshot sequence per bot (rejects stale/out-of-order reads).
+my %_charstatus_seq;
+# Last written charstatus path per bot (dedup + atomic-write tracking).
+my %_charstatus_last_path;
+# charstatus.json output directory (default: data/charstatus/ under repo root).
+my $_charstatus_dir = '';
+
 # ── New module instances (upgraded IPC, state builders, circuit breaker) ──
 my $_circuit_breaker;
 my $_connection_metrics;
@@ -2189,6 +2197,279 @@ sub _send_snapshot {
     if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_actorsEnabled', 1)) {
         _send_actor_delta_from_snapshot($snapshot);
     }
+
+    # ── charstatus.json real-time state file (2026-08-27) ──
+    # Write the complete, enriched char+world state to a per-bot JSON file so
+    # the Conscious (LLM), Subconscious (ML) and Reflex brains can read the
+    # SAME authoritative snapshot. Atomic write (temp+rename) + monotonic seq
+    # so a concurrent reader never sees a torn/out-of-order file.
+    _write_charstatus_file($snapshot);
+}
+
+# ── charstatus.json atomic writer ──
+# Writes the enriched snapshot to data/charstatus/charstatus_<bot>.json.
+# Atomic: write to a temp file in the same dir, then rename (atomic on same fs).
+# Monotonic seq: rejects stale/out-of-order writes from a concurrent reader.
+sub _write_charstatus_file {
+    my ($snapshot) = @_;
+    return if ref($snapshot) ne 'HASH';
+    return if !_cfg_bool('aiSidecar_charstatusEnabled', 1);
+    return if !$char;  # no char state yet (char-select / disconnected)
+
+    my $bot_id = _bot_id();
+    my $safe_bot = $bot_id;
+    $safe_bot =~ s/[^A-Za-z0-9_.-]/_/g;
+    $safe_bot = 'unknown' if $safe_bot eq '';
+
+    # Resolve output dir once (default: data/charstatus/ under repo root).
+    if ($_charstatus_dir eq '') {
+        my $dir = _cfg('aiSidecar_charstatusDir', '');
+        if ($dir eq '') {
+            $dir = 'data/charstatus';
+        }
+        $_charstatus_dir = $dir;
+    }
+    my $dir = $_charstatus_dir;
+    if (!-d $dir) {
+        eval { require File::Path; File::Path::make_path($dir); 1; } or do {
+            _throttled_warning('charstatus_mkdir_failed', "[aiSidecarBridge] cannot create charstatus dir $dir: $@");
+            return;
+        };
+    }
+
+    my $path = "$dir/charstatus_$safe_bot.json";
+    my $tmp  = "$path.tmp.$$";
+
+    # Monotonic seq — reject out-of-order writes.
+    my $seq = ($_charstatus_seq{$bot_id} || 0) + 1;
+    $_charstatus_seq{$bot_id} = $seq;
+
+    # Enrich the snapshot with the full charstatus contract fields.
+    my $cs = _build_charstatus_payload($snapshot, $seq);
+
+    my $json;
+    if ($json_available) {
+        $json = eval { JSON::PP->new->canonical->encode($cs); 1; } ? JSON::PP->new->canonical->encode($cs) : undef;
+    }
+    if (!defined $json) {
+        _throttled_warning('charstatus_encode_failed', "[aiSidecarBridge] charstatus JSON encode failed");
+        return;
+    }
+
+    # Atomic write: temp + rename.
+    if (open my $fh, '>', $tmp) {
+        print $fh $json;
+        close $fh;
+        if (rename $tmp, $path) {
+            $_charstatus_last_path{$bot_id} = $path;
+        } else {
+            unlink $tmp;
+            _throttled_warning('charstatus_rename_failed', "[aiSidecarBridge] charstatus rename failed for $path");
+        }
+    } else {
+        _throttled_warning('charstatus_write_failed', "[aiSidecarBridge] charstatus write failed for $tmp: $!");
+    }
+}
+
+# ── charstatus.json full contract builder ──
+# Builds the COMPLETE char+world state contract (all 11 sections) from the
+# bridge snapshot + OpenKore core. This is the authoritative INPUT for all
+# three brains. Read-only for brains — they never write to it.
+sub _build_charstatus_payload {
+    my ($snapshot, $seq) = @_;
+    my $bot_id = _bot_id();
+    my $now = time();
+    my $in_game = ($net && $net->getState() == Network::IN_GAME) ? 1 : 0;
+
+    # ── Status effects (SC) + cooldowns from $char->{statuses} ──
+    my %status_effects;
+    my %cooldowns;
+    if ($char && ref($char->{statuses}) eq 'HASH') {
+        for my $handle (keys %{$char->{statuses}}) {
+            my $st = $char->{statuses}{$handle};
+            next unless ref($st) eq 'HASH';
+            my $remaining = 0;
+            if ($st->{tick} && $st->{time}) {
+                $remaining = int(($st->{time} + ($st->{tick} / 1000)) - $now);
+                $remaining = 0 if $remaining < 0;
+            }
+            if ($handle =~ /_DELAY$/) {
+                # Skill cooldown (ZC_SKILL_POSTDELAY stores <skill>_DELAY status)
+                my $skill = $handle;
+                $skill =~ s/_DELAY$//;
+                $cooldowns{$skill} = $remaining;
+            } else {
+                $status_effects{$handle} = $remaining;
+            }
+        }
+    }
+
+    # ── Stats (str/agi/vit/int/dex/luk) from OpenKore core ──
+    my %stats;
+    if ($char) {
+        $stats{str} = $char->{str} // 0;
+        $stats{agi} = $char->{agi} // 0;
+        $stats{vit} = $char->{vit} // 0;
+        $stats{int} = $char->{int} // 0;
+        $stats{dex} = $char->{dex} // 0;
+        $stats{luk} = $char->{luk} // 0;
+        $stats{str_bonus} = $char->{str_bonus} // 0;
+        $stats{agi_bonus} = $char->{agi_bonus} // 0;
+        $stats{vit_bonus} = $char->{vit_bonus} // 0;
+        $stats{int_bonus} = $char->{int_bonus} // 0;
+        $stats{dex_bonus} = $char->{dex_bonus} // 0;
+        $stats{luk_bonus} = $char->{luk_bonus} // 0;
+    }
+
+    # ── Current attack target from AI task args ──
+    my $target_id = '';
+    my $target_name = '';
+    my $target_hp_pct = 0;
+    eval {
+        my $args = AI::args(0);
+        if ($args && $args->{attackID}) {
+            $target_id = $args->{attackID};
+            my $t = $monsters{$target_id};
+            if ($t) {
+                $target_name = $t->{name} || '';
+                $target_hp_pct = ($t->{hp_max} && $t->{hp_max} > 0) ? int(($t->{hp} || 0) * 100 / $t->{hp_max}) : 0;
+            }
+        }
+    };
+
+    # ── Environment (server time, map flags) ──
+    my $map = $snapshot->{position}{map} || '';
+    my $is_town = 0;
+    if ($map) {
+        my @town_maps = qw(prontera morocc geffen payon aldebaran alberta izlude lutie xmas comodo yuno einbroch rachel veins nameless);
+        for my $tm (@town_maps) {
+            if ($map =~ /^\Q$tm\E/) { $is_town = 1; last; }
+        }
+    }
+
+    return {
+        schema_version => 1,
+        seq            => $seq,
+        snapshot_ts    => _iso_now(),
+        server_time    => $now,
+        freshness      => $in_game ? 'live' : 'stale',
+        in_game        => $in_game,
+        last_seen_ts   => $now,
+        bot_id         => $bot_id,
+        # ── 1. Identity ──
+        identity => {
+            account_id => $char ? ($char->{accountID} // '') : '',
+            char_id    => $char ? ($char->{ID} // '') : '',
+            name       => $char ? ($char->{name} // '') : '',
+            job        => $char ? ($char->{jobName} // '') : '',
+            job_id     => $char ? ($char->{jobID} // 0) : 0,
+            base_level => $char ? ($char->{level} // 0) : 0,
+            job_level  => $char ? ($char->{level_job} // 0) : 0,
+            gender     => $char ? ($char->{sex} // '') : '',
+            guild_id   => $char ? ($char->{guildID} // 0) : 0,
+            party_id   => $char ? ($char->{party}{ID} // 0) : 0,
+        },
+        # ── 2. Vitals ──
+        vitals => {
+            hp         => $char ? ($char->{hp} // 0) : 0,
+            hp_max     => $char ? ($char->{hp_max} // 0) : 0,
+            hp_ratio   => ($char && $char->{hp_max} > 0) ? (($char->{hp} || 0) / $char->{hp_max}) : 0,
+            sp         => $char ? ($char->{sp} // 0) : 0,
+            sp_max     => $char ? ($char->{sp_max} // 0) : 0,
+            sp_ratio   => ($char && $char->{sp_max} > 0) ? (($char->{sp} || 0) / $char->{sp_max}) : 0,
+            weight     => $char ? ($char->{weight} // 0) : 0,
+            weight_max => $char ? ($char->{weight_max} // 0) : 0,
+            weight_ratio => ($char && $char->{weight_max} > 0) ? (($char->{weight} || 0) / $char->{weight_max}) : 0,
+            dead       => ($char && $char->{dead}) ? 1 : 0,
+            sitting    => ($char && $char->{sitting}) ? 1 : 0,
+            status_effects => \%status_effects,
+        },
+        # ── 3. Position & Movement ──
+        position => {
+            map => $map,
+            x   => $snapshot->{position}{x},
+            y   => $snapshot->{position}{y},
+            direction => $char ? ($char->{direction} // 0) : 0,
+            move_dest => ($char && ref($char->{pos_to}) eq 'HASH') ? { x => $char->{pos_to}{x}, y => $char->{pos_to}{y} } : undef,
+            route_failure_count => $snapshot->{raw}{route_failure_count} || 0,
+            route_churn_count   => $snapshot->{raw}{route_churn_count} || 0,
+            stuck_detected      => ($snapshot->{raw}{route_failure_count} || 0) > 3 ? 1 : 0,
+        },
+        # ── 4. Inventory ──
+        inventory => {
+            zeny       => $char ? ($char->{zeny} // 0) : 0,
+            item_count => $snapshot->{inventory}{item_count} || 0,
+            weight     => $char ? ($char->{weight} // 0) : 0,
+            weight_max => $char ? ($char->{weight_max} // 0) : 0,
+            items      => $snapshot->{inventory_items} || [],
+            equipment  => $snapshot->{progression}{equipment} || {},
+        },
+        # ── 5. Stats & Skills ──
+        stats => \%stats,
+        skills => {
+            list        => $snapshot->{skills} || [],
+            cooldowns   => \%cooldowns,
+            skill_points => $char ? ($char->{points_skill} // 0) : 0,
+            stat_points  => $char ? ($char->{status_points} // $char->{points_free} // 0) : 0,
+        },
+        # ── 6. Combat State ──
+        combat => {
+            ai_sequence   => $snapshot->{combat}{ai_sequence} || '',
+            is_in_combat  => $snapshot->{combat}{is_in_combat} ? 1 : 0,
+            target_id     => $target_id,
+            target_name   => $target_name,
+            target_hp_pct => $target_hp_pct,
+            monster_count => $snapshot->{combat}{monster_count} || 0,
+            nearby_monsters => $snapshot->{actors} || [],
+        },
+        # ── 7. Environment ──
+        environment => {
+            map_name => $map,
+            is_town  => $is_town,
+            is_field => ($map =~ /_fild|_field|_dun|_gld/) ? 1 : 0,
+            time_of_day => _time_of_day($now),
+        },
+        # ── 8. Party/Guild ──
+        party => {
+            in_party      => $snapshot->{in_party} ? 1 : 0,
+            members       => $snapshot->{party_members} || [],
+            all_bots      => $snapshot->{all_bots} || [],
+        },
+        # ── 9. Economy ──
+        economy => {
+            zeny => $char ? ($char->{zeny} // 0) : 0,
+        },
+        # ── 10. AI/Internal ──
+        ai => {
+            current_ai_state => $snapshot->{combat}{ai_sequence} || '',
+            ai_queue        => $snapshot->{raw}{ai_queue} || '',
+            death_count     => $snapshot->{raw}{death_count} || 0,
+            respawn_state   => $snapshot->{raw}{respawn_state} || '',
+            reconnect_age_s => $snapshot->{raw}{reconnect_age_s} || 0,
+            npc_dialog      => {
+                npc_name => $snapshot->{raw}{npc_name} || '',
+                npc_x    => $snapshot->{raw}{npc_x} || 0,
+                npc_y    => $snapshot->{raw}{npc_y} || 0,
+                last_text => $snapshot->{raw}{last_npc_text} || '',
+                menu_options => $snapshot->{raw}{menu_options} || [],
+            },
+        },
+        # ── 11. Telemetry ──
+        telemetry => {
+            latency_ms   => 0,
+            session_id   => $bot_id,
+            server_time  => $now,
+        },
+    };
+}
+
+# ── Time-of-day helper (server time) ──
+sub _time_of_day {
+    my ($t) = @_;
+    my @g = gmtime($t);
+    my $hour = $g[2];
+    return 'night' if $hour < 6 || $hour >= 18;
+    return 'day';
 }
 
 sub _build_snapshot_payload {
@@ -2294,6 +2575,71 @@ sub _build_snapshot_payload {
 				destroyed => 0 + ($fs->{destroyed} || 0),
 				live      => 0 + ($fs->{live} || 0),
 			} : undef;
+		},
+		# ── charstatus contract enrichment (2026-08-27) ──
+		# Status effects (SC) + skill cooldowns from $char->{statuses}.
+		status_effects => eval {
+			my %se;
+			if ($char && ref($char->{statuses}) eq 'HASH') {
+				for my $h (keys %{$char->{statuses}}) {
+					next if $h =~ /_DELAY$/;
+					my $st = $char->{statuses}{$h};
+					next unless ref($st) eq 'HASH';
+					my $rem = 0;
+					if ($st->{tick} && $st->{time}) {
+						$rem = int(($st->{time} + ($st->{tick} / 1000)) - time());
+						$rem = 0 if $rem < 0;
+					}
+					$se{$h} = $rem;
+				}
+			}
+			\%se;
+		},
+		cooldowns => eval {
+			my %cd;
+			if ($char && ref($char->{statuses}) eq 'HASH') {
+				for my $h (keys %{$char->{statuses}}) {
+					next unless $h =~ /_DELAY$/;
+					my $st = $char->{statuses}{$h};
+					next unless ref($st) eq 'HASH';
+					my $rem = 0;
+					if ($st->{tick} && $st->{time}) {
+						$rem = int(($st->{time} + ($st->{tick} / 1000)) - time());
+						$rem = 0 if $rem < 0;
+					}
+					my $skill = $h;
+					$skill =~ s/_DELAY$//;
+					$cd{$skill} = $rem;
+				}
+			}
+			\%cd;
+		},
+		# Stats (str/agi/vit/int/dex/luk) from OpenKore core.
+		stats => eval {
+			my %s;
+			if ($char) {
+				$s{str} = $char->{str} // 0;
+				$s{agi} = $char->{agi} // 0;
+				$s{vit} = $char->{vit} // 0;
+				$s{int} = $char->{int} // 0;
+				$s{dex} = $char->{dex} // 0;
+				$s{luk} = $char->{luk} // 0;
+			}
+			\%s;
+		},
+		# Current attack target from AI task args.
+		target => eval {
+			my $args = AI::args(0);
+			my %t;
+			if ($args && $args->{attackID}) {
+				$t{id} = $args->{attackID};
+				my $m = $monsters{$args->{attackID}};
+				if ($m) {
+					$t{name} = $m->{name} || '';
+					$t{hp_pct} = ($m->{hp_max} && $m->{hp_max} > 0) ? int(($m->{hp} || 0) * 100 / $m->{hp_max}) : 0;
+				}
+			}
+			\%t;
 		},
 	};
 

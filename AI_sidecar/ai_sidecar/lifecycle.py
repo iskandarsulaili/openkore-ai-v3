@@ -595,6 +595,7 @@ class RuntimeState:
     preemptive_manager: object | None = None  # PreemptiveResourceManager — restock before depletion
     portal_verifier: object | None = None  # PortalVerifier — validates portals.txt vs observed
     competitive_intelligence: object | None = None  # CompetitiveIntelligence — meta/opponent tracking
+    charstatus_reader: object | None = None  # CharStatusReader — durable real-time charstate file
     crisis_manager: object | None = None  # CrisisManager — failure diagnosis/recovery
     social_engine: object | None = None  # SocialEngine — chat/relationship engine
     positioning_system: object | None = None  # PositioningSystem — spatial combat awareness
@@ -6123,6 +6124,11 @@ def create_runtime() -> RuntimeState:
 
     action_queue = ActionQueue(max_per_bot=settings.action_max_queue_per_bot)
     snapshot_cache = SnapshotCache(ttl_seconds=settings.snapshot_cache_ttl_seconds)
+    # Durable real-time charstatus.json reader (bridge writes the full enriched
+    # contract to data/charstatus/charstatus_<bot>.json on every snapshot tick).
+    from ai_sidecar.runtime.charstatus import CharStatusReader
+
+    charstatus_reader = CharStatusReader(data_dir=workspace_root)
     # Enqueue-side disconnected gate: nothing queues for bots that are KNOWN
     # logged out (snapshot exists with map_known=False from char-select /
     # disconnected state — FLAW 8 derived flag). No snapshot = unknown =
@@ -6163,6 +6169,7 @@ def create_runtime() -> RuntimeState:
         workspace_root=workspace_root,
         bot_registry=BotRegistry(),
         snapshot_cache=snapshot_cache,
+        charstatus_reader=charstatus_reader,
         action_queue=action_queue,
         action_arbiter=action_arbiter,
         latency_router=LatencyRouter(budget_ms=settings.latency_budget_ms),
