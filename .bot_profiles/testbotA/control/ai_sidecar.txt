@@ -1,0 +1,83 @@
+1|######## AI Sidecar Bridge Control ########
+2|# Local bridge plugin: aiSidecarBridge
+3|#
+4|# Design goals:
+5|# - fail-open: OpenKore keeps running even when sidecar is down
+6|# - bounded and low-latency local HTTP calls only
+7|# - OpenKore remains authoritative for command execution
+8|
+9|# Master switch for the bridge plugin.
+10|aiSidecar_enable 1
+11|
+12|# Local sidecar base URL (HTTP only for this local IPC slice).
+13|aiSidecar_baseUrl http://127.0.0.1:18081
+14|
+15|# Contract metadata fields.
+16|aiSidecar_contractVersion v1
+17|aiSidecar_source openkore-bridge
+18|
+19|# Tight-but-stable local IPC timeouts in milliseconds.
+20|aiSidecar_connectTimeoutMs 180
+21|aiSidecar_ioTimeoutMs 30000
+22|
+23|# Snapshot push behavior.
+24|aiSidecar_snapshotEnabled 1
+25|aiSidecar_snapshotIntervalMs 500
+26|
+27|# Poll when disconnected (0 recommended for conservative operation).
+28|aiSidecar_pollWhenDisconnected 1
+29|
+30|# Action polling behavior.
+31|aiSidecar_actionPollEnabled 1
+32|aiSidecar_pollIntervalMs 300
+33|aiSidecar_pollFailureBackoffBaseMs 600
+34|aiSidecar_pollFailureBackoffMaxMs 6000
+35|aiSidecar_pollFailureResetRegistrationAfter 3
+36|
+37|# Acknowledgement behavior.
+38|aiSidecar_ackEnabled 1
+39|aiSidecar_ackRetryMs 400
+40|aiSidecar_ackMaxAgeMs 8000
+41|
+42|# Registration retry interval.
+43|aiSidecar_registerRetryMs 3000
+44|
+45|# Optional identity overrides for deterministic bot IDs.
+46|# aiSidecar_botIdentity openkoreai
+48|
+49|# Telemetry push behavior.
+50|aiSidecar_telemetryEnabled 1
+51|aiSidecar_telemetryIntervalMs 1000
+52|
+53|# Bounded payload safeguards.
+54|aiSidecar_maxRawChars 256
+55|aiSidecar_maxCommandLength 160
+56|
+57|# Macro hot-reload orchestration (through safe built-in bridge flow).
+58|aiSidecar_macroReloadEnabled 1
+59|aiSidecar_macroFile ai_sidecar_generated_macros.txt
+60|aiSidecar_eventMacroFile ai_sidecar_generated_eventmacros.txt
+61|aiSidecar_macroPluginName macro
+62|aiSidecar_eventMacroPluginName eventMacro
+63|
+64|# v2 ingestion cadence and bounded buffers.
+65|aiSidecar_eventIngestIntervalMs 700
+66|aiSidecar_chatIngestIntervalMs 900
+67|aiSidecar_configIngestIntervalMs 2000
+68|aiSidecar_eventIngestFailureBackoffBaseMs 1000
+69|aiSidecar_eventIngestFailureBackoffMaxMs 10000
+70|aiSidecar_eventBatchSize 20
+71|aiSidecar_chatBatchSize 20
+72|aiSidecar_maxEventQueue 500
+73|aiSidecar_maxChatQueue 200
+74|
+# Extra bridge logs (1=enabled, 0=minimal).
+aiSidecar_verbose 1
+aiSidecar_master Local rAthena AI World
+
+# ── charstatus.json real-time state file (2026-08-27) ──
+# Write the full enriched char+world contract to data/charstatus/charstatus_<bot>.json
+# on every snapshot tick (atomic temp+rename, monotonic seq). Consumed by all 3 brains.
+aiSidecar_charstatusEnabled 1
+aiSidecar_charstatusDir data/charstatus
+78|
