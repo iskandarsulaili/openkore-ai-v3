@@ -36,10 +36,14 @@ class SituationalAwareness:
     """
     
     # Healing items by potency (item_id, name, heal_amount, cost, min_level)
+    # Novice Potion (569) is the academy free starter kit (300x) — a level-1 bot
+    # has it but NOT Red/Orange/White, so it MUST be in the heal list or the bot
+    # dies with 300 potions unused (verified live). heal ~rand(44,66)≈55, free.
     HEALING_ITEMS = [
         (504, "White Potion", 325, 250, 30),
         (502, "Orange Potion", 105, 100, 15),
         (501, "Red Potion", 45, 12, 1),
+        (569, "Novice Potion", 55, 0, 1),
     ]
     
     def __init__(self):
