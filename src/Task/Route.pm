@@ -422,7 +422,20 @@ sub iterate {
 		
 		$current_calc_pos = calcPosFromPathfinding($field, $self->{actor}, $extra_time);
 		
-		if ($current_calc_pos->{x} == $solution->[$#{$solution}]{x} && $current_calc_pos->{y} == $solution->[$#{$solution}]{y}) {
+		# Arrival MUST be judged on the server-confirmed position ($current_pos)
+		# vs the TRUE destination, NOT the extrapolated $current_calc_pos and
+		# NOT $solution->[$#{$solution}]. Two distinct bugs here:
+		# (a) calcPosFromPathfinding extrapolates from $actor->{time_move} +
+		#     walk_speed; on a FRESH dispatch that timestamp is stale so the
+		#     extrapolation jumps the whole route -> reads == dest.
+		# (b) THIS fork's getRoute orders the solution [dest ... start], so
+		#     $solution->[-1] is the START (the bot's own current cell), not the
+		#     destination. Comparing current pos to solution[-1] (== start)
+		#     matches ALWAYS -> "reached the destination" fires with ZERO walk
+		#     packets and the bot never steps onto the warp tile.
+		# Use $self->{dest}{pos} (the true target), as the CALCULATE_ROUTE
+		# stage does.
+		if ($current_pos->{x} == $self->{dest}{pos}{x} && $current_pos->{y} == $self->{dest}{pos}{y}) {
 			# Actor position is the destination; we've arrived at the destination
 			if ($self->{notifyUponArrival}) {
 				message TF("%s reached the destination.\n", $self->{actor}), "route";
@@ -685,9 +698,18 @@ sub iterate {
 					next;
 				}
 
-				my @trusted_slice = @{$solution}[0 .. $move_step_index];
+				# Anchor the trusted slice at the solution index nearest the bot's
+				# LIVE position, not at solution[0] (the route start). The
+				# client_solution below is computed from $current_calc_pos (the
+				# live position), so comparing against a slice anchored at the
+				# route start misaligns once the bot has advanced -> deviation
+				# always grows -> trim -> reset -> recompute the same route
+				# forever (infinite walk loop, "trim 10 to 6" spam).
+				my ($anchor_index, $anchor_dist) = bestSolutionAnchorIndex($self, $solution, $move_step_index, $current_calc_pos);
+				$anchor_index = 0 if !defined $anchor_index || $anchor_index < 0;
+				$anchor_index = $move_step_index if $anchor_index > $move_step_index;
+				my @trusted_slice = @{$solution}[$anchor_index .. $move_step_index];
 				my $max_deviation = _maxPathDeviation($client_solution, \@trusted_slice);
-				#debug "[move_step_index $move_step_index] Route estimated deviation: $max_deviation\n", "route";
 
 				if ($self->{trimm_dev_block}) {
 					debug "Route $self->{actor} - skipping deviation trim check because trimm_dev_block is active.\n", "route", 2;
@@ -879,19 +901,27 @@ sub _maxPathDeviation {
 	my ($path_a, $path_b) = @_;
 	return 0 if !$path_a || !$path_b || !@{$path_a} || !@{$path_b};
 
-	my $max_index_a = $#{$path_a};
-	my $max_index_b = $#{$path_b};
-	my $smaller = $max_index_a > $max_index_b ? $max_index_b : $max_index_a;
-
+	# Directional Hausdorff distance: for every cell of the client path
+	# (path_a, computed from the LIVE position), find the distance to the
+	# NEAREST cell of the trusted route (path_b), then take the max.
+	#
+	# Why not index-aligned cell-vs-cell: the client path and the route slice
+	# have different lengths AND different origins (client path starts at the
+	# live pos, the route slice at the route start), so aligning them by index
+	# is meaningless — a client Manhattan path that hugs the diagonal A* route
+	# would still show large per-index deviation and trigger a bogus trim/reset
+	# loop. Hausdorff only signals genuine corridor-exit (the client path leaves
+	# the route's walkable band), regardless of path shape/length.
+	my @route = @{$path_b};
 	my $max_dev = 0;
-
-	foreach my $index (0..$smaller) {
-		my $cell_a = $path_a->[$index];
-		my $cell_b = $path_b->[$index];
-		my $dist = blockDistance($cell_a, $cell_b);
-		if ($dist > $max_dev) {
-			$max_dev = $dist;
+	foreach my $cell_a (@{$path_a}) {
+		my $min_dist = -1;
+		foreach my $cell_b (@route) {
+			my $d = blockDistance($cell_a, $cell_b);
+			$min_dist = $d if $min_dist < 0 || $d < $min_dist;
+			last if $min_dist == 0;
 		}
+		$max_dev = $min_dist if $min_dist > $max_dev;
 	}
 
 	return $max_dev;
@@ -1039,6 +1069,17 @@ sub getRoute {
 	my $ret;
 	if ($solution) {
 		$ret = $pathfinding->run($solution);
+		# ── SOLUTION ORDER (2026-08-27, 0-walk infinite-reset root cause) ──
+		# The compiled C pathfinder (PathFinding.xs.cpp run()) emits the route
+		# DEST-first: it starts at the end node and walks the predecessor chain
+		# back to the start, so solution[0]==dest and solution[-1]==start.
+		# Stock OpenKore's contract is START-first (solution[0]==start,
+		# solution[-1]==dest) — the WALK stage's arrival check compares the
+		# actor against solution[-1] and reads step_index cells off solution[0..].
+		# With a dest-first array the walker read dest-area cells, every
+		# canMove() failed, and the task reset -> "Solution Ready" -> reset
+		# infinite loop with ZERO walk packets. Reverse to restore the contract.
+		@{$solution} = reverse @{$solution} if ($ret >= 0);
 	} else {
 		$ret = $pathfinding->runcount();
 	}
