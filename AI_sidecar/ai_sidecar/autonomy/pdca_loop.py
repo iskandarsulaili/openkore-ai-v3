@@ -9646,6 +9646,39 @@ class PDCALoop:
             f"'farm_zeny' when no academy warp but a learned_farm_map exists and is reachable. "
             f"Never invent item IDs or map names beyond the facts given."
         )
+        # ── charstatus.json real-time facts (2026-08-27) ──
+        # Inject the full live char+world state (vitals/stats/status_effects/
+        # cooldowns/target/nearby monsters) so the Conscious brain reasons over
+        # the SAME authoritative snapshot the bridge writes. Read-only.
+        try:
+            _cs_reader = getattr(_rt, "charstatus_reader", None)
+            if _cs_reader is not None:
+                _cs = _cs_reader.get(bot_id)
+                if _cs is not None:
+                    _v = _cs.get("vitals") or {}
+                    _st = _cs.get("stats") or {}
+                    _cmb = _cs.get("combat") or {}
+                    _env = _cs.get("environment") or {}
+                    _cs_facts = (
+                        f"LIVE charstatus: hp={_v.get('hp')}/{_v.get('hp_max')} "
+                        f"(ratio {_v.get('hp_ratio')}), sp={_v.get('sp')}/{_v.get('sp_max')}, "
+                        f"weight={_v.get('weight')}/{_v.get('weight_max')}, "
+                        f"dead={_v.get('dead')}, sitting={_v.get('sitting')}, "
+                        f"status_effects={_v.get('status_effects')}, "
+                        f"stats={_st}, "
+                        f"ai_state={_cmb.get('ai_sequence')}, in_combat={_cmb.get('is_in_combat')}, "
+                        f"target={_cmb.get('target_name') or _cmb.get('target_id') or 'none'} "
+                        f"(hp {_cmb.get('target_hp_pct')}%), "
+                        f"nearby_monsters={_cmb.get('monster_count')}, "
+                        f"map={_env.get('map_name')} town={_env.get('is_town')} field={_env.get('is_field')} "
+                        f"time={_env.get('time_of_day')}. "
+                    )
+                    _prompt = _prompt.replace(
+                        "Never invent item IDs or map names beyond the facts given.",
+                        _cs_facts + "Never invent item IDs or map names beyond the facts given.",
+                    )
+        except Exception:
+            pass
         try:
             _res = await _llm.complete_json(
                 _prompt,

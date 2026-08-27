@@ -149,6 +149,7 @@ class ReflexRuleEngine:
         queue_action,
         publish_macros,
         get_planner_context=None,
+        get_charstatus=None,
     ) -> list[ReflexTriggerRecord]:
         self.ensure_bot(bot_id=bot_id)
 
@@ -159,7 +160,8 @@ class ReflexRuleEngine:
         for event in events:
             state = get_enriched_state(bot_id=bot_id)
             planner_context = get_planner_context(bot_id=bot_id) if callable(get_planner_context) else {}
-            facts = self._build_fact_map(event=event, state=state, planner_context=planner_context)
+            charstatus = get_charstatus(bot_id=bot_id) if callable(get_charstatus) else {}
+            facts = self._build_fact_map(event=event, state=state, planner_context=planner_context, charstatus=charstatus)
             descriptors = self._candidate_descriptors(bot_id=bot_id, event=event)
             override_emitted = False
             for descriptor in descriptors:
@@ -400,6 +402,7 @@ class ReflexRuleEngine:
         event: NormalizedEvent,
         state: EnrichedWorldState,
         planner_context: dict[str, object],
+        charstatus: dict[str, object] | None = None,
     ) -> dict[str, object]:
         facts: dict[str, object] = {
             "event.event_id": event.event_id,
@@ -422,6 +425,25 @@ class ReflexRuleEngine:
 
         planner_payload = planner_context if isinstance(planner_context, dict) else {}
         self._flatten(prefix="planner", value=planner_payload, out=facts)
+
+        # ── charstatus.json real-time facts (2026-08-27) ──
+        # Flatten the durable charstatus contract (vitals/status_effects/
+        # cooldowns/stats/target/environment) so reflex rules can gate on
+        # status effects (poison/stone/curse), skill cooldowns, and target.
+        if isinstance(charstatus, dict) and charstatus:
+            self._flatten(prefix="charstatus", value=charstatus, out=facts)
+            _cs_vitals = charstatus.get("vitals") or {}
+            _cs_combat = charstatus.get("combat") or {}
+            _cs_skills = charstatus.get("skills") or {}
+            facts["charstatus.hp_ratio"] = _cs_vitals.get("hp_ratio", 1.0)
+            facts["charstatus.dead"] = bool(_cs_vitals.get("dead"))
+            facts["charstatus.sitting"] = bool(_cs_vitals.get("sitting"))
+            facts["charstatus.status_effects"] = _cs_vitals.get("status_effects") or {}
+            facts["charstatus.cooldowns"] = _cs_skills.get("cooldowns") or {}
+            facts["charstatus.target_id"] = _cs_combat.get("target_id") or ""
+            facts["charstatus.target_name"] = _cs_combat.get("target_name") or ""
+            facts["charstatus.in_combat"] = bool(_cs_combat.get("is_in_combat"))
+            facts["charstatus.map"] = (charstatus.get("environment") or {}).get("map_name") or ""
 
         facts["planner.active"] = bool(planner_payload.get("active", False))
         facts["planner.current_horizon"] = planner_payload.get("current_horizon", "")

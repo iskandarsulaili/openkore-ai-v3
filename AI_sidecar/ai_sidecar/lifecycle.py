@@ -3063,6 +3063,9 @@ class RuntimeState:
             queue_action=self.queue_action,
             publish_macros=self.publish_macros,
             get_planner_context=lambda *, bot_id=bot_id: self.reflex_runtime_context(bot_id=bot_id),
+            get_charstatus=lambda *, bot_id=bot_id: (
+                self.charstatus_reader.get(bot_id) if self.charstatus_reader is not None else {}
+            ),
         )
         elapsed_ms = self.latency_router.end("reflex.evaluate", started)
 
@@ -4404,10 +4407,30 @@ class RuntimeState:
             return dict(fallback)
         try:
             state = self.enriched_state(bot_id=bot_id)
+            # ── charstatus.json real-time facts (2026-08-27) ──
+            # The bridge writes the full enriched contract (status_effects,
+            # cooldowns, stats, target, vitals) to data/charstatus/. Inject
+            # them into the ML state so the Subconscious brain reasons over
+            # the SAME authoritative snapshot as the Conscious brain.
+            _cs: dict[str, object] = {}
+            _cs_reader = getattr(self, "charstatus_reader", None)
+            if _cs_reader is not None:
+                _cs_data = _cs_reader.get(bot_id)
+                if _cs_data is not None:
+                    _cs = _cs_data
             return {
                 "feature_values": dict(state.features.values),
                 "feature_labels": dict(state.features.labels),
                 "feature_raw": dict(state.features.raw),
+                "charstatus": {
+                    "vitals": _cs.get("vitals") or {},
+                    "stats": _cs.get("stats") or {},
+                    "combat": _cs.get("combat") or {},
+                    "environment": _cs.get("environment") or {},
+                    "inventory": _cs.get("inventory") or {},
+                    "skills": _cs.get("skills") or {},
+                    "identity": _cs.get("identity") or {},
+                },
                 "risk": {
                     "danger_score": float(state.risk.danger_score),
                     "death_risk_score": float(state.risk.death_risk_score),

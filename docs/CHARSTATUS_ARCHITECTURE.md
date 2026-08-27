@@ -17,12 +17,14 @@
 - [x] **Bridge: current attack target** — from `AI::args(0)->{attackID}` + `$monsters{$id}` (name + hp_pct).
 - [x] **Bridge: environment** — is_town/is_field + time_of_day (server time).
 - [x] **Bridge: raw snapshot enrichment** — status_effects/cooldowns/stats/target added to `$raw` so the POSTed snapshot carries them too.
-- [x] **Sidecar: CharStatusReader** (`runtime/charstatus.py`) — reads durable file, mtime-cached, stale-guard (max_age_s), per-bot.
+- [x] **Bridge: UTF-8 sanitizer** — `_sanitize_utf8_deep`/`_sanitize_utf8_scalar` (CP949/CP1252 → UTF-8) applied before JSON encode (was corrupting the file).
+- [x] **Bridge: char_id/account_id unpack** — via `_actor_id_from_any` (was raw packed binary).
+- [x] **Sidecar: CharStatusReader** (`runtime/charstatus.py`) — reads durable file, mtime-cached, stale-guard (max_age_s), per-bot; path = `<root>/data/charstatus/`.
 - [x] **Sidecar: RuntimeState.charstatus_reader** wired in `create_runtime`.
 - [x] **Sidecar: GET /v1/fleet/charstatus/{bot_id}** — prefers durable charstatus.json, falls back to snapshot_cache.
+- [v] **Verify live** — charstatus.json written atomically (seq monotonic), valid UTF-8, full contract (char_id 2000011, vitals/stats/combat/env/inventory), endpoint returns `source: charstatus.json`.
 
 ### ⏳ PENDING
-- [ ] **Verify live** — restart sidecar + bot, confirm `data/charstatus/charstatus_<bot>.json` written + endpoint returns full contract.
 - [ ] **Wire brains** — Conscious (LLM prompt injection), Subconscious (ML state), Reflex (rules) consume charstatus fields (status_effects/cooldowns/stats/target).
 - [ ] **Config** — add `aiSidecar_charstatusEnabled`/`aiSidecar_charstatusDir` defaults to bridge config.
 - [ ] **Tests** — add unit tests for CharStatusReader + bridge contract builder.
