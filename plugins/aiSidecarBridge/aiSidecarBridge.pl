@@ -844,9 +844,19 @@ sub on_mainLoop_post {
             if ($_pm ne $_last_portal_map) {
                 $_last_portal_map = $_pm;
                 if ($_pm =~ /_fild|_dun/i) {
-                    # Just arrived on a hunting map — check potions
+                    # Just arrived on a hunting map — check potions.
+                    # IMPORTANT: OpenKore re-syncs inventory on map change — for the
+                    # first ~1-3s after entering, _char_inventory() can return EMPTY
+                    # even though the char owns potions. Turning back on an
+                    # empty-but-unsynced inventory traps the bot in a town↔farm
+                    # loop (log: "0 potions ... turning back" every map change
+                    # while the Stackable list later shows x300). So an EMPTY
+                    # inventory is NOT proof of zero potions: only turn back when
+                    # we have BOTH a synced inventory AND genuinely no healing item.
                     my $_hp = 0;
+                    my $_inv_synced = 0;
                     if (@{_char_inventory($char)}) {
+                        $_inv_synced = 1;
                         for my $_hi (@{_char_inventory($char)}) {
                             next unless $_hi;
                             my $_hn = $_hi->{name} || '';
@@ -856,7 +866,7 @@ sub on_mainLoop_post {
                             }
                         }
                     }
-                    if (!$_hp) {
+                    if ($_inv_synced && !$_hp) {
                         # Check if lockMap matches current map (heuristic wants bot here)
                         my $_pe_lockmap = $::config{lockMap} || '';
                         if ($_pe_lockmap ne '' && $_pe_lockmap eq $_pm) {
@@ -928,7 +938,10 @@ sub on_mainLoop_post {
 	    }
 	    if ($_ae_item) {
 	        my $_ae_name = $_ae_item->{name} || '';
-	        my $_ae_ok = eval { Commands::run("equip $_ae_name"); 1 };
+	        # This fork's command is `eq` (NOT `equip` — Commands.pm registers
+	        # ['eq', ..., \&cmdEquip]; 'equip' → "Unknown command"). Verified live:
+	        # every `equip <name>` logged Unknown command → weapon never equipped.
+	        my $_ae_ok = eval { Commands::run("eq $_ae_name"); 1 };
 	        warning "[autoequip] equipping held weapon '$_ae_name' on $_ae_map (${\\($_ae_ok ? 'OK' : 'FAILED')})\n", 'aiSidecarBridge', 1;
 	    }
 	}
@@ -6640,11 +6653,13 @@ sub _rewrite_runtime_command {
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
 	}
 
-	# Handle 'equip <nameID>' -> 'equip <item name>' (nameID -> inventory name)
+	# Handle 'equip <nameID>' -> 'eq <item name>' (nameID -> inventory name)
 	# OpenKore's cmdEquip treats a NUMERIC arg as an inventory BINID index, not the
 	# item's nameID (item_db id). The sidecar emits `equip 1243` (item_db id) which
 	# cmdEquip fails to find -> the weapon never equips -> the bot fights with bare
 	# fists (Dmg 1-2, verified live). Resolve the nameID to the owned item's NAME.
+	# ALSO: this fork registers the command as `eq`, NOT `equip` — any raw
+	# `equip ...` is "Unknown command" (verified live). Rewrite both forms.
 	if ($normalized =~ /^equip\s+(\d+)$/ && $char) {
 		my $_want_id = $1;
 		my $_item = undef;
@@ -6657,14 +6672,25 @@ sub _rewrite_runtime_command {
 		}
 		if ($_item) {
 			my $_eq_name = $_item->{name} || '';
-			my $_eq_slot = _inventory_slot_for_item($_item);
-			debug "[equip] nameID $_want_id -> '$_eq_name' (slot $_eq_slot)\n", 'aiSidecarBridge', 1;
-			my $cmd = defined $_eq_slot ? "equip $_eq_slot $_eq_name" : "equip $_eq_name";
-			my $_eq_ok = eval { Commands::run($cmd); 1 };
+			# This fork's command is `eq` (NOT `equip` — "Unknown command").
+			# Equip by NAME only: cmdEquip resolves names via Actor::Item::get,
+			# and the fork's type/type_equip mapping is inverted vs stock so
+			# slot-qualified forms misfire (verified live).
+			debug "[equip] nameID $_want_id -> '$_eq_name'\n", 'aiSidecarBridge', 1;
+			my $_eq_ok = eval { Commands::run("eq $_eq_name"); 1 };
 			return ('', $_eq_ok ? "equip_ok_$_eq_name" : "equip_failed_$_eq_name");
 		}
 		warning "[equip] item nameID $_want_id not in inventory, skipping\n", 'aiSidecarBridge', 1;
 		return ('', "equip_item_not_found_$_want_id");
+	}
+
+	# Handle 'equip <name>' (sidecar name-based emits) -> 'eq <name>'
+	# This fork registers `eq` only; 'equip' → "Unknown command" (verified live).
+	if ($normalized =~ /^equip\s+(.+)$/ && $char) {
+		my $_eq_arg = $1;
+		debug "[equip] rewrite 'equip $_eq_arg' -> 'eq $_eq_arg'\n", 'aiSidecarBridge', 1;
+		my $_eq_ok = eval { Commands::run("eq $_eq_arg"); 1 };
+		return ('', $_eq_ok ? "equip_ok_$_eq_arg" : "equip_failed_$_eq_arg");
 	}
 
 	# Handle sit/stand
