@@ -326,13 +326,32 @@ class CrisisManager:
             actions.append(f"Blacklist {monster} for {recurrence * 3600}s")
             lesson = f"Killed by {monster}. Blacklisting temporarily."
 
-        # Recurrence escalation
-        if recurrence >= 3:
+        # Recurrence escalation — ENDURANCE-AWARE (user directive 2026-08-27):
+        # some servers have aggressive mobs (RAW Mobs ML self-learns and evolves), so
+        # over-blacklisting a map the bot could brute-force-learn defeats self-learning.
+        # Only blacklist when the bot is ADEQUATELY GEARED for its level (the map is
+        # genuinely lethal, not the bot being too weak to survive). An under-geared bot
+        # that dies is told to ACQUIRE GEAR first (the fixable cause), NOT to abandon
+        # the map — so it can endure + learn to win there once properly armed.
+        base_level = context.get("base_level", 0) or 0
+        has_weapon = context.get("has_weapon", True)
+        has_armor = context.get("has_armor", True)
+        # Gear sufficiency heuristic: a novice under level 5 that has NO weapon is
+        # under-geared by definition — its deaths are a gear problem, not a map problem.
+        under_geared = (base_level <= 5) and (not has_weapon or not has_armor)
+        if recurrence >= 3 and not under_geared:
             factors.append(f"Recurring deaths: {recurrence}x on {map_name}")
             map_blacklist.append(map_name)
             actions.append(f"Blacklist {map_name} for {recurrence * 3600}s")
             config_changes["lockMap"] = ""
             lesson = f"Died {recurrence}x on {map_name}. Blacklisting map."
+            self._stats["crises_escalated"] += 1
+        elif recurrence >= 3 and under_geared:
+            # Under-geared: escalate GEAR ACQUISITION, do NOT blacklist the map (endure).
+            factors.append(f"Recurring deaths ({recurrence}x) on {map_name} while under-geared (Lv{base_level}, no weapon/armor)")
+            actions.append("Acquire starter weapon+armor before re-engaging (endure+learn, don't abandon map)")
+            config_changes["acquire_starter_gear"] = True
+            lesson = f"Died {recurrence}x on {map_name} under-geared. Get starter gear, then return."
             self._stats["crises_escalated"] += 1
 
         if recurrence >= 5:

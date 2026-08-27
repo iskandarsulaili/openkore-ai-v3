@@ -5229,6 +5229,22 @@ class PDCALoop:
                                                         "recent_death": True,
                                                         "map": str(_conscious_snap.get("map", "") or ""),
                                                         "combat.aggro_count": int(_combat_da.get("aggro_count", 0) or 0),
+                                                        # Endurance-aware escalation: pass level + gear so the crisis manager
+                                                        # can distinguish a genuinely lethal map (blacklist) from an under-geared
+                                                        # bot (acquire gear + endure, don't abandon the map).
+                                                        "base_level": int(_conscious_snap.get("base_level", _conscious_snap.get("level", 1)) or 1),
+                                                        "has_weapon": bool((_conscious_snap.get("has_weapon_in_inventory", False)) or any(
+                                                            ("knife" in str(i.get("name", "")).lower() or "sword" in str(i.get("name", "")).lower()
+                                                             or "weapon" in str(i.get("name", "")).lower())
+                                                            for i in (_conscious_snap.get("inventory_items") or [])
+                                                            if isinstance(i, dict)
+                                                        )),
+                                                        "has_armor": bool((_conscious_snap.get("equipment") is not None and bool(_conscious_snap.get("equipment"))) or any(
+                                                            ("armor" in str(i.get("name", "")).lower() or "shirt" in str(i.get("name", "")).lower()
+                                                             or "guard" in str(i.get("name", "")).lower())
+                                                            for i in (_conscious_snap.get("inventory_items") or [])
+                                                            if isinstance(i, dict)
+                                                        )),
                                                     })
                                                     if _cm_event is not None:
                                                         _cm_diag = _cm_d.diagnose(_cm_event)
