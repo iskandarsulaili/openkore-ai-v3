@@ -24,7 +24,6 @@ charServer_ip ipv6-raw-server.openkore-ai.com
 charServer_port 21544
 mapServer_ip ipv6-raw-server.openkore-ai.com
 mapServer_port 53378
-private 1
 master_version 0
 version 128
 charBlockSize 175
