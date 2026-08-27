@@ -60,12 +60,12 @@ sub sendMapLogin {
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
 	my $msg = pack(
-		'v V V V V x4 C',
+		'v a4 a4 a4 V x4 C',
 		0x0436, $accountID, $charID, $sessionID, getTickCount(), $sex
 	);
 
 	$self->sendToServer($msg);
-	debug "Sent sendMapLogin (0x0436, 23 bytes)\n", "sendPacket", 2;
+	debug(sprintf("Sent sendMapLogin (0x0436, 23 bytes) acct=%s char=%s sess=%s sex=%d\n", unpack('V',$accountID), unpack('V',$charID), unpack('V',$sessionID), $sex), "sendPacket", 2);
 }
 
 1;
