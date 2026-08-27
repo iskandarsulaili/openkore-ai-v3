@@ -25,10 +25,18 @@
 - [v] **Verify live** — charstatus.json written atomically (seq monotonic), valid UTF-8, full contract (char_id 2000011, vitals/stats/combat/env/inventory), endpoint returns `source: charstatus.json`.
 
 ### ⏳ PENDING
-- [ ] **Wire brains** — Conscious (LLM prompt injection), Subconscious (ML state), Reflex (rules) consume charstatus fields (status_effects/cooldowns/stats/target).
-- [ ] **Config** — add `aiSidecar_charstatusEnabled`/`aiSidecar_charstatusDir` defaults to bridge config.
-- [ ] **Tests** — add unit tests for CharStatusReader + bridge contract builder.
-- [ ] **Commit + push** — after live verify.
+- [v] **Wire brains** — Conscious (LLM cold-start prompt injects live charstatus facts), Subconscious (ML _ml_state_features includes charstatus block), Reflex (evaluate_events get_charstatus callback → _build_fact_map flattens status_effects/cooldowns/target/in_combat/map/hp_ratio/dead/sitting).
+- [v] **Config** — aiSidecar_charstatusEnabled/Dir added to bot control + root template.
+- [v] **Tests** — test_charstatus_reader.py (5): fresh/stale/missing/mtime-cache/list_bots. Reflex tests 21 pass.
+- [v] **Commit + push** — all charstatus commits pushed (82a3b2059→65a6e7131).
+- [v] **Party /status 404 FIXED** — added /v2/party/status ingest endpoint (bridge POSTs every 30s, was 404).
+
+## BATCH LOG
+- Batch 1: bridge extraction + atomic writer + UTF-8 sanitizer + char_id unpack (82a3b2059, 9cafffcf5)
+- Batch 2: sidecar CharStatusReader + RuntimeState wiring + endpoint + reader path fix (82a3b2059, 9cafffcf5)
+- Batch 3: brain wiring — Conscious/Subconscious/Reflex consume charstatus (dacc5a489) + config (aee9f19a3)
+- Batch 4: party /status endpoint fix (65a6e7131)
+- ALL PUSHED
 
 ---
 
