@@ -2158,6 +2158,38 @@ sub _char_inventory {
     return \@items;
 }
 
+# ── Best available healing item (survivability fallback) ──
+# When the sidecar/reflex emits "use red_potion" but the bot only owns a
+# different heal (e.g. Novice Potion 569 x300 academy kit), pick the strongest
+# potion actually in inventory so the bot heals instead of dying. Returns the
+# item NAME (string) or '' if no heal item is owned.
+sub _best_available_heal_name {
+    my ($char) = @_;
+    my @inv = @{_char_inventory($char)};
+    my @owned_heal;
+    for my $_item (@inv) {
+        next unless ref($_item);
+        my $_n = $_item->{name} || '';
+        next unless $_n =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green|grape|milk|juice/i;
+        push @owned_heal, [ $_item->{amount} || 1, $_n ];
+    }
+    return '' unless @owned_heal;
+    # Prefer the highest heal-potency item present; among equal potency pick
+    # by quantity then name. Heal potency order (approx, by max heal): white>
+    # orange>yellow>blue>green>red>grape>novice. We sort by a rough potency rank
+    # then quantity, so "300x Novice" still yields to a single "Red" if owned.
+    my %rank = (
+        'white potion' => 9, 'orange potion' => 8, 'yellow potion' => 7,
+        'blue potion' => 6, 'green potion' => 5, 'red potion' => 4,
+        'grape' => 3, 'novice potion' => 2, 'apples' => 1, 'banana' => 1,
+    );
+    @owned_heal = sort {
+        my $ra = $rank{lc $a->[1]} || 0; my $rb = $rank{lc $b->[1]} || 0;
+        ($rb <=> $ra) || ($b->[0] <=> $a->[0]);
+    } @owned_heal;
+    return $owned_heal[0][1];
+}
+
 sub _send_snapshot {
     return if !_bridge_enabled();
     return if !$registered;  # Don't send snapshots until registered
@@ -6537,8 +6569,24 @@ sub _rewrite_runtime_command {
 			}
 		}
 		if (!$found) {
+			# ── POTION FALLBACK (survivability-critical) ──
+			# The sidecar/reflex may emit "use red_potion" (its preferred heal) while
+			# the bot only owns a different heal (e.g. Novice Potion 569 x300 — the
+			# academy starter kit). Without this fallback the bot DIED with potions
+			# unused (verified live: 34 deaths, 0 heals executed). If the requested
+			# item is a heal and any potion exists, substitute the best available one.
+			my $is_heal_req = ($item_name =~ /potion|herb|fruit|berry|red|orange|white|yellow|blue|green|grape/i);
+			if ($is_heal_req) {
+				my ($fallback_name) = _best_available_heal_name($char);
+				if ($fallback_name) {
+					$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
+					my $ok2 = eval { Commands::run("is $fallback_name"); 1 };
+					debug "[use] '$item_name' not owned -> falling back to '$fallback_name' (${\\($ok2 ? 'OK' : 'FAILED')})\n", 'aiSidecarBridge', 1;
+					return ('', $ok2 ? "use_item_fallback_$fallback_name" : "use_item_fallback_failed_$fallback_name");
+				}
+			}
 			$_last_reflex_fire_ms{$cooldown_key} = $now_ms;
-			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
+			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
 		my $ok = eval { Commands::run("is $item_name"); 1 };
