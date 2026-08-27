@@ -2247,6 +2247,11 @@ sub _write_charstatus_file {
     # Enrich the snapshot with the full charstatus contract fields.
     my $cs = _build_charstatus_payload($snapshot, $seq);
 
+    # Sanitize ALL strings to valid UTF-8 — game item/mob names carry CP949/
+    # CP1252 bytes that JSON::PP would emit as invalid UTF-8 (corrupting the
+    # file). Recursively clean every scalar.
+    _sanitize_utf8_deep($cs);
+
     my $json;
     if ($json_available) {
         $json = eval { JSON::PP->new->canonical->encode($cs); 1; } ? JSON::PP->new->canonical->encode($cs) : undef;
@@ -2358,16 +2363,16 @@ sub _build_charstatus_payload {
         bot_id         => $bot_id,
         # ── 1. Identity ──
         identity => {
-            account_id => $char ? ($char->{accountID} // '') : '',
-            char_id    => $char ? ($char->{ID} // '') : '',
+            account_id => $char ? _actor_id_from_any($char->{accountID}) : '',
+            char_id    => $char ? _actor_id_from_any($char->{ID}) : '',
             name       => $char ? ($char->{name} // '') : '',
             job        => $char ? ($char->{jobName} // '') : '',
             job_id     => $char ? ($char->{jobID} // 0) : 0,
             base_level => $char ? ($char->{level} // 0) : 0,
             job_level  => $char ? ($char->{level_job} // 0) : 0,
             gender     => $char ? ($char->{sex} // '') : '',
-            guild_id   => $char ? ($char->{guildID} // 0) : 0,
-            party_id   => $char ? ($char->{party}{ID} // 0) : 0,
+            guild_id   => $char ? _actor_id_from_any($char->{guildID}) : 0,
+            party_id   => $char ? _actor_id_from_any($char->{party}{ID}) : 0,
         },
         # ── 2. Vitals ──
         vitals => {
@@ -2470,6 +2475,51 @@ sub _time_of_day {
     my $hour = $g[2];
     return 'night' if $hour < 6 || $hour >= 18;
     return 'day';
+}
+
+# ── Recursive UTF-8 sanitizer ──
+# Game item/mob/char names carry CP949/CP1252 bytes (mojibake). JSON::PP emits
+# them as invalid UTF-8, corrupting the charstatus file. Recursively clean
+# every scalar: decode CP1252→UTF-8, then drop any remaining invalid bytes.
+sub _sanitize_utf8_deep {
+    my ($ref) = @_;
+    if (ref($ref) eq 'HASH') {
+        for my $k (keys %$ref) {
+            my $v = $ref->{$k};
+            if (ref($v)) {
+                _sanitize_utf8_deep($v);
+            } elsif (defined $v) {
+                $ref->{$k} = _sanitize_utf8_scalar($v);
+            }
+        }
+    } elsif (ref($ref) eq 'ARRAY') {
+        for my $i (0 .. $#$ref) {
+            my $v = $ref->[$i];
+            if (ref($v)) {
+                _sanitize_utf8_deep($v);
+            } elsif (defined $v) {
+                $ref->[$i] = _sanitize_utf8_scalar($v);
+            }
+        }
+    }
+}
+
+sub _sanitize_utf8_scalar {
+    my ($s) = @_;
+    return $s unless defined $s;
+    return $s if utf8::is_utf8($s) && eval { utf8::valid($s); 1; };
+    # Try CP1252→UTF-8 (covers most RO mojibake); fall back to dropping
+    # invalid bytes.
+    my $out = eval {
+        require Encode;
+        Encode::decode('cp1252', $s, Encode::FB_DEFAULT());
+    };
+    if (defined $out && utf8::is_utf8($out) && eval { utf8::valid($out); 1; }) {
+        return $out;
+    }
+    # Last resort: strip non-UTF8 bytes.
+    $s =~ s/([^\x00-\x7F])/sprintf('\\x%02X', ord($1))/ge;
+    return $s;
 }
 
 sub _build_snapshot_payload {

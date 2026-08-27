@@ -26,7 +26,10 @@ class CharStatusReader:
     """Reads the durable charstatus.json files written by the bridge."""
 
     def __init__(self, data_dir: Path) -> None:
-        self._dir = Path(data_dir) / "charstatus"
+        # The bridge writes to <repo_root>/data/charstatus/charstatus_<bot>.json
+        # (its default aiSidecar_charstatusDir is "data/charstatus"). data_dir
+        # here is the workspace root, so append "data/charstatus".
+        self._dir = Path(data_dir) / "data" / "charstatus"
         self._lock = RLock()
         self._cache: dict[str, dict] = {}
         self._mtime: dict[str, float] = {}
