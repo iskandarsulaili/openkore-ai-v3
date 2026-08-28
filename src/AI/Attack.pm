@@ -1069,6 +1069,11 @@ sub main {
 				Actor::Item::scanConfigAndEquip("attackEquip");
 			} else {
 				debug "[Attack] Sending attack target $target ($realMonsterPos->{x} $realMonsterPos->{y}) ($realMonsterDist blocks away); we're at ($realMyPos->{x} $realMyPos->{y})\n", "ai_attack";
+				# One-shot out-of-range allowance: reset after firing so the next
+				# attack must be genuinely in range again (prevents the permanent
+				# miss-loop where one lucky hit lets every future attack fire from
+				# any distance).
+				$hitTarget_when_not_possible = 0;
 				$messageSender->sendAction($ID, ($config{'tankMode'}) ? 0 : 7);
 				$timeout{ai_attack}{time} = time;
 				delete $args->{attackMethod};
