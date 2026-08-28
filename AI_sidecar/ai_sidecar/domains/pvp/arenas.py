@@ -331,7 +331,7 @@ class ArenaTactics:
         logger.info("[Arena] %s: retreating at low HP, %d threats", bot_id, len(threats))
         actions.append(HeuristicAction(
             kind="command",
-            command="use 601",  # Fly Wing
+            command="use Fly Wing",  # RULE.md: by name (universal RO item)
             confidence=0.99,
             domain="pvp",
             reason=f"Arena retreat: HP critical with {len(threats)} opponents",

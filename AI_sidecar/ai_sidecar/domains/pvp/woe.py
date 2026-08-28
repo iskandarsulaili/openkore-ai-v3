@@ -478,7 +478,7 @@ class WoETactics:
         if hp_ratio < 0.30:
             actions.append(HeuristicAction(
                 kind="command",
-                command="use 501",
+                command="use potion",  # RULE.md: generic heal (OpenKore resolves)
                 confidence=0.95,
                 domain="pvp",
                 reason=f"WoE HP low ({hp_ratio:.0%}) — healing",

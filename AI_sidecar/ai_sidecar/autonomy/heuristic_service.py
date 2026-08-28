@@ -3611,7 +3611,7 @@ class HeuristicService:
                     _sstore = get_server_solutions_store()
                     try:
                         _potion_buy = str(_sstore.get_json("potion_solution", {}).get("buy_command") or "").strip()
-                        _safe_town_buy = str(_sstore.get("safe_town", "") or "").strip() or "prontera"
+                        _safe_town_buy = str(_sstore.get("safe_town", "") or "").strip()
                     except Exception:
                         _potion_buy, _safe_town_buy = "", ""
                     if not _potion_buy:
@@ -3865,15 +3865,28 @@ class HeuristicService:
                         for item in _audit_items
                     )
                     if not _audit_has_weapon and _audit_zeny >= 50:
+                        # RULE.md: starter weapon via the AGNOSTIC gear planner
+                        # (best affordable by stat/zeny); generic 'buy weapon'
+                        # fallback — never a hardcoded server item id.
+                        _tw_w = ""
+                        try:
+                            from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                            _tw_plan = get_gear_progression_planner().get_best_upgrade(
+                                int(signals.get("base_level", 1) or 1), _audit_zeny
+                            )
+                            if _tw_plan is not None and _tw_plan.slot_name == "weapon" and _tw_plan.is_affordable:
+                                _tw_w = str(_tw_plan.item_name or _tw_plan.item_id or "")
+                        except Exception:
+                            _tw_w = ""
                         actions.append(HeuristicAction(
-                            kind="command", command="buy 1201 1",
+                            kind="command", command=f"buy weapon 1" if not _tw_w else f"buy {_tw_w} 1",
                             confidence=0.99, domain="economy",
-                            reason="Town stuck - buy Knife (no weapon detected)",
+                            reason="Town stuck - buy starter weapon (no weapon detected)",
                         ))
                         actions.append(HeuristicAction(
-                            kind="command", command="equip 1201",
+                            kind="command", command=f"equip weapon" if not _tw_w else f"equip {_tw_w}",
                             confidence=0.99, domain="economy",
-                            reason="Town stuck - equip Knife after purchase",
+                            reason="Town stuck - equip starter weapon",
                         ))
                     # DO NOT queue move 367 205 here — bot must wait until potions confirmed
                     # Only queue portal exit when potions are actually in inventory
@@ -4305,10 +4318,11 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason=f"Cold start - buy {_cs_potion_qty} {_cs_potion_name} Potions (item {_cs_potion_id}, level {base_level})",
                     ))
-            # Buy arrows if enough zeny
+            # Buy arrows if enough zeny — RULE.md: by item NAME (universal RO
+            # ammo, OpenKore resolves), never a hardcoded server item id.
             if _cs_zeny >= 200:
                 actions.append(HeuristicAction(
-                    kind="command", command="buy 1750 200",
+                    kind="command", command="buy Arrow 200",
                     confidence=0.99, domain="economy",
                     reason="Buy 200 arrows (harmless for non-archers, critical for archers)",
                 ))

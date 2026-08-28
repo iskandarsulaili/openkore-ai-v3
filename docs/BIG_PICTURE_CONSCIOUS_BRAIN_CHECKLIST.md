@@ -226,3 +226,11 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - heuristic_service 2x inline portal coords (move 367 205) -> town_portal(parent_town(map)); empty-guarded
 - progression.py _cold_step2: hardcoded buy 1201 1 / equip 1201 (Knife) -> AGNOSTIC gear planner (get_best_upgrade) / generic buy weapon; base_level param threaded
 - 30 affected tests pass; full suite 430 green
+
+## B14 (2026-08-28) — ROUND 4 AGNOSTICIZATION (remaining item-id + town literals)
+
+- woe.py use 501 -> use potion; arenas.py use 601 -> use Fly Wing; game_sense.py use 602 -> use Butterfly Wing (by name — universal RO items)
+- heuristic 3614 safe_town fallback "prontera" -> store-only (empty = skip)
+- heuristic 3869 town-stuck knife buy 1201/equip 1201 -> gear planner / generic buy weapon
+- heuristic 4311 buy 1750 200 -> buy Arrow 200 (by name)
+- Full suite re-run; 30 affected tests pass

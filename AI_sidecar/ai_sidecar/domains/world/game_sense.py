@@ -518,7 +518,7 @@ class GameSenseEngine:
         if self._abort_state.should_evacuate(hp_pct):
             actions.append(HeuristicAction(
                 kind="command",
-                command="use 602",  # Butterfly Wing
+                command="use Butterfly Wing",  # RULE.md: by name (universal RO item)
                 confidence=0.99,
                 domain="survival",
                 reason=f"Abort triggered — MVP alarm + low HP ({hp_pct:.0%}), using Butterfly Wing",
