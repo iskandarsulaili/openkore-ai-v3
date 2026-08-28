@@ -336,3 +336,16 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
   unresolved case; the handoff was blind).
 - +4 tests (test_progression_planner_agent.py): never-None, full flow,
   low-score-when-unresolved, None-only-when-idle. 442 passed.
+
+## B22 (2026-08-28) — CONFIG-CHURN SWEEP (live observation)
+
+- FOUND (live console): the bridge re-applied `set attackAuto 3` every ~20s
+  (21:25-21:26) — the cold-start step-4 farm-enable fired EVERY cycle while on
+  a hunting field (no latch) = config churn + poll waste.
+- FIX: _cold_start_latches dict (per bot+map key) — the attack-enable emits
+  ONCE per bot+map; leaving + returning re-arms. +2 tests.
+- ALSO FOUND + FIXED: hardcoded `prt_fild01` in the step-4 move branch
+  (line 3373: `if not _cs_in_hunting or _cs_map == "prt_fild01"`) — RULE.md
+  violation, now just `if not _cs_in_hunting`.
+- VERIFIED: mon_control re-emits ALREADY rate-limited (1044/1082/1121), ai auto
+  is step-1 one-time. 444 passed.

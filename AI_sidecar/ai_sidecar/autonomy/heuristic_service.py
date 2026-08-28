@@ -1121,6 +1121,10 @@ class HeuristicService:
         self._mon_control_sent: dict[str, set] = {}
         # Step timeout tracking: stable_key -> timestamp when step started
         self._cold_start_step_since: dict[str, float] = {}
+        # LATCH (2026-08-28): one-shot config emits (attack enable etc.) keyed
+        # by bot+map — prevents re-emitting the same command every cycle
+        # (config churn observed live: `set attackAuto 3` every ~20s).
+        self._cold_start_latches: dict[str, bool] = {}
         # Leader-decided team job assignments (persisted for crash recovery)
         self._team_levels: dict[str, int] = {}
         self._team_jobs_assigned: dict[str, bool] = {}
@@ -3370,7 +3374,7 @@ class HeuristicService:
                 # RULE.md: no hardcoded farm — the current farmable field is the
                 # safest agnostic fallback (the bot is ALREADY on it).
                 _cs4_farm = _cs_map if _cs_in_hunting else ""
-            if not _cs_in_hunting or _cs_map == "prt_fild01":
+            if not _cs_in_hunting:
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_cs4_farm}",
                     confidence=0.99, domain="hunting",
@@ -3381,11 +3385,18 @@ class HeuristicService:
                 # Farm-enable: the bot is on a farmable field — MUST fight (attackAuto 3).
                 # This fires at ANY cold-start step (the farmability decision, not the
                 # step machine) so a weaponed bot on a field never idles passive.
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto 3",
-                    confidence=0.99, domain="hunting",
-                    reason="Cold start - on farmable field with gear, enable attack for farming",
-                ))
+                # LATCH (2026-08-28): emit ONCE per bot+map — re-emitting every
+                # cycle (the bridge applies `set attackAuto 3` every ~20s) is config
+                # churn + poll waste (observed live). The key includes the map so
+                # leaving + returning to a hunting field re-arms it.
+                _aa_key = f"attack_enabled:{_cs_stable_key}:{_cs_map}"
+                if not self._cold_start_latches.get(_aa_key):
+                    self._cold_start_latches[_aa_key] = True
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 3",
+                        confidence=0.99, domain="hunting",
+                        reason="Cold start - on farmable field with gear, enable attack for farming",
+                    ))
                 if base_level >= 10:
                     self._cold_start_step[_cs_stable_key] = 5
                     logger.info(f"[cold_start] {bot_id}: on hunting map level {base_level}, step 4 -> 5")
