@@ -262,3 +262,18 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
   no-heuristic-actions path); guard empty-zone death move.
 - TESTS: NEW tests/test_edge_case_self_heal.py (4 tests: unstuck via bus, death
   spiral, skill points, pdca wiring end-to-end). 4/4 pass + 36 broader pass.
+
+## B17 (2026-08-28) — COMEBACK-ENGINE UN-ORPHANED (fix-verify-learn loop)
+
+- FOUND: get_comeback_engine initialized (lifecycle 6416) but analyze/learn/
+  auto_verify_pending NEVER called — the failure->fix->VERIFY->success-rate
+  self-learning loop was dead.
+- WIRED: (1) comeback learn + register_fix into the crisis-recovery completion
+  (pdca 5399, after execute_recovery) — builds a RootCause + FailureContext from
+  the diagnosed death (cause_type/recommended_fix/map/hp/aggro), feeds the
+  fix-registry for verification; (2) auto_verify_pending every ~50 PDCA cycles
+  against bounded _recent_failure_ctxs (no recurrence within window = fix works);
+  (3) failure_reasoning VERIFIED already wired (capture_failure lifecycle 1820 +
+  get_llm_context pdca 11624).
+- CHAIN NOW LIVE: crisis detect->diagnose->recover -> comeback learn->verify ->
+  failure_reasoning LLM context. 23 tests pass.

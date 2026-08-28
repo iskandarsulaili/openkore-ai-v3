@@ -2820,6 +2820,19 @@ class PDCALoop:
             except Exception:
                 logger.debug("memory_delta_store_failed", exc_info=True)
 
+        # ── Comeback-engine fix verification (was ORPHANED: auto_verify_pending
+        # never called) — every ~50 cycles, verify pending fixes against recent
+        # failure contexts (no recurrence within the window = fix worked). This
+        # closes the self-learning loop: failure -> fix -> VERIFY -> success-rate.
+        if self._cycle_count % 50 == 0:
+            try:
+                _cbv = getattr(self._runtime, "comeback_engine", None)
+                if _cbv is not None and hasattr(_cbv, "auto_verify_pending"):
+                    _recent_fails = list(getattr(self, "_recent_failure_ctxs", []) or [])
+                    _cbv.auto_verify_pending(_recent_fails)
+            except Exception:
+                logger.debug("comeback_auto_verify_failed", exc_info=True)
+
         # ── Conscious-tier: LLM gear/sustain advisory (agent-driven, not hardcoded) ──
         # Every so often, consult the LLM about the bot's gear/sustain state so the
         # conscious tier can adapt (acquire potions/gear, change farm, retreat) based
@@ -5399,6 +5412,48 @@ class PDCALoop:
                                                         logger.info("crisis_recovery_executed: bot=%s type=%s root=%s steps=%s",
                                                                     _reflex_bot_id, _cm_event.crisis_type,
                                                                     _cm_diag.root_cause, _cm_rec.steps[:2])
+                                                        # ── Comeback-engine learn hook (was ORPHANED: get_comeback_engine
+                                                        # initialized but analyze/learn/auto_verify_pending NEVER called).
+                                                        # Feed the diagnosed failure into the fix-registry so the bot
+                                                        # learns which fixes actually work (success-rate feedback).
+                                                        _cb_d = getattr(self._runtime, "comeback_engine", None)
+                                                        if _cb_d is not None:
+                                                            try:
+                                                                from ai_sidecar.combat.comeback_engine import FailureContext as _CBFC
+                                                                from ai_sidecar.combat.comeback_engine import RootCause as _CBRC
+                                                                _cb_ctx = _CBFC(
+                                                                    failure_type=str(_cm_diag.root_cause or "death"),
+                                                                    map_name=str(_conscious_snap.get("map", "") or "unknown"),
+                                                                    player_hp_pct=float(_bot_prev_hp) / max(int(_vitals_da.get("max_hp", 1) or 1), 1),
+                                                                    aggro_count=int(_combat_da.get("aggro_count", 0) or 0),
+                                                                )
+                                                                _cb_cause = _CBRC(
+                                                                    cause_type=str(_cm_diag.root_cause or "death"),
+                                                                    recommended_fix=str(_cm_diag.lesson or "retreat to safer zone"),
+                                                                )
+                                                                _cb_pattern = _cb_d.learn(_cb_cause, _cb_ctx)
+                                                                if _cm_diag.lesson:
+                                                                    _cb_d.register_fix(
+                                                                        cause_type=str(_cm_diag.root_cause or "death"),
+                                                                        fix=str(_cm_diag.lesson or "retreat to safer zone"),
+                                                                        parameters={},
+                                                                        context={"map": str(_conscious_snap.get("map", "") or "unknown")},
+                                                                    )
+                                                                # Feed recent-failure contexts for auto_verify_pending (bounded).
+                                                                _rf = getattr(self, "_recent_failure_ctxs", None)
+                                                                if _rf is None:
+                                                                    _rf = []
+                                                                    object.__setattr__(self, "_recent_failure_ctxs", _rf)
+                                                                _rf.append({
+                                                                    "cause_type": str(_cm_diag.root_cause or "death"),
+                                                                    "context": {"map": str(_conscious_snap.get("map", "") or "unknown")},
+                                                                    "ts": time.time(),
+                                                                })
+                                                                if len(_rf) > 200:
+                                                                    del _rf[:-100]
+                                                                logger.info("comeback_learn: bot=%s pattern=%s", _reflex_bot_id, _cb_pattern)
+                                                            except Exception:
+                                                                logger.warning("comeback_learn_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                                 except Exception:
                                                     logger.warning("crisis_detect_failed: bot=%s", _reflex_bot_id, exc_info=True)
                                             # ── Gear Progression hook (was DEAD: get_best_upgrade/execute_upgrade never called) ──
