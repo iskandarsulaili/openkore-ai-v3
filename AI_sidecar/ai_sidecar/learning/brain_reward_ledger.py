@@ -138,6 +138,16 @@ class BrainRewardLedger:
         self._ledger_dir.mkdir(parents=True, exist_ok=True)
 
     # ── API ────────────────────────────────────────────────────────
+    @staticmethod
+    def _score_dict(s: BrainScore) -> dict:
+        """JSON-safe dict for a BrainScore (slots dataclass, deque → list)."""
+        import dataclasses
+        out = dataclasses.asdict(s)
+        for _k, _v in list(out.items()):
+            if isinstance(_v, deque):
+                out[_k] = list(_v)
+        return out
+
     def load(self) -> None:
         """Replay persisted JSONL into in-memory scores (idempotent).
 

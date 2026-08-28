@@ -552,14 +552,17 @@ async def brain_rewards(
     try:
         from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
         _ledger = get_brain_reward_ledger()
+        _ledger.load()  # replay persisted JSONL so scores survive restarts
+        _sd = _ledger._score_dict
         if bot_id:
             scores = _ledger.scores(bot_id)
-            return {"ok": True, "bot_id": bot_id, "scores": [s.__dict__ for s in scores]}
+            return {"ok": True, "bot_id": bot_id,
+                    "scores": [_sd(s) for s in scores]}
         # No bot_id → aggregate across all bots seen.
         bots = sorted({s.bot_id for s in _ledger._scores.values() for s in s.values()})
         out = {}
         for bid in bots:
-            out[bid] = [s.__dict__ for s in _ledger.scores(bid)]
+            out[bid] = [_sd(s) for s in _ledger.scores(bid)]
         return {"ok": True, "bots": out}
     except Exception as exc:  # pragma: no cover
         return {"ok": False, "error": str(exc)}
