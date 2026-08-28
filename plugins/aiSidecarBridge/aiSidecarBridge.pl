@@ -2637,6 +2637,7 @@ sub _build_snapshot_payload {
 		$::aiSidecar_cached_progression{$_ck}{job_exp}      = $char->{exp_job}  if defined $char->{exp_job};
 		$::aiSidecar_cached_progression{$_ck}{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
 		$::aiSidecar_cached_progression{$_ck}{job_id}       = $char->{jobID}    if defined $char->{jobID};
+		$::aiSidecar_cached_progression{$_ck}{job_name}     = (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) if defined $char;
 		$::aiSidecar_cached_progression{$_ck}{skill_points} = $char->{points_skill} if defined $char->{points_skill};
 		$::aiSidecar_cached_progression{$_ck}{stat_points}  = (defined $char->{status_points}) ? $char->{status_points}
 			: (defined $char->{points_free}) ? $char->{points_free}
@@ -2653,6 +2654,7 @@ sub _build_snapshot_payload {
 		my $_c = $::aiSidecar_cached_progression{$_ck} || {};
 		my %_pp = (
 			job_id       => $_c->{job_id},
+			job_name     => $_c->{job_name},
 			base_level   => $_c->{base_level},
 			job_level    => $_c->{job_level},
 			base_exp     => $_c->{base_exp},
