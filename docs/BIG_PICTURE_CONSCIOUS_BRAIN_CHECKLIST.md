@@ -114,3 +114,23 @@ Verified wired (no action): failure_context (failure_reasoning) → _context_ove
 memory + failure lessons + brain confidence → LLM → action → outcome → ledger → memory.
 
 421 tests green (was 420).
+
+## B8 — SWEEP ROUND 5 2026-08-28 13:10 (+08) — TRUTHFUL LLM SIGNALS + EXECUTION VERIFIED
+
+Found + fixed:
+1. Gear advisory told the LLM "kills=0" FOREVER (bridge has no kill counter) —
+   the conscious brain's sustain/gear decisions were grounded on a fabricated
+   zero. FIXED: shows REAL progression (level, exp/exp_max — 86% toward next
+   level) from the snapshot. Verified live: prompt reads level=5, exp=2728/3152.
+
+Verified wired (full execution chain, live):
+- LLM advisory action → action_queue.enqueue() (strategic tier)
+- Bridge polls POST /v1/actions/next (3765) → runtime.next_action() → bot
+- LIVE: 338 actions/next polls 200 OK — bot actively consuming commands
+- Bounded fallback on LLM gateway outage (never strands a bot needing sustain)
+- server_solutions DB facts (never hardcoded values) translate LLM action → cmd
+
+HANDOVER (map-server issue): root cause precis pushed — set_char_online conflict
+"marked in map server 0, but map server -2 claims it online" (stale standby);
+5 standbys register ALL 1262 maps (not EVE-idle) = char-ownership flap ejecting
+the bot. Standbys must claim ONLY when central is down. Sibling mid-fix.
