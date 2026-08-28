@@ -971,9 +971,12 @@ sub main {
 	}
 
 	# If we still cannot attack, compute a better meeting position and walk to it.
+	# Gate on BOTH the predicted canAttack AND the server-confirmed distance:
+	# prediction can claim "in range" while the server has the bot 8+ blocks
+	# away — without the server-confirmed check the bot stands still forever.
 	if (
 		!$found_action &&
-		($canAttack == 0 || $canAttack == -1) &&
+		(($canAttack == 0 || $canAttack == -1) || blockDistance($char->{pos}, $target->{pos}) > ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1)) &&
 		!$hitTarget_when_not_possible
 	) {
 		debug "Attack $char ($realMyPos->{x} $realMyPos->{y}) - target $target ($realMonsterPos->{x} $realMonsterPos->{y})\n";
