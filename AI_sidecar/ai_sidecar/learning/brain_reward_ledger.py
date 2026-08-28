@@ -127,7 +127,13 @@ class BrainRewardLedger:
     def __init__(self, workspace_root: Path | None = None) -> None:
         self._lock = RLock()
         self._scores: dict[str, dict[str, BrainScore]] = {}   # bot_id -> brain -> score
-        self._root = workspace_root or Path(".")
+        # DURABLE + CWD-INDEPENDENT path: resolve from this file's location so
+        # the ledger persists in the SAME place regardless of how the sidecar
+        # was started (repo root / AI_sidecar cwd / systemd). A cwd-relative
+        # path (Path(".")) silently splits the ledger across restarts.
+        if workspace_root is None:
+            workspace_root = Path(__file__).resolve().parents[3]  # repo root
+        self._root = workspace_root
         self._ledger_dir = self._root / "AI_sidecar" / "data" / "brain_rewards"
         self._ledger_dir.mkdir(parents=True, exist_ok=True)
 

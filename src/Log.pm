@@ -228,6 +228,20 @@ sub processMsg {
 
 				if ($config{logConsole} &&
 					open(F, ">>:utf8", $Settings::console_log_file)) {
+					# ── Console-log rotation guard (2026-08-28) ──
+					# logConsole appends every console message and this fork has
+					# NO size limit — a long-running bot grows the console log
+					# ~1GB/day and eventually fills the disk (observed 731MB
+					# after one day). Cheap size check per write (stat is
+					# kernel-cached, ~µs); rotate at 128MB keeping one .bak.
+					# Safe: the file is opened append + closed per message, so
+					# rename while closed never loses a handle.
+					if (-s $Settings::console_log_file > 128 * 1024 * 1024) {
+						close(F);
+						rename($Settings::console_log_file,
+							$Settings::console_log_file . ".bak");
+						open(F, ">>:utf8", $Settings::console_log_file);
+					}
 					print F $message2;
 					close(F);
 				}

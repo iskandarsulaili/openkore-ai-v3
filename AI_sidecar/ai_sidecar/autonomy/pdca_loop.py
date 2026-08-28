@@ -9587,7 +9587,19 @@ class PDCALoop:
     # the live snapshot and stores them into long-term memory so the Conscious
     # brain's recall sees the bot's own history (preemption over reaction).
     def _memory_snapshot_key(self, bot_id: str) -> dict:
-        return self._memory_snapshot_state.setdefault(bot_id, {})
+        # Bound the per-bot baseline map: drop entries for bots that have not
+        # produced a snapshot in a long time (sidecar restart or fleet shrink)
+        # so the map cannot grow unbounded across a long-running process.
+        if len(self._memory_snapshot_state) > 64:
+            _stale = [
+                _bid for _bid, _st in self._memory_snapshot_state.items()
+                if _st.get("_last_ts", 0) < (time.time() - 3600.0)
+            ]
+            for _bid in _stale[:32]:
+                self._memory_snapshot_state.pop(_bid, None)
+        _key = self._memory_snapshot_state.setdefault(bot_id, {})
+        _key["_last_ts"] = time.time()
+        return _key
 
     def _remember_significant_deltas(self, bot_id: str) -> None:
         from datetime import datetime, timezone
@@ -9627,6 +9639,18 @@ class PDCALoop:
         _prev_exp = int(_prev.get("exp", 0))
         _exp_delta = _exp - _prev_exp
         _kill_delta = 1 if _exp_delta > 0 else 0
+
+        # FIRST-OBSERVATION SEED (restart-safe): if this bot has no baseline yet
+        # (sidecar restart / fleet join), seed the counters WITHOUT scoring —
+        # otherwise the bot's full EXP / death-count would be counted as fresh
+        # kills/deaths on the very first cycle after every restart (false
+        # reward/punish + false memory spam).
+        _first_obs = "_seeded" not in _prev
+        if _first_obs:
+            _prev["_seeded"] = True
+            _prev.update({"deaths": _deaths, "exp": _exp,
+                          "weapon": _has_weapon, "map": _map})
+            return
 
         # ── REWARD/PUNISH LEDGER (2026-08-28): score ALL brains on outcomes ──
         # Same deltas as memory, now crediting/punishing the whole brain stack
