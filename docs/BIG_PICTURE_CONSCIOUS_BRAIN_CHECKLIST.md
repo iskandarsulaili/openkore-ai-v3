@@ -57,3 +57,25 @@ dormant/dead code allowed.
 - Memory store rows appear on kill/death (log line or DB/file).
 - Preemptive: bot stocks potions/leaves danger BEFORE hp critical (not after).
 - All tests green. Everything committed + pushed.
+
+## B5 — ADEVERSARIAL SWEEP 2026-08-28 11:25 (+08) — ALL DONE + LIVE-VERIFIED
+
+FOUND + FIXED (real production defects, "regardless severity"):
+1. BrainRewardLedger persistence was CWD-dependent (`Path(".")/AI_sidecar/...` = nested wrong dir when started from repo root). FIXED: absolute path from file location.
+2. `_memory_snapshot_state` grew unbounded (per-bot dict, never pruned). FIXED: time-based pruning.
+3. First-observation restart false-positive (empty baseline → full EXP counted as a gain on every sidecar restart). FIXED: seed baseline without storing.
+4. Console logs (`logs/console_*.txt`) grew UNBOUNDED (731MB + growing 45MB/hr → disk exhaustion). FIXED: rotation guard in src/Log.pm (100MB) + truncated 731MB file.
+5. `/v1/fleet/state/{bot_id}` 500'd forever — FleetCoordinator.get_bot_state never existed. FIXED: route merges snapshot_cache + charstatus_reader + get_bot. VERIFIED 200 with real data.
+6. **ROOT-CAUSE CHAIN (the big one):** snapshot progression (base_level/exp) was ALWAYS null → memory + BrainRewardLedger kill-rewards were DEAD. THREE bugs:
+   a. Bridge `$char` alias broken — duplicate `use Globals qw($char)` re-aliased the imported scalar → bridge saw UNDEF (position worked from $net, but level/exp from $char never).
+   b. Wrong fork keys — this fork stores `{lv}`/`{lv_job}` (NOT stock `{level}`/`{level_job}`).
+   c. Progression eval nested inside `if ($_leader_lv >= 40)` (party block) → never ran for level-5 bots.
+   FIXED: (a) removed duplicate import, (b) fork-correct keys, (c) unconditional progression-cache populator at sub top (last-known values, survives disconnects).
+7. `_last_snapshot` attribute NEVER SET anywhere — ALL 5 LLM advisories (cold-start/gear/npc-dialog/help) were FLYING BLIND reading it. FIXED: migrated all to `snapshot_cache.get()` (real data). Tests adapted.
+8. Test suite: 420 passed, 0 failures (was 4 failing after the snapshot_cache migration — fixed test fakes).
+
+LIVE-VERIFIED (bot in-game):
+- Snapshot progression REAL: base_level 5, job_level 10, base_exp 2728.
+- Memory: 172 rows durable, dedup working (level-5 gear acquisition recorded).
+- BrainRewardLedger JSONL WRITING: kill +0.8 for ALL 7 brains on prt_fild08.
+- Sidecar health 200, all endpoints live.
