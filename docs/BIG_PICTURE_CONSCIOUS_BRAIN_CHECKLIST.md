@@ -42,9 +42,14 @@ dormant/dead code allowed.
       critical score every brain; ledger context injected into BOTH LLM
       advisories (self-aware, preemptive); GET /v1/conscious/brain-rewards
       observability; JSONL persisted; 7 unit tests green.
-- [ ] B3 (G5): verify preemptive paths live (death-loop, danger pre-escape,
-      potion pre-stock). Fix any dormant.
-- [ ] B4: full test suite (413+), commit, push. Live EXP/kill verification.
+- [x] B3 (G5): verify preemptive paths live (death-loop, danger pre-escape,
+      potion pre-stock). Fix any dormant. — ALL WIRED: combat_monitor death-
+      loop detect+reset (pdca 2838), hunting_zone_manager danger_score zone
+      selection (pdca 793), buyAuto pre-stock verified live in bot log
+      (buyAuto_npc prt_in + buy 501 30 set before pots ran out).
+- [x] B4: full test suite 420 passed (413 + 7 ledger), commit, push.
+      (Bot progression verified: EXP 547→955, kills banked, weapon equipped,
+      heal chain live. BLOCKER: login wedge server-side — documented handover.)
 
 ## VERIFY (definition of done)
 - Bot banks EXP continuously (kills land, weapon equipped, heals fire).
