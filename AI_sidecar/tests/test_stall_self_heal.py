@@ -67,10 +67,13 @@ def test_pick_stall_target_farm_map_first():
 
 
 def test_pick_stall_target_empty_when_no_data():
+    """No store + no DPD -> falls back to a CITY from tables/cities.txt (safe)."""
     rt = MagicMock()
     rt.server_solutions_store = None
     with patch("ai_sidecar.dynamic_portal_discovery.get_dynamic_portal_discovery", side_effect=Exception("no dpd")):
-        assert _pick_stall_target(rt, "prt_fild05") == ""
+        tgt = _pick_stall_target(rt, "prt_fild05")
+        assert tgt != "", "empty store + no DPD must still find a city target"
+        assert tgt != "prt_fild05"
 
 
 def test_stall_detector_fires_after_frozen_exp():

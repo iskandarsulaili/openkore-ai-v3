@@ -1854,6 +1854,12 @@ def _pick_stall_target(runtime_state, current_map: str) -> str:
             _farm = str(_store.get("farm_map", None) or "")
             if _farm and _farm != current_map:
                 return _farm
+        # Safe target: a CITY (shops, kafra, portals) from the core's tables/cities.txt
+        # (real game data, RULE.md agnostic — never hardcoded map names).
+        _cities = _load_city_maps()
+        for _c in _cities:
+            if _c and _c != current_map:
+                return _c
         _dpd = getattr(runtime_state, "dynamic_portal_discovery", None)
         if _dpd is None:
             from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
@@ -1868,6 +1874,29 @@ def _pick_stall_target(runtime_state, current_map: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _load_city_maps() -> list:
+    """Read the core's tables/cities.txt (map#name per line) -> map names."""
+    try:
+        from pathlib import Path
+        _tables_dir = Path(__file__).resolve().parents[3] / "tables"
+        _p = _tables_dir / "cities.txt"
+        if not _p.exists():
+            return []
+        _out = []
+        for _line in _p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith("#"):
+                continue
+            _m = _line.split("#")[0].strip().lower()
+            if _m.endswith(".rsw"):
+                _m = _m[:-4]
+            if _m and _m not in _out:
+                _out.append(_m)
+        return _out
+    except Exception:
+        return []
 
 
 def _emit_exploration_scout(runtime_state, bot_id: str, map_name: str, base_level: int) -> int:
