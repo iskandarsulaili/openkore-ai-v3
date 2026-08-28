@@ -130,7 +130,7 @@ class IntegrationBus:
             return 0
         
         try:
-            proposals = handler.check_all(bot_id=bot_id, snapshot=snapshot)
+            proposals = handler.check_all(bot_id=bot_id, bot_state=snapshot)
             if proposals:
                 count = 0
                 for proposal in proposals:

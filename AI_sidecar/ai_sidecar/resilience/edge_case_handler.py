@@ -26,19 +26,50 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_UNSTUCK_TIMEOUT_S = 30
 _DEFAULT_WEIGHT_RATIO = 0.85
-_DEFAULT_TOWN_MAPS = {
-    "prontera", "prt_in", "morocc", "payon", "geffen",
-    "aldebaran", "alberta", "izlude", "comodo",
-}
+
+
+def _default_town_maps() -> set[str]:
+    """RO town maps from the core's tables/cities.txt (agnostic — RULE.md:
+    never a hardcoded town list)."""
+    try:
+        from ai_sidecar.game_data import load_city_maps
+        return {c for c in load_city_maps()}
+    except Exception:
+        return set()
+
+
+_DEFAULT_TOWN_MAPS = _default_town_maps()
 _DEFAULT_STAT_PRIORITY = ["agi", "dex", "str", "vit", "int", "luk"]
 _DEFAULT_PORTAL_RETRY_LIMIT = 3
-_DEFAULT_HUNTING_ZONES = [
-    "prt_fild05",
-    "pay_fild11",
-    "pay_fild06",
-    "gef_fild14",
-    "mjolnir_09",
-]
+
+
+def _default_hunting_zones() -> list[str]:
+    """RO hunting fields from the map graph (agnostic). Falls back to the
+    city-maps prefixes — never hardcoded zone lists."""
+    try:
+        from ai_sidecar.combat.map_knowledge import get_hunting_maps
+        _z = get_hunting_maps(1)
+        if _z:
+            out = []
+            for m in _z:
+                # get_hunting_maps may return (map, score) tuples or bare maps
+                _name = m[0] if isinstance(m, (tuple, list)) and m else m
+                _name = str(_name or "").strip()
+                if _name:
+                    out.append(_name)
+            if out:
+                return out[:6]
+    except Exception:
+        pass
+    try:
+        from ai_sidecar.game_data import load_city_maps
+        _cs = load_city_maps()
+        return [f"{c}_fild01" for c in _cs if c][:6]
+    except Exception:
+        return []
+
+
+_DEFAULT_HUNTING_ZONES = _default_hunting_zones()
 
 
 # ── Outcome tracker for lightweight learning ────────────────────────────────
@@ -196,7 +227,7 @@ class EdgeCaseHandler:
             if prev_pos is not None and prev_pos == pos_key:
                 elapsed = (now - prev_time).total_seconds()
                 if elapsed >= self._unstuck_timeout_s:
-                    map_name = str(bot_state.get("map", bot_state.get("position", {}).get("map", "prontera")))
+                    map_name = str(bot_state.get("map", bot_state.get("position", {}).get("map", "")))
                     # AI-driven: pick a destination near the current map
                     target = self._pick_random_destination(map_name, bot_state)
                     self._last_move_time[bot_id] = now  # reset timer
@@ -292,6 +323,8 @@ class EdgeCaseHandler:
         self._outcomes.record("death_recovery", bot_id, "triggered",
                               detail=f"Death #{death_num}, target zone={zone}")
 
+        if not zone:
+            return None
         return self._build_proposal(
             bot_id=bot_id,
             command=f"move {zone}",
@@ -303,8 +336,12 @@ class EdgeCaseHandler:
 
     def _pick_safer_zone(self, bot_state: dict[str, Any]) -> str:
         """Return a safer zone when bot is in a death spiral."""
-        # Prefer town for safety after repeated deaths
-        return random.choice(["prontera", "morocc", "payon"])
+        # Prefer town for safety after repeated deaths — from the agnostic town
+        # set (cities.txt), never a hardcoded trio (RULE.md).
+        _towns = list(self._town_maps or _DEFAULT_TOWN_MAPS)
+        if _towns:
+            return random.choice(_towns)
+        return ""
 
     # ── Handler: SKILL_POINTS_UNSPENT ────────────────────────────────────────
 

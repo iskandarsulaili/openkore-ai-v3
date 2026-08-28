@@ -120,7 +120,35 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         hs = getattr(runtime_state, "heuristic_service", None)
         if hs is None:
             return 0
-        
+
+        # ── Edge-case self-heal: run the integration bus periodic_review (the
+        # dispatcher for ALL 8 EdgeCaseHandler handlers — unstuck, death
+        # recovery, inventory full, portal stuck, no arrows, skill/stat points,
+        # GM query). Was ORPHANED (never called) — every handler was dead code.
+        _edge_n = 0
+        try:
+            _bus = (
+                getattr(runtime_state, "integration_bus", None)
+                or getattr(runtime_state, "_integration_bus", None)
+                or getattr(getattr(runtime_state, "highfreq_reflex", None), "integration_bus", None)
+            )
+            if _bus is not None and hasattr(_bus, "periodic_review"):
+                _edge_snap = getattr(runtime_state, "snapshot_cache", None)
+                _edge_snapshot = {}
+                if _edge_snap is not None and bot_id:
+                    try:
+                        _sl = _edge_snap.get(bot_id) if hasattr(_edge_snap, "get") else None
+                        if _sl is not None:
+                            _edge_snapshot = _sl.model_dump(mode="json") if hasattr(_sl, "model_dump") else (dict(_sl) if isinstance(_sl, dict) else {})
+                    except Exception:
+                        _edge_snapshot = {}
+                _edge_aq = getattr(runtime_state, "action_queue", None)
+                _edge_n = _bus.periodic_review(bot_id, _edge_snapshot, _edge_aq)
+                if _edge_n:
+                    _log.info("edge_case_heal_actions: %d enqueued for %s", _edge_n, bot_id)
+        except Exception as _e:
+            _log.warning("edge_case_periodic_review_failed: %s", _e)
+
         # ── Party healing: process party_need_heal events ──
         _party_aq = getattr(runtime_state, 'action_queue', None)
         if _party_aq is not None:
@@ -601,7 +629,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
         assessment = hs.assess(signals, bot_id_override=bot_id)
         if not assessment.actions:
             _log.info("heuristic_no_actions horizon=%s signals=%s", horizon, str(signals)[:200])
-            return 0
+            return _edge_n
         aq = getattr(runtime_state, "action_queue", None)
         if aq is None:
             return 0
@@ -640,7 +668,7 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                 _log.exception("heuristic_action_push_failed")
         if queued:
             _log.info("heuristic_actions_emitted: %d for %s bot_id=%s", queued, horizon, bot_id)
-        return queued
+        return queued + _edge_n
     except Exception:
         _log.exception("heuristic_action_emission_failed")
     return 0
@@ -3637,7 +3665,7 @@ class PDCALoop:
                     _edge = getattr(self._runtime, "edge_case_handler", None)
                     if _edge is None:
                         try:
-                            from ai_sidecar.edge.edge_case_handler import EdgeCaseHandler
+                            from ai_sidecar.resilience.edge_case_handler import EdgeCaseHandler
                             _edge = EdgeCaseHandler()
                             _aq = getattr(self._runtime, "action_queue", None)
                             if _aq is not None:
@@ -3655,6 +3683,19 @@ class PDCALoop:
                                     idempotency_key=f"edge-{int(_dt.now(UTC).timestamp())}",
                                 ))
                             self._runtime.edge_case_handler = _edge
+                            # Wire the handler into the integration bus so
+                            # periodic_review dispatches it (the bus was created
+                            # with edge_handler=None — lifecycle never set it).
+                            try:
+                                _ib = (
+                                    getattr(self._runtime, "integration_bus", None)
+                                    or getattr(self._runtime, "_integration_bus", None)
+                                    or getattr(getattr(self._runtime, "highfreq_reflex", None), "integration_bus", None)
+                                )
+                                if _ib is not None and hasattr(_ib, "_edges"):
+                                    _ib._edges = _edge
+                            except Exception:
+                                pass
                             logger.info("edge_case_handler_initialized")
                         except Exception as e:
                             logger.warning("edge_case_handler_init_failed: %s", e)

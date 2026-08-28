@@ -240,3 +240,25 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - heuristic 5245/5252 + combat.py 250 + consumables.py 84: use 601/602 -> use Fly Wing / use Butterfly Wing (by name)
 - FINAL SCAN: ZERO hardcoded buy/sell/use <id> commands remain (only the by-name 'buy 0 Arrow 100' + 'buy potion'/'buy weapon' generic forms)
 - ZERO hardcoded town fallbacks remain (all store/tables-driven)
+
+## B16 (2026-08-28) — EDGE-CASE SELF-HEAL UN-ORPHANED (CRITICAL)
+
+- FOUND: integration bus periodic_review (the dispatcher for ALL 8 EdgeCaseHandler
+  handlers — unstuck/death_recovery/inventory_full/portal_stuck/no_arrows/
+  skill_points/stat_points/gm_query) was NEVER CALLED from the PDCA loop — the
+  whole edge-case self-heal system was DEAD CODE silently returning 0.
+- FOUND: bus called check_all(bot_id=..., snapshot=...) but the signature is
+  check_all(bot_id, bot_state) -> TypeError caught -> 0 (2nd dead link).
+- FOUND: EdgeCaseHandler init at pdca 3667 imported ai_sidecar.edge.edge_case_handler
+  (WRONG PATH — real: ai_sidecar.resilience) -> ImportError -> handler NEVER created;
+  AND the bus was wired with edge_handler=None (lifecycle never set it) (3rd dead link).
+- FOUND: _pick_random_destination returned (map, score) tuples (get_hunting_maps
+  shape) -> command "move ('prt_fild05', 0.442)" malformed; fixed name extraction.
+- FOUND: _pick_safer_zone hardcoded ["prontera","morocc","payon"]; _DEFAULT_TOWN_MAPS
+  + _DEFAULT_HUNTING_ZONES hardcoded -> cities.txt + get_hunting_maps (agnostic).
+- FIXED: wired periodic_review into _emit_heuristic_actions (bus via runtime/
+  _integration_bus/highfreq_reflex.integration_bus); fixed import path; wired the
+  created handler INTO bus._edges; count edge actions in the return (incl. the
+  no-heuristic-actions path); guard empty-zone death move.
+- TESTS: NEW tests/test_edge_case_self_heal.py (4 tests: unstuck via bus, death
+  spiral, skill points, pdca wiring end-to-end). 4/4 pass + 36 broader pass.
