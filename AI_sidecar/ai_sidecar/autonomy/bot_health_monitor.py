@@ -11,22 +11,31 @@ from datetime import UTC, datetime, timedelta
 
 _log = logging.getLogger(__name__)
 
+
+def _is_town_map(map_name: str, safe_town: str) -> bool:
+    """Agnostic town detection: the map IS the learned safe town, or its
+    interior/city prefix (e.g. safe_town 'prontera' → 'prontera', 'prt_in').
+    No hardcoded town list — the server's safe_town comes from the learned
+    server_solutions store."""
+    if not map_name:
+        return True
+    if not safe_town:
+        return False
+    base = safe_town.lower()
+    cur = map_name.lower()
+    if cur == base or cur.startswith(base + "_"):
+        return True
+    # Interior map of the town (e.g. 'prt_in' for 'prontera') is still town —
+    # derived from the town's own 3-char prefix, never a hardcoded town list.
+    if cur.startswith(base[:3] + "_in"):
+        return True
+    return False
+
+
 # Issue detection thresholds
 MAX_WEIGHT_RATIO = 0.65       # Sell if weight > 65%
 MIN_KILLS_PER_CYCLE = 1       # Alert if no kills in a cycle
 MAX_CONSECUTIVE_DEATHS = 3    # Force teleport if died N times in a row
-STUCK_TOWN_MAPS = {"prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta"}
-
-# Config fixes that can be applied via "set <key> <value>" commands
-CONFIG_FIXES = {
-    "weight_2000": {"key": "weight", "value": "2000", "reason": "Max weight too low, bot stuck sitting"},
-    "sell_auto_on": {"key": "sellAuto", "value": "1", "reason": "Auto-sell disabled, inventory filling up"},
-    "sell_npc_prt_in": {"key": "sellAuto_npc", "value": "prt_in 126 76", "reason": "Sell NPC not set to Tool Dealer"},
-    "sell_steps_correct": {"key": "sellAuto_npc_steps", "value": "c r0 c", "reason": "Sell NPC dialog steps wrong"},
-    "items_take_2": {"key": "itemsTakeAuto", "value": "2", "reason": "Item pickup disabled"},
-    # "attack_auto_2": {"key": "attackAuto", "value": "3"},  # heuristic controls this
-    # "teleport_hp_0": {"key": "teleportAuto_hp", "value": "0"},  # heuristic controls this
-}
 
 
 def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
@@ -109,8 +118,10 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
         })
     
     # ── Stuck in town check (bot in town for too long) ──
-    town_maps = {m for m in STUCK_TOWN_MAPS}
-    is_in_town = any(m in map_name.lower() for m in town_maps) if map_name else True
+    # Agnostic: town = the learned safe_town (server_solutions store).
+    _store_t = getattr(runtime_state, "server_solutions_store", None)
+    _safe_t = str((_store_t.get("safe_town", None) if _store_t else None) or "")
+    is_in_town = _is_town_map(map_name, _safe_t) if _safe_t else bool(map_name)
     
     if is_in_town and weight_ratio < MAX_WEIGHT_RATIO:
         # Bot is in town and NOT overweight — should be hunting
@@ -122,25 +133,26 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
         if town_cycles >= 3:  # 3+ cycles in town = stuck
             # Route through server_solutions_store (RULE.md: never hardcode server maps)
             _store = getattr(runtime_state, "server_solutions_store", None)
-            _farm_map = str((_store.get("farm_map", None) if _store else None) or "prt_fild08")
-            _log.info("health_monitor: %s stuck in town (%s, %d cycles), sending to hunt (%s)",
-                      bot_id, map_name, town_cycles, _farm_map)
-            corrections.append({
-                "action_id": f"health_move_hunt_{bot_id}",
-                "kind": "command",
-                "command": f"move {_farm_map}",
-                "priority_tier": "tactical",
-                "source": "health_monitor",
-                "metadata": {"reason": f"Stuck in {map_name} for {town_cycles} cycles, sending to hunt {_farm_map}"},
-            })
+            _farm_map = str((_store.get("farm_map", None) if _store else None) or "")
+            if _farm_map:
+                _log.info("health_monitor: %s stuck in town (%s, %d cycles), sending to hunt (%s)",
+                          bot_id, map_name, town_cycles, _farm_map)
+                corrections.append({
+                    "action_id": f"health_move_hunt_{bot_id}",
+                    "kind": "command",
+                    "command": f"move {_farm_map}",
+                    "priority_tier": "tactical",
+                    "source": "health_monitor",
+                    "metadata": {"reason": f"Stuck in {map_name} for {town_cycles} cycles, sending to hunt {_farm_map}"},
+                })
         
         check_bot_health._state[now_key] = {"prev_map": map_name, "town_cycles": town_cycles}
     
     # ── Low HP check ──
-    if hp_ratio < 0.20 and map_name and "prontera" not in map_name.lower() and "prt_in" not in map_name.lower():
+    _store = getattr(runtime_state, "server_solutions_store", None)
+    _safe_town = str((_store.get("safe_town", None) if _store else None) or "")
+    if hp_ratio < 0.20 and _safe_town and not _is_town_map(map_name, _safe_town):
         # Route through server_solutions_store (RULE.md: never hardcode server towns)
-        _store = getattr(runtime_state, "server_solutions_store", None)
-        _safe_town = str((_store.get("safe_town", None) if _store else None) or "prontera")
         _log.info("health_monitor: %s critically low HP (%.0f%%), sending to town (%s)", bot_id, hp_ratio * 100, _safe_town)
         corrections.append({
             "action_id": f"health_town_{bot_id}",

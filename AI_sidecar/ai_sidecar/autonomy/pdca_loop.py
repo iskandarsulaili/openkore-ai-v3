@@ -9529,20 +9529,20 @@ class PDCALoop:
             # action to a command using the server's learned solution facts.
             _store = getattr(_rt, "server_solutions_store", None)
             if not _cmd:
-                _potion_cmd = str((_store.get_json("potion_solution", {}) if _store else {}).get("buy_command") or "") or "buy 501 30"
-                _safe_town = str((_store.get("safe_town", None) if _store else None) or "prontera")
-                _farm_map = str((_store.get("farm_map", None) if _store else None) or "prt_fild08")
+                _potion_cmd = str((_store.get_json("potion_solution", {}) if _store else {}).get("buy_command") or "")
+                _safe_town = str((_store.get("safe_town", None) if _store else None) or "")
+                _farm_map = str((_store.get("farm_map", None) if _store else None) or "")
                 _cmd_map = {
                     "acquire_potions": _potion_cmd,
                     "restock": _potion_cmd,
                     "keep_farming": "ai auto",
-                    "change_farm": f"move {_farm_map}",
+                    "change_farm": f"move {_farm_map}" if _farm_map else "",
                     "equip": "",
                 }
                 if _action == "retreat" and _from_sustain:
-                    _cmd_map["retreat"] = f"move {_safe_town}"
+                    _cmd_map["retreat"] = f"move {_safe_town}" if _safe_town else ""
                 else:
-                    _cmd_map["retreat"] = f"move {_farm_map}"
+                    _cmd_map["retreat"] = f"move {_farm_map}" if _farm_map else ""
                 _cmd = _cmd_map.get(_action, "")
             logger.info("llm_gear_advisory bot=%s action=%s cmd=%r reason=%s", bot_id, _action, _cmd, _reason)
             if _cmd and hasattr(_rt, "action_queue"):
@@ -9600,17 +9600,24 @@ class PDCALoop:
                                     _potion_fb = str(_store2.get_json("potion_solution", {}).get("buy_command") or "")
                                 except Exception:
                                     _potion_fb = ""
-                            _cmd_fb = _potion_fb or "buy 501 30"
-                            _rt2.action_queue.enqueue(bot_id, _AP(
-                                action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
-                                kind="command", command=_cmd_fb,
-                                conflict_key="", priority_tier=_APT.strategic, source="crewai",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key="llm-gear-fallback-restock",
-                            ))
-                            logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> %s",
-                                        bot_id, _no_pots, _hp * 100, _cmd_fb)
+                            _cmd_fb = _potion_fb
+                            if _cmd_fb:
+                                _rt2.action_queue.enqueue(bot_id, _AP(
+                                    action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
+                                    kind="command", command=_cmd_fb,
+                                    conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                                    created_at=_dt.now(UTC),
+                                    expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                    idempotency_key="llm-gear-fallback-restock",
+                                ))
+                                logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> %s",
+                                            bot_id, _no_pots, _hp * 100, _cmd_fb)
+                            else:
+                                # Agnostic cold start: the server's potion solution
+                                # isn't learned yet — never hardcode a server item.
+                                # The reflex/primary advisory path covers sustain.
+                                logger.info("llm_gear_advisory_fallback_skip bot=%s no_pots=%s hp=%.0f%% (no potion_solution learned yet)",
+                                            bot_id, _no_pots, _hp * 100)
             except Exception:
                 pass
 
