@@ -162,6 +162,11 @@ class EdgeCaseHandler:
         self._last_move_time: dict[str, datetime] = {}
         self._portal_attempts: dict[str, int] = {}
         self._death_count: dict[str, int] = {}
+        # Rolling-window death tracking (2026-08-28): death timestamps per bot,
+        # pruned to _death_window_s. The spiral escalation (3+ deaths) must NOT
+        # reset on alive — the bot respawns + re-enters the lethal zone.
+        self._death_times: dict[str, list[float]] = {}
+        self._death_window_s: float = 300.0  # 5-min window for the death spiral
 
     # ── Factory helper ───────────────────────────────────────────────────────
 
@@ -304,13 +309,20 @@ class EdgeCaseHandler:
         )
 
         if not is_dead:
-            with self._lock:
-                self._death_count[bot_id] = 0
+            # Do NOT reset the death counter on alive — the bot respawns, re-enters
+            # the lethal zone, dies again; resetting here means the 3-death spiral
+            # escalation NEVER fires (observed live: bot looped in a lethal zone
+            # forever). Count deaths within a rolling window instead.
             return None
 
         with self._lock:
-            self._death_count[bot_id] = self._death_count.get(bot_id, 0) + 1
-            death_num = self._death_count[bot_id]
+            _now = time.time()
+            _recent = self._death_times.get(bot_id, [])
+            _recent = [t for t in _recent if _now - t < self._death_window_s]
+            _recent.append(_now)
+            self._death_times[bot_id] = _recent
+            death_num = len(_recent)
+            self._death_count[bot_id] = death_num
 
         _log.info("edge_death bot=%s death_count=%d", bot_id, death_num)
 

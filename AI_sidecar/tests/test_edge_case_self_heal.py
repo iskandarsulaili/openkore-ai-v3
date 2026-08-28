@@ -124,3 +124,28 @@ def test_wiring_from_pdca_emit_heuristic_actions() -> None:
     _emit_heuristic_actions(rt, "short", "bot:w")
     n = _emit_heuristic_actions(rt, "short", "bot:w")
     assert n >= 1, f"pdca emit must reach edge heals: {n}"
+
+
+def test_death_spiral_counts_within_window_not_reset_on_alive() -> None:
+    """3 deaths within the window must escalate to a safer zone — the counter
+    must NOT reset on alive (the bot respawns + re-enters the lethal zone)."""
+    edge = EdgeCaseHandler(unstuck_timeout_s=1)
+    edge._death_window_s = 300.0
+    # 3 deaths, each followed by an alive tick (respawn) — the OLD code reset
+    # the counter on alive so it never reached 3.
+    for _ in range(3):
+        edge.handle_death_recovery("b1", {"dead": True, "vitals": {"hp": 0}})
+        edge.handle_death_recovery("b1", {"dead": False, "vitals": {"hp": 50}})
+    assert edge._death_count.get("b1", 0) >= 3, "death counter reset on alive — spiral never escalates"
+
+
+def test_death_spiral_escalates_to_safer_zone() -> None:
+    """At 3+ deaths the handler recommends a safer zone (not the default)."""
+    edge = EdgeCaseHandler(unstuck_timeout_s=1)
+    edge._death_window_s = 300.0
+    edge._town_maps = ["prontera"]
+    edge._hunting_zones = ["prt_fild08"]
+    for _ in range(3):
+        edge.handle_death_recovery("b2", {"dead": True, "vitals": {"hp": 0}})
+    # The 3rd death should pick a safer zone (town), not the default hunting zone.
+    assert edge._death_count.get("b2", 0) >= 3
