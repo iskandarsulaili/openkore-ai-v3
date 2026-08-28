@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from ai_sidecar.actions import HeuristicAction as _HeuristicAction
@@ -972,12 +973,22 @@ class AdaptiveDataStore:
             if not self.map_performance:
                 return None
             candidates = []
+            _now = time.time()
             for map_name, perf in self.map_performance.items():
                 _n = str(map_name or "").lower().replace(".gat", "")
                 # FARM GATE: only actual hunting maps. Intro islands / towns /
                 # rooms / dungeons with no farmable spawns are never valid targets.
                 if "_fild" not in _n and "_dun" not in _n:
                     continue
+                # ENDURANCE-AWARE LETHAL-MAP COOLDOWN (2026-08-28): skip maps the
+                # death-spiral flagged (3+ deaths in window) until the cooldown
+                # expires. The bot may retry them later (endurance mandate).
+                try:
+                    from ai_sidecar.resilience.edge_case_handler import LETHAL_MAP_COOLDOWN
+                    if LETHAL_MAP_COOLDOWN.get(_n, 0) > _now:
+                        continue
+                except Exception:
+                    pass
                 avg_level = perf.get("avg_level", base_level)
                 if abs(avg_level - base_level) <= 5:
                     candidates.append((map_name, perf.get("kills", 0), perf.get("deaths", 1)))

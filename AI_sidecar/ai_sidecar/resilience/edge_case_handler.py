@@ -18,6 +18,13 @@ from typing import Any
 
 from ai_sidecar.contracts.actions import ActionPriorityTier, ActionProposal
 
+# ENDURANCE-AWARE LETHAL-MAP COOLDOWN (2026-08-28): SHARED module-level dict
+# (map -> unix ts until which the farm selector avoids it). Written by
+# EdgeCaseHandler on a 3-death spiral, read by the heuristic farm selector
+# (get_best_map). Time-bounded so the bot can retry lethal zones later
+# (endurance mandate — allow learning, then escalate).
+LETHAL_MAP_COOLDOWN: dict[str, float] = {}
+
 UTC = timezone.utc
 
 _log = logging.getLogger(__name__)
@@ -167,6 +174,13 @@ class EdgeCaseHandler:
         # reset on alive — the bot respawns + re-enters the lethal zone.
         self._death_times: dict[str, list[float]] = {}
         self._death_window_s: float = 300.0  # 5-min window for the death spiral
+        # ENDURANCE-AWARE LETHAL-MAP COOLDOWN (2026-08-28): map -> unix ts until
+        # which the farm selector avoids it (after a 3-death spiral). Time-bounded
+        # so the bot can retry lethal zones later (endurance mandate).
+        # SHARED module-level dict so the heuristic farm selector (get_best_map)
+        # reads the SAME cooldown the edge handler writes.
+        self._lethal_map_cooldown: dict[str, float] = LETHAL_MAP_COOLDOWN
+        self._lethal_cooldown_s: float = 600.0  # 10-min cooldown after a spiral
 
     # ── Factory helper ───────────────────────────────────────────────────────
 
@@ -331,6 +345,17 @@ class EdgeCaseHandler:
         if death_num >= 3:
             _log.warning("edge_death_spiral bot=%s %d consecutive deaths", bot_id, death_num)
             zone = self._pick_safer_zone(bot_state)
+            # ENDURANCE-AWARE LETHAL-MAP COOLDOWN (2026-08-28): record the map
+            # the bot died on so the farm-map selector (get_best_map) avoids it
+            # for a while. The bot is allowed to LEARN in lethal zones (endurance
+            # mandate) but after a 3-death spiral it must not immediately re-pick
+            # the same lethal map. Cooldown is time-bounded (not a permanent
+            # blacklist) so the bot can retry later.
+            _cmap = str(bot_state.get("map") or bot_state.get("position", {}).get("map") or "").lower().replace(".gat", "")
+            if _cmap:
+                with self._lock:
+                    self._lethal_map_cooldown[_cmap] = _now + self._lethal_cooldown_s
+                _log.warning("edge_death_lethal_cooldown map=%s until=%.0f", _cmap, self._lethal_map_cooldown[_cmap])
 
         self._outcomes.record("death_recovery", bot_id, "triggered",
                               detail=f"Death #{death_num}, target zone={zone}")

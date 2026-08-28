@@ -149,3 +149,31 @@ def test_death_spiral_escalates_to_safer_zone() -> None:
         edge.handle_death_recovery("b2", {"dead": True, "vitals": {"hp": 0}})
     # The 3rd death should pick a safer zone (town), not the default hunting zone.
     assert edge._death_count.get("b2", 0) >= 3
+
+
+def test_lethal_map_cooldown_skips_flagged_map() -> None:
+    """After a 3-death spiral flags a map, get_best_map must avoid it until the
+    cooldown expires (endurance-aware: time-bounded, not a permanent blacklist)."""
+    from ai_sidecar.resilience.edge_case_handler import LETHAL_MAP_COOLDOWN
+    from ai_sidecar.autonomy.heuristic_service import AdaptiveDataStore
+    import time as _t
+
+    LETHAL_MAP_COOLDOWN.clear()
+    edge = EdgeCaseHandler(unstuck_timeout_s=1)
+    edge._death_window_s = 300.0
+    edge._town_maps = ["prontera"]
+    edge._hunting_zones = ["prt_fild08"]
+    # 3 deaths on prt_fild08 -> spiral -> cooldown recorded
+    for _ in range(3):
+        edge.handle_death_recovery("b3", {"dead": True, "vitals": {"hp": 0}, "map": "prt_fild08"})
+    assert LETHAL_MAP_COOLDOWN.get("prt_fild08", 0) > _t.time(), "lethal map not flagged"
+
+    # get_best_map must skip the flagged map
+    svc = AdaptiveDataStore()
+    svc.map_performance = {
+        "prt_fild08": {"avg_level": 6, "kills": 10, "deaths": 5},
+        "prt_fild05": {"avg_level": 6, "kills": 5, "deaths": 1},
+    }
+    best = svc.get_best_map("b3", 6)
+    assert best != "prt_fild08", "get_best_map returned the lethal-flagged map"
+    assert best == "prt_fild05"
