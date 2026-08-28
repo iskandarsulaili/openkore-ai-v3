@@ -277,3 +277,14 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
   get_llm_context pdca 11624).
 - CHAIN NOW LIVE: crisis detect->diagnose->recover -> comeback learn->verify ->
   failure_reasoning LLM context. 23 tests pass.
+
+## B18 (2026-08-28) — STRATEGY INTEGRATIONS UN-ORPHANED
+
+- FOUND: onboarding_integration / intelligence_integration / combat_tactics_
+  integration / economy_intelligence_integration (wrapping try_onboarding cold-start,
+  PreemptiveIntelligence, class CombatTactics, economy market/price engines) were
+  defined + imported in pdca but NEVER INVOKED — each was a dead self-heal/
+  adaptation surface.
+- WIRED into the SHORT_TERM main loop (same cadence as domain emitters), passing
+  the live snapshot (the _in_game gate returns False on None — no-snapshot calls
+  would silently 0 forever).

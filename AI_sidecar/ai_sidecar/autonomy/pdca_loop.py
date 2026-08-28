@@ -6543,13 +6543,51 @@ class PDCALoop:
                                 self._check_progress_and_detect_stuck(_bid)
                             except Exception as _stuck_e:
                                 logger.warning("stuck_detector_error bot=%s err=%s", _bid, _stuck_e)
-                        # ── BOT HEALTH MONITOR (dead code -> wired): overweight / stuck-in-town / low-HP self-heal ──
+                        # ── BOT HEALTH MONITOR (dead code -> wired): overweight / stuck-in-town / lo
                         if horizon == Horizon.SHORT_TERM:
                             try:
                                 from ai_sidecar.autonomy.bot_health_monitor import run_health_checks
                                 run_health_checks(self._runtime, self._runtime.action_queue, [_bid])
                             except Exception as _health_e:
                                 logger.warning("health_monitor_error bot=%s err=%s", _bid, _health_e)
+                        # ── STRATEGY INTEGRATIONS (were ORPHANED: onboarding/intelligence/
+                        # combat_tactics/economy_intelligence modules defined + imported but
+                        # never invoked) — each wraps a self-heal/adaptation engine:
+                        # try_onboarding (cold-start), run_intelligence (PreemptiveIntelligence),
+                        # run_combat_tactics (class tactics), run_economy_intelligence (economy
+                        # precompute). Same cadence as the domain emitters.
+                        if horizon == Horizon.SHORT_TERM:
+                            try:
+                                from ai_sidecar.autonomy.onboarding_integration import try_onboarding as _try_ob
+                                _snap_ob = None
+                                try:
+                                    _snap_ob = getattr(self._runtime, "snapshot_cache", None)
+                                    if _snap_ob is not None:
+                                        _sl_ob = _snap_ob.get(_bid) if hasattr(_snap_ob, "get") else None
+                                        if _sl_ob is not None:
+                                            _snap_ob = _sl_ob.model_dump(mode="json") if hasattr(_sl_ob, "model_dump") else _sl_ob
+                                        else:
+                                            _snap_ob = None
+                                except Exception:
+                                    _snap_ob = None
+                                _try_ob(self._runtime, _bid, _snap_ob)
+                            except Exception as _ob_e:
+                                logger.warning("onboarding_integration_error bot=%s err=%s", _bid, _ob_e)
+                            try:
+                                from ai_sidecar.autonomy.intelligence_integration import run_intelligence as _run_pi
+                                _run_pi(self._runtime, _bid, _snap_ob)
+                            except Exception as _pi_e:
+                                logger.warning("intelligence_integration_error bot=%s err=%s", _bid, _pi_e)
+                            try:
+                                from ai_sidecar.autonomy.combat_tactics_integration import run_combat_tactics as _run_ct
+                                _run_ct(self._runtime, _bid, _snap_ob)
+                            except Exception as _ct_e:
+                                logger.warning("combat_tactics_integration_error bot=%s err=%s", _bid, _ct_e)
+                            try:
+                                from ai_sidecar.autonomy.economy_intelligence_integration import run_economy_intelligence as _run_ei
+                                _run_ei(self._runtime, _bid, _snap_ob)
+                            except Exception as _ei_e:
+                                logger.warning("economy_intelligence_integration_error bot=%s err=%s", _bid, _ei_e)
                         _total_actions += _actions_queued_ge + _actions_queued_hs + _actions_queued_swarm + _actions_queued_vendor + _actions_queued_skill + _actions_queued_combat
                         # ── Config push: heal resources + anti-detection (every cycle) ──
                         try:
