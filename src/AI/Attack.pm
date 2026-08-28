@@ -970,13 +970,22 @@ sub main {
 		}
 	}
 
+	# ── SERVER-CONFIRMED RANGE (drift-proof) ──
+	# $char->{pos}/$target->{pos} are set by server position packets (0x0088);
+	# the predicted $realMyPos/$realMonsterDist run ahead under latency. Use the
+	# confirmed positions with a defined-guard (fall back to predicted).
+	my $_my_pos = ($char->{pos} && defined $char->{pos}{x} && defined $char->{pos}{y}) ? $char->{pos} : $realMyPos;
+	my $_tgt_pos = ($target->{pos} && defined $target->{pos}{x} && defined $target->{pos}{y}) ? $target->{pos} : $realMonsterPos;
+	my $_confirmed_dist = blockDistance($_my_pos, $_tgt_pos);
+	debug TF("[Attack] confirmed_dist %d (my %d %d, tgt %d %d), maxDistance %d\n", $_confirmed_dist, $_my_pos->{x}, $_my_pos->{y}, $_tgt_pos->{x}, $_tgt_pos->{y}, ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1)), 'ai_attack', 1;
+
 	# If we still cannot attack, compute a better meeting position and walk to it.
 	# Gate on BOTH the predicted canAttack AND the server-confirmed distance:
 	# prediction can claim "in range" while the server has the bot 8+ blocks
 	# away — without the server-confirmed check the bot stands still forever.
 	if (
 		!$found_action &&
-		(($canAttack == 0 || $canAttack == -1) || blockDistance($char->{pos}, $target->{pos}) > ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1)) &&
+		(($canAttack == 0 || $canAttack == -1) || $_confirmed_dist > ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1)) &&
 		!$hitTarget_when_not_possible
 	) {
 		debug "Attack $char ($realMyPos->{x} $realMyPos->{y}) - target $target ($realMonsterPos->{x} $realMonsterPos->{y})\n";
@@ -1052,7 +1061,7 @@ sub main {
 		# runs AHEAD of the server under latency, so the predicted dist says
 		# "in range" while the server has the bot 8+ blocks away -> every
 		# attack misses -> permanent "in-range hit timeout" loop.
-		blockDistance($char->{pos}, $target->{pos}) <= ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1) &&
+		$_confirmed_dist <= ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1) &&
 		(!$config{"runFromTarget"} || $realMonsterDist >= $config{"runFromTarget_dist"} || $failed_runFromTarget) &&
 		(!$config{"tankMode"} || !$target->{dmgFromYou})
 	 ) {
