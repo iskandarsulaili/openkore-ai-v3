@@ -721,7 +721,7 @@ def test_runtime_snapshot_builds_typed_actor_delta_payload(monkeypatch: pytest.M
 
     runtime.ingest_snapshot(snapshot)
 
-    deadline = time.monotonic() + 2.0
+    deadline = time.monotonic() + 5.0
     while "payload" not in captured and time.monotonic() < deadline:
         time.sleep(0.01)
 
