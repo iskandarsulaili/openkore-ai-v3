@@ -10,7 +10,6 @@ use Commands;
 use FileParsers qw(parseConfigFile);
 use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender);
 use IO::Socket::INET;
-use Globals qw($char);
 use Log qw(debug message warning);
 use Network;
 use Plugins;
@@ -2460,8 +2459,8 @@ sub _build_charstatus_payload {
             name       => $char ? ($char->{name} // '') : '',
             job        => $char ? ($char->{jobName} // '') : '',
             job_id     => $char ? ($char->{jobID} // 0) : 0,
-            base_level => $char ? ($char->{level} // 0) : 0,
-            job_level  => $char ? ($char->{level_job} // 0) : 0,
+            base_level => $char ? ($char->{lv} // 0) : 0,
+            job_level  => $char ? ($char->{lv_job} // 0) : 0,
             gender     => $char ? ($char->{sex} // '') : '',
             guild_id   => $char ? _actor_id_from_any($char->{guildID}) : 0,
             party_id   => $char ? _actor_id_from_any($char->{party}{ID}) : 0,
@@ -2617,6 +2616,55 @@ sub _sanitize_utf8_scalar {
 sub _build_snapshot_payload {
 	my $bot_id = _bot_id();
 	my $max_raw = _cfg_int('aiSidecar_maxRawChars', 256);
+	my $progression = {};  # built at top-level below (2026-08-28)
+
+	# ── PROGRESSION CACHE (2026-08-28) ──
+	# Populate the last-known level/exp cache UNCONDITIONALLY on every
+	# snapshot. $char (the OpenKore player actor) is only bound while
+	# in-game; during death/respawn + reconnect cycles it is undef and the
+	# nested progression eval below (inside `if ($_leader_lv >= 40)`) never
+	# runs — so the snapshot progression was ALWAYS empty and the sidecar's
+	# EXP-delta kill proxy never fired. This cache keeps the last-known
+	# values across those cycles. NOTE: this fork stores level as {lv} and
+	# job level as {lv_job} (VAR_CLEVEL/VAR_CJOBLEVEL handlers in
+	# Network/Receive.pm) — NOT the stock {level}/{level_job} keys.
+	if (defined($char) && ref($char)) {
+		my $_ck = $bot_id || $::config{username} || 'unknown';
+		$::aiSidecar_cached_progression{$_ck}{base_level}   = $char->{lv}       if defined $char->{lv};
+		$::aiSidecar_cached_progression{$_ck}{base_exp}     = $char->{exp}      if defined $char->{exp};
+		$::aiSidecar_cached_progression{$_ck}{base_exp_max} = $char->{exp_max}  if defined $char->{exp_max};
+		$::aiSidecar_cached_progression{$_ck}{job_level}    = $char->{lv_job}   if defined $char->{lv_job};
+		$::aiSidecar_cached_progression{$_ck}{job_exp}      = $char->{exp_job}  if defined $char->{exp_job};
+		$::aiSidecar_cached_progression{$_ck}{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
+		$::aiSidecar_cached_progression{$_ck}{job_id}       = $char->{jobID}    if defined $char->{jobID};
+		$::aiSidecar_cached_progression{$_ck}{skill_points} = $char->{points_skill} if defined $char->{points_skill};
+		$::aiSidecar_cached_progression{$_ck}{stat_points}  = (defined $char->{status_points}) ? $char->{status_points}
+			: (defined $char->{points_free}) ? $char->{points_free}
+			: (defined $char->{stat_pts}) ? $char->{stat_pts} : 0;
+	}
+
+	# ── PROGRESSION PAYLOAD — built HERE, unconditionally (2026-08-28) ──
+	# The old `$progression = eval {...}` below is nested inside
+	# `if ($_leader_lv >= 40)` (party-formation) — a sub-40 bot NEVER ran it,
+	# so the snapshot progression was ALWAYS empty and the sidecar's EXP-delta
+	# kill proxy never fired. Build the payload at sub top-level instead.
+	{
+		my $_ck = $bot_id || $::config{username} || 'unknown';
+		my $_c = $::aiSidecar_cached_progression{$_ck} || {};
+		my %_pp = (
+			job_id       => $_c->{job_id},
+			base_level   => $_c->{base_level},
+			job_level    => $_c->{job_level},
+			base_exp     => $_c->{base_exp},
+			base_exp_max => $_c->{base_exp_max},
+			job_exp      => $_c->{job_exp},
+			job_exp_max  => $_c->{job_exp_max},
+			skill_points => $_c->{skill_points},
+			stat_points  => $_c->{stat_points},
+		);
+		# drop undef keys so pydantic gets real values only
+		$progression = { map { defined $_pp{$_} ? ($_ => $_pp{$_}) : () } keys %_pp };
+	}
 
 	my ($x, $y);
 	my $map = '';
@@ -2786,7 +2834,6 @@ sub _build_snapshot_payload {
 	};
 
 	# --- Progression digest (job, level, exp) ---
-	my $progression = {};
 	if ($char) {
 		# ── Populate all_bots from .bot_profiles directory ──
 		if (!defined $::aiSidecar_all_bots || $::aiSidecar_all_bots eq '') {
