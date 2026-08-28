@@ -154,6 +154,32 @@ def test_stall_detector_fires_even_when_never_gained_exp():
     assert len(rt.action_queue.enqueued) == 1, "frozen-from-start bot must stall-fire"
 
 
+def test_stall_detector_route_failure_triggers_heal():
+    """F13: high route_failure_count (8+) while in-game -> map-change heal,
+    rate-limited by the same window (one per _stall_min)."""
+    from ai_sidecar.autonomy.pdca_loop import PDCALoop
+    rt = MagicMock()
+    rt.action_queue = _FakeAQ()
+    rt.long_term_memory = _FakeLTM()
+    rt.server_solutions_store = None
+    rt.dynamic_portal_discovery = None
+    o = PDCALoop.__new__(PDCALoop)
+    o._runtime = rt
+    o._stall_no_progress_min = 5
+    o._log = MagicMock()
+    # Fresh snapshot with route_failure_count=10, EXP unchanged
+    snap = _snap(626, "prt_fild05", 30.0)
+    snap.raw["route_failure_count"] = 10
+    prev = {"_seeded": True, "deaths": 0, "exp": 626, "weapon": True,
+            "map": "prt_fild05", "_exp_change_ts": time.time() - 10}
+    rt.snapshot_cache.get.return_value = snap
+    with patch.object(o, "_memory_snapshot_key", return_value=prev):
+        o._remember_significant_deltas("testbotA")
+    assert len(rt.action_queue.enqueued) == 1, "route-failure stall must heal"
+    meta = rt.action_queue.enqueued[0][1].metadata
+    assert meta["reason"] == "route_failure"
+
+
 def test_stall_detector_resolves_profile_key_mismatch_via_latest():
     """bot_id is the PROFILE key but snapshot_cache keys by meta.bot_id (FULL
     key). get(profile) misses -> latest() fallback must resolve the snapshot

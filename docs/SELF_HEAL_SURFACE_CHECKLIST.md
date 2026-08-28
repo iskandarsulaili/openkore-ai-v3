@@ -40,3 +40,17 @@ patterns go to self-learning/self-improving.
 - [ ] B4: Wire any missing heal (deterministic, event-driven).
 - [ ] B5: Test each heal path (unit + live).
 - [ ] B6: Verify ledger/memory only get the failures learning SHOULD see.
+
+## B3/B4 (2026-08-28) — F13 ROUTE-FAILURE HEAL + F8 SHOP AGNOSTICIZATION
+
+- F13 WIRED: route_failure_count >= 8 while in-game -> map-change heal
+  (rate-limited 1/_stall_min via _route_heal_ts). Shared _emit_stall_heal
+  helper (both no-progress + route-failure triggers use it). Independent
+  if-branch (not elif — the EXP branch's unmet condition shadowed it).
+- F8 HARDCODE REMOVED: _town_npc = {"prontera": "...", "izlude": "..."} dict
+  (RULE.md violation) -> learned shop_npc from server_solutions store; empty
+  until observed (buyAuto runs near any shop; reflex covers sustain).
+- TESTS: 9/9 (route-failure heal + all stall cases).
+- F11 death-loop: ALREADY healed (_death_loop_target suppress window).
+- F12 zeny-starvation: covered by F6 reflex potion-fallback (verified live).
+- F14 map-flap: covered by F1 no-progress (map flapping = frozen EXP).

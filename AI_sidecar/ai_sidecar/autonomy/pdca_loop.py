@@ -1840,6 +1840,38 @@ class PDCAConfig:
     stuck_detect_window_s: float = 120.0
 
 
+def _emit_stall_heal(runtime_state, ltm, bot_id: str, from_map: str, now_ts: float,
+                     reason: str, detail: str) -> None:
+    """Shared self-heal emitter: enqueue a map-change action (target chosen by
+    _pick_stall_target: learned farm_map -> city from tables/cities.txt -> DPD
+    portal -> unexplored) + record the stall in long-term memory. Never
+    hardcodes a map (RULE.md)."""
+    try:
+        _aq = getattr(runtime_state, "action_queue", None)
+        if _aq is None:
+            return
+        from datetime import UTC, datetime, timedelta
+        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+        _tgt = _pick_stall_target(runtime_state, from_map)
+        if not _tgt:
+            return
+        _aq.enqueue(bot_id, ActionProposal(
+            action_id=f"stall_heal_{bot_id}_{int(now_ts*1000)}",
+            kind="command", command=f"move {_tgt}",
+            priority_tier=ActionPriorityTier.tactical, source="planner",
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(seconds=120),
+            conflict_key=f"stall_heal_{bot_id}",
+            idempotency_key=f"stall_heal_{bot_id}",
+            metadata={"source": "self_heal_stall", "reason": reason,
+                      "from_map": from_map, "target": _tgt, "bot_id": bot_id},
+        ))
+        if ltm is not None and hasattr(ltm, "store"):
+            ltm.store("stall", f"bot {bot_id} stalled ({reason}: {detail}), healed -> {_tgt}", importance=6)
+    except Exception:
+        pass
+
+
 def _pick_stall_target(runtime_state, current_map: str) -> str:
     """Self-heal target chooser for a stalled bot (agnostic, RULE.md).
 
@@ -9896,6 +9928,14 @@ class PDCALoop:
         _in_game = _snap_age_s < 180  # fresh snapshot = connected + in-game
         _exp_changed = _exp != _prev_exp
         _last_change = float(_prev.get("_exp_change_ts", 0) or 0)
+        # F13: ROUTE-FAILURE STALL — the bot cannot path to its target (high
+        # route_failure_count in the snapshot raw). Heal with the same
+        # map-change (a fresh map resets pathfinding). Rate-limited via the
+        # same _prev window (one heal per _stall_min).
+        _route_fails = int(_raw.get("route_failure_count") or 0)
+        _last_route_heal = float(_prev.get("_route_heal_ts", 0) or 0)
+        _route_stall = (_in_game and _route_fails >= 8
+                        and (_now_ts - _last_route_heal) >= _stall_min * 60)
         if _in_game and _exp_changed:
             _prev["_exp_change_ts"] = _now_ts
         elif _in_game and not _exp_changed and _last_change > 0:
@@ -9904,27 +9944,14 @@ class PDCALoop:
                 _prev["_exp_change_ts"] = _now_ts  # re-arm (one heal per window)
                 _log = getattr(self, "_log", None) or logging.getLogger(__name__)
                 _log.warning("self-heal: %s NO PROGRESS for %d min on %s (exp %s frozen) -> map change", bot_id, _stall_min, _map, _exp)
-                try:
-                    _aq = getattr(self._runtime, "action_queue", None)
-                    if _aq is not None:
-                        from datetime import UTC, datetime, timedelta
-                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                        _tgt = _pick_stall_target(self._runtime, _map)
-                        if _tgt:
-                            _aq.enqueue(bot_id, ActionProposal(
-                                action_id=f"stall_heal_{bot_id}_{int(_now_ts*1000)}",
-                                kind="command", command=f"move {_tgt}",
-                                priority_tier=ActionPriorityTier.tactical, source="planner",
-                                created_at=datetime.now(UTC),
-                                expires_at=datetime.now(UTC) + timedelta(seconds=120),
-                                conflict_key=f"stall_heal_{bot_id}",
-                                idempotency_key=f"stall_heal_{bot_id}",
-                                metadata={"source": "self_heal_stall", "reason": "no_progress",
-                                          "from_map": _map, "target": _tgt, "bot_id": bot_id},
-                            ))
-                            _ltm.store("stall", f"bot {bot_id} stalled on {_map} (no EXP {_stall_min}min), healed -> {_tgt}", importance=6)
-                except Exception:
-                    pass
+                _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "no_progress",
+                                 f"no EXP {_stall_min}min on {_map}")
+        if _route_stall:
+            _prev["_route_heal_ts"] = _now_ts
+            _log = getattr(self, "_log", None) or logging.getLogger(__name__)
+            _log.warning("self-heal: %s ROUTE-FAILURE stall (%d fails) on %s -> map change", bot_id, _route_fails, _map)
+            _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "route_failure",
+                             f"{_route_fails} route failures on {_map}")
 
         # Death: store personal_history + danger_zone for the map
         if _deaths > _prev_deaths:
