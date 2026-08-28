@@ -566,3 +566,69 @@ async def brain_rewards(
         return {"ok": True, "bots": out}
     except Exception as exc:  # pragma: no cover
         return {"ok": False, "error": str(exc)}
+
+
+@router.get("/self-heal-status", response_model=dict)
+async def self_heal_status(
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """Self-heal observability: every correctable-failure surface's state.
+
+    Aggregates the edge-case handler outcomes, crisis summary, comeback
+    fix-registry, degradation module health, and healer log — the surfaces
+    the user directive (2026-08-28) requires self-healing to own BEFORE
+    self-learning/self-improving.
+    """
+    out: dict = {
+        "edge_case": {},
+        "crisis": {},
+        "comeback": {},
+        "degradation": {},
+        "self_healer": {},
+        "time_scheduler": {},
+    }
+    try:
+        _edge = getattr(runtime, "edge_case_handler", None)
+        if _edge is not None and hasattr(_edge, "_outcomes"):
+            _oc = _edge._outcomes
+            if hasattr(_oc, "summary"):
+                out["edge_case"] = _oc.summary()
+            elif hasattr(_oc, "records"):
+                out["edge_case"] = {"count": len(_oc.records)}
+            else:
+                out["edge_case"] = {"note": "outcome history active"}
+    except Exception:
+        pass
+    try:
+        _cm = getattr(runtime, "crisis_manager", None)
+        if _cm is not None and hasattr(_cm, "get_crisis_summary"):
+            out["crisis"] = _cm.get_crisis_summary()
+    except Exception:
+        pass
+    try:
+        _cb = getattr(runtime, "comeback_engine", None)
+        if _cb is not None:
+            out["comeback"]["fix_summary"] = _cb.get_fix_summary() if hasattr(_cb, "get_fix_summary") else {}
+            out["comeback"]["pending"] = _cb.get_pending_count() if hasattr(_cb, "get_pending_count") else 0
+            out["comeback"]["recovery_rate"] = _cb.get_recovery_rate("death") if hasattr(_cb, "get_recovery_rate") else 0.0
+    except Exception:
+        pass
+    try:
+        _dm = getattr(runtime, "degradation_manager", None)
+        if _dm is not None and hasattr(_dm, "get_health_summary"):
+            out["degradation"] = _dm.get_health_summary()
+    except Exception:
+        pass
+    try:
+        _sh = getattr(runtime, "self_healer", None)
+        if _sh is not None and hasattr(_sh, "get_heal_summary"):
+            out["self_healer"] = _sh.get_heal_summary()
+    except Exception:
+        pass
+    try:
+        _ts = getattr(runtime, "time_scheduler", None)
+        if _ts is not None and hasattr(_ts, "get_scheduler_summary"):
+            out["time_scheduler"] = _ts.get_scheduler_summary()
+    except Exception:
+        pass
+    return out
