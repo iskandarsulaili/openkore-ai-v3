@@ -1840,6 +1840,36 @@ class PDCAConfig:
     stuck_detect_window_s: float = 120.0
 
 
+def _pick_stall_target(runtime_state, current_map: str) -> str:
+    """Self-heal target chooser for a stalled bot (agnostic, RULE.md).
+
+    Priority (all from learned game data, never hardcoded literals):
+      1. The learned farm_map (server_solutions store) if != current map.
+      2. An unexplored/portal-reachable map via DynamicPortalDiscovery.
+      3. '' (no target — caller skips; the LLM/exploration decides next).
+    """
+    try:
+        _store = getattr(runtime_state, "server_solutions_store", None)
+        if _store is not None:
+            _farm = str(_store.get("farm_map", None) or "")
+            if _farm and _farm != current_map:
+                return _farm
+        _dpd = getattr(runtime_state, "dynamic_portal_discovery", None)
+        if _dpd is None:
+            from ai_sidecar.dynamic_portal_discovery import get_dynamic_portal_discovery
+            _dpd = get_dynamic_portal_discovery()
+        for _p in _dpd.get_discovered_portals_from(current_map):
+            _tm = str(getattr(_p, "target_map", "") or "")
+            if _tm and _tm != current_map:
+                return _tm
+        for _m in _dpd.get_unexplored_maps():
+            if _m and _m != current_map:
+                return _m
+    except Exception:
+        pass
+    return ""
+
+
 def _emit_exploration_scout(runtime_state, bot_id: str, map_name: str, base_level: int) -> int:
     """FLAW 2: when a bot is stuck, propose an exploration target.
 
@@ -9680,6 +9710,19 @@ class PDCALoop:
         _pos = getattr(_snap_obj, "position", None) or {}
         _vit = getattr(_snap_obj, "vitals", None) or {}
         _prog = getattr(_snap_obj, "progression", None) or {}
+        # Snapshot observed_at -> unix ts (for in-game freshness / stall detection)
+        import time as _t0
+        _ts_obs = 0.0
+        try:
+            _obs_raw = getattr(_snap_obj, "observed_at", None) or ""
+            if _obs_raw:
+                from datetime import datetime as _dt
+                _obs_dt = _dt.fromisoformat(str(_obs_raw).replace("Z", "+00:00"))
+                _ts_obs = _obs_dt.timestamp()
+            else:
+                _ts_obs = _t0.time()
+        except Exception:
+            _ts_obs = _t0.time()
 
         _map = str(_raw.get("map") or getattr(_pos, "map", "") or "").lower().replace(".gat", "")
         _deaths = int(_raw.get("death_count") or 0)
@@ -9768,10 +9811,60 @@ class PDCALoop:
                 _ledger.record(bot_id, "goal_decomposer", "kill", f"map={_map} n={_kill_delta}")
                 _ledger.record(bot_id, "memory", "kill", f"map={_map} n={_kill_delta}")
                 _ledger.record(bot_id, "strategy", "kill", f"map={_map} n={_kill_delta}")
-            if _hp_ratio <= 0.30:
-                _ledger.record(bot_id, "reflex", "hp_critical", f"ratio={_hp_ratio:.2f}")
         except Exception:
             logger.debug("brain_reward_record_failed", exc_info=True)
+
+        # HP-critical punish (original, outside the stall block)
+        if _hp_ratio <= 0.30:
+            try:
+                from ai_sidecar.learning.brain_reward_ledger import get_brain_reward_ledger
+                get_brain_reward_ledger().record(bot_id, "reflex", "hp_critical", f"ratio={_hp_ratio:.2f}")
+            except Exception:
+                pass
+
+        # ── SELF-HEAL: NO-PROGRESS STALL DETECTOR (2026-08-28) ──
+        # The 60-cycle stuck-tracker resets when the map FLAPS (wedge reassigns
+        # the bot between maps every few minutes) — so it never reaches 60 and
+        # the bot sits on an empty map forever. This detector keys on EXP
+        # PROGRESS (immune to map flapping): if the bot is IN-GAME (fresh
+        # snapshot) and base_exp has not changed for STALL_NO_PROGRESS_MIN
+        # minutes, emit a map-change heal (self-healing BEFORE self-learning).
+        import time as _t
+        _stall_min = int(getattr(self, "_stall_no_progress_min", 5) or 5)
+        _now_ts = _t.time()
+        _snap_age_s = _now_ts - _ts_obs
+        _in_game = _snap_age_s < 180  # fresh snapshot = connected + in-game
+        _exp_changed = _exp != _prev_exp
+        _last_change = float(_prev.get("_exp_change_ts", 0) or 0)
+        if _in_game and _exp_changed:
+            _prev["_exp_change_ts"] = _now_ts
+        elif _in_game and not _exp_changed and _last_change > 0:
+            _stall_s = _now_ts - _last_change
+            if _stall_s >= _stall_min * 60:
+                _prev["_exp_change_ts"] = _now_ts  # re-arm (one heal per window)
+                _log = getattr(self, "_log", None) or logging.getLogger(__name__)
+                _log.warning("self-heal: %s NO PROGRESS for %d min on %s (exp %s frozen) -> map change", bot_id, _stall_min, _map, _exp)
+                try:
+                    _aq = getattr(self._runtime, "action_queue", None)
+                    if _aq is not None:
+                        from datetime import UTC, datetime, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
+                        _tgt = _pick_stall_target(self._runtime, _map)
+                        if _tgt:
+                            _aq.enqueue(bot_id, ActionProposal(
+                                action_id=f"stall_heal_{bot_id}_{int(_now_ts*1000)}",
+                                kind="command", command=f"move {_tgt}",
+                                priority_tier=ActionPriorityTier.tactical, source="planner",
+                                created_at=datetime.now(UTC),
+                                expires_at=datetime.now(UTC) + timedelta(seconds=120),
+                                conflict_key=f"stall_heal_{bot_id}",
+                                idempotency_key=f"stall_heal_{bot_id}",
+                                metadata={"source": "self_heal_stall", "reason": "no_progress",
+                                          "from_map": _map, "target": _tgt, "bot_id": bot_id},
+                            ))
+                            _ltm.store("stall", f"bot {bot_id} stalled on {_map} (no EXP {_stall_min}min), healed -> {_tgt}", importance=6)
+                except Exception:
+                    pass
 
         # Death: store personal_history + danger_zone for the map
         if _deaths > _prev_deaths:
