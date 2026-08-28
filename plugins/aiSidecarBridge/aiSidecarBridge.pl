@@ -2457,7 +2457,7 @@ sub _build_charstatus_payload {
             account_id => $char ? _actor_id_from_any($char->{accountID}) : '',
             char_id    => $char ? _actor_id_from_any($char->{ID}) : '',
             name       => $char ? ($char->{name} // '') : '',
-            job        => $char ? ($char->{jobName} // '') : '',
+            job        => $char ? (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) : '',
             job_id     => $char ? ($char->{jobID} // 0) : 0,
             base_level => $char ? ($char->{lv} // 0) : 0,
             job_level  => $char ? ($char->{lv_job} // 0) : 0,
@@ -2940,7 +2940,7 @@ sub _build_snapshot_payload {
 			elsif (defined $char->{points_free}) { $p{stat_points} = $char->{points_free}; }
 			elsif (defined $char->{stat_pts}) { $p{stat_points} = $char->{stat_pts}; }
 			else { $p{stat_points} = 0; }
-			$p{job_name}     = $char->{jobName}      if defined $char->{jobName};
+			$p{job_name}     = (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) if defined $char;
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			# Cache party state to survive death/respawn
