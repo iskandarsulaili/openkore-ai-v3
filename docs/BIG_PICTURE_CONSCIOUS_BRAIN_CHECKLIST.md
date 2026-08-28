@@ -79,3 +79,21 @@ LIVE-VERIFIED (bot in-game):
 - Memory: 172 rows durable, dedup working (level-5 gear acquisition recorded).
 - BrainRewardLedger JSONL WRITING: kill +0.8 for ALL 7 brains on prt_fild08.
 - Sidecar health 200, all endpoints live.
+
+## B6 — SWEEP ROUND 3 2026-08-28 12:20 (+08) — LEDGER OBSERVABILITY FIXED
+
+Found + fixed (the "bots: {}" observability LIE):
+1. BrainRewardLedger was WRITE-ONLY — after any sidecar restart, scores reset to
+   empty (endpoint + LLM feedback blind) while JSONL held full history. FIXED:
+   load() (idempotent JSONL replay) wired into record()/scores()/discounted_confidence
+   + endpoint. Restart-replay test added (8 ledger tests).
+2. brain-rewards endpoint 500'd (slots dataclass no __dict__ + deque not
+   JSON-serializable → pydantic 500). FIXED: _score_dict (asdict + deque→list).
+   VERIFIED: endpoint returns persisted scores across restarts (ok:True, 1 bot,
+   4 brains).
+
+BOT PROOF (12:16 live): snapshot FRESH (secs old), map prt_fild08, base_level 5,
+base_exp 2728, hp_ratio 1.0 (heal chain working), progression real. Kill-chain
+proof from 11:24 stands: EXP 547→2728, level 1→5, kills landing, memory+ledger
+firing. CONTINUOUS farming blocked ONLY by the login wedge (1400 timeouts/15min,
+sibling's standby-map domain — handed over, they're mid-fix R1/best-region).
