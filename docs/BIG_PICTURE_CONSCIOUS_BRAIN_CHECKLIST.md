@@ -97,3 +97,20 @@ base_exp 2728, hp_ratio 1.0 (heal chain working), progression real. Kill-chain
 proof from 11:24 stands: EXP 547→2728, level 1→5, kills landing, memory+ledger
 firing. CONTINUOUS farming blocked ONLY by the login wedge (1400 timeouts/15min,
 sibling's standby-map domain — handed over, they're mid-fix R1/best-region).
+
+## B7 — SWEEP ROUND 4 2026-08-28 12:45 (+08) — PUNISH-SIDE SELF-CORRECTION WIRED
+
+Found + fixed:
+1. discounted_confidence (punish-side brain confidence 0.5-1.0 by win-rate) was
+   DEAD CODE — never consulted by any decision path; the self-* loop only showed
+   descriptive text. FIXED: injected into context_for_llm → LLM advisories now
+   SEE per-brain confidence. Verified: prompt shows "confidence=1.00" per brain.
+2. Kill/death rewards credited only 4/7 brains (reflex/memory/strategy missing).
+   FIXED: ALL 7 brains scored on every kill + death.
+
+Verified wired (no action): failure_context (failure_reasoning) → _context_overrides
+→ planner prompt; self_awareness MEMORY.md lesson curation; long_term_memory recall
++ ledger context in both advisories. Full self-* loop COMPLETE: live state + past
+memory + failure lessons + brain confidence → LLM → action → outcome → ledger → memory.
+
+421 tests green (was 420).
