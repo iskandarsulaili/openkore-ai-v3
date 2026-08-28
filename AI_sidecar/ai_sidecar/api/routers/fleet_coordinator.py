@@ -128,8 +128,23 @@ def bot_state(
         Bot state dict.
     """
     coord = _require_coordinator(runtime)
-    state = coord.get_bot_state(bot_id)
-    if state is None:
+    # FleetCoordinator has NO get_bot_state (the old call 500'd every time).
+    # The live per-bot state lives in the snapshot cache + charstatus reader;
+    # merge them for a complete view (this is what the fleet actually knows).
+    state: dict[str, Any] = {}
+    if runtime.snapshot_cache is not None:
+        snap = runtime.snapshot_cache.get(bot_id)
+        if snap is not None:
+            state["snapshot"] = snap
+    reader = getattr(runtime, "charstatus_reader", None)
+    if reader is not None:
+        cs = reader.get(bot_id)
+        if cs is not None:
+            state["charstatus"] = cs
+    registered = coord.get_bot(bot_id) if hasattr(coord, "get_bot") else None
+    if registered is not None:
+        state["registration"] = vars(registered) if hasattr(registered, "__dict__") else registered
+    if not state:
         raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}")
     return {
         "ok": True,
