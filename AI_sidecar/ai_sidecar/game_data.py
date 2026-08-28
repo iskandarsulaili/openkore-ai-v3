@@ -107,6 +107,23 @@ MAP_PREFIX_TOWN: dict[str, str] = {
 }
 
 
+# Town portal exit points (map -> (x, y)): the portal from a town to its
+# fields. Static RO geography (the same portal coords on every server), kept
+# in ONE authoritative table (game_data) so decision paths never inline them.
+TOWN_PORTALS: dict[str, tuple[int, int]] = {
+    "izlude": (367, 205),   # izlude -> prt_fild08
+    "prontera": (156, 289), # prontera -> prt_fild01
+    "morocc": (287, 95),    # morocc -> moc_fild01
+    "geffen": (147, 133),   # geffen -> gef_fild07
+    "payon": (113, 218),    # payon -> pay_fild01
+}
+
+
+def town_portal(town: str) -> tuple[int, int]:
+    """Return the portal exit point for a town, or (0, 0) if unknown."""
+    return TOWN_PORTALS.get((town or "").lower(), (0, 0))
+
+
 def parent_town(field_map: str) -> str:
     """Resolve a field/dungeon map's parent town from the RO prefix graph.
 

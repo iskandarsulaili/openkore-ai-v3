@@ -113,7 +113,7 @@ class ProgressionDomain(BaseDomain):
             self._cold_step1(actions, signals, _cs_key, zeny, _in_town,
                             _in_hunting, map_name, service)
         elif _cs_step == 2:
-            self._cold_step2(actions, _cs_key, _has_weapon, zeny, service)
+            self._cold_step2(actions, _cs_key, _has_weapon, zeny, base_level, service)
         elif _cs_step == 3:
             self._cold_step3(actions, _cs_key, _has_potions, zeny,
                             base_level, weight, inventory, service)
@@ -198,18 +198,32 @@ class ProgressionDomain(BaseDomain):
                 ))
 
     def _cold_step2(
-        self, actions, _cs_key, _has_weapon, zeny, service,
+        self, actions, _cs_key, _has_weapon, zeny, base_level, service,
     ):
         if not _has_weapon and zeny >= 50:
+            # RULE.md: the starter weapon comes from the AGNOSTIC gear planner
+            # (best affordable weapon by stat/zeny). The generic 'buy weapon'
+            # form (OpenKore resolves the best starter weapon from its tables)
+            # is the fallback — never a hardcoded server item id.
+            _cs2_w = ""
+            try:
+                from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                _cs2_plan = get_gear_progression_planner().get_best_upgrade(
+                    int(base_level or 1), zeny
+                )
+                if _cs2_plan is not None and _cs2_plan.slot_name == "weapon" and _cs2_plan.is_affordable:
+                    _cs2_w = str(_cs2_plan.item_name or _cs2_plan.item_id or "")
+            except Exception:
+                _cs2_w = ""
             actions.append(HeuristicAction(
-                kind="command", command="buy 1201 1",
+                kind="command", command=f"buy weapon 1" if not _cs2_w else f"buy {_cs2_w} 1",
                 confidence=0.99, domain="economy",
-                reason="Cold start step 2 - buy Knife",
+                reason="Cold start step 2 - buy starter weapon" + (f" ({_cs2_w})" if _cs2_w else " (best affordable)"),
             ))
             actions.append(HeuristicAction(
-                kind="command", command="equip 1201",
+                kind="command", command=f"equip weapon" if not _cs2_w else f"equip {_cs2_w}",
                 confidence=0.99, domain="economy",
-                reason="Cold start step 2 - equip Knife",
+                reason="Cold start step 2 - equip starter weapon",
             ))
         else:
             service._cold_start_step[_cs_key] = 3

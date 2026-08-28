@@ -3880,10 +3880,17 @@ class HeuristicService:
             if _audit_has_potions and _audit_zeny >= 50:
                 # Have potions — return to hunt
                 # ROUTE LOOP PREVENTION: only send move if bot isn't already at portal
+                # RULE.md: portal point from the authoritative game_data table
+                # (town_portal), never inline coords.
+                try:
+                    from ai_sidecar.game_data import town_portal as _tp
+                    _portal_x, _portal_y = _tp(_audit_map)
+                except Exception:
+                    _portal_x, _portal_y = 0, 0
                 _audit_pos = signals.get("position", {}) or {}
                 _audit_px = _audit_pos.get("x", 0) or 0
                 _audit_py = _audit_pos.get("y", 0) or 0
-                _audit_dist = ((_audit_px - 367)**2 + (_audit_py - 205)**2)**0.5
+                _audit_dist = ((_audit_px - _portal_x)**2 + (_audit_py - _portal_y)**2)**0.5
                 if _audit_dist < 5:
                     # Already at portal - just enable auto mode
                     actions.append(HeuristicAction(
@@ -4144,11 +4151,21 @@ class HeuristicService:
             _audit_last_force = self._last_force_return.get(bot_id, 0)
             if _audit_now - _audit_last_force > 120:  # 2 min cooldown
                 self._last_force_return[bot_id] = _audit_now
-                actions.append(HeuristicAction(
-                    kind="command", command="move 367 205",
-                    confidence=0.99, domain="emergency",
-                    reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
-                ))
+                # RULE.md: return to the town portal (authoritative game_data),
+                # never inline coords.
+                try:
+                    from ai_sidecar.game_data import town_portal, parent_town
+                    _rt_town = parent_town(_audit_map)
+                    _rt_x, _rt_y = town_portal(_rt_town)
+                except Exception:
+                    _rt_town, _rt_x, _rt_y = "", 0, 0
+                _rt_cmd = f"move {_rt_town} {_rt_x} {_rt_y}" if _rt_town else ""
+                if _rt_cmd:
+                    actions.append(HeuristicAction(
+                        kind="command", command=_rt_cmd,
+                        confidence=0.99, domain="emergency",
+                        reason=f"Force return - no potions, no weapon, {_audit_zeny}z available",
+                    ))
 
         # ── RETURN-TO-FARM AFTER RESTOCK (COMPLETED per completeness mandate) ──
         # The inverse of force-return: a bot that went to town to restock (now HAS

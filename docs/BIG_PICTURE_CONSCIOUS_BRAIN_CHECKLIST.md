@@ -219,3 +219,10 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - kafra_teleport 2x return "prontera" -> parent_town
 - progression.py buy 1201 1 (Knife) — the cold-start step-2 knife; gear planner is AGNOSTIC (get_best_upgrade) but the FALLBACK is hardcoded — fix next
 - Tests: 20 affected pass; full suite running
+
+## B13 (2026-08-28) — ROUND 3 AGNOSTICIZATION (portal coords + starter weapon)
+
+- game_data.py: TOWN_PORTALS table + town_portal() (izlude 367,205 etc. — RO geography, single authoritative table)
+- heuristic_service 2x inline portal coords (move 367 205) -> town_portal(parent_town(map)); empty-guarded
+- progression.py _cold_step2: hardcoded buy 1201 1 / equip 1201 (Knife) -> AGNOSTIC gear planner (get_best_upgrade) / generic buy weapon; base_level param threaded
+- 30 affected tests pass; full suite 430 green
