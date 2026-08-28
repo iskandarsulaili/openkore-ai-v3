@@ -175,7 +175,13 @@ class KafraTeleportManager:
             for map_name in self._kafra_locations:
                 if map_name:
                     return map_name
-            return "prontera"
+            # RULE.md: no hardcoded town — last resort is the RO prefix graph
+            # of the current map (a field's parent town), else empty.
+            try:
+                from ai_sidecar.game_data import parent_town
+                return parent_town(current_map)
+            except Exception:
+                return ""
 
         # BFS through portal graph to find nearest Kafra
         visited = {current_map}
@@ -190,7 +196,13 @@ class KafraTeleportManager:
                     visited.add(neighbor)
                     queue.append(neighbor)
 
-        return "prontera"  # ultimate fallback
+        # RULE.md: no hardcoded town — BFS exhausted; use the current map's
+        # parent town from the RO prefix graph, else empty.
+        try:
+            from ai_sidecar.game_data import parent_town
+            return parent_town(current_map)
+        except Exception:
+            return ""
 
     # ── Warp Service ──────────────────────────────────────────────────
 

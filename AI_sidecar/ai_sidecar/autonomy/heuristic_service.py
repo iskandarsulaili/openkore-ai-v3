@@ -186,17 +186,43 @@ CLASS_STAT_BUILDS: dict[str, list[tuple[str, int]]] = {
 }
 
 # ── Job change NPC locations ──
-JOB_CHANGE_NPCS: dict[str, tuple[str, int, int]] = {
-    "novice": ("prontera", 160, 191),   # Archer Guild
-    "archer": ("prontera", 160, 191),    # Bowman Guild
-    "thief": ("prontera", 231, 38),      # Thief Guild
-    "acolyte": ("prontera", 200, 170),   # Acolyte Guild (approximate)
-    "mage": ("prontera", 180, 150),      # Mage Guild (approximate)
-    "swordman": ("prontera", 140, 120),  # Swordman Guild (approximate)
-    "merchant": ("prontera", 120, 200),  # Merchant Guild (approximate)
-}
+# ── Job-change guild NPCs ──
+# RULE.md: NO hardcoded server-specific locations. The authoritative source is
+# the core's tables/job_change_locations.txt (loaded once, agnostic); the
+# learned server_solutions store is the runtime fallback. NEVER a literal dict.
+JOB_CHANGE_NPCS: dict[str, tuple[str, int, int]] = {}
+try:
+    from ai_sidecar.game_data import load_job_change_locations
+    for _j, _v in load_job_change_locations().items():
+        JOB_CHANGE_NPCS[_j] = (_v["map"], _v["x"], _v["y"])
+except Exception:
+    JOB_CHANGE_NPCS = {}
 
-# ── Bot role assignments ──
+_CITY_MAPS: list[str] = []
+try:
+    from ai_sidecar.game_data import load_city_maps
+    _CITY_MAPS = load_city_maps()
+except Exception:
+    _CITY_MAPS = []
+
+
+def _is_city_map(map_name: str) -> bool:
+    """Agnostic city check: the map IS one of the core's tables/cities.txt
+    entries (game fact, same on every RO server) or a city prefix variant
+    (e.g. prt_in/prontera -> prontera). Never a hardcoded literal (RULE.md)."""
+    _m = (map_name or "").strip().lower().replace(".gat", "")
+    if not _m:
+        return False
+    if _m in _CITY_MAPS:
+        return True
+    # city prefix variant: the map's short prefix matches a city's prefix
+    _mpref = _m.split("_")[0]
+    for _c in _CITY_MAPS:
+        _c = _c.lower().replace(".gat", "")
+        _cpref = _c.split("_")[0]
+        if _mpref and _mpref == _cpref:
+            return True
+    return False
 BOT_ROLES: dict[str, str] = {
     # Dynamic: first bot in all_bots is leader, rest are dps
 }
@@ -3053,7 +3079,7 @@ class HeuristicService:
         # Step 4: Return to hunting map with weapon + potions — cold start complete
         # Define map check vars before use (config audit section defines them later)
         _cs_map = signals.get("map", "") or ""
-        _cs_in_town = any(x in _cs_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+        _cs_in_town = _is_city_map(_cs_map)
         _cs_in_hunting = any(x in _cs_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
         # Use stable key based on character name only (not account prefix)
         _cs_stable_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
@@ -3523,7 +3549,7 @@ class HeuristicService:
         # MUST run before state-specific returns to ensure config is always applied
         _audit_map = signals.get("map", "") or ""
         _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
-        _audit_is_town = any(x in _audit_map for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+        _audit_is_town = _is_city_map(_audit_map)
         # ── COLD-START POTION ECONOMY (O3, runs for ALL bots incl. level 1-2) ──
         # A low-level bot that can't buy potions runs dry and flees/wanders to town. Point the
         # buyAuto potion at the TOWN shop and enable sellAuto so loot funds the potions. The
@@ -3721,7 +3747,16 @@ class HeuristicService:
                 _audit_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
                 _audit_weight = float(signals.get("weight_ratio", 0.0) or 0.0)
                 _audit_map_low = str(signals.get("map", "") or "").lower()
-                _audit_on_farm = any(x in _audit_map_low for x in ["prt_fild08", "prt_fild08c", "prt_fild05"])
+                # RULE.md: farm-map check must use the LEARNED farm_map (the
+                # bot's actual EXP-yielding map), never hardcoded map literals.
+                _learned_farm = ""
+                try:
+                    _fs = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
+                    if _fs is not None and hasattr(_fs, "get"):
+                        _learned_farm = str(_fs.get("farm_map", None) or "").lower()
+                except Exception:
+                    _learned_farm = ""
+                _audit_on_farm = bool(_learned_farm) and _learned_farm in _audit_map_low
                 _real_emergency = (_audit_hp < 0.30) or (_audit_weight > 0.70)
                 if _real_emergency and not _audit_on_farm:
                     # Only emergency-return when NOT on a farm map (a farm bot should restock
@@ -4107,11 +4142,18 @@ class HeuristicService:
             _audit_last_job_change = self._last_job_change_attempt.get(bot_id, 0)
             if _audit_now - _audit_last_job_change > 60:  # 1 min cooldown
                 self._last_job_change_attempt[bot_id] = _audit_now
-                # Route to job change NPC in Prontera
-                _audit_job_npc = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
+                # Route to a job-change guild — from the core tables (agnostic):
+                # the novice (starting job) changes to ANY 1st-class; use the
+                # first guild in the table as the default destination.
+                _jc_npcs = JOB_CHANGE_NPCS
+                _audit_job_npc = (_jc_npcs.get("novice")
+                                  or next(iter(_jc_npcs.values()), ()) if _jc_npcs else ())
+                if not _audit_job_npc:
+                    return None
                 _audit_job_map, _audit_job_x, _audit_job_y = _audit_job_npc
                 if _audit_map != _audit_job_map:
-                    # Not in Prontera — return to town first
+                    # Not at the guild — return to town first (route via the
+                    # learned safe_town when known, else skip the pin)
                     actions.append(HeuristicAction(
                         kind="command", command="move 367 205",
                         confidence=0.99, domain="emergency",
@@ -4135,7 +4177,7 @@ class HeuristicService:
             # Set ai auto FIRST so the bot starts moving immediately
             # Skip during cold start step 0 — pipeline uses ai manual + move for portal walk
             _cs_map_str = str(signals.get("map", ""))
-            _cs_in_town_str = any(x in _cs_map_str for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+            _cs_in_town_str = _is_city_map(_cs_map_str)
             _cs_z = int(signals.get("zeny", 0) or 0)
             _cs_has_weapon = bool(signals.get("weapon", {}).get("id", 0))
             if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
@@ -4151,7 +4193,7 @@ class HeuristicService:
                 "Cold start - set chase distance")
             # Only enable attack if bot has a weapon OR is in town (not pipeline step 0)
             _cs_map_str = str(signals.get("map", ""))
-            _cs_in_town_str = any(x in _cs_map_str for x in ["prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude"])
+            _cs_in_town_str = _is_city_map(_cs_map_str)
             _cs_z = int(signals.get("zeny", 0) or 0)
             _cs_has_weapon = bool(signals.get("weapon", {}).get("id", 0))
             if _cs_has_weapon or _cs_in_town_str or _cs_z >= 50:
@@ -4732,8 +4774,10 @@ class HeuristicService:
                 # Default to Archer (most classes can be reached from Prontera)
                 # The user can change this per-bot via job selection config
                 _jc_target_class = "archer"
-                _jc_npc = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
-                _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc
+                _jc_npcs2 = JOB_CHANGE_NPCS
+                _jc_npc = (_jc_npcs2.get("novice")
+                           or next(iter(_jc_npcs2.values()), ()) if _jc_npcs2 else ())
+                _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc or ("", 0, 0)
                 _jc_talk_seq = JOB_CHANGE_TALK.get("archer", [
                     "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"
                 ])
@@ -4745,8 +4789,12 @@ class HeuristicService:
                 if _jc_2_1_data:
                     _jc_npc_map, _jc_npc_x, _jc_npc_y, _jc_talk_seq = _jc_2_1_data
                 else:
-                    # Fallback if 2-1 data not found
-                    _jc_npc_map, _jc_npc_x, _jc_npc_y = ("prontera", 160, 191)
+                    # Fallback if 2-1 data not found — first guild from the
+                    # core tables (agnostic), never a hardcoded literal.
+                    _jc_npcs3 = JOB_CHANGE_NPCS
+                    _jc_fb = (_jc_npcs3.get(_jc_job_lower)
+                              or next(iter(_jc_npcs3.values()), ()) if _jc_npcs3 else ())
+                    _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_fb or ("", 0, 0)
                     _jc_talk_seq = ["talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]
                 _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
                 logger.info(f"[job_change] {bot_id}: {_jc_job_lower} job Lv{_jc_job_level} -> {_jc_target_class} (2-1)")
@@ -5507,14 +5555,27 @@ class HeuristicService:
                     except Exception:
                         _safe_town_buy = ""
                     if not _safe_town_buy:
-                        _safe_town_buy = "prontera"
-                    # The buy NPC is the town Tool Dealer (prt_in 126 75 is Prontera's shop area).
-                    _buy_npc_coords = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"set buyAuto_npc {_buy_npc_coords}",
-                        confidence=0.99, domain="economy",
-                        reason=f"Point potion buy at the town shop ({_safe_town_buy})",
-                    ))
+                        # RULE.md: safe_town comes from the LEARNED store; with
+                        # nothing learned, skip the buy-NPC pin (buyAuto runs
+                        # near any shop; reflex covers sustain).
+                        _safe_town_buy = ""
+                    # The buy NPC is the LEARNED shop (server_solutions shop_npc,
+                    # observed from the bot's own purchases) — never a hardcoded
+                    # town->shop dict (RULE.md).
+                    _shop_npc2 = ""
+                    try:
+                        _ss2 = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
+                        if _ss2 is not None and hasattr(_ss2, "get"):
+                            _shop_npc2 = str(_ss2.get("shop_npc", None) or "")
+                    except Exception:
+                        _shop_npc2 = ""
+                    _buy_npc_coords = _shop_npc2
+                    if _buy_npc_coords:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"set buyAuto_npc {_buy_npc_coords}",
+                            confidence=0.99, domain="economy",
+                            reason=f"Point potion buy at the learned town shop ({_safe_town_buy})",
+                        ))
                 except Exception:
                     pass
                 # HP MANAGEMENT: Sit when low HP to prevent death (hunting map only)

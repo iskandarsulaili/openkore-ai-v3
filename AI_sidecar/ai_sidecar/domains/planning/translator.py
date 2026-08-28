@@ -67,6 +67,15 @@ _EMIT_COOLDOWN: dict[str, float] = {
 _DEFAULT_COOLDOWN = 120.0
 
 
+def _parent_city(map_name: str) -> str:
+    """Derive a field's parent town from the RO prefix graph (game_data)."""
+    try:
+        from ai_sidecar.game_data import parent_town as _pt
+        return _pt(map_name)
+    except Exception:
+        return ""
+
+
 class TaskCommandTranslator:
     """Translate scheduler task intents into safe, real actions."""
 
@@ -173,14 +182,19 @@ class TaskCommandTranslator:
             # to town every 10 min for nothing.
             if not signals.get("inventory_full"):
                 return None
-            return "move prontera"
+            # RULE.md: town = the field's parent city, derived from the core's
+            # tables/cities.txt (map prefix graph), never a hardcoded literal.
+            _town = _parent_city(cur_map)
+            return f"move {_town}" if _town else None
 
         if cmd == "buy_pots":
             cur_map = str(signals.get("map", "") or "").lower()
             # Only buy while in town (never mid-field)
             if not cur_map or "fild" in cur_map or "int_land" in cur_map:
                 return None
-            return "buy 501 30"
+            # RULE.md: generic potion form (OpenKore resolves the best heal
+            # item from its tables) — never a hardcoded server item id.
+            return "buy potion 30"
 
         # Unknown semantic command → observe, don't emit
         return None

@@ -539,7 +539,7 @@ class WoEIntelligence:
         if my_hp_pct < 0.30:
             actions.append(HeuristicAction(
                 kind="command",
-                command="use 504",  # White Potion
+                command="use potion",  # RULE.md: generic heal item (OpenKore resolves from tables)
                 confidence=0.99,
                 domain="pvp",
                 reason=f"WoE HP low ({my_hp_pct:.0%}) — using potion",
@@ -667,7 +667,7 @@ class WoEIntelligence:
         if hp_ratio < 0.30:
             actions.append(HeuristicAction(
                 kind="command",
-                command="use 501",
+                command="use potion",
                 confidence=0.95,
                 domain="pvp",
                 reason=f"WoE HP low ({hp_ratio:.0%}) — healing",

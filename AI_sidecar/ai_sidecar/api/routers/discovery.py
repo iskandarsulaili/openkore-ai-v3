@@ -160,12 +160,15 @@ async def determine_heal_strategy(req: HealStrategyRequest) -> HealStrategyRespo
     if shops_data and req.map:
         for line in shops_data:
             parts = line.split(",")
-            if len(parts) >= 4 and "501:" in line:  # 501 = Red Potion
+            # RULE.md: don't hardcode a potion id — any heal item in the shop
+            # line qualifies (the generic 'buy potion' form resolves the best
+            # heal item via OpenKore's game tables, server-agnostic).
+            if len(parts) >= 4 and any(k in line for k in ("potion", "Potion", "berry", "fruit", "apple", "grape", "milk")):
                 shop_map = parts[0]
                 if shop_map == req.map or True:  # portal check would go here
                     return HealStrategyResponse(
                         strategy="buy_from_npc",
-                        command="buy 501 30",
+                        command="buy potion 30",
                         target_map=shop_map,
                         confidence=0.7,
                     )

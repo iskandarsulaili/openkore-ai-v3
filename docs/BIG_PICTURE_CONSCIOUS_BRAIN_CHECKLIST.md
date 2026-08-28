@@ -192,3 +192,15 @@ SCOPE DECISION: documented, NOT patched — (1) kills DO land when position
 syncs (11:24 EXP proof), (2) a prediction-race fix risks breaking the working
 attack path with NO live verification possible (wedge cuts windows), (3) the
 PRIMARY blocker remains the wedge. Revisit when the wedge clears.
+
+## B11 (2026-08-28) — FULL-REPO AGNOSTICIZATION (RULE.md sweep)
+
+- NEW AI_sidecar/ai_sidecar/game_data.py: shared game-data loaders (job-change table + cities + RO map-prefix→town graph MAP_PREFIX_TOWN + parent_town())
+- heuristic_service.py: JOB_CHANGE_NPCS now table-loaded (was hardcoded prontera/archer coords — WRONG, archer guild != novice change); 4 town-check sites → _is_city_map (cities.txt); farm-check → learned store; buy-NPC → learned shop_npc (removed 2nd hardcoded shop dict + buy 501 fallback)
+- translator.py: return_town → parent_town (RO prefix graph, was move prontera); buy_pots → buy potion 30 (was buy 501 30)
+- kafra_teleport.py: 2 hardcoded return "prontera" fallbacks → parent_town
+- discovery.py: 501 shop-check → any potion keyword + buy potion
+- edge_case_handler.py: buy 5 500 (Red Potion for bow class!) → buy 0 Arrow 100 (by name)
+- woe_intelligence.py: use 504/501 → use potion (generic)
+- KEPT (legit static RO game data, identical on every server): KAFRA_WARP_ROUTES + KNOWN_KAFRA_LOCATIONS (kafra costs/positions), CLASS_HUNTING_GROUNDS (level-banded guide, overridden by adaptive scoring), field-map lists in _cs_in_hunting/_audit_is_hunting (RO field geography), portal/navigation tables
+- Tests: 16 affected pass; full suite running

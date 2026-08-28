@@ -552,7 +552,9 @@ class EdgeCaseHandler:
 
         return self._build_proposal(
             bot_id=bot_id,
-            command="buy 5 500",
+            # RULE.md: buy by ITEM NAME (OpenKore resolves names against its
+            # game tables — server-agnostic), never a hardcoded server item id.
+            command="buy 0 Arrow 100",
             priority_tier=ActionPriorityTier.tactical,
             reason=f"Bow class ({job}) with 0 arrows",
             ttl_seconds=120,
