@@ -32,7 +32,21 @@ class ProgressionPlannerProfile(BehaviorProfile):
         if signals.get("job_change_available"):
             job_change_npc = signals.get("job_change_npc")
             if job_change_npc:
-                return {"kind": "job_change", "command": f"move {job_change_npc}", "confidence": 0.9, "reason": "Job change available, proceeding"}
+                # job_change_npc is now "move <map> <x> <y>" — emit the move AND
+                # the talknpc so the bot actually talks to the NPC and changes job
+                # (self-aware: meet the requirement -> act immediately).
+                _parts = job_change_npc.split()
+                _move_cmd = job_change_npc
+                _talk_cmd = ""
+                if len(_parts) >= 4 and _parts[0] == "move":
+                    _talk_cmd = f"talknpc {_parts[2]} {_parts[3]}"
+                return {
+                    "kind": "job_change",
+                    "command": _move_cmd,
+                    "metadata": {"followup_command": _talk_cmd} if _talk_cmd else {},
+                    "confidence": 0.9,
+                    "reason": "Job change available, proceeding",
+                }
 
         equipment = signals.get("equipment", [])
         level = signals.get("level", 1)

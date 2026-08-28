@@ -3212,6 +3212,12 @@ sub getMeetingPositionCandidateSpots {
 
 				my $dist_to_spot = blockDistance($realMyPos, \%spot);
 				next if $dist_to_spot > $max_path_dist;
+				# Never choose a spot at (or within 1 block of) the actor's current
+				# position: routing there is a 0-distance/1-block no-op that leaves
+				# the bot standing (attacking out of range -> "in-range hit timeout"
+				# miss loop) when the target's predicted path ends at the actor, and
+				# position drift makes the calc believe a 1-block move is real.
+				next if $dist_to_spot < 2;
 
 				$seen{$key} = {
 					x => $x,

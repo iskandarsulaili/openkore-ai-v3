@@ -3762,6 +3762,35 @@ sub _poll_next_action {
 			}
 
 	my $poll_id = _trace_id();
+
+	# ── FOLLOWUP EXECUTION (self-aware multi-step actions) ──
+	# Some actions carry a followup in metadata (e.g. job_change = move THEN
+	# talknpc). The bridge processes ONE action per poll, so a followup is
+	# stored here and executed on the NEXT poll before fetching a new action.
+	my $_followup = $::aiSidecar_followup{_bot_id()};
+	if ($_followup) {
+		delete $::aiSidecar_followup{_bot_id()};
+		my ($_fup_cmd, $_fup_meta, $_fup_action_id) = @{$_followup};
+		debug "[aiSidecarBridge] executing followup command: $_fup_cmd (action $_fup_action_id)\n", 'aiSidecarBridge', 1;
+		my ($_fs, $_fr, $_fm) = _execute_action($_fup_action_id, {
+			action_id => $_fup_action_id,
+			kind => 'command',
+			command => $_fup_cmd,
+			metadata => $_fup_meta,
+		});
+		push @ack_queue, {
+			queued_at => _now_ms(),
+			action_id => $_fup_action_id,
+			poll_id => $poll_id,
+			success => $_fs,
+			result_code => $_fr,
+			message => $_fm,
+			observed_latency_ms => 0,
+			kind => 'command',
+		};
+		return;
+	}
+
 	my $resp = _http_post_json('/v1/actions/next', {
 		meta => _meta(_bot_id()),
 		poll_id => $poll_id,
@@ -4314,6 +4343,17 @@ sub _execute_action {
 	my $latency_ms = _now_ms() - $started;
 	my $event_name = $kind eq 'macro_reload' ? 'macro_reload_executed' : $kind eq 'config_reload' ? 'config_reload_executed' : 'action_executed';
 	my $category = $kind eq 'macro_reload' ? 'macro' : $kind eq 'config_reload' ? 'config' : 'action';
+
+	# ── STORE FOLLOWUP for the next poll (multi-step self-aware actions) ──
+	# e.g. job_change: metadata.followup_command = "talknpc <x> <y>" — executed
+	# after the move lands. Stored only on SUCCESS (a failed move means the bot
+	# is not at the target; retry the primary command instead).
+	if ($success && ref($metadata) eq 'HASH' && $metadata->{followup_command}) {
+		my $_fup_cmd = $metadata->{followup_command};
+		debug "[aiSidecarBridge] storing followup for action $action_id: $_fup_cmd\n", 'aiSidecarBridge', 1;
+		$::aiSidecar_followup{_bot_id()} = [$_fup_cmd, $metadata, $action_id];
+	}
+
 	push @ack_queue, {
 		queued_at => _now_ms(),
 		action_id => $action_id,

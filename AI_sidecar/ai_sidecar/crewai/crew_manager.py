@@ -38,12 +38,12 @@ _AGENT_ROSTERS: dict[str, list[str]] = {
 
 
 def _resolve_job_change_npc(current_job: str) -> str:
-    """Resolve job change NPC location from tables file. Returns 'prontera' as fallback."""
+    """Resolve job change NPC location from tables file. Returns 'move prontera' as fallback."""
     try:
         _tables_dir = Path(__file__).parent.parent.parent.parent / "tables"
         _jc_path = _tables_dir / "job_change_locations.txt"
         if not _jc_path.exists():
-            return "prontera"
+            return "move prontera"
         _text = _jc_path.read_text()
         # Normalize job name for matching
         _job_key = current_job.strip().lower().replace(" ", "_")
@@ -56,7 +56,8 @@ def _resolve_job_change_npc(current_job: str) -> str:
             if len(_parts) >= 3 and _parts[0].strip().lower().replace(' ', '_') == _job_key:
                 _map = _parts[1].strip()
                 _coords = _parts[2].strip()
-                return f"move {_map}"
+                # Full location: map + coords so the bot can move there AND talknpc.
+                return f"move {_map} {_coords}"
         # If current job is "novice", find first 1st class route as default
         if _job_key in ("novice", "super_novice"):
             for _line in _text.split('\n'):
@@ -68,11 +69,14 @@ def _resolve_job_change_npc(current_job: str) -> str:
                     if 'Class Changes' in _desc or 'Novice' in _parts[0]:
                         # Skip the header row
                         if _parts[0].strip().lower() not in ('target_job',):
-                            _target = _parts[0].strip().lower()
-            return "prontera"
+                            _map = _parts[1].strip()
+                            _coords = _parts[2].strip()
+                            return f"move {_map} {_coords}"
+            return "move prontera"
+        return "move prontera"
     except Exception:
         pass
-    return "prontera"
+    return "move prontera"
 
 
 @dataclass(slots=True)
@@ -244,15 +248,19 @@ class CrewManager:
             command = str(action.get("command", "")).strip()
             recommended_actions = []
             if command:
+                _action_meta = dict(action.get("metadata") or {})
+                _action_meta.setdefault("source", "crewai_strategize")
+                _action_meta.setdefault("profile", best_id)
+                _action_meta.setdefault("kind", str(action.get("kind") or "command"))
                 recommended_actions.append(ActionProposal(
                     action_id=f"crewai-{uuid4().hex[:20]}",
-                    kind="command",
+                    kind=str(action.get("kind") or "command"),
                     command=command[:256],
                     priority_tier=ActionPriorityTier.tactical,
                     created_at=now,
                     expires_at=now + timedelta(seconds=120),
                     idempotency_key=f"crewai:{best_id}:{command}"[:128],
-                    metadata={"source": "crewai_strategize", "profile": best_id},
+                    metadata=_action_meta,
                 ))
             planner_response = PlannerResponse(
                 ok=True,

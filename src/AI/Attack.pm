@@ -1004,8 +1004,33 @@ sub main {
 				noMapRoute => 1
 			);
 		} else {
-			message T("Unable to calculate a meetingPosition to target, dropping target\n"), "ai_attack";
-			giveUp($args, $ID, 1);
+			# No meeting spot calculable (e.g. target's predicted path ends at the
+			# actor, so every candidate was the actor's own cell and got rejected).
+			# Fall back to chasing the target's CURRENT position instead of giving
+			# up — routing to the actor's own cell is a 0-distance no-op that
+			# causes the out-of-range attack miss loop.
+			if ($realMonsterPos && $realMonsterPos->{x} && $realMonsterPos->{y}) {
+				debug TF("[Attack] %s no meeting spot, chasing target to (%d %d)\n", $char, $realMonsterPos->{x}, $realMonsterPos->{y}), 'ai_attack';
+				$args->{move_start} = time;
+				$args->{monsterLastMoveTime} = $target->{time_move};
+				$args->{monsterLastMovePosTo} = { %{$target->{pos_to}} } if $target->{pos_to};
+				$args->{sentApproach} = 1;
+				$char->route(
+					undef,
+					$realMonsterPos->{x},
+					$realMonsterPos->{y},
+					maxRouteTime => $config{'attackMaxRouteTime'},
+					attackID => $ID,
+					avoidWalls => 0,
+					randomFactor => 0,
+					useManhattan => 1,
+					meetingSubRoute => 1,
+					noMapRoute => 1
+				);
+			} else {
+				message T("Unable to calculate a meetingPosition to target, dropping target\n"), "ai_attack";
+				giveUp($args, $ID, 1);
+			}
 		}
 		$found_action = 1;
 	}
