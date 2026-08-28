@@ -3548,10 +3548,21 @@ class HeuristicService:
                     if _potion_buy:
                         self._set_config_once(actions, bot_id, "buyAuto_Red_Potion", _potion_buy, "economy",
                             f"Cold-start potion sustain: {_potion_buy} (from server_solutions DB)")
-                    # Point the buy/sell NPC at the town shop (server-specific, DB-backed).
-                    _town_npc = {"prontera": "prt_in 126 75", "izlude": "izlude 116 92"}.get(_safe_town_buy, f"{_safe_town_buy} 0 0")
-                    self._set_config_once(actions, bot_id, "buyAuto_npc", _town_npc, "economy",
-                        f"Buy potions at {_safe_town_buy} town shop (from server_solutions DB)")
+                    # Point the buy/sell NPC at the town shop — from the LEARNED
+                    # server_solutions store (shop_npc learned by observation),
+                    # NEVER a hardcoded town->coords dict (RULE.md). With no
+                    # learned shop, buyAuto runs when near any shop (reflex
+                    # covers sustain); the store learns the shop on first buy.
+                    _shop_npc = ""
+                    try:
+                        _sss = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
+                        if _sss is not None and hasattr(_sss, "get"):
+                            _shop_npc = str(_sss.get("shop_npc", None) or "")
+                    except Exception:
+                        _shop_npc = ""
+                    if _shop_npc:
+                        self._set_config_once(actions, bot_id, "buyAuto_npc", _shop_npc, "economy",
+                            f"Buy potions at {_safe_town_buy} town shop (learned shop_npc)");
                     self._set_config_once(actions, bot_id, "sellAuto", "1", "economy",
                         "Cold-start: auto-sell loot to fund potions")
         except Exception:
