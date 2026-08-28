@@ -1,5 +1,6 @@
 control/ai_sidecar_macros.txt
 control/ai_sidecar_generated_macros.txt
+control/ai_sidecar_generated_eventmacros.txt
 AI_sidecar/ai_sidecar/skills/.usage.json
 .bot_profiles_stash/
 private/

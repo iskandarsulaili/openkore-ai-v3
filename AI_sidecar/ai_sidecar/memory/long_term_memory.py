@@ -304,10 +304,20 @@ class LongTermMemory:
             # Dedup: skip an identical (category, content) within the last 64
             # entries — the map-visit/store spam came from reconnect cycles
             # re-firing the same event; keeping every duplicate pollutes recall.
+            # ALSO: time-window dedup — same (category, content) within 30 min
+            # is a repeat (reconnect churn), not a new fact. (2026-08-28)
             _key = f"{category}|{content}"
+            _now = datetime.now(timezone.utc)
             for _m in memories[-64:]:
                 if f"{_m.get('category','')}|{_m.get('content','')}" == _key:
                     return True  # already remembered — do not duplicate
+                # time-window: same category+content stored within 30 min
+                try:
+                    _ts = datetime.fromisoformat(_m.get("timestamp", ""))
+                    if (category, content) == (_m.get("category"), _m.get("content")) and (_now - _ts).total_seconds() < 1800:
+                        return True
+                except Exception:
+                    pass
 
             memories.append({
                 "category": category,

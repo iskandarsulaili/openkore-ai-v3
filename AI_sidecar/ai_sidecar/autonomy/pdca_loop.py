@@ -5512,7 +5512,7 @@ class PDCALoop:
                                         category="farming_spot",
                                         content=f"Visited map {_map} at level {_level}",
                                         tags=["map_visit", _map],
-                                        importance=3,
+                                        importance=1,
                                         metadata={"map": _map, "level": _level},
                                     )
                                     # ── DYNAMIC PORTAL DISCOVERY FEED ──
