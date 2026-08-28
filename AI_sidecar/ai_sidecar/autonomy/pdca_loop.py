@@ -9404,6 +9404,9 @@ class PDCALoop:
         _has_potions = False
         _has_weapon = False
         _kills = 0
+        _exp = 0
+        _exp_max = 0
+        _lvl = 0
         _snap_obj: object | None = None
         try:
             _sc = getattr(_rt, "snapshot_cache", None)
@@ -9418,6 +9421,14 @@ class PDCALoop:
                                 else (_raw.get("hp_ratio") or -1.0))
                 _deaths = int(_raw.get("death_count") or 0)
                 _kills = 0  # the bridge has no kill counter; EXP-delta is the proxy
+                _exp = 0
+                _exp_max = 0
+                _lvl = 0
+                _prog = getattr(_snap_obj, "progression", None) or {}
+                if _prog:
+                    _exp = int(getattr(_prog, "base_exp", None) or _raw.get("base_exp") or 0)
+                    _exp_max = int(getattr(_prog, "base_exp_max", None) or 0)
+                    _lvl = int(getattr(_prog, "base_level", None) or 0)
                 _inv = list(getattr(_snap_obj, "inventory_items", None) or [])
                 for _it in _inv:
                     _n = str(getattr(_it, "name", "") or "").lower()
@@ -9447,7 +9458,8 @@ class PDCALoop:
             pass
         _prompt = (
             f"Ragnarok bot {bot_id} is on map {_map}, HP {_hp_pct*100:.0f}%, "
-            f"deaths={_deaths}, kills={_kills}, has_potions={_has_potions}, "
+            f"level={_lvl}, exp={_exp}/{_exp_max}, deaths={_deaths}, "
+            f"has_potions={_has_potions}, "
             f"has_weapon={_has_weapon}. "
             f"THINK DEEP, FROM THE WHOLE PICTURE: before deciding, analyze the SYSTEMIC "
             f"situation — not just this instant. Consider: (1) root cause — WHY is this bot "
