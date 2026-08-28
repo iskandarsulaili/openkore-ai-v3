@@ -54,3 +54,14 @@ patterns go to self-learning/self-improving.
 - F11 death-loop: ALREADY healed (_death_loop_target suppress window).
 - F12 zeny-starvation: covered by F6 reflex potion-fallback (verified live).
 - F14 map-flap: covered by F1 no-progress (map flapping = frozen EXP).
+
+## B5 (2026-08-28) — FULL SURFACE VERIFIED (F1-F16)
+
+- F15 party: party_check/joiner_check emit heal signals (leader/joiner/stuck
+  town states) — LIVE in logs (in_party=False members=[] leader_char=testbot99).
+- F16 in-game flag: bridge 1731 uses REAL network state ($net->getState()==
+  IN_GAME) — not stale.
+- ALL 16 classes: F1✅ F2✅(F1) F3✅ F4✅ F5✅(backoff auto) F6✅ F7✅ F8✅
+  F9✅(gear advisory) F10✅ F11✅ F12✅(F6) F13✅(NEW) F14✅(F1) F15✅ F16✅.
+- Principle honored: DETECT -> HEAL deterministic -> ONLY novel/repeated
+  failures go to self-learning/self-improving (ledger/memory/LLM advisory).
