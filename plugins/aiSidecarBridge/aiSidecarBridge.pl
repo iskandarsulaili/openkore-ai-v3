@@ -2460,6 +2460,8 @@ sub _build_charstatus_payload {
             job        => $char ? (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) : '',
             job_id     => $char ? ($char->{jobID} // 0) : 0,
             base_level => $char ? ($char->{lv} // 0) : 0,
+            base_exp   => $char ? ($char->{exp} // 0) : 0,
+            base_exp_max => $char ? ($char->{exp_max} // 0) : 0,
             job_level  => $char ? ($char->{lv_job} // 0) : 0,
             gender     => $char ? ($char->{sex} // '') : '',
             guild_id   => $char ? _actor_id_from_any($char->{guildID}) : 0,
