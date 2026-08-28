@@ -29,7 +29,27 @@ class _FakeRuntime:
     def __init__(self, llm):
         self.llm_manager = llm
         self.action_queue = _FakeQueue()
-        self._last_snapshot = {"botA": {"map": "prt_fild08c", "hp_ratio": 0.3, "death_count": 3, "kills": 3}}
+        from types import SimpleNamespace
+        _snap = SimpleNamespace(
+            raw={"map": "prt_fild08c", "death_count": 3},
+            position=SimpleNamespace(map="prt_fild08c"),
+            vitals=SimpleNamespace(hp_ratio=0.3),
+            progression=SimpleNamespace(base_exp=100),
+            inventory_items=[],
+            has_weapon_in_inventory=True,
+            observed_at="2026-08-28T00:00:00+00:00",
+        )
+        self.snapshot_cache = SimpleNamespace(get=lambda _b: _snap, latest=lambda: _snap)
+        # store with a REAL learned potion solution (agnostic, not hardcoded)
+        self.server_solutions_store = SimpleNamespace(
+            get=lambda k, d=None: {
+                "potion_solution": "buy 569 30",
+                "safe_town": "prontera",
+                "farm_map": "prt_fild08",
+            }.get(k, d),
+            get_json=lambda k, d=None: ({"buy_command": "buy 569 30", "potion_id": "569"} if k == "potion_solution" else (d or {})),
+            get_origin=lambda k: "learned",
+        )
 
 
 def _make_loop(rt):

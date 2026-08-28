@@ -3544,15 +3544,18 @@ class HeuristicService:
                     except Exception:
                         _potion_buy, _safe_town_buy = "", ""
                     if not _potion_buy:
-                        _potion_buy = "buy 501 30"
+                        # RULE.md: NO hardcoded server-specific item. Empty =
+                        # skip the buy config; the reflex potion-fallback covers
+                        # sustain until the store learns the real potion.
+                        _potion_buy = ""
                     if _potion_buy:
                         self._set_config_once(actions, bot_id, "buyAuto_Red_Potion", _potion_buy, "economy",
                             f"Cold-start potion sustain: {_potion_buy} (from server_solutions DB)")
                     # Point the buy/sell NPC at the town shop — from the LEARNED
                     # server_solutions store (shop_npc learned by observation),
-                    # NEVER a hardcoded town->coords dict (RULE.md). With no
-                    # learned shop, buyAuto runs when near any shop (reflex
-                    # covers sustain); the store learns the shop on first buy.
+                    # NEVER a hardcoded town->coords dict (RULE.md). The potion
+                    # config above is INDEPENDENT of the shop (buyAuto runs near
+                    # any shop); the shop pin only narrows the target.
                     _shop_npc = ""
                     try:
                         _sss = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
