@@ -42,3 +42,13 @@ healed → verified.
 - B3: wire no-progress detection (C2) + escalation
 - B4: ack/verify loop (D4) + learn (D5)
 - B5: tests + live verify + checklist mark
+
+## B2 (2026-08-28) — LIVE BUG: PROFILE/FULL KEY MISMATCH (stall detector DEAD)
+
+- Found: PDCA loop resolves bot_id = PROFILE key (TestBotA:testbot99) but
+  snapshot_cache keys by meta.bot_id (FULL "Local rAthena AI World:testbot99")
+  -> `snapshot_missing: no snapshot available` -> _remember_significant_deltas
+  returned early -> memory/ledger/stall ALL dead (same class as _last_snapshot).
+- FIXED: resilient lookup in _remember_significant_deltas — exact get() first,
+  then cache.latest() fallback (single-bot authoritative snapshot).
+- TEST: test_stall_detector_resolves_profile_key_mismatch_via_latest (7/7 pass).

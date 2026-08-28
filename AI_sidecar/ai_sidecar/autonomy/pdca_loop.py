@@ -9714,6 +9714,31 @@ class PDCALoop:
         return _key
 
     def _remember_significant_deltas(self, bot_id: str) -> None:
+        # ── RESILIENT SNAPSHOT LOOKUP ──
+        # bot_id here is the PROFILE key (TestBotA:testbot99) from
+        # _resolve_cost_gate_bot_id, but snapshot_cache is keyed by the FULL
+        # server key (Local rAthena AI World:testbot99). Try exact first, then
+        # suffix/contains scan so the deltas + stall detector always see data.
+        _snap_obj = None
+        try:
+            _cache = getattr(self._runtime, "snapshot_cache", None)
+            if _cache is not None:
+                _get = getattr(_cache, "get", None)
+                if _get:
+                    _snap_obj = _get(bot_id) or None
+                if _snap_obj is None:
+                    # Key mismatch: bot_id is the PROFILE key (TestBotA:testbot99)
+                    # while snapshot_cache is keyed by meta.bot_id (the FULL
+                    # "Local rAthena AI World:testbot99"). When only ONE bot is
+                    # live, latest() is the authoritative single snapshot.
+                    _latest = getattr(_cache, "latest", None)
+                    if _latest is not None:
+                        try:
+                            _snap_obj = _latest() or None
+                        except Exception:
+                            _snap_obj = None
+        except Exception:
+            pass
         from datetime import datetime, timezone
 
         if self._runtime is None:
@@ -9725,14 +9750,16 @@ class PDCALoop:
         # ingest fills). `_last_snapshot` is NEVER assigned anywhere in the
         # codebase — reading it always yielded {} so this whole PAST layer was
         # silently dead. Use the bridge's raw dict (all fields incl. death_count)
-        # with the typed model fields as fallbacks.
-        _snap_obj = None
-        try:
-            _sc = getattr(self._runtime, "snapshot_cache", None)
-            if _sc is not None:
-                _snap_obj = _sc.get(bot_id)
-        except Exception:
-            _snap_obj = None
+        # with the typed model fields as fallbacks. NOTE: the resilient lookup
+        # above already resolved _snap_obj across the profile/full key mismatch;
+        # only fetch here if it came back empty.
+        if _snap_obj is None:
+            try:
+                _sc = getattr(self._runtime, "snapshot_cache", None)
+                if _sc is not None:
+                    _snap_obj = _sc.get(bot_id)
+            except Exception:
+                _snap_obj = None
         if _snap_obj is None:
             return
         _raw = dict(getattr(_snap_obj, "raw", None) or {})

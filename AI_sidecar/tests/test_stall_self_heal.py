@@ -123,3 +123,28 @@ def test_stall_detector_arms_timestamp_on_exp_change():
     # exp changed -> _exp_change_ts re-armed to now; no heal
     assert len(rt.action_queue.enqueued) == 0
     assert prev["_exp_change_ts"] > time.time() - 5
+
+
+def test_stall_detector_resolves_profile_key_mismatch_via_latest():
+    """bot_id is the PROFILE key but snapshot_cache keys by meta.bot_id (FULL
+    key). get(profile) misses -> latest() fallback must resolve the snapshot
+    so the stall detector still fires (the live bug: snapshot_missing logs)."""
+    from ai_sidecar.autonomy.pdca_loop import PDCALoop
+    rt = MagicMock()
+    rt.action_queue = _FakeAQ()
+    rt.long_term_memory = _FakeLTM()
+    rt.server_solutions_store = None
+    rt.dynamic_portal_discovery = None
+    # exact get(profile) MISSES; latest() returns the full-key snapshot
+    rt.snapshot_cache.get.return_value = None
+    rt.snapshot_cache.latest.return_value = _snap(100, "prt_fild05", 30.0)
+    o = PDCALoop.__new__(PDCALoop)
+    o._runtime = rt
+    o._stall_no_progress_min = 5
+    o._log = MagicMock()
+    prev = {"_seeded": True, "deaths": 0, "exp": 100, "weapon": True,
+            "map": "prt_fild05", "_exp_change_ts": time.time() - 360}
+    with patch.object(o, "_memory_snapshot_key", return_value=prev):
+        o._remember_significant_deltas("TestBotA:testbot99")
+    assert len(rt.action_queue.enqueued) == 1, "profile-key miss must fall back to latest() and fire"
+    assert rt.snapshot_cache.latest.called
