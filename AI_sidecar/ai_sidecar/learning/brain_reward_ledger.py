@@ -138,6 +138,45 @@ class BrainRewardLedger:
         self._ledger_dir.mkdir(parents=True, exist_ok=True)
 
     # ── API ────────────────────────────────────────────────────────
+    def load(self) -> None:
+        """Replay persisted JSONL into in-memory scores (idempotent).
+
+        The ledger was WRITE-ONLY: after a sidecar restart the scores/observ-
+        ability/LLM-feedback all reset to empty even though the JSONL holds
+        the full history. Load replays today's file(s) so the brain-rewards
+        endpoint + context_for_llm show the REAL track record across restarts.
+        """
+        with self._lock:
+            if getattr(self, "_loaded", False):
+                return
+            self._loaded = True
+            if not self._ledger_dir.exists():
+                return
+            for _f in sorted(self._ledger_dir.glob("*.jsonl")):
+                try:
+                    with open(_f) as _fh:
+                        for _line in _fh:
+                            _line = _line.strip()
+                            if not _line:
+                                continue
+                            try:
+                                _row = json.loads(_line)
+                            except Exception:
+                                continue
+                            _bid = _row.get("bot_id")
+                            _br = _row.get("brain")
+                            _ev = _row.get("event")
+                            if not _bid or not _br or _ev not in _EVENT_DELTA:
+                                continue
+                            scores = self._scores.setdefault(_bid, {})
+                            _s = scores.get(_br)
+                            if _s is None:
+                                _s = BrainScore(bot_id=_bid, brain=_br)
+                                scores[_br] = _s
+                            _s.apply(_ev, _EVENT_DELTA[_ev], _row.get("detail", ""))
+                except Exception:
+                    logger.debug("brain_reward_load_failed", exc_info=True)
+
     def record(self, bot_id: str, brain: str, event: str, detail: str = "") -> None:
         """Credit/punish a brain for an outcome event (agnostic event names)."""
         if brain not in BRAINS:
@@ -145,6 +184,7 @@ class BrainRewardLedger:
         if event not in _EVENT_DELTA:
             logger.debug("brain_reward_unknown_event brain=%s event=%s", brain, event)
             return
+        self.load()  # replay persisted history BEFORE adding this row (idempotent)
         with self._lock:
             scores = self._scores.setdefault(bot_id, {})
             score = scores.get(brain)
@@ -168,6 +208,7 @@ class BrainRewardLedger:
             logger.debug("brain_reward_write_failed", exc_info=True)
 
     def scores(self, bot_id: str) -> list[BrainScore]:
+        self.load()  # replay persisted JSONL first (idempotent)
         with self._lock:
             return list(self._scores.get(bot_id, {}).values())
 
@@ -193,6 +234,10 @@ class BrainRewardLedger:
         """
         with self._lock:
             score = self._scores.get(bot_id, {}).get(brain)
+        if score is None:
+            self.load()  # replay persisted history before judging a brain
+            with self._lock:
+                score = self._scores.get(bot_id, {}).get(brain)
         if score is None or score.events < 3:
             return 1.0
         win = score.win_rate

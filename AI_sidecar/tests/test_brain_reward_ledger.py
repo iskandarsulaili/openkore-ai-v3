@@ -87,3 +87,26 @@ def test_singleton():
     a = get_brain_reward_ledger()
     b = get_brain_reward_ledger()
     assert a is b
+
+
+def test_ledger_loads_persisted_history_across_restart():
+    """A NEW ledger instance (simulating a sidecar restart) must replay the
+    JSONL so the brain-rewards observability + LLM feedback survive restarts."""
+    tmp = Path(tempfile.mkdtemp(prefix="brain_reward_restart_"))
+    l1 = BrainRewardLedger(workspace_root=tmp)
+    l1.record("botR", "conscious_llm", REWARD_KILL, "map=prt_fild08")
+    l1.record("botR", "conscious_llm", REWARD_KILL, "map=prt_fild08")
+    l1.record("botR", "heuristic", PUNISH_DEATH, "map=prt_fild08")
+
+    # new instance = "restart": empty in-memory, must replay from JSONL
+    l2 = BrainRewardLedger(workspace_root=tmp)
+    scores = l2.scores("botR")
+    by_brain = {s.brain: s for s in scores}
+    assert by_brain["conscious_llm"].events == 2, "kill history must replay"
+    assert by_brain["heuristic"].events == 1, "death history must replay"
+    assert abs(by_brain["conscious_llm"].score - 1.6) < 1e-6
+
+    # record on the restarted instance must APPLY ON TOP (not double-count)
+    l2.record("botR", "conscious_llm", REWARD_KILL, "map=prt_fild08")
+    scores2 = l2.scores("botR")
+    assert next(s for s in scores2 if s.brain == "conscious_llm").events == 3
