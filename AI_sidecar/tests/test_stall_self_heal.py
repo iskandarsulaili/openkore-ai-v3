@@ -125,6 +125,35 @@ def test_stall_detector_arms_timestamp_on_exp_change():
     assert prev["_exp_change_ts"] > time.time() - 5
 
 
+def test_stall_detector_fires_even_when_never_gained_exp():
+    """A bot that NEVER gains EXP (frozen from start) must still stall-fire:
+    the first-observation seed sets _exp_change_ts=now so the 5-min window
+    starts at baseline (bug: _last_change stayed 0 -> never fired)."""
+    from ai_sidecar.autonomy.pdca_loop import PDCALoop
+    rt = MagicMock()
+    rt.action_queue = _FakeAQ()
+    rt.long_term_memory = _FakeLTM()
+    rt.server_solutions_store = None
+    rt.dynamic_portal_discovery = None
+    o = PDCALoop.__new__(PDCALoop)
+    o._runtime = rt
+    o._stall_no_progress_min = 5
+    o._log = MagicMock()
+    # First observation: seeds baseline + _exp_change_ts (no stall yet)
+    rt.snapshot_cache.get.return_value = _snap(626, "prt_fild05", 30.0)
+    prev = {}
+    with patch.object(o, "_memory_snapshot_key", return_value=prev):
+        o._remember_significant_deltas("testbotA")
+    assert len(rt.action_queue.enqueued) == 0, "first obs must not stall-fire"
+    assert prev["_exp_change_ts"] > time.time() - 5, "baseline window must start at seed"
+    # 6 min later, STILL 626 -> stall fires
+    prev["_exp_change_ts"] = time.time() - 360
+    rt.snapshot_cache.get.return_value = _snap(626, "prt_fild05", 30.0)
+    with patch.object(o, "_memory_snapshot_key", return_value=prev):
+        o._remember_significant_deltas("testbotA")
+    assert len(rt.action_queue.enqueued) == 1, "frozen-from-start bot must stall-fire"
+
+
 def test_stall_detector_resolves_profile_key_mismatch_via_latest():
     """bot_id is the PROFILE key but snapshot_cache keys by meta.bot_id (FULL
     key). get(profile) misses -> latest() fallback must resolve the snapshot

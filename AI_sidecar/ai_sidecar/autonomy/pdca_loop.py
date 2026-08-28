@@ -9840,6 +9840,10 @@ class PDCALoop:
             _prev["_seeded"] = True
             _prev.update({"deaths": _deaths, "exp": _exp,
                           "weapon": _has_weapon, "map": _map})
+            # Start the stall window NOW (baseline for the NO-PROGRESS
+            # detector): without this, a bot that NEVER gains EXP keeps
+            # _exp_change_ts=0 -> _last_change=0 -> stall never fires.
+            _prev["_exp_change_ts"] = _t0.time() if "_t0" in dir() else time.time()
             return
 
         # ── REWARD/PUNISH LEDGER (2026-08-28): score ALL brains on outcomes ──
