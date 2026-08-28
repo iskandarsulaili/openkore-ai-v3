@@ -318,3 +318,21 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
   (hp/sp/aggro/weight/level/job) with try/except defaults. ALSO: _resolve_job_
   change_npc had 4x hardcoded "move prontera" fallbacks (RULE.md violations) ->
   agnostic "" (table-driven only).
+
+## B21 (2026-08-28) — CREWAI JOB-CHANGE NO-OP/CRASH-LOOP SWEEP
+
+- FOUND: job_change_available=True but job_change_npc="" (cold start / table
+  missing the job) -> progression get_action returned None -> crew_manager
+  line 285 action.get() AttributeError -> crew_strategize_failed every cycle
+  (crash-loop) OR (guarded) a 0.8 can_handle score re-selected the same
+  profile forever (no-op loop — job never changes, nothing else runs).
+- FIX 1: get_action degrades to a graceful no-op action (command="") when
+  eligible-but-unresolved — never None.
+- FIX 2: crew_manager guards action=None -> {} (never crashes on None.get).
+- FIX 3: can_handle scores LOW (0.2) when NPC unresolved so the LLM conscious
+  brain + other profiles take over instead of looping.
+- FIX 4: the MAIN LLM advisory prompt now carries job/job_level/job_change_
+  eligible (was absent — the LLM couldn't see eligibility to take over the
+  unresolved case; the handoff was blind).
+- +4 tests (test_progression_planner_agent.py): never-None, full flow,
+  low-score-when-unresolved, None-only-when-idle. 442 passed.

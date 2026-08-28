@@ -9708,9 +9708,22 @@ class PDCALoop:
                 }))
         except Exception:
             pass
+        # Job-change eligibility: the LLM must SEE it (self-aware) so it can
+        # advise the move/talk flow or the unresolved-NPC fallback.
+        _job_name = "novice"
+        _job_lvl = 0
+        try:
+            if _prog:
+                _job_name = str(getattr(_prog, "job_name", None) or _raw.get("job_name") or "novice").lower()
+                _job_lvl = int(getattr(_prog, "job_level", None) or 0)
+        except Exception:
+            pass
+        _job_change_avail = (_job_name == "novice" and _job_lvl >= 10) or \
+            (_job_name in ("swordman", "mage", "archer", "thief", "acolyte", "merchant") and _job_lvl >= 50)
         _prompt = (
             f"Ragnarok bot {bot_id} is on map {_map}, HP {_hp_pct*100:.0f}%, "
             f"level={_lvl}, exp={_exp}/{_exp_max}, deaths={_deaths}, "
+            f"job={_job_name}, job_level={_job_lvl}, job_change_eligible={_job_change_avail}, "
             f"has_potions={_has_potions}, "
             f"has_weapon={_has_weapon}. "
             f"THINK DEEP, FROM THE WHOLE PICTURE: before deciding, analyze the SYSTEMIC "

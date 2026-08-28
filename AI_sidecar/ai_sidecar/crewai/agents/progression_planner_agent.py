@@ -21,9 +21,16 @@ class ProgressionPlannerProfile(BehaviorProfile):
         level = signals.get("level", 1)
         job_level = signals.get("job_level", 1)
         can_change = bool(signals.get("job_change_available"))
+        npc_resolved = bool(signals.get("job_change_npc"))
         score = 0.0
-        if can_change:
+        if can_change and npc_resolved:
             score += 0.8
+        elif can_change and not npc_resolved:
+            # Eligible but the NPC table lacks this job (cold start / unknown
+            # server): do NOT keep claiming this profile — a low score lets the
+            # LLM conscious brain + other profiles take over instead of looping
+            # a no-op job-change plan every cycle.
+            score += 0.2
         if level % 10 == 0:  # every 10 levels, check gear
             score += 0.4
         return min(score, 1.0)
@@ -47,6 +54,17 @@ class ProgressionPlannerProfile(BehaviorProfile):
                     "confidence": 0.9,
                     "reason": "Job change available, proceeding",
                 }
+            # Eligible but the tables file lacks this job's NPC (cold start /
+            # unknown server): degrade gracefully — generic no-op action so the
+            # crew manager never crashes on None.get (the can_handle score is
+            # already low so the LLM brain takes over).
+            return {
+                "kind": "command",
+                "command": "",
+                "metadata": {"source": "progression_planner", "reason": "job_npc_unresolved"},
+                "confidence": 0.2,
+                "reason": "Job change available but NPC unresolved; continuing to train",
+            }
 
         equipment = signals.get("equipment", [])
         level = signals.get("level", 1)

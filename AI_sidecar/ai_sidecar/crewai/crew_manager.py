@@ -267,6 +267,12 @@ class CrewManager:
 
             profile = get_profile(best_id)
             action = profile.get_action(signals) if hasattr(profile, "get_action") else {}
+            if action is None:
+                # No action from the best profile (e.g. job_change available but
+                # no NPC + nothing outdated): never crash on None.get — treat as
+                # "no recommended action" so the planner returns a clean no-op
+                # plan (the PDCA can then fall through to other brains).
+                action = {}
             agent_output = {
                 "agent_id": best_id,
                 "confidence": best_score,
