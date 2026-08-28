@@ -236,7 +236,13 @@ class EdgeCaseHandler:
         if not pos:
             return None
 
-        pos_key: tuple[float, float] = (float(pos.get("x", 0)), float(pos.get("y", 0)))
+        # None-safe coercion: pos.get("x", 0) returns None when the key EXISTS
+        # but is None (partial/reconnect snapshot) -> float(None) crashes the
+        # whole edge-case chain (observed live: edge_handler_crash handler=unstuck).
+        try:
+            pos_key: tuple[float, float] = (float(pos.get("x") or 0), float(pos.get("y") or 0))
+        except (TypeError, ValueError):
+            return None
         now = datetime.now(timezone.utc)
 
         with self._lock:

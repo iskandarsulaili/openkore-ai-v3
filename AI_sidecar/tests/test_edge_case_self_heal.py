@@ -177,3 +177,16 @@ def test_lethal_map_cooldown_skips_flagged_map() -> None:
     best = svc.get_best_map("b3", 6)
     assert best != "prt_fild08", "get_best_map returned the lethal-flagged map"
     assert best == "prt_fild05"
+
+
+def test_unstuck_none_position_no_crash() -> None:
+    """A partial/reconnect snapshot with position=None must NOT crash the
+    unstuck handler (float(None) TypeError killed the whole edge-case chain)."""
+    edge = EdgeCaseHandler(unstuck_timeout_s=1)
+    # position present but x/y are None (partial snapshot)
+    edge.handle_unstuck("b4", {"position": {"x": None, "y": None}, "map": "prt_fild05"})
+    # position entirely missing
+    edge.handle_unstuck("b4", {"map": "prt_fild05"})
+    # position with valid coords still works
+    edge.handle_unstuck("b4", {"position": {"x": 10, "y": 20}, "map": "prt_fild05"})
+    assert True  # no exception raised
