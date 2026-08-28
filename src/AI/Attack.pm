@@ -1044,7 +1044,12 @@ sub main {
 
 	if (
 		!$found_action &&
-		$realMonsterDist <= ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1) &&
+		# Use the SERVER-CONFIRMED positions for the range gate, not the
+		# predicted ($realMyPos/$realMonsterDist): local pathfinding prediction
+		# runs AHEAD of the server under latency, so the predicted dist says
+		# "in range" while the server has the bot 8+ blocks away -> every
+		# attack misses -> permanent "in-range hit timeout" loop.
+		blockDistance($char->{pos}, $target->{pos}) <= ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1) &&
 		(!$config{"runFromTarget"} || $realMonsterDist >= $config{"runFromTarget_dist"} || $failed_runFromTarget) &&
 		(!$config{"tankMode"} || !$target->{dmgFromYou})
 	 ) {
