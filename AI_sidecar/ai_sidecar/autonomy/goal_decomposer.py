@@ -78,12 +78,21 @@ class CrossHorizonSynergy:
         conflicts = []
         if not short_term_goal or not long_term_goal:
             return conflicts
-        # Example: if short-term is "grind on prt_fild08" but long-term is "job change to Knight"
-        # which requires being in Morocc, that's a conflict
+        # Example: if short-term is "grind on prt_fild08" but long-term is "job change to Knigh
+        # which requires being in Morocc, that's a conflict. RULE.md: resolve
+        # zone->town via the RO prefix graph (game_data), never hardcoded maps.
         st = short_term_goal.lower()
         lt = long_term_goal.lower()
-        if "prt_fild" in st and ("morocc" in lt or "payon" in lt):
-            conflicts.append("short_term_zone_conflicts_with_long_term_goal")
+        try:
+            from ai_sidecar.game_data import parent_town
+            _st_map = next((w for w in st.split() if "_" in w and "fild" in w), "") or next(
+                (w for w in st.split() if "_" in w), "")
+            _st_town = parent_town(_st_map)
+            _lt_town = parent_town(next((w for w in lt.split() if "_" in w), ""))
+            if _st_town and _lt_town and _st_town != _lt_town:
+                conflicts.append("short_term_zone_conflicts_with_long_term_goal")
+        except Exception:
+            pass
         if "grind" in st and "job" in lt:
             conflicts.append("grinding_delays_job_advancement")
         if conflicts:

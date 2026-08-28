@@ -215,6 +215,12 @@ def _is_city_map(map_name: str) -> bool:
         return False
     if _m in _CITY_MAPS:
         return True
+    # A field/dungeon/instance map is NEVER a city, even if its short prefix
+    # matches a city's (prt_fild05 -> prefix prt -> prontera is a FIELD, not
+    # the city). The prefix-variant rule applies only to interior/settlement
+    # maps (prt_in, prt_church -> the prontera settlement).
+    if any(_tok in _m for _tok in ("fild", "dun", "gld", "arena", "airport", "instance")):
+        return False
     # city prefix variant: the map's short prefix matches a city's prefix
     _mpref = _m.split("_")[0]
     for _c in _CITY_MAPS:
@@ -1458,7 +1464,23 @@ class HeuristicService:
 
     def _get_potion_id(self, base_level: int) -> int:
         """Return the best potion item ID for a given base level.
-        Scales from Red (501) -> Orange (502) -> White (504) as level increases."""
+
+        RULE.md: prefers the LEARNED potion from the server_solutions store
+        (the item the bot actually carries/heals with — e.g. Novice Potion on
+        the academy server). Falls back to the level-scaling guide (generic RO
+        potions, identical on every server) only before the store has learned.
+        """
+        try:
+            _ss = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
+            if _ss is not None and hasattr(_ss, "get"):
+                _pot = _ss.get("potion_solution", None)
+                if isinstance(_pot, dict):
+                    _pid = _pot.get("potion_id")
+                    if _pid:
+                        return int(_pid)
+        except Exception:
+            pass
+        # Cold-start guide: Red -> Orange -> White as level increases.
         if base_level < 15:
             return 501  # Red Potion (heals 45 HP)
         elif base_level < 30:
@@ -2139,7 +2161,19 @@ class HeuristicService:
                             _pb_last = self._last_buy_time.get(_bot_id, 0)
                             if not _has_potion and _zeny >= 500 and (_pb_now - _pb_last >= 60):
                                 self._last_buy_time[_bot_id] = _pb_now
-                                _actions.append(HeuristicAction(kind="command", command="buy 501 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
+                                # RULE.md: potion = the LEARNED store item, else
+                                # the generic 'buy potion' form (OpenKore resolves
+                                # the best heal item from its tables).
+                                _potion_cmd2 = ""
+                                try:
+                                    _ss3 = getattr(self, "_store", None) or getattr(self, "server_solutions_store", None)
+                                    if _ss3 is not None and hasattr(_ss3, "get"):
+                                        _pot = _ss3.get("potion_solution", None)
+                                        if isinstance(_pot, dict):
+                                            _potion_cmd2 = str(_pot.get("buy_command") or "")
+                                except Exception:
+                                    _potion_cmd2 = ""
+                                _actions.append(HeuristicAction(kind="command", command=_potion_cmd2 or "buy potion 30", confidence=0.95, reason=f"Cold start: learn Basic Skill for sit/regen", domain="progression"))
                         if _bl <= 15:
                             if _bl <= 5:
                                 # ── ACADEMY REGISTRATION (rathena-ai-world starter gear) ──
@@ -3097,6 +3131,7 @@ class HeuristicService:
             if _has_weapon and _has_potions:
                 # Already equipped — skip cold start
                 self._cold_start_step[_cs_stable_key] = 4
+                _cold_start_step = 4
             else:
                 # Need cold start
                 if _cs_in_hunting:
@@ -3332,7 +3367,9 @@ class HeuristicService:
                 except Exception:
                     pass
             if not _cs4_farm:
-                _cs4_farm = "prt_fild05"
+                # RULE.md: no hardcoded farm — the current farmable field is the
+                # safest agnostic fallback (the bot is ALREADY on it).
+                _cs4_farm = _cs_map if _cs_in_hunting else ""
             if not _cs_in_hunting or _cs_map == "prt_fild01":
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_cs4_farm}",
@@ -3341,6 +3378,14 @@ class HeuristicService:
                 ))
             elif _cs_in_hunting:
                 # On hunting map with weapon + potions — cold start complete, advance to step 5
+                # Farm-enable: the bot is on a farmable field — MUST fight (attackAuto 3).
+                # This fires at ANY cold-start step (the farmability decision, not the
+                # step machine) so a weaponed bot on a field never idles passive.
+                actions.append(HeuristicAction(
+                    kind="command", command="set attackAuto 3",
+                    confidence=0.99, domain="hunting",
+                    reason="Cold start - on farmable field with gear, enable attack for farming",
+                ))
                 if base_level >= 10:
                     self._cold_start_step[_cs_stable_key] = 5
                     logger.info(f"[cold_start] {bot_id}: on hunting map level {base_level}, step 4 -> 5")

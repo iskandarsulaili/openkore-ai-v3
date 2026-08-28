@@ -89,11 +89,11 @@ def test_buy_pots_only_in_town() -> None:
     )
     tr = TaskCommandTranslator()
     in_town = tr.translate(task, {"map": "prontera", "base_level": 8}, "bot:x")
-    assert "buy 501 30" in _real_commands(in_town)
+    assert "buy potion 30" in _real_commands(in_town)
 
     tr2 = TaskCommandTranslator()
     on_fild = tr2.translate(task, {"map": "prt_fild05", "base_level": 8}, "bot:x")
-    assert "buy 501 30" not in _real_commands(on_fild)
+    assert "buy potion 30" not in _real_commands(on_fild)
 
 
 def test_emission_throttled_per_bot_task() -> None:

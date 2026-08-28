@@ -161,10 +161,19 @@ class NavigationIntuition:
     
     def is_town(self, map_name: str) -> bool:
         node = self._maps.get(map_name)
-        return node.is_town if node else ("prontera" in map_name or "morocc" in map_name or 
-                                           "geffen" in map_name or "payon" in map_name or
-                                           "aldebaran" in map_name or "yuno" in map_name or
-                                           "izlude" in map_name or "comodo" in map_name)
+        if node:
+            return node.is_town
+        # RULE.md: agnostic town check via the core's tables/cities.txt
+        # (RO geography — no hardcoded town names).
+        try:
+            from ai_sidecar.game_data import load_city_maps
+            _m = (map_name or "").lower()
+            for _c in load_city_maps():
+                if _m.startswith(_c.split("_")[0]) or _m == _c:
+                    return True
+            return False
+        except Exception:
+            return False
     
     def has_kafra(self, map_name: str) -> bool:
         node = self._maps.get(map_name)

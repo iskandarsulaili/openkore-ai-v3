@@ -190,12 +190,13 @@ class SituationalAwareness:
                 reason=f"Situational: {name} best available",
                 domain=action.domain,
             )
-        # No potions available — try to buy some
-        logger.warning(f"[situational] {bot_id}: No potions available, buying Red Potions")
+        # No potions available — try to buy some (generic potion form —
+        # RULE.md: the heal item is learned, never a hardcoded server id).
+        logger.warning(f"[situational] {bot_id}: No potions available, buying potions")
         return HeuristicAction(
-            kind="command", command="buy 10 501",
+            kind="command", command="buy potion 10",
             confidence=0.7,
-            reason="Soldier on: buying Red Potions",
+            reason="Soldier on: buying potions",
             domain="survival",
         )
     

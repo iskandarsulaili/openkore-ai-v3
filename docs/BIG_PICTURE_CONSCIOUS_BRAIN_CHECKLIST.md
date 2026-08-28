@@ -204,3 +204,18 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - woe_intelligence.py: use 504/501 → use potion (generic)
 - KEPT (legit static RO game data, identical on every server): KAFRA_WARP_ROUTES + KNOWN_KAFRA_LOCATIONS (kafra costs/positions), CLASS_HUNTING_GROUNDS (level-banded guide, overridden by adaptive scoring), field-map lists in _cs_in_hunting/_audit_is_hunting (RO field geography), portal/navigation tables
 - Tests: 16 affected pass; full suite running
+
+## B12 (2026-08-28) — ROUND 2 AGNOSTICIZATION + COLD-START BRAIN FIX
+
+- _get_potion_id now store-learned first (potion_solution), level-guide fallback (was hardcoded 501/502/504)
+- _is_city_map: field/dungeon maps EXCLUDED from city-prefix match (REAL BUG: prt_fild05 was classified a city -> wrong cold-start branch)
+- cold-start step-0 skip now updates the local step (was dict-only -> step-4 block never ran same cycle)
+- step-4 on-hunting-map now emits attackAuto 3 (farm-enable at ANY step, was step-1-only)
+- step-4 farm fallback: current farmable field (was hardcoded prt_fild05)
+- step-0 non-town walk: parent_town graph (was hardcoded move prontera comment)
+- situational.py buy 10 501 -> buy potion 10; heuristic 2142 -> learned store / buy potion 30
+- goal_decomposer conflict: parent_town graph (was prt_fild/morocc/payon literals)
+- navigation_intuition is_town: cities.txt (was 8-town literal list)
+- kafra_teleport 2x return "prontera" -> parent_town
+- progression.py buy 1201 1 (Knife) — the cold-start step-2 knife; gear planner is AGNOSTIC (get_best_upgrade) but the FALLBACK is hardcoded — fix next
+- Tests: 20 affected pass; full suite running
