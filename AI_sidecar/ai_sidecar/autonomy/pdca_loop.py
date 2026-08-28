@@ -400,6 +400,19 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                             _raw_all = _raw.get("all_bots", []) or []
                             if _raw_all:
                                 signals["all_bots"] = _raw_all
+                        # Reconnect state: a growing reconnect_age_s proves the bot is
+                        # mid-reconnect (bridge lost the session) even when raw.map
+                        # still shows the last playable map. The cold-start gate needs
+                        # this to NEVER fire char-creation/delete during a reconnect.
+                        _raw_rc = latest.get("raw", {}) or {}
+                        _rc_age = _raw_rc.get("reconnect_age_s", 0)
+                        if _rc_age:
+                            try:
+                                signals["reconnect_age_s"] = float(_rc_age)
+                            except (TypeError, ValueError):
+                                signals["reconnect_age_s"] = 0.0
+                        signals["raw_in_game"] = _raw_rc.get("in_game")
+                        signals["raw"] = _raw_rc
                         # Fallback: populate from snapshot cache bot_ids
                         if not signals["all_bots"] and snapshots is not None and hasattr(snapshots, 'bot_ids'):
                             _snap_bot_ids = snapshots.bot_ids()

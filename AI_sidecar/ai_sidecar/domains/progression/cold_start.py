@@ -318,6 +318,21 @@ class ColdStartManager:
         # `characters` list is empty (it's only populated at char-select).
         _map_name = str(signals.get("map", "") or "").strip()
         _in_game_flag = bool(signals.get("in_game", False))
+        # RECONNECT GATE (2026-08-28): during a reconnect the snapshot has no
+        # map/base_level (bridge has no $char yet) BUT the bot is NOT at
+        # char-select — it's mid-reconnect. Without this gate, cold-start sees
+        # characters=[] (char list only populates at char-select) and fires
+        # char-creation/delete against a LIVE account. Treat a growing
+        # reconnect_age_s (or an explicit in_game=False / net_state != IN_GAME)
+        # as "connection not established" and NEVER create/delete.
+        _reconnect_age = signals.get("reconnect_age_s", signals.get("reconnect_age", 0))
+        try:
+            _reconnect_age = float(_reconnect_age or 0)
+        except (TypeError, ValueError):
+            _reconnect_age = 0.0
+        _raw_in_game = signals.get("raw_in_game", signals.get("raw", {}).get("in_game") if isinstance(signals.get("raw"), dict) else None)
+        if _reconnect_age > 0 or _raw_in_game is False:
+            return
         if _map_known or _bl > 0 or _in_game_flag or _map_name:
             return
         # Check if we already have a character

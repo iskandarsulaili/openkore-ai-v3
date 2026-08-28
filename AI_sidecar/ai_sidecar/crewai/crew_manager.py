@@ -38,12 +38,13 @@ _AGENT_ROSTERS: dict[str, list[str]] = {
 
 
 def _resolve_job_change_npc(current_job: str) -> str:
-    """Resolve job change NPC location from tables file. Returns 'move prontera' as fallback."""
+    """Resolve job change NPC location from tables file. Returns '' (agnostic —
+    no hardcoded town fallback; RULE.md) when the table lacks the job."""
     try:
         _tables_dir = Path(__file__).parent.parent.parent.parent / "tables"
         _jc_path = _tables_dir / "job_change_locations.txt"
         if not _jc_path.exists():
-            return "move prontera"
+            return ""
         _text = _jc_path.read_text()
         # Normalize job name for matching
         _job_key = current_job.strip().lower().replace(" ", "_")
@@ -72,11 +73,11 @@ def _resolve_job_change_npc(current_job: str) -> str:
                             _map = _parts[1].strip()
                             _coords = _parts[2].strip()
                             return f"move {_map} {_coords}"
-            return "move prontera"
-        return "move prontera"
+            return ""
+        return ""
     except Exception:
         pass
-    return "move prontera"
+    return ""
 
 
 @dataclass(slots=True)
@@ -174,17 +175,41 @@ class CrewManager:
                         # Handle both dict and BotStateSnapshot objects
                         if isinstance(snap, dict):
                             v = snap.get("vitals") or {}
-                            signals["hp_ratio"] = float(v.get("hp_ratio", 1.0))
-                            signals["sp_ratio"] = float(v.get("sp_ratio", 1.0))
+                            try:
+                                signals["hp_ratio"] = float(v.get("hp_ratio", 1.0) or 1.0)
+                            except (TypeError, ValueError):
+                                signals["hp_ratio"] = 1.0
+                            try:
+                                signals["sp_ratio"] = float(v.get("sp_ratio", 1.0) or 1.0)
+                            except (TypeError, ValueError):
+                                signals["sp_ratio"] = 1.0
                             c = snap.get("combat") or {}
-                            signals["combat.aggro_count"] = int(c.get("aggro_count", 0))
+                            try:
+                                signals["combat.aggro_count"] = int(c.get("aggro_count", 0) or 0)
+                            except (TypeError, ValueError):
+                                signals["combat.aggro_count"] = 0
                             signals["map_known"] = bool(snap.get("map_known", False))
                             inv = snap.get("inventory") or {}
-                            signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0))
-                            # Level and job change signals
+                            try:
+                                signals["weight_ratio"] = float(inv.get("weight_ratio", 0.0) or 0.0)
+                            except (TypeError, ValueError):
+                                signals["weight_ratio"] = 0.0
+                            # Level and job change signals — defensive int() (a
+                            # None/str value from a partial snapshot must never
+                            # crash the whole enrichment: default to 1).
                             prog = snap.get("progression") or {}
-                            signals["level"] = int(prog.get("base_level", v.get("base_level", 1)) or 1)
-                            signals["job_level"] = int(prog.get("job_level", v.get("job_level", 1)) or 1)
+                            try:
+                                _bl_raw = prog.get("base_level", v.get("base_level", 1))
+                                _bl_v = int(float(_bl_raw)) if _bl_raw is not None else 1
+                            except (TypeError, ValueError):
+                                _bl_v = 1
+                            try:
+                                _jl_raw = prog.get("job_level", v.get("job_level", 1))
+                                _jl_v = int(float(_jl_raw)) if _jl_raw is not None else 1
+                            except (TypeError, ValueError):
+                                _jl_v = 1
+                            signals["level"] = _bl_v
+                            signals["job_level"] = _jl_v
                             signals["job_name"] = str(prog.get("job_name", v.get("job_name", "novice")) or "novice").lower()
                             _job = signals["job_name"]
                             _jl = signals["job_level"]
@@ -203,12 +228,24 @@ class CrewManager:
                             # Level and job change signals
                             prog = getattr(snap, "progression", None) or {}
                             if isinstance(prog, dict):
-                                _bl = int(prog.get("base_level", 1) or 1)
-                                _jl = int(prog.get("job_level", 1) or 1)
+                                try:
+                                    _bl = int(float(prog.get("base_level", 1))) if prog.get("base_level") is not None else 1
+                                except (TypeError, ValueError):
+                                    _bl = 1
+                                try:
+                                    _jl = int(float(prog.get("job_level", 1))) if prog.get("job_level") is not None else 1
+                                except (TypeError, ValueError):
+                                    _jl = 1
                                 _jn = str(prog.get("job_name", "novice") or "novice").lower()
                             else:
-                                _bl = int(getattr(prog, "base_level", 1) or 1)
-                                _jl = int(getattr(prog, "job_level", 1) or 1)
+                                try:
+                                    _bl = int(float(getattr(prog, "base_level", 1))) if getattr(prog, "base_level", None) is not None else 1
+                                except (TypeError, ValueError):
+                                    _bl = 1
+                                try:
+                                    _jl = int(float(getattr(prog, "job_level", 1))) if getattr(prog, "job_level", None) is not None else 1
+                                except (TypeError, ValueError):
+                                    _jl = 1
                                 _jn = str(getattr(prog, "job_name", "novice") or "novice").lower()
                             signals["level"] = _bl
                             signals["job_level"] = _jl

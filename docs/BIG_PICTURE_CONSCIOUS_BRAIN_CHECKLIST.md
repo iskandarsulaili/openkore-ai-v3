@@ -302,3 +302,19 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
   degradation manager (report + breaker), self_healer (heal_module), time_scheduler
   (strategy context), failure_reasoning (LLM context), 4 strategy integrations
   (onboarding/intelligence/combat_tactics/economy), healing_optimizer + party heal.
+
+## B20 (2026-08-28) — LIVE-LOG DEFECT SWEEP (2 REAL bugs from live observation)
+
+- BUG 1 (DANGEROUS): cold-start fired CHAR-CREATION at 11:11 while the bot was
+  mid-reconnect — raw.map still showed the last playable map (prt_fild08) so the
+  disconnected-gate (real-map = in-game) passed, characters=[] (char list only
+  populates at char-select) -> "no character exists" -> create (and with
+  delete-recreate enabled, could DESTROY the leveled char). FIX: cold-start
+  reconnect gate — reconnect_age_s>0 OR raw_in_game=False blocks creation;
+  pdca signals now carry reconnect_age_s/raw_in_game/raw. +4 tests.
+- BUG 2: crewai_signal_enrichment_failed int() NoneType — the enrichment's
+  int() on base_level/job_level could hit None from a partial snapshot (pydantic
+  attr branch: getattr(...,None) -> int(None)); hardened ALL int()/float() sites
+  (hp/sp/aggro/weight/level/job) with try/except defaults. ALSO: _resolve_job_
+  change_npc had 4x hardcoded "move prontera" fallbacks (RULE.md violations) ->
+  agnostic "" (table-driven only).
