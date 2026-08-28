@@ -288,3 +288,17 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - WIRED into the SHORT_TERM main loop (same cadence as domain emitters), passing
   the live snapshot (the _in_game gate returns False on None — no-snapshot calls
   would silently 0 forever).
+
+## B19 (2026-08-28) — SELF-HEAL OBSERVABILITY + SURFACE AUDIT COMPLETE
+
+- NEW endpoint GET /v1/conscious/self-heal-status — aggregates edge-case
+  outcomes, crisis summary, comeback fix-registry + recovery rate, degradation
+  module health, self-healer log, time-scheduler strategy. (The same observability
+  class as the brain-rewards endpoint — surfaces must be visible, not silent.)
+- SURFACE AUDIT (user directive: stalling is NOT the only thing self-healing
+  must own): verified ALL correctable-failure surfaces now LIVE —
+  edge-case 8 handlers (unstuck/death/inventory/portal/no_arrows/skill/stat/gm),
+  crisis detect->diagnose->recover->learn, comeback learn->verify->success-rate,
+  degradation manager (report + breaker), self_healer (heal_module), time_scheduler
+  (strategy context), failure_reasoning (LLM context), 4 strategy integrations
+  (onboarding/intelligence/combat_tactics/economy), healing_optimizer + party heal.
