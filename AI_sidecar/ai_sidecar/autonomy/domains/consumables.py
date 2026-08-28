@@ -81,7 +81,7 @@ class ConsumablesDomain(BaseDomain):
         # ── BUTTERFLY WING RETURN: low HP + no items + hunted 5+ min ──
         if hp_ratio < 0.3 and not has_items and hunt_duration > 300:
             actions.append(HeuristicAction(
-                kind="command", command="use 602",
+                kind="command", command="use Butterfly Wing",
                 confidence=0.95, domain="survival",
                 reason=f"Low HP ({hp_ratio:.0%}) no items - Butterfly Wing to town",
             ))

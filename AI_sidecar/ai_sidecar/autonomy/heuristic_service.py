@@ -5242,14 +5242,14 @@ class HeuristicService:
                 _aggro_count = signals.get("aggressives", 0) or 0
                 if _aggro_count >= 3 and _hp_ratio < 0.5:
                     actions.append(HeuristicAction(
-                        kind="command", command="use 601",
+                        kind="command", command="use Fly Wing",
                         confidence=0.99, domain="survival",
                         reason=f"Surrounded by {_aggro_count} mobs at {_hp_ratio:.0%} HP - Fly Wing escape",
                     ))
                 # ── BUTTERFLY WING RETURN: If low HP + no items + been hunting 5+ min ──
                 if _hp_ratio < 0.3 and not _has_items and _hunt_duration > 300:
                     actions.append(HeuristicAction(
-                        kind="command", command="use 602",
+                        kind="command", command="use Butterfly Wing",
                         confidence=0.95, domain="survival",
                         reason=f"Low HP ({_hp_ratio:.0%}) no items - Butterfly Wing to town",
                     ))

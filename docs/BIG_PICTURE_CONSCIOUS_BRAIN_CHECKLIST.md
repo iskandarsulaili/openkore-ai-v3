@@ -234,3 +234,9 @@ PRIMARY blocker remains the wedge. Revisit when the wedge clears.
 - heuristic 3869 town-stuck knife buy 1201/equip 1201 -> gear planner / generic buy weapon
 - heuristic 4311 buy 1750 200 -> buy Arrow 200 (by name)
 - Full suite re-run; 30 affected tests pass
+
+## B15 (2026-08-28) — ROUND 5: LAST item-id commands by name
+
+- heuristic 5245/5252 + combat.py 250 + consumables.py 84: use 601/602 -> use Fly Wing / use Butterfly Wing (by name)
+- FINAL SCAN: ZERO hardcoded buy/sell/use <id> commands remain (only the by-name 'buy 0 Arrow 100' + 'buy potion'/'buy weapon' generic forms)
+- ZERO hardcoded town fallbacks remain (all store/tables-driven)

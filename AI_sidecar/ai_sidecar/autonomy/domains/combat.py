@@ -247,7 +247,7 @@ class CombatDomain(BaseDomain):
         _aggro = int(signals.get("aggressives", 0) or 0)
         if _aggro >= 3 and hp_ratio < 0.5:
             actions.append(HeuristicAction(
-                kind="command", command="use 601",
+                kind="command", command="use Fly Wing",
                 confidence=0.99, domain="survival",
                 reason=f"Surrounded by {_aggro} mobs at {hp_ratio:.0%} HP - Fly Wing escape",
             ))
