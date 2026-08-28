@@ -9704,11 +9704,16 @@ class PDCALoop:
                 _ledger.record(bot_id, "reflex", "death", f"map={_map}")
                 _ledger.record(bot_id, "subconscious_ml", "death", f"map={_map}")
                 _ledger.record(bot_id, "goal_decomposer", "death", f"map={_map}")
+                _ledger.record(bot_id, "memory", "death", f"map={_map}")
+                _ledger.record(bot_id, "strategy", "death", f"map={_map}")
             if _kill_delta > 0:
                 _ledger.record(bot_id, "conscious_llm", "kill", f"map={_map} n={_kill_delta}")
                 _ledger.record(bot_id, "heuristic", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "reflex", "kill", f"map={_map} n={_kill_delta}")
                 _ledger.record(bot_id, "subconscious_ml", "kill", f"map={_map} n={_kill_delta}")
                 _ledger.record(bot_id, "goal_decomposer", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "memory", "kill", f"map={_map} n={_kill_delta}")
+                _ledger.record(bot_id, "strategy", "kill", f"map={_map} n={_kill_delta}")
             if _hp_ratio <= 0.30:
                 _ledger.record(bot_id, "reflex", "hp_critical", f"ratio={_hp_ratio:.2f}")
         except Exception:

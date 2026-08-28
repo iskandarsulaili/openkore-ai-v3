@@ -234,7 +234,10 @@ class BrainRewardLedger:
         if not scores:
             return ""
         scores.sort(key=lambda s: s.score, reverse=True)
-        lines = [s.summary() for s in scores[:limit]]
+        lines = [
+            f"{s.summary()} (confidence={self.discounted_confidence(bot_id, s.brain):.2f})"
+            for s in scores[:limit]
+        ]
         return "BRAIN PERFORMANCE (reward/punish history): " + " | ".join(lines)
 
     def discounted_confidence(self, bot_id: str, brain: str) -> float:
