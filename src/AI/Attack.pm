@@ -894,9 +894,16 @@ sub main {
 	if (!$args->{firstLoop} && $canAttack == 0 && $youHitTarget) {
 		debug TF("[%s] We were able to hit target even though it is out of range, accepting and continuing. (you %s (%d %d), target %s (%d %d) [(%d %d) -> (%d %d)], distance %d, maxDistance %d, dmgFromYou %d)\n", $canAttack_fail_string, $char, $realMyPos->{x}, $realMyPos->{y}, $target, $realMonsterPos->{x}, $realMonsterPos->{y}, $target->{pos}{x}, $target->{pos}{y}, $target->{pos_to}{x}, $target->{pos_to}{y}, $realMonsterDist, $args->{attackMethod}{maxDistance}, $target->{dmgFromYou}), 'ai_attack';
 		if ($clientDist > $args->{attackMethod}{maxDistance} && $clientDist <= ($args->{attackMethod}{maxDistance} + 1) && $args->{temporary_extra_range} == 0) {
-			debug TF("[%s] Probably extra range provided by the server due to chasing, increasing range by 1.\n", $canAttack_fail_string), 'ai_attack';
-			$args->{temporary_extra_range} = 1;
-			$args->{attackMethod}{maxDistance} += $args->{temporary_extra_range};
+			debug TF("[%s] Probably extra range provided by the server due to chasing, increasing range by 1.\\n", $canAttack_fail_string), 'ai_attack';
+			# BOUNDED: cap the accumulated range so a melee bot can never grow
+			# its attack distance unbounded (one lucky hit per window -> +1 each
+			# -> eventually fires from 12+ blocks -> permanent miss-loop).
+			if ($args->{attackMethod}{maxDistance} < ($config{"attackMaxDistance"} || 1) + 3) {
+				$args->{temporary_extra_range} = 1;
+				$args->{attackMethod}{maxDistance} += $args->{temporary_extra_range};
+			} else {
+				debug TF("[%s] Range adaptation capped at %d, staying put.\\n", $canAttack_fail_string, $args->{attackMethod}{maxDistance}), 'ai_attack';
+			}
 			$canAttack = canAttack($field, $realMyPos, $realMonsterPos, $config{attackCanSnipe}, $args->{attackMethod}{maxDistance}, $config{clientSight});
 		} else {
 			debug TF("[%s] Reason unknown, allowing once.\n", $canAttack_fail_string), 'ai_attack';
