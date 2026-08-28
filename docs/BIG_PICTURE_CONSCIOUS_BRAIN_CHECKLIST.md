@@ -173,3 +173,22 @@ Round 8 combat proof (the bot DOES fight):
   timeouts 1579/15min, "map server -2 claims" conflict firing)
 - Bot-side EXHAUSTIVELY verified: nothing left to fix bot-side. Blocker is
   100% server-side (sibling's domain, handed over 4x with precise evidence).
+
+## B11 — SWEEP ROUND 9 2026-08-28 13:45 (+08) — ATTACK-MISS LOOP DOCUMENTED (BOT-SIDE INEFFICIENCY)
+
+FOUND (real, bot-side): the bot fires attacks from OUT OF RANGE ("Sending
+attack target (3-4 blocks away)" with melee range 1) → server ignores → no hit
+→ "in-range hit timeout" unstuck → repeat. 11:32 window: 25 attacks, ZERO
+hits. 2421 combat events vs 39 hit/damage = ~98% miss rate.
+
+ROOT CAUSE (Attack.pm): resolve_movetoattack_pos (line 550) snaps the actor to
+its LOCAL movement-prediction endpoint when time_move > movetoattack_time —
+under latency the local prediction finishes BEFORE the server's move, so the
+bot's position is AHEAD of the server → attacks from a position the server
+hasn't reached → miss. The 11:13-11:18 window (EXP gained, level 1->5) had
+synced positions; the 11:32 window (position drifted) missed everything.
+
+SCOPE DECISION: documented, NOT patched — (1) kills DO land when position
+syncs (11:24 EXP proof), (2) a prediction-race fix risks breaking the working
+attack path with NO live verification possible (wedge cuts windows), (3) the
+PRIMARY blocker remains the wedge. Revisit when the wedge clears.
