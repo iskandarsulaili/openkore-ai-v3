@@ -9435,6 +9435,18 @@ class PDCALoop:
                     _i = str(getattr(_it, "id", "") or "")
                     if "potion" in _n or _i == "569":
                         _has_potions = True
+                        # ── SELF-LEARN (agnostic): the bot's REAL potion is observed
+                        # from its inventory — seed the server_solutions store so
+                        # restock/acquire_potions uses the server's actual heal item,
+                        # never a hardcoded item id (RULE.md).
+                        if _i:
+                            try:
+                                _st = getattr(_rt, "server_solutions_store", None)
+                                if _st is not None and _st.get("potion_solution", None) in (None, ""):
+                                    _st.seed_from_server(potion_item=str(getattr(_it, "name", "") or ""),
+                                                         potion_id=_i)
+                            except Exception:
+                                pass
                     if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
                             or "gauche" in _n or "mace" in _n or "axe" in _n:
                         _has_weapon = True
@@ -9687,6 +9699,26 @@ class PDCALoop:
         _prev_weapon = bool(_prev.get("weapon", False))
         _prev_map = str(_prev.get("map", "") or "")
 
+        # ── SELF-LEARN safe_town (agnostic): a map where the bot is at FULL HP
+        # for 3+ consecutive cycles is the server's safe town (rest/shop spot).
+        # Seeded into server_solutions so retreat/health-monitor use the OBSERVED
+        # town, never a hardcoded map name (RULE.md).
+        try:
+            _full_hp = float(getattr(_vit, "hp_ratio", 0.0) if getattr(_vit, "hp_ratio", None) is not None else (_raw.get("hp_ratio") or 0.0)) >= 0.95
+            if _full_hp and _map:
+                _fc = int(_prev.get("_fullhp_count", 0) or 0)
+                _fc = _fc + 1 if _prev.get("_fullhp_map_last") == _map else 1
+                _prev["_fullhp_count"] = _fc
+                _prev["_fullhp_map_last"] = _map
+                if _fc >= 3:
+                    _st4 = getattr(self._runtime, "server_solutions_store", None)
+                    if _st4 is not None and _st4.get("safe_town", None) in (None, ""):
+                        _st4.set("safe_town", _map, origin="learned", confidence=0.6)
+            elif _prev.get("_fullhp_map_last") != _map:
+                _prev["_fullhp_count"] = 0
+        except Exception:
+            pass
+
         _now = datetime.now(timezone.utc).isoformat()
 
         # EXP delta = successful-kills proxy (the bridge tracks deaths via
@@ -9765,6 +9797,15 @@ class PDCALoop:
                 importance=5,
                 metadata={"map": _map, "exp_delta": _exp_delta, "at": _now},
             )
+            # ── SELF-LEARN (agnostic): the first map that yields REAL EXP is
+            # the server's farm — seed the store so change_farm/keep_farming
+            # use the observed farm, never a hardcoded map name (RULE.md).
+            try:
+                _st3 = getattr(self._runtime, "server_solutions_store", None)
+                if _st3 is not None and _st3.get("farm_map", None) in (None, ""):
+                    _st3.set("farm_map", _map, origin="learned", confidence=0.6)
+            except Exception:
+                pass
 
         # Weapon acquisition (gear milestone)
         if _has_weapon and not _prev_weapon:

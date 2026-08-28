@@ -5783,18 +5783,12 @@ def create_runtime() -> RuntimeState:
         try:
             from ai_sidecar.server_adaptation import get_server_solutions_store
             _srv_store = get_server_solutions_store(db=db, server_key="default")
-            # Seed the store from the server's KNOWN facts so the executor reads real
-            # server values (potion item, town, farm) from the DB, not decision literals.
-            # The potion (Red Potion 501) is the server's own item — verified present in
-            # rathena-AI-world/db/re/item_db_usable.yml. Values are stored as learned facts;
-            # the LLM/executor reads them from the DB at runtime (RULE.md: server-specific
-            # solutions live in DB/memory, never hardcoded in decision branches).
-            _srv_store.seed_from_server(
-                potion_item="Red Potion", potion_id="501", potion_cost=50,
-                safe_town="prontera", farm_map="prt_fild08",
-            )
-            # Stored to a module-scope local; the caller attaches it to the RuntimeState
-            # instance (RuntimeState is created after this DB block, then returned).
+            # Seed NOT done here with literals: RULE.md forbids hardcoded
+            # server-specific solutions (potion item, town, farm). The store
+            # self-learns from the bot's OBSERVED inventory (the gear advisory
+            # seeds potion_solution from the real carried potion) and the
+            # observation pipeline seeds safe_town/farm_map. Cold start = no
+            # commands until learned — the reflex tier covers sustain meanwhile.
             servers_solutions_store = _srv_store
         except Exception as _srv_err:
             logger.warning("server_solutions_store_init_failed: %s", _srv_err)
