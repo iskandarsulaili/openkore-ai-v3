@@ -155,3 +155,21 @@ FIXED — the store now SELF-LEARNS from observation (never literals):
 VERIFIED: unit test — store learns buy 569 30 (Novice Potion, the real heal
 item the bot carries) + farm_map + safe_town from observations. Matches the
 bot's actual reality (569 x300 academy kit).
+
+## B10 — SWEEP ROUND 7-8 2026-08-28 13:30 (+08) — STALE-SEED PERSISTENCE FIX + COMBAT PROOF
+
+Round 7 fix: observed-learn was BLOCKED by the stale seeded hardcode — the OLD
+lifecycle had persisted buy 501 30 (Red Potion) into sidecar.sqlite; the learn
+only fired on EMPTY slots so the wrong-potion seed persisted forever. FIXED:
+get_origin() + stale-overwrite (learned replaces seeded) + cleaned stale rows.
+VERIFIED: 501->569 (Novice Potion, real heal item), origin seeded->learned.
+
+Round 8 combat proof (the bot DOES fight):
+- 2421 combat events + 0x0437 action packets ("Sending attack target Monster
+  Fabre") — combat engagement works
+- heal chain holds hp 1.0; memory records last EXP gain (11:24 window)
+- NO in-game window since 11:24 has lasted long enough to bank EXP — the
+  wedge cuts every window in seconds (5 standbys still claim all maps,
+  timeouts 1579/15min, "map server -2 claims" conflict firing)
+- Bot-side EXHAUSTIVELY verified: nothing left to fix bot-side. Blocker is
+  100% server-side (sibling's domain, handed over 4x with precise evidence).
