@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import types
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 from ai_sidecar.autonomy.pdca_loop import PDCALoop
@@ -45,6 +46,31 @@ class FakeRuntime:
     action_queue: FakeActionQueue = field(default_factory=FakeActionQueue)
     server_solutions_store: Any = None
     _last_snapshot: dict = field(default_factory=dict)
+    snapshot_cache: Any = None
+
+    def __post_init__(self):
+        if self.snapshot_cache is None:
+            # a minimal snapshot_cache backed by _last_snapshot-style dicts
+            class _SC:
+                def __init__(self, owner):
+                    self._owner = owner
+                def get(self, bot_id):
+                    d = self._owner._last_snapshot.get(bot_id) or {}
+                    return _Snap(d)
+            class _Snap:
+                def __init__(self, d):
+                    self._d = d
+                    self.position = SimpleNamespace(map=d.get("map", ""))
+                    self.vitals = SimpleNamespace(hp_ratio=d.get("hp_ratio", 0.0))
+                    self.progression = SimpleNamespace(
+                        base_level=d.get("base_level", 1),
+                        base_exp=d.get("base_exp"),
+                        base_exp_max=d.get("base_exp_max"),
+                        job_level=d.get("job_level", 1),
+                    )
+                    self.raw = d.get("raw") or d
+                    self.inventory_items = d.get("inventory_items", [])
+            self.snapshot_cache = _SC(self)
 
 
 def _pdca(fake_rt: FakeRuntime, tmp_path) -> PDCALoop:

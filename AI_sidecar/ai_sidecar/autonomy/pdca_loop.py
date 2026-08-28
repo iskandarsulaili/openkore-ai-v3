@@ -9404,24 +9404,31 @@ class PDCALoop:
         _has_potions = False
         _has_weapon = False
         _kills = 0
-        _snap: dict | None = None
+        _snap_obj: object | None = None
         try:
-            _snap = getattr(_rt, "_last_snapshot", None) or {}
-            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
-            if _snap is not None:
-                if isinstance(_snap, dict):
-                    _map = str(_snap.get("map", "") or "")
-                    _hp_pct = float(_snap.get("hp_ratio", -1.0) or -1.0)
-                    _deaths = int(_snap.get("death_count", 0) or 0)
-                    _kills = int(_snap.get("kills", 0) or 0)
-                    _inv = _snap.get("inventory_items") or []
-                    for _it in _inv:
-                        _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
-                        _i = str(_it.get("id", "")) if isinstance(_it, dict) else ""
-                        if "potion" in _n or _i == "569":
-                            _has_potions = True
-                        if "knife" in _n or "sword" in _n or "weapon" in _n:
-                            _has_weapon = True
+            _sc = getattr(_rt, "snapshot_cache", None)
+            if _sc is not None:
+                _snap_obj = _sc.get(bot_id)
+            if _snap_obj is not None:
+                _raw = dict(getattr(_snap_obj, "raw", None) or {})
+                _pos = getattr(_snap_obj, "position", None) or {}
+                _vit = getattr(_snap_obj, "vitals", None) or {}
+                _map = str(_raw.get("map") or getattr(_pos, "map", "") or "")
+                _hp_pct = float(getattr(_vit, "hp_ratio", -1.0) if getattr(_vit, "hp_ratio", None) is not None
+                                else (_raw.get("hp_ratio") or -1.0))
+                _deaths = int(_raw.get("death_count") or 0)
+                _kills = 0  # the bridge has no kill counter; EXP-delta is the proxy
+                _inv = list(getattr(_snap_obj, "inventory_items", None) or [])
+                for _it in _inv:
+                    _n = str(getattr(_it, "name", "") or "").lower()
+                    _i = str(getattr(_it, "id", "") or "")
+                    if "potion" in _n or _i == "569":
+                        _has_potions = True
+                    if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
+                            or "gauche" in _n or "mace" in _n or "axe" in _n:
+                        _has_weapon = True
+                if getattr(_snap_obj, "has_weapon_in_inventory", False):
+                    _has_weapon = True
         except Exception:
             pass
         # Apply the SAME latched weapon decision as the reflex tier so an intermittent
@@ -9430,9 +9437,12 @@ class PDCALoop:
         try:
             _hsvc = getattr(_rt, "heuristic_service", None)
             if _hsvc is not None and hasattr(_hsvc, "_has_coldstart_weapon"):
-                _has_weapon = bool(_hsvc._has_coldstart_weapon(
-                    {"inventory_items": _snap.get("inventory_items") or [] if _snap else [],
-                     "has_weapon_in_inventory": bool(_snap.get("has_weapon_in_inventory")) if _snap else False}))
+                _has_weapon = bool(_hsvc._has_coldstart_weapon({
+                    "inventory_items": [getattr(_i, "model_dump", lambda: {})() for _i in _inv]
+                    if _snap_obj is not None else [],
+                    "has_weapon_in_inventory": bool(getattr(_snap_obj, "has_weapon_in_inventory", False))
+                    if _snap_obj is not None else False,
+                }))
         except Exception:
             pass
         _prompt = (
@@ -9548,37 +9558,47 @@ class PDCALoop:
             try:
                 _rt2 = self._runtime
                 if _rt2 is not None and hasattr(_rt2, "action_queue"):
-                    _snap = getattr(_rt2, "_last_snapshot", None) or {}
-                    _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
-                    _hp = float((_snap or {}).get("hp_ratio", 1.0) or 1.0)
-                    _no_pots = not bool((_snap or {}).get("inventory_items") and any(
-                        ("potion" in str(i.get("name", "")).lower() or str(i.get("id", "")) == "569")
-                        for i in (_snap or {}).get("inventory_items", [])
-                        if isinstance(i, dict)
-                    ))
-                    if _no_pots or _hp < 0.5:
-                        from datetime import UTC, datetime as _dt, timedelta
-                        from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                        # Read the server's learned potion command from the DB-backed
-                        # server_solutions store (server-specific; fallback is a safe default).
-                        _store2 = getattr(_rt2, "server_solutions_store", None)
-                        _potion_fb = ""
-                        if _store2 is not None:
-                            try:
-                                _potion_fb = str(_store2.get_json("potion_solution", {}).get("buy_command") or "")
-                            except Exception:
-                                _potion_fb = ""
-                        _cmd_fb = _potion_fb or "buy 501 30"
-                        _rt2.action_queue.enqueue(bot_id, _AP(
-                            action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
-                            kind="command", command=_cmd_fb,
-                            conflict_key="", priority_tier=_APT.strategic, source="crewai",
-                            created_at=_dt.now(UTC),
-                            expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                            idempotency_key="llm-gear-fallback-restock",
-                        ))
-                        logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> %s",
-                                    bot_id, _no_pots, _hp * 100, _cmd_fb)
+                    _snap = None
+                    try:
+                        _sc2 = getattr(_rt2, "snapshot_cache", None)
+                        if _sc2 is not None:
+                            _snap = _sc2.get(bot_id)
+                    except Exception:
+                        _snap = None
+                    if _snap is not None:
+                        _raw2 = dict(getattr(_snap, "raw", None) or {})
+                        _vit2 = getattr(_snap, "vitals", None) or {}
+                        _hp = float(getattr(_vit2, "hp_ratio", None) if getattr(_vit2, "hp_ratio", None) is not None
+                                    else (_raw2.get("hp_ratio") or 1.0))
+                        _inv2 = list(getattr(_snap, "inventory_items", None) or [])
+                        _no_pots = not any(
+                            ("potion" in str(getattr(i, "name", "") or "").lower()
+                             or str(getattr(i, "id", "") or "") == "569")
+                            for i in _inv2
+                        )
+                        if _no_pots or _hp < 0.5:
+                            from datetime import UTC, datetime as _dt, timedelta
+                            from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                            # Read the server's learned potion command from the DB-backed
+                            # server_solutions store (server-specific; fallback is a safe default).
+                            _store2 = getattr(_rt2, "server_solutions_store", None)
+                            _potion_fb = ""
+                            if _store2 is not None:
+                                try:
+                                    _potion_fb = str(_store2.get_json("potion_solution", {}).get("buy_command") or "")
+                                except Exception:
+                                    _potion_fb = ""
+                            _cmd_fb = _potion_fb or "buy 501 30"
+                            _rt2.action_queue.enqueue(bot_id, _AP(
+                                action_id=f"llm-gear-fallback-{int(_dt.now(UTC).timestamp())}",
+                                kind="command", command=_cmd_fb,
+                                conflict_key="", priority_tier=_APT.strategic, source="crewai",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key="llm-gear-fallback-restock",
+                            ))
+                            logger.info("llm_gear_advisory_fallback bot=%s no_pots=%s hp=%.0f%% -> %s",
+                                        bot_id, _no_pots, _hp * 100, _cmd_fb)
             except Exception:
                 pass
 
@@ -9609,23 +9629,41 @@ class PDCALoop:
         _ltm = getattr(self._runtime, "long_term_memory", None)
         if _ltm is None:
             return
-        _snap = getattr(self._runtime, "_last_snapshot", None) or {}
-        _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
-        if not _snap:
+        # Read the LIVE snapshot from snapshot_cache (the authoritative store
+        # ingest fills). `_last_snapshot` is NEVER assigned anywhere in the
+        # codebase — reading it always yielded {} so this whole PAST layer was
+        # silently dead. Use the bridge's raw dict (all fields incl. death_count)
+        # with the typed model fields as fallbacks.
+        _snap_obj = None
+        try:
+            _sc = getattr(self._runtime, "snapshot_cache", None)
+            if _sc is not None:
+                _snap_obj = _sc.get(bot_id)
+        except Exception:
+            _snap_obj = None
+        if _snap_obj is None:
             return
+        _raw = dict(getattr(_snap_obj, "raw", None) or {})
+        _pos = getattr(_snap_obj, "position", None) or {}
+        _vit = getattr(_snap_obj, "vitals", None) or {}
+        _prog = getattr(_snap_obj, "progression", None) or {}
+
+        _map = str(_raw.get("map") or getattr(_pos, "map", "") or "").lower().replace(".gat", "")
+        _deaths = int(_raw.get("death_count") or 0)
+        _hp_ratio = float(getattr(_vit, "hp_ratio", None) if getattr(_vit, "hp_ratio", None) is not None
+                          else (_raw.get("hp_ratio") or 1.0))
+        _exp = int(_raw.get("base_exp") if _raw.get("base_exp") is not None
+                   else (getattr(_prog, "base_exp", None) or 0))
+        _inv = list(getattr(_snap_obj, "inventory_items", None) or [])
+        _has_weapon = bool(getattr(_snap_obj, "has_weapon_in_inventory", False))
+        if not _has_weapon:
+            for _it in _inv:
+                _n = str(getattr(_it, "name", "") or "").lower()
+                if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
+                        or "gauche" in _n or "mace" in _n or "axe" in _n:
+                    _has_weapon = True
+
         _prev = self._memory_snapshot_key(bot_id)
-
-        _map = str(_snap.get("map", "") or "").lower().replace(".gat", "")
-        _deaths = int(_snap.get("death_count", 0) or 0)
-        _hp_ratio = float(_snap.get("hp_ratio", 1.0) or 1.0)
-        _inv = _snap.get("inventory_items") or []
-        _has_weapon = False
-        for _it in _inv:
-            _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
-            if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
-                    or "gauche" in _n or "mace" in _n or "axe" in _n:
-                _has_weapon = True
-
         _prev_deaths = int(_prev.get("deaths", 0))
         _prev_weapon = bool(_prev.get("weapon", False))
         _prev_map = str(_prev.get("map", "") or "")
@@ -9634,8 +9672,7 @@ class PDCALoop:
 
         # EXP delta = successful-kills proxy (the bridge tracks deaths via
         # death_count but does NOT send a kill counter; base_exp IS in the
-        # snapshot). A positive EXP delta = kills landed = REWARD.
-        _exp = int(_snap.get("base_exp", 0) or 0)
+        # raw snapshot). A positive EXP delta = kills landed = REWARD.
         _prev_exp = int(_prev.get("exp", 0))
         _exp_delta = _exp - _prev_exp
         _kill_delta = 1 if _exp_delta > 0 else 0
@@ -9747,22 +9784,29 @@ class PDCALoop:
         _has_weapon = False
         _has_potions = False
         _inv_names: list[str] = []
-        _snap: dict | None = None
+        _snap_obj: object | None = None
+        _inv: list[object] = []
         try:
-            _snap = getattr(_rt, "_last_snapshot", None) or {}
-            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
-            if _snap is not None:
-                _map = str(_snap.get("map", "") or "").lower().replace(".gat", "")
-                _bl = int(_snap.get("base_level", 1) or 1)
-                _inv = _snap.get("inventory_items") or []
+            _sc = getattr(_rt, "snapshot_cache", None)
+            if _sc is not None:
+                _snap_obj = _sc.get(bot_id)
+            if _snap_obj is not None:
+                _raw = dict(getattr(_snap_obj, "raw", None) or {})
+                _pos = getattr(_snap_obj, "position", None) or {}
+                _prog = getattr(_snap_obj, "progression", None) or {}
+                _map = str(_raw.get("map") or getattr(_pos, "map", "") or "").lower().replace(".gat", "")
+                _bl = int(getattr(_prog, "base_level", None) or _raw.get("base_level") or 1)
+                _inv = list(getattr(_snap_obj, "inventory_items", None) or [])
                 for _it in _inv:
-                    _n = str(_it.get("name", "")).lower() if isinstance(_it, dict) else ""
-                    _i = str(_it.get("id", "")) if isinstance(_it, dict) else ""
+                    _n = str(getattr(_it, "name", "") or "").lower()
+                    _i = str(getattr(_it, "id", "") or "")
                     _inv_names.append(_n or _i)
                     if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n or "mace" in _n or "bow" in _n or "rod" in _n:
                         _has_weapon = True
                     if "potion" in _n or _i in ("569", "501"):
                         _has_potions = True
+                if getattr(_snap_obj, "has_weapon_in_inventory", False):
+                    _has_weapon = True
         except Exception:
             pass
         # Use the SAME latched weapon decision as the reflex tier (heuristic_service
@@ -9773,9 +9817,12 @@ class PDCALoop:
         try:
             _hsvc = getattr(_rt, "heuristic_service", None)
             if _hsvc is not None and hasattr(_hsvc, "_has_coldstart_weapon"):
-                _has_weapon = bool(_hsvc._has_coldstart_weapon(
-                    {"inventory_items": _snap.get("inventory_items") or [] if _snap else [],
-                     "has_weapon_in_inventory": bool(_snap.get("has_weapon_in_inventory")) if _snap else False}))
+                _has_weapon = bool(_hsvc._has_coldstart_weapon({
+                    "inventory_items": [getattr(_i, "model_dump", lambda: {})() for _i in _inv]
+                    if _snap_obj is not None else [],
+                    "has_weapon_in_inventory": bool(getattr(_snap_obj, "has_weapon_in_inventory", False))
+                    if _snap_obj is not None else False,
+                }))
         except Exception:
             pass
         # A bot is in cold-start only when it genuinely needs it (no weapon + low level).
@@ -9977,17 +10024,20 @@ class PDCALoop:
         _dialogue_text = ""
         _goal = ""
         try:
-            _snap = getattr(_rt, "_last_snapshot", None) or {}
-            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
+            _snap = None
+            _sc = getattr(_rt, "snapshot_cache", None)
+            if _sc is not None:
+                _snap = _sc.get(bot_id)
             if _snap is not None:
-                _raw = _snap.get("raw") or {}
+                _raw = dict(getattr(_snap, "raw", None) or {})
+                _pos = getattr(_snap, "position", None) or {}
                 _options = [str(o) for o in (_raw.get("menu_options") or [])]
-                _npc_name = str(_raw.get("npc_name") or _snap.get("npc_name") or "")
+                _npc_name = str(_raw.get("npc_name") or "")
                 _npc_x = int(_raw.get("npc_x") or 0)
                 _npc_y = int(_raw.get("npc_y") or 0)
-                _npc_map = str(_snap.get("map") or _raw.get("npc_map") or "")
+                _npc_map = str(getattr(_pos, "map", "") or _raw.get("npc_map") or "")
                 _dialogue_text = str(_raw.get("last_npc_text") or "")
-                _goal = str(_snap.get("goal") or _raw.get("goal") or "")
+                _goal = str(_raw.get("goal") or "")
         except Exception:
             pass
         # Only act when a dialog is actually open with a menu (or text to reply to).
@@ -10114,12 +10164,17 @@ class PDCALoop:
         # Gather live party/swarm state.
         _members: list[dict] = []
         try:
-            _snap = getattr(_rt, "_last_snapshot", None) or {}
-            _snap = _snap.get(bot_id) if isinstance(_snap, dict) else None
-            _my_map = str((_snap or {}).get("map", "") or "") if isinstance(_snap, dict) else ""
-            _party = (_snap or {}).get("party_members") if isinstance(_snap, dict) else None
-            if isinstance(_party, list):
-                _members = _party
+            _snap = None
+            _sc = getattr(_rt, "snapshot_cache", None)
+            if _sc is not None:
+                _snap = _sc.get(bot_id)
+            if _snap is not None:
+                _raw = dict(getattr(_snap, "raw", None) or {})
+                _pos = getattr(_snap, "position", None) or {}
+                _my_map = str(getattr(_pos, "map", "") or _raw.get("map") or "")
+                _party = getattr(_snap, "party_members", None) or _raw.get("party_members")
+                if isinstance(_party, list):
+                    _members = [{"name": str(m)} for m in _party]
         except Exception:
             pass
         if not _members:

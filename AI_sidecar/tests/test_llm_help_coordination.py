@@ -1,5 +1,6 @@
 """Tests for the conscious-tier team-play help coordination (LLM-driven)."""
 import asyncio
+from types import SimpleNamespace
 from ai_sidecar.autonomy.pdca_loop import PDCALoop
 
 
@@ -33,6 +34,16 @@ class _FakeRuntime:
         self.llm_manager = llm
         self.action_queue = _FakeQueue()
         self._last_snapshot = {"botA": {"map": "prt_fild08c", "party_members": members or []}}
+        _snaps = self._last_snapshot
+        class _SC:
+            def get(self, bot_id):
+                d = _snaps.get(bot_id) or {}
+                return SimpleNamespace(
+                    position=SimpleNamespace(map=d.get("map", "")),
+                    raw=d,
+                    party_members=d.get("party_members", []),
+                )
+        self.snapshot_cache = _SC()
 
 
 def _make_loop(runtime):
