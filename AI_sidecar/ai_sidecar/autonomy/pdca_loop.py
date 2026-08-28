@@ -9605,7 +9605,6 @@ class PDCALoop:
 
         _map = str(_snap.get("map", "") or "").lower().replace(".gat", "")
         _deaths = int(_snap.get("death_count", 0) or 0)
-        _kills = int(_snap.get("kills", 0) or 0)
         _hp_ratio = float(_snap.get("hp_ratio", 1.0) or 1.0)
         _inv = _snap.get("inventory_items") or []
         _has_weapon = False
@@ -9616,13 +9615,18 @@ class PDCALoop:
                 _has_weapon = True
 
         _prev_deaths = int(_prev.get("deaths", 0))
-        _prev_kills = int(_prev.get("kills", 0))
         _prev_weapon = bool(_prev.get("weapon", False))
         _prev_map = str(_prev.get("map", "") or "")
 
         _now = datetime.now(timezone.utc).isoformat()
 
-        _kill_delta = _kills - _prev_kills
+        # EXP delta = successful-kills proxy (the bridge tracks deaths via
+        # death_count but does NOT send a kill counter; base_exp IS in the
+        # snapshot). A positive EXP delta = kills landed = REWARD.
+        _exp = int(_snap.get("base_exp", 0) or 0)
+        _prev_exp = int(_prev.get("exp", 0))
+        _exp_delta = _exp - _prev_exp
+        _kill_delta = 1 if _exp_delta > 0 else 0
 
         # ── REWARD/PUNISH LEDGER (2026-08-28): score ALL brains on outcomes ──
         # Same deltas as memory, now crediting/punishing the whole brain stack
@@ -9667,14 +9671,14 @@ class PDCALoop:
             )
             logger.info("memory_store: death bot=%s map=%s deaths=%s", bot_id, _map, _deaths)
 
-        # Kill banked: store farming_spot quality signal
+        # Kill banked (EXP delta proxy): store farming_spot quality signal
         if _kill_delta > 0 and _map:
             _ltm.store(
                 category="farming_spot",
-                content=f"map '{_map}' yielded {_kill_delta} kills for bot {bot_id} (total {_kills})",
-                tags=[bot_id, "kills", _map],
+                content=f"map '{_map}' yielded EXP for bot {bot_id} (+{_exp_delta})",
+                tags=[bot_id, "exp", _map],
                 importance=5,
-                metadata={"map": _map, "kill_delta": _kill_delta, "kills": _kills, "at": _now},
+                metadata={"map": _map, "exp_delta": _exp_delta, "at": _now},
             )
 
         # Weapon acquisition (gear milestone)
@@ -9689,7 +9693,7 @@ class PDCALoop:
             logger.info("memory_store: weapon bot=%s map=%s", bot_id, _map)
 
         # Persist the new baseline for next cycle
-        _prev.update({"deaths": _deaths, "kills": _kills,
+        _prev.update({"deaths": _deaths, "exp": _exp,
                       "weapon": _has_weapon, "map": _map})
 
     async def _llm_cold_start_advisory(self, bot_id: str) -> None:

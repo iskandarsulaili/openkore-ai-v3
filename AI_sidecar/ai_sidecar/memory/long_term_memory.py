@@ -283,16 +283,32 @@ class LongTermMemory:
             return dict(self._stats)
     
     # ── Local JSON fallback ──
-    
-    _local_path: Path = Path("/tmp/openkore_memory.json")
-    
+    # DURABLE path: /tmp is wiped on reboot → memory would be lost, breaking
+    # self-learning/self-healing/self-improving across restarts (user mandate).
+    # Resolve under the repo's data dir (gitignored runtime data) with an env
+    # override so tests can point elsewhere.
+    _local_path: Path = Path(
+        __import__("os").environ.get(
+            "OPENKORE_MEMORY_PATH",
+            str(Path(__file__).resolve().parents[3] / "AI_sidecar" / "data" / "openkore_memory.json"),
+        )
+    )
+
     def _store_local(self, category, content, tags, importance, metadata) -> bool:
         try:
             memories = []
             if self._local_path.exists():
                 with open(self._local_path) as f:
                     memories = json.load(f)
-            
+
+            # Dedup: skip an identical (category, content) within the last 64
+            # entries — the map-visit/store spam came from reconnect cycles
+            # re-firing the same event; keeping every duplicate pollutes recall.
+            _key = f"{category}|{content}"
+            for _m in memories[-64:]:
+                if f"{_m.get('category','')}|{_m.get('content','')}" == _key:
+                    return True  # already remembered — do not duplicate
+
             memories.append({
                 "category": category,
                 "content": content,

@@ -10,3 +10,5 @@ AI_sidecar/ai_sidecar/memory/lessons_hub.db
 # Per-server/per-character runtime state (user/char-agnostic) — never commit.
 # Contains ':' which is illegal on Windows and breaks clone/checkout.
 data/swarm_state_*.json
+# Long-term memory local fallback (bot-learned history, per-server runtime data)
+AI_sidecar/data/openkore_memory.json
