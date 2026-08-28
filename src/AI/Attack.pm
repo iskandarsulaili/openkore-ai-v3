@@ -1037,6 +1037,7 @@ sub main {
 
 	if (
 		!$found_action &&
+		$realMonsterDist <= ($args->{attackMethod}{maxDistance} || $config{"attackMaxDistance"} || 1) &&
 		(!$config{"runFromTarget"} || $realMonsterDist >= $config{"runFromTarget_dist"} || $failed_runFromTarget) &&
 		(!$config{"tankMode"} || !$target->{dmgFromYou})
 	 ) {
