@@ -9442,9 +9442,11 @@ class PDCALoop:
                         if _i:
                             try:
                                 _st = getattr(_rt, "server_solutions_store", None)
-                                if _st is not None and _st.get("potion_solution", None) in (None, ""):
+                                _stale = _st is not None and (_st.get("potion_solution", None) in (None, "")
+                                                             or _st.get_origin("potion_solution") == "seeded")
+                                if _stale:
                                     _st.seed_from_server(potion_item=str(getattr(_it, "name", "") or ""),
-                                                         potion_id=_i)
+                                                         potion_id=_i, origin="learned")
                             except Exception:
                                 pass
                     if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
@@ -9712,7 +9714,8 @@ class PDCALoop:
                 _prev["_fullhp_map_last"] = _map
                 if _fc >= 3:
                     _st4 = getattr(self._runtime, "server_solutions_store", None)
-                    if _st4 is not None and _st4.get("safe_town", None) in (None, ""):
+                    if _st4 is not None and (_st4.get("safe_town", None) in (None, "")
+                                             or _st4.get_origin("safe_town") == "seeded"):
                         _st4.set("safe_town", _map, origin="learned", confidence=0.6)
             elif _prev.get("_fullhp_map_last") != _map:
                 _prev["_fullhp_count"] = 0
@@ -9802,7 +9805,8 @@ class PDCALoop:
             # use the observed farm, never a hardcoded map name (RULE.md).
             try:
                 _st3 = getattr(self._runtime, "server_solutions_store", None)
-                if _st3 is not None and _st3.get("farm_map", None) in (None, ""):
+                if _st3 is not None and (_st3.get("farm_map", None) in (None, "")
+                                         or _st3.get_origin("farm_map") == "seeded"):
                     _st3.set("farm_map", _map, origin="learned", confidence=0.6)
             except Exception:
                 pass

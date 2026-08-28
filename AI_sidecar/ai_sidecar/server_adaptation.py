@@ -522,6 +522,25 @@ class ServerSolutionsStore:
                 return default if _v is None else _v
             return default
 
+    def get_origin(self, slot: str) -> str:
+        """Return the persisted origin ('learned'/'seeded'/...) for a slot, or ''."""
+        slot = str(slot or "").strip()
+        with self._lock:
+            if self._db is not None:
+                try:
+                    _row = self._db.fetchone(
+                        "SELECT origin FROM server_solutions WHERE server_key=? AND slot=? LIMIT 1",
+                        (self._server_key, slot),
+                    )
+                    if _row is not None:
+                        return str(_row["origin"] if "origin" in _row.keys() else (_row[0] if len(_row) > 0 else ""))
+                except Exception:
+                    pass
+            _f = self._fallback.get(slot)
+            if _f is not None:
+                return str(_f.get("origin", ""))
+            return ""
+
     def get_json(self, slot: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
         """Read a JSON-structured server solution fact."""
         default = default if default is not None else {}
@@ -537,7 +556,7 @@ class ServerSolutionsStore:
         return default
 
     def seed_from_server(self, *, potion_item: str = "", potion_id: str = "", potion_cost: int = 0,
-                         safe_town: str = "", farm_map: str = "") -> None:
+                         safe_town: str = "", farm_map: str = "", origin: str = "learned") -> None:
         """Populate the store from the server's OBSERVED/known facts (not decision literals).
 
         Seeds server-specific solution facts (which potion to buy, the safe town, the
@@ -550,14 +569,15 @@ class ServerSolutionsStore:
         with self._lock:
             if potion_id:
                 _existing = self.get("potion_solution", None)
-                if _existing in (None, ""):
+                _stale = _existing in (None, "") or self.get_origin("potion_solution") == "seeded"
+                if _stale:
                     _buy_cmd = f"buy {potion_id} 30"
                     _pj = json.dumps({"buy_command": _buy_cmd, "potion_id": potion_id, "name": potion_item or "Potion", "cost": int(potion_cost or 0)})
-                    self.set("potion_solution", {"buy_command": _buy_cmd, "potion_id": potion_id}, origin="seeded", confidence=0.7, value_json=_pj)
-            if safe_town and self.get("safe_town", None) in (None, ""):
-                self.set("safe_town", safe_town, origin="seeded", confidence=0.7)
-            if farm_map and self.get("farm_map", None) in (None, ""):
-                self.set("farm_map", farm_map, origin="seeded", confidence=0.7)
+                    self.set("potion_solution", {"buy_command": _buy_cmd, "potion_id": potion_id}, origin=origin, confidence=0.7, value_json=_pj)
+            if safe_town and (self.get("safe_town", None) in (None, "") or self.get_origin("safe_town") == "seeded"):
+                self.set("safe_town", safe_town, origin=origin, confidence=0.7)
+            if farm_map and (self.get("farm_map", None) in (None, "") or self.get_origin("farm_map") == "seeded"):
+                self.set("farm_map", farm_map, origin=origin, confidence=0.7)
 
 
 _def_store: ServerSolutionsStore | None = None
