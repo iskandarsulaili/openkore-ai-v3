@@ -3561,10 +3561,16 @@ class HeuristicService:
             # Apply mon_control for hunting maps when bot is on a new map
             self._emit_mon_control_for_map(actions, bot_id, _audit_map, int(signals.get("base_level", 1) or 1))
             # Ensure attack config is optimal for Novice-level combat
-            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
-                "Config audit - increase chase distance to 30 for Novice attack range")
-            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
-                "Config audit - attack from 5 cells away")
+            # RULE.md: NO hardcoded server-specific values. A Novice's melee
+            # range is 1 cell (Knife) — the old 30/5 made the bot attack from
+            # 5-30 cells (server melee range is still 1 -> EVERY attack missed
+            # -> "in-range hit timeout" loop). Use the melee reality (1/2) —
+            # the weapon's actual range comes from the game's own tables, not
+            # a hardcoded chase distance.
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "2", "hunting",
+                "Config audit - melee chase range (weapon range is 1 cell)")
+            self._set_config_once(actions, bot_id, "attackDistance", "1", "hunting",
+                "Config audit - melee attack distance (weapon range is 1 cell)")
             # Always enable attackAuto on hunting maps (includes cold start farming)
             _aa_val = "2" if base_level < 10 else "3"
             self._set_config_once(actions, bot_id, "attackAuto", _aa_val, "hunting",
