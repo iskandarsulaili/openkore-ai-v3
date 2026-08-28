@@ -134,3 +134,24 @@ HANDOVER (map-server issue): root cause precis pushed — set_char_online confli
 "marked in map server 0, but map server -2 claims it online" (stale standby);
 5 standbys register ALL 1262 maps (not EVE-idle) = char-ownership flap ejecting
 the bot. Standbys must claim ONLY when central is down. Sibling mid-fix.
+
+## B9 — SWEEP ROUND 6 2026-08-28 13:15 (+08) — FULL RULE.md AGNOSTICIZATION + OBSERVATION SELF-LEARN
+
+Found + fixed (the DEEPEST hardcode class):
+1. server_solutions store was SEEDED with hardcoded literals at lifecycle
+   startup: potion_id="501", safe_town="prontera", farm_map="prt_fild08" —
+   RULE.md violation (server-specific facts written as code, not learned).
+2. Advisory + health-monitor fallbacks hardcoded the SAME values
+   ("buy 501 30", "prontera", "prt_fild08", "prt_in 126 76" sell NPC).
+
+FIXED — the store now SELF-LEARNS from observation (never literals):
+- potion_solution ← observed inventory potion (gear advisory)
+- farm_map ← first map that yields REAL EXP (EXP-delta)
+- safe_town ← 3x consecutive full-HP map (rest/shop spot)
+- health-monitor town detection derived from store safe_town (_is_town_map)
+- Removed dead CONFIG_FIXES + STUCK_TOWN_MAPS (zero consumers, hardcoded)
+- No learned solution = NO command (cold start; reflex covers sustain)
+
+VERIFIED: unit test — store learns buy 569 30 (Novice Potion, the real heal
+item the bot carries) + farm_map + safe_town from observations. Matches the
+bot's actual reality (569 x300 academy kit).
