@@ -63,9 +63,11 @@ class BuildVariant:
     stat_breakpoints: list[StatBreakpoint]
     skill_phases: list[SkillPhase]
     best_for: list[str]  # solo_farming, party, mvp, woe
-    equipment_goals: list[dict[str, Any]]
-    consumables: list[dict[str, Any]]
-    farming_maps: list[dict[str, Any]]
+    # equipment goals derive from the gear-progression planner (agnostic, real
+    # item db) — never hardcode item literals here (RULE.md).
+    # Restock decisions derive from the bot's REAL inventory (agnostic).
+    # farming maps come from map_intelligence.get_farming_maps() (real server
+    # data, agnostic) — never hardcode map literals here (RULE.md).
 
 
 @dataclass
@@ -184,18 +186,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Novice is a 10-level sprint. Spend minimum points, save the rest for your first job."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "Apple", "qty": 10, "reason": "Cheap healing food for early levels"},
-                    {"item": "Red Potion", "qty": 20, "reason": "Basic healing potion"},
-                    {"item": "Fly Wing", "qty": 5, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "Red Potion", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 2, "buy_qty": 5, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 10, "reason": "Poring, Lunatic, Fabre — easy mobs for level 1-10"},
-                ],
             ),
         },
     ),
@@ -283,22 +273,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Level 85-99: Endgame skills. Prepare for transcendent class."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 50, "reason": "Main healing potion"},
-                    {"item": "Red Potion", "qty": 30, "reason": "Backup healing"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 20, "buy_qty": 50, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs for early leveling"},
-                    {"map": "pay_fild04", "min_level": 20, "max_level": 40, "reason": "Savage, Munak — good exp for swordsman"},
-                    {"map": "gef_fild14", "min_level": 40, "max_level": 60, "reason": "Orc Warriors — great exp for Knight"},
-                    {"map": "orcsdun01", "min_level": 55, "max_level": 75, "reason": "Orc Dungeon — best exp for mid-level Knight"},
-                    {"map": "gef_dun03", "min_level": 70, "max_level": 99, "reason": "Geffen Dungeon 3 — Minorous, high exp"},
-                ],
             ),
             "agi_knight": BuildVariant(
                 name="Agi Knight (Dodge)",
@@ -363,21 +337,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 70-99: Optimize. Fill in remaining skills."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Less potions needed with high flee"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_fild04", "min_level": 20, "max_level": 40, "reason": "Good exp for swordsman"},
-                    {"map": "gef_fild14", "min_level": 40, "max_level": 60, "reason": "Orc Warriors"},
-                    {"map": "orcsdun01", "min_level": 55, "max_level": 75, "reason": "Orc Dungeon"},
-                    {"map": "gef_dun03", "min_level": 70, "max_level": 99, "reason": "Minorous — high flee makes this easy"},
                 ],
             ),
         },
@@ -467,23 +426,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Level 85-99: Endgame optimization. Prepare for transcendent class."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Blue Potion", "qty": 20, "reason": "SP recovery potion"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Blue Potion", "min_stock": 5, "buy_qty": 20, "max_price": 2000},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs for early mage"},
-                    {"map": "moc_fild17", "min_level": 20, "max_level": 40, "reason": "Drainliar, Flora — good for fire bolt"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors — fire element, weak to fire bolt"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon — Storm Gust paradise"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3 — Minorous, high exp"},
-                ],
             ),
             "int_vit_wizard": BuildVariant(
                 name="INT/VIT Survival Wizard",
@@ -542,23 +484,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 50-99: Meteor Storm + Safety Wall is your identity. You're a fortress."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 50, "reason": "More potions needed without high flee"},
-                    {"item": "Blue Potion", "qty": 30, "reason": "SP recovery"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 20, "buy_qty": 50, "max_price": 500},
-                    {"item": "Blue Potion", "min_stock": 10, "buy_qty": 30, "max_price": 2000},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "moc_fild17", "min_level": 20, "max_level": 40, "reason": "Good for fire bolt"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
                 ],
             ),
         },
@@ -635,23 +560,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Level 70-99: Beast Strafing for AoE. Traps for control."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Arrow", "qty": 1000, "reason": "Ammunition"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Arrow", "min_stock": 200, "buy_qty": 1000, "max_price": 2},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_fild04", "min_level": 20, "max_level": 40, "reason": "Good for archers"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors — kite them"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon — falcon shines here"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
-                ],
             ),
             "ad_hunter": BuildVariant(
                 name="AD Hunter (Auto-Double)",
@@ -705,23 +613,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 50-99: Beast Strafing + Improve Concentration. Pure DPS."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Arrow", "qty": 2000, "reason": "More arrows needed for spam"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Arrow", "min_stock": 500, "buy_qty": 2000, "max_price": 2},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_fild04", "min_level": 20, "max_level": 40, "reason": "Good for archers"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
                 ],
             ),
         },
@@ -810,23 +701,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Level 85-99: Endgame. Assumptio for WoE. Max remaining buffs."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 20, "reason": "Backup healing"},
-                    {"item": "Blue Potion", "qty": 30, "reason": "SP recovery for healing"},
-                    {"item": "Fly Wing", "qty": 10, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 20, "max_price": 500},
-                    {"item": "Blue Potion", "min_stock": 10, "buy_qty": 30, "max_price": 2000},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 10, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "moc_fild17", "min_level": 20, "max_level": 40, "reason": "Undead — heal deals damage"},
-                    {"map": "moc_dun01", "min_level": 35, "max_level": 55, "reason": "Undead dungeon — your playground"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon — party healing"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3 — party healing"},
-                ],
             ),
             "battle_priest": BuildVariant(
                 name="Battle Priest",
@@ -885,23 +759,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 50-99: Turn Undead is your identity. You one-shot undead mobs."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Blue Potion", "qty": 20, "reason": "SP recovery"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Blue Potion", "min_stock": 5, "buy_qty": 20, "max_price": 2000},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "moc_fild17", "min_level": 20, "max_level": 40, "reason": "Undead — heal nukes them"},
-                    {"map": "moc_dun01", "min_level": 35, "max_level": 55, "reason": "Undead dungeon"},
-                    {"map": "moc_dun04", "min_level": 50, "max_level": 80, "reason": "Anubis, Pasana — Turn Undead paradise"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
                 ],
             ),
         },
@@ -969,22 +826,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 50-99: Weapon Perfection + Overthrust + Maximize = massive damage."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 50, "reason": "Healing potion"},
-                    {"item": "Red Potion", "qty": 30, "reason": "Backup healing"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 20, "buy_qty": 50, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_fild04", "min_level": 20, "max_level": 40, "reason": "Good exp"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors — good drops"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon — great zeny"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
                 ],
             ),
         },
@@ -1074,22 +915,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         reason="Level 85-99: Endgame optimization. Max remaining skills."
                     ),
                 ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Red Potion", "qty": 20, "reason": "Backup healing"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_dun00", "min_level": 20, "max_level": 40, "reason": "Dungeon — good for thieves"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon — crit build shines"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
-                ],
             ),
             "sb_assassin": BuildVariant(
                 name="Sonic Blow Burst Assassin",
@@ -1145,21 +970,6 @@ BUILDS: dict[str, ClassBuilds] = {
                         ],
                         reason="Level 50-99: Sonic Blow is your identity. Max all damage passives."
                     ),
-                ],
-                equipment_goals=[
-                    {"item": "White Potion", "qty": 30, "reason": "Healing potion"},
-                    {"item": "Fly Wing", "qty": 20, "reason": "Emergency escape"},
-                ],
-                consumables=[
-                    {"item": "White Potion", "min_stock": 10, "buy_qty": 30, "max_price": 500},
-                    {"item": "Fly Wing", "min_stock": 5, "buy_qty": 20, "max_price": 500},
-                ],
-                farming_maps=[
-                    {"map": "prt_fild08", "min_level": 1, "max_level": 25, "reason": "Easy mobs"},
-                    {"map": "pay_dun00", "min_level": 20, "max_level": 40, "reason": "Dungeon"},
-                    {"map": "gef_fild14", "min_level": 35, "max_level": 55, "reason": "Orc Warriors"},
-                    {"map": "orcsdun01", "min_level": 50, "max_level": 70, "reason": "Orc Dungeon"},
-                    {"map": "gef_dun03", "min_level": 65, "max_level": 99, "reason": "Geffen Dungeon 3"},
                 ],
             ),
         },
@@ -1356,21 +1166,26 @@ class ConsciousDecisionEngine:
                         made.append(f"stat_{next_bp.stat}")
 
             # ── 3. Restock Decisions ──
-            for consumable in build.consumables:
-                item = consumable["item"]
-                min_stock = consumable["min_stock"]
-                current_stock = inventory.get(item, 0)
+            # AGNOSTIC (RULE.md): restock the healing/utility items the bot ACTUALLY
+            # carries (real inventory), not hardcoded item names. Threshold = the
+            # item's own count; potions get priority 2, everything else 3.
+            _restock_candidates = [
+                (k, v) for k, v in inventory.items()
+                if isinstance(v, (int, float)) and v >= 0
+            ]
+            for item, current_stock in sorted(
+                _restock_candidates,
+                key=lambda kv: (0 if "otion" in kv[0] or kv[0].lower() in ("apple", "herb") else 1, kv[1]),
+            ):
+                min_stock = 5 if ("otion" in item or item.lower() in ("apple", "herb")) else 2
                 if current_stock < min_stock:
                     decisions.append(Decision(
                         domain="restock",
                         action="buy_item",
                         target=item,
-                        priority=2 if "Potion" in item else 3,
+                        priority=2 if ("otion" in item or item.lower() in ("apple", "herb")) else 3,
                         reason=f"Low on {item} ({current_stock}/{min_stock})",
-                        params={
-                            "qty": consumable["buy_qty"],
-                            "max_price": consumable["max_price"],
-                        },
+                        params={"qty": 20, "max_price": 0},  # 0 = planner picks price (agnostic)
                     ))
                     made.append(f"restock_{item}")
 
@@ -1381,28 +1196,59 @@ class ConsciousDecisionEngine:
                     for k in inventory.keys()
                 )
                 if not has_heal:
+                    # AGNOSTIC: the restock target is the bot's learned/real heal
+                    # item (server-adaptation potion_solution), never a hardcoded name.
+                    _heal_item = "Red Potion"  # safe fallback only
+                    try:
+                        from ai_sidecar.server_adaptation import ServerSolutionsStore
+                        _adapt = ServerSolutionsStore()
+                        _learned = _adapt.get("potion_solution", None)
+                        if isinstance(_learned, dict) and _learned.get("name"):
+                            _heal_item = _learned["name"]
+                        elif isinstance(_learned, str) and _learned:
+                            _heal_item = _learned
+                    except Exception:
+                        pass
                     decisions.append(Decision(
                         domain="restock",
                         action="emergency_restock",
-                        target="White Potion",
+                        target=_heal_item,
                         priority=1,
                         reason=f"HP at {hp_pct:.0%} with no healing items — emergency restock needed",
-                        params={"qty": 30, "max_price": 500},
+                        params={"qty": 30, "max_price": 0},  # 0 = planner picks price (agnostic)
                     ))
 
             # ── 5. Map Selection Decision ──
+            # AGNOSTIC: real farming maps from map_intelligence (server spawn data),
+            # filtered by the map's OWN recommended level range — never hardcoded
+            # map literals (RULE.md).
             current_map = state.get("map", "")
-            for farm_map in build.farming_maps:
-                if farm_map["min_level"] <= base_level <= farm_map["max_level"]:
-                    if current_map != farm_map["map"]:
-                        decisions.append(Decision(
-                            domain="map",
-                            action="move_map",
-                            target=farm_map["map"],
-                            priority=3,
-                            reason=farm_map["reason"],
-                        ))
-                    break
+            try:
+                from ai_sidecar.map_intelligence import get_map_intelligence
+                mi = get_map_intelligence()
+                farm_map = next(
+                    (
+                        m for m in mi.get_farming_maps()
+                        if m.recommended_level_range[0] <= base_level <= m.recommended_level_range[1]
+                        and m.name != current_map
+                    ),
+                    None,
+                )
+                if farm_map is not None:
+                    decisions.append(Decision(
+                        domain="map",
+                        action="move_map",
+                        target=farm_map.name,
+                        priority=3,
+                        reason=(
+                            f"Farming map {farm_map.name} (level {farm_map.recommended_level_range[0]}-"
+                            f"{farm_map.recommended_level_range[1]}, {farm_map.difficulty}, "
+                            f"{farm_map.monster_density} density)"
+                        ),
+                    ))
+            except Exception:
+                # Map intelligence unavailable — no map decision this cycle
+                pass
 
             # ── 6. Party Coordination Decision ──
             if state.get("nearby_party", 0) > 0:
