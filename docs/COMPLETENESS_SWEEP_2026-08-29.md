@@ -175,3 +175,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] Q1: UI wiring VERIFIED (App.tsx state line 336, mount init 1539, toggle 3039-3055 + i18n).
 - [x] Q4: ConfigManager capture parse VERIFIED (capture.enabled + max_bytes, defaults false).
 - [x] Q2: SHARED-MAPPING OVERFLOW (CRITICAL) — two instances with different max_bytes: the SECOND CreateFileMappingW on the existing name gets the FIRST's mapping but set s_cap = its OWN config → writes past the real boundary (shared-memory heap overflow) + memset past it. FIX: on ERROR_ALREADY_EXISTS adopt the header's ACTUAL capacity (only a fresh creation initializes the header); the launcher already trusts the header. DLL 0.1.1069 deployed (sha 251e4359, zero local file).
+
+## Batch R — FLAW-FIX sweep round 7 (2026-08-29)
+- [x] R1a: cleanup cron VERIFIED (0 2 * * * → cron_logs) + the packet-capture 7-day prune present.
+- [x] R1b: OTHER TELEMETRY UNPRUNED (REAL) — the launcher/p2p_dll/hostboot/injector files had NO prune (the comment claimed 30-day but no DELETE existed) → 71.4MB/93 rows accumulated. FIX: 30-day prune added (packet-capture keeps 7-day). Ran the cron live: "ok" + 0 deleted (all rows < 30 days old — the fix reclaims as they age). php -l clean.
