@@ -112,3 +112,13 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] H9: Launcher cargo check PASSED (7.14s Finished, no new warnings).
 - [x] H10: FULL CHAIN E2E — simulated telemetry POST → HTTP 200 stored:1 → DB row 66155 file_type=packetcapture 43 bytes. SERVER-SIDE VERIFIED.
 - [ ] H11: Real-client capture — needs a user launch with the toggle ON (Windows rebuild + dist upload; the launcher can only be built on Windows).
+
+## Batch I — SECURITY: NO local copy (2026-08-29, user directive)
+- [x] I1: REDESIGN — the capture NEVER writes a local file. The DLL now logs packets to a NAMED SHARED MEMORY RING (Local\RAWPacketCapture, 512KB, magic PCPT, header+ring frames) — zero disk writes.
+- [x] I2: VERIFIED the deployed DLL has ZERO packet_capture.log references (strings -a count = 0) — no local file path anywhere.
+- [x] I3: Launcher poll_packet_capture — opens+maps the ring (windows-sys Win32_System_Memory, feature added), reads the frames, POSTs straight to /telemetry/files (file_type packet-capture), CLEARS the ring (nothing stays local). Wired into the 30s telemetry loop.
+- [x] I4: Removed the packet_capture.log file-upload candidate from upload_files.
+- [x] I5: DLL rebuilt + deployed (P2PDLL_VERSION=0.1.1062, sha e25a93a96100e69d).
+- [x] I6: Server unchanged (already accepts packet-capture).
+- [x] I7: Linux cargo check PASSED; the Windows-target check fails ONLY on the build.rs windows-gnu gate (by design); the Memory FFI verified against windows-sys 0.52 source (link! macros present).
+- [ ] I8: Real-client capture (needs the Windows rebuild + dist upload; toggle ON → DLL writes the ring → launcher uploads → central DB).
