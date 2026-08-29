@@ -116,8 +116,10 @@ class CostModeManager:
             return 10000  # ~$0.50/day
         elif self.mode == CostMode.STANDARD:
             return 100000  # ~$5/day
-        else:  # MAX
-            return 1000000  # ~$50/day
+        else:  # MAX — unlimited per user mandate ("LLM cost tier: max/unlimited
+            # for conscious-brain reasoning"). budget<=0 disables the gate in
+            # manager._check_daily_budget; the per-call/per-hour limits still bound.
+            return 0
 
     def get_cost_per_hour_estimate(self) -> str:
         """Get estimated cost per hour for this mode."""
