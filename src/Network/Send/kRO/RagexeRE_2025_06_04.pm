@@ -22,6 +22,7 @@
 package Network::Send::kRO::RagexeRE_2025_06_04;
 
 use strict;
+use Globals qw(%config);
 use base qw(Network::Send::kRO::RagexeRE_2021_11_03);
 use Log qw(debug);
 use Utils qw(getTickCount);
@@ -48,34 +49,51 @@ sub new {
 	return $self;
 }
 
-# CZ_ENTER2 / 0x0436 — the RUNNING map-server expects 23 bytes:
-#   account_id.L char_id.L auth_code.L client_tick.L x4 sex.B
-# (the LIVE binary's packet db has 0x0436=23; the SOURCE tree now has 19 —
-#  the 19-byte form activates only after the map-server is rebuilt from
-#  current source. RULE.md: adapt to the LIVE server, never assume the
-#  source == the running binary.)
+# CZ_ENTER2 / 0x0436 — map-login packet length is SERVER-ADAPTED, never hardcoded.
+#   The RAW server's map-server binary changed mid-deploy (multi-login era):
+#   SOURCE tree = 19 bytes, the RUNNING binary (built 10:24) = 26 bytes.
+#   RULE.md: adapt to the LIVE server — the sidecar probes the live server +
+#   persists the accepted length in ServerSolutionsStore, then writes
+#   `mapLoginLength <N>` into the bot config (the bridge's server-adaptation
+#   flow). Supported: 19 (id + accountID + charID + sessionID + tick + sex),
+#   26 (id + 5 longs + sex + 3 pad — the RUNNING binary's multi-login-era
+#   layout). Anything else falls back to 19 (the SOURCE's canonical form).
 sub sendMapLogin {
 	my ($self, $accountID, $charID, $sessionID, $sex) = @_;
 	my $msg;
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
-	# 23-byte form matching the RUNNING map-server (see comment above):
-	#   id.W accountID.L charID.L sessionID.L tick.L sex.B + 4 trailing bytes
-	# (the server reads fields at offsets 2,6,10,14,18 — the 4 trailing bytes
-	#  are padding the 19-byte core to the server's expected 23.)
-	my $packet = pack(
-		'v V4 C V',
-		0x0436,
-		$accountID,
-		$charID,
-		$sessionID,
-		time(),
-		$sex,
-		0,
-	);
+	# Server-adapted length (the sidecar sets it from a live probe). Default 19.
+	my $mlen = $config{mapLoginLength} || 19;
+	my $packet;
+	if ($mlen == 26) {
+		# 26-byte layout: id + 5 longs (extra 0 tick slot) + sex + 3 pad
+		$packet = pack(
+			'v V5 C a3',
+			0x0436,
+			$accountID,
+			$charID,
+			$sessionID,
+			time(),
+			0,
+			$sex,
+			'',
+		);
+	} else {
+		# 19-byte layout: id + 4 longs + sex (the SOURCE's canonical form)
+		$packet = pack(
+			'v V4 C',
+			0x0436,
+			$accountID,
+			$charID,
+			$sessionID,
+			time(),
+			$sex,
+		);
+	}
 	$msg = $packet;
 	$self->sendToServer($msg);
-	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes)\n", 'sendPacket';
+	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes, mapLoginLength=$mlen)\n", 'sendPacket';
 }
 
 1;
