@@ -645,12 +645,16 @@ sub checkConnection {
 			# length (19 -> 23acct2 -> 23acct6 -> 26) until one lands. No
 			# hardcode: the bot learns the live server's accepted layout by
 			# probing it through the reconnect cycle.
-			my %_layouts = (19 => 1, 23 => 1, 26 => 1);
 			my @_order = (19, 23, 26);
 			my $_cur = defined($config{mapLoginLength}) ? $config{mapLoginLength} : 23;
 			my $_next = $_cur;
-			for my $_cand (@_order) {
-				if ($_cand != $_cur && $_layouts{$_cand}) { $_next = $_cand; last; }
+			# Rotate to the NEXT in the cycle (19 -> 23 -> 26 -> 19), not the
+			# first-that-differs — that would bounce between two forms forever.
+			for my $_i (0 .. $#_order) {
+				if ($_order[$_i] == $_cur) {
+					$_next = $_order[($_i + 1) % @_order];
+					last;
+				}
 			}
 			if ($_next != $_cur) {
 				$config{mapLoginLength} = $_next;
