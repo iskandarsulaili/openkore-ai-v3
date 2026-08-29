@@ -12872,6 +12872,10 @@ sub notify_accessible_mapname {
 	my $save_map = defined $config{saveMap} ? lc $config{saveMap} : undef;
 	$save_map =~ s/\.gat\z//i if defined $save_map;
 
+    # DEBUG: dump the accessible-map statuses (diagnose "map not ready" loops)
+    my @dbg_statuses = map { "$_->{map_name}=$_->{status}" } @{$args->{map_list}};
+    debug "accessible_map_dbg: " . join(", ", @dbg_statuses) . "\n", "connection";
+
     foreach my $i (0 .. $#{$args->{map_list}}) {
         my $map = $args->{map_list}[$i];
 		next if $map->{status} != 0;
