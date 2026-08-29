@@ -189,3 +189,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] T1: capture_dropped LOST for multi-chunk (my S4 client fix zeroed it on multi-chunk → the drop signal vanished). FIX server-side: store dropped only on the FIRST file of a call (the SUM stays correct for single + multi-chunk). E2E: 2-file call → row1 dropped=7, row2=0 (rows 66304/66305).
 - [x] T2: telemetry_files NO SCHEMA SOURCE (Z-1 class) — created ad-hoc in the live DB; a fresh deploy would fail every INSERT. FIX: idempotent migration 018_create_telemetry_files.sql (CREATE IF NOT EXISTS + guarded capture_dropped column, idx_uploaded for the prunes).
 - [x] php -l clean; E2E upload 200.
+
+## Batch U — FLAW-FIX sweep round 10 (2026-08-29)
+- [x] U1: MIGRATION PDO-SAFETY (REAL, T2's fix was fragile) — the Migrator (lib/Flux/Database/Migrator.php:85) runs the WHOLE file via ONE PDO::exec; my first 018 used PREPARE/EXECUTE user-variables (multi-statement — may fail under PDO). FIX: standalone statements + MariaDB ADD COLUMN IF NOT EXISTS (10.0.2+; the server runs 11.7). VERIFIED: scratch DB first-run exit 0 + second-run exit 0 (idempotent) + the LIVE DB (exit 0, capture_dropped present).
