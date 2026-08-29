@@ -151,3 +151,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] L6: capture_dropped rides the upload body → NEW telemetry_files.capture_dropped column (ALTER TABLE) → handler stores it → export surfaces dropped_frames (the ML trainer knows when the capture lost data). E2E: row 66265 capture_dropped=42 stored OK.
 - [x] L7: capture_enabled getter ALSO reads p2p_config.json capture.enabled (a manual config enables the DLL without the flag — the UI now reflects the true state).
 - [x] L8: cargo check PASSED (5.31s), php -l clean.
+
+## Batch M — FLAW-FIX sweep round 3 (2026-08-29)
+- [x] M1: MULTI-WRITER RACE (CRITICAL) — two game instances (2 PCs / multi-login) both CreateFileMappingW the SAME named ring (an existing name returns a handle to the SAME mapping); each had ONLY a process-local capture_mutex_ → two writers corrupt write_pos + frames. FIX: named inter-process mutex (Local\RAWPacketCaptureLock) — the DLL acquires it around EVERY ring write (1s timeout → drop + count, never block the game socket), the launcher acquires it around read+clear (atomic). DLL 0.1.1067 deployed (sha 27d461eb, zero local file); cargo check PASSED (2.02s).
+- [x] M3: prune SQL VERIFIED — matches both file_type spellings (packet-capture,packetcapture) + the stored value IS 'packetcapture' + 7-day cutoff on uploaded_ts. Correct.
+- [x] M4: export auth VERIFIED — proper session bootstrap + featureAllowed('ads.admin') (the same as /ads/telemetry).
