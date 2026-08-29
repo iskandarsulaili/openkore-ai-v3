@@ -413,11 +413,14 @@ class CrewManager:
                 trace = payload.meta.trace_id or ""
             if hasattr(payload, "decision_context"):
                 decision_context = payload.decision_context
-            # Call the crew pipeline — can be monkeypatched by tests
-            pipeline = getattr(type(self), '_run_crew_pipeline', None)
+            # Call the crew pipeline — can be monkeypatched by tests.
+            # NOTE: getattr(type(self), fn) yields the UNBOUND function, so calling
+            # it requires passing self explicitly — but _run_crew_pipeline is
+            # keyword-only (*, ...) and rejects a positional self. Use the BOUND
+            # method (self._run_crew_pipeline) which injects self automatically.
+            pipeline = getattr(self, '_run_crew_pipeline', None)
             if pipeline and decision_context is not None:
                 agent_results, summary, flow_info, errors, decision_output = await pipeline(
-                    self,
                     bot_id=bot,
                     trace_id=trace,
                     objective=str(getattr(payload, "objective", "")),

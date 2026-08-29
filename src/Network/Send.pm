@@ -483,31 +483,17 @@ sub sendMapLogin {
 	my $msg;
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
-	if ($self->{serverType} == 0 || $self->{serverType} == 17 || $self->{serverType} == 18 || $self->{serverType} == 19 ||
-		$self->{serverType} == 20 || $self->{serverType} == 21 || $self->{serverType} == 22) {
-
-		$msg = $self->reconstruct({
-			switch => 'map_login',
-			accountID => $accountID,
-			charID => $charID,
-			sessionID => $sessionID,
-			tick => getTickCount,
-			sex => $sex,
-		});
-
-	} else { #oRO and pRO
-		my $key;
-
-		$key = pack("C*", 0xFA, 0x12, 0, 0x50, 0x83);
-		$msg = pack("C*", 0x72, 0, 0, 0, 0) .
-			$accountID .
-			$key .
-			$charID .
-			pack("C*", 0xFF, 0xFF) .
-			$sessionID .
-			pack("V", getTickCount()) .
-			pack("C", $sex);
-	}
+	# 2025-06-04 client: the server's 0x0436 (CZ_ENTER) is 19 bytes:
+	#   id(2) + accountID(4) + charID(4) + sessionID(4) + tick(4) + sex(1)
+	# (clif_packetdb.hpp: parseable_packet(0x0436,19,clif_parse_WantToConnection,2,6,10,14,18)).
+	# The generic reconstruct emits 23 (an extra serverID field) which the server
+	# REJECTS ("Connection Failed With Error" 0x006A) -> map-login refused.
+	$msg = pack("v", 0x0436) .
+		$accountID .
+		$charID .
+		$sessionID .
+		pack("V", getTickCount()) .
+		pack("C", $sex);
 
 	$self->sendToServer($msg);
 	debug "Sent sendMapLogin\n", "sendPacket", 2;

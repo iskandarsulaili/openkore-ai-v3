@@ -48,24 +48,34 @@ sub new {
 	return $self;
 }
 
-# CZ_ENTER2 / 0x0436 — PACKETVER >= 20220330 layout (23 bytes):
+# CZ_ENTER2 / 0x0436 — the RUNNING map-server expects 23 bytes:
 #   account_id.L char_id.L auth_code.L client_tick.L x4 sex.B
-# The inherited RagexeRE_2021_11_03 map_login struct ('a4 a4 a4 V2 C') is
-# 21 bytes with sex at offset 20 — the rAthena 20250604 server reads sex at
-# byte 22 (pos 2,6,10,14,22) and rejects the short packet ("wrong length"),
-# desyncing the whole stream and disconnecting every bot on map-enter. We
-# override sendMapLogin to pack the exact 23-byte form.
+# (the LIVE binary's packet db has 0x0436=23; the SOURCE tree now has 19 —
+#  the 19-byte form activates only after the map-server is rebuilt from
+#  current source. RULE.md: adapt to the LIVE server, never assume the
+#  source == the running binary.)
 sub sendMapLogin {
 	my ($self, $accountID, $charID, $sessionID, $sex) = @_;
+	my $msg;
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
-	my $msg = pack(
-		'v a4 a4 a4 V x4 C',
-		0x0436, $accountID, $charID, $sessionID, getTickCount(), $sex
+	# 23-byte form matching the RUNNING map-server (see comment above):
+	#   id.W accountID.L charID.L sessionID.L tick.L sex.B + 4 trailing bytes
+	# (the server reads fields at offsets 2,6,10,14,18 — the 4 trailing bytes
+	#  are padding the 19-byte core to the server's expected 23.)
+	my $packet = pack(
+		'v V4 C V',
+		0x0436,
+		$accountID,
+		$charID,
+		$sessionID,
+		time(),
+		$sex,
+		0,
 	);
-
+	$msg = $packet;
 	$self->sendToServer($msg);
-	debug "Sent sendMapLogin (0x0436, 23 bytes)\n", "sendPacket", 2;
+	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes)\n", 'sendPacket';
 }
 
 1;

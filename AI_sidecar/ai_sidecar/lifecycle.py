@@ -6294,16 +6294,25 @@ def create_runtime() -> RuntimeState:
     # never tripped. per_bot_budget=True means each bot has its own budget (bounded
     # per-bot) — change to False for a single shared fleet budget.
     try:
+        # NOTE: the env-bound field is llm_cost_tier (OPENKORE_AI_LLM_COST_TIER),
+        # NOT cost_mode (which stays at its default). Read BOTH, prefer the env one.
+        _cost_tier = str(getattr(settings, "llm_cost_tier", "") or "").lower() or \
+                     str(getattr(settings, "cost_mode", "standard") or "standard").lower()
         _cost_budget = int(getattr(settings, "llm_daily_budget_tokens", 0) or 0) or 100000
         _cost_hourly = int(getattr(settings, "cost_mode_hourly_calls", 0) or 0) or 30
+        # MAX tier = unlimited (user mandate: max/unlimited for conscious-brain
+        # reasoning). 0 disables both the daily-token and per-hour call gates.
+        if _cost_tier == "max":
+            _cost_budget = 0
+            _cost_hourly = 0
         if hasattr(model_router, "set_cost_controls"):
             model_router.set_cost_controls(
                 tracker=runtime.cost_tracker,
                 daily_budget=_cost_budget,
                 max_calls_per_hour=_cost_hourly,
-                tier=getattr(settings, "cost_mode", "standard"),
+                tier=_cost_tier,
             )
-            logger.info("cost_controls_wired: router budget daily=%d hourly=%d", _cost_budget, _cost_hourly)
+            logger.info("cost_controls_wired: router budget daily=%d hourly=%d tier=%s", _cost_budget, _cost_hourly, _cost_tier)
     except Exception as _ce:
         logger.warning("cost_router_wiring_failed: %s", _ce)
     # Attach the LLMManager to the runtime so the conscious-tier advisory/root-cause
