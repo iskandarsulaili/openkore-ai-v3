@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import inspect
+import threading
 import logging
 from threading import Thread
 from typing import Any
@@ -794,20 +795,47 @@ class DecisionService:
         except RuntimeError:
             return asyncio.run(value)
 
-        result: dict[str, Any] = {}
+        # A new Thread running asyncio.run() PER CALL means a new OS thread
+        # and a new event loop for every decision. Each new thread also gets
+        # fresh threading.local() storage, and this process holds several
+        # thread-local SQLite pools, so the per-call thread quietly created a
+        # per-call set of database connections that nothing ever closed.
+        #
+        # Measured on a sidecar running against a live server: 67 open
+        # descriptors to one database file cycling between 21 and 114, with
+        # RSS climbing ~90 MB/min while Python object counts stayed flat --
+        # a SQLite page cache is allocated in C, so tracemalloc cannot see it.
+        #
+        # Instead: ONE worker thread with ONE long-lived loop, created lazily
+        # and reused for the life of the process. Blocking semantics for the
+        # caller are unchanged; the thread-locals are created once rather
+        # than once per call.
+        loop = self._ensure_helper_loop()
+        future = asyncio.run_coroutine_threadsafe(value, loop)
+        return future.result()
 
-        def worker() -> None:
-            try:
-                result["value"] = asyncio.run(value)
-            except Exception as exc:  # pragma: no cover - passthrough to caller
-                result["error"] = exc
+    _helper_loop = None
+    _helper_lock = threading.Lock()
 
-        thread = Thread(target=worker, daemon=True)
-        thread.start()
-        thread.join()
-        if "error" in result:
-            raise result["error"]
-        return result.get("value")
+    @classmethod
+    def _ensure_helper_loop(cls):
+        """Return the shared helper event loop, starting it on first use."""
+        loop = cls._helper_loop
+        if loop is not None and not loop.is_closed():
+            return loop
+        with cls._helper_lock:
+            loop = cls._helper_loop
+            if loop is not None and not loop.is_closed():
+                return loop
+            new_loop = asyncio.new_event_loop()
+
+            def _runner() -> None:
+                asyncio.set_event_loop(new_loop)
+                new_loop.run_forever()
+
+            Thread(target=_runner, name="sidecar-async-helper", daemon=True).start()
+            cls._helper_loop = new_loop
+            return new_loop
 
     def _build_assessment(
         self,
