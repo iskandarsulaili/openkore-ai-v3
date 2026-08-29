@@ -639,6 +639,23 @@ sub checkConnection {
 		} elsif (timeOut($timeout{maplogin})) {
 			message T("Timeout on Map Server, connecting to Account Server...\n"), "connection";
 			Plugins::callHook('timeout_mapserver');
+			# AUTO-ADAPT (2026-08-29, RULE.md agnostic): the map-login (0x0436)
+			# length is SERVER-ADAPTED — the live map-server's binary expects ONE
+			# specific form. On a timeout/rejection, rotate to the next candidate
+			# length (19 -> 23acct2 -> 23acct6 -> 26) until one lands. No
+			# hardcode: the bot learns the live server's accepted layout by
+			# probing it through the reconnect cycle.
+			my %_layouts = (19 => 1, 23 => 1, 26 => 1);
+			my @_order = (19, 23, 26);
+			my $_cur = defined($config{mapLoginLength}) ? $config{mapLoginLength} : 23;
+			my $_next = $_cur;
+			for my $_cand (@_order) {
+				if ($_cand != $_cur && $_layouts{$_cand}) { $_next = $_cand; last; }
+			}
+			if ($_next != $_cur) {
+				$config{mapLoginLength} = $_next;
+				message TF("Map-login auto-adapted: mapLoginLength %d -> %d (learning the live server's 0x0436 form)\n", $_cur, $_next), "connection";
+			}
 			$timeout_ex{master}{timeout} = $timeout{reconnect}{timeout};
 			$self->serverDisconnect;
 			$self->setState(Network::NOT_CONNECTED);

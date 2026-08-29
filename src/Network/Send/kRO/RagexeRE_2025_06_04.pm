@@ -81,20 +81,21 @@ sub sendMapLogin {
 			'',
 		);
 	} elsif ($mlen == 23) {
-		# 23-byte multi-login layout (PROBED live, the RUNNING binary):
-		#   id.W + 4B unknown + accountID.L@6 + charID.L@10 + sessionID.L@14
-		#   + tick.L@18 + sex.B@22 — the account_id MOVED to offset 6 in the
-		#   multi-login era (the real client sends this). Verified: acct@6 ->
-		#   23B reply, acct@2 -> 6B error.
+		# 23-byte multi-login layout (the RUNNING binary — PROBED live):
+		#   id.W + 4B pad + accountID.L@6 + charID.L@10 + sessionID.L@14
+		#   + SEX.B@18 + 4B pad@19-22.
+		#   PROBE EVIDENCE: acct@2 -> 6B reply (reject ack), acct@6 -> 23B
+		#   reply (the real ack) — the account_id MOVED to offset 6 in the
+		#   multi-login era. The sex sits at 18 (the server's pos[4]=18).
 		$packet = pack(
-			'v I I I I I C a0',
+			'v I I I I C a4',
 			0x0436,
-			0,           # unknown @2-5
+			0,           # pad @2-5
 			$accountID,  # @6-9
 			$charID,     # @10-13
 			$sessionID,  # @14-17
-			time(),      # @18-21
-			$sex,        # @22
+			$sex,        # @18
+			'',          # pad @19-22
 		);
 	} else {
 		# 19-byte layout: id + 4 longs + sex (the SOURCE's canonical form)
