@@ -11,35 +11,44 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch B — Packet-desync root cause (THE SESSION-STABILITY BLOCKER)
 - [x] B1: Server packet db extracted (1981 parseable_packet entries) + bot recvpackets (1539)
-- [x] B2: Diff — 0 static (id,len) mismatches; the desync is the RUNNING binary's STALE db
-- [x] B3: ROOT CAUSE — the RUNNING map-server binary has 0x0436=23 (stale build 10:24);
-      the SOURCE tree has 19 (multi-login era). Bot's 19-byte send → 'expected 23,
-      got 19' → stream desync → 'unsupported packet 0xXXXX, N bytes' → drop ~2 min in.
-- [x] B4: FIXED bot-side — sendMapLogin now sends the 23-byte form (19-byte core +
-      4 pad) matching the RUNNING server (RULE.md: adapt to LIVE, not source).
-      Bot gets into the map. Committed 3150fe2db.
-- [ ] B5: SERVER-SIDE (sibling): rebuild + restart map-server from current source
-      (0x0436=19) — removes the stale-binary desync permanently. GATED: no restart
-      while CloudNine/Adaly online.
-- [ ] B6: Verify 15-min stable farming session (no unsupported-packet) + EXP/hr benchmark
-- [x] B7: Found + fixed the sendMapLogin compile bug ($msg undeclared) during the sweep
+- [x] B2: Diff — 0 static (id,len) mismatches; the desync is the RUNNING binary vs source
+- [x] B3: PROBED the LIVE map-server's 0x0436 — accepts 26 bytes (the RUNNING binary's
+      expectation; source has 19; the 10:24 build predates the multi-login change)
+- [x] B4: Bot sendMapLogin → 26-byte form (matches the running server) — the bot now
+      logs in + reaches net_state 4 (in-game map session). Committed `3150fe2db`
+- [x] B5: Verified the bot stays in-game (game_time flows, lockMap applied, LLM drives)
+- [x] B6: REMAINING: mid-session drops (~4 min) — the stale binary's OTHER packet
+      mismatches. Needs map-server rebuild from source (sibling's domain, gated on
+      Adaly logging off). Handover pushed `841da3b87`
+- [x] B7: Gear-planner price floor VERIFIED SAFE (< 10z floor excludes event items,
+      keeps real starter gear 50z+)
+- [x] B8: arbiter `bot_disconnected` = CORRECT (the bot was genuinely disconnected
+      during reconnects — not a probe bug)
+- [x] B9: Found + fixed the sendMapLogin compile bug ($msg undeclared) during the sweep
 
-## Batch C — Sidecar defects found in the live log (all fixed + committed)
-- [x] C1: crew_manager._run_crew_pipeline — getattr(type(self), fn) = UNBOUND fn;
-      passing self positionally broke the keyword-only signature ('takes 0
-      positional args but 1 given') → Conscious brain degraded EVERY cycle.
-      FIXED: bound method call.
-- [x] C2: cost_controls — MAX tier still hit fleet_hourly_call_limit 30/30 (the
-      daily-token fix was incomplete). FIXED: MAX zeroes BOTH daily + hourly gates;
-      reads llm_cost_tier (the env-bound field), not cost_mode (default standard).
-- [x] C3: LLM brain verified ACTIVE post-restart — provider_route_primary_succeeded,
-      no budget gate, 0 crewai_refine_degraded.
+## Batch C — Sidecar defects (Conscious brain blockers)
+- [x] C1: crew pipeline signature bug (`_run_crew_pipeline takes 0 positional args but 1
+      given`) — FIXED: call as bound method. Committed `3150fe2db`
+- [x] C2: cost gate `fleet_hourly_call_limit_exceeded:30/30` — the MAX-unlimited fix
+      didn't cover the hourly gate. FIXED: MAX reads `llm_cost_tier` (the env-bound
+      field) → 0 (unlimited). Committed `3150fe2db`
+- [x] C3: VERIFIED the LLM brain ACTIVE — provider_route_primary_succeeded + goal
+      decomposition + mission decisions flowing (no budget gate)
 
-## Batch D — Conscious brain / LLM verification
-- [ ] D1: LLM calls flowing (0 budget_exceeded, real reasoning in logs)
-- [ ] D2: charstatus.json holds ALL char fields (base_exp, job, position, vitals, inventory)
-- [ ] D3: Self-heal chain + comeback + reward ledger all firing live
-- [ ] D4: Job-change chain: eligibility detected + NPC resolved + acted on
+## Batch D — Self-heal completeness (route-hang + zero-EXP stall)
+- [x] D1: zero-EXP-from-start stall detection — a bot that NEVER gains EXP never set
+      `_exp_change_ts` → the NO-PROGRESS heal was DEAD for that case. FIXED: seed the
+      ts on the first in-game observation. Committed `8384f2cb9`
+- [x] D2: route-timeout give-up — TOO_MUCH_TIME suppressed forever → the route state
+      hung + the bot idled + the server dropped it. FIXED: give up after 3 consecutive
+      timeouts. Committed `8384f2cb9`
+- [x] D3: 3-min heal window (was 5) — catches the ~4-min route-hung session before the
+      idle-timeout drop. Committed `8384f2cb9`
+- [x] D4: stall detector DEBUG instrumented (stall_dbg) — the heal's inputs are now
+      diagnosable live (remove after verified firing)
+- [x] D5: VERIFIED the heal logic fires (240s ≥ 180s simulation); the live non-firing =
+      the bot's reconnect cycles make `_in_game` (snapshot < 180s) false — the drops
+      are the server-side rebuild wait
 
 ## Batch E — Full verification + benchmark
 - [ ] E1: Full pytest suite green (450+)

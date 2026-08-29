@@ -10099,6 +10099,15 @@ class PDCALoop:
         _last_route_heal = float(_prev.get("_route_heal_ts", 0) or 0)
         _route_stall = (_in_game and _route_fails >= 8
                         and (_now_ts - _last_route_heal) >= _stall_min * 60)
+        # DEBUG (2026-08-29): log the stall detector's inputs so a never-firing
+        # heal is diagnosable live (remove once verified firing).
+        if _in_game and (bot_id in getattr(self, "_stall_dbg", set()) or True) and _now_ts % 60 < 1:
+            _log_dbg = getattr(self, "_log", None) or logging.getLogger(__name__)
+            _log_dbg.warning(
+                "stall_dbg: bot=%s in_game=%s exp_changed=%s last_change=%.0f stall_s=%.0f "
+                "route_fails=%d snap_age=%.0f map=%s exp=%s",
+                bot_id, _in_game, _exp_changed, _last_change, _now_ts - _last_change,
+                _route_fails, _now_ts - _ts_obs, _map, _exp)
         # FIX (2026-08-29): a bot that gains ZERO EXP from the start (stuck on a
         # sparse map) NEVER sets _exp_change_ts (that only happens when EXP
         # CHANGES), so _last_change stays 0 and the elif below never fires —
