@@ -79,3 +79,23 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
       churn (the char believes ONLY standby 3 is routable, but its maps aren't
       found) is the suspected root (server-side, sibling's domain)
 
+## Batch G — 0x0436 AUTO-ADAPT (the agnostic completion, 2026-08-29)
+- [x] G1: The RUNNING map-server's 0x0436 = 23 (probed + the log "expected 23").
+      The SOURCE + the 2025 emulator = 19. The binary ≠ the source (the sibling's
+      build has uncommitted 0x0436=23 changes)
+- [x] G2: 4 layout guesses (19, 23-acct@2, 23-acct@6, 26) ALL rejected
+      ("invalid account_id" / "unknown (length:N)") — the 23-byte's pos[] is
+      NOT guessable (binary decode: the entry @0x7acb198 len=23 func=0x00b4888e
+      but the pos[] decode fails — the struct alignment)
+- [x] G3: AUTO-ADAPT SHIPPED (committed `90e554a1d` + the rotation fix) — on a
+      map-login timeout, the bot rotates the layout (19 -> 23 -> 26 -> 19) until
+      one lands. RULE.md agnostic: the bot LEARNS the live server's accepted form
+      through the reconnect cycle, no hardcode
+- [ ] G4: VERIFIED the rotation cycles (23 -> 26 -> 19 observed live) but NO
+      layout lands yet — the RUNNING binary's 0x0436 pos[] remains unknown
+- [ ] G5: THE DEFINITIVE (the only remaining verification): capture the REAL
+      client's 0x0436 bytes (tcpdump the tunnel while a real launcher session
+      connects) — the real client works, its packet is the ground truth. Until
+      then, the auto-adapt rotation is the bot-side completion
+
+
