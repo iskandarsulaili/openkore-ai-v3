@@ -122,3 +122,12 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] I6: Server unchanged (already accepts packet-capture).
 - [x] I7: Linux cargo check PASSED; the Windows-target check fails ONLY on the build.rs windows-gnu gate (by design); the Memory FFI verified against windows-sys 0.52 source (link! macros present).
 - [ ] I8: Real-client capture (needs the Windows rebuild + dist upload; toggle ON → DLL writes the ring → launcher uploads → central DB).
+
+## Batch J — MORE capture for ML (2026-08-29, user directive + "moderation and pruning both sides")
+- [x] J1: DLL v2 — 8MB config-driven ring (capture.max_bytes, clamped 1-32MB), FULL packets (no 128B truncation), v2 frames [u32 len][u64 ts_ms][raw bytes] (ML-ready timestamps). Ring WRAPS (keeps newest). Deployed P2PDLL_VERSION=0.1.1064 (sha 97e2f4733b864fbe), zero local file (strings count 0).
+- [x] J2: Launcher — v2 frame parse + in-memory retry retention (PENDING_CAPTURE, 16MB cap, oldest dropped): upload failures NEVER lose capture, next poll retries. cargo check PASSED.
+- [x] J3: Server MODERATION — packet-capture gets 8MB per-file cap (2MB others keep).
+- [x] J4: Server PRUNING — 7-day retention for packet-capture rows (cleanup_logs.php cron), the other telemetry files keep 30-day.
+- [x] J5: ML EXPORT — GET /ads/telemetry/capture?username=X decodes the stored v2 frames to "0x0436 <ts> <hex>" lines (admin-gated EXACTLY like /ads/telemetry — featureAllowed('ads.admin'); the weak Flux::$isLoggedIn gate never 403'd correctly in api.php, fixed).
+- [x] J6: E2E VERIFIED — v2 frame upload → HTTP 200 stored:1 → row 66237 (len 20 + ts 1788016000000 + the 0x0436 bytes) → decode test = "0x0436 1788016000000 36041000..." → unauth export = 401 (gate works) → 2 rows stored.
+- [ ] J7: Real-client capture + ML training (needs Windows launcher rebuild + dist upload + toggle ON).
