@@ -357,11 +357,39 @@ class SQLiteDB:
         message = str(exc).strip().lower()
         return "database is locked" in message or "database table is locked" in message or "database schema is locked" in message
 
+    class _ClosingConnection(sqlite3.Connection):
+        """A sqlite3.Connection that closes itself when its with-block ends.
+
+        sqlite3 treats 'with conn:' as a TRANSACTION scope: it commits or
+        rolls back and leaves the connection OPEN. Every call site in this
+        file is written as 'with self._connect() as conn:', so each database
+        operation left a live connection behind, each holding its own page
+        cache, until the garbage collector happened to reap it.
+
+        Measured on a running sidecar: 876 connections opened in ninety
+        seconds from this one method, with RSS climbing while Python object
+        counts stayed flat -- a SQLite page cache is allocated in C, so
+        tracemalloc does not see it.
+
+        Overriding __exit__ preserves the transaction semantics exactly: the
+        base class still commits or rolls back, and then it closes.
+        """
+
+        def __exit__(self, exc_type, exc, tb):
+            try:
+                return super().__exit__(exc_type, exc, tb)
+            finally:
+                try:
+                    self.close()
+                except Exception:
+                    pass
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(
             self._path,
             timeout=max(self._busy_timeout_ms / 1000.0, 0.05),
             check_same_thread=False,
+            factory=SQLiteDB._ClosingConnection,
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -370,5 +398,6 @@ class SQLiteDB:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=%d" % max(self._busy_timeout_ms, 5000))
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-8000")
+        # 2 MB, not 8 MB: this connection is discarded after one operation.
+        conn.execute("PRAGMA cache_size=-2000")
         return conn
