@@ -156,3 +156,12 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] M1: MULTI-WRITER RACE (CRITICAL) — two game instances (2 PCs / multi-login) both CreateFileMappingW the SAME named ring (an existing name returns a handle to the SAME mapping); each had ONLY a process-local capture_mutex_ → two writers corrupt write_pos + frames. FIX: named inter-process mutex (Local\RAWPacketCaptureLock) — the DLL acquires it around EVERY ring write (1s timeout → drop + count, never block the game socket), the launcher acquires it around read+clear (atomic). DLL 0.1.1067 deployed (sha 27d461eb, zero local file); cargo check PASSED (2.02s).
 - [x] M3: prune SQL VERIFIED — matches both file_type spellings (packet-capture,packetcapture) + the stored value IS 'packetcapture' + 7-day cutoff on uploaded_ts. Correct.
 - [x] M4: export auth VERIFIED — proper session bootstrap + featureAllowed('ads.admin') (the same as /ads/telemetry).
+
+## Batch N — FLAW-FIX sweep round 4 (2026-08-29)
+- [x] N3: SERVER KEEPS THE HEAD (CRITICAL) — packet-capture per-file cap 8MB was substr(-8MB) = KEEP TAIL; a full ring + retry CUT the 0x0436 (at the START, the WHOLE POINT). FIX: packet-capture keeps the HEAD (0..8MB); other files keep the tail. Unit-verified (head vs tail logic); php -l clean. (The 8MB E2E upload isn't feasible over the tunnel — the storage chain is proven by the smaller uploads.)
+- [x] N5: writer_pid in the ring header [28..31] — two clients on one machine share the ring; the export can separate by PID (currently informational).
+- [x] N1: mutex/ring lifetime AUDITED clean (the launcher opens by name per poll; a game-exit miss is clean).
+- [x] N2: dropped counter overflow (u32@4G) — negligible, documented.
+- [x] N7: flag re-check every 30s + capture on the recv hot path — the gate is a cached bool + one config read when disabled (ZERO overhead, the mandate).
+- [x] N8: disabled = zero cost VERIFIED (the gate order: `if (!cfg.enabled && !flag_on) return;` — the flag check is ONLY when cfg.enabled is false, 30s-cached).
+- [x] DLL 0.1.1068 deployed (sha 9836d22f, zero local file).
