@@ -57,21 +57,30 @@ class MonsterDB:
         self._loaded = False
     
     def _default_path(self) -> str:
-        """Find mob_db.yml — try pre-re and re versions."""
+        """Find mob_db.yml — RAW runs RENEWAL, so db/re is authoritative for
+        the live server's mob stats (pre-re HP/EXP mis-score every target:
+        Thief Bug Egg = HP 290 real vs 48 pre-re). Prefer re over pre-re."""
         base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         base = os.path.join(base, "knowledge", "rathena_db", "db")
-        # Try pre-re first, then re
-        for variant in ["pre-re", "re"]:
+        # Try re (renewal — the live RAW server) first, then pre-re
+        for variant in ["re", "pre-re"]:
             path = os.path.join(base, variant, "mob_db.yml")
             if os.path.exists(path):
                 return path
         return os.path.join(base, "re", "mob_db.yml")
     
     def _find_rathena_path(self) -> str:
-        """Try to find the rAthena repo path."""
+        """Try to find the rAthena repo path.
+
+        RAW server runs RENEWAL (db/re is authoritative for the live server's
+        mob stats — pre-re HP/EXP mis-score every target). Prefer the RUNNING
+        server's db/re over the vendored pre-re copy.
+        """
         base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         # Check common locations
         candidates = [
+            os.path.join(os.path.expanduser("~"), "rathena-AI-world", "db", "re"),
+            os.path.join(base, "knowledge", "rathena_db", "db", "re"),
             os.path.join(base, "knowledge", "rathena_db", "db"),
             os.path.join(os.path.expanduser("~"), "rathena", "db"),
             os.path.join(os.path.expanduser("~"), "rathena", "db", "re"),
