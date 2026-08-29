@@ -99,3 +99,16 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
       then, the auto-adapt rotation is the bot-side completion
 
 
+
+## Batch H — tcpdump-capture feature (2026-08-29, user directive)
+- [x] H1: Killed ALL stale processes (openkore bots, start-bot wrappers, monitor/check 30min loops) — only the sidecar (740128) remains.
+- [x] H2: DLL packet-capture hook (WARP patches/cross-compile NetworkHooks.cpp) — MaybeCapturePacket logs every map-server packet (hex + dir + len) to packet_capture.log when capture.enabled; disabled by default (zero overhead); 8MB cap. Hooked on BOTH recv (S>) + send (C>).
+- [x] H3: Config — CaptureConfig in Types.h (enabled=false, max_bytes=8MB) + ConfigManager parse (p2p_config.json capture.enabled) + GetCaptureConfig accessor.
+- [x] H4: Launcher Settings toggle (App.tsx) — Packet Capture checkbox (OFF by default) → Rust set_capture_enabled writes packet_capture.flag + p2p_config.json capture.enabled; capture_enabled getter for the initial state. Registered in invoke_handler.
+- [x] H5: Telemetry upload — upload_files now includes packet_capture.log (file_type packet-capture), same change-tracking.
+- [x] H6: Server allowlist (FluxCP ads_api_routes.php) accepts packet-capture/packetcapture (the SWEEP-48 trap — a new file_type silently dropped).
+- [x] H7: i18n settings.captureDisabledByDefault in en/ja/es.
+- [x] H8: DLL built (P2PDLL_VERSION=0.1.1061 commit e535c14), deployed to client dir (sha d630a8107c00b8c6, old backed up .bak-20260829-precapture).
+- [x] H9: Launcher cargo check PASSED (7.14s Finished, no new warnings).
+- [x] H10: FULL CHAIN E2E — simulated telemetry POST → HTTP 200 stored:1 → DB row 66155 file_type=packetcapture 43 bytes. SERVER-SIDE VERIFIED.
+- [ ] H11: Real-client capture — needs a user launch with the toggle ON (Windows rebuild + dist upload; the launcher can only be built on Windows).
