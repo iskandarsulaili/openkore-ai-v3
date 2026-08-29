@@ -239,67 +239,57 @@ BOT_JOBS: dict[str, str] = {
 }
 
 # ── Class-aware hunting grounds ──
-# (min_level, max_level, map_name, description)
-CLASS_HUNTING_GROUNDS: dict[str, list[tuple[int, int, str, str]]] = {
-    # Pro RO progression: dungeons for density, field maps only as fallback
-    # Dungeons have 3-5x spawn density vs field maps
-    "novice": [
-        (1, 10,  "prt_fild05",   "Prontera Field — Porings, Lunatics, Pupa (safe, level 1-10)"),
-        (10, 20, "pay_dun00",    "Payon Cave 1F — Skeletons, Zombies (undead, 3x density)"),
-        (20, 35, "pay_dun01",    "Payon Cave 2F — Munak, Bongun, Ghoul (undead, 5x density)"),
-        (35, 50, "gef_dun00",    "Geffen Dungeon 1F — Drainliar, Creamy, Flora (element advantage)"),
-    ],
-    "swordman": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Bash one-shots undead)"),
-        (15, 30, "orcsdun01",     "Orc Dungeon — Orc Warriors, Orc Archers (melee heaven, 5x density)"),
-        (30, 50, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo, Alligator"),
-    ],
-    "mage": [
-        (1, 15,  "gef_dun00",     "Geffen Dungeon 1F — Drainliar, Creamy (Fire Bolt one-shots)"),
-        (15, 30, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo (element advantage)"),
-        (30, 50, "mag_dun01",     "Magma Dungeon 1F — Kaho, Lava Golem (fire element)"),
-    ],
-    "archer": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons, Zombies (kite from range)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (Double Strafe burst)"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere, Kukre (water element)"),
-    ],
-    "acolyte": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Undead (Heal one-shots, 3x EXP)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (Turn Undead)"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere (Heal vs undead)"),
-    ],
-    "merchant": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (tanky, high HP)"),
-        (15, 30, "orcsdun01",     "Orc Dungeon — Orc Warriors (tanky, good drops)"),
-        (30, 50, "gef_dun01",     "Geffen Dungeon 2F — Anacondaq, Stapo"),
-    ],
-    "thief": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Double Attack procs)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun (AGI build shines)"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere, Kukre"),
-    ],
-    "taekwon": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (kick damage)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
-    ],
-    "gunslinger": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Single Action burst)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
-    ],
-    "ninja": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Kunai range)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
-    ],
-    "soul_linker": [
-        (1, 15,  "pay_dun00",     "Payon Cave 1F — Skeletons (Soul Strike)"),
-        (15, 30, "pay_dun01",     "Payon Cave 2F — Munak, Bongun"),
-        (30, 50, "iz_dun00",      "Byalan Dungeon 1F — Marine Sphere"),
-    ],
-}
+# AGNOSTIC (RULE.md): candidate hunting maps are DERIVED from the live server's
+# spawn data (map_spawns) + the renewal mob db — never hardcoded map literals.
+# Each map's mobs are scored by danger-vs-level; the adaptive store then ranks.
+CLASS_HUNTING_GROUNDS: dict[str, list[tuple[int, int, str, str]]] = {}
+
+
+def _derive_hunting_grounds(
+    map_spawns: dict[str, list[tuple[str, int, int]]],
+    level: int = 1,
+    _monster_db: Any | None = None,
+) -> list[tuple[int, int, str, str]]:
+    """Derive candidate hunting maps from the server's real spawn data.
+
+    For each map with spawns, compute an approximate danger band from its mobs'
+    ATK (renewal mob db) and return a (min_level, max_level, map, reason) tuple.
+    The band widens with level so low-level bots prefer easy maps and high-level
+    bots move to harder ones. No map/monster literals (RULE.md).
+    """
+    if not map_spawns:
+        return []
+    _md = _monster_db
+    if _md is None:
+        try:
+            from ai_sidecar.combat.target_engine import MonsterDB
+            _md = MonsterDB()
+            _md.load()
+        except Exception:
+            return []
+    out: list[tuple[int, int, str, str]] = []
+    for map_name, mobs in map_spawns.items():
+        try:
+            atks = []
+            for mob_name, count, _r in mobs:
+                if not count:
+                    continue
+                m = _md.lookup(mob_name)
+                if m is not None and m.attack > 0:
+                    atks.append((m.attack, count))
+            if not atks:
+                continue
+            # Weighted mean attack of the map's mobs (count-weighted)
+            tot = sum(c for _a, c in atks)
+            wavg = sum(a * c for a, c in atks) / max(tot, 1)
+            # Danger band: a mob of ATK A is comfortable around level ~A (renewal
+            # HP pools are large; the band is generous). Floor at 1.
+            min_lv = max(1, int(wavg * 0.7) - 5)
+            max_lv = max(min_lv + 5, int(wavg * 1.6) + 10)
+            out.append((min_lv, max_lv, map_name, f"{map_name} — {len(mobs)} spawn groups (real server data)"))
+        except Exception:
+            continue
+    return sorted(out, key=lambda e: e[0])
 
 # ── Class-aware skill training priorities ──
 # (skill_id, max_level, description)
@@ -393,7 +383,17 @@ def _class_hunting_ground(
     Falls back to hardcoded defaults for unknown maps.
     Returns (map_name, description) or None if already on the best map.
     """
-    grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+    grounds = _derive_hunting_grounds({}, base_level)  # replaced below with real spawns
+    # NOTE: _class_hunting_ground is module-level; the caller passes map_spawns
+    # via the hunting-ground derivation. If no spawns are available, grounds=[].
+    if not grounds:
+        # AGNOSTIC: derive from the loaded map_spawns (real server data) when the
+        # caller didn't pass spawns — module-level fallback.
+        try:
+            from ai_sidecar.autonomy.spawn_loader import load_map_spawns
+            grounds = _derive_hunting_grounds(load_map_spawns(), base_level)
+        except Exception:
+            grounds = []
 
     # Score each candidate map using adaptive data
     candidates = []
@@ -733,7 +733,7 @@ class AdaptiveDataStore:
         Considers: monster density, monster HP vs player ATK, exp per kill, element advantage.
         Returns (map_name, reason).
         """
-        grounds = CLASS_HUNTING_GROUNDS.get(job_name, CLASS_HUNTING_GROUNDS["novice"])
+        grounds = _derive_hunting_grounds(self.map_spawns, base_level)
         best_map = None
         best_reason = ""
         best_score = -1.0
@@ -1342,7 +1342,14 @@ class HeuristicService:
         except Exception:
             logger.debug("_load_towns DB query failed; using prefix fallback", exc_info=True)
         if not _HUNT_TOWNS:
-            _HUNT_TOWNS = {"prontera", "morocc", "geffen", "payon", "aldebaran", "alberta", "izlude", "comodo", "umbala", "yuno", "einbroch", "einbech", "lighthalzen", "rachel", "veins", "niflheim", "manuk", "splendide", "brasilis", "moscovia", "amatsu", "kunlun", "louyang", "ayothaya", "jawaii", "gonryun", "hugel"}
+            # AGNOSTIC fallback: the server's real town list (tables/cities.txt) —
+            # never hardcoded map literals (RULE.md).
+            try:
+                from ai_sidecar.game_data import load_city_maps
+                _HUNT_TOWNS = set(load_city_maps())
+            except Exception:
+                logger.debug("_load_towns cities.txt fallback failed", exc_info=True)
+                _HUNT_TOWNS = set()
 
     def _get_state(self, signals: dict, bot_id: str = "default") -> str:
         """Determine bot state from signals."""
@@ -1979,8 +1986,10 @@ class HeuristicService:
                                 try:
                                     _is_farmable = _cm_farmable in {m for m, _s in _mk_get_hunting_maps(_bl_c)}
                                 except Exception:
-                                    _is_farmable = _cm_farmable in {
-                                        "prt_fild08c", "prt_fild08", "prt_fild05", "prt_fild04"}
+                                    # AGNOSTIC fallback: any map with real spawn data is
+                                    # farmable (loaded from the server's spawn scripts) —
+                                    # never hardcoded map literals (RULE.md).
+                                    _is_farmable = _cm_farmable in set(self.map_spawns.keys())
                                 if _is_farmable:
                                     _actions.append(HeuristicAction(
                                         kind="log", command=f"commit_farm={_cm_farmable}",
