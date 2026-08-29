@@ -170,3 +170,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] P4: retry drain VERIFIED clean (mem::take on the success path empties the store; a failed upload retains bounded 16MB; the next success drains).
 - [x] P6: UPLOAD CHUNKING — the pending (≤16MB) was sent as ONE file; the server's 8MB per-file cap (head-keep) truncated the ML data after the first 8MB. FIX: chunk into ≤8MB pieces (≤16MB = 2 chunks/1 call, the server's 2-files/call). cargo check PASSED.
 - [x] P1/P2/P3/P5: audited clean (dropped-counter static resets on launcher restart = minor; read+clear atomic under the named mutex; INT cast fine; multi-session rows are ordered by id + ts — acceptable for the 0x0436 goal).
+
+## Batch Q — FLAW-FIX sweep round 6 (2026-08-29)
+- [x] Q1: UI wiring VERIFIED (App.tsx state line 336, mount init 1539, toggle 3039-3055 + i18n).
+- [x] Q4: ConfigManager capture parse VERIFIED (capture.enabled + max_bytes, defaults false).
+- [x] Q2: SHARED-MAPPING OVERFLOW (CRITICAL) — two instances with different max_bytes: the SECOND CreateFileMappingW on the existing name gets the FIRST's mapping but set s_cap = its OWN config → writes past the real boundary (shared-memory heap overflow) + memset past it. FIX: on ERROR_ALREADY_EXISTS adopt the header's ACTUAL capacity (only a fresh creation initializes the header); the launcher already trusts the header. DLL 0.1.1069 deployed (sha 251e4359, zero local file).
