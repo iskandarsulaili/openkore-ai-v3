@@ -11,7 +11,6 @@ from ai_sidecar.game_knowledge_db import GameKnowledgeDB
 from ai_sidecar.anti_detection import BehaviorEngine, get_behavior_engine
 from ai_sidecar.anti_detection.behavior_engine import BehaviorProfileType
 from ai_sidecar.autonomy.ro_mechanics import (
-    PER_MAP_MON_CONTROL,
     JOB_CHANGE_2_1,
     JOB_2_1_CLASSES,
     CLASS_SKILL_TRAINING,
@@ -29,8 +28,7 @@ from ai_sidecar.autonomy.ro_mechanics import (
     POTION_COST, POTION_HEAL_MIN, POTION_HEAL_MAX,
     BLUE_POTION_COST, BLUE_POTION_SP_MIN, BLUE_POTION_SP_MAX, ARROW_COST,
     MVP_MONSTERS, ELEMENTAL_WEAPONS, JOB_CHANGE_TALK,
-    JOB_CHANGE_2_1, JOB_2_1_CLASSES,
-    PER_MAP_MON_CONTROL, CLASS_SKILL_TRAINING,
+    CLASS_SKILL_TRAINING,
 )
 from ai_sidecar.autonomy.domains import DomainRegistry
 from ai_sidecar.domains.combat.dispatcher import TacticsDispatcher
@@ -789,7 +787,14 @@ class AdaptiveDataStore:
                 best_reason = f"{desc} (score={score:.1f}, avg_hits={hits_to_kill:.1f}, danger={danger_ratio:.0%})"
 
         if best_map is None:
-            return ("prt_fild05", "Fallback: Prontera Field (safe for all classes)")
+            # AGNOSTIC fallback: the first real spawn map (never a hardcoded literal).
+            _fb = grounds[0] if grounds else None
+            if _fb is None and self.map_spawns:
+                _fb_map = sorted(self.map_spawns.keys())[0]
+                return (_fb_map, f"Fallback: {_fb_map} (real spawn data)")
+            if _fb is not None:
+                return (_fb[2], _fb[3])
+            return ("", "No hunting maps available (no spawn data)")
         return (best_map, best_reason)
 
     def get_optimal_weapon(self, job_name: str, base_level: int, zeny: int) -> tuple[str, str] | None:
@@ -1545,7 +1550,11 @@ class HeuristicService:
         Dedup: only emits when map changes, not every cycle.
         """
         _map = map_name.lower().replace(".gat", "")
-        controls = PER_MAP_MON_CONTROL.get(_map)
+        # AGNOSTIC (RULE.md): derive the per-map monster stance list from the
+        # LIVE server's real spawn data (map_spawns) — never hardcoded tables.
+        controls = [
+            (m, 1, 0, 0) for m, _c, _r in self.map_spawns.get(_map, [])
+        ]
         if not controls:
             return
         # EMIT-ON-MAP-CHANGE ONLY (completeness fix): the earlier GLOBAL 60s rate-limit
@@ -2673,13 +2682,19 @@ class HeuristicService:
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto 3", confidence=0.90, reason=f"Cold start: at academy {_cur_map} lvl {_bl} — attack enabled", domain="survival"))
                                     _actions.append(HeuristicAction(kind="command", command="set attackAuto_inLockOnly 0", confidence=0.90, reason="Cold start: attack enabled on lockMap", domain="survival"))
                             else:
-                                # Level 6-15: prt_fild05, farm the map's actual spawns
-                                # (Pupa/Thief Bug give real EXP) — attack, not avoid.
-                                # NOTE: 'set lockMap' so the bridge marker shields
-                                # it from the hunting-map stickiness override.
-                                _actions.append(HeuristicAction(kind="command", command="set lockMap prt_fild05", confidence=0.75, reason=f"Cold start: field at lvl {_bl}", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Pupa 0 1 1", confidence=0.6, reason="Farm Pupa (real EXP)", domain="progression"))
-                                _actions.append(HeuristicAction(kind="command", command="mon_control Thief Bug 0 1 1", confidence=0.6, reason="Farm Thief Bug (real EXP)", domain="progression"))
+                                # Level 6-15: farm the map's REAL spawns (agnostic —
+                                # derived from live spawn data + mob danger), attack not avoid.
+                                _cs_field_map = ""
+                                try:
+                                    _cs_field_map, _cs_field_reason = self._adaptive.get_optimal_hunting_map(str(signals.get("job_name", "") or "novice"), int(_bl or 1))
+                                except Exception:
+                                    _cs_field_map = ""
+                                if not _cs_field_map and self.map_spawns:
+                                    _cs_field_map = sorted(self.map_spawns.keys())[0]
+                                if _cs_field_map:
+                                    _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_cs_field_map}", confidence=0.75, reason=f"Cold start: field at lvl {_bl} ({_cs_field_map})", domain="progression"))
+                                    for _fm, _fc, _fr in self.map_spawns.get(_cs_field_map, [])[:5]:
+                                        _actions.append(HeuristicAction(kind="command", command=f"mon_control {_fm}\t0 1 1", confidence=0.6, reason=f"Farm {_fm} (real EXP)", domain="progression"))
                         if _bl <= 25:
                             _cs_mgr = getattr(self, '_cold_start_manager', None)
                             if _cs_mgr is not None:
@@ -3134,8 +3149,14 @@ class HeuristicService:
         # Step 4: Return to hunting map with weapon + potions — cold start complete
         # Define map check vars before use (config audit section defines them later)
         _cs_map = signals.get("map", "") or ""
+        _cs_job = signals.get("job_name", "") or "novice"
+        _cs_lvl = signals.get("base_level", 1)
         _cs_in_town = _is_city_map(_cs_map)
-        _cs_in_hunting = any(x in _cs_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
+        # AGNOSTIC: "in hunting" = the current map is one of the server's REAL
+        # spawn maps (loaded from the live spawn scripts) — never hardcoded
+        # map-name prefixes (RULE.md).
+        _cs_spawn_maps = set(self.map_spawns.keys())
+        _cs_in_hunting = _cs_map in _cs_spawn_maps
         # Use stable key based on character name only (not account prefix)
         _cs_stable_key = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
         _cold_start_step = self._cold_start_step.get(_cs_stable_key, 0)
@@ -3220,25 +3241,17 @@ class HeuristicService:
                         # academy block); do NOT advance the cold-start step here — the
                         # academy kit (knife+potions) will move the flow forward naturally.
                     else:
-                        # In Prontera/other town. Prefer the academy-farm lockMap if the
-                        # level-1-5 academy block already resolved one (prt_fild08 or the
-                        # current field) — otherwise two competing cold-start blocks
-                        # oscillate lockMap between prt_fild05 and prt_fild08 every cycle,
-                        # leaving the bot stuck in town calculating routes and never
-                        # farming (verified live). Only fall back to the legacy prt_fild05
-                        # step-1 target when the academy block did NOT pick a hunt field.
+                        # Prefer the academy-farm lockMap if the level-1-5 academy block
+                        # already resolved one — otherwise two competing cold-start blocks
+                        # oscillate lockMap every cycle (verified live). Only fall back to a
+                        # REAL-data hunting ground when the academy block picked no hunt map.
                         _cs_authority_hunt = str(getattr(self, "_cold_start_hunt_map", {}).get(bot_id, "") or "").lower()
                         # ── SERVER-AGNOSTIC REACHABLE-FARM RESOLUTION (sidecar decision) ──
                         # A farm target that is UNROUTABLE from the bot's current map makes
-                        # the bot loop forever ("Calculating route..."), never farming. Resolve
-                        # the hunt target to the reachable variant for the current location.
-                        # NOTE (verified live 2026-08-28): prt_fild08c exists in map_index
-                        # + has a GAT, but is NOT loaded by the server's maps_athena.conf
-                        # (only prt_fild08/08a/08b are) → it is absent from the 0x0840
-                        # accessible-map list → OpenKore refuses to enter it ("Map server
-                        # not ready" / routes back to town forever). The old izlude_c→
-                        # prt_fild08c remap locked the bot to a map the server never serves.
-                        # Always target the BASE farm map (prt_fild08), which IS accessible.
+                        # the bot loop forever ("Calculating route..."), never farming.
+                        # prt_fild08c exists in map_index but is NOT loaded by the server's
+                        # maps_athena.conf → absent from the 0x0840 accessible-map list →
+                        # OpenKore refuses to enter it. Always target the BASE farm map.
                         _cs_cur = str(signals.get("map", "") or "").lower().replace(".gat", "")
                         if _cs_cur == "izlude_c" and _cs_authority_hunt == "prt_fild08c":
                             _cs_authority_hunt = "prt_fild08"
@@ -3255,30 +3268,34 @@ class HeuristicService:
                                 reason=f"Cold start step 1 - walk to academy hunt {_cs_authority_hunt}",
                             ))
                         else:
-                            # SIDECAR routing decision (server-agnostic): the academy
-                            # tutorial ROOM (iz_ac01_a) has no portal to any field map,
-                            # so `move <farm>` is unroutable there. The bot must first
-                            # walk to the room's EXIT warp (iz_ac01_a 100,24 ->
-                            # izlude_a 127,253), from which the farm fields are reachable.
-                            # Route a farm-bound bot in the academy room to the exit tile
-                            # (a sidecar decision — the bridge only passes commands).
-                            actions.append(HeuristicAction(
-                                kind="command", command="set lockMap prt_fild05",
-                                confidence=0.99, domain="economy",
-                                reason=f"Cold start step 1 - set lockMap to prt_fild05, need {50 - zeny}z more",
-                            ))
-                            if str(_cs_map).lower() == "iz_ac01_a":
+                            # Legacy fallback: NO academy hunt map resolved — pick the best
+                            # REAL hunting ground for the bot's level (agnostic: derived
+                            # from live spawns + mob danger), never hardcoded.
+                            _cs_farm = ""
+                            try:
+                                _cs_farm, _cs_reason = self._adaptive.get_optimal_hunting_map(_cs_job or "novice", int(_cs_lvl or 1))
+                            except Exception:
+                                _cs_farm = ""
+                            if not _cs_farm and self.map_spawns:
+                                _cs_farm = sorted(self.map_spawns.keys())[0]
+                            if _cs_farm:
                                 actions.append(HeuristicAction(
-                                    kind="command", command="move 100 24",
+                                    kind="command", command=f"set lockMap {_cs_farm}",
                                     confidence=0.99, domain="economy",
-                                    reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
+                                    reason=f"Cold start step 1 - set lockMap to {_cs_farm} (real hunting ground)",
                                 ))
-                            else:
-                                actions.append(HeuristicAction(
-                                    kind="command", command="move prt_fild05",
-                                    confidence=0.99, domain="economy",
-                                    reason=f"Cold start step 1 - walk to prt_fild05, need {50 - zeny}z more",
-                                ))
+                                if str(_cs_map).lower() == "iz_ac01_a":
+                                    actions.append(HeuristicAction(
+                                        kind="command", command="move 100 24",
+                                        confidence=0.99, domain="economy",
+                                        reason="Academy room (iz_ac01_a): walk to room exit (100,24 -> izlude_a) so the farm map is reachable",
+                                    ))
+                                else:
+                                    actions.append(HeuristicAction(
+                                        kind="command", command=f"move {_cs_farm}",
+                                        confidence=0.99, domain="economy",
+                                        reason=f"Cold start step 1 - walk to {_cs_farm} (real hunting ground)",
+                                    ))
                 elif _cs_in_hunting:
                     # On prt_fild05 — enable AI and attack for farming
                     actions.append(HeuristicAction(
@@ -3297,7 +3314,13 @@ class HeuristicService:
                     # Pragmatic + server-adaptive: attack whatever farmable mob actually
                     # spawns instead of hardcoding an ignore list. Only genuinely too-tough
                     # or 0-value mobs should be ignored — none here.
-                    for _cs_attack in ["Pupa", "Thief Bug", "Thief Bug Egg"]:
+                    # AGNOSTIC (RULE.md): attack whatever farmable mobs actually
+                    # spawn on the current map (loaded from the live server's
+                    # spawn scripts) — never hardcoded mob names.
+                    _cs_mobs = [
+                        m for m, _c, _r in self.map_spawns.get(_cm_farmable, [])
+                    ] or [m for m, _c, _r in self.map_spawns.get(_cm_map, [])]
+                    for _cs_attack in _cs_mobs:
                         actions.append(HeuristicAction(
                             kind="command", command=f"mon_control {_cs_attack}	0 1 1",
                             confidence=0.95, domain="economy",
@@ -3441,11 +3464,19 @@ class HeuristicService:
                         reason=f"Step 5 - keep attacking until level 10 (currently {base_level})",
                     ))
                 elif _cs_in_town:
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prt_fild05",
-                        confidence=0.99, domain="progression",
-                        reason="Step 5 - return to hunting map to level",
-                    ))
+                    _cs_ret = ""
+                    try:
+                        _cs_ret, _cs_ret_reason = self._adaptive.get_optimal_hunting_map(_cs_job, int(_cs_lvl or 1))
+                    except Exception:
+                        _cs_ret = ""
+                    if not _cs_ret and self.map_spawns:
+                        _cs_ret = sorted(self.map_spawns.keys())[0]
+                    if _cs_ret:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_cs_ret}",
+                            confidence=0.99, domain="progression",
+                            reason=f"Step 5 - return to hunting map {_cs_ret} to level",
+                        ))
         if _cold_start_step == 6:
             # Step 6: Leader evaluates team, assigns jobs via LLM
             if self._team_jobs_assigned.get(_cs_stable_key, False):
@@ -3597,7 +3628,8 @@ class HeuristicService:
                 except Exception:
                     _hunt_map = ""
             if not _hunt_map:
-                _hunt_map = "prt_fild05"  # true last-resort cold-start fallback
+                # AGNOSTIC true last-resort: the first real spawn map (never hardcoded).
+                _hunt_map = sorted(self.map_spawns.keys())[0] if self.map_spawns else ""
             if _cs_in_hunting:
                 # On hunting map — farm
                 actions.append(HeuristicAction(
@@ -4307,10 +4339,16 @@ class HeuristicService:
                 "Attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Cold start - don't give up mid-fight")
-            # COLD START: Go to safe field first (prt_fild05 for level 1-10)
-            # Then progress to dungeon at level 10+
-            _cs_hunt_map = "prt_fild05"
-            _cs_portal_coords = "22 203"  # Portal from Prontera (156, 164) -> prt_fild05 (22, 203)
+            # COLD START: go to the best REAL hunting ground for the level (agnostic —
+            # derived from live spawns + mob danger), never a hardcoded map.
+            _cs_hunt_map = ""
+            try:
+                _cs_hunt_map, _cs_hunt_reason = self._adaptive.get_optimal_hunting_map(_cs_job, int(_cs_lvl or 1))
+            except Exception:
+                _cs_hunt_map = ""
+            if not _cs_hunt_map and self.map_spawns:
+                _cs_hunt_map = sorted(self.map_spawns.keys())[0]
+            _cs_portal_coords = ""  # resolved from the portal graph (agnostic)
             # Set route_randomWalk and lockMap — skip during cold start step 0
             # (bot on hunting map, 0 potions, no weapon, routing to Prontera via bridge)
             # Also skip during pipeline step 1 (farming prt_fild01 for 50z)
@@ -5128,13 +5166,14 @@ class HeuristicService:
             # Move to hunting map - use adaptive data
             target_map = self._adaptive.get_best_map(bot_id, base_level)
             if not target_map:
-                # Fallback based on level
-                if base_level >= 20:
-                    target_map = "pay_fild01"
-                elif base_level >= 15:
-                    target_map = "prt_fild08"
-                else:
-                    target_map = "prt_fild05"
+                # AGNOSTIC fallback: the best REAL hunting ground for the level
+                # (derived from live spawns + mob danger) — never hardcoded maps.
+                try:
+                    target_map, _t_reason = self._adaptive.get_optimal_hunting_map(_cs_job, int(base_level or 1))
+                except Exception:
+                    target_map = ""
+                if not target_map and self.map_spawns:
+                    target_map = sorted(self.map_spawns.keys())[0]
             actions.append(HeuristicAction(
                 kind="command", command=f"move {target_map}",
                 confidence=0.90, domain="exploration",
@@ -5620,12 +5659,20 @@ class HeuristicService:
                         return assessment
                 #                 # After party is formed, move to hunting map
                 _map = signals.get("map", "") or ""
-                if "prontera" in _map or "prt_in" in _map:
-                    actions.append(HeuristicAction(
-                        kind="command", command="move prt_fild05",
-                        confidence=0.95, domain="hunting",
-                        reason="Move to hunting map after party formation",
-                    ))
+                if _is_city_map(_map):
+                    _cs_post_map = ""
+                    try:
+                        _cs_post_map, _cs_post_reason = self._adaptive.get_optimal_hunting_map(_cs_job, int(_cs_lvl or 1))
+                    except Exception:
+                        _cs_post_map = ""
+                    if not _cs_post_map and self.map_spawns:
+                        _cs_post_map = sorted(self.map_spawns.keys())[0]
+                    if _cs_post_map:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_cs_post_map}",
+                            confidence=0.95, domain="hunting",
+                            reason=f"Move to hunting map {_cs_post_map} after party formation",
+                        ))
                 # ECONOMY CONFIG: Ensure sellAuto, itemsTakeAuto, buyAuto are set
                 actions.append(HeuristicAction(
                     kind="command", command="set sellAuto 1",

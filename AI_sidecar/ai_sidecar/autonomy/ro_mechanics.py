@@ -578,59 +578,6 @@ JOB_2_1_CLASSES = {
     "gunslinger": "gunslinger_2", "ninja": "ninja_2", "soul_linker": "soul_linker_2",
 }
 
-PER_MAP_MON_CONTROL: dict[str, list[tuple[str, int, int, int]]] = {
-    "prt_fild05": [
-        ("Poring",             1, 0, 0), ("Lunatic",            0, 0, 0),
-        ("Pupa",               -1, 0, 0), ("Thief Bug Egg",      -1, 0, 0),
-        ("Thief Bug",          -1, 0, 0), ("Fabre",              -1, 0, 0), ("Condor",             -1, 0, 0),
-    ],
-    "prt_fild04": [
-        ("Poring",             1, 0, 0), ("Rocker",             1, 0, 0),
-        ("Creamy",             1, 0, 0), ("Pupa",               -1, 0, 0),
-        ("Thief Bug Egg",      -1, 0, 0), ("Lunatic",            0, 0, 0),
-    ],
-    "prt_fild08": [
-        # Server's actual spawns (fields/prontera.txt): Poring, Lunatic, Fabre, Little Poring
-        # + Familiar/Rocker/Creamy/Poporing. All low-HP and safe at level 1-3 — attack them so
-        # a bot on prt_fild08 doesn't default-ignore the mobs it sees (the no-fight failure).
-        ("Poring",             1, 0, 0), ("Lunatic",           1, 0, 0),
-        ("Fabre",              1, 0, 0), ("Little Poring",     1, 0, 0),
-        ("Familiar",           1, 0, 0), ("Rocker",            1, 0, 0),
-        ("Creamy",             1, 0, 0), ("Poporing",          1, 0, 0),
-        ("Thief Bug",          -1, 0, 0), ("Pupa",             -1, 0, 0),
-    ],
-    # prt_fild08c = the ACADEMY FARM server (academy.txt spawns Poring 110 / Lunatic 100 /
-    # Fabre 100). These are low-HP, farmable at level 1-3. Without this entry the bot on
-    # prt_fild08c gets NO mon_control and defaults to ignoring Lunatic/Poring/Fabre -> the
-    # endless 'target reselection' loop. All are attackable (1=attack). Drives the reflex
-    # actually engaging mobs on the live farm.
-    "prt_fild08c": [
-        ("Poring",             1, 0, 0), ("Lunatic",            1, 0, 0),
-        ("Fabre",              1, 0, 0), ("Pupa",               1, 0, 0),
-        ("Thief Bug",          1, 0, 0), ("Thief Bug Egg",      1, 0, 0),
-        ("Little Poring",      1, 0, 0),
-    ],
-    "pay_fild01": [
-        ("Steel Chonchon",     1, 0, 0), ("Poporing",           1, 0, 0),
-        ("Familiar",           1, 0, 0), ("Wolf",               0, 0, 0), ("Thief Bug",          -1, 0, 0),
-    ],
-    "pay_dun00": [
-        ("Skeleton",           1, 0, 0), ("Zombie",             1, 0, 0), ("Familiar",           1, 0, 0),
-    ],
-    "gef_dun00": [
-        ("Zombie",             1, 0, 0), ("Skeleton",           1, 0, 0),
-        ("Ghoul",              1, 0, 0), ("Poison Spore",       -1, 0, 0),
-    ],
-    "orcsdun01": [
-        ("Orc Warrior",        1, 0, 0), ("Orc Archer",         1, 0, 0),
-        ("Orc Zombie",         1, 0, 0), ("Orc Skeleton",       1, 0, 0), ("Orc Lady",           -1, 0, 0),
-    ],
-    "orcsdun02": [
-        ("Orc Warrior",        1, 0, 0), ("Orc Archer",         1, 0, 0),
-        ("Orc Zombie",         1, 0, 0), ("Orc Skeleton",       1, 0, 0),
-        ("Orc Lord",           -1, 0, 0), ("Orc Hero",           -1, 0, 0),
-    ],
-}
 
 CLASS_SKILL_TRAINING = {
     "swordman": [("SM_BASH", 10, "Bash — core damage skill"), ("SM_RECOVERY", 5, "Increase HP Recovery")],
@@ -777,9 +724,17 @@ def get_mvp_value(monster_name: str) -> int:
 
 
 def get_optimal_element_for_map(map_name: str) -> str:
-    map_mobs = PER_MAP_MON_CONTROL.get(map_name, [])
+    # AGNOSTIC (RULE.md): derive the map's element mix from the LIVE server's
+    # real spawn data (spawn_loader) + the renewal mob db — never hardcoded
+    # per-map monster lists.
+    try:
+        from ai_sidecar.autonomy.spawn_loader import load_map_spawns
+        _spawns = load_map_spawns()
+    except Exception:
+        _spawns = {}
+    map_mobs = [(mob_name, count) for mob_name, count, _r in _spawns.get(map_name, [])]
     element_counts: dict[str, int] = {}
-    for mob_name, *_ in map_mobs:
+    for mob_name, _count in map_mobs:
         stats = get_monster_stats(mob_name)
         if stats:
             elem = stats.get("element", "Neutral")

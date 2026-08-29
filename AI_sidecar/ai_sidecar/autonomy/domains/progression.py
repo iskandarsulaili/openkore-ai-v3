@@ -21,7 +21,7 @@ from ai_sidecar.autonomy.heuristic_service import (
     CLASS_HUNTING_GROUNDS,
     NOVICE_WEIGHT_CAPACITY,
 )
-from ai_sidecar.autonomy.ro_mechanics import PER_MAP_MON_CONTROL
+from ai_sidecar.autonomy.ro_mechanics import JOB_CHANGE_2_1  # noqa: F401 (re-export for domains)
 
 logger = logging.getLogger(__name__)
 

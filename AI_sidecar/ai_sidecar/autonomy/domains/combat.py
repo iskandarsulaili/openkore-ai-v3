@@ -11,7 +11,6 @@ from typing import Any
 from ai_sidecar.autonomy.domains import BaseDomain
 from ai_sidecar.autonomy.heuristic_service import HeuristicAction
 from ai_sidecar.autonomy.ro_mechanics import (
-    PER_MAP_MON_CONTROL,
     JOB_WEAPON_TYPE,
     get_best_skill,
     is_mvp,
@@ -92,7 +91,30 @@ class CombatDomain(BaseDomain):
         Uses PER_MAP_MON_CONTROL table to set per-monster attack/ignore.
         Dedups via service._last_mon_control_map.
         """
-        controls = PER_MAP_MON_CONTROL.get(map_name)
+        # AGNOSTIC (RULE.md): derive per-map mon_control from the LIVE server's
+        # real spawn data + the renewal mob db — attack every spawn mob that is
+        # farmable (not boss, not lethal), ignore nothing (the mob db gates).
+        # No hardcoded monster stances.
+        try:
+            from ai_sidecar.autonomy.spawn_loader import load_map_spawns
+            _spawns = load_map_spawns()
+        except Exception:
+            _spawns = {}
+        controls = []
+        for _mob_name, _count, _r in _spawns.get(map_name, []):
+            _stats = None
+            try:
+                from ai_sidecar.autonomy.ro_mechanics import get_monster_stats
+                _stats = get_monster_stats(_mob_name)
+            except Exception:
+                pass
+            _attack = 1  # attack by default (data-driven; the mob db gates too-strong)
+            if _stats:
+                _is_boss = bool(_stats.get("boss", 0) or _stats.get("mvp", 0))
+                _atk = int(_stats.get("attack", 0) or 0)
+                if _is_boss or _atk > 500:
+                    _attack = 0  # ignore boss / lethal mobs (safety floor)
+            controls.append((_mob_name, _attack, 0, 0))
         if not controls:
             return
         # COMPLETENESS FIX: this combat-domain emitter shared the SAME
@@ -103,7 +125,7 @@ class CombatDomain(BaseDomain):
         # Use the SAME normalized base-map dedup so both emitters agree and only ONE
         # emits per true map change.
         _dedup_map = map_name
-        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in PER_MAP_MON_CONTROL:
+        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in _spawns:
             _dedup_map = _dedup_map[:-1]  # prt_fild08c -> prt_fild08 (same farm)
         _last_map = service._last_mon_control_map.get(bot_id, "")
         if _last_map == _dedup_map:
