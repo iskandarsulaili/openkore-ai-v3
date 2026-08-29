@@ -10082,7 +10082,10 @@ class PDCALoop:
         # snapshot) and base_exp has not changed for STALL_NO_PROGRESS_MIN
         # minutes, emit a map-change heal (self-healing BEFORE self-learning).
         import time as _t
-        _stall_min = int(getattr(self, "_stall_no_progress_min", 5) or 5)
+        # 3-min window (was 5): the bot's sessions can drop at ~4 min (server
+        # session timeout for an idle route-hung bot), so a 5-min heal window
+        # NEVER fires before the drop. 3 min catches the route-hang in-game.
+        _stall_min = int(getattr(self, "_stall_no_progress_min", 3) or 3)
         _now_ts = _t.time()
         _snap_age_s = _now_ts - _ts_obs
         _in_game = _snap_age_s < 180  # fresh snapshot = connected + in-game
@@ -10096,6 +10099,13 @@ class PDCALoop:
         _last_route_heal = float(_prev.get("_route_heal_ts", 0) or 0)
         _route_stall = (_in_game and _route_fails >= 8
                         and (_now_ts - _last_route_heal) >= _stall_min * 60)
+        # FIX (2026-08-29): a bot that gains ZERO EXP from the start (stuck on a
+        # sparse map) NEVER sets _exp_change_ts (that only happens when EXP
+        # CHANGES), so _last_change stays 0 and the elif below never fires —
+        # the no-progress heal is dead for the zero-EXP-from-start case. Seed
+        # the timestamp on the FIRST in-game observation.
+        if _in_game and not _prev.get("_exp_change_ts"):
+            _prev["_exp_change_ts"] = _now_ts
         if _in_game and _exp_changed:
             _prev["_exp_change_ts"] = _now_ts
         elif _in_game and not _exp_changed and _last_change > 0:

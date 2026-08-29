@@ -89,10 +89,29 @@ sub iterate {
 	$char->processTask("route", onError => sub {
 		my ($task, $error) = @_;
 		AI::Attack::note_approach_route_failure($task, $error);
-		if (!($task->isa('Task::MapRoute') && $error->{code} == Task::MapRoute::TOO_MUCH_TIME())
-		 && !($task->isa('Task::Route') && $error->{code} == Task::Route::TOO_MUCH_TIME())) {
+		# TOO_MUCH_TIME (route can't find a path / times out) is normally
+		# suppressed so the route task retries — but an UNREACHABLE target
+		# makes it hang FOREVER (the bot idles in 'route' state + the server
+		# drops it for inactivity). Give up after 3 consecutive timeouts so
+		# the bot dequeues route + can re-route to a reachable target.
+		my $too_much_time = (
+			($task->isa('Task::MapRoute') && $error->{code} == Task::MapRoute::TOO_MUCH_TIME())
+			|| ($task->isa('Task::Route') && $error->{code} == Task::Route::TOO_MUCH_TIME())
+		);
+		if ($too_much_time) {
+			my $key = ref($task) . ':' . ($task->{dest} ? $task->{dest}{map} : '?');
+			my $count = ($::aiSidecarRouteTimeouts{$key} || 0) + 1;
+			$::aiSidecarRouteTimeouts{$key} = $count;
+			if ($count < 3) {
+				debug "[route] TOO_MUCH_TIME retry $count/3 for $key\n", 'route';
+				return;  # suppress (retry)
+			}
+			delete $::aiSidecarRouteTimeouts{$key};
+			# 3rd timeout = give up + surface the error (bot re-routes)
 			error("$error->{message}\n");
+			return;
 		}
+		error("$error->{message}\n");
 	});
 	processTake();
 	$char->processTask('move');
