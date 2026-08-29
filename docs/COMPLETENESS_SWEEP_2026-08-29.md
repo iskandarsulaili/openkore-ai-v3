@@ -165,3 +165,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] N7: flag re-check every 30s + capture on the recv hot path — the gate is a cached bool + one config read when disabled (ZERO overhead, the mandate).
 - [x] N8: disabled = zero cost VERIFIED (the gate order: `if (!cfg.enabled && !flag_on) return;` — the flag check is ONLY when cfg.enabled is false, 30s-cached).
 - [x] DLL 0.1.1068 deployed (sha 9836d22f, zero local file).
+
+## Batch P — FLAW-FIX sweep round 5 (2026-08-29)
+- [x] P4: retry drain VERIFIED clean (mem::take on the success path empties the store; a failed upload retains bounded 16MB; the next success drains).
+- [x] P6: UPLOAD CHUNKING — the pending (≤16MB) was sent as ONE file; the server's 8MB per-file cap (head-keep) truncated the ML data after the first 8MB. FIX: chunk into ≤8MB pieces (≤16MB = 2 chunks/1 call, the server's 2-files/call). cargo check PASSED.
+- [x] P1/P2/P3/P5: audited clean (dropped-counter static resets on launcher restart = minor; read+clear atomic under the named mutex; INT cast fine; multi-session rows are ordered by id + ts — acceptable for the 0x0436 goal).
