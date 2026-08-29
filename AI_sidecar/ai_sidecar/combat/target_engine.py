@@ -77,15 +77,23 @@ class MonsterDB:
         server's db/re over the vendored pre-re copy.
         """
         base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        # Check common locations
-        candidates = [
-            os.path.join(os.path.expanduser("~"), "rathena-AI-world", "db", "re"),
-            os.path.join(base, "knowledge", "rathena_db", "db", "re"),
-            os.path.join(base, "knowledge", "rathena_db", "db"),
-            os.path.join(os.path.expanduser("~"), "rathena", "db"),
-            os.path.join(os.path.expanduser("~"), "rathena", "db", "re"),
-        ]
-        for path in candidates:
+        # Check common locations — NO hardcoded repo path (agnostic): the server
+        # may live anywhere. re (renewal) wins over pre-re at whatever root.
+        candidates = []
+        for root in (
+            os.path.expanduser("~"),
+            base,
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        ):
+            candidates.append(os.path.join(root, "rathena-AI-world", "db", "re"))
+            candidates.append(os.path.join(root, "rathena", "db", "re"))
+            candidates.append(os.path.join(base, "knowledge", "rathena_db", "db", "re"))
+            candidates.append(os.path.join(root, "rathena-AI-world", "db"))
+            candidates.append(os.path.join(root, "rathena", "db"))
+        # Dedup while preserving order
+        seen = set()
+        unique = [p for p in candidates if not (p in seen or seen.add(p))]
+        for path in unique:
             if os.path.exists(os.path.join(path, "mob_db.yml")):
                 return path
         return candidates[0]

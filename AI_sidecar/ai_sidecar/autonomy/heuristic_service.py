@@ -556,16 +556,13 @@ class AdaptiveDataStore:
             "aldebaran": ["alde_alche", "alde_gld", "aldeba_in", "c_tower1", "mjolnir_12", "xmas_fild01"],
         }
         # Map spawn data: map_name -> [(monster_name, count, respawn_ms)]
-        # From rAthena pre-re mob spawn scripts
-        self.map_spawns: dict[str, list[tuple[str, int, int]]] = {
-            "pay_dun00": [("Familiar", 15, 0), ("Zombie", 20, 0), ("Skeleton", 35, 0), ("Poporing", 15, 0)],
-            "pay_dun01": [("Munak", 20, 0), ("Bongun", 15, 0), ("Ghoul", 10, 0), ("Skeleton", 30, 0)],
-            "gef_dun00": [("Hunter Fly", 30, 60000), ("Poporing", 15, 0), ("Poison Spore", 25, 0)],
-            "orcsdun01": [("Steel Chonchon", 10, 0), ("Familiar", 15, 0), ("Drainliar", 5, 0), ("Orc Zombie", 80, 60000)],
-            "iz_dun00": [("Plankton", 65, 0), ("Marina", 45, 0), ("Kukre", 15, 0), ("Hydra", 15, 0), ("Vadon", 15, 0)],
-            "prt_fild05": [("Poring", 70, 0), ("Thief Bug Egg", 20, 0), ("Lunatic", 30, 0), ("Pupa", 30, 0), ("Thief Bug", 10, 0)],
-            "prt_fild04": [("Rocker", 70, 0), ("Creamy", 40, 0), ("Pupa", 10, 0), ("Poring", 30, 0)],
-        }
+        # AGNOSTIC (RULE.md): loaded from the LIVE server's own mob spawn scripts
+        # (npc/re/mobs/**/*.txt) — never hardcoded map/monster literals. If the
+        # server root isn't found, falls back to {} (maps score by default).
+        from ai_sidecar.autonomy.spawn_loader import load_map_spawns
+        self.map_spawns: dict[str, list[tuple[str, int, int]]] = load_map_spawns()
+        if not self.map_spawns:
+            logger.warning("map_spawns: no server spawn scripts found — map scoring uses defaults")
 
         # ── RO MECHANICS TABLES (imported from ro_mechanics.py) ──
         # Size penalty, element table, weapon types, stat breakpoints,
