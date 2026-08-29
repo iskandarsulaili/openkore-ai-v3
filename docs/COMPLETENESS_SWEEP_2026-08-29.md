@@ -179,3 +179,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch R — FLAW-FIX sweep round 7 (2026-08-29)
 - [x] R1a: cleanup cron VERIFIED (0 2 * * * → cron_logs) + the packet-capture 7-day prune present.
 - [x] R1b: OTHER TELEMETRY UNPRUNED (REAL) — the launcher/p2p_dll/hostboot/injector files had NO prune (the comment claimed 30-day but no DELETE existed) → 71.4MB/93 rows accumulated. FIX: 30-day prune added (packet-capture keeps 7-day). Ran the cron live: "ok" + 0 deleted (all rows < 30 days old — the fix reclaims as they age). php -l clean.
+
+## Batch S — FLAW-FIX sweep round 8 (2026-08-29)
+- [x] S2: FRAME-BOUNDARY CHUNKING (REAL, self-introduced in P6) — the raw-offset chunker SPLIT frames at every 8MB boundary → the server stored the halves as separate rows → the export's walk broke at each boundary (frame lost + mis-parse). FIX: walk the [len][magic][ts][bytes] frames + close a chunk only at a frame boundary.
+- [x] S4: capture_dropped DOUBLE-COUNT (REAL, self-introduced in P6) — the server stores the body's capture_dropped on EVERY row; the export SUMS → multi-chunk calls double-counted. FIX: send dropped only on single-chunk calls.
+- [x] cargo check PASSED (2.60s).
