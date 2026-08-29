@@ -56,15 +56,16 @@ sub new {
 #   persists the accepted length in ServerSolutionsStore, then writes
 #   `mapLoginLength <N>` into the bot config (the bridge's server-adaptation
 #   flow). Supported: 19 (id + accountID + charID + sessionID + tick + sex),
-#   26 (id + 5 longs + sex + 3 pad — the RUNNING binary's multi-login-era
-#   layout). Anything else falls back to 19 (the SOURCE's canonical form).
+#   23 (id + 4 longs + sex + 4-byte unknown — the LIVE server's actual
+#   expectation, PROBED: 23-byte 0x0436 -> 23B reply, the real client sends
+#   this), 26 (id + 5 longs + sex + 3 pad). Default 23 (the server's form).
 sub sendMapLogin {
 	my ($self, $accountID, $charID, $sessionID, $sex) = @_;
 	my $msg;
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
-	# Server-adapted length (the sidecar sets it from a live probe). Default 19.
-	my $mlen = $config{mapLoginLength} || 19;
+	# Server-adapted length (the sidecar sets it from a live probe). Default 23.
+	my $mlen = $config{mapLoginLength} || 23;
 	my $packet;
 	if ($mlen == 26) {
 		# 26-byte layout: id + 5 longs (extra 0 tick slot) + sex + 3 pad
@@ -78,6 +79,22 @@ sub sendMapLogin {
 			0,
 			$sex,
 			'',
+		);
+	} elsif ($mlen == 23) {
+		# 23-byte multi-login layout (PROBED live, the RUNNING binary):
+		#   id.W + 4B unknown + accountID.L@6 + charID.L@10 + sessionID.L@14
+		#   + tick.L@18 + sex.B@22 — the account_id MOVED to offset 6 in the
+		#   multi-login era (the real client sends this). Verified: acct@6 ->
+		#   23B reply, acct@2 -> 6B error.
+		$packet = pack(
+			'v I I I I I C a0',
+			0x0436,
+			0,           # unknown @2-5
+			$accountID,  # @6-9
+			$charID,     # @10-13
+			$sessionID,  # @14-17
+			time(),      # @18-21
+			$sex,        # @22
 		);
 	} else {
 		# 19-byte layout: id + 4 longs + sex (the SOURCE's canonical form)
@@ -93,7 +110,7 @@ sub sendMapLogin {
 	}
 	$msg = $packet;
 	$self->sendToServer($msg);
-	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes, mapLoginLength=$mlen)\n", 'sendPacket';
+	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes, mapLoginLength=$mlen, accountID=$accountID, charID=$charID)\n", 'sendPacket';
 }
 
 1;
