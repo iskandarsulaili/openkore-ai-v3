@@ -141,3 +141,13 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] K6: FLAG PATH — resolved next to the DLL (GetModuleFileName), not the game CWD (robust).
 - [x] K7: EXPORT AUTH — /ads/telemetry/capture uses the SAME admin gate as /ads/telemetry (session bootstrap + featureAllowed('ads.admin')); the weak Flux::$isLoggedIn gate always 403'd. Verified 401 unauth.
 - [x] K8: E2E — v3 upload 200 + row 66260 (36B) + decode OK; php -l clean; DLL 0.1.1066 deployed (sha 2a348dc4, zero local file); cargo check PASSED.
+
+## Batch L — FLAW-FIX sweep round 2 (2026-08-29)
+- [x] L1: poll wiring VERIFIED (the 30s telemetry loop at main.rs:10198 calls poll_packet_capture; runs whole launcher lifetime, cheap OpenFileMappingW miss when disabled — the ONLY call site).
+- [x] L2: retry duplication AUDITED clean (mem::take empties the store; failure re-adds once; no double-upload).
+- [x] L3: retry keep-OLDEST (was keep-newest) — the 0x0436 login is at the START of the session (ML-critical); the newest re-captures anyway.
+- [x] L4: dropped-frames log on CHANGE only (was every 30s forever after a drop = spam).
+- [x] L5: ring 'active' flag NOT checked — minor (the frame-magic walk already protects); documented.
+- [x] L6: capture_dropped rides the upload body → NEW telemetry_files.capture_dropped column (ALTER TABLE) → handler stores it → export surfaces dropped_frames (the ML trainer knows when the capture lost data). E2E: row 66265 capture_dropped=42 stored OK.
+- [x] L7: capture_enabled getter ALSO reads p2p_config.json capture.enabled (a manual config enables the DLL without the flag — the UI now reflects the true state).
+- [x] L8: cargo check PASSED (5.31s), php -l clean.
