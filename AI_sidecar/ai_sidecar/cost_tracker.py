@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
 
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
+
 logger = logging.getLogger(__name__)
 
 
@@ -187,8 +189,7 @@ class CostTracker:
         if not sqlite_path:
             return
         try:
-            import sqlite3
-            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            db = _hardened_connect(sqlite_path)
             db.execute("CREATE TABLE IF NOT EXISTS cost_budget (bot_id TEXT, key TEXT, value INTEGER, updated_at REAL, PRIMARY KEY(bot_id, key))")
             if self._per_bot:
                 for bot_id in self._bot_tokens:
@@ -216,8 +217,7 @@ class CostTracker:
         if not sqlite_path:
             return
         try:
-            import sqlite3
-            db = sqlite3.connect(sqlite_path, timeout=5.0)
+            db = _hardened_connect(sqlite_path)
             cursor = db.execute("SELECT bot_id, key, value, updated_at FROM cost_budget")
             now = time.time()
             for bot_id, key, value, updated_at in cursor.fetchall():

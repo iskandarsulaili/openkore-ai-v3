@@ -10,13 +10,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
 
 
 @dataclass
@@ -69,7 +70,7 @@ class SharedLearningDB:
     def _init_db(self) -> None:
         """Initialize the database schema."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS deaths (
@@ -166,7 +167,7 @@ class SharedLearningDB:
     def record_death(self, record: SharedDeathRecord) -> None:
         """Record a death shared across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute(
                     "INSERT OR REPLACE INTO deaths (monster_id, monster_name, map_name, cause, timestamp, bot_id) "
@@ -180,7 +181,7 @@ class SharedLearningDB:
     def is_monster_dangerous(self, monster_id: int) -> bool:
         """Check if any instance has died to this monster."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT COUNT(*) FROM deaths WHERE monster_id = ?", (monster_id,)
@@ -193,7 +194,7 @@ class SharedLearningDB:
     def get_death_count(self, monster_id: int) -> int:
         """Get total death count for a monster across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT COUNT(*) FROM deaths WHERE monster_id = ?", (monster_id,)
@@ -205,7 +206,7 @@ class SharedLearningDB:
     def get_most_dangerous_monsters(self, limit: int = 10) -> list[dict]:
         """Get the monsters that have killed us the most across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT monster_id, monster_name, COUNT(*) as deaths FROM deaths "
@@ -220,7 +221,7 @@ class SharedLearningDB:
     def record_mvp_kill(self, record: SharedMVPKill) -> None:
         """Record an MVP kill shared across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute(
                     "INSERT INTO mvp_kills (monster_id, monster_name, map_name, kill_time, bot_id, strategy_used, successful) "
@@ -235,7 +236,7 @@ class SharedLearningDB:
     def get_mvp_kill_count(self, monster_id: int) -> int:
         """Get total MVP kill count for a monster across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT COUNT(*) FROM mvp_kills WHERE monster_id = ? AND successful = 1", (monster_id,)
@@ -247,7 +248,7 @@ class SharedLearningDB:
     def get_mvp_spawn_time(self, monster_id: int) -> float | None:
         """Get the last known spawn time for an MVP."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT kill_time FROM mvp_kills WHERE monster_id = ? ORDER BY kill_time DESC LIMIT 1",
@@ -263,7 +264,7 @@ class SharedLearningDB:
     def record_price(self, record: SharedPrice) -> None:
         """Record a price observation shared across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute(
                     "INSERT INTO prices (item_name, item_id, buy_price, sell_price, map_name, timestamp, bot_id) "
@@ -278,7 +279,7 @@ class SharedLearningDB:
     def get_average_price(self, item_name: str, hours: int = 24) -> dict:
         """Get average buy/sell price for an item over the last N hours."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cutoff = time.time() - (hours * 3600)
                 cursor = conn.execute(
@@ -307,7 +308,7 @@ class SharedLearningDB:
         """
         try:
             with self._lock:
-                conn = sqlite3.connect(self._db_path)
+                conn = _hardened_connect(self._db_path)
                 try:
                     cursor = conn.execute(
                         "SELECT item_name, AVG(buy_price), AVG(sell_price), COUNT(*) "
@@ -330,7 +331,7 @@ class SharedLearningDB:
     def record_strategy(self, monster_id: int, strategy: str, success: bool, bot_id: str = "") -> None:
         """Record a strategy outcome shared across all instances."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 if success:
                     conn.execute(
@@ -353,7 +354,7 @@ class SharedLearningDB:
     def get_best_strategy(self, monster_id: int) -> str | None:
         """Get the best strategy for a monster based on success rate."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cursor = conn.execute(
                     "SELECT strategy, success_count, fail_count FROM strategies WHERE monster_id = ? "
@@ -367,7 +368,7 @@ class SharedLearningDB:
 
     def get_shared_summary(self) -> str:
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 death_count = conn.execute("SELECT COUNT(*) FROM deaths").fetchone()[0]
                 mvp_count = conn.execute("SELECT COUNT(*) FROM mvp_kills").fetchone()[0]
@@ -395,7 +396,7 @@ class SharedLearningDB:
     def _ensure_failures_table(self) -> None:
         """Create the failures table if it doesn't exist (idempotent)."""
         with self._lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS failures (
@@ -434,7 +435,7 @@ class SharedLearningDB:
         """Record a failure in the shared database."""
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 conn.execute(
                     """INSERT OR REPLACE INTO failures
@@ -476,7 +477,7 @@ class SharedLearningDB:
         """Get failures with optional filters."""
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 query = "SELECT * FROM failures WHERE 1=1"
                 params: list = []
@@ -504,7 +505,7 @@ class SharedLearningDB:
         """Find failures with recurrence_count >= min_count."""
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 query = "SELECT * FROM failures WHERE recurrence_count >= ?"
                 params: list = [min_count]
@@ -524,7 +525,7 @@ class SharedLearningDB:
         """Return a formatted failure summary for LLM context injection."""
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 if server_id:
                     total = conn.execute(
@@ -610,7 +611,7 @@ class SharedLearningDB:
         """Mark a failure as resolved."""
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 if effective is not None:
                     conn.execute(
@@ -634,7 +635,7 @@ class SharedLearningDB:
         """
         with self._lock:
             self._ensure_failures_table()
-            conn = sqlite3.connect(self._db_path)
+            conn = _hardened_connect(self._db_path)
             try:
                 cutoff = time.time() - 3600
                 cursor = conn.execute(

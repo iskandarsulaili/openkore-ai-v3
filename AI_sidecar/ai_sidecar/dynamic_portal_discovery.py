@@ -24,6 +24,7 @@ from typing import Any
 
 from ai_sidecar.portal_knowledge import Portal, get_portal_knowledge
 from ai_sidecar.learning.shared_learning_db import get_shared_learning_db
+from ai_sidecar.persistence.sqlite_utils import connect as _hardened_connect
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,12 @@ class DynamicPortalDiscovery:
 
     def _load_discovered(self) -> None:
         """Load previously discovered portals from the shared database."""
+        with self._lock:
+            self._load_discovered_locked()
+
+    def _load_discovered_locked(self) -> None:
         try:
-            conn = sqlite3.connect(self._get_db_path())
+            conn = _hardened_connect(self._get_db_path())
             try:
                 cursor = conn.execute(
                     "SELECT source_map, source_x, source_y, target_map, target_x, target_y, "
@@ -109,8 +114,12 @@ class DynamicPortalDiscovery:
 
     def _ensure_schema(self) -> None:
         """Ensure the discovered_portals table exists."""
+        with self._lock:
+            self._ensure_schema_locked()
+
+    def _ensure_schema_locked(self) -> None:
         try:
-            conn = sqlite3.connect(self._get_db_path())
+            conn = _hardened_connect(self._get_db_path())
             try:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS discovered_portals (
@@ -245,7 +254,7 @@ class DynamicPortalDiscovery:
                 logger.info("dynamic_map_explored: %s by %s", map_name, bot_id)
                 try:
                     self._ensure_schema()
-                    conn = sqlite3.connect(self._get_db_path())
+                    conn = _hardened_connect(self._get_db_path())
                     try:
                         conn.execute(
                             "INSERT OR REPLACE INTO explored_maps (map_name, first_explored_at, last_seen_at, explored_by) "
@@ -260,7 +269,7 @@ class DynamicPortalDiscovery:
             else:
                 # Refresh last_seen for existing maps (cheap, keeps recency signal)
                 try:
-                    conn = sqlite3.connect(self._get_db_path())
+                    conn = _hardened_connect(self._get_db_path())
                     try:
                         conn.execute(
                             "UPDATE explored_maps SET last_seen_at = ? WHERE map_name = ?",
@@ -276,7 +285,7 @@ class DynamicPortalDiscovery:
         """Save a discovered portal to the shared database."""
         try:
             self._ensure_schema()
-            conn = sqlite3.connect(self._get_db_path())
+            conn = _hardened_connect(self._get_db_path())
             try:
                 conn.execute(
                     "INSERT OR REPLACE INTO discovered_portals "
