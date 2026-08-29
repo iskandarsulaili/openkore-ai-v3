@@ -184,3 +184,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] S2: FRAME-BOUNDARY CHUNKING (REAL, self-introduced in P6) — the raw-offset chunker SPLIT frames at every 8MB boundary → the server stored the halves as separate rows → the export's walk broke at each boundary (frame lost + mis-parse). FIX: walk the [len][magic][ts][bytes] frames + close a chunk only at a frame boundary.
 - [x] S4: capture_dropped DOUBLE-COUNT (REAL, self-introduced in P6) — the server stores the body's capture_dropped on EVERY row; the export SUMS → multi-chunk calls double-counted. FIX: send dropped only on single-chunk calls.
 - [x] cargo check PASSED (2.60s).
+
+## Batch T — FLAW-FIX sweep round 9 (2026-08-29)
+- [x] T1: capture_dropped LOST for multi-chunk (my S4 client fix zeroed it on multi-chunk → the drop signal vanished). FIX server-side: store dropped only on the FIRST file of a call (the SUM stays correct for single + multi-chunk). E2E: 2-file call → row1 dropped=7, row2=0 (rows 66304/66305).
+- [x] T2: telemetry_files NO SCHEMA SOURCE (Z-1 class) — created ad-hoc in the live DB; a fresh deploy would fail every INSERT. FIX: idempotent migration 018_create_telemetry_files.sql (CREATE IF NOT EXISTS + guarded capture_dropped column, idx_uploaded for the prunes).
+- [x] php -l clean; E2E upload 200.
