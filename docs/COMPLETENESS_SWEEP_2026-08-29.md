@@ -131,3 +131,13 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] J5: ML EXPORT — GET /ads/telemetry/capture?username=X decodes the stored v2 frames to "0x0436 <ts> <hex>" lines (admin-gated EXACTLY like /ads/telemetry — featureAllowed('ads.admin'); the weak Flux::$isLoggedIn gate never 403'd correctly in api.php, fixed).
 - [x] J6: E2E VERIFIED — v2 frame upload → HTTP 200 stored:1 → row 66237 (len 20 + ts 1788016000000 + the 0x0436 bytes) → decode test = "0x0436 1788016000000 36041000..." → unauth export = 401 (gate works) → 2 rows stored.
 - [ ] J7: Real-client capture + ML training (needs Windows launcher rebuild + dist upload + toggle ON).
+
+## Batch K — FLAW-FIX sweep (2026-08-29, adversarial: "any more missing/flaw/race/blindspot?")
+- [x] K1: PINNED-FILE WRITE (CRITICAL) — set_capture_enabled WROTE p2p_config.json (a manifest-pinned verify_integrity target) → every toggle would FAIL the pin check → restore loop + the toggle reverted. FIX: toggle writes ONLY packet_capture.flag; the DLL reads the flag (resolved next to the DLL, re-checked 30s → mid-session toggles apply).
+- [x] K2: RECV-PATH GAP — capture only on the recv() FAST path (0-peer). FIX: added to ALL 4 paths — recv fast + routing-active, WSARecv fast + routing-active (in-game ML packets captured when peers are connected).
+- [x] K3: CROSS-PROCESS RACE (ring v3) — v2 WRAP: the launcher (no lock) could read a frame mid-memcpy (torn) or the wrap could overwrite a frame being read / fight the clear (duplicate uploads). FIX: v3 = NO WRAP (drop-when-full + dropped_frames counter) + per-frame magic 0xF0C7 — a mid-write frame is detectable, never uploaded; the dropped counter is logged ("capture falling behind").
+- [x] K4: FRAME_LEN SEMANTICS — the DLL writes frame_len = TOTAL incl. the 16B header; the export + poll advanced hdr+fl (DOUBLE-COUNT → every v3 frame mis-parsed "corrupt tail"). FIX: advance by frame_len, packet = [hdr..fl]. E2E: v3 row 66260 decoded 0x0436 1788016000123 OK.
+- [x] K5: SERVER QUOTA — packet-capture rows EXCLUDED from the 10MB machine quota (bounded by the 8MB cap + 7-day prune) so the ML capture never purges other telemetry.
+- [x] K6: FLAG PATH — resolved next to the DLL (GetModuleFileName), not the game CWD (robust).
+- [x] K7: EXPORT AUTH — /ads/telemetry/capture uses the SAME admin gate as /ads/telemetry (session bootstrap + featureAllowed('ads.admin')); the weak Flux::$isLoggedIn gate always 403'd. Verified 401 unauth.
+- [x] K8: E2E — v3 upload 200 + row 66260 (36B) + decode OK; php -l clean; DLL 0.1.1066 deployed (sha 2a348dc4, zero local file); cargo check PASSED.
