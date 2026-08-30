@@ -252,3 +252,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AO — FLAW-FIX sweep round 26 (2026-08-30)
 - [x] AO: ANON CAPTURES UNREACHABLE (REAL) — the launcher uploads anon (empty username, machine-keyed); the export only filtered by username → anon captures (real ML data from real players) were stored but INVISIBLE. FIX: ?machine_id=<prefix> filter. E2E: machine_id=e2e3 → packets 2, has_more True. php -l clean.
+
+## Batch AR — FLAW-FIX sweep round 27 (2026-08-30)
+- [x] AP: VERIFIED — the launcher's machine_id is a 16-hex FNV-1a hash of the MachineGuid; the stored anon rows use the SAME hash — the prefix filter works for real anon rows.
+- [x] AQ: VERIFIED — the machine filter is behind the SAME admin gate (Bearer/featureAllowed) — an unauthenticated request can't enumerate machines.
+- [x] AR: LIKE-WILDCARD INJECTION (REAL, my AO fix) — machine_id=% (/_ ) matched ALL machines. FIX: hex-only + bounded length (a hash prefix needs only a few chars). E2E: % rejected → username path. php -l clean.
