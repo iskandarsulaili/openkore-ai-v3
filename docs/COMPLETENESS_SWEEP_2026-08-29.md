@@ -269,3 +269,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AX — FLAW-FIX sweep round 30 (2026-08-30)
 - [x] AW: VERIFIED — ALL telemetry_files queries are indexed (quota machine → idx_machine, admin list → idx_session, export → idx_filetype_username/idx_machine, prune → idx_filetype_uploaded).
 - [x] AX: ADMIN LIST BLOB BLOAT (REAL, pre-existing) — the admin /ads/telemetry SELECTed content (FULL blobs, each 2-8MB) for EVERY file + base64-encoded them into one response (a heavy user = tens of MB). FIX: metadata-only by default; ?include_content=1 fetches the blobs explicitly. php -l clean + E2E (no content_b64 without the flag).
+
+## Batch AZ — FLAW-FIX sweep round 31 (2026-08-30)
+- [x] AY: VERIFIED — no consumer of content_b64 outside the handler (the metadata-only default breaks nothing).
+- [x] AZ: ADMIN TELEMETRY AUTH GAP (REAL) — /ads/telemetry was SESSION-ONLY (a CLI consumer couldn't reach it — unlike the export's Y1 Bearer). FIX: same Bearer path (admin group>=99) + fixed the Flux_DataObject access (->group_id, never [0] — the [0] 500'd). E2E: Bearer admin telemetry ok True.
