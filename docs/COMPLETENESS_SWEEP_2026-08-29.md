@@ -281,3 +281,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BD — FLAW-FIX sweep round 33 (2026-08-30)
 - [x] BD: USERNAME-DEFAULT GAP (REAL, my AZ fix) — the admin /ads/telemetry Bearer path lacked the Y1 username-default fallback — a natural CLI call (Bearer + no username = my own telemetry) failed validation. FIX: captures the bearer's userid + defaults $username to it. E2E: Bearer + no username ok True. php -l clean.
+
+## Batch BE — FLAW-FIX sweep round 34 (2026-08-30)
+- [x] BE: STALE-RING UPLOAD (REAL) — the toggle-OFF did NOT clear the ring — a stale ring (frames from a previous capture) would be read + uploaded on the next ON (boot-relative ts + a FRESH captured_at_ms = the ML trainer mis-correlates them). FIX: OFF now clears the ring (zero write_pos + total_bytes under the named mutex, Windows-gated). cargo check PASSED (4.97s).
