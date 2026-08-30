@@ -212,3 +212,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch Z — FLAW-FIX sweep round 15 (2026-08-30)
 - [x] Z1: the OFF path VERIFIED — it DELETES packet_capture.flag (no stale-flag capture-on-OFF).
 - [x] Z2: PRIVACY BLINDSPOT (REAL) — the DLL gate was cfg.enabled OR flag; a pre-set capture.enabled:true in p2p_config.json captured REGARDLESS of the toggle-OFF (the launcher can't touch the pinned config). FIX: NEW packet_capture.off sentinel — the OFF writes it, the ON removes it, the DLL checks it FIRST (never capture when present — the user's OFF wins over any config). Built + deployed DLL 0.1.1070 (252c3e98, sha f6d895bd), cargo check PASSED.
+
+## Batch AA — FLAW-FIX sweep round 16 (2026-08-30)
+- [x] AA1: the toggle files (packet_capture.flag/.off) VERIFIED safe — not in verify_integrity's manifest loop (they're not pinned) + NOT in the purge list (scoped to conf/db/npc/log/save + specific loose files). A fresh client dir = no flags = capture OFF by default (the disabled-by-default directive).
+- [x] AA3: the capture_enabled() getter did NOT respect the OFF sentinel (Z2) — with a pre-set config.enabled, the UI showed ON after a toggle-OFF (the OR ignored the off). FIX: the getter returns false when packet_capture.off exists (the off wins). cargo check PASSED.
