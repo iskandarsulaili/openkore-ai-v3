@@ -311,3 +311,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] BN: VERIFIED — a delayed retry's captured_at_ms = the ORIGINAL poll-time (the pending preserves it) — distinct from a new batch's ts (30s apart) — the dedup key is sound.
 - [x] BO: VERIFIED — a retry after a PARTIAL store (chunk 1 stored, chunk 2 lost) → the retry's chunk 1 dedups (skip) + chunk 2 stores → the data is complete + the pending clears — the dedup + retry interaction is sound.
 - [x] BP: VERIFIED — the dedup's machine_id covers the anon path (machine-keyed) + the logged-in path — the ts differs between sessions → both store. Sound.
+
+## Batch BQ — UNWIRED CONSUMER (round 43, 2026-08-30)
+- [x] BQ CONFIRMED: the capture chain (DLL → ring → launcher → server → export) is COMPLETE but has NO consumer in openkore-ai-v3. The auto-adapt (DirectConnection.pm:642) still rotates BLINDLY (19→23→26) — it never SEES the captured 0x0436 bytes (the exact data the feature exists for). The 'fix/train openkore-ai-v3' directive is UNMET.
+- [ ] DESIGN (pending user choice): a capture-consumer module that pulls the export (Bearer, paginated) + parses the captured 0x0436 frames' actual length + writes the learned layout to mapLoginLength (the auto-adapt then starts from the LEARNED value). Options presented (minimal consumer / ML feed / both / design-doc-first); clarify TIMED OUT → NOT implemented (standing answer-first rule for new architecture).
