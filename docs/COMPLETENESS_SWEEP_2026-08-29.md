@@ -261,3 +261,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AT — FLAW-FIX sweep round 28 (2026-08-30)
 - [x] AS: VERIFIED — the multi-writer clear is atomic under the named mutex (M1); ONE launcher per machine polls + uploads BOTH clients' frames together (writer_pid separates them per-frame). A second launcher on one machine is prevented (single-instance).
 - [x] AT: EXPORT INDEX (REAL) — the export's WHERE (file_type, username) had NO index → a full scan on every export as the table grows (the "capture as much as possible" directive makes it a real scaling issue). FIX: ADD INDEX IF NOT EXISTS idx_filetype_username (migration 018, idempotent; ran on the live DB exit 0).
+
+## Batch AV — FLAW-FIX sweep round 29 (2026-08-30)
+- [x] AU: VERIFIED — BOTH export paths use indexes (username → idx_filetype_username, machine → idx_machine LIKE range).
+- [x] AV: PRUNE INDEX (REAL) — the 30-day prune's (file_type NOT IN, uploaded_ts) had no composite → it scanned via the file_type-first index + filtered uploaded_ts (grows with the table). FIX: ADD INDEX IF NOT EXISTS idx_filetype_uploaded (migration 018, idempotent, live exit 0).
