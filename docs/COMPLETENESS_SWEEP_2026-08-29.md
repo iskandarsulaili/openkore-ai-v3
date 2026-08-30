@@ -192,3 +192,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch U — FLAW-FIX sweep round 10 (2026-08-29)
 - [x] U1: MIGRATION PDO-SAFETY (REAL, T2's fix was fragile) — the Migrator (lib/Flux/Database/Migrator.php:85) runs the WHOLE file via ONE PDO::exec; my first 018 used PREPARE/EXECUTE user-variables (multi-statement — may fail under PDO). FIX: standalone statements + MariaDB ADD COLUMN IF NOT EXISTS (10.0.2+; the server runs 11.7). VERIFIED: scratch DB first-run exit 0 + second-run exit 0 (idempotent) + the LIVE DB (exit 0, capture_dropped present).
+
+## Batch V — FLAW-FIX sweep round 11 (2026-08-29/30)
+- [x] V1: migration tracker STALE — 016/017/018 applied ad-hoc + untracked (tracker stopped at 015); a future migrate would re-run 017's non-idempotent ALTER ("Duplicate column"). FIX: registered 016/017/018 in flux_migrations.
+- [x] V2: export gate VERIFIED — /ads/telemetry/capture uses the EXACT same featureAllowed('ads.admin') as /ads/telemetry (lines 4012/4094).
+- [x] V3: THE MIGRATOR WAS NEVER INVOKED (REAL, the "unwired" class) — zero call sites; new migrations never auto-applied (a fresh deploy + unapplied = missing tables = failed INSERTs). FIX: cron/run_migrations.php (minimal bootstrap mirroring adspace_cron: include-path-before-autoload, appConfigFile+serversConfigFile) + wired daily 01:00 (before the 02:00 cleanup, log lot399-owned). VERIFIED: "Migrations up to date".
