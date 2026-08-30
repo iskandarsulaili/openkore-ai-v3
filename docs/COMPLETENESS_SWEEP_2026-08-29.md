@@ -233,3 +233,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AF — FLAW-FIX sweep round 21 (2026-08-30)
 - [x] AF1: AE1 DOUBLE-COUNT + GAP (REAL, my AE1 fix had 2 flaws) — (1) the failure path added capture_dropped (which already included PENDING_DROPPED) → double-count on consecutive failures; now adds only the NEW delta; (2) the Err (network) branch MISSED the accumulation entirely (retained bytes but lost the drops) — now adds the delta too. cargo check PASSED.
+
+## Batch AG — FLAW-FIX sweep round 22 (2026-08-30)
+- [x] AG: EXPORT SCALING (REAL) — the export built the WHOLE decoded history into one response (a heavy player = 10s of MB + trainer memory + Cloudflare's response cap). FIX: limit/offset params (default 5000 lines, capped 50000) + has_more flag so the ML trainer pages. php -l clean + the response structure E2E-verified.
