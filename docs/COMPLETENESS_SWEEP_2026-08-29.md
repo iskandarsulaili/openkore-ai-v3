@@ -230,3 +230,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AE — FLAW-FIX sweep round 20 (2026-08-30)
 - [x] AE1: DROP DELTA LOST ON FAILED UPLOAD (REAL) — the AC2 delta was consumed every poll; a FAILED upload's drops were never reported (the retried bytes carried a 0 delta). FIX: NEW PENDING_DROPPED accumulator — failed uploads add their drops, the next report carries the total, a successful upload clears it (the drops ride the retried bytes). cargo check PASSED.
+
+## Batch AF — FLAW-FIX sweep round 21 (2026-08-30)
+- [x] AF1: AE1 DOUBLE-COUNT + GAP (REAL, my AE1 fix had 2 flaws) — (1) the failure path added capture_dropped (which already included PENDING_DROPPED) → double-count on consecutive failures; now adds only the NEW delta; (2) the Err (network) branch MISSED the accumulation entirely (retained bytes but lost the drops) — now adds the delta too. cargo check PASSED.
