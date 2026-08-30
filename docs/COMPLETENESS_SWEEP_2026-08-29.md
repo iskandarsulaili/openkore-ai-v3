@@ -224,3 +224,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AC — FLAW-FIX sweep round 18 (2026-08-30)
 - [x] AC1: the 30s loop VERIFIED sequential (the awaits serialize: sleep → flush → upload → poll) — a 60s poll delays the next tick but never runs concurrently (no double-upload/race).
 - [x] AC2: DROPPED DOUBLE-COUNT (REAL) — the ring's dropped counter is CUMULATIVE (never reset); reporting it raw every poll made the server's export SUM multiply the drops by the poll count. FIX: the poll reports the DELTA since the last poll (per-poll static). cargo check PASSED.
+
+## Batch AD — FLAW-FIX sweep round 19 (2026-08-30)
+- [x] AD1: S4/T1 CONFLICT (REAL) — S4 (client sends capture_dropped=0 on multi-chunk) contradicted T1 (server stores first-file-only): the drop delta was LOST for 2-chunk uploads. FIX: the client sends the delta ALWAYS (the server's T1 first-file logic prevents the SUM over-count). cargo check PASSED.
