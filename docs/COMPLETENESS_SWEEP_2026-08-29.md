@@ -287,3 +287,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BF — FLAW-FIX sweep round 35 (2026-08-30)
 - [x] BF: STALE-PENDING UPLOAD (REAL, my BE fix) — BE cleared the RING but not the launcher's in-memory PENDING_CAPTURE retry buffer (≤16MB) — the next ON uploaded the STALE pre-OFF bytes with a FRESH captured_at_ms (the BE mis-correlation class, second instance). FIX: clear_ring_on_toggle_off now ALSO clears PENDING_CAPTURE + PENDING_DROPPED. cargo check PASSED (1.87s).
+
+## Batch BG — FLAW-FIX sweep round 36 (2026-08-30)
+- [x] BG: DLL-CADENCE RESIDUE (REAL) — the DLL re-checks the off-sentinel only every ~30s → post-OFF frames land in the ring AFTER the toggle-OFF's clear → the next ON uploads them (BE mis-correlation class, 3rd instance). FIX: the ON now ALSO clears the ring + pending (start fresh) — the session boundary is airtight regardless of the DLL's cadence. cargo check PASSED (4.79s).
