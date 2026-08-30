@@ -293,3 +293,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BH — FLAW-FIX sweep round 37 (2026-08-30)
 - [x] BH: UNBOUNDED SQL FETCH (REAL, my AG fix) — the export's SQL fetched ALL the user's rows (no LIMIT) — every page re-loaded the ENTIRE history (content blobs) into memory (a heavy player = the AG class, unbounded per page). FIX: row-level LIMIT 200 (frames ≤64KB + 8MB/session cap = ~130 rows/session max — 200 covers it) — the frame-level pagination still spans rows, the SQL fetch is bounded. E2E: limit=1 → packets 1, has_more True. php -l clean.
+
+## Batch BI — FLAW-FIX sweep round 38 (2026-08-30)
+- [x] BI: ROW-CAP HIDES HAS_MORE (REAL, my BH fix) — the BH row-level LIMIT 200 could hide has_more — a sparse capture (200 rows × few frames < the frame limit) consumed all 200 rows WITHOUT hitting the frame limit → rows 201+ silently lost. FIX: SQL fetches 201 rows; the 201st row's presence PROVES more exist → has_more=true. E2E: e2e3 → packets 2, has_more False (correct). php -l clean.
