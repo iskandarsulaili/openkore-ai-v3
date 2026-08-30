@@ -302,3 +302,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BK — FLAW-FIX sweep round 40 (2026-08-30)
 - [x] BK: DUPLICATE-ON-RETRY (REAL) — a retry of a POST that COMMITTED server-side (response lost — the AB2 timeout class) re-sent the SAME bytes → duplicate rows → the ML trainer double-weights them. FIX: dedup on (machine_id, captured_at_ms, file_type) — captured_at_ms is the natural batch key (a retry has the same, a new batch has a new one). E2E: POST same batch twice → stored 1 then stored 0, 1 row. php -l clean.
+
+## Batch BL — FLAW-FIX sweep round 41 (2026-08-30)
+- [x] BL: DEDUP KILLS MULTI-CHUNK (REAL, my BK fix) — the BK dedup fired on the files of the SAME call — a 16MB capture = 2 chunks with the SAME captured_at_ms → the 2nd chunk's check found the 1st chunk's fresh row and SKIPPED it (half the capture lost). FIX: track the ts+ftype combos inserted IN THIS CALL (callInserted) — the dedup only compares against PRE-EXISTING rows. E2E: 2-chunk call → stored 2; same call again → stored 0; 2 rows. php -l clean.
