@@ -296,3 +296,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BI — FLAW-FIX sweep round 38 (2026-08-30)
 - [x] BI: ROW-CAP HIDES HAS_MORE (REAL, my BH fix) — the BH row-level LIMIT 200 could hide has_more — a sparse capture (200 rows × few frames < the frame limit) consumed all 200 rows WITHOUT hitting the frame limit → rows 201+ silently lost. FIX: SQL fetches 201 rows; the 201st row's presence PROVES more exist → has_more=true. E2E: e2e3 → packets 2, has_more False (correct). php -l clean.
+
+## Batch BJ — FLAW-FIX sweep round 39 (2026-08-30)
+- [x] BJ: NO ROW OFFSET (REAL, my BH/BI fixes) — the row-cap had NO row OFFSET — page 2 re-fetched rows 1-201 → frames beyond row 201 NEVER reachable (silent truncation for >201 rows). FIX: offset/limit are now ROW-based (SQL OFFSET/LIMIT, limit+1 sentinel for has_more). E2E: limit=1 → packets 1 has_more True; no limit → packets 2 has_more False. (LIMIT params interpolated ints — MariaDB can't bind a LIMIT placeholder.) php -l clean.
