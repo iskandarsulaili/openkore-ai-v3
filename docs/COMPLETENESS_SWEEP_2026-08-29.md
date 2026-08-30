@@ -249,3 +249,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] AL: VERIFIED — the chunker's torn-tail break (off+16>len) is correct (a partial frame never bundled).
 - [x] AM: VERIFIED — frames are ≤64KB (RO protocol) — never >8MB MAX_CHUNK.
 - [x] AN: PARTIAL-TAIL CORRUPTION (REAL, my AK fix) — a partial tail (from the byte-granular truncate) was re-added to the pending on failure → the next poll parsed it as a CORRUPT frame (partial bytes + new data) → the walk broke, losing the frames after it. FIX: upload only VALID frames + DROP the partial tail (it can never be completed). cargo check PASSED.
+
+## Batch AO — FLAW-FIX sweep round 26 (2026-08-30)
+- [x] AO: ANON CAPTURES UNREACHABLE (REAL) — the launcher uploads anon (empty username, machine-keyed); the export only filtered by username → anon captures (real ML data from real players) were stored but INVISIBLE. FIX: ?machine_id=<prefix> filter. E2E: machine_id=e2e3 → packets 2, has_more True. php -l clean.
