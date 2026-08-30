@@ -197,3 +197,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] V1: migration tracker STALE — 016/017/018 applied ad-hoc + untracked (tracker stopped at 015); a future migrate would re-run 017's non-idempotent ALTER ("Duplicate column"). FIX: registered 016/017/018 in flux_migrations.
 - [x] V2: export gate VERIFIED — /ads/telemetry/capture uses the EXACT same featureAllowed('ads.admin') as /ads/telemetry (lines 4012/4094).
 - [x] V3: THE MIGRATOR WAS NEVER INVOKED (REAL, the "unwired" class) — zero call sites; new migrations never auto-applied (a fresh deploy + unapplied = missing tables = failed INSERTs). FIX: cron/run_migrations.php (minimal bootstrap mirroring adspace_cron: include-path-before-autoload, appConfigFile+serversConfigFile) + wired daily 01:00 (before the 02:00 cleanup, log lot399-owned). VERIFIED: "Migrations up to date".
+
+## Batch W — FLAW-FIX sweep round 12 (2026-08-30)
+- [x] W1: the Migrator's connection user VERIFIED — the ragnarok user has GRANT ALL on the ragnarok DB (servers.php:17-19 + SHOW GRANTS) → the migrations' CREATE/ALTER work.
+- [x] W2: a migration FAILURE now alerts the founder — POST /ml-alert (moderator :9543, secret from config DiscordInteractionsProxySecret) — a schema failure = missing tables = failed INSERTs everywhere, must not be silent. php -l clean + the cron still runs "Migrations up to date".
