@@ -257,3 +257,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] AP: VERIFIED — the launcher's machine_id is a 16-hex FNV-1a hash of the MachineGuid; the stored anon rows use the SAME hash — the prefix filter works for real anon rows.
 - [x] AQ: VERIFIED — the machine filter is behind the SAME admin gate (Bearer/featureAllowed) — an unauthenticated request can't enumerate machines.
 - [x] AR: LIKE-WILDCARD INJECTION (REAL, my AO fix) — machine_id=% (/_ ) matched ALL machines. FIX: hex-only + bounded length (a hash prefix needs only a few chars). E2E: % rejected → username path. php -l clean.
+
+## Batch AT — FLAW-FIX sweep round 28 (2026-08-30)
+- [x] AS: VERIFIED — the multi-writer clear is atomic under the named mutex (M1); ONE launcher per machine polls + uploads BOTH clients' frames together (writer_pid separates them per-frame). A second launcher on one machine is prevented (single-instance).
+- [x] AT: EXPORT INDEX (REAL) — the export's WHERE (file_type, username) had NO index → a full scan on every export as the table grows (the "capture as much as possible" directive makes it a real scaling issue). FIX: ADD INDEX IF NOT EXISTS idx_filetype_username (migration 018, idempotent; ran on the live DB exit 0).
