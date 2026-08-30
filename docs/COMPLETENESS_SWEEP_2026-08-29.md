@@ -216,3 +216,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AA — FLAW-FIX sweep round 16 (2026-08-30)
 - [x] AA1: the toggle files (packet_capture.flag/.off) VERIFIED safe — not in verify_integrity's manifest loop (they're not pinned) + NOT in the purge list (scoped to conf/db/npc/log/save + specific loose files). A fresh client dir = no flags = capture OFF by default (the disabled-by-default directive).
 - [x] AA3: the capture_enabled() getter did NOT respect the OFF sentinel (Z2) — with a pre-set config.enabled, the UI showed ON after a toggle-OFF (the OR ignored the off). FIX: the getter returns false when packet_capture.off exists (the off wins). cargo check PASSED.
+
+## Batch AB — FLAW-FIX sweep round 17 (2026-08-30)
+- [x] AB1: the server's per-file cap VERIFIED — it checks the DECODED bytes (base64_decode first, then strlen($raw) > cap) — an 8MB chunk → 8MB decoded = exactly at the cap (no truncation).
+- [x] AB2: UPLOAD TIMEOUT (REAL) — the packet-capture poll shared the 12s telemetry client; an 8MB upload on a slow link (8MB base64 ≈ 10.7MB; the earlier E2E timed out twice over the tunnel) exceeded it → POST failed → capture lost + retry. FIX: the poll now uses its OWN 60s client. cargo check PASSED.
