@@ -278,3 +278,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] BA: VERIFIED — no consumer of /ads/telemetry in the launcher UI or site modules (admin/CLI-only; the AZ change affects nothing client-visible).
 - [x] BB: VERIFIED — the Bearer check is gated by the header's presence (no header → no DB query on anonymous requests).
 - [x] BC: WASTED SESSION BOOTSTRAP (REAL, my AZ fix) — the session-bootstrap + access-config parse ran even for Bearer-authed CLI calls. FIX: the whole session/auth block is skipped when bearerOk. E2E: Bearer admin telemetry still ok True. php -l clean.
+
+## Batch BD — FLAW-FIX sweep round 33 (2026-08-30)
+- [x] BD: USERNAME-DEFAULT GAP (REAL, my AZ fix) — the admin /ads/telemetry Bearer path lacked the Y1 username-default fallback — a natural CLI call (Bearer + no username = my own telemetry) failed validation. FIX: captures the bearer's userid + defaults $username to it. E2E: Bearer + no username ok True. php -l clean.
