@@ -273,3 +273,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AZ — FLAW-FIX sweep round 31 (2026-08-30)
 - [x] AY: VERIFIED — no consumer of content_b64 outside the handler (the metadata-only default breaks nothing).
 - [x] AZ: ADMIN TELEMETRY AUTH GAP (REAL) — /ads/telemetry was SESSION-ONLY (a CLI consumer couldn't reach it — unlike the export's Y1 Bearer). FIX: same Bearer path (admin group>=99) + fixed the Flux_DataObject access (->group_id, never [0] — the [0] 500'd). E2E: Bearer admin telemetry ok True.
+
+## Batch BC — FLAW-FIX sweep round 32 (2026-08-30)
+- [x] BA: VERIFIED — no consumer of /ads/telemetry in the launcher UI or site modules (admin/CLI-only; the AZ change affects nothing client-visible).
+- [x] BB: VERIFIED — the Bearer check is gated by the header's presence (no header → no DB query on anonymous requests).
+- [x] BC: WASTED SESSION BOOTSTRAP (REAL, my AZ fix) — the session-bootstrap + access-config parse ran even for Bearer-authed CLI calls. FIX: the whole session/auth block is skipped when bearerOk. E2E: Bearer admin telemetry still ok True. php -l clean.
