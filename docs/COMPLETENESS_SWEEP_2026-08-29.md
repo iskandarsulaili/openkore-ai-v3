@@ -220,3 +220,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AB — FLAW-FIX sweep round 17 (2026-08-30)
 - [x] AB1: the server's per-file cap VERIFIED — it checks the DECODED bytes (base64_decode first, then strlen($raw) > cap) — an 8MB chunk → 8MB decoded = exactly at the cap (no truncation).
 - [x] AB2: UPLOAD TIMEOUT (REAL) — the packet-capture poll shared the 12s telemetry client; an 8MB upload on a slow link (8MB base64 ≈ 10.7MB; the earlier E2E timed out twice over the tunnel) exceeded it → POST failed → capture lost + retry. FIX: the poll now uses its OWN 60s client. cargo check PASSED.
+
+## Batch AC — FLAW-FIX sweep round 18 (2026-08-30)
+- [x] AC1: the 30s loop VERIFIED sequential (the awaits serialize: sleep → flush → upload → poll) — a 60s poll delays the next tick but never runs concurrently (no double-upload/race).
+- [x] AC2: DROPPED DOUBLE-COUNT (REAL) — the ring's dropped counter is CUMULATIVE (never reset); reporting it raw every poll made the server's export SUM multiply the drops by the poll count. FIX: the poll reports the DELTA since the last poll (per-poll static). cargo check PASSED.
