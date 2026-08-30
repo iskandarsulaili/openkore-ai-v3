@@ -205,3 +205,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch X — FLAW-FIX sweep round 13 (2026-08-30)
 - [x] X1: BOOT-RELATIVE TIMESTAMPS (REAL ML-data gap) — the DLL's per-frame ts is GetTickCount64 (ms since boot); the ML trainer can't map a frame to wall-clock. FIX: the launcher sends captured_at_ms (its own epoch-ms at poll) → NEW telemetry_files.captured_at_ms column (first file of a call, same as dropped) → export surfaces it (the trainer correlates a session's frames to a wall-clock window). E2E: row 66323 captured_at_ms=1788016000000. Migration 018 updated (idempotent ADD COLUMN IF NOT EXISTS), ran on live (exit 0), php -l clean, cargo check PASSED.
 - [x] X2: App.tsx toggle VERIFIED (flag-only K1 version + optimistic state + best-effort).
+
+## Batch Y — FLAW-FIX sweep round 14 (2026-08-30)
+- [x] Y1: EXPORT AUTH USABILITY (REAL) — the export was session-cookie-gated; a CLI ML trainer can't hold a browser session. FIX: the export ALSO accepts an SSO Bearer token (discord_login_tokens, admin group>=99) — the trainer mints a token + passes Authorization: Bearer (can omit ?username — defaults to the bearer's login). VERIFIED: 200 + the decoded response structure.
