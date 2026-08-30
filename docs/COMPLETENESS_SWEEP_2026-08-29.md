@@ -299,3 +299,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BJ — FLAW-FIX sweep round 39 (2026-08-30)
 - [x] BJ: NO ROW OFFSET (REAL, my BH/BI fixes) — the row-cap had NO row OFFSET — page 2 re-fetched rows 1-201 → frames beyond row 201 NEVER reachable (silent truncation for >201 rows). FIX: offset/limit are now ROW-based (SQL OFFSET/LIMIT, limit+1 sentinel for has_more). E2E: limit=1 → packets 1 has_more True; no limit → packets 2 has_more False. (LIMIT params interpolated ints — MariaDB can't bind a LIMIT placeholder.) php -l clean.
+
+## Batch BK — FLAW-FIX sweep round 40 (2026-08-30)
+- [x] BK: DUPLICATE-ON-RETRY (REAL) — a retry of a POST that COMMITTED server-side (response lost — the AB2 timeout class) re-sent the SAME bytes → duplicate rows → the ML trainer double-weights them. FIX: dedup on (machine_id, captured_at_ms, file_type) — captured_at_ms is the natural batch key (a retry has the same, a new batch has a new one). E2E: POST same batch twice → stored 1 then stored 0, 1 row. php -l clean.
