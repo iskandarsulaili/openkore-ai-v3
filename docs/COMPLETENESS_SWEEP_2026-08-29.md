@@ -236,3 +236,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AG — FLAW-FIX sweep round 22 (2026-08-30)
 - [x] AG: EXPORT SCALING (REAL) — the export built the WHOLE decoded history into one response (a heavy player = 10s of MB + trainer memory + Cloudflare's response cap). FIX: limit/offset params (default 5000 lines, capped 50000) + has_more flag so the ML trainer pages. php -l clean + the response structure E2E-verified.
+
+## Batch AJ — FLAW-FIX sweep round 23 (2026-08-30)
+- [x] AH: VERIFIED — the export semantics are consistent (page packets + full-history dropped/aggregates; the trainer pages + sums).
+- [x] AI: VERIFIED — the offset skip is FRAME-accurate (advances by the exact frame + the walk continues) — no gaps/overlaps between pages.
+- [x] AJ: PAGINATION BOUNDARY BUG (REAL, my AG fix) — a page landing exactly on a row boundary hit the top-of-loop continue WITHOUT setting has_more → the trainer thought it was done but more data existed. FIX: the continue now sets has_more=true. php -l clean.
