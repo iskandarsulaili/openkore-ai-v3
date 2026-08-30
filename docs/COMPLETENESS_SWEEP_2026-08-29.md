@@ -265,3 +265,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch AV — FLAW-FIX sweep round 29 (2026-08-30)
 - [x] AU: VERIFIED — BOTH export paths use indexes (username → idx_filetype_username, machine → idx_machine LIKE range).
 - [x] AV: PRUNE INDEX (REAL) — the 30-day prune's (file_type NOT IN, uploaded_ts) had no composite → it scanned via the file_type-first index + filtered uploaded_ts (grows with the table). FIX: ADD INDEX IF NOT EXISTS idx_filetype_uploaded (migration 018, idempotent, live exit 0).
+
+## Batch AX — FLAW-FIX sweep round 30 (2026-08-30)
+- [x] AW: VERIFIED — ALL telemetry_files queries are indexed (quota machine → idx_machine, admin list → idx_session, export → idx_filetype_username/idx_machine, prune → idx_filetype_uploaded).
+- [x] AX: ADMIN LIST BLOB BLOAT (REAL, pre-existing) — the admin /ads/telemetry SELECTed content (FULL blobs, each 2-8MB) for EVERY file + base64-encoded them into one response (a heavy user = tens of MB). FIX: metadata-only by default; ?include_content=1 fetches the blobs explicitly. php -l clean + E2E (no content_b64 without the flag).
