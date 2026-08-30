@@ -290,3 +290,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BG — FLAW-FIX sweep round 36 (2026-08-30)
 - [x] BG: DLL-CADENCE RESIDUE (REAL) — the DLL re-checks the off-sentinel only every ~30s → post-OFF frames land in the ring AFTER the toggle-OFF's clear → the next ON uploads them (BE mis-correlation class, 3rd instance). FIX: the ON now ALSO clears the ring + pending (start fresh) — the session boundary is airtight regardless of the DLL's cadence. cargo check PASSED (4.79s).
+
+## Batch BH — FLAW-FIX sweep round 37 (2026-08-30)
+- [x] BH: UNBOUNDED SQL FETCH (REAL, my AG fix) — the export's SQL fetched ALL the user's rows (no LIMIT) — every page re-loaded the ENTIRE history (content blobs) into memory (a heavy player = the AG class, unbounded per page). FIX: row-level LIMIT 200 (frames ≤64KB + 8MB/session cap = ~130 rows/session max — 200 covers it) — the frame-level pagination still spans rows, the SQL fetch is bounded. E2E: limit=1 → packets 1, has_more True. php -l clean.
