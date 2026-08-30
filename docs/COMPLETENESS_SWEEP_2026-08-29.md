@@ -208,3 +208,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch Y — FLAW-FIX sweep round 14 (2026-08-30)
 - [x] Y1: EXPORT AUTH USABILITY (REAL) — the export was session-cookie-gated; a CLI ML trainer can't hold a browser session. FIX: the export ALSO accepts an SSO Bearer token (discord_login_tokens, admin group>=99) — the trainer mints a token + passes Authorization: Bearer (can omit ?username — defaults to the bearer's login). VERIFIED: 200 + the decoded response structure.
+
+## Batch Z — FLAW-FIX sweep round 15 (2026-08-30)
+- [x] Z1: the OFF path VERIFIED — it DELETES packet_capture.flag (no stale-flag capture-on-OFF).
+- [x] Z2: PRIVACY BLINDSPOT (REAL) — the DLL gate was cfg.enabled OR flag; a pre-set capture.enabled:true in p2p_config.json captured REGARDLESS of the toggle-OFF (the launcher can't touch the pinned config). FIX: NEW packet_capture.off sentinel — the OFF writes it, the ON removes it, the DLL checks it FIRST (never capture when present — the user's OFF wins over any config). Built + deployed DLL 0.1.1070 (252c3e98, sha f6d895bd), cargo check PASSED.
