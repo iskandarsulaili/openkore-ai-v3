@@ -244,3 +244,8 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AK — FLAW-FIX sweep round 24 (2026-08-30)
 - [x] AK: PRUNE CONTRADICTION (REAL) — the MAX_PENDING prune dropped the OLDEST (drain(..drop_n)) — defeating the L3 keep-oldest protection: a sustained failure + busy capture dropped the 0x0436 login (the WHOLE POINT). FIX: keep the OLDEST 16MB + drop the newest (re-captured next tick). cargo check PASSED.
+
+## Batch AN — FLAW-FIX sweep round 25 (2026-08-30)
+- [x] AL: VERIFIED — the chunker's torn-tail break (off+16>len) is correct (a partial frame never bundled).
+- [x] AM: VERIFIED — frames are ≤64KB (RO protocol) — never >8MB MAX_CHUNK.
+- [x] AN: PARTIAL-TAIL CORRUPTION (REAL, my AK fix) — a partial tail (from the byte-granular truncate) was re-added to the pending on failure → the next poll parsed it as a CORRUPT frame (partial bytes + new data) → the walk broke, losing the frames after it. FIX: upload only VALID frames + DROP the partial tail (it can never be completed). cargo check PASSED.
