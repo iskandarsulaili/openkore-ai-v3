@@ -284,3 +284,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BE — FLAW-FIX sweep round 34 (2026-08-30)
 - [x] BE: STALE-RING UPLOAD (REAL) — the toggle-OFF did NOT clear the ring — a stale ring (frames from a previous capture) would be read + uploaded on the next ON (boot-relative ts + a FRESH captured_at_ms = the ML trainer mis-correlates them). FIX: OFF now clears the ring (zero write_pos + total_bytes under the named mutex, Windows-gated). cargo check PASSED (4.97s).
+
+## Batch BF — FLAW-FIX sweep round 35 (2026-08-30)
+- [x] BF: STALE-PENDING UPLOAD (REAL, my BE fix) — BE cleared the RING but not the launcher's in-memory PENDING_CAPTURE retry buffer (≤16MB) — the next ON uploaded the STALE pre-OFF bytes with a FRESH captured_at_ms (the BE mis-correlation class, second instance). FIX: clear_ring_on_toggle_off now ALSO clears PENDING_CAPTURE + PENDING_DROPPED. cargo check PASSED (1.87s).
