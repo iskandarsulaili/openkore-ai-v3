@@ -241,3 +241,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 - [x] AH: VERIFIED — the export semantics are consistent (page packets + full-history dropped/aggregates; the trainer pages + sums).
 - [x] AI: VERIFIED — the offset skip is FRAME-accurate (advances by the exact frame + the walk continues) — no gaps/overlaps between pages.
 - [x] AJ: PAGINATION BOUNDARY BUG (REAL, my AG fix) — a page landing exactly on a row boundary hit the top-of-loop continue WITHOUT setting has_more → the trainer thought it was done but more data existed. FIX: the continue now sets has_more=true. php -l clean.
+
+## Batch AK — FLAW-FIX sweep round 24 (2026-08-30)
+- [x] AK: PRUNE CONTRADICTION (REAL) — the MAX_PENDING prune dropped the OLDEST (drain(..drop_n)) — defeating the L3 keep-oldest protection: a sustained failure + busy capture dropped the 0x0436 login (the WHOLE POINT). FIX: keep the OLDEST 16MB + drop the newest (re-captured next tick). cargo check PASSED.
