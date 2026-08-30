@@ -319,3 +319,17 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch BR — ML WALL-CLOCK GAP (round 44, 2026-08-30)
 - [x] BR CONFIRMED: the frame ts (GetTickCount64, boot-relative) CANNOT map to wall-clock — the launcher sends only the batch captured_at_ms (poll-time), NOT the DLL's boot epoch. X1 fixed the BATCH correlation but the PER-FRAME wall-clock (what the ML trainer needs for session analysis) is still impossible.
 - [ ] DESIGN (protocol change): the DLL writes a boot_epoch_ms into the ring header (v3 header is full — a v4 bump + the launcher reads/sends it + the server stores it). Cross-repo (DLL + launcher + server). Answer-first rule → presented, not implemented.
+
+## Batch BS — THE META-BLINDSPOT (round 45, 2026-08-30) — caught by the USER's real Windows build
+- [x] BS CONFIRMED (the biggest verification flaw of all 45 rounds): the ENTIRE `#[cfg(windows)]` packet-capture implementation was **NEVER TYPE-CHECKED**. Every `cargo check` across 44 audit rounds ran on Linux and compiled ONLY the `#[cfg(not(windows))]` stubs. `build.rs` panics on `TARGET=x86_64-pc-windows-gnu` (the deploy guard), so `cargo check --target x86_64-pc-windows-gnu` was impossible — the Windows path had ZERO compile coverage. It shipped to the user's real `cargo tauri build` with **20 compile errors**.
+- [x] 20 errors fixed (6 distinct defect classes):
+  1. `E0428` duplicate `FRAME_MAGIC` const (declared twice in the same fn body — the BE/S2 edits each added one).
+  2. `E0425` missing `use windows_sys::Win32::System::Threading::*` — `CreateMutexW`/`OpenMutexW`/`WaitForSingleObject`/`ReleaseMutex` unresolved in BOTH fns (the `Memory::*` + `Foundation::*` imports did not cover Threading).
+  3. `E0425` `CloseHandle` unresolved — main.rs declares its OWN manual `extern "system"` `CloseHandle` (private to that module); telemetry.rs needed `Foundation::*`.
+  4. `E0599`/`E0605` `MapViewOfFile` returns `MEMORY_MAPPED_VIEW_ADDRESS` (a `#[repr(C)]` struct wrapping `.Value`), NOT a raw pointer — `view.is_null()` and `view as *const u8` are both invalid → `view.Value.is_null()` / `view.Value as *const u8`.
+  5. `E0425` `wide(...)` helper does not exist anywhere in the crate (invented in the BE patch) → `OsString::from(..).encode_wide().chain(once(0)).collect()`.
+  6. Raw magic numbers (`0x0001`, `0x0004`, `0x0002`) replaced with the real typed consts (`MUTEX_ALL_ACCESS`, `FILE_MAP_ALL_ACCESS`) — `OpenMutexW` takes `SYNCHRONIZATION_ACCESS_RIGHTS`, and `SYNCHRONIZE` is NOT in `Threading` (it lives in `Storage::FileSystem` as a `FILE_ACCESS_RIGHTS`).
+- [x] ROOT-CAUSE FIX (so this class can never recur): `build.rs` gains `RAW_TYPECHECK_ONLY=1` — permits the `windows-gnu` TARGET for **type-checking only**; the deployable-build refusal is unchanged for every normal invocation.
+- [x] VERIFIED (all three): `RAW_TYPECHECK_ONLY=1 cargo check --target x86_64-pc-windows-gnu` → **Finished, 0 errors 0 warnings**; native Linux `cargo check` → Finished (no regression); `cargo check --target x86_64-pc-windows-gnu` WITHOUT the env var → still REFUSED (guard intact).
+- [x] Commit: launcher `6c87171` (VERSION 605).
+- **META-LESSON:** for 44 rounds I reported "cargo check PASSED" as the verification gate for Windows-only code. It was **structurally incapable** of checking that code. When a platform gate (`#[cfg]`) exists, the verification command MUST target that platform — otherwise "verified" means nothing. Always ask: *does my verification command actually compile the code I changed?*
