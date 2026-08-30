@@ -227,3 +227,6 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch AD — FLAW-FIX sweep round 19 (2026-08-30)
 - [x] AD1: S4/T1 CONFLICT (REAL) — S4 (client sends capture_dropped=0 on multi-chunk) contradicted T1 (server stores first-file-only): the drop delta was LOST for 2-chunk uploads. FIX: the client sends the delta ALWAYS (the server's T1 first-file logic prevents the SUM over-count). cargo check PASSED.
+
+## Batch AE — FLAW-FIX sweep round 20 (2026-08-30)
+- [x] AE1: DROP DELTA LOST ON FAILED UPLOAD (REAL) — the AC2 delta was consumed every poll; a FAILED upload's drops were never reported (the retried bytes carried a 0 delta). FIX: NEW PENDING_DROPPED accumulator — failed uploads add their drops, the next report carries the total, a successful upload clears it (the drops ride the retried bytes). cargo check PASSED.
