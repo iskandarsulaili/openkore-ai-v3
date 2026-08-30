@@ -305,3 +305,9 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 
 ## Batch BL — FLAW-FIX sweep round 41 (2026-08-30)
 - [x] BL: DEDUP KILLS MULTI-CHUNK (REAL, my BK fix) — the BK dedup fired on the files of the SAME call — a 16MB capture = 2 chunks with the SAME captured_at_ms → the 2nd chunk's check found the 1st chunk's fresh row and SKIPPED it (half the capture lost). FIX: track the ts+ftype combos inserted IN THIS CALL (callInserted) — the dedup only compares against PRE-EXISTING rows. E2E: 2-chunk call → stored 2; same call again → stored 0; 2 rows. php -l clean.
+
+## Batch BM/BN/BO/BP — VERIFY sweep round 42 (2026-08-30)
+- [x] BM: VERIFIED — the poll cadence is 30s → two SEPARATE batches are ≥30s apart → their captured_at_ms (ms-resolution) can NEVER collide (the ms-collision window requires two batches within 1ms — impossible at a 30s cadence).
+- [x] BN: VERIFIED — a delayed retry's captured_at_ms = the ORIGINAL poll-time (the pending preserves it) — distinct from a new batch's ts (30s apart) — the dedup key is sound.
+- [x] BO: VERIFIED — a retry after a PARTIAL store (chunk 1 stored, chunk 2 lost) → the retry's chunk 1 dedups (skip) + chunk 2 stores → the data is complete + the pending clears — the dedup + retry interaction is sound.
+- [x] BP: VERIFIED — the dedup's machine_id covers the anon path (machine-keyed) + the logged-in path — the ts differs between sessions → both store. Sound.
