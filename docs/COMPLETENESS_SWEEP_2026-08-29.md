@@ -201,3 +201,7 @@ Proven with benchmark, not assumption. Verify before modifying. Big picture + al
 ## Batch W — FLAW-FIX sweep round 12 (2026-08-30)
 - [x] W1: the Migrator's connection user VERIFIED — the ragnarok user has GRANT ALL on the ragnarok DB (servers.php:17-19 + SHOW GRANTS) → the migrations' CREATE/ALTER work.
 - [x] W2: a migration FAILURE now alerts the founder — POST /ml-alert (moderator :9543, secret from config DiscordInteractionsProxySecret) — a schema failure = missing tables = failed INSERTs everywhere, must not be silent. php -l clean + the cron still runs "Migrations up to date".
+
+## Batch X — FLAW-FIX sweep round 13 (2026-08-30)
+- [x] X1: BOOT-RELATIVE TIMESTAMPS (REAL ML-data gap) — the DLL's per-frame ts is GetTickCount64 (ms since boot); the ML trainer can't map a frame to wall-clock. FIX: the launcher sends captured_at_ms (its own epoch-ms at poll) → NEW telemetry_files.captured_at_ms column (first file of a call, same as dropped) → export surfaces it (the trainer correlates a session's frames to a wall-clock window). E2E: row 66323 captured_at_ms=1788016000000. Migration 018 updated (idempotent ADD COLUMN IF NOT EXISTS), ran on live (exit 0), php -l clean, cargo check PASSED.
+- [x] X2: App.tsx toggle VERIFIED (flag-only K1 version + optimistic state + best-effort).
