@@ -307,7 +307,14 @@ class CaptureConsumer:
         kept.append(f"mapLoginLength {layout.length}")
         kept.append(f"mapLoginLayout {json.dumps(layout.to_dict())}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        # ATOMIC write (temp + os.replace): the bot reads config.txt at startup
+        # and on reconnect — a non-atomic truncate+write could hand it a
+        # truncated mapLoginLayout line mid-write, the JSON decode fails, and
+        # the bot falls back to the WRONG 23-byte form. os.replace is atomic on
+        # POSIX + Windows (same-filesystem rename).
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
         logger.info("wrote bot config: mapLoginLength=%d mapLoginLayout=%s", layout.length, json.dumps(layout.to_dict()))
         return True
 
