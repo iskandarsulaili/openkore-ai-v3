@@ -133,13 +133,37 @@ class SharedLearningDB:
                         captured_at_ms INTEGER NOT NULL,
                         learned_layout TEXT NOT NULL DEFAULT '{}',
                         bot_id TEXT NOT NULL DEFAULT '',
-                        timestamp REAL NOT NULL
+                        timestamp REAL NOT NULL,
+                        UNIQUE(packet_id, raw_hex, captured_at_ms)
                     )
                 """)
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_packet_layouts_packet
                     ON packet_layouts(packet_id, captured_at_ms)
                 """)
+                # BQ (2026-08-31): the table may pre-date the UNIQUE constraint
+                # (CREATE TABLE IF NOT EXISTS is a no-op on an existing table),
+                # so the dedup key must be added idempotently as an index too.
+                # Without it, INSERT OR IGNORE has nothing to dedup against and
+                # the store grows with duplicate frames every run.
+                try:
+                    conn.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_packet_layouts_dedup
+                        ON packet_layouts(packet_id, raw_hex, captured_at_ms)
+                    """)
+                except Exception:
+                    # Duplicate rows already exist -> the unique index can't be
+                    # built. Dedupe them first, then retry.
+                    conn.execute("""
+                        DELETE FROM packet_layouts WHERE id NOT IN (
+                            SELECT MIN(id) FROM packet_layouts
+                            GROUP BY packet_id, raw_hex, captured_at_ms
+                        )
+                    """)
+                    conn.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_packet_layouts_dedup
+                        ON packet_layouts(packet_id, raw_hex, captured_at_ms)
+                    """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS failures (
                         id TEXT PRIMARY KEY,
@@ -533,7 +557,7 @@ class SharedLearningDB:
             conn = _hardened_connect(self._db_path)
             try:
                 conn.execute(
-                    "INSERT INTO packet_layouts (packet_id, length, raw_hex, captured_at_ms, learned_layout, bot_id, timestamp) "
+                    "INSERT OR IGNORE INTO packet_layouts (packet_id, length, raw_hex, captured_at_ms, learned_layout, bot_id, timestamp) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (packet_id, length, raw_hex, captured_at_ms, learned_layout, bot_id, time.time()),
                 )

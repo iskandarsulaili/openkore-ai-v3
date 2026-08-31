@@ -401,11 +401,33 @@ class CaptureConsumer:
         )
         return layout
 
+    def _delete_token(self, token: str) -> None:
+        """Delete a minted token after use (prevents unbounded growth)."""
+        import pymysql
+        try:
+            conn = pymysql.connect(
+                host=self.db_host, port=self.db_port, user=self.db_user,
+                password=self.db_password, database=self.db_database, autocommit=True,
+            )
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM discord_login_tokens WHERE token = %s", (token,))
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("token cleanup failed: %s", e)
+
     # ── Main run ──────────────────────────────────────────────────────────
     def run(self) -> dict[str, Any]:
         """Pull captures, learn the layout, write config + ML feed."""
         token = self._mint_token()
-        lines = self._pull_all(token)
+        try:
+            lines = self._pull_all(token)
+        finally:
+            # Delete the token after use — a fresh token every 10-min run would
+            # otherwise grow discord_login_tokens unboundedly (144/day x 30-day
+            # expiry = ~4320 rows before any expire).
+            self._delete_token(token)
         if not lines:
             logger.info("no capture lines pulled")
             return {"learned": False, "frames": 0, "reason": "no captures"}
