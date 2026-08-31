@@ -120,6 +120,26 @@ class SharedLearningDB:
                         UNIQUE(monster_id, strategy)
                     )
                 """)
+                # BQ (2026-08-31): packet-layout learning store — the capture
+                # consumer (capture_consumer.py) appends every captured 0x0436
+                # map-login frame here so the ML trainer can learn the server's
+                # accepted layout (length + field offsets) from real bytes.
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS packet_layouts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        packet_id INTEGER NOT NULL,
+                        length INTEGER NOT NULL,
+                        raw_hex TEXT NOT NULL,
+                        captured_at_ms INTEGER NOT NULL,
+                        learned_layout TEXT NOT NULL DEFAULT '{}',
+                        bot_id TEXT NOT NULL DEFAULT '',
+                        timestamp REAL NOT NULL
+                    )
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_packet_layouts_packet
+                    ON packet_layouts(packet_id, captured_at_ms)
+                """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS failures (
                         id TEXT PRIMARY KEY,
@@ -488,6 +508,54 @@ class SharedLearningDB:
                     query += " AND category = ?"
                     params.append(category)
                 query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+                cursor = conn.execute(query, params)
+                rows = cursor.fetchall()
+                columns = [d[0] for d in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
+            finally:
+                conn.close()
+
+    # ── Packet Layouts (BQ 2026-08-31: capture-consumer ML feed) ──
+
+    def record_packet_layout(
+        self,
+        *,
+        packet_id: int,
+        length: int,
+        raw_hex: str,
+        captured_at_ms: int,
+        learned_layout: str = "",
+        bot_id: str = "",
+    ) -> None:
+        """Record a captured packet frame for ML layout learning."""
+        with self._lock:
+            conn = _hardened_connect(self._db_path)
+            try:
+                conn.execute(
+                    "INSERT INTO packet_layouts (packet_id, length, raw_hex, captured_at_ms, learned_layout, bot_id, timestamp) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (packet_id, length, raw_hex, captured_at_ms, learned_layout, bot_id, time.time()),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def get_packet_layouts(
+        self,
+        packet_id: int | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Get captured packet frames (for the ML trainer)."""
+        with self._lock:
+            conn = _hardened_connect(self._db_path)
+            try:
+                query = "SELECT * FROM packet_layouts WHERE 1=1"
+                params: list = []
+                if packet_id is not None:
+                    query += " AND packet_id = ?"
+                    params.append(packet_id)
+                query += " ORDER BY captured_at_ms DESC LIMIT ?"
                 params.append(limit)
                 cursor = conn.execute(query, params)
                 rows = cursor.fetchall()

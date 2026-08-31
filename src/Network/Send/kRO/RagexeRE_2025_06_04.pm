@@ -66,8 +66,34 @@ sub sendMapLogin {
 
 	# Server-adapted length (the sidecar sets it from a live probe). Default 23.
 	my $mlen = $config{mapLoginLength} || 23;
+	# BQ (2026-08-31): the capture consumer learns the REAL field offsets and
+	# writes them as mapLoginLayout (JSON). If present, emit the packet with the
+	# LEARNED offsets — the hardcoded 23-byte form (account@6) was WRONG: the
+	# captured real client sends account@2 (id@0 account@2 char@6 login1@10
+	# login2@14 tick@18 sex@22). The learned layout is authoritative.
+	my $layout = $config{mapLoginLayout};
+	# The config stores it as a JSON string (ControlParser writes 'key value').
+	# JSON::PP is core Perl (always present); JSON may not be installed.
+	$layout = eval { JSON::PP::decode_json($layout) } if ($layout && !ref($layout));
 	my $packet;
-	if ($mlen == 26) {
+	if ($layout && ref($layout) eq 'HASH' && $layout->{length}) {
+		my $n = $layout->{length};
+		my $acc = $layout->{account_offset} // 2;
+		my $chr = $layout->{char_offset} // ($acc + 4);
+		my $l1  = $layout->{login1_offset} // ($acc + 8);
+		my $l2  = $layout->{login2_offset} // ($acc + 12);
+		my $tk  = $layout->{tick_offset} // ($acc + 16);
+		my $sx  = $layout->{sex_offset} // ($acc + 20);
+		# Build a zero-filled buffer of length $n, then place each field.
+		$packet = pack('v', 0x0436) . ("\x00" x ($n - 2));
+		substr($packet, $acc, 4) = pack('V', $accountID);
+		substr($packet, $chr, 4) = pack('V', $charID);
+		substr($packet, $l1, 4)  = pack('V', $sessionID);
+		substr($packet, $l2, 4)  = pack('V', 0);  # loginID2 (unused by the server)
+		substr($packet, $tk, 4)  = pack('V', getTickCount());
+		substr($packet, $sx, 1)  = pack('C', $sex);
+		$msg = $packet;
+	} elsif ($mlen == 26) {
 		# 26-byte layout: id + 5 longs (extra 0 tick slot) + sex + 3 pad
 		$packet = pack(
 			'v V5 C a3',

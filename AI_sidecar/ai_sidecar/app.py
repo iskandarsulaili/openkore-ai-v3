@@ -185,6 +185,32 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.debug("Curator not available: %s", exc)
         curator_task = None
+    # BQ (2026-08-31): capture-consumer background loop — pulls the captured
+    # 0x0436 map-login packets from the central server, learns the REAL layout,
+    # writes it to the bot config + ML store. Runs every 10 min (the capture
+    # poll is 30s; a 10-min cadence keeps the learned layout fresh without
+    # hammering the export).
+    capture_task = None
+    try:
+        from ai_sidecar.capture_consumer import CaptureConsumer
+        async def _capture_loop():
+            while True:
+                try:
+                    consumer = CaptureConsumer()
+                    result = consumer.run()
+                    if result.get("learned"):
+                        logger.info("capture consumer: learned layout len=%d (samples=%d)",
+                                    result["layout"]["length"], result["layout"]["samples"])
+                    else:
+                        logger.debug("capture consumer: %s", result.get("reason", "no-op"))
+                except Exception as exc:
+                    logger.debug("capture consumer cycle error: %s", exc)
+                await asyncio.sleep(600)  # every 10 min
+        capture_task = asyncio.create_task(_capture_loop())
+        logger.info("Capture consumer background loop started")
+    except Exception as exc:
+        logger.debug("Capture consumer not available: %s", exc)
+        capture_task = None
     # Start keep-alive loop if enabled
     runtime.keep_alive_enabled = settings.keep_alive_enabled
     runtime.keep_alive_timeout_minutes = settings.keep_alive_timeout_minutes
