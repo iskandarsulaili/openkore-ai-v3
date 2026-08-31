@@ -8410,6 +8410,13 @@ sub received_character_ID_and_Map {
 		$map_ip = $args->{mapUrl};
 		$map_ip =~ s/:[0-9\0]+//;
 		$map_port = $args->{mapPort};
+	} elsif (exists $args->{mapUrl} && $args->{'mapUrl'} =~ /^[0-9a-fA-F:]+$/) {
+		# REACHABILITY LADDER (2026-08-31): the char puts the host's actual
+		# global IPv6 in the 0x2b04 `domain` field (a bare IPv6, no port) so a
+		# bot with no DLL proxy can connect to a reachable_v6 host directly via
+		# IO::Socket::IP. The game client ignores this field (uses the 4-byte IP).
+		$map_ip = $args->{mapUrl};
+		$map_port = $args->{mapPort};
 	} else {
 		$map_ip = makeIP($args->{mapIP});
 		$map_ip = $masterServer->{ip} if ($masterServer && $masterServer->{private});

@@ -146,13 +146,38 @@ sub serverConnect {
 	return if ($return);
 
 	message TF("Connecting (%s:%s)... ", $host, $port), "connection";
-	$self->{remote_socket} = new IO::Socket::INET(
+	# REACHABILITY LADDER (2026-08-31): a reachable_v6 host's address is a bare
+	# IPv6 (from the 0x2b04 domain field). IO::Socket::INET is IPv4-only — use
+	# IO::Socket::IP (dual-stack) so the bot can connect to an IPv6 host directly.
+	my $is_v6 = ($host =~ /:/ && $host !~ /^\d+\.\d+\.\d+\.\d+$/);
+	if ($is_v6) {
+		eval { require IO::Socket::IP; };
+		if ($@) {
+			error TF("couldn't connect: %s (error code %d)\n", "IO::Socket::IP not available for IPv6 host $host", 0), "connection";
+			return;
+		}
+		$self->{remote_socket} = IO::Socket::IP->new(
 			LocalAddr	=> $config{bindIp} || undef,
 			PeerAddr	=> $host,
 			PeerPort	=> $port,
 			Proto		=> 'tcp',
 			Timeout		=> 4);
-	($self->{remote_socket} && inet_aton($self->{remote_socket}->peerhost()) eq inet_aton($host)) ?
+	} else {
+		$self->{remote_socket} = new IO::Socket::INET(
+			LocalAddr	=> $config{bindIp} || undef,
+			PeerAddr	=> $host,
+			PeerPort	=> $port,
+			Proto		=> 'tcp',
+			Timeout		=> 4);
+	}
+	# REACHABILITY LADDER (2026-08-31): the success check must handle IPv6 —
+	# inet_aton returns undef for an IPv6 host, so compare the peerhost string
+	# directly for v6 (the socket is connected iff peerhost is non-empty).
+	my $connected = $self->{remote_socket} && $self->{remote_socket}->peerhost();
+	if ($connected && !$is_v6) {
+		$connected = inet_aton($self->{remote_socket}->peerhost()) eq inet_aton($host);
+	}
+	$connected ?
 		message T("connected\n"), "connection" :
 		error(TF("couldn't connect: %s (error code %d)\n", "$!", int($!)), "connection");
 	if ($self->getState() != Network::NOT_CONNECTED) {
