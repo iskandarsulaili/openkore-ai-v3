@@ -179,8 +179,14 @@ class CaptureConsumer:
         return token
 
     # ── Export pull (Bearer + paginated) ─────────────────────────────────
-    def _pull_page(self, token: str, offset: int, limit: int) -> list[str]:
-        """Fetch one page of capture lines. Returns the '0x%04x %u %s' lines."""
+    def _pull_page(self, token: str, offset: int, limit: int) -> tuple[list[str], bool]:
+        """Fetch one page of capture lines. Returns (lines, has_more).
+
+        has_more is the server's authoritative row-based signal (set by the
+        limit+1 sentinel row). The consumer must use it, not a frame-count
+        heuristic — a single row (capture upload) can hold ~130 frames, so
+        comparing frame count against the ROW limit would over/under-fetch.
+        """
         url = f"{self.export_base}{EXPORT_PATH}?username={self.admin_user}&offset={offset}&limit={limit}"
         req = urllib.request.Request(url, headers={
             "Authorization": f"Bearer {token}",
@@ -191,25 +197,26 @@ class CaptureConsumer:
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             logger.warning("capture export HTTP %s: %s", e.code, e.read()[:200])
-            return []
+            return [], False
         except Exception as e:
             logger.warning("capture export fetch failed: %s", e)
-            return []
+            return [], False
         # Response shape: {success, data: {lines: [...], has_more, ...}}
         d = data.get("data", {}) if isinstance(data, dict) else {}
         packets = d.get("lines", []) if isinstance(d, dict) else []
-        return [str(p) for p in packets]
+        has_more = bool(d.get("has_more", False)) if isinstance(d, dict) else False
+        return [str(p) for p in packets], has_more
 
     def _pull_all(self, token: str) -> list[str]:
-        """Pull all capture lines (paginated)."""
+        """Pull all capture lines (paginated by the server's has_more)."""
         lines: list[str] = []
         offset = 0
         while len(lines) < MAX_FRAMES:
-            page = self._pull_page(token, offset, self.page_size)
+            page, has_more = self._pull_page(token, offset, self.page_size)
             if not page:
                 break
             lines.extend(page)
-            if len(page) < self.page_size:
+            if not has_more:
                 break
             offset += self.page_size
         return lines
