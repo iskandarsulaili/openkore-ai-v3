@@ -105,3 +105,12 @@ REAL field offsets, not just the length.
   real layout (23), not the stale source value. (Server-side source-vs-binary
   drift — not mine to fix per no-RAW-modifications.)
 - Committed `6a6898100`, pushed.
+
+## Adversarial sweep 4 (2026-08-31) — 1 more REAL flaw closed
+- **D8 (pagination ignored server has_more):** `_pull_all` compared the FRAME
+  count against the ROW page_size and ignored the server's authoritative
+  `has_more` flag. A single row (capture upload) holds ~130 frames, so the
+  frame-count heuristic over/under-fetched. FIX: `_pull_page` returns
+  (lines, has_more); `_pull_all` pages on has_more. Verified: learned 23,
+  config_written, ml_fed 6, store_layout 23.
+- Committed `6cddef977`, pushed.
