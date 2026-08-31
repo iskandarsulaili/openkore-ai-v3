@@ -645,20 +645,27 @@ sub checkConnection {
 			# length (19 -> 23acct2 -> 23acct6 -> 26) until one lands. No
 			# hardcode: the bot learns the live server's accepted layout by
 			# probing it through the reconnect cycle.
+			# BQ (2026-08-31): if the capture consumer has LEARNED the real
+			# layout (mapLoginLayout set), that is AUTHORITATIVE — do NOT rotate
+			# over it. The learned 23-byte form (account@2) is the exact bytes
+			# the real client sends; blind rotation would fight it. Only rotate
+			# on cold-start (no learned layout yet).
 			my @_order = (19, 23, 26);
 			my $_cur = defined($config{mapLoginLength}) ? $config{mapLoginLength} : 23;
 			my $_next = $_cur;
-			# Rotate to the NEXT in the cycle (19 -> 23 -> 26 -> 19), not the
-			# first-that-differs — that would bounce between two forms forever.
-			for my $_i (0 .. $#_order) {
-				if ($_order[$_i] == $_cur) {
-					$_next = $_order[($_i + 1) % @_order];
-					last;
+			if (!$config{mapLoginLayout}) {
+				# Rotate to the NEXT in the cycle (19 -> 23 -> 26 -> 19), not the
+				# first-that-differs — that would bounce between two forms forever.
+				for my $_i (0 .. $#_order) {
+					if ($_order[$_i] == $_cur) {
+						$_next = $_order[($_i + 1) % @_order];
+						last;
+					}
 				}
-			}
-			if ($_next != $_cur) {
-				$config{mapLoginLength} = $_next;
-				message TF("Map-login auto-adapted: mapLoginLength %d -> %d (learning the live server's 0x0436 form)\n", $_cur, $_next), "connection";
+				if ($_next != $_cur) {
+					$config{mapLoginLength} = $_next;
+					message TF("Map-login auto-adapted: mapLoginLength %d -> %d (learning the live server's 0x0436 form)\n", $_cur, $_next), "connection";
+				}
 			}
 			$timeout_ex{master}{timeout} = $timeout{reconnect}{timeout};
 			$self->serverDisconnect;

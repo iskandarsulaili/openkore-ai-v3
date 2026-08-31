@@ -124,6 +124,22 @@ class CaptureConsumer:
         self.db_user = db_user or os.environ.get("DB_USER", "ragnarok")
         self.db_password = db_password or os.environ.get("DB_PASSWORD", "")
         self.db_database = db_database or os.environ.get("DB_DATABASE", "ragnarok")
+        # Resolve the real paths when not given: the sidecar runs from the repo
+        # root (python -m ai_sidecar.app), so the bot config is control/config.txt
+        # and the shared learning DB is AI_sidecar/data/shared_learning.db.
+        if not bot_config_path:
+            bot_config_path = os.path.join(os.getcwd(), "control", "config.txt")
+        if not shared_learning_db_path:
+            # MUST match SharedLearningDB's own default exactly
+            # (AI_sidecar/data/shared_learning.db) or the ML feed lands in a
+            # different store than the trainer reads. SharedLearningDB resolves
+            # relative to its own module dir: ai_sidecar/learning -> ../../data.
+            # capture_consumer.py is at AI_sidecar/ai_sidecar/, so dirname x2
+            # = AI_sidecar, then /data.
+            shared_learning_db_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "data", "shared_learning.db",
+            )
         self.bot_config_path = bot_config_path
         self.shared_learning_db_path = shared_learning_db_path
         self.page_size = page_size
@@ -327,6 +343,64 @@ class CaptureConsumer:
         logger.info("fed %d 0x0436 frames to ML store", count)
         return count
 
+    def _learn_from_store(self) -> LearnedLayout | None:
+        """Learn the layout from the ACCUMULATED packet_layouts store.
+
+        This is the ML feed's CONSUMER: the store is written by _feed_ml on
+        every run, and this reads it back so the learned layout reflects the
+        whole captured dataset (not just the latest pull). Without this the
+        store would be write-only (dormant) — the completeness mandate requires
+        every written table to be read.
+        """
+        if not self.shared_learning_db_path:
+            return None
+        from ai_sidecar.learning.shared_learning_db import SharedLearningDB
+        db = SharedLearningDB(db_path=self.shared_learning_db_path)
+        rows = db.get_packet_layouts(packet_id=PACKET_ID_0436, limit=500)
+        if not rows:
+            return None
+        account_id = self._admin_account_id()
+        if account_id is None:
+            return None
+        candidates: list[tuple[int, int, int, int, int, int, int]] = []
+        for row in rows:
+            try:
+                raw = bytes.fromhex(row.get("raw_hex", ""))
+            except (ValueError, TypeError):
+                continue
+            n = len(raw)
+            if n < 2:
+                continue
+            for off in range(2, n - 3):
+                val = struct.unpack_from("<I", raw, off)[0]
+                if val == account_id:
+                    if off + 20 < n:
+                        candidates.append((n, off, off + 4, off + 8, off + 12, off + 16, off + 20))
+                    break
+        if not candidates:
+            return None
+        from collections import Counter
+        length = Counter(c[0] for c in candidates).most_common(1)[0][0]
+        acc_off = Counter(c[1] for c in candidates).most_common(1)[0][0]
+        layout = LearnedLayout(
+            length=length,
+            account_offset=acc_off,
+            char_offset=acc_off + 4,
+            login1_offset=acc_off + 8,
+            login2_offset=acc_off + 12,
+            tick_offset=acc_off + 16,
+            sex_offset=acc_off + 20,
+            samples=len(candidates),
+            last_observed_ms=int(time.time() * 1000),
+            confidence=min(1.0, len(candidates) / 5.0),
+        )
+        self._layout = layout
+        logger.info(
+            "learned 0x0436 layout from store: len=%d account@%d (samples=%d)",
+            layout.length, layout.account_offset, layout.samples,
+        )
+        return layout
+
     # ── Main run ──────────────────────────────────────────────────────────
     def run(self) -> dict[str, Any]:
         """Pull captures, learn the layout, write config + ML feed."""
@@ -340,10 +414,14 @@ class CaptureConsumer:
             return {"learned": False, "frames": len(lines), "reason": "no 0x0436 with matching account"}
         wrote = self._write_bot_config(layout)
         fed = self._feed_ml(lines, layout)
+        # The ML feed's consumer: re-learn from the accumulated store so the
+        # written data is genuinely read (not dormant).
+        store_layout = self._learn_from_store()
         return {
             "learned": True,
             "frames": len(lines),
             "layout": layout.to_dict(),
+            "store_layout": store_layout.to_dict() if store_layout else None,
             "config_written": wrote,
             "ml_fed": fed,
         }

@@ -251,6 +251,13 @@ async def lifespan(app: FastAPI):
             logger.info("fleet sync loop cancelled")
         except Exception:
             logger.info("fleet sync loop stopped")
+    # Stop capture consumer loop (BQ 2026-08-31)
+    if capture_task is not None:
+        capture_task.cancel()
+        try:
+            await capture_task
+        except asyncio.CancelledError:
+            logger.info("capture consumer loop cancelled")
     try:
         await runtime.shutdown()
     except Exception:
