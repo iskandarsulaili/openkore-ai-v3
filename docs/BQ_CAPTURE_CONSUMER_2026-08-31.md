@@ -55,3 +55,26 @@ REAL field offsets, not just the length.
   need the rebuild to reach players).
 - One real 2-client session with capture armed BEFORE Play to confirm the bot
   enters the map with the learned layout (needs the rebuild first).
+
+## Adversarial sweep (2026-08-31, "is everything implemented?") — 4 REAL defects closed
+- **D1 (no-op wiring):** app.py loop called `CaptureConsumer()` with empty paths
+  → `_write_bot_config` + `_feed_ml` both skipped → the production loop LEARNED
+  but never wrote. My E2E passed only because I passed explicit paths. FIX:
+  resolve real paths by default (control/config.txt + AI_sidecar/data/
+  shared_learning.db).
+- **D2 (wrong ML store):** the consumer's default shared_learning_db path
+  resolved to `data/shared_learning.db` (repo root) but SharedLearningDB's
+  default is `AI_sidecar/data/shared_learning.db` → the ML feed wrote to a
+  DIFFERENT store than the trainer reads. FIX: match SharedLearningDB's default
+  exactly.
+- **D3 (orphaned task):** capture_task was never cancelled on shutdown (leaked a
+  task that kept running after app exit). FIX: cancel + await in the teardown.
+- **D4 (dormant store + rotation fight):** (a) packet_layouts was write-only
+  (nothing read it) — added `_learn_from_store()` so the accumulated dataset
+  feeds the layout learning (the ML feed's consumer). (b) the blind 19->23->26
+  rotation in DirectConnection.pm would FIGHT the learned layout — gated it to
+  cold-start only (learned mapLoginLayout is authoritative).
+- **Verified:** config parse reads mapLoginLength=23 + mapLoginLayout JSON
+  decodes to length=23 account_offset=2; store_layout=23; app.py syntax OK;
+  consumer run with default paths: config_written=True ml_fed=6 store_layout=23.
+- Committed `15b82e2b8`, pushed.
