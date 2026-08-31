@@ -107,23 +107,22 @@ sub sendMapLogin {
 			'',
 		);
 	} elsif ($mlen == 23) {
-		# 23-byte layout — the CAPTURED real client's form (BQ 2026-08-31):
-		#   id.W@0 + accountID.L@2 + charID.L@6 + loginID1.L@10
-		#   + loginID2.L@14 + clientTick.L@18 + sex.B@22.
-		#   CAPTURE EVIDENCE (kicapmasin888, telemetry 69569 frame 21):
-		#   36 04 8c 84 1e 00 f2 49 02 00 ... = id@0, account@2 (2000012),
-		#   char@6 (150002) — and the player logged in (rcode 100). The
-		#   account_id is at offset 2, NOT 6 (the old 'acct@6' probe was
-		#   wrong — the real client sends acct@2 and the server accepts it).
+		# 23-byte form — AGNOSTIC (BQ 2026-08-31): do NOT hardcode a specific
+		# server's field offsets. The capture consumer LEARNS the real layout
+		# (mapLoginLayout) from the live server's packets and that is the
+		# authoritative adaptation. This fallback is only a cold-start probe —
+		# it uses the standard rAthena field order (id + account + char +
+		# login1 + tick + sex) padded to 23 bytes. The learned layout overrides
+		# it once available.
 		$packet = pack(
-			'v V V V V V C',
+			'v V V V V C a2',
 			0x0436,
 			$accountID,  # @2-5
 			$charID,     # @6-9
 			$sessionID,  # @10-13 (loginID1)
-			0,           # @14-17 (loginID2, unused by the server)
-			getTickCount(),  # @18-21 (client tick)
-			$sex,        # @22
+			getTickCount(),  # @14-17 (client tick)
+			$sex,        # @18
+			'',          # pad @19-22
 		);
 	} else {
 		# 19-byte layout: id + 4 longs + sex (the SOURCE's canonical form)
