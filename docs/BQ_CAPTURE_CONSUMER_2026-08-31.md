@@ -91,3 +91,17 @@ REAL field offsets, not just the length.
   (144/day × 30-day expiry = ~4320 rows before any expire). FIX: delete the
   token after the pull (finally block). Verified: 0 tokens left behind.
 - Committed `f3f559e81`, pushed.
+
+## Adversarial sweep 3 (2026-08-31) — 1 more REAL race closed
+- **D7 (non-atomic config write):** `_write_bot_config` used `path.write_text`
+  (truncate+write). The bot reads config.txt at startup + reconnect — a
+  mid-write read could hand it a truncated `mapLoginLayout` line → JSON decode
+  fails → bot falls back to the WRONG 23-byte form. FIX: atomic write (temp +
+  os.replace, atomic on POSIX + Windows). Verified: no .tmp left, config still
+  parses to length=23 account@2.
+- **Verified the crux:** the source registers 0x0436 len=19, but kicapmasin888
+  logged in (rcode 100) at 09:04:26 with a 23-byte packet — the SERVING
+  map-server accepts 23. The consumer correctly learned the RUNNING server's
+  real layout (23), not the stale source value. (Server-side source-vs-binary
+  drift — not mine to fix per no-RAW-modifications.)
+- Committed `6a6898100`, pushed.
