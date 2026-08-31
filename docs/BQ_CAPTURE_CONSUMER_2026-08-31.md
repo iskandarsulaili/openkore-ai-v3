@@ -78,3 +78,16 @@ REAL field offsets, not just the length.
   decodes to length=23 account_offset=2; store_layout=23; app.py syntax OK;
   consumer run with default paths: config_written=True ml_fed=6 store_layout=23.
 - Committed `15b82e2b8`, pushed.
+
+## Adversarial sweep 2 (2026-08-31) — 2 more REAL blindspots closed
+- **D5 (unbounded ML store):** the export returns ALL capture rows (no "new
+  since" filter) and `packet_layouts` had no UNIQUE key → every 10-min run
+  re-fed the SAME frames → unbounded duplicate growth. FIX: UNIQUE(packet_id,
+  raw_hex, captured_at_ms) + INSERT OR IGNORE + an idempotent unique index
+  (the table pre-dated the constraint, so CREATE TABLE IF NOT EXISTS was a
+  no-op; the index dedupes existing rows then enforces). Verified: 30→6 rows,
+  stable across runs.
+- **D6 (unbounded token growth):** a fresh SSO token minted every 10-min run
+  (144/day × 30-day expiry = ~4320 rows before any expire). FIX: delete the
+  token after the pull (finally block). Verified: 0 tokens left behind.
+- Committed `f3f559e81`, pushed.
