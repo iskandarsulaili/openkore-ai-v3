@@ -114,3 +114,14 @@ REAL field offsets, not just the length.
   (lines, has_more); `_pull_all` pages on has_more. Verified: learned 23,
   config_written, ml_fed 6, store_layout 23.
 - Committed `6cddef977`, pushed.
+
+## Adversarial sweep 5 (2026-08-31) — 1 more REAL flaw closed
+- **D9 (cold-start fallback 23-byte layout was WRONG):** the `mlen==23`
+  fallback in sendMapLogin used account@6 with pad@2-5 — but the CAPTURED real
+  client sends account@2 (id@0 account@2 char@6 login1@10 login2@14 tick@18
+  sex@22), and kicapmasin888 logged in with it (rcode 100). So on cold-start
+  (no learned layout yet) the bot sent the WRONG form and got rejected. FIX:
+  fallback now emits the captured layout. Verified byte-exact:
+  `36048c841e00f2490200cb3b016300000000505d3e0001` matches the captured packet
+  field-for-field (login2=0, server ignores it).
+- Committed `9b910b580`, pushed.
