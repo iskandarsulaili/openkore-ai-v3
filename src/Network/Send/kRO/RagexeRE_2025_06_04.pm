@@ -85,10 +85,13 @@ sub sendMapLogin {
 		my $tk  = $layout->{tick_offset} // ($acc + 16);
 		my $sx  = $layout->{sex_offset} // ($acc + 20);
 		# Build a zero-filled buffer of length $n, then place each field.
+		# accountID/charID/sessionID arrive as RAW 4-byte strings (parsed via
+		# 'a4'), so pack('V', $raw) treats them as non-numeric -> 0. unpack('V')
+		# first to get the numeric value, then pack('V') to place it.
 		$packet = pack('v', 0x0436) . ("\x00" x ($n - 2));
-		substr($packet, $acc, 4) = pack('V', $accountID);
-		substr($packet, $chr, 4) = pack('V', $charID);
-		substr($packet, $l1, 4)  = pack('V', $sessionID);
+		substr($packet, $acc, 4) = pack('V', unpack('V', $accountID));
+		substr($packet, $chr, 4) = pack('V', unpack('V', $charID));
+		substr($packet, $l1, 4)  = pack('V', unpack('V', $sessionID));
 		substr($packet, $l2, 4)  = pack('V', 0);  # loginID2 (unused by the server)
 		substr($packet, $tk, 4)  = pack('V', getTickCount());
 		substr($packet, $sx, 1)  = pack('C', $sex);

@@ -302,28 +302,55 @@ class CaptureConsumer:
 
     # ── Bot config write ──────────────────────────────────────────────────
     def _write_bot_config(self, layout: LearnedLayout) -> bool:
-        """Write mapLoginLength + mapLoginLayout to the bot's control/config.txt."""
-        if not self.bot_config_path:
-            logger.warning("no bot_config_path; skipping config write")
+        """Write mapLoginLength + mapLoginLayout to the bot's control/config.txt.
+
+        The bots run from .bot_profiles/<name>/control/config.txt (one per
+        profile), NOT the repo-root control/config.txt. The default
+        bot_config_path (cwd/control/config.txt) is a legacy fallback that no
+        running bot reads — writing only there means the learned layout never
+        reaches the bot and it keeps sending the wrong 0x0436 form. Discover
+        every .bot_profiles/*/control/config.txt and write the learned layout
+        to each (atomic per file), so every bot adapts.
+        """
+        targets: list[Path] = []
+        if self.bot_config_path:
+            targets.append(Path(self.bot_config_path))
+        # Discover all bot profiles under the repo root (cwd when run via
+        # python -m ai_sidecar.app). Each profile's control/config.txt is a
+        # real bot config the bridge reads.
+        repo_root = Path(os.getcwd())
+        profiles = repo_root / ".bot_profiles"
+        if profiles.is_dir():
+            for cfg in sorted(profiles.glob("*/control/config.txt")):
+                if cfg not in targets:
+                    targets.append(cfg)
+        if not targets:
+            logger.warning("no bot config targets; skipping config write")
             return False
-        path = Path(self.bot_config_path)
-        content = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
-        lines = content.splitlines()
-        # Remove existing mapLoginLength / mapLoginLayout lines.
-        kept = [l for l in lines if not l.strip().startswith("mapLoginLength") and not l.strip().startswith("mapLoginLayout")]
-        kept.append(f"mapLoginLength {layout.length}")
-        kept.append(f"mapLoginLayout {json.dumps(layout.to_dict())}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # ATOMIC write (temp + os.replace): the bot reads config.txt at startup
-        # and on reconnect — a non-atomic truncate+write could hand it a
-        # truncated mapLoginLayout line mid-write, the JSON decode fails, and
-        # the bot falls back to the WRONG 23-byte form. os.replace is atomic on
-        # POSIX + Windows (same-filesystem rename).
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
-        os.replace(tmp, path)
-        logger.info("wrote bot config: mapLoginLength=%d mapLoginLayout=%s", layout.length, json.dumps(layout.to_dict()))
-        return True
+        wrote = 0
+        for path in targets:
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+                lines = content.splitlines()
+                # Remove existing mapLoginLength / mapLoginLayout lines.
+                kept = [l for l in lines if not l.strip().startswith("mapLoginLength") and not l.strip().startswith("mapLoginLayout")]
+                kept.append(f"mapLoginLength {layout.length}")
+                kept.append(f"mapLoginLayout {json.dumps(layout.to_dict())}")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # ATOMIC write (temp + os.replace): the bot reads config.txt at
+                # startup and on reconnect — a non-atomic truncate+write could
+                # hand it a truncated mapLoginLayout line mid-write, the JSON
+                # decode fails, and the bot falls back to the WRONG 23-byte
+                # form. os.replace is atomic on POSIX + Windows.
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
+                os.replace(tmp, path)
+                wrote += 1
+                logger.info("wrote bot config %s: mapLoginLength=%d mapLoginLayout=%s",
+                            path, layout.length, json.dumps(layout.to_dict()))
+            except Exception as exc:  # one bad profile must not block the rest
+                logger.warning("failed to write bot config %s: %s", path, exc)
+        return wrote > 0
 
     # ── ML feed ───────────────────────────────────────────────────────────
     def _feed_ml(self, lines: list[str], layout: LearnedLayout) -> int:
