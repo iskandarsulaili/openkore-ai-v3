@@ -125,3 +125,11 @@ REAL field offsets, not just the length.
   `36048c841e00f2490200cb3b016300000000505d3e0001` matches the captured packet
   field-for-field (login2=0, server ignores it).
 - Committed `9b910b580`, pushed.
+- **REVERTED (user directive: "always agnostic, NOT hardcoded"):** the D9 fix
+  hardcoded a server-specific layout (account@2) into the cold-start fallback —
+  that violates the agnostic rule. The capture consumer LEARNS the real layout
+  (mapLoginLayout) from the live server's packets and that is the authoritative
+  adaptation. The fallback is now a neutral standard rAthena form (id+account+
+  char+login1+tick+sex, padded to 23); the learned layout overrides it once
+  available. The blind rotation in DirectConnection.pm handles cold-start
+  probing. Committed `6551755af`, pushed.
