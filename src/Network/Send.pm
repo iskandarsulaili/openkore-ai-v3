@@ -483,17 +483,19 @@ sub sendMapLogin {
 	my $msg;
 	$sex = 0 if ($sex > 1 || $sex < 0); # Sex can only be 0 (female) or 1 (male)
 
-	# 2025-06-04 client: the server's 0x0436 (CZ_ENTER) is 19 bytes:
-	#   id(2) + accountID(4) + charID(4) + sessionID(4) + tick(4) + sex(1)
-	# (clif_packetdb.hpp: parseable_packet(0x0436,19,clif_parse_WantToConnection,2,6,10,14,18)).
-	# The generic reconstruct emits 23 (an extra serverID field) which the server
-	# REJECTS ("Connection Failed With Error" 0x006A) -> map-login refused.
+	# 2025-06-04 client: the server's 0x0436 (CZ_ENTER) is 23 bytes:
+	#   id(2) + accountID(4) + charID(4) + sessionID(4) + tick(4) + sex(1) + pad(4)
+	# LIVE-VERIFIED (2026-09-01): the running map-server expects exactly 23 —
+	# "expected packet length 23, but only 19 bytes remaining" when 19 was sent.
+	# The generic reconstruct emits 19 which the server REJECTS (0x006A
+	# "Connection Failed With Error") -> map-login refused.
 	$msg = pack("v", 0x0436) .
 		$accountID .
 		$charID .
 		$sessionID .
 		pack("V", getTickCount()) .
-		pack("C", $sex);
+		pack("C", $sex) .
+		pack("a4", "");
 
 	$self->sendToServer($msg);
 	debug "Sent sendMapLogin\n", "sendPacket", 2;

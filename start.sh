@@ -32,10 +32,23 @@ for _profile_dir in "$SCRIPT_DIR"/.bot_profiles/*/; do
     _name="$(basename "$_profile_dir")"
     BOT_NAMES+=("$_name")
     BOT_MASTER["$_name"]="Local rAthena AI World"
-    BOT_USER["$_name"]="$_name"
+    _cfg_char="$SCRIPT_DIR/.bot_profiles/$_name/control/config.txt"
+    # Preserve each bot's existing username from its config (critical: the
+    # profile dir name may differ from the DB account — e.g. profile 'testbotA'
+    # logs in as account 'testbot99'. Overwriting with the profile name breaks
+    # login with 'Unregistered ID.'). Only default to the profile name if the
+    # config has no username yet.
+    _cfg_user=""
+    if [ -f "$_cfg_char" ]; then
+        _cfg_user=$(grep -E '^username ' "$_cfg_char" | head -1 | awk '{print $2}')
+    fi
+    if [ -n "$_cfg_user" ]; then
+        BOT_USER["$_name"]="$_cfg_user"
+    else
+        BOT_USER["$_name"]="$_name"
+    fi
     # Preserve each bot's existing char slot from its config (critical:
     # overwriting with 0 breaks login when the character lives at slot 5/7/3/2/4/6).
-    _cfg_char="$SCRIPT_DIR/.bot_profiles/$_name/control/config.txt"
     if [ -f "$_cfg_char" ]; then
         _existing_char=$(grep -E '^char ' "$_cfg_char" | head -1 | awk '{print $2}')
         if [ -n "$_existing_char" ] && [ "$_existing_char" != "0" ]; then
