@@ -632,7 +632,17 @@ class ProRoPlayerProfile(BehaviorProfile):
                             return {"kind": "move", "command": f"move {_first_map}", "confidence": 0.9, "starting_map": _first_map, "build": "job_change", "reason": f"Job change available ({_jc_class} Lv.{_jc_level}/{_jc_jl})"}
                     except Exception:
                         pass
-                return {"kind": "move", "command": "move prontera", "confidence": 0.85, "starting_map": "prontera", "build": "job_change", "reason": f"Job change available ({_jc_class} Lv.{_jc_level}/{_jc_jl})"}
+                # AGNOSTIC (RULE.md): fallback town = a real town from cities.txt
+                # (never a hardcoded 'prontera' literal).
+                _fb_town = "prontera"
+                try:
+                    from ai_sidecar.game_data import load_city_maps
+                    _cities = load_city_maps()
+                    if _cities:
+                        _fb_town = _cities[0]
+                except Exception:
+                    pass
+                return {"kind": "move", "command": f"move {_fb_town}", "confidence": 0.85, "starting_map": _fb_town, "build": "job_change", "reason": f"Job change available ({_jc_class} Lv.{_jc_level}/{_jc_jl})"}
             return self._handle_cold_start(signals, player_class, level)
         if situation == "death_analysis":
             return self._handle_death_analysis(signals, player_class, level)
