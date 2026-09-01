@@ -4954,9 +4954,8 @@ class HeuristicService:
                     # Benign agnostic default: first class from the knowledge table
                     # (never a hardcoded literal like "archer").
                     try:
-                        from ai_sidecar.game_knowledge import game_knowledge
-                        _gk = game_knowledge()
-                        _jc_locs = getattr(_gk, "_JOB_CHANGE_LOCATIONS", {}) or {}
+                        import ai_sidecar.game_knowledge as _gk_mod
+                        _jc_locs = getattr(_gk_mod, "_JOB_CHANGE_LOCATIONS", {}) or {}
                         _jc_first = [k for k in _jc_locs if k in (
                             "swordman", "mage", "archer", "acolyte", "merchant", "thief")]
                         _jc_target_class = _jc_first[0] if _jc_first else "swordman"

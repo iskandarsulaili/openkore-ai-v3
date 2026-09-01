@@ -10698,9 +10698,8 @@ class PDCALoop:
         except Exception:
             _options = []
         try:
-            from ai_sidecar.game_knowledge import game_knowledge
-            _gk = game_knowledge()
-            _jc_locs = getattr(_gk, "_JOB_CHANGE_LOCATIONS", {}) or {}
+            import ai_sidecar.game_knowledge as _gk_mod
+            _jc_locs = getattr(_gk_mod, "_JOB_CHANGE_LOCATIONS", {}) or {}
             _seed = list(_jc_locs.keys())
             for _s in _seed:
                 if _s not in _options:
