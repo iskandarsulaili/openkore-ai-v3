@@ -4438,7 +4438,7 @@ class HeuristicService:
 
         # ── JOB CHANGE: Novice with job_level >= 10 should job change ──
         # Force return to town and route to job change NPC
-        _audit_job_name = signals.get("job_name", "") or ""
+        _audit_job_name = str(signals.get("job_name", "") or "").lower()
         _audit_job_level = signals.get("job_level", 0) or 0
         if _audit_job_name == "novice" and _audit_job_level >= 10:
             _audit_now = __import__("time").time()
