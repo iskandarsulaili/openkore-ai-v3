@@ -4440,6 +4440,14 @@ class HeuristicService:
         # Force return to town and route to job change NPC
         _audit_job_name = str(signals.get("job_name", "") or "").lower()
         _audit_job_level = signals.get("job_level", 0) or 0
+        # job_level may arrive as a string (e.g. "10") — coerce to int so the
+        # threshold compare never raises (a raw str>=int TypeError in a branch
+        # would be swallowed by the outer try and silently yield NO actions,
+        # leaving a max-job-level bot parked in town forever).
+        try:
+            _audit_job_level = int(_audit_job_level)
+        except (TypeError, ValueError):
+            _audit_job_level = 0
         if _audit_job_name == "novice" and _audit_job_level >= 10:
             _audit_now = __import__("time").time()
             _audit_last_job_change = self._last_job_change_attempt.get(bot_id, 0)
