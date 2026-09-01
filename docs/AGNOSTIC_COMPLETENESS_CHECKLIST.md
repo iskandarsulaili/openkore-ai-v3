@@ -52,7 +52,12 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
-## Round 2 — Adversarial sweep (2026-09-01, commits ac07026ab..efa1ffcf8)
+## Round 3 — Adversarial sweep (2026-09-01, commits 04066ae42..5bb73e3a6)
+- [x] Equipment optimizer consumer: command=str(_eq) stringified the dict (NOT a valid OpenKore command) — upgrade/slot/repair never executed. Now emits real 'command' field.
+- [x] General equipment-progression check filtered to slot_name=='weapon' only — bot only bought/equipped weapons. Now covers ALL 8 slots + cards + refine.
+- [x] Gear planner was NOT job-aware — recommended Orcish Sword to a Mage (can't equip). Now job-filtered (Jobs.All=every class, Jobs.Novice=Novice ONLY). All 7 consumers pass the bot's job.
+- [x] Verified: mage@21 -> accessory (no affordable mage weapon), swordman@21 -> Orcish Sword. Mage weapons (Rod/Knife/Fortune Sword) in path.
+- [x] Sidecar restarted 21:39, 0 crashes, bot Mage base 22 farming.
 - [x] get_optimal_weapon fallback → DB gear planner (was hardcoded equipment_progression)
 - [x] cold-start step-2 last-resort weapon → cheapest buyable from knowledge DB (was hardcoded 1201)
 - [x] equipment-progression upgrade check → DB gear planner
