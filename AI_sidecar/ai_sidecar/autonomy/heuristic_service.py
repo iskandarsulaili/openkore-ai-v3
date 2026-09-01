@@ -3624,10 +3624,13 @@ class HeuristicService:
                 self._cold_start_step[_cs_stable_key] = 8
                 logger.info(f"[cold_start] {bot_id}: job changed to {job_name}, step 7 -> 8")
             elif _assigned_job:
-                # Have an assigned job — look up NPC
-                _jc_data = JOB_CHANGE_2_1.get(_assigned_job)
-                if _jc_data:
-                    _jc_map, _jc_x, _jc_y, _jc_talk_seq = _jc_data
+                # Have an assigned job — look up NPC from the DB-backed table
+                # (JOB_CHANGE_NPCS from job_change_locations.txt), NOT the hardcoded
+                # JOB_CHANGE_2_1 (wrong coords for RAW). Open dialog with 'c' and let
+                # the LLM dialog responder pick the menu option (per-class layouts differ).
+                _jc_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
+                if _jc_npc:
+                    _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
                     if _cs_in_town:
                         # Walk to NPC talk spot
                         _talk_area_x = _jc_x + 1
@@ -3637,11 +3640,8 @@ class HeuristicService:
                             confidence=0.99, domain="progression",
                             reason=f"Step 7 - walk to {_assigned_job} job change NPC at ({_jc_x},{_jc_y})",
                         ))
-                        # After walking, talk to NPC
-                        # Use talknpc with the NPC coordinates
-                        _talk_cmd = f"talknpc {_jc_x} {_jc_y}"
-                        for _t in _jc_talk_seq:
-                            _talk_cmd += " " + _t.replace("talk @npc@", "").strip()
+                        # After walking, talk to NPC (open dialog; LLM picks menu option)
+                        _talk_cmd = f"talknpc {_jc_x} {_jc_y} c"
                         actions.append(HeuristicAction(
                             kind="command", command=_talk_cmd,
                             confidence=0.99, domain="progression",
@@ -3708,7 +3708,9 @@ class HeuristicService:
         # Fixes: attackMaxDistance, attackDistance, attackAuto, avoidList settings
         # MUST run before state-specific returns to ensure config is always applied
         _audit_map = signals.get("map", "") or ""
-        _audit_is_hunting = any(x in _audit_map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild", "moc_fild", "cmd_fild"])
+        # AGNOSTIC (RULE.md): hunting = has real spawns and is not a town (DB-backed).
+        _audit_map_norm = _audit_map.lower().replace(".gat", "")
+        _audit_is_hunting = (_audit_map_norm in self.map_spawns) and (_audit_map_norm not in _HUNT_TOWNS)
         _audit_is_town = _is_city_map(_audit_map)
         # ── COLD-START POTION ECONOMY (O3, runs for ALL bots incl. level 1-2) ──
         # A low-level bot that can't buy potions runs dry and flees/wanders to town. Point the
@@ -4199,7 +4201,9 @@ class HeuristicService:
         _leader_char = (getattr(self, '_profile_to_char', {}) or {}).get(_sorted_bots[0], _sorted_bots[0]) if _sorted_bots else ""
         _joiner_in_wrong_party = _party_in and not _is_leader and len(_party_members) == 1 and _leader_char and _leader_char not in _party_members
         # Also: if joiner is on a town map while leader is on hunting map, force move
-        _town_maps = ("prontera", "morocc", "geffen", "payon", "alberta", "izlude", "aldebaran", "comodo", "umbala", "niflheim", "louyang", "einbroch", "lighthalzen", "rachel", "veins", "juno", "yuno")
+        # AGNOSTIC (RULE.md): use the DB-backed town set (_HUNT_TOWNS from cities.txt),
+        # not a hardcoded town-name tuple.
+        _town_maps = _HUNT_TOWNS
         # _leader_map already initialized at function start
         _joiner_stuck_in_town = not _is_leader and map_name and map_name in _town_maps and _leader_map and _leader_map not in _town_maps
         logger.info("[joiner_check] " + str(bot_id) + " party_in=" + str(_party_in) + " joiner_wrong=" + str(_joiner_in_wrong_party) + " stuck_town=" + str(_joiner_stuck_in_town) + " is_leader=" + str(_is_leader) + " state=" + str(state) + " members=" + str(_party_members) + " all_bots=" + str(_all_bots) + " leader_char=" + str(_leader_char) + " map=" + str(map_name) + " leader_map=" + str(_leader_map))
@@ -4571,7 +4575,17 @@ class HeuristicService:
             _death_zeny = signals.get("zeny", 0) or 0
             _death_potion_id = self._get_potion_id(base_level)
             _death_potion_cost = self._get_potion_cost(_death_potion_id)
-            _death_potion_name = {501: "Red", 502: "Orange", 504: "White"}.get(_death_potion_id, "Red")
+            # AGNOSTIC (RULE.md): resolve the potion's real name from the knowledge DB,
+            # not a hardcoded {501:Red, 502:Orange, 504:White} map.
+            _death_potion_name = "Potion"
+            try:
+                from ai_sidecar.knowledge_loader import get_items
+                for _it_d in get_items():
+                    if str(_it_d.get("Id", "")) == str(_death_potion_id):
+                        _death_potion_name = str(_it_d.get("Name", "") or "Potion")
+                        break
+            except Exception:
+                pass
             if _death_zeny >= _death_potion_cost * 10:
                 actions.append(HeuristicAction(
                     kind="command", command=f"buy {_death_potion_id} 10",
@@ -4596,12 +4610,34 @@ class HeuristicService:
                 for item in (_death_inv.get("items", []) or [])
             )
             if not _death_has_weapon and _death_zeny >= 50:
-                _death_weapon_id = "1201"  # Knife (ATK 17) — cheapest, all classes
-                actions.append(HeuristicAction(
-                    kind="command", command=f"buy {_death_weapon_id} 1",
-                    confidence=0.99, domain="economy",
-                    reason=f"Death recovery - buy weapon {_death_weapon_id} for {_death_job}",
-                ))
+                # AGNOSTIC (RULE.md): pick the best-affordable weapon from the DB-backed
+                # gear planner (NPC-buyable filtered), NOT a hardcoded '1201 Knife'.
+                _death_weapon_id = None
+                _death_weapon_name = ""
+                try:
+                    from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                    _gpp_d = get_gear_progression_planner()
+                    _d_plan = _gpp_d.get_best_upgrade(base_level, _death_zeny)
+                    if _d_plan is not None and _d_plan.slot_name == "weapon" and _d_plan.is_affordable:
+                        from ai_sidecar.knowledge_loader import get_weapons
+                        for _w_d in get_weapons():
+                            _w_dn = str(_w_d.get("Name", "") or _w_d.get("AegisName", "")).lower()
+                            if _w_dn == str(_d_plan.target_item).lower():
+                                _death_weapon_id = str(_w_d.get("Id", ""))
+                                _death_weapon_name = str(_d_plan.target_item)
+                                break
+                except Exception:
+                    pass
+                if not _death_weapon_id:
+                    _d_opt = self._adaptive.get_optimal_weapon(_death_job, base_level, _death_zeny)
+                    if _d_opt:
+                        _death_weapon_id, _death_weapon_name = _d_opt
+                if _death_weapon_id:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy {_death_weapon_id} 1",
+                        confidence=0.99, domain="economy",
+                        reason=f"Death recovery - buy weapon {_death_weapon_name or _death_weapon_id} for {_death_job}",
+                    ))
             # Return to hunt via portal after 15s in town.
             # AGNOSTIC (founder 2026-08-25): this block must NOT bake server-specific
             # facts (prt_fild05/22 203 are RAW-specific literals). It is skipped during
@@ -4698,34 +4734,54 @@ class HeuristicService:
                     confidence=0.95, domain="economy",
                     reason="Stand up before walking to Tool Dealer",
                 ))
-                # Walk to Tool Dealer (290, 221) and sell
-                actions.append(HeuristicAction(
-                    kind="command", command="move 290 221",
-                    confidence=0.95, domain="economy",
-                    reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="talknpc 290 221 c r1 n",
-                    confidence=0.90, domain="economy",
-                    reason="Open Tool Dealer and sell items (atomic dialog)",
-                ))
-                # ── AUTO-SELL KNOWN JUNK ITEMS ──
-                # Search inventory for known sellable junk items and queue sell commands.
-                # Uses _sell_config_once to avoid re-selling the same item within cooldown.
+                # AGNOSTIC (RULE.md): resolve the sell NPC from the knowledge DB FACT
+                # store (seeded baseline + learned per server), NOT a hardcoded coord.
+                _sell_npc = self._get_npc("sell", map_name) or self._get_npc("tool_dealer", map_name)
+                _sell_x = int((_sell_npc or {}).get("x", 0) or 0)
+                _sell_y = int((_sell_npc or {}).get("y", 0) or 0)
+                if _sell_x and _sell_y:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"move {_sell_x} {_sell_y}",
+                        confidence=0.95, domain="economy",
+                        reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"talknpc {_sell_x} {_sell_y} c r1 n",
+                        confidence=0.90, domain="economy",
+                        reason="Open Tool Dealer and sell items (atomic dialog)",
+                    ))
+                # ── AUTO-SELL JUNK ITEMS (AGNOSTIC) ──
+                # Search inventory for low-value items (Sell price below a threshold
+                # from the knowledge DB) and queue sell commands. No hardcoded item
+                # names/IDs — an item is junk if its vendor value is negligible.
                 _inv_items = signals.get("inventory_items", []) or []
                 _junk_found = False
+                try:
+                    from ai_sidecar.knowledge_loader import get_items
+                    _item_db = {str(_it.get("Id", "")): _it for _it in get_items()}
+                except Exception:
+                    _item_db = {}
                 for _item_entry in _inv_items:
                     _item_str = str(_item_entry).lower().strip()
-                    for _junk_name, _junk_id in SELLABLE_JUNK.items():
-                        if _junk_name in _item_str:
-                            if self._sell_config_once(bot_id, _junk_id, cooldown=120.0):
-                                actions.append(HeuristicAction(
-                                    kind="command", command=f"sell {_junk_id} 0",
-                                    confidence=0.85, domain="economy",
-                                    reason=f"Sell {_junk_name} (item {_junk_id}) — junk from inventory",
-                                ))
-                                _junk_found = True
-                            break  # Only match one junk name per item entry
+                    # Try to resolve the item's vendor value from the DB by name.
+                    _junk_id = None
+                    _junk_name = ""
+                    for _it_id, _it in _item_db.items():
+                        _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "")).lower()
+                        if _it_nm and _it_nm in _item_str:
+                            _sell_val = int(_it.get("Sell", 0) or 0)
+                            # Junk = vendor value below 100z (low-value drops).
+                            if 0 < _sell_val < 100:
+                                _junk_id = _it_id
+                                _junk_name = _it_nm
+                            break
+                    if _junk_id and self._sell_config_once(bot_id, _junk_id, cooldown=120.0):
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"sell {_junk_id} 0",
+                            confidence=0.85, domain="economy",
+                            reason=f"Sell {_junk_name} (item {_junk_id}) — low-value junk from inventory",
+                        ))
+                        _junk_found = True
                 if _junk_found:
                     logger.info(f"[auto_sell] {bot_id}: queued sell commands for junk items in inventory")
                 actions.append(HeuristicAction(
@@ -4745,7 +4801,10 @@ class HeuristicService:
         # ── STATE: WEAPON_BUY (priority over potions) ──
         if state == "WEAPON_BUY":
             _map = signals.get("map", "") or ""
-            _is_hunting = any(x in _map for x in ["prt_fild", "pay_fild", "mjolnir", "gef_fild", "ra_fild"])
+            # AGNOSTIC (RULE.md): a map is a hunting map if it has real spawns in the
+            # DB-backed map_spawns and is not a town — never a hardcoded prefix list.
+            _map_norm = _map.lower().replace(".gat", "")
+            _is_hunting = (_map_norm in self.map_spawns) and (_map_norm not in _HUNT_TOWNS)
             # SHIP FLOOD-FIX: WEAPON_BUY re-emits the same shop-routing commands EVERY
             # cycle, flooding the action queue and pinning a bot in a buy-loop at town
             # instead of farming. Rate-limit: run the shop-atom at most once per 15s per
@@ -4782,22 +4841,36 @@ class HeuristicService:
                         confidence=0.95, domain="economy",
                         reason=f"Zeny {zeny} - walk to Weapon Shop to buy weapon",
                     ))
-                # Buy a bow (1701) or knife (1301) depending on class
-                _weapon = "1701"  # Default: Bow
-                if "thief" in job_name or "assassin" in job_name:
-                    _weapon = "1301"  # Knife
-                elif "sword" in job_name or "knight" in job_name:
-                    _weapon = "1201"  # Sword
-                elif "mage" in job_name or "wizard" in job_name:
-                    _weapon = "1501"  # Rod
-                elif "acolyte" in job_name or "priest" in job_name:
-                    _weapon = "1501"  # Rod (Mace is 1301 but starts with Rod)
+                # AGNOSTIC (RULE.md): pick the best-affordable weapon from the DB-backed
+                # gear progression planner (stat/zeny ranked, NPC-buyable filtered),
+                # NOT a hardcoded item ID per class. Fall back to the level/job-aware
+                # get_optimal_weapon only if the planner is unavailable.
+                _weapon = None
+                _weapon_name = ""
+                try:
+                    from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                    _gpp_wb = get_gear_progression_planner()
+                    _wb_plan = _gpp_wb.get_best_upgrade(base_level, zeny)
+                    if _wb_plan is not None and _wb_plan.slot_name == "weapon" and _wb_plan.is_affordable:
+                        from ai_sidecar.knowledge_loader import get_weapons
+                        for _w_wb in get_weapons():
+                            _w_nm = str(_w_wb.get("Name", "") or _w_wb.get("AegisName", "")).lower()
+                            if _w_nm == str(_wb_plan.target_item).lower():
+                                _weapon = str(_w_wb.get("Id", ""))
+                                _weapon_name = str(_wb_plan.target_item)
+                                break
+                except Exception:
+                    pass
+                if not _weapon:
+                    _wb_opt = self._adaptive.get_optimal_weapon(job_name, base_level, zeny)
+                    if _wb_opt:
+                        _weapon, _weapon_name = _wb_opt
                 # Atomic: walk to NPC, open shop, buy weapon in one cycle
                 if _ws_x and _ws_y:
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_ws_x} {_ws_y}",
                         confidence=0.95, domain="economy",
-                        reason=f"Walk to Weapon Shop to buy weapon {_weapon}",
+                        reason=f"Walk to Weapon Shop to buy weapon {_weapon_name or _weapon}",
                     ))
                     # Menu selection for the weapon shop is handled by the conscious
                     # LLM dialog responder (reads the actual shop menu) — a hardcoded
@@ -4807,11 +4880,12 @@ class HeuristicService:
                         confidence=0.90, domain="economy",
                         reason="Open Weapon Shop dialog (menu handled by LLM)",
                     ))
-                actions.append(HeuristicAction(
-                    kind="command", command=f"buy {_weapon} 1",
-                    confidence=0.85, domain="economy",
-                    reason=f"Buy weapon {_weapon} for class {job_name}",
-                ))
+                if _weapon:
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"buy {_weapon} 1",
+                        confidence=0.85, domain="economy",
+                        reason=f"Buy weapon {_weapon_name or _weapon} for class {job_name}",
+                    ))
             total_confidence = 0.90
             top_domain = "economy"
             assessment = HeuristicAssessment(
@@ -5004,9 +5078,14 @@ class HeuristicService:
                            or _jc_npcs2.get("novice")
                            or next(iter(_jc_npcs2.values()), ()) if _jc_npcs2 else ())
                 _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc or ("", 0, 0)
-                _jc_talk_seq = JOB_CHANGE_TALK.get(_jc_target_class, [
-                    "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"
-                ])
+                # AGNOSTIC (RULE.md): NO hardcoded menu sequence. RAW job-change NPCs
+                # have per-class menu layouts (swordman=option 2, merchant=option 1,
+                # etc.) — a canned 'r1/r2' is wrong for most. Open the dialog with
+                # 'c' (click) and let the CONSCIOUS-tier LLM dialog responder
+                # (_llm_npc_dialog_response) read the ACTUAL menu options and select
+                # the job-change option agnostically. The LLM also self-learns the
+                # winning option per NPC+goal in server_solutions.
+                _jc_talk_seq = ["c"]
                 logger.info(f"[job_change] {bot_id}: Novice job Lv{_jc_job_level} -> {_jc_target_class}")
             else:
                 # 2-1 / higher-tier job change: first class -> next class.
@@ -5022,7 +5101,13 @@ class HeuristicService:
                     _jc_target_class = ""
                 _jc_2_1_data = JOB_CHANGE_2_1.get(_jc_target_class or _jc_job_lower)
                 if _jc_2_1_data:
-                    _jc_npc_map, _jc_npc_x, _jc_npc_y, _jc_talk_seq = _jc_2_1_data
+                    # AGNOSTIC (RULE.md): use the DB-backed NPC coords (JOB_CHANGE_NPCS)
+                    # — the hardcoded JOB_CHANGE_2_1 coords are WRONG for RAW (e.g.
+                    # merchant at prontera,120,200 but RAW is alberta_in,58,43). Open the
+                    # dialog with 'c' and let the LLM dialog responder pick the menu
+                    # option (per-class layouts differ).
+                    _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_2_1_data[0], _jc_2_1_data[1], _jc_2_1_data[2]
+                    _jc_talk_seq = ["c"]
                 else:
                     # Fallback if 2-1 data not found — first guild from the
                     # core tables (agnostic), never a hardcoded literal.
@@ -5030,7 +5115,7 @@ class HeuristicService:
                     _jc_fb = (_jc_npcs3.get(_jc_target_class or _jc_job_lower)
                               or next(iter(_jc_npcs3.values()), ()) if _jc_npcs3 else ())
                     _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_fb or ("", 0, 0)
-                    _jc_talk_seq = ["talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]
+                    _jc_talk_seq = ["c"]
                 if not _jc_target_class:
                     _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
                 logger.info(f"[job_change] {bot_id}: {_jc_job_lower} job Lv{_jc_job_level} -> {_jc_target_class} (2-1)")
