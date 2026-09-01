@@ -3713,7 +3713,18 @@ class HeuristicService:
             _is_novice = job_name == "novice"
             # Check if we have an assigned job (from leader or manual)
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+            # AGNOSTIC (RULE.md): prefer the CONSCIOUS-tier decision (server_solutions
+            # job_change_target, set by the LLM) over the team-synergy fallback. The
+            # conscious decision is the authoritative intent; the fallback only fires
+            # when no conscious decision exists yet.
             _assigned_job = self._assigned_jobs.get(_cs_bot_profile, "").lower()
+            try:
+                from ai_sidecar.server_adaptation import get_server_solutions_store
+                _cs_target = str((get_server_solutions_store().get("job_change_target", None) or {}).get("target_class", "") or "").strip().lower()
+                if _cs_target:
+                    _assigned_job = _cs_target
+            except Exception:
+                pass
             if not _is_novice:
                 # Job change complete — advance
                 self._cold_start_step[_cs_stable_key] = 8
