@@ -52,6 +52,10 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
+## Round 8 — Adversarial sweep (2026-09-01, commit 112393469)
+- [x] CRITICAL GAP: job-change trigger (line 4443) only fired for novice. A Mage/Swordman/etc at job_lv 10 (max) never triggered the 2-1 change — bot stuck at first class forever. Added 2-1 trigger: first-class at job_lv >= 10 routes to its 2-1 class (wizard/knight/etc) via conscious decision or universal JOB_2_1_CLASSES; NPC coords from DB-backed JOB_CHANGE_NPCS. 60s cooldown shared.
+- [x] Verified: sidecar restarted, 0 crashes, bot Mage base 22 job_lv 10 farming (will route to Wizard on next cooldown window).
+
 ## Round 7 — Adversarial sweep (2026-09-01, commit 88659c7d9)
 - [x] 2-1 job-change path (line 5211) used hardcoded JOB_CHANGE_2_1 coords — but its own comment said those coords are WRONG for RAW and to use DB-backed JOB_CHANGE_NPCS. Code contradicted comment. Now prefers JOB_CHANGE_NPCS (verified wizard=gef_tower, knight=prt_in, hunter=hu_in01). Hardcoded dict = last-resort fallback only.
 - [x] JOB_2_1_CLASSES (swordman→knight, mage→wizard) = universal game fact, not per-server routing. Acceptable.
