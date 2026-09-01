@@ -5208,14 +5208,16 @@ class HeuristicService:
                     _jc_target_class = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
                 except Exception:
                     _jc_target_class = ""
-                _jc_2_1_data = JOB_CHANGE_2_1.get(_jc_target_class or _jc_job_lower)
-                if _jc_2_1_data:
-                    # AGNOSTIC (RULE.md): use the DB-backed NPC coords (JOB_CHANGE_NPCS)
-                    # — the hardcoded JOB_CHANGE_2_1 coords are WRONG for RAW (e.g.
-                    # merchant at prontera,120,200 but RAW is alberta_in,58,43). Open the
-                    # dialog with 'c' and let the LLM dialog responder pick the menu
-                    # option (per-class layouts differ).
-                    _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_2_1_data[0], _jc_2_1_data[1], _jc_2_1_data[2]
+                # AGNOSTIC (RULE.md): use the DB-backed NPC coords (JOB_CHANGE_NPCS
+                # from job_change_locations.txt) — the hardcoded JOB_CHANGE_2_1
+                # coords are WRONG for RAW (e.g. merchant at prontera,120,200 but
+                # RAW is alberta_in,58,43). Open the dialog with 'c' and let the
+                # LLM dialog responder pick the menu option (per-class layouts differ).
+                _jc_npcs2_1 = JOB_CHANGE_NPCS
+                _jc_2_1_db = (_jc_npcs2_1.get(_jc_target_class or _jc_job_lower)
+                              or next(iter(_jc_npcs2_1.values()), ()) if _jc_npcs2_1 else ())
+                if _jc_2_1_db:
+                    _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_2_1_db[0], _jc_2_1_db[1], _jc_2_1_db[2]
                     _jc_talk_seq = ["c"]
                 else:
                     # Fallback if 2-1 data not found — first guild from the
