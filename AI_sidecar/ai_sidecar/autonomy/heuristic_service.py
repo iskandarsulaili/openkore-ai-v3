@@ -3580,6 +3580,11 @@ class HeuristicService:
             else:
                 # Track this bot's level in shared team state
                 self._team_levels[_cs_stable_key] = base_level
+                # AGNOSTIC: derive fleet + leader from signals (never assume scope).
+                _cs_all_bots = signals.get("all_bots", []) or []
+                _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+                _cs_sorted = sorted(_cs_all_bots)
+                _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
                 # Check if we're in town (must be in town for job change NPC access)
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
@@ -3587,13 +3592,13 @@ class HeuristicService:
                         confidence=0.99, domain="progression",
                         reason="Step 6 - return to town for job change",
                     ))
-                elif _is_leader:
+                elif _cs_is_leader:
                     # Leader: check if ALL bots are level >= 10
                     # We need all bot levels. Use the shared _team_levels dict.
                     _all_ready = all(
                         self._team_levels.get(p, 0) >= 10
-                        for p in _all_bots if p != _bot_profile
-                    ) if _all_bots else False
+                        for p in _cs_all_bots if p != _cs_bot_profile
+                    ) if _cs_all_bots else False
                     _self_ready = base_level >= 10
                     if _all_ready and _self_ready:
                         # All bots ready — call team synergy API
@@ -3603,7 +3608,7 @@ class HeuristicService:
                                 "bots": [
                                     {
                                         "bot_id": bot_id,
-                                        "profile_name": _bot_profile,
+                                        "profile_name": _cs_bot_profile,
                                         "base_level": base_level,
                                         "job_level": job_level,
                                         "current_job": job_name.title(),
@@ -3640,7 +3645,7 @@ class HeuristicService:
                             logger.warning(f"[team_synergy] call failed: {_e} — using knowledge fallback")
                             # Knowledge fallback: assign jobs based on position
                             _fallback_jobs = ["Acolyte", "Mage", "Swordsman", "Hunter", "Thief", "Merchant"]
-                            for _i, _p in enumerate(_all_bots):
+                            for _i, _p in enumerate(_cs_all_bots):
                                 if _i < len(_fallback_jobs):
                                     actions.append(HeuristicAction(
                                         kind="command",
@@ -3657,7 +3662,8 @@ class HeuristicService:
             # Step 7: Execute job change (walk to NPC, talk)
             _is_novice = job_name == "novice"
             # Check if we have an assigned job (from leader or manual)
-            _assigned_job = self._assigned_jobs.get(_bot_profile, "").lower()
+            _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+            _assigned_job = self._assigned_jobs.get(_cs_bot_profile, "").lower()
             if not _is_novice:
                 # Job change complete — advance
                 self._cold_start_step[_cs_stable_key] = 8
