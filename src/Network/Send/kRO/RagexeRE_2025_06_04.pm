@@ -115,20 +115,22 @@ sub sendMapLogin {
 		# (mapLoginLayout) from the live server's packets and that is the
 		# authoritative adaptation. This fallback is only a cold-start probe —
 		# it uses the standard rAthena field order (id + account + char +
-		# login1 + tick + sex) padded to 23 bytes. The learned layout overrides
-		# it once available.
-		# FIX (2026-09-01): the previous 'v V V V V C a2' emitted 25 bytes
-		# (the a2 pad), which the live map-server rejects as "unknown connect
-		# packet 0x0436(length:25)". The server expects exactly 23. 'v V V V V C'
-		# = 2 + 4*5 + 1 = 23 bytes.
+		# login1 + login2 + tick + sex) padded to 23 bytes. The learned layout
+		# overrides it once available.
+		# FIX (2026-09-01): the previous 'v V V V V C' emitted 19 bytes (the
+		# format had only 4 longs), which the live map-server rejects as
+		# "expected packet length 23, but only 21 bytes remaining". The 23-byte
+		# form needs FIVE longs: id + account + char + login1 + login2 + tick +
+		# sex = 2 + 4*5 + 1 = 23 bytes.
 		$packet = pack(
-			'v V V V V C',
+			'v V V V V V C',
 			0x0436,
 			$accountID,  # @2-5
 			$charID,     # @6-9
 			$sessionID,  # @10-13 (loginID1)
-			getTickCount(),  # @14-17 (client tick)
-			$sex,        # @18
+			0,           # @14-17 (loginID2, unused by the server)
+			getTickCount(),  # @18-21 (client tick)
+			$sex,        # @22
 		);
 	} else {
 		# 19-byte layout: id + 4 longs + sex (the SOURCE's canonical form)
