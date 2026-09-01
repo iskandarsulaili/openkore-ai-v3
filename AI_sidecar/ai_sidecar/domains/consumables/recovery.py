@@ -6,7 +6,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Recovery item definitions
+# Recovery item definitions — AGNOSTIC (RULE.md): the canonical source is the
+# knowledge DB (item_db). This module resolves potions by name pattern + heal
+# script at runtime; the hardcoded map below is only a cold-start fallback when
+# the DB is unavailable.
 _RECOVERY_ITEMS: dict[str, dict[str, Any]] = {
     "red_potion": {
         "item_id": "501", "name": "Red Potion",
@@ -39,6 +42,71 @@ _RECOVERY_ITEMS: dict[str, dict[str, Any]] = {
         "weight": 2, "cost": 500, "min_level": 20,
     },
 }
+
+# Cache of DB-derived recovery items (name -> def), built lazily.
+_db_recovery_cache: dict[str, dict[str, Any]] | None = None
+
+
+def _load_db_recovery_items() -> dict[str, dict[str, Any]]:
+    """Derive recovery items from the knowledge DB (item_db) by name pattern.
+
+    Returns {lower_name: {item_id, name, heals_hp, heals_sp, cures, cost,
+    min_level}}. Falls back to _RECOVERY_ITEMS if the DB is unavailable.
+    """
+    global _db_recovery_cache
+    if _db_recovery_cache is not None:
+        return _db_recovery_cache
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        import re
+        from ai_sidecar.knowledge_loader import get_items
+        for it in get_items():
+            nm = str(it.get("Name", "") or it.get("AegisName", "")).lower()
+            if not any(k in nm for k in ("potion", "panacea")):
+                continue
+            pid = str(it.get("Id", ""))
+            buy = int(it.get("Buy", 0) or 0)
+            scr = str(it.get("Script", "") or "")
+            heal_hp = 0
+            heal_sp = 0
+            # itemheal <hp>,<sp> where each side may be a plain int or rand(a,b).
+            m = re.search(
+                r"itemheal\s+"
+                r"(?:rand\(\s*(\d+)\s*,\s*(\d+)\s*\)|(\d+))\s*,\s*"
+                r"(?:rand\(\s*(\d+)\s*,\s*(\d+)\s*\)|(\d+))",
+                scr,
+            )
+            if m:
+                if m.group(1) and m.group(2):
+                    heal_hp = (int(m.group(1)) + int(m.group(2))) // 2
+                elif m.group(3):
+                    heal_hp = int(m.group(3))
+                if m.group(4) and m.group(5):
+                    heal_sp = (int(m.group(4)) + int(m.group(5))) // 2
+                elif m.group(6):
+                    heal_sp = int(m.group(6))
+            cures = []
+            if "green potion" in nm:
+                cures = ["poison", "silence", "confusion"]
+            elif "panacea" in nm:
+                cures = ["all"]
+            # Multiple items share a name (e.g. Blue Potion 505 vs 11518). Keep the
+            # LOWEST item_id per name — the canonical base item (501-512 range).
+            _existing = out.get(nm)
+            if _existing is not None and int(_existing["item_id"] or 0) <= int(pid or 0):
+                continue
+            out[nm] = {
+                "item_id": pid, "name": str(it.get("Name", "") or nm),
+                "heals_hp": heal_hp, "heals_sp": heal_sp,
+                "cures": cures, "cost": buy, "min_level": 1,
+            }
+        if out:
+            _db_recovery_cache = out
+            return out
+    except Exception:
+        pass
+    _db_recovery_cache = _RECOVERY_ITEMS
+    return _RECOVERY_ITEMS
 
 _DEFAULT_HP_THRESHOLD = 0.4
 _DEFAULT_SP_THRESHOLD = 0.25
@@ -153,12 +221,13 @@ class RecoveryManager:
 
     def _find_hp_potions(self, inventory: list[dict], base_level: int) -> list[dict]:
         potions: list[dict] = []
+        recovery = _load_db_recovery_items()
         for item in inventory:
             name = (item.get("name", "") or "").lower()
             amount = int(item.get("amount", 0) or 0)
             if amount <= 0:
                 continue
-            for pot_id, pot_def in _RECOVERY_ITEMS.items():
+            for pot_id, pot_def in recovery.items():
                 if pot_def.get("heals_hp", 0) > 0 and pot_def["min_level"] <= base_level:
                     if pot_def["name"].lower() in name or pot_def["item_id"] == item.get("id", ""):
                         potions.append({
@@ -172,29 +241,33 @@ class RecoveryManager:
 
     def _find_sp_potions(self, inventory: list[dict]) -> list[dict]:
         potions: list[dict] = []
+        recovery = _load_db_recovery_items()
         for item in inventory:
             name = (item.get("name", "") or "").lower()
             amount = int(item.get("amount", 0) or 0)
             if amount <= 0:
                 continue
-            if "blue potion" in name:
-                potions.append({
-                    "item_id": "505", "name": "Blue Potion",
-                    "heals": 50, "amount": amount,
-                })
+            for pot_id, pot_def in recovery.items():
+                if pot_def.get("heals_sp", 0) > 0 and pot_def["name"].lower() in name:
+                    potions.append({
+                        "item_id": pot_def["item_id"], "name": pot_def["name"],
+                        "heals": pot_def["heals_sp"], "amount": amount,
+                    })
+                    break
         return potions
 
     def _find_status_cures(self, inventory: list[dict]) -> list[dict]:
         cures: list[dict] = []
+        recovery = _load_db_recovery_items()
         for item in inventory:
             name = (item.get("name", "") or "").lower()
             amount = int(item.get("amount", 0) or 0)
             if amount <= 0:
                 continue
-            if "green potion" in name:
-                cures.append({"item_id": "511", "name": "Green Potion", "amount": amount})
-            elif "panacea" in name:
-                cures.append({"item_id": "512", "name": "Panacea", "amount": amount})
+            for pot_id, pot_def in recovery.items():
+                if pot_def.get("cures") and pot_def["name"].lower() in name:
+                    cures.append({"item_id": pot_def["item_id"], "name": pot_def["name"], "amount": amount})
+                    break
         return cures
 
     def _get_best_hp_potion(self, potions: list[dict], heal_needed: float) -> dict | None:
