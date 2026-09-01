@@ -10611,6 +10611,7 @@ class PDCALoop:
         _llm = getattr(_rt, "llm_manager", None)
         if _llm is None or not getattr(_llm, "is_available", lambda: False)():
             return
+        logger.info("llm_job_change_consult bot=%s (advisory reached)", bot_id)
         _store = getattr(_rt, "server_solutions_store", None)
         # Gather facts for the current bot from the live snapshot.
         _job = "novice"
@@ -10625,6 +10626,17 @@ class PDCALoop:
             _sc = getattr(_rt, "snapshot_cache", None)
             if _sc is not None:
                 _snap_obj = _sc.get(bot_id)
+                # AGNOSTIC key resolution: the snapshot cache is keyed by the
+                # bridge's bot_id (e.g. "TestBotA:testbot99") which can differ
+                # from the cycle bot_id (e.g. "Local rAthena AI World:testbot99").
+                # Fall back to a suffix match on the identity so the advisory
+                # fires regardless of the master-name prefix.
+                if _snap_obj is None:
+                    _suffix = bot_id.split(":", 1)[-1] if ":" in bot_id else bot_id
+                    for _bid in _sc.bot_ids():
+                        if _bid.split(":", 1)[-1] == _suffix:
+                            _snap_obj = _sc.get(_bid)
+                            break
             if _snap_obj is not None:
                 _prog = getattr(_snap_obj, "progression", None) or {}
                 _job = str(getattr(_prog, "job_name", None) or "novice").lower()

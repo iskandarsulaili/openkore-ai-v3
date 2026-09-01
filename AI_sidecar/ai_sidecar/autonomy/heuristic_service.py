@@ -1073,6 +1073,17 @@ class HeuristicService:
         self._last_return_to_farm: dict[str, float] = {}  # return-to-farm after restock cooldown
         self._last_job_change_attempt: dict[str, float] = {}
         self._last_lockmap: dict[str, str] = {}
+        # Map spawn data: map_name -> [(monster_name, count, respawn_ms)]
+        # AGNOSTIC (RULE.md): loaded from the LIVE server's own mob spawn scripts
+        # (npc/re/mobs/**/*.txt) — never hardcoded map/monster literals. If the
+        # server root isn't found, falls back to {} (maps score by default).
+        try:
+            from ai_sidecar.autonomy.spawn_loader import load_map_spawns
+            self.map_spawns: dict[str, list[tuple[str, int, int]]] = load_map_spawns()
+        except Exception:
+            self.map_spawns = {}
+        if not self.map_spawns:
+            logger.warning("map_spawns: no server spawn scripts found — map scoring uses defaults")
         # Config dedup cache: bot_id -> {config_key: last_set_value}
         # Prevents sending "set route_randomWalk 1" every cycle when it's already 1
         self._last_config_set: dict[str, dict[str, str]] = {}
