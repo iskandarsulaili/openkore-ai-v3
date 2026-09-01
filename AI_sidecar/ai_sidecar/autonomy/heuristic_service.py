@@ -4470,6 +4470,52 @@ class HeuristicService:
                         reason=f"Job change - Novice job level {_audit_job_level} >= 10, walk to job NPC",
                     ))
 
+        # ── JOB CHANGE 2-1: first-class (mage/swordman/etc) with job_level >= 10
+        # should advance to its 2-1 class (wizard/knight/etc). AGNOSTIC: the target
+        # class comes from the conscious tier (server_solutions job_change_target)
+        # or the universal JOB_2_1_CLASSES mapping; the NPC coords come from the
+        # DB-backed JOB_CHANGE_NPCS. Without this trigger a first-class bot at max
+        # job level would stay stuck forever (never job-changes again).
+        _audit_first_classes = ("swordman", "mage", "archer", "acolyte", "merchant", "thief")
+        if _audit_job_name in _audit_first_classes and _audit_job_level >= 10:
+            _audit_now2 = __import__("time").time()
+            _audit_last2 = self._last_job_change_attempt.get(bot_id, 0)
+            if _audit_now2 - _audit_last2 > 60:  # 1 min cooldown
+                self._last_job_change_attempt[bot_id] = _audit_now2
+                # Resolve the 2-1 target class (conscious decision first, else
+                # the universal first-class->2-1 mapping).
+                _jc2_target = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _jc2_target = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
+                except Exception:
+                    _jc2_target = ""
+                if not _jc2_target:
+                    _jc2_target = JOB_2_1_CLASSES.get(_audit_job_name, _audit_job_name)
+                _jc2_npcs = JOB_CHANGE_NPCS
+                _jc2_npc = (_jc2_npcs.get(_jc2_target)
+                            or _jc2_npcs.get(_audit_job_name)
+                            or next(iter(_jc2_npcs.values()), ()) if _jc2_npcs else ())
+                if _jc2_npc:
+                    _jc2_map, _jc2_x, _jc2_y = _jc2_npc
+                    if _audit_map != _jc2_map:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_jc2_map}",
+                            confidence=0.99, domain="progression",
+                            reason=f"Job change 2-1 - {_audit_job_name} job level {_audit_job_level} >= 10, move to {_jc2_map} for {_jc2_target}",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_jc2_x} {_jc2_y}",
+                            confidence=0.99, domain="progression",
+                            reason=f"Job change 2-1 - walk to {_jc2_target} job NPC at ({_jc2_x},{_jc2_y})",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="talknpc c",
+                            confidence=0.99, domain="progression",
+                            reason=f"Job change 2-1 - talk to {_jc2_target} job NPC (LLM dialog responder picks menu)",
+                        ))
+
         # ── STATE: COLD_START (fresh spawn - go hunt immediately) ──
         if state == "COLD_START":
             actions.append(HeuristicAction(
