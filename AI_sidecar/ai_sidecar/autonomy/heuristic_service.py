@@ -807,16 +807,24 @@ class AdaptiveDataStore:
         return (best_map, best_reason)
 
     def get_optimal_weapon(self, job_name: str, base_level: int, zeny: int) -> tuple[str, str] | None:
-        """Find the best weapon to buy using rAthena-corrected IDs.
-        Returns (weapon_id, description) or None if can't afford.
+        """Find the best weapon to buy — AGNOSTIC (RULE.md).
+
+        Uses the DB-backed gear progression planner (stat/zeny ranked,
+        NPC-buyable filtered) and resolves the chosen item's real ID from the
+        knowledge DB. Returns (weapon_id, description) or None if can't afford.
         """
-        prog = self.equipment_progression.get(job_name, self.equipment_progression["novice"])
-        best = None
-        for lvl, wid, desc in prog:
-            if base_level >= lvl:
-                best = (wid, desc)
-        if best and zeny >= 100:
-            return best
+        try:
+            from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+            from ai_sidecar.knowledge_loader import get_weapons
+            _gpp = get_gear_progression_planner()
+            _plan = _gpp.get_best_upgrade(base_level, zeny)
+            if _plan is not None and _plan.slot_name == "weapon" and _plan.is_affordable:
+                for _w in get_weapons():
+                    _wn = str(_w.get("Name", "") or _w.get("AegisName", "")).lower()
+                    if _wn == str(_plan.target_item).lower():
+                        return (str(_w.get("Id", "")), str(_plan.target_item))
+        except Exception:
+            pass
         return None
 
     def estimate_survivability(self, map_name: str, base_level: int, attack_power: int = 25) -> float:
@@ -3007,8 +3015,19 @@ class HeuristicService:
                     _now = True
                 if any(w in name for w in ("knife", "sword", "mace", "bow", "dagger", "rod", "cutter")):
                     _now = True
-                if _iid and str(_iid) in ("1201", "1243", "1244", "1301", "1302", "1303", "1601", "1701"):
-                    _now = True
+                # AGNOSTIC (RULE.md): resolve the item's real type from the knowledge
+                # DB by ID (never a hardcoded weapon-ID list).
+                if _iid:
+                    try:
+                        from ai_sidecar.knowledge_loader import get_items
+                        for _it_l in get_items():
+                            if str(_it_l.get("Id", "")) == str(_iid):
+                                _t = int(_it_l.get("Type", 0) or 0)
+                                if _t in (4, 5, 8):
+                                    _now = True
+                                break
+                    except Exception:
+                        pass
             if int(signals.get("attack_power", 0) or 0) > 30:
                 _now = True
             return self._latch_weapon_seen(_bot, _now)
@@ -3444,8 +3463,25 @@ class HeuristicService:
                     if _cs2_opt:
                         _cs2_weapon_id, _cs2_weapon_name = _cs2_opt
                 if not _cs2_weapon_id:
-                    _cs2_weapon_id = "1201"
-                    _cs2_weapon_name = "Knife"
+                    # AGNOSTIC: last-resort — pick the cheapest buyable weapon from the
+                    # knowledge DB (never a hardcoded 1201 literal).
+                    try:
+                        from ai_sidecar.knowledge_loader import get_weapons
+                        from ai_sidecar.buyable_items import get_buyable_items
+                        _buyable = get_buyable_items()
+                        _cheapest = None
+                        for _w_cs2b in get_weapons():
+                            _wid2 = str(_w_cs2b.get("Id", ""))
+                            if _buyable and _wid2 and _wid2 not in _buyable:
+                                continue
+                            _wbuy2 = int(_w_cs2b.get("Buy", 0) or 0)
+                            if _wbuy2 > 0 and (_cheapest is None or _wbuy2 < _cheapest[1]):
+                                _cheapest = (_wid2, _wbuy2, str(_w_cs2b.get("Name", "") or _wid2))
+                        if _cheapest:
+                            _cs2_weapon_id = _cheapest[0]
+                            _cs2_weapon_name = _cheapest[2]
+                    except Exception:
+                        pass
                 if zeny >= 50:
                     actions.append(HeuristicAction(
                         kind="command", command=f"buy {_cs2_weapon_id} 1",
@@ -5605,12 +5641,17 @@ class HeuristicService:
                         confidence=0.80, domain="economy",
                         reason=f"Weight cap in {_time_to_cap:.0f} min - skip low-value drops",
                     ))
-                # EQUIPMENT PROGRESSION: check if bot should upgrade weapon
-                _eq_prog = self._adaptive.equipment_progression.get(job_name, [])
+                # EQUIPMENT PROGRESSION: check if bot should upgrade weapon — AGNOSTIC
+                # (RULE.md): use the DB-backed gear planner, never hardcoded IDs.
                 _best_weapon = None
-                for _lvl, _wid, _desc in _eq_prog:
-                    if base_level >= _lvl:
-                        _best_weapon = (_wid, _desc)
+                try:
+                    from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+                    _gpp_eq = get_gear_progression_planner()
+                    _eq_plan = _gpp_eq.get_best_upgrade(base_level, zeny)
+                    if _eq_plan is not None and _eq_plan.slot_name == "weapon" and _eq_plan.is_affordable:
+                        _best_weapon = (_eq_plan.target_item, _eq_plan.reason or "")
+                except Exception:
+                    pass
                 if _best_weapon and zeny >= 100 and _hunt_duration > 60 and _total_kills > 5:
                     # Check if we have enough zeny and have been hunting long enough
                     # The actual buy happens in WEAPON_BUY state when in town
