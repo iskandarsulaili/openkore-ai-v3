@@ -52,6 +52,13 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
+## Round 6 — Adversarial sweep (2026-09-01, commits abf3c7cf5, de2ba2cc7)
+- [x] gear_upgrade_after_death (pdca_loop:5544) called get_best_upgrade without job — Mage could buy a Novice-only Sword after death. Now passes job from conscious snapshot.
+- [x] domains/progression.py _cold_step2: get_best_upgrade missing job — now passes job_name (added to signature + caller).
+- [x] domains/equipment.py:44: read the hardcoded equipment_progression dict (Round-1 violation). Now uses DB-backed gear planner (job-aware, NPC-buyable).
+- [x] VERIFIED: domains/progression.py _cold_step7 (hardcoded JOB_CHANGE_2_1) is DEAD CODE — legacy domains run observe-only (commands→log, never executed). Live job-change path = heuristic_service.py step 7 (fixed Round 4). No action needed.
+- [x] Verified: bot Mage base 22 job_lv 10, farming Lunatic/Poring. DQN training_steps 2163, exp 2157.
+
 ## Round 5 — Adversarial sweep (2026-09-01, commit 5a9e7fd94)
 - [x] CRASH: _class_stat_allocation line 366 unpacked (bp, needed) but ro_mechanics get_nearest_breakpoint returns (bp_value, bp_description) — 2nd element is a str label, not points needed. Every assess() crashed TypeError '>' not supported between str and int (488+ times). Now computes needed = max(0, int(bp)-int(current)). Verified: mage allocates 20 to INT. Sidecar restarted, 0 crashes.
 
