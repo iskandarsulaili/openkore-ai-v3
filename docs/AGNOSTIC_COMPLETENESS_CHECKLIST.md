@@ -52,6 +52,10 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
+## Round 4 — Adversarial sweep (2026-09-01, commit c8b4565ce)
+- [x] Job-change conflict: bot became Mage but LLM conscious tier had decided merchant (server_solutions job_change_target). Step 7 used _assigned_jobs (team-synergy position fallback) and ignored the conscious decision. Now step 7 prefers the conscious job_change_target; fallback only fires when no conscious decision exists.
+- [x] Verified: DB has target_class=merchant, fix reads it. Sidecar restarted 21:52, 0 crashes, bot Mage base 22 farming.
+
 ## Round 3 — Adversarial sweep (2026-09-01, commits 04066ae42..5bb73e3a6)
 - [x] Equipment optimizer consumer: command=str(_eq) stringified the dict (NOT a valid OpenKore command) — upgrade/slot/repair never executed. Now emits real 'command' field.
 - [x] General equipment-progression check filtered to slot_name=='weapon' only — bot only bought/equipped weapons. Now covers ALL 8 slots + cards + refine.
