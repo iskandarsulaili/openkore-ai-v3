@@ -115,12 +115,30 @@ Status legend:
 - [ ] 4.3. Crowdsource P2P: lessons_hub.db push/pull + p2p_knowledge mesh working.
 - [ ] 4.4. Subconscious (RL/DQN): verify _train_from_replay actually runs,
       reinforcement_stats.json training_steps>0, shadow→promotion.
+      [2026-09-01] DQN FIXED + TRAINING: root cause = observe/train loop trapped in
+      one-time _strategic_services_initialized init block (ran once per sidecar start,
+      then never again) + train_batch backprop bug (dq.reshape(1,-1).T=(batch,1) could
+      not dot w3.T → ALWAYS crashed on first training batch). Fixed: per-cycle per-bot
+      observe (_subconscious_observe_and_drive iterates all live snapshots) + reward on
+      the DELTA (died-this-cycle) not cumulative death_count + full (batch,action_dim)
+      backprop gradient. VERIFIED: training_steps 0→4, exp 63→67 live. [VERIFIED]
 
 ## 5. AGNOSTIC AUDIT (server/game/situation — the user's core rule)
 
 - [ ] 5.1. Sweep for hardcoded server-specific literals (map names, coords, item IDs,
       NPC names) in decision code. Must resolve via discovery/server_solutions.
 - [ ] 5.2. Verify heuristic_service / reflex tier holds only generic safety rules
+      [2026-09-01] JOB-CHANGE CLASS DECISION WIRED TO CONSCIOUS (LLM), DB-BACKED/AGNOSTIC:
+      NEW _llm_job_change_advisory — LLM decides WHEN + WHICH class from live facts
+      (job/level/build/gear/party) + learned server solutions, persists to server_solutions
+      slot 'job_change_target'. Options DB-driven (learned 'job_change_options' + game_knowledge
+      seed) covering 1st/2nd/3rd/4th + custom server jobs — never a hardcoded per-tier dict.
+      Eligibility thresholds DB-driven ('job_change_thresholds') with benign default ladder as
+      reflex safety floor. heuristic JOB_CHANGE executor now READS the conscious decision from
+      the store (was hardcoded 'archer' — RULE.md violation). RULE.md updated: conscious=LLM/agent
+      only (never rule-based), subconscious=ML from repeated conscious actions via reward/punish,
+      reflex=rule-based (only tier allowed). [VERIFIED — logic unit-tested; live E2E pending bot
+      reconnect]
       (never per-server).
 - [ ] 5.3. Bridge (Perl) passes commands only — never the source of strategy.
 - [x] 5.4. **Inventory-snapshot false-empty FIXED + LIVE-VERIFIED**: bridge read
