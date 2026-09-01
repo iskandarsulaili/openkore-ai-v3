@@ -1545,13 +1545,52 @@ class HeuristicService:
                         return int(_pid)
         except Exception:
             pass
-        # Cold-start guide: Red -> Orange -> White as level increases.
+        # AGNOSTIC (RULE.md): cold-start fallback picks the best affordable heal
+        # potion from the knowledge DB (name pattern + buy price, NPC-buyable
+        # filtered) — never a hardcoded 501/502/504 literal.
+        try:
+            from ai_sidecar.knowledge_loader import get_items
+            from ai_sidecar.buyable_items import get_buyable_items
+            _buyable = get_buyable_items()
+            # Heal potions by name (Red/Orange/Yellow/White/Green/Novice Potion),
+            # ranked by heal-per-zeny (higher heal, lower price = better value).
+            _heal_names = ("red potion", "orange potion", "yellow potion",
+                           "white potion", "green potion", "novice potion")
+            _candidates = []
+            for _it in get_items():
+                _nm = str(_it.get("Name", "") or _it.get("AegisName", "")).lower()
+                if _nm not in _heal_names:
+                    continue
+                _pid = int(_it.get("Id", 0) or 0)
+                if _pid and _buyable and _pid not in _buyable:
+                    continue
+                _buy = int(_it.get("Buy", 0) or 0)
+                if _buy <= 0:
+                    continue
+                # Heal amount from the item's script (itemheal N,0 or itemheal rand(a,b),0).
+                _heal = 0
+                _scr = str(_it.get("Script", "") or "")
+                import re as _re
+                _m = _re.search(r"itemheal\s+(?:rand\(\s*(\d+)\s*,\s*(\d+)\s*\)|(\d+))", _scr)
+                if _m:
+                    if _m.group(1) and _m.group(2):
+                        _heal = (int(_m.group(1)) + int(_m.group(2))) // 2
+                    elif _m.group(3):
+                        _heal = int(_m.group(3))
+                if _heal > 0:
+                    _candidates.append((_heal / max(_buy, 1), _heal, _buy, _pid, _nm))
+            if _candidates:
+                _candidates.sort(key=lambda x: (-x[0], x[2]))
+                return _candidates[0][3]
+        except Exception:
+            pass
+        # Last-resort (DB unavailable): level-scaled generic RO potions.
         if base_level < 15:
-            return 501  # Red Potion (heals 45 HP)
+            return 501
         elif base_level < 30:
-            return 502  # Orange Potion (heals 105 HP)
+            return 502
         else:
-            return 504  # White Potion (heals 250 HP)
+            return 504
 
     def _get_potion_cost(self, potion_id: int) -> int:
         """Return the cost of a potion by item ID — AGNOSTIC (DB-backed, RULE.md).
