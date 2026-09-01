@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path as _PathModule
 from typing import Any, Optional
 
+from ai_sidecar.autonomy.heuristic_service import _is_city_map as _pdca_is_city_map
+
 from ai_sidecar.autonomy.plan_executor import PlanExecutor
 from ai_sidecar.autonomy.progress_tracker import ProgressTracker
 from ai_sidecar.contracts.common import ContractMeta
@@ -2080,8 +2082,7 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
         # ── Town detection (death loop) ─────────────────────────
         # Track TOWN ↔ HUNT ↔ TOWN cycles. Only count as a return when:
         # bot was on a hunting map between the last town visit and this one.
-        _town_maps = ("prontera", "prt_in", "morocc", "payon", "geffen", "aldebaran", "alberta")
-        _in_town = map_name and any(t in map_name.lower() for t in _town_maps)
+        _in_town = map_name and _pdca_is_city_map(map_name)
         
         # ── Stuck detection: reset AI if bot hasn't moved maps in N cycles ──
         # Normalize bot_id by extracting character name suffix (handle duplicate prefixes)
@@ -2343,7 +2344,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
             _combat = getattr(latest, "combat", None)
             if _combat:
                 _is_sitting = bool(getattr(_combat, "is_sitting", False))
-        if _is_sitting and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
+        if _is_sitting and map_name and not _pdca_is_city_map(map_name):
             _log.warning("combat_monitor: bot=%s FOUND SITTING on field map %s -> queuing stand", _bid, map_name)
             try:
                 aq = getattr(runtime_state, "action_queue", None)
@@ -2382,7 +2383,7 @@ def _emit_combat_actions(runtime_state, horizon: str, bot_id: str | None = None)
             return 1
         
         # Emergency Butterfly Wing: use wing when HP<30% on field map (not town)
-        if hp_ratio < 0.30 and hp_ratio > 0.0 and map_name and not any(t in map_name.lower() for t in ("prontera","prt_in")):
+        if hp_ratio < 0.30 and hp_ratio > 0.0 and map_name and not _pdca_is_city_map(map_name):
             if aq is not None:
                 _log.info("combat_actions: bot=%s emergency_wing (HP=%.0f%%)", _bid, hp_ratio*100)
                 aq.enqueue(_bid, ActionProposal(
@@ -2493,16 +2494,32 @@ def _extract_command_from_goal(goal: str | None, objective: str | None = None, c
         "manual": "attackAuto 0",
     }
     
-    # Dynamic map routing: if objective mentions a hunting map, route there
+    # Dynamic map routing: if objective mentions a hunting map, route there.
+    # AGNOSTIC (RULE.md): match against the server's REAL spawn maps (loaded
+    # from live spawn scripts), never a hardcoded field-prefix list.
     if objective and keyword in ("leveling", "grind", "hunt", "advancement", "survival"):
-        for map_code in ("prt_fild", "pay_fild", "moc_fild", "gef_fild", "alde_fild", "mjolnir"):
-            if map_code in objective.lower():
-                _maps = _re_module.findall(map_code.replace("_", ".") + "[0-9]+", objective.lower())
-                if _maps:
-                    return f"move {_maps[0]}"
-        # If in Prontera with survival/economy goal, route to nearby field
+        _spawn_maps = set()
+        try:
+            from ai_sidecar.autonomy.heuristic_service import HeuristicService
+            _spawn_maps = set(HeuristicService().map_spawns.keys())
+        except Exception:
+            pass
+        _obj_l = objective.lower()
+        for _m in _spawn_maps:
+            if _m in _obj_l:
+                return f"move {_m}"
+        # Fallback: any map token in the objective that looks like a real map
+        # (letters+digits, no spaces) and is not a town.
+        for _tok in _obj_l.split():
+            _tok = _tok.strip(".,;:()[]{}")
+            if _tok and _tok.isalnum() and any(ch.isdigit() for ch in _tok) and not _pdca_is_city_map(_tok):
+                return f"move {_tok}"
+        # If in Prontera with survival/economy goal, route to a nearby field map
+        # (AGNOSTIC: pick the first real spawn map that is not a town).
         if "prontera" in objective.lower() and keyword in ("survival", "idle", "economy"):
-            return "move prt_fild08"
+            for _m in sorted(_spawn_maps):
+                if not _pdca_is_city_map(_m):
+                    return f"move {_m}"
     
     # For job_advancement goal — route to job change NPC from tables file
     # Once at NPC, send talknpc to initiate job change dialog
@@ -7378,7 +7395,7 @@ class PDCALoop:
                     
                     # Detect stuck: same town map for multiple cycles with weight > 70%
                     _is_stuck_in_town = (
-                        _sn_map in ("prt_in", "prontera", "morocc", "payon", "geffen", "aldebaran", "alberta")
+                        _pdca_is_city_map(_sn_map)
                         and _sn_map == _prev_map
                         and _is_overweight
                         and _prev_weight >= 70
@@ -7628,7 +7645,7 @@ class PDCALoop:
                                     if _best_cmd:
                                         _cmd = _best_cmd
                                         logger.info("pdca_exp_best_action: bot=%s map=%s cmd=%s rate=%.2f", _bot, _map_name, _cmd, _best_rate)
-                                    elif _map_name and "prontera" in _map_name.lower() and not "fild" in _map_name.lower():
+                                    elif _map_name and _pdca_is_city_map(_map_name):
                                         # Bot in town with no learned path — heuristic/reflex will handle
                                         _cmd = "ai auto"
                             except Exception as _e:
