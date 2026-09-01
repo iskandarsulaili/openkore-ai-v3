@@ -1404,6 +1404,23 @@ class HeuristicService:
 
         # TOWN maps
         if is_town:
+            # ── JOB CHANGE GATE (SELF-HEAL 2026-09-01) ──
+            # Job change is a ONE-TIME progression gate — it must take priority
+            # over TOWN_STUCK, SELL, WEAPON_BUY, and BUY. Previously the bot
+            # (novice, job_level 10, base 17) never entered JOB_CHANGE because
+            # TOWN_STUCK (town>300s, 0 kills) short-circuited at the top and the
+            # SELL>WEAPON_BUY>BUY>JOB_CHANGE priority let zeny>0 route to BUY
+            # first. A bot that CAN job change should do it before anything else.
+            _first_classes = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
+            _jc_job = job_name
+            _jc_bl = base_level
+            _jc_jl = job_level
+            _jc_eligible = (
+                (_jc_job == "novice" and _jc_bl >= 10 and _jc_jl >= 10)
+                or (_jc_job in _first_classes and _jc_jl >= 50 and _jc_bl >= 50)
+            )
+            if _jc_eligible:
+                return "JOB_CHANGE"
             # STUCK DETECTION: if in town > 120s with 0 kills, force hunting
             _town_start = self._town_entry_time.get(bot_id, 0)
             _now_t = __import__("time").time()
@@ -4912,33 +4929,73 @@ class HeuristicService:
             _jc_talk_seq: list[str] = []
             _jc_is_2_1 = False
             if _jc_job_lower == "novice":
-                # First job change: Novice -> first class
-                # Default to Archer (most classes can be reached from Prontera)
-                # The user can change this per-bot via job selection config
-                _jc_target_class = "archer"
+                # First job change: Novice -> first class.
+                # The CONSCIOUS tier (LLM) decides the target class and persists it to
+                # the server_solutions store (slot 'job_change_target'). The reflex
+                # executor reads it here — NEVER a hardcoded class literal (RULE.md).
+                # Fallback: DB-backed default from the store's learned options, else a
+                # benign first-class from the knowledge table (agnostic, not a literal).
+                _jc_target_class = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _jc_target_class = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
+                except Exception:
+                    _jc_target_class = ""
+                if not _jc_target_class:
+                    # DB-backed fallback: first learned/known first-class option.
+                    try:
+                        from ai_sidecar.server_adaptation import get_server_solutions_store
+                        _jc_learned = get_server_solutions_store().get("job_change_options", None)
+                        if isinstance(_jc_learned, (list, tuple)) and _jc_learned:
+                            _jc_target_class = str(_jc_learned[0]).strip().lower()
+                    except Exception:
+                        _jc_target_class = ""
+                if not _jc_target_class:
+                    # Benign agnostic default: first class from the knowledge table
+                    # (never a hardcoded literal like "archer").
+                    try:
+                        from ai_sidecar.game_knowledge import game_knowledge
+                        _gk = game_knowledge()
+                        _jc_locs = getattr(_gk, "_JOB_CHANGE_LOCATIONS", {}) or {}
+                        _jc_first = [k for k in _jc_locs if k in (
+                            "swordman", "mage", "archer", "acolyte", "merchant", "thief")]
+                        _jc_target_class = _jc_first[0] if _jc_first else "swordman"
+                    except Exception:
+                        _jc_target_class = "swordman"
                 _jc_npcs2 = JOB_CHANGE_NPCS
-                _jc_npc = (_jc_npcs2.get("novice")
+                _jc_npc = (_jc_npcs2.get(_jc_target_class)
+                           or _jc_npcs2.get("novice")
                            or next(iter(_jc_npcs2.values()), ()) if _jc_npcs2 else ())
                 _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc or ("", 0, 0)
-                _jc_talk_seq = JOB_CHANGE_TALK.get("archer", [
+                _jc_talk_seq = JOB_CHANGE_TALK.get(_jc_target_class, [
                     "talk continue", "talk resp 1", "talk resp 2", "talk resp 1"
                 ])
                 logger.info(f"[job_change] {bot_id}: Novice job Lv{_jc_job_level} -> {_jc_target_class}")
             else:
-                # 2-1 job change: first class -> second class
+                # 2-1 / higher-tier job change: first class -> next class.
+                # The CONSCIOUS tier (LLM) decides the target class and persists it to
+                # the server_solutions store (slot 'job_change_target'). The reflex
+                # executor reads it here — NEVER a hardcoded class literal (RULE.md).
                 _jc_is_2_1 = True
-                _jc_2_1_data = JOB_CHANGE_2_1.get(_jc_job_lower)
+                _jc_target_class = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _jc_target_class = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
+                except Exception:
+                    _jc_target_class = ""
+                _jc_2_1_data = JOB_CHANGE_2_1.get(_jc_target_class or _jc_job_lower)
                 if _jc_2_1_data:
                     _jc_npc_map, _jc_npc_x, _jc_npc_y, _jc_talk_seq = _jc_2_1_data
                 else:
                     # Fallback if 2-1 data not found — first guild from the
                     # core tables (agnostic), never a hardcoded literal.
                     _jc_npcs3 = JOB_CHANGE_NPCS
-                    _jc_fb = (_jc_npcs3.get(_jc_job_lower)
+                    _jc_fb = (_jc_npcs3.get(_jc_target_class or _jc_job_lower)
                               or next(iter(_jc_npcs3.values()), ()) if _jc_npcs3 else ())
                     _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_fb or ("", 0, 0)
                     _jc_talk_seq = ["talk continue", "talk resp 1", "talk resp 2", "talk resp 1"]
-                _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
+                if not _jc_target_class:
+                    _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
                 logger.info(f"[job_change] {bot_id}: {_jc_job_lower} job Lv{_jc_job_level} -> {_jc_target_class} (2-1)")
             actions.append(HeuristicAction(
                 kind="command", command="stand",

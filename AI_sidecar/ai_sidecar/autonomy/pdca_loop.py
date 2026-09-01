@@ -2577,6 +2577,7 @@ class PDCALoop:
         self._breaker_family = "queue"
         self._advisory_inflight: set[str] = set()
         self._llm_cold_start_cache: dict[str, float] = {}
+        self._llm_job_change_cache: dict[str, float] = {}
         self._default_bot_id = "default"
         self._last_bot_id: str | None = None
         # Respawn cooldown tracking: bot_id -> timestamp when cooldown expires
@@ -2887,6 +2888,22 @@ class PDCALoop:
                 self._spawn_advisory(
                     f"coldstart:{_cycle_bot_id}",
                     self._llm_cold_start_advisory(_cycle_bot_id),
+                )
+            except Exception:
+                pass
+
+        # ── Conscious-tier: LLM job-change class decision (AGNOSTIC, RULE.md) ──
+        # The CONSCIOUS tier (LLM) decides WHEN to job change and WHICH class to take,
+        # from live observation + learned facts (build, gear, party synergy, team
+        # composition). The class choice is NEVER a hardcoded literal — it is an
+        # LLM/agent decision, DB-backed/agnostic. The heuristic/reflex tier only
+        # EXECUTES the walk/talk sequence once the conscious tier has decided the
+        # class. Consulted on a coarse cadence + cached per bot-state.
+        if self._cycle_count % 15 == 0 and _cycle_bot_id:
+            try:
+                self._spawn_advisory(
+                    f"jobchange:{_cycle_bot_id}",
+                    self._llm_job_change_advisory(_cycle_bot_id),
                 )
             except Exception:
                 pass
@@ -10572,6 +10589,185 @@ class PDCALoop:
             # (deterministic academy/hunt branch as the safety floor). Never log as error
             # (LLM flakiness is expected); silent fallback keeps the bot acting.
             logger.debug("llm_cold_start_skipped bot=%s: %s", bot_id, _lce)
+
+    async def _llm_job_change_advisory(self, bot_id: str) -> None:
+        """CONSCIOUS-tier (LLM) job-change class decision — AGNOSTIC, RULE.md.
+
+        The CONSCIOUS tier (LLM) decides WHEN to job change and WHICH class to take,
+        from live observation + learned facts (build direction, gear, party synergy,
+        team composition). The class choice is NEVER a hardcoded literal — it is an
+        LLM/agent decision, DB-backed/agnostic. The heuristic/reflex tier only EXECUTES
+        the walk/talk sequence once the conscious tier has decided the class.
+
+        Data-driven facts are injected (current job, base/job level, stat build, gear,
+        party composition, learned server solutions); the LLM picks the target class.
+        The chosen class is persisted to the server_solutions store (slot
+        'job_change_target') so the reflex executor reads it — never a *.py literal.
+        Cached per bot per eligibility state so it does not re-fire the LLM every cycle.
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        _store = getattr(_rt, "server_solutions_store", None)
+        # Gather facts for the current bot from the live snapshot.
+        _job = "novice"
+        _bl = 1
+        _jl = 1
+        _map = ""
+        _stats: dict[str, int] = {}
+        _gear: list[str] = []
+        _party: list[str] = []
+        _snap_obj: object | None = None
+        try:
+            _sc = getattr(_rt, "snapshot_cache", None)
+            if _sc is not None:
+                _snap_obj = _sc.get(bot_id)
+            if _snap_obj is not None:
+                _prog = getattr(_snap_obj, "progression", None) or {}
+                _job = str(getattr(_prog, "job_name", None) or "novice").lower()
+                _bl = int(getattr(_prog, "base_level", None) or 1)
+                _jl = int(getattr(_prog, "job_level", None) or 1)
+                _raw = dict(getattr(_snap_obj, "raw", None) or {})
+                _pos = getattr(_snap_obj, "position", None) or {}
+                _map = str(_raw.get("map") or getattr(_pos, "map", "") or "").lower().replace(".gat", "")
+                _stats = dict(getattr(_prog, "stats", None) or {})
+                _gear = [str(getattr(_i, "name", "") or "") for _i in (getattr(_snap_obj, "inventory_items", None) or [])]
+                _party = [str(_p) for _p in (getattr(_snap_obj, "party_members", None) or [])]
+        except Exception:
+            pass
+        # Eligibility — AGNOSTIC across ALL tiers (1st/2nd/3rd/4th + custom).
+        # A bot is eligible when its current job is a known job AND it has reached a
+        # job-change threshold. Thresholds are DB-driven (server_solutions slot
+        # 'job_change_thresholds' -> {job: {base, job}}) with a benign default ladder
+        # (novice 10/10, first-class 50/50, higher tiers 70/70) as a REFLEX safety
+        # floor — never a hardcoded per-tier class dict. The LLM decides the class.
+        _thresholds = {}
+        try:
+            _th = _store.get("job_change_thresholds", None) if _store else None
+            if isinstance(_th, dict):
+                _thresholds = {str(k).lower(): v for k, v in _th.items()}
+        except Exception:
+            _thresholds = {}
+        _default_thresholds = {
+            "novice": (10, 10),
+            "swordman": (50, 50), "mage": (50, 50), "archer": (50, 50),
+            "acolyte": (50, 50), "merchant": (50, 50), "thief": (50, 50),
+            "taekwon": (50, 50), "gunslinger": (50, 50), "ninja": (50, 50),
+            "soul_linker": (50, 50),
+        }
+        _tbl, _tjl = _default_thresholds.get(_job, (70, 70))
+        _thr = _thresholds.get(_job)
+        if isinstance(_thr, dict):
+            _tbl = int(_thr.get("base", _tbl) or _tbl)
+            _tjl = int(_thr.get("job", _tjl) or _tjl)
+        elif isinstance(_thr, (list, tuple)) and len(_thr) >= 2:
+            _tbl = int(_thr[0] or _tbl)
+            _tjl = int(_thr[1] or _tjl)
+        _eligible = (_bl >= _tbl and _jl >= _tjl)
+        if not _eligible:
+            return
+        # Cache guard: consult the LLM once per (bot, eligibility state) — re-ask only
+        # when the job/level bucket changes, preventing LLM spam.
+        _bucket = f"{_job}/{min(_bl // 5, 20)}/{min(_jl // 5, 20)}"
+        _ckey = f"jc:{bot_id}:{_bucket}"
+        import time as _time
+        _last = self._llm_job_change_cache.get(_ckey, 0)
+        if _time.time() - _last < 600:
+            return
+        # Read server-specific solution facts (AGNOSTIC — never hardcoded).
+        _safe_town = str((_store.get("safe_town", None) if _store else None) or "")
+        # Available job-change options — DB-DRIVEN + AGNOSTIC across ALL tiers
+        # (1st/2nd/3rd/4th + custom server jobs). The LLM picks from the union of:
+        #   (1) LEARNED options persisted in the server_solutions store (slot
+        #       'job_change_options' — filled by observing the live server's job
+        #       change NPCs, so custom/3rd/4th-tier jobs the static table lacks are
+        #       included), and
+        #   (2) the static game_knowledge table as a seed (1st + 2-1 classes).
+        # Never a hardcoded per-tier dict — the LLM reasons over whatever the server
+        # actually offers.
+        _options = []
+        try:
+            _learned = _store.get("job_change_options", None) if _store else None
+            if isinstance(_learned, (list, tuple)):
+                _options = [str(x).strip().lower() for x in _learned if str(x).strip()]
+            elif isinstance(_learned, str) and _learned.strip():
+                _options = [x.strip().lower() for x in _learned.replace(",", " ").split() if x.strip()]
+        except Exception:
+            _options = []
+        try:
+            from ai_sidecar.game_knowledge import game_knowledge
+            _gk = game_knowledge()
+            _jc_locs = getattr(_gk, "_JOB_CHANGE_LOCATIONS", {}) or {}
+            _seed = list(_jc_locs.keys())
+            for _s in _seed:
+                if _s not in _options:
+                    _options.append(_s)
+        except Exception:
+            pass
+        # Dedupe, keep order, drop empties.
+        _seen = set()
+        _options = [o for o in _options if o and not (o in _seen or _seen.add(o))]
+        if not _options:
+            return
+        _prompt = (
+            f"Ragnarok bot {bot_id}: current_job='{_job}', base_level={_bl}, job_level={_jl}, "
+            f"on map '{_map}', safe_town='{_safe_town}'. "
+            f"Stat build: {_stats or 'unknown'}. Gear: {_gear[:8] or 'none'}. "
+            f"Party members: {_party or 'none'}. "
+            f"Eligible job-change options (from the DB-backed knowledge store): {_options}. "
+            f"THINK LIKE A TOP PRO RO PLAYER and a SYSTEM ANALYST. The bot is ready to job change. "
+            f"Decide the SINGLE best target class from the WHOLE PICTURE — build direction, "
+            f"current gear, party synergy/team composition, and the server's learned facts. "
+            f"Respond as JSON: "
+            f"{{'analysis': <2-4 sentence deep reasoning>, 'root_cause': <deepest reason>, "
+            f"'target_class': <one of {_options}>, 'reason': <short reason>}}. "
+            f"Pick ONLY from the given options. Never invent a class or map beyond the facts given."
+        )
+        try:
+            _res = await _llm.complete_json(
+                _prompt,
+                system_prompt=(
+                    "You are the CONSCIOUS tier of an autonomous RO farming bot. You decide "
+                    "job-change class AGNOSTICALLY from FACTS (job/level/build/gear/party/learned "
+                    "server solutions). You do NOT hardcode server-specific names — you reason "
+                    "from the facts injected. Tool/disciplined: pick ONE target class from the "
+                    "given options, output a valid JSON object."
+                ),
+                temperature=0.2,
+                max_tokens=500,
+            )
+            self._llm_job_change_cache[_ckey] = _time.time()
+            _target = str(_res.get("target_class", "") or "").strip().lower()
+            _reason = str(_res.get("reason", "") or "")
+            _analysis = str(_res.get("analysis", "") or "")
+            if _target not in _options:
+                logger.info("llm_job_change bot=%s invalid_target=%s options=%s", bot_id, _target, _options)
+                return
+            # Persist the conscious decision to the DB-backed store so the reflex executor
+            # reads it (never a *.py literal). Slot: job_change_target.
+            if _store is not None:
+                try:
+                    _store.set(
+                        "job_change_target",
+                        _target,
+                        origin="conscious",
+                        confidence=0.9,
+                        value_json=__import__("json").dumps({
+                            "target_class": _target, "from_job": _job,
+                            "base_level": _bl, "job_level": _jl, "reason": _reason,
+                        }),
+                    )
+                except Exception:
+                    pass
+            logger.info("llm_job_change bot=%s target=%s reason=%s analysis=%r",
+                        bot_id, _target, _reason, _analysis[:160])
+        except Exception as _lje:
+            # LLM unavailable — the REFLEX/fallback layers in heuristic_service still run
+            # (deterministic job-change execution as the safety floor). Never log as error.
+            logger.debug("llm_job_change_skipped bot=%s: %s", bot_id, _lje)
 
     async def _llm_npc_dialog_response(self, bot_id: str) -> None:
         """CONSCIOUS-tier (LLM) NPC-dialog responder — AGNOSTIC, SELF-LEARNING.
