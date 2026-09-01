@@ -52,6 +52,11 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
+## Round 7 — Adversarial sweep (2026-09-01, commit 88659c7d9)
+- [x] 2-1 job-change path (line 5211) used hardcoded JOB_CHANGE_2_1 coords — but its own comment said those coords are WRONG for RAW and to use DB-backed JOB_CHANGE_NPCS. Code contradicted comment. Now prefers JOB_CHANGE_NPCS (verified wizard=gef_tower, knight=prt_in, hunter=hu_in01). Hardcoded dict = last-resort fallback only.
+- [x] JOB_2_1_CLASSES (swordman→knight, mage→wizard) = universal game fact, not per-server routing. Acceptable.
+- [x] Verified: sidecar restarted 22:18, 0 crashes, bot Mage base 22 job_lv 10 farming.
+
 ## Round 6 — Adversarial sweep (2026-09-01, commits abf3c7cf5, de2ba2cc7)
 - [x] gear_upgrade_after_death (pdca_loop:5544) called get_best_upgrade without job — Mage could buy a Novice-only Sword after death. Now passes job from conscious snapshot.
 - [x] domains/progression.py _cold_step2: get_best_upgrade missing job — now passes job_name (added to signature + caller).
