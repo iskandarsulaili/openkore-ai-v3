@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 # Default buy prices for common consumables (used when actual shop price unknown)
+# AGNOSTIC (RULE.md): the canonical source is the knowledge DB (item_db Buy
+# price). This dict is only a cold-start fallback when the DB is unavailable.
 _DEFAULT_SHOP_PRICES: dict[str, int] = {
     "red potion": 50,
     "yellow potion": 500,
@@ -26,12 +28,42 @@ _DEFAULT_SHOP_PRICES: dict[str, int] = {
 }
 
 # Items that should be sold automatically by vendor NPCs
+# AGNOSTIC (RULE.md): junk is detected by vendor value (Sell price) from the
+# knowledge DB, not a hardcoded name list. This set is only a cold-start fallback.
 _AUTO_SELL_TYPES: set[str] = {
     "jellopy", "sticky mucus", "feather", "shell", "clover",
     "scell", "memento", "gemstone", "rough ore", "emerald",
     "opal", "topaz", "amethyst", "sapphire", "garnet",
     "diamond", "zircon", "aquamarine",
 }
+
+# Cache of DB-derived shop prices (lower_name -> buy price).
+_db_shop_price_cache: dict[str, int] | None = None
+
+
+def _load_db_shop_prices() -> dict[str, int]:
+    """Derive shop buy prices from the knowledge DB (item_db Buy price).
+
+    Returns {lower_name: buy_price}. Falls back to _DEFAULT_SHOP_PRICES.
+    """
+    global _db_shop_price_cache
+    if _db_shop_price_cache is not None:
+        return _db_shop_price_cache
+    out: dict[str, int] = {}
+    try:
+        from ai_sidecar.knowledge_loader import get_items
+        for it in get_items():
+            nm = str(it.get("Name", "") or it.get("AegisName", "")).lower()
+            buy = int(it.get("Buy", 0) or 0)
+            if nm and buy > 0:
+                out[nm] = buy
+        if out:
+            _db_shop_price_cache = out
+            return out
+    except Exception:
+        pass
+    _db_shop_price_cache = _DEFAULT_SHOP_PRICES
+    return _DEFAULT_SHOP_PRICES
 
 
 @dataclass
@@ -74,11 +106,26 @@ class NPCShop:
 
         # Check if we need potions (HP or SP low)
         needs_potions = hp_ratio < 0.4 or sp_ratio < 0.3
-        # Check if we have junk to sell
-        has_junk = any(
-            any(junk in (item.get("name", "") or "").lower() for junk in _AUTO_SELL_TYPES)
-            for item in inventory
-        )
+        # Check if we have junk to sell — AGNOSTIC (RULE.md): junk is detected by
+        # vendor value (Sell price) from the knowledge DB, not a hardcoded name list.
+        has_junk = False
+        try:
+            from ai_sidecar.knowledge_loader import get_items
+            _junk_db = {
+                str(it.get("Name", "") or it.get("AegisName", "")).lower(): int(it.get("Sell", 0) or 0)
+                for it in get_items()
+            }
+            for item in inventory:
+                _nm = (item.get("name", "") or "").lower()
+                _val = _junk_db.get(_nm, 0)
+                if 0 < _val < 100:
+                    has_junk = True
+                    break
+        except Exception:
+            has_junk = any(
+                any(junk in (item.get("name", "") or "").lower() for junk in _AUTO_SELL_TYPES)
+                for item in inventory
+            )
 
         if needs_potions and zeny > 5000 and map_name:
             actions.append({
@@ -148,8 +195,9 @@ class NPCShop:
         return zeny > listed_price * 1.5  # Can afford with buffer
 
     def get_estimated_price(self, item_name: str) -> int:
-        """Get the estimated shop price for an item."""
-        return _DEFAULT_SHOP_PRICES.get(item_name.lower(), 1000)
+        """Get the estimated shop price for an item (DB-backed, cold-start fallback)."""
+        prices = _load_db_shop_prices()
+        return prices.get(item_name.lower(), _DEFAULT_SHOP_PRICES.get(item_name.lower(), 1000))
 
     def build_shopping_list(
         self,
