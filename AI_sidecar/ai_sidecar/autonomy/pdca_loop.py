@@ -5541,7 +5541,10 @@ class PDCALoop:
                                                                 _ge_slot = "weapon" if _ge_idx == 0 else ""
                                                                 if _ge_slot:
                                                                     _gpp_d.update_equipment(_ge_slot, _ge_name)
-                                                    _gear_plan = _gpp_d.get_best_upgrade(_gear_level, _gear_zeny)
+                                                    _gear_plan = _gpp_d.get_best_upgrade(
+                                                        _gear_level, _gear_zeny,
+                                                        job=str(_conscious_snap.get("job_name", _conscious_snap.get("job", "")) or "").lower(),
+                                                    )
                                                     if _gear_plan is not None and _gear_plan.is_affordable:
                                                         _gpp_d.execute_upgrade(_gear_plan)
                                                         logger.info("gear_upgrade_after_death: bot=%s slot=%s target=%s cost=%dz",
