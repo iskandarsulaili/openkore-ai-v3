@@ -52,6 +52,9 @@
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
 
+## Round 5 — Adversarial sweep (2026-09-01, commit 5a9e7fd94)
+- [x] CRASH: _class_stat_allocation line 366 unpacked (bp, needed) but ro_mechanics get_nearest_breakpoint returns (bp_value, bp_description) — 2nd element is a str label, not points needed. Every assess() crashed TypeError '>' not supported between str and int (488+ times). Now computes needed = max(0, int(bp)-int(current)). Verified: mage allocates 20 to INT. Sidecar restarted, 0 crashes.
+
 ## Round 4 — Adversarial sweep (2026-09-01, commit c8b4565ce)
 - [x] Job-change conflict: bot became Mage but LLM conscious tier had decided merchant (server_solutions job_change_target). Step 7 used _assigned_jobs (team-synergy position fallback) and ignored the conscious decision. Now step 7 prefers the conscious job_change_target; fallback only fires when no conscious decision exists.
 - [x] Verified: DB has target_class=merchant, fix reads it. Sidecar restarted 21:52, 0 crashes, bot Mage base 22 farming.
