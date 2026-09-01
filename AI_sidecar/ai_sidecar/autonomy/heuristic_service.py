@@ -261,8 +261,17 @@ def _derive_hunting_grounds(
     if _md is None:
         try:
             from ai_sidecar.combat.target_engine import MonsterDB
-            _md = MonsterDB()
-            _md.load()
+            # Class-level singleton (parses 2675 monsters from YAML — heavy). Reuse
+            # across all bots/cycles instead of re-parsing per call (was the sidecar
+            # CPU hog: get_optimal_hunting_map -> _derive_hunting_grounds ran this
+            # every assess cycle, pegging CPU 100%+ and starving the bot's
+            # /v1/actions/next read -> 30s gamelogin timeout -> reconnect loop).
+            if HeuristicService._monster_db_singleton is None:
+                _md = MonsterDB()
+                _md.load()
+                HeuristicService._monster_db_singleton = _md
+            else:
+                _md = HeuristicService._monster_db_singleton
         except Exception:
             return []
     out: list[tuple[int, int, str, str]] = []
@@ -1028,6 +1037,10 @@ class AdaptiveDataStore:
 
 
 class HeuristicService:
+    # Class-level singleton for the monster DB (parses 2675 monsters from YAML — heavy).
+    # Loaded lazily on the first real map change, reused across all bots/cycles.
+    _monster_db_singleton: Any | None = None
+
     """Economy-first state machine for bot progression.
 
     Priority:
@@ -1593,14 +1606,39 @@ class HeuristicService:
         # the bot's actual map CHANGES (which genuinely needs a fresh set, e.g.
         # prt_fild08c<->prt_fild08). On a stable map, nothing re-emits -> zero AI resets.
         # (handled by _last_mon_control_map check below)
+        # DEDUP-FIRST (2026-09-01): the MonsterDB load below parses the FULL 2675-monster
+        # mob_db.yml — a heavy ~10s CPU cost. It MUST run only when the map actually
+        # changed (a fresh emission genuinely needs the DB), NOT on every assess() cycle
+        # on a stable farm map. Previously the load ran BEFORE this guard, so every cycle
+        # reloaded the whole DB then discarded it -> sidecar CPU pegged 100%+ -> the bot's
+        # /v1/actions/next read blocked ~80s -> the 30s gamelogin timeout fired before the
+        # 0x0ac4 reply was read -> reconnect loop. Move the guard first; load the DB lazily.
+        # Normalize farm sub-map variants (prt_fild08c and prt_fild08 are the SAME farm)
+        # so a snapshot map-flip between them does NOT re-emit mon_control and reset the
+        # client's combat AI (which cancels in-progress kills). Only a TRUE map change
+        # (different farm/field) triggers a fresh emission.
+        _dedup_map = _map
+        # AGNOSTIC (RULE.md): the base-map check uses the LIVE spawn data (map_spawns),
+        # not a hardcoded PER_MAP_MON_CONTROL constant (which was referenced but never
+        # defined — a latent NameError that would crash on any c/_c/a/_a map).
+        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in self.map_spawns:
+            _dedup_map = _dedup_map[:-1]  # prt_fild08c -> prt_fild08 (same farm)
+        _last_map = self._last_mon_control_map.get(bot_id, "")
+        if _last_map == _dedup_map:
+            return  # Already sent for this (farm) map — skip the heavy DB load entirely
         # F3 (user directive): the attack decision must come from the GAME DB, not a
         # hardcoded 'always attack' tuple. Look up each monster in the real mob_db.yml
         # (via MonsterDB) — downgrade to ignore if it's a BOSS or far above the farmable
         # range, so mon_control reflects the game's actual data rather than literals.
+        # Loaded lazily (only on a real map change) + cached as a class-level singleton so
+        # a map flip does not re-parse the 2675-monster YAML every time.
         try:
             from ai_sidecar.combat.target_engine import MonsterDB
-            _mdb = MonsterDB()
-            _mdb.load()
+            if HeuristicService._monster_db_singleton is None:
+                _mdb = MonsterDB()
+                _mdb.load()
+                HeuristicService._monster_db_singleton = _mdb
+            _mdb = HeuristicService._monster_db_singleton
         except Exception:
             _mdb = None
         _filtered: list = []
@@ -1629,17 +1667,6 @@ class HeuristicService:
             _filtered.append((_monster, _use[0], _use[1], _use[2]))
         if not _filtered:
             return
-        # Check if we already sent mon_control for this map
-        # Normalize farm sub-map variants (prt_fild08c and prt_fild08 are the SAME farm)
-        # so a snapshot map-flip between them does NOT re-emit mon_control and reset the
-        # client's combat AI (which cancels in-progress kills). Only a TRUE map change
-        # (different farm/field) triggers a fresh emission.
-        _dedup_map = _map
-        if _dedup_map.endswith(("c", "_c", "a", "_a")) and _dedup_map[:-1] in PER_MAP_MON_CONTROL:
-            _dedup_map = _dedup_map[:-1]  # prt_fild08c -> prt_fild08 (same farm)
-        _last_map = self._last_mon_control_map.get(bot_id, "")
-        if _last_map == _dedup_map:
-            return  # Already sent for this (farm) map
         # DIAG: log when re-emitting despite dedup (to catch the reset/flip)
         logger.debug("mon_control_reemit bot=%s map=%s dedup_key=%s last=%s last_mon_emit_age=%.0f",
                      bot_id, _map, _dedup_map, _last_map,
