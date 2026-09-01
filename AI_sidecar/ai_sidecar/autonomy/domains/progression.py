@@ -113,7 +113,8 @@ class ProgressionDomain(BaseDomain):
             self._cold_step1(actions, signals, _cs_key, zeny, _in_town,
                             _in_hunting, map_name, service)
         elif _cs_step == 2:
-            self._cold_step2(actions, _cs_key, _has_weapon, zeny, base_level, service)
+            self._cold_step2(actions, _cs_key, _has_weapon, zeny, base_level, service,
+                             job_name=str(signals.get("job_name", "") or "").lower())
         elif _cs_step == 3:
             self._cold_step3(actions, _cs_key, _has_potions, zeny,
                             base_level, weight, inventory, service)
@@ -198,7 +199,7 @@ class ProgressionDomain(BaseDomain):
                 ))
 
     def _cold_step2(
-        self, actions, _cs_key, _has_weapon, zeny, base_level, service,
+        self, actions, _cs_key, _has_weapon, zeny, base_level, service, job_name="",
     ):
         if not _has_weapon and zeny >= 50:
             # RULE.md: the starter weapon comes from the AGNOSTIC gear planner
@@ -209,7 +210,8 @@ class ProgressionDomain(BaseDomain):
             try:
                 from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                 _cs2_plan = get_gear_progression_planner().get_best_upgrade(
-                    int(base_level or 1), zeny
+                    int(base_level or 1), zeny,
+                    job=str(job_name or "").lower(),
                 )
                 if _cs2_plan is not None and _cs2_plan.slot_name == "weapon" and _cs2_plan.is_affordable:
                     _cs2_w = str(_cs2_plan.item_name or _cs2_plan.item_id or "")

@@ -40,12 +40,18 @@ class EquipmentDomain(BaseDomain):
         )
         total_kills = int(signals.get("kills", 0) or 0)
 
-        # Check equipment progression
-        _prog = service._adaptive.equipment_progression.get(job_name, [])
+        # Check equipment progression — AGNOSTIC (RULE.md): the upgrade target
+        # comes from the DB-backed gear planner (stat/zeny ranked, NPC-buyable,
+        # job-aware), NOT the hardcoded equipment_progression dict.
         _best = None
-        for _lvl, _wid, _desc in _prog:
-            if base_level >= _lvl:
-                _best = (_wid, _desc)
+        try:
+            from ai_sidecar.gear_progression_planner import get_gear_progression_planner
+            _gpp = get_gear_progression_planner()
+            _plan = _gpp.get_best_upgrade(base_level, zeny, job=str(job_name or "").lower())
+            if _plan is not None and _plan.is_affordable:
+                _best = (str(_plan.target_item or ""), str(_plan.target_item or ""))
+        except Exception:
+            _best = None
 
         if (
             _best
