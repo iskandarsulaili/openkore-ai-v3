@@ -10,6 +10,46 @@ instant action, updated by the conscious over time). The full spec is
 **`docs/MIND_ARCHITECTURE.md`** — it is authoritative and wins over this file and over any
 code that contradicts it.
 
+### Tier Boundaries (authoritative — the ONLY place each tier may live)
+
+**CONSCIOUS = LLM / CrewAI agents ONLY. It is NEVER rule-based.**
+- The conscious tier decides the *what / when / why* of every strategic, tactical, and
+  progression decision (routing, gear, economy, job change, class choice, party role,
+  build direction, team synergy, novel situations) by reasoning from live observation +
+  learned facts. It must NOT be implemented as hardcoded if/else rules, baked-in item IDs,
+  map names, class literals, or fixed priority ladders.
+- A hardcoded rule in the conscious path is a BUG to be replaced by agent/LLM reasoning,
+  not a feature. If a decision is currently made by a rule, it must be re-homed to the LLM
+  (with the rule demoted to a reflex safety floor or a DB-backed fallback, never the
+  decision source).
+
+**SUBCONSCIOUS = trained ML that learns from repeated CONSCIOUS actions via a
+reward/punish loop.**
+- The subconscious is the DQN/RL learner. It observes the state + the action the conscious
+  tier took, and is rewarded/punished by the outcome (kills, deaths, EXP, survival). Over
+  many repetitions it learns which actions lead to good outcomes and drives skilled
+  moment-to-moment execution.
+- It is NOT rule-based and NOT a hardcoded policy. It is the ML model trained on the
+  conscious tier's decisions + their outcomes.
+- The subconscious may be promoted to drive skilled combat once it demonstrably beats the
+  rule/reflex baseline (measured win-rate), per the shadow-mode promotion pipeline.
+
+**REFLEX = rule-based, and the ONLY tier allowed to be rule-based.**
+- Reflexes are common, universal, instant-timing actions: per-job or per-mob/MVP actions
+  that must fire immediately (skill combos, dodging, emergency survival, never-die/withdraw,
+  sit-to-heal, flee). They are the hardwired safety floor.
+- Reflexes only ACT on a conscious/subconscious decision with instant timing; they are not
+  the source of the *what/when/why* of strategy. They may be updated by the conscious tier
+  over time (e.g. a learned per-mob reflex), but they never decide strategy.
+- Reflex rules are allowed to be per-job / per-mob / per-MVP because they are universal
+  game mechanics (instant reactions), not server-specific strategy.
+
+**Hard rule — the conscious tier must never be rule-based; only reflex may be rule-based.**
+Any decision currently implemented as a rule in the conscious path must be re-homed to the
+LLM/agents. The rule may remain only as (a) a reflex safety floor (instant, universal) or
+(b) a DB-backed fallback used only when the LLM is unavailable — never as the decision
+source while the LLM is available.
+
 **Hard rule — `AI_sidecar/ai_sidecar/autonomy/heuristic_service.py` is OBSOLETE.**
 Do NOT remove it (it still carries reflex-tier cold-start logic and is the fallback), but:
 - Do NOT add any new hardcoded map/coordinate/NPC directives to it.
@@ -141,7 +181,14 @@ The heuristic sets attackAuto based on bot level:
 The sidecar (`AI_sidecar/`) handles:
 - **Config changes**: Detect overweight → queue `set sellAuto 1` action
 - **Routing**: Detect stuck in town → queue `move <hunting_map>` via portal coords
-- **Job change**: Detect job_level >= 10 for Novice → route to job change NPC
+- **Job change**: The CONSCIOUS tier (LLM/agent) decides WHEN to job change and WHICH
+  class to take, from live observation + learned facts (build direction, gear, party
+  synergy, team composition). The class choice is NEVER a hardcoded literal (e.g. no
+  baked-in "archer" default) — it is an LLM/agent decision, DB-backed/agnostic. The
+  heuristic/reflex tier only EXECUTES the walk/talk sequence once the conscious tier has
+  decided the class. The heuristic's job-change detection is a REFLEX safety floor (it
+  may flag "eligible" but must defer the class choice to the conscious tier; if the LLM
+  is unavailable it may fall back to a DB-backed default, never a hardcoded class).
 - **Healing**: Detect low HP → queue potion use or sit
 - **Skill/stat allocation**: Detect unspent points → queue stat_add/skills add
 - **Skill rotation**: After job change, queue skill use commands (Bash, Double Attack, Heal) for efficient farming
