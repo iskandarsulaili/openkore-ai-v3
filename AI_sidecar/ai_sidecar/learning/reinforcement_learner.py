@@ -387,14 +387,23 @@ def train_batch(batch: list[PrioritizedExperience],
     avg_td = float(np.mean(abs_td))
     max_td = float(np.max(abs_td))
 
-    # MSE loss gradient
-    dq = -2.0 * td_errors / batch_size  # d(Loss)/d(q_sa)
+    # MSE loss gradient (only for the taken action)
+    dq = -2.0 * td_errors / batch_size  # d(Loss)/d(q_sa), shape (batch,)
+
+    # Full output-layer gradient: zero everywhere except the taken action column.
+    # SELF-HEAL (2026-09-01): the old code did `dq.reshape(1,-1).T` which produced
+    # (batch,1) and could not dot with w3.T (action_dim, hidden) — the DQN backprop
+    # ALWAYS crashed on the first training batch (training_steps stayed 0 forever).
+    # Build a (batch, action_dim) gradient that is zero except at the taken action.
+    action_dim = online_net.w3.shape[1]
+    dq_full = np.zeros((batch_size, action_dim), dtype=np.float64)
+    dq_full[np.arange(batch_size), actions] = dq
 
     # Backprop through output layer
     a2 = cache["a2"]
-    dw3 = np.dot(a2.T, dq.reshape(-1, 1))
-    db3 = np.sum(dq, axis=0)
-    da2 = np.dot(dq.reshape(1, -1).T if dq.ndim == 1 else dq, online_net.w3.T)
+    dw3 = np.dot(a2.T, dq_full)
+    db3 = np.sum(dq_full, axis=0)
+    da2 = np.dot(dq_full, online_net.w3.T)
 
     # Backprop through layer 2 (ReLU)
     z2 = cache["z2"]

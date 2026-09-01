@@ -2822,6 +2822,20 @@ class PDCALoop:
         # Resolve current bot_id for cost gate
         _cycle_bot_id = self._resolve_cost_gate_bot_id()
 
+        # ── SUBCONSCIOUS OBSERVE + TRAIN + DRIVE (per-cycle, SELF-HEAL 2026-09-01) ──
+        # The observe/train loop was trapped inside the one-time
+        # `_strategic_services_initialized` init block, so it ran ONCE per sidecar
+        # start then never again — the DQN recorded ~63 experiences and stopped
+        # (training_steps stayed 0). Relocated here (runs EVERY cycle, before any
+        # cost-mode/LLM gate) so the subconscious genuinely learns (observe ->
+        # replay -> train) and drives moment-to-moment once trained. This is the
+        # self-learning core of the three-tier mind.
+        if _cycle_bot_id:
+            try:
+                self._subconscious_observe_and_drive(_cycle_bot_id)
+            except Exception:
+                logger.debug("subconscious_observe_drive_failed bot=%s", _cycle_bot_id, exc_info=True)
+
         # ── PAST LAYER: long-term memory store on significant deltas ──
         # The bot must REMEMBER what happened (kills, deaths, EXP jumps, gear
         # changes) so the Conscious brain can see the past and act PREEMPTIVELY
@@ -7986,6 +8000,143 @@ class PDCALoop:
         except Exception:
             logger.exception("Failed to get latest snapshot")
         return None
+
+    def _subconscious_observe_and_drive(self, bot_id: str) -> None:
+        """Per-cycle subconscious observe + train + drive (SELF-HEAL 2026-09-01).
+
+        The observe/train loop was previously trapped inside the one-time
+        `_strategic_services_initialized` init block, so it ran ONCE per sidecar
+        start then never again — the DQN recorded ~63 experiences and stopped
+        (training_steps stayed 0). Relocated to the per-bot per-cycle path so the
+        subconscious genuinely learns (observe -> replay -> train) and drives
+        moment-to-moment once trained. This is the self-learning core of the
+        three-tier mind.
+
+        Iterates ALL bots that have a live snapshot (not just the rotated
+        `bot_id`) so a stale/disabled profile never starves the learner.
+        """
+        try:
+            _rl = getattr(self._runtime, "reinforcement_learner", None)
+            if _rl is None or not hasattr(_rl, "observe") or not hasattr(_rl, "encode_state"):
+                logger.info("subconscious_observe: learner missing (rl=%s)", _rl is not None)
+                return
+            _cache = getattr(self._runtime, "snapshot_cache", None)
+            if _cache is None:
+                logger.info("subconscious_observe: snapshot_cache missing")
+                return
+            # Iterate every bot with a live snapshot; fall back to the passed id.
+            _targets = []
+            try:
+                _ids = _cache.bot_ids() if hasattr(_cache, "bot_ids") else []
+                _targets = [str(i) for i in _ids]
+            except Exception as _ids_e:
+                logger.info("subconscious_observe: bot_ids failed: %s", _ids_e)
+                _targets = []
+            logger.info("subconscious_observe: targets=%s passed=%s", _targets, bot_id)
+            if not _targets:
+                _targets = [bot_id]
+            for _bid in _targets:
+                try:
+                    self._subconscious_observe_one(_rl, _cache, _bid)
+                except Exception as _one_e:
+                    logger.info("subconscious_observe_one_failed bot=%s: %s", _bid, _one_e)
+        except Exception as _rl_e:
+            logger.debug("reinforcement_learner_observe_skipped: %s", _rl_e)
+
+    def _subconscious_observe_one(self, _rl: object, _cache: object, bot_id: str) -> None:
+        """Observe + train + drive ONE bot's snapshot (shared by the per-cycle loop)."""
+        _snap = _cache.get(bot_id) if _cache is not None else None
+        if _snap is None:
+            return
+        _st = _rl.encode_state({
+            "hp": getattr(getattr(_snap, "vitals", None), "hp", 100) or 100,
+            "hp_max": getattr(getattr(_snap, "vitals", None), "hp_max", 100) or 100,
+            "base_level": getattr(getattr(_snap, "progression", None), "base_level", 1) or 1,
+            "zeny": getattr(getattr(_snap, "inventory", None), "zeny", 0) or 0,
+            "actors": max(0, len(getattr(_snap, "actors", None) or [])),
+            "party_size": 1,
+            "weight": getattr(getattr(_snap, "vitals", None), "weight", 0) or 0,
+            "death_recently": 1 if (getattr(_snap, "death_count", 0) or 0) > 0 else 0,
+        })
+        _reward = 0.0
+        _died_now = bool(getattr(_snap, "raw", None) and getattr(_snap.raw, "respawn_state", "") == "dead")
+        if _died_now:
+            _reward = -1.0
+        else:
+            # SELF-HEAL (2026-09-01): the reward gate used cumulative
+            # `death_count == 0`, so after the bot's FIRST death death_count
+            # stayed > 0 forever and the reward never returned to the
+            # positive-survival branch — observe() stopped firing and the DQN
+            # froze (training_steps stayed 0). Reward on the DELTA (died this
+            # cycle) instead: alive now => small positive, regardless of past
+            # deaths. This keeps the subconscious learning continuously.
+            _reward = 0.05  # small positive for surviving this cycle
+        logger.info("subconscious_observe_one: bot=%s died_now=%s reward=%s ever=%s",
+                    bot_id, _died_now, _reward, getattr(self._runtime, "_rl_ever_observed", False))
+        if _reward != 0.0 or not getattr(self._runtime, "_rl_ever_observed", False):
+            # CONSCIOUS -> SUBCONSCIOUS TRANSFER: learn the conscious's cold-start plan.
+            _cs_step = 0
+            try:
+                _hsvc = getattr(self._runtime, "heuristic_service", None)
+                if _hsvc is not None:
+                    _cs_map = getattr(_hsvc, "_cold_start_step", {}) or {}
+                    _cs_step = int(_cs_map.get(bot_id, 0) or 0)
+            except Exception:
+                _cs_step = 0
+            _observe_action = "farm"
+            if _reward < 0:
+                _observe_action = "rest"
+            elif _cs_step <= 1:
+                _observe_action = "buy_potions"
+            elif _cs_step >= 4:
+                _observe_action = "sell_items"
+            _rl.observe(_st, _observe_action, _reward, _st,
+                        done=_died_now,
+                        map_name=str(getattr(_snap, "map_name", "") or ""))
+            self._runtime._rl_ever_observed = True
+            # periodic train
+            _obs_n = getattr(self._runtime, "_rl_obs_count", 0) + 1
+            self._runtime._rl_obs_count = _obs_n
+            if _obs_n % 16 == 0 and hasattr(_rl, "_train_from_replay"):
+                try:
+                    _rl._train_from_replay()
+                except Exception:
+                    pass
+            # Subconscious behavior override (gated) — once trained, suggest a behavior.
+            try:
+                _rl_act = _rl.behavior_override(_st, min_experiences=40)
+                if _rl_act:
+                    _rl_cmd_map = {
+                        "farm": "attackAuto 3",
+                        "buy_potions": "buyAuto 1",
+                        "sell_items": "sellAuto 1",
+                        "level_skill": "stat_add 1 1",
+                        "rest": "sit",
+                        "socialize": "party 1",
+                        "upgrade_gear": "storageAuto 1",
+                    }
+                    _rl_cmd = _rl_cmd_map.get(_rl_act)
+                    if _rl_cmd and hasattr(self._runtime, "action_queue"):
+                        from datetime import UTC, datetime as _dt, timedelta
+                        from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                        self._runtime.action_queue.enqueue(
+                            bot_id,
+                            _AP(
+                                action_id=f"rl-{int(_dt.now(UTC).timestamp())}",
+                                kind="command",
+                                command=_rl_cmd,
+                                conflict_key="",
+                                priority_tier=_APT.strategic,
+                                source="subconscious_rl",
+                                created_at=_dt.now(UTC),
+                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                                idempotency_key=f"rl-{_rl_act}",
+                            ),
+                        )
+                        logger.info("subconscious_behavior_override bot=%s action=%s cmd=%s",
+                                    bot_id, _rl_act, _rl_cmd)
+            except Exception as _rl_bo:
+                logger.debug("subconscious_behavior_override_skipped: %s", _rl_bo)
 
     async def _generate_plan(
         self,
