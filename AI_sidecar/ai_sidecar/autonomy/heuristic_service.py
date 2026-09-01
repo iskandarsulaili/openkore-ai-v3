@@ -2871,11 +2871,25 @@ class HeuristicService:
                             _eq_results = self._equipment_optimizer.assess(signals, bot_id=_bot_id)
                             if _eq_results:
                                 for _eq in _eq_results[:3]:
-                                    _actions.append(HeuristicAction(
-                                        kind="command", command=str(_eq),
-                                        confidence=0.7, domain="equipment",
-                                        reason="Equipment optimizer recommendation",
-                                    ))
+                                    # AGNOSTIC: the optimizer returns dicts with a real
+                                    # `command` field (upgrade/slot/repair) OR a
+                                    # recommendation (optimize/auto_swap/loadout). Emit the
+                                    # real command when present; otherwise emit a log intent
+                                    # so the recommendation is observable, never a raw
+                                    # str(dict) (which is NOT a valid OpenKore command).
+                                    _eq_cmd = str(_eq.get("command", "") or "").strip()
+                                    if _eq_cmd:
+                                        _actions.append(HeuristicAction(
+                                            kind="command", command=_eq_cmd,
+                                            confidence=0.7, domain="equipment",
+                                            reason=str(_eq.get("reason", "Equipment optimizer recommendation")),
+                                        ))
+                                    else:
+                                        _actions.append(HeuristicAction(
+                                            kind="log", command=f"equipment_advice:{_eq.get('type','')}",
+                                            confidence=0.5, domain="equipment",
+                                            reason=str(_eq.get("reason", "Equipment optimizer recommendation")),
+                                        ))
                         except Exception:
                             pass
                     if self._goal_manager and self._task_scheduler:
@@ -5641,18 +5655,19 @@ class HeuristicService:
                         confidence=0.80, domain="economy",
                         reason=f"Weight cap in {_time_to_cap:.0f} min - skip low-value drops",
                     ))
-                # EQUIPMENT PROGRESSION: check if bot should upgrade weapon — AGNOSTIC
-                # (RULE.md): use the DB-backed gear planner, never hardcoded IDs.
-                _best_weapon = None
+                # EQUIPMENT PROGRESSION: check if bot should upgrade ANY gear slot —
+                # AGNOSTIC (RULE.md): use the DB-backed gear planner (covers all 8
+                # slots + cards + refine), never hardcoded IDs.
+                _best_gear = None
                 try:
                     from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                     _gpp_eq = get_gear_progression_planner()
                     _eq_plan = _gpp_eq.get_best_upgrade(base_level, zeny)
-                    if _eq_plan is not None and _eq_plan.slot_name == "weapon" and _eq_plan.is_affordable:
-                        _best_weapon = (_eq_plan.target_item, _eq_plan.reason or "")
+                    if _eq_plan is not None and _eq_plan.is_affordable:
+                        _best_gear = (_eq_plan.slot_name, _eq_plan.target_item, _eq_plan.reason or "")
                 except Exception:
                     pass
-                if _best_weapon and zeny >= 100 and _hunt_duration > 60 and _total_kills > 5:
+                if _best_gear and zeny >= 100 and _hunt_duration > 60 and _total_kills > 5:
                     # Check if we have enough zeny and have been hunting long enough
                     # The actual buy happens in WEAPON_BUY state when in town
                     pass  # Will trigger WEAPON_BUY on next town visit
