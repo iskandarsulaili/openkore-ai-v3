@@ -362,8 +362,10 @@ def _class_stat_allocation(
             if remaining <= 0:
                 break
             current = current_stats.get(stat_name, 1)
-            # Find nearest breakpoint
-            bp, needed = adaptive.get_nearest_breakpoint(stat_name, current)
+            # Find nearest breakpoint (returns (bp_value, bp_description) — the
+            # 2nd element is a str label, NOT the points needed).
+            bp, _ = adaptive.get_nearest_breakpoint(stat_name, current)
+            needed = max(0, int(bp) - int(current))
             if needed > 0:
                 add = min(needed, remaining)
                 if add > 0:
