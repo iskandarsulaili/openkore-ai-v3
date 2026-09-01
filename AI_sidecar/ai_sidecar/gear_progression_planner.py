@@ -96,6 +96,10 @@ class GearProgressionPlanner:
                     continue
                 atk = int(w.get("Attack", 0) or 0)
                 matk = int(w.get("MagicAttack", 0) or 0)
+                # AGNOSTIC: capture the item's job-eligibility flags so the plan
+                # can be filtered by the bot's actual job (a Mage must not be
+                # told to buy a Sword). Jobs.All = usable by every class.
+                _job_flags = {k.split(".", 1)[1] for k, v in w.items() if k.startswith("Jobs.") and v}
                 weapon_paths.append({
                     "item": w.get("Name", "") or w.get("AegisName", ""),
                     "refine": min(10, max(4, equip_min // 10)),
@@ -103,6 +107,7 @@ class GearProgressionPlanner:
                     "level": equip_min,
                     "atk": atk,
                     "matk": matk,
+                    "jobs": _job_flags,
                     # efficiency-aware: ATK(+MATK) per zeny — picks the best-value weapon
                     "score": (atk + matk) / max(buy_price, 1) * 1000.0,
                 })
@@ -223,14 +228,30 @@ class GearProgressionPlanner:
                 self._slots[slot].current_refine = refine
                 self._slots[slot].current_cards = cards or []
 
-    def generate_plan(self, level: int, budget: int) -> list[UpgradePlan]:
-        """Generate an upgrade plan based on current level and budget."""
+    def generate_plan(self, level: int, budget: int, job: str = "") -> list[UpgradePlan]:
+        """Generate an upgrade plan based on current level and budget.
+
+        AGNOSTIC (RULE.md): when a job is given, only recommend items the bot's
+        job can actually equip (a Mage must not be told to buy a Sword). Items
+        with no job flags (or Jobs.All/Jobs.Novice) are usable by everyone.
+        """
+        _job = (job or "").strip().lower()
         with self._lock:
             plans: list[UpgradePlan] = []
             for slot_name, slot in self._slots.items():
                 path = self.UPGRADE_PATHS.get(slot_name, [])
                 for step in path:
                     if step["level"] <= level and step["cost"] <= budget:
+                        # Job-eligibility filter (weapons carry a 'jobs' set).
+                        # AGNOSTIC: only Jobs.All means usable by every class.
+                        # Jobs.Novice means ONLY the Novice class can equip it
+                        # (a Mage must not be told to buy a Novice-only Sword).
+                        _step_jobs = step.get("jobs")
+                        if _step_jobs and _job:
+                            _step_jobs_l = {j.lower() for j in _step_jobs}
+                            _usable = ("all" in _step_jobs_l) or (_job in _step_jobs_l)
+                            if not _usable:
+                                continue
                         if slot.current_item != step["item"] or slot.current_refine < step["refine"]:
                             # efficiency-aware benefit text: show the stat the item gives
                             if slot_name == "weapon":
@@ -253,9 +274,9 @@ class GearProgressionPlanner:
             self._plans = plans
             return plans
 
-    def get_best_upgrade(self, level: int, budget: int) -> UpgradePlan | None:
-        """Get the best affordable upgrade."""
-        plans = self.generate_plan(level, budget)
+    def get_best_upgrade(self, level: int, budget: int, job: str = "") -> UpgradePlan | None:
+        """Get the best affordable upgrade (job-aware when a job is given)."""
+        plans = self.generate_plan(level, budget, job=job)
         affordable = [p for p in plans if p.is_affordable]
         return affordable[0] if affordable else None
 

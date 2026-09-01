@@ -817,7 +817,7 @@ class AdaptiveDataStore:
             from ai_sidecar.gear_progression_planner import get_gear_progression_planner
             from ai_sidecar.knowledge_loader import get_weapons
             _gpp = get_gear_progression_planner()
-            _plan = _gpp.get_best_upgrade(base_level, zeny)
+            _plan = _gpp.get_best_upgrade(base_level, zeny, job=job_name)
             if _plan is not None and _plan.slot_name == "weapon" and _plan.is_affordable:
                 for _w in get_weapons():
                     _wn = str(_w.get("Name", "") or _w.get("AegisName", "")).lower()
@@ -3462,7 +3462,7 @@ class HeuristicService:
                 try:
                     from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                     _gpp_cs2 = get_gear_progression_planner()
-                    _cs2_plan = _gpp_cs2.get_best_upgrade(base_level, zeny)
+                    _cs2_plan = _gpp_cs2.get_best_upgrade(base_level, zeny, job=job_name)
                     if _cs2_plan is not None and _cs2_plan.slot_name == "weapon" and _cs2_plan.is_affordable:
                         from ai_sidecar.knowledge_loader import get_weapons
                         for _w_cs2 in get_weapons():
@@ -4084,7 +4084,8 @@ class HeuristicService:
                         try:
                             from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                             _tw_plan = get_gear_progression_planner().get_best_upgrade(
-                                int(signals.get("base_level", 1) or 1), _audit_zeny
+                                int(signals.get("base_level", 1) or 1), _audit_zeny,
+                                job=str(signals.get("job_name", "") or ""),
                             )
                             if _tw_plan is not None and _tw_plan.slot_name == "weapon" and _tw_plan.is_affordable:
                                 _tw_w = str(_tw_plan.item_name or _tw_plan.item_id or "")
@@ -4556,7 +4557,7 @@ class HeuristicService:
             try:
                 from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                 _gpp_cs = get_gear_progression_planner()
-                _cs_plan = _gpp_cs.get_best_upgrade(base_level, _cs_zeny)
+                _cs_plan = _gpp_cs.get_best_upgrade(base_level, _cs_zeny, job=_cs_job)
                 if _cs_plan is not None and _cs_plan.slot_name == "weapon" and _cs_plan.is_affordable:
                     # resolve the chosen item's real ID from the knowledge DB (by name)
                     from ai_sidecar.knowledge_loader import get_weapons
@@ -4712,7 +4713,7 @@ class HeuristicService:
                 try:
                     from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                     _gpp_d = get_gear_progression_planner()
-                    _d_plan = _gpp_d.get_best_upgrade(base_level, _death_zeny)
+                    _d_plan = _gpp_d.get_best_upgrade(base_level, _death_zeny, job=_death_job)
                     if _d_plan is not None and _d_plan.slot_name == "weapon" and _d_plan.is_affordable:
                         from ai_sidecar.knowledge_loader import get_weapons
                         for _w_d in get_weapons():
@@ -4945,7 +4946,7 @@ class HeuristicService:
                 try:
                     from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                     _gpp_wb = get_gear_progression_planner()
-                    _wb_plan = _gpp_wb.get_best_upgrade(base_level, zeny)
+                    _wb_plan = _gpp_wb.get_best_upgrade(base_level, zeny, job=job_name)
                     if _wb_plan is not None and _wb_plan.slot_name == "weapon" and _wb_plan.is_affordable:
                         from ai_sidecar.knowledge_loader import get_weapons
                         for _w_wb in get_weapons():
@@ -5662,7 +5663,7 @@ class HeuristicService:
                 try:
                     from ai_sidecar.gear_progression_planner import get_gear_progression_planner
                     _gpp_eq = get_gear_progression_planner()
-                    _eq_plan = _gpp_eq.get_best_upgrade(base_level, zeny)
+                    _eq_plan = _gpp_eq.get_best_upgrade(base_level, zeny, job=job_name)
                     if _eq_plan is not None and _eq_plan.is_affordable:
                         _best_gear = (_eq_plan.slot_name, _eq_plan.target_item, _eq_plan.reason or "")
                 except Exception:
