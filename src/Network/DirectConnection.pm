@@ -675,12 +675,34 @@ sub checkConnection {
 			# over it. The learned 23-byte form (account@2) is the exact bytes
 			# the real client sends; blind rotation would fight it. Only rotate
 			# on cold-start (no learned layout yet).
+			# SELF-HEAL (2026-09-01): a LEARNED layout can go STALE when the
+			# server binary is rebuilt to a different 0x0436 length (the running
+			# map-server changed 23->19 mid-deploy). A stale learned layout that
+			# is never invalidated = permanent map-login rejection loop. So a
+			# learned layout is authoritative ONLY while it keeps landing; after
+			# MAPLOGIN_STALE_THRESHOLD consecutive failures it is cleared and
+			# rotation resumes (the bot re-learns the live form). This keeps the
+			# learned-layout preference AND self-heals a server-side change.
 			my @_order = (19, 23, 26);
 			my $_cur = defined($config{mapLoginLength}) ? $config{mapLoginLength} : 23;
 			my $_next = $_cur;
-			if (!$config{mapLoginLayout}) {
-				# Rotate to the NEXT in the cycle (19 -> 23 -> 26 -> 19), not the
-				# first-that-differs — that would bounce between two forms forever.
+			my $_stale_threshold = 3; # consecutive map-login failures before a learned layout is invalidated
+			if ($config{mapLoginLayout}) {
+				# Learned layout present: count consecutive failures. If it keeps
+				# failing, the server changed — clear the stale layout + length
+				# so the rotation below re-probes from scratch.
+				$config{_mapLoginStaleCount} = ($config{_mapLoginStaleCount} || 0) + 1;
+				if ($config{_mapLoginStaleCount} >= $_stale_threshold) {
+					message TF("Map-login auto-adapt: learned layout stale after %d failures — clearing, re-probing live form\n", $config{_mapLoginStaleCount}), "connection";
+					delete $config{mapLoginLayout};
+					delete $config{mapLoginLength};
+					delete $config{_mapLoginStaleCount};
+					$_cur = 23; # restart the probe cycle at the default
+				}
+			} else {
+				# No learned layout (or just cleared): rotate to the NEXT in the
+				# cycle (19 -> 23 -> 26 -> 19), not the first-that-differs — that
+				# would bounce between two forms forever.
 				for my $_i (0 .. $#_order) {
 					if ($_order[$_i] == $_cur) {
 						$_next = $_order[($_i + 1) % @_order];
