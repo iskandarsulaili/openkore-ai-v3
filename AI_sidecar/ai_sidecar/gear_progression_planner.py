@@ -63,8 +63,13 @@ class GearProgressionPlanner:
         paths: dict[str, list[dict]] = {}
         try:
             from ai_sidecar.knowledge_loader import get_weapons, get_armors
+            from ai_sidecar.buyable_items import get_buyable_items
             weapons = get_weapons()
             armors = get_armors()
+            # AGNOSTIC (RULE.md): only recommend items the server's NPC shops
+            # actually sell. The item DB alone cannot distinguish buyable from
+            # event/rare rewards (event items have Buy=10 but no shop sells them).
+            buyable = get_buyable_items()
 
             # ── Weapon paths ──
             weapon_paths = []
@@ -83,6 +88,9 @@ class GearProgressionPlanner:
                 # these keeps the plan to genuinely-purchasable gear (agnostic: the
                 # floor excludes the event-price class, not any specific item).
                 if buy_price < 10:
+                    continue
+                # AGNOSTIC: only recommend items the server's shops actually sell.
+                if buyable and int(w.get("Id", 0) or 0) not in buyable:
                     continue
                 if not (w.get("Locations.Right_Hand") or w.get("Locations.Both_Hand")):
                     continue
@@ -125,6 +133,9 @@ class GearProgressionPlanner:
                 buy_price = int(a.get("Buy", 0) or 0)
                 # price floor — exclude 1z event/rare reward items (not NPC-buyable)
                 if buy_price < 10:
+                    continue
+                # AGNOSTIC: only recommend items the server's shops actually sell.
+                if buyable and int(a.get("Id", 0) or 0) not in buyable:
                     continue
                 defense = int(a.get("Defense", 0) or 0)
                 for flag, slot, stat in slot_map:
