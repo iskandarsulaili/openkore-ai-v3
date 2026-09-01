@@ -47,7 +47,18 @@
 
 ## Verification
 - [x] All modules import clean
-- [x] Bot farms continuously (0 assess() crashes since 20:07 restart, CPU 70% down from 100%+)
+- [x] Bot farms continuously (0 assess() crashes since 20:26 restart, CPU 70% down from 100%+)
 - [x] No hardcoded per-server literals in live decision paths (grep sweep)
 - [x] Benchmark: loop latency 6-8s (was 75-90s), potion = DB-backed Red 501
 - [x] List all enabled commands for normal user/player on website
+
+## Round 2 — Adversarial sweep (2026-09-01, commits ac07026ab..efa1ffcf8)
+- [x] get_optimal_weapon fallback → DB gear planner (was hardcoded equipment_progression)
+- [x] cold-start step-2 last-resort weapon → cheapest buyable from knowledge DB (was hardcoded 1201)
+- [x] equipment-progression upgrade check → DB gear planner
+- [x] weapon-latch → resolve item type from knowledge DB by ID (was hardcoded weapon-ID list)
+- [x] equipment_progression/loot_values/SELLABLE_JUNK dicts now dead (0 refs)
+- [x] pdca_loop.py: 6 town-map tuples + field-prefix routing → DB _is_city_map + real spawn maps
+- [x] pro_ro_player_agent job-change fallback town → cities.txt (was hardcoded prontera)
+- [x] buyable_items wired at 4 sites, gear planner returns buyable Orcish Sword
+- [x] Sidecar restarted 20:26, 0 crashes, bot farming
