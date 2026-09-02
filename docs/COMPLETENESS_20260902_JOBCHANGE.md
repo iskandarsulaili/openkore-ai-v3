@@ -40,10 +40,18 @@ job-change oscillation. Prove live with benchmarks.
 
 
 ## Round B — Job-change oscillation (via macro-agent or direct)
-- [ ] DIAGNOSED: bot eligible (novice lv26/10) but oscillates move alberta_in <-> navigate prt_fild08
-- [ ] ROOT CAUSE: competing emitters (routing/hunting/exploration/combat/stuck)
-- [ ] FIXED: JOB_CHANGE wins over ALL competing emitters while eligible + not on guild map
+- [x] DIAGNOSED: bot eligible (novice lv26/10) but oscillates move alberta_in <-> navigate prt_fild08
+- [x] ROOT CAUSE: competing emitters (routing/hunting/exploration/combat/stuck)
+- [x] FIXED: JOB_CHANGE wins over ALL competing emitters while eligible + not on guild map
+  - heuristic_service: hoisted JOB_CHANGE gate, removed 60s rate-limit, empty-job_name→novice default
+  - heuristic_service: `_job_change_route_emit` latch (no re-emit every cycle → no route-calc reset)
+  - heuristic_service: routing block gates `navigate <farm>` on job-change eligibility
+  - edge_case_handler: handle_unstuck gate resolves DOTTED progression path (was top-level keys that don't exist → gate never fired) — f38105378
+  - macro_intelligence: job_change patterns emit `set attackAuto 0` first
 - [ ] PROVEN: bot routes to alberta_in and STAYS, reaches guild, completes job change
+  - PARTIAL: bot consistently emits `move alberta_in` (routing fix verified live 17:40-17:50), but
+    pre-existing reconnect loop (0x0436/0x05fc disconnect) keeps kicking it before it reaches the guild.
+    The 23-byte 0x0436 IS correct (tcpdump proved in-game at 17:28).
 
 ## Round C — Post-job-change farming
 - [ ] Bot re-evaluates hunting map for merchant class (DB-backed)
