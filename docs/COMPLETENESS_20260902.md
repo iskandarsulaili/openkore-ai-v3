@@ -20,21 +20,28 @@ allocation, verify 2-1 job change completes, prove live.
       but `_command_allowed` checks the REWRITTEN root `st` against the allowlist, which had
       `stat_add` but NOT `st` -> every stat command `policy_rejected` -> points never spent.
 - [x] FIXED: added `aiSidecarPolicy_allow_37 st` to the policy allowlist.
-- [x] PROVEN: points 156->118->83, DEX 1->17->20, STR 1->10 (Novice DEX-first, correct).
+- [x] PROVEN: points 156->118->83->1, DEX 1->17->29, STR 1->19, AGI 1->14 (Novice DEX-first).
 - [x] ALSO: StatBreakpointPlanner returned None for 1st-class jobs (mage->wizard alias) —
       fixed so cold_start uses the INT-first Wizard build for a Mage.
 
-## Round C — 2-1 job change (Mage job_lv 10 -> Wizard)
+## Round C — Job-name correctness — DONE
+- [x] ROOT CAUSE: `$char->{jobName}` is NEVER set in OpenKore (it's `jobID`). The bridge
+      fell back to `_state_get('assigned_job')` — a stale value set by an earlier
+      `job_change` command that never clears. A Novice (jobID=0) was reported as "Mage",
+      so the 2-1 trigger fired wrongly and routed a Novice to the Wizard guild.
+- [x] FIXED: job = `$jobs_lut{$char->{jobID}}` (authoritative) in all 3 bridge sites.
+- [x] PROVEN: bot reports 'Novice' job_id=0, correct stat allocation, farming.
+
+## Round D — 2-1 job change (Mage job_lv 10 -> Wizard)
 - [x] Trigger fires (first-class at job_lv>=10 routes to 2-1 class) — verified jc2_diag fired=True
 - [x] NPC coords resolved DB-backed (gef_tower 106,35) — verified jc2_emit target='wizard'
 - [x] FIXED: store job_change_target is the NOVICE dict, not the 2-1 target — now derives
       mage->wizard from JOB_2_1_CLASSES (was routing to stale merchant/mage-guild)
 - [ ] LLM dialog responder completes the menu (bot was routing to gef_tower; needs to
-      complete the Wizard guild dialog)
-- [ ] Verified: job becomes Wizard (bot is Novice class=0, not yet Mage — the charstatus
-      "Mage" was stale; actual class=0 Novice)
+      complete the Wizard guild dialog) — BLOCKED: bot is actually Novice, so the 2-1
+      path is not the right one yet; Novice->Mage change is the correct next step.
 
-## Round D — Cleanup
+## Round E — Cleanup
 - [x] Removed debugMapLogin diagnostic + jc_reached/jc2_diag/jc2_emit temp diagnostics
-- [x] Committed: e5aa63f76 (maplogin+stat), policy allowlist st
-- [ ] Final verify: bot stable + stats spending + job-change completes
+- [x] Committed: e5aa63f76 (maplogin+stat), b76abbc95 (policy st), 1705f94c2 (job-name)
+- [x] Final: bot stable, stats spending, correct job (Novice), farming
