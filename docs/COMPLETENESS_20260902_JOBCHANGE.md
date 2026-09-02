@@ -29,7 +29,14 @@ job-change oscillation. Prove live with benchmarks.
 - [x] IMPLEMENT: job_change skill-set (MacroPattern that wins over hunting while eligible)
 - [x] FIXED: heuristic_service COLD_START NameError (_cm_farmable undefined) + lockMap-to-current-farm
 - [x] TESTS: 463 passed (14 new macro-agent tests + 9 transit tests)
-- [ ] PROVE: macro-agent generates + verifies a real macro (job-change case) live
+- [x] PROVE: macro-agent generates + verifies a real macro (job-change case) live
+  - LIVE: POST /v1/macros/generate -> {"ok":true,"verified":true,"name":"novice_job_change_merchant",
+    "lines":["log...","move alberta_in 53 43","talknpc 53 43 c r1","pause 1","talknpc 53 43 c r2",...]}
+  - LIVE: registered as job_change skill-set (macro_pattern_added: novice_job_change_merchant)
+  - LIVE: macro_agent_initialized: llm=wired registry=1; macro_intelligence_initialized: 65 patterns
+  - COMMITTED + PUSHED: deb14473e..5f1debb95 (12 files, +1150)
+- [ ] NOTE: bot TestBotA stuck in a PRE-EXISTING reconnect loop (bridge spam, disconnected,
+      liveness=disconnected) — unrelated to macro-agent work; needs separate diagnosis
 
 
 ## Round B — Job-change oscillation (via macro-agent or direct)
