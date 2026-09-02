@@ -30,6 +30,14 @@ class ProgressionDomain(BaseDomain):
     name: str = "progression"
     priority: int = 30
 
+    # LATCH (2026-09-02): job-change route emit — the progression domain's
+    # _handle_job_change emits `move <guild>` EVERY cycle (a SEPARATE emitter
+    # from the heuristic's _job_change_route_emit latch). Re-emitting resets the
+    # expensive (~900-step) route calc before the walk starts -> route-calc loop
+    # (observed live: "Calculating route to: Inside Alberta" repeats forever).
+    # Emit at most once per 10s per bot so the route calc completes.
+    _job_change_route_emit: dict[str, float] = {}
+
     # Post-job-change hunt maps per class
     JOB_HUNT_MAPS: dict[str, str] = {
         "acolyte": "pay_fild01",
@@ -504,34 +512,44 @@ class ProgressionDomain(BaseDomain):
             confidence=0.95, domain="progression",
             reason="Stand up before walking to job change NPC",
         ))
-        if map_name != _jc_npc_map:
-            actions.append(HeuristicAction(
-                kind="command", command=f"move {_jc_npc_map}",
-                confidence=0.95, domain="progression",
-                reason=f"Move to {_jc_npc_map} for job change to {_jc_target_class}",
-            ))
-        else:
-            actions.append(HeuristicAction(
-                kind="command", command=f"move {_jc_npc_x} {_jc_npc_y}",
-                confidence=0.95, domain="progression",
-                reason=f"Walk to job change NPC for {_jc_target_class}",
-            ))
-            for _idx, _cmd in enumerate(_jc_talk_seq):
-                _conf = max(0.70, 0.95 - (_idx * 0.03))
+        # LATCH (2026-09-02): emit the guild move at most once per 10s per bot.
+        # Re-emitting every cycle resets the expensive route calc before the walk
+        # starts -> route-calc loop (observed live). The latch key includes the
+        # target map so a map change re-arms it.
+        import time as _t
+        _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"
+        _jc_now = _t.time()
+        _jc_last = self._job_change_route_emit.get(_jc_lk, 0.0)
+        if _jc_now - _jc_last >= 10.0:
+            self._job_change_route_emit[_jc_lk] = _jc_now
+            if map_name != _jc_npc_map:
                 actions.append(HeuristicAction(
-                    kind="command", command=_cmd,
-                    confidence=_conf, domain="progression",
-                    reason=f"Job change dialog step {_idx+1}: {_jc_target_class}",
+                    kind="command", command=f"move {_jc_npc_map}",
+                    confidence=0.95, domain="progression",
+                    reason=f"Move to {_jc_npc_map} for job change to {_jc_target_class}",
                 ))
-            # Post-job-change cleanup
-            service._last_mon_control_map[bot_id] = ""
-            service._last_lockmap[bot_id] = ""
-            service._cold_start_step[bot_id] = 4
-            service._post_job_change_reset[bot_id] = True
-            logger.info(
-                "[job_change] %s: sequence sent for %s",
-                bot_id, _jc_target_class,
-            )
+            else:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_jc_npc_x} {_jc_npc_y}",
+                    confidence=0.95, domain="progression",
+                    reason=f"Walk to job change NPC for {_jc_target_class}",
+                ))
+                for _idx, _cmd in enumerate(_jc_talk_seq):
+                    _conf = max(0.70, 0.95 - (_idx * 0.03))
+                    actions.append(HeuristicAction(
+                        kind="command", command=_cmd,
+                        confidence=_conf, domain="progression",
+                        reason=f"Job change dialog step {_idx+1}: {_jc_target_class}",
+                    ))
+                # Post-job-change cleanup
+                service._last_mon_control_map[bot_id] = ""
+                service._last_lockmap[bot_id] = ""
+                service._cold_start_step[bot_id] = 4
+                service._post_job_change_reset[bot_id] = True
+                logger.info(
+                    "[job_change] %s: sequence sent for %s",
+                    bot_id, _jc_target_class,
+                )
 
     # ── STATS ───────────────────────────────────────────────────────────
 
