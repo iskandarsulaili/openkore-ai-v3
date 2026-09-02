@@ -48,10 +48,14 @@ job-change oscillation. Prove live with benchmarks.
   - heuristic_service: routing block gates `navigate <farm>` on job-change eligibility
   - edge_case_handler: handle_unstuck gate resolves DOTTED progression path (was top-level keys that don't exist → gate never fired) — f38105378
   - macro_intelligence: job_change patterns emit `set attackAuto 0` first
-- [ ] PROVEN: bot routes to alberta_in and STAYS, reaches guild, completes job change
-  - PARTIAL: bot consistently emits `move alberta_in` (routing fix verified live 17:40-17:50), but
-    pre-existing reconnect loop (0x0436/0x05fc disconnect) keeps kicking it before it reaches the guild.
-    The 23-byte 0x0436 IS correct (tcpdump proved in-game at 17:28).
+  - heuristic_service: `str(signals.get("job_name") or "novice")` — empty job_name (bridge doesn't populate it) now = novice → state=JOB_CHANGE → combat gated → bot WALKS (was HUNT → fought) — 193b4f01c
+  - domains/progression.py: removed hardcoded `archer` target (RULE.md violation) → reads LLM-decided server_solutions target agnostically — 193b4f01c
+  - domains/progression.py + heuristic JOB_CHANGE handler: 10s latch on guild move (route-calc reset) — 78c5bfbd5
+- [ ] PROVEN: bot routes to guild and STAYS, reaches guild, completes job change
+  - PARTIAL: bot now in JOB_CHANGE state + WALKING (verified 19:0x, moving 357→346 toward geffen_in).
+    Remaining blocker: route-calc loop to geffen_in (izlude→geffen is a long multi-map route the
+    pathfinder re-calculates) + pre-existing reconnect loop (0x0436/0x05fc disconnect). The 23-byte
+    0x0436 IS correct (tcpdump proved in-game at 17:28).
 
 ## Round C — Post-job-change farming
 - [ ] Bot re-evaluates hunting map for merchant class (DB-backed)
