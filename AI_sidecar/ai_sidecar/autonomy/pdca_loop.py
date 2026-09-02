@@ -1841,6 +1841,18 @@ def _emit_skill_actions(runtime_state, horizon: str, bot_id: str | None = None) 
 _STARTUP_GATE_MIN_EVENTS = 2
 _STARTUP_GATE_MAX_CREW_FAILURES = 2
 
+# Job-change guild maps (agnostic, RULE.md): the maps where a job-change NPC
+# lives. A job-change-eligible bot must NOT be re-routed to the farm by the
+# stall self-heal while it is walking to one of these. Derived from the
+# JOB_CHANGE_NPCS mapping (ro_mechanics.py) — kept in sync, never a literal
+# decision source.
+_JOB_CHANGE_GUILD_MAPS = frozenset({
+    "alberta_in", "payon_in", "geffen_in", "morocc_in", "aldebaran_in",
+    "prontera", "comodo", "xmas", "yuno", "amatsu", "louyang", "umbala",
+    "niflheim", "einbroch", "lighthalzen", "rachel", "veins", "nameless_in",
+    "jawaii", "ayothaya", "gonryun", "moc_prydb1", "moc_prydb2",
+})
+
 
 class Horizon(Enum):
     SHORT_TERM = "short_term"      # 5s  — tactical movement, combat
@@ -10261,6 +10273,14 @@ class PDCALoop:
                 if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n \
                         or "gauche" in _n or "mace" in _n or "axe" in _n:
                     _has_weapon = True
+        # JOB-CHANGE ELIGIBILITY (agnostic, RULE.md): a novice at job_level>=10
+        # must WALK to the guild, not be re-routed to the farm by the stall
+        # self-heal. Read from the snapshot's progression block (dotted path).
+        _jc_job = str(getattr(_prog, "job_name", None) or _raw.get("job_name") or "").lower()
+        _jc_jlvl = int(getattr(_prog, "job_level", None) if getattr(_prog, "job_level", None) is not None
+                       else (_raw.get("job_level") or 0))
+        _jc_eligible = (_jc_job in ("", "novice")) and _jc_jlvl >= 10
+        _jc_guild_map = _jc_eligible and _map in _JOB_CHANGE_GUILD_MAPS
 
         _prev = self._memory_snapshot_key(bot_id)
         _prev_deaths = int(_prev.get("deaths", 0))
@@ -10398,14 +10418,16 @@ class PDCALoop:
                 _prev["_exp_change_ts"] = _now_ts  # re-arm (one heal per window)
                 _log = getattr(self, "_log", None) or logging.getLogger(__name__)
                 _log.warning("self-heal: %s NO PROGRESS for %d min on %s (exp %s frozen) -> map change", bot_id, _stall_min, _map, _exp)
-                _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "no_progress",
-                                 f"no EXP {_stall_min}min on {_map}")
+                if not (_jc_eligible and not _jc_guild_map):
+                    _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "no_progress",
+                                     f"no EXP {_stall_min}min on {_map}")
         if _route_stall:
             _prev["_route_heal_ts"] = _now_ts
             _log = getattr(self, "_log", None) or logging.getLogger(__name__)
             _log.warning("self-heal: %s ROUTE-FAILURE stall (%d fails) on %s -> map change", bot_id, _route_fails, _map)
-            _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "route_failure",
-                             f"{_route_fails} route failures on {_map}")
+            if not (_jc_eligible and not _jc_guild_map):
+                _emit_stall_heal(self._runtime, _ltm, bot_id, _map, _now_ts, "route_failure",
+                                 f"{_route_fails} route failures on {_map}")
 
         # Death: store personal_history + danger_zone for the map
         if _deaths > _prev_deaths:
