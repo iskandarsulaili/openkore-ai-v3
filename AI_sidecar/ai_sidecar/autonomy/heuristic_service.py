@@ -5412,20 +5412,21 @@ class HeuristicService:
                 # before the walk starts -> route-calc loop (observed live:
                 # "Calculating route to: Inside Alberta" repeats forever).
                 # COMBAT GATE (2026-09-02): a job-change bot must WALK to the
-                # guild, NOT fight on the field — attackAuto is still 3 from
-                # earlier farming, so the low-HP novice attacks monsters en
-                # route and dies (observed live: died on prt_fild08 attacking
-                # Poring/Lunatic/Fabre while walking to alberta). Emit
-                # `set attackAuto 0` once so the walk is uninterrupted.
+                # guild, NOT chase monsters — but it MUST defend itself when
+                # attacked (attackAuto 0 = never fight back -> the low-HP novice
+                # just takes hits from swarming field mobs and dies en route,
+                # observed live). attackAuto 1 = fight back when attacked, no
+                # chasing. This clears aggro while walking without diverting the
+                # route.
                 _jc_s_lk = f"job_change_state:{bot_id}:{_jc_npc_map}"
                 _jc_s_now = __import__("time").time()
                 _jc_s_last = self._job_change_route_emit.get(_jc_s_lk, 0.0)
                 if _jc_s_now - _jc_s_last >= 10.0:
                     self._job_change_route_emit[_jc_s_lk] = _jc_s_now
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 0",
+                        kind="command", command="set attackAuto 1",
                         confidence=0.95, domain="progression",
-                        reason="Job change - disable combat while walking to guild",
+                        reason="Job change - defend-only combat while walking to guild",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_jc_npc_map}",
