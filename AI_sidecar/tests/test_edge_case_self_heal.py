@@ -190,3 +190,28 @@ def test_unstuck_none_position_no_crash() -> None:
     # position with valid coords still works
     edge.handle_unstuck("b4", {"position": {"x": 10, "y": 20}, "map": "prt_fild05"})
     assert True  # no exception raised
+
+
+def test_unstuck_gate_dotted_progression_job_change() -> None:
+    """A Novice at job_level>=10 (job change pending) must NOT get an unstuck
+    hunting move — the guild move wins. The snapshot carries progression under
+    DOTTED paths (`progression.job_name`/`progression.job_level`), which the
+    gate must resolve (top-level `job`/`job_level` keys don't exist)."""
+    edge = EdgeCaseHandler(unstuck_timeout_s=1)
+    # Dotted-path snapshot (the real enriched form) — gate must fire
+    snap = {
+        "progression": {"job_name": "novice", "job_level": 10},
+        "position": {"x": 10, "y": 20},
+        "map": "prt_fild05",
+    }
+    assert edge.handle_unstuck("b4", snap) is None, "dotted-path novice gate must block unstuck"
+    # Top-level fallback keys still work
+    snap2 = {"job": "novice", "job_level": 10, "position": {"x": 10, "y": 20}, "map": "prt_fild05"}
+    assert edge.handle_unstuck("b4", snap2) is None, "top-level novice gate must block unstuck"
+    # A non-eligible bot (novice job_level<5) still gets unstuck (needs 2 calls:
+    # first sets prev_pos, second with same pos + timeout triggers the move)
+    snap3 = {"progression": {"job_name": "novice", "job_level": 5}, "position": {"x": 10, "y": 20}, "map": "prt_fild05"}
+    edge.handle_unstuck("b4", snap3)  # first call: records position
+    import time as _t
+    _t.sleep(1.1)  # exceed unstuck_timeout_s=1
+    assert edge.handle_unstuck("b4", snap3) is not None, "non-eligible bot must still get unstuck"

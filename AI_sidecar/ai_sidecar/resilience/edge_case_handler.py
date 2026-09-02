@@ -237,10 +237,22 @@ class EdgeCaseHandler:
         # destination that matters. edge_unstuck's random hunting move (reflex
         # priority) overrides it every cycle -> the bot never reaches the guild
         # (route-calc loop). Skip unstuck entirely while a job change is pending
-        # so the guild move wins. The snapshot carries `job`/`job_level` (not a
-        # `state` key), so gate on the eligibility condition directly.
-        _job = str(bot_state.get("job", bot_state.get("job_name", "")) or "").lower()
-        _jl = bot_state.get("job_level", 0) or 0
+        # so the guild move wins. The snapshot carries progression under DOTTED
+        # paths (`progression.job_name`/`progression.job_level`), NOT top-level
+        # `job`/`job_level` keys — resolve the dotted path (same as
+        # macro_intelligence._resolve_path) or the gate silently never fires.
+        def _rp(_s: dict, _p: str):
+            _c = _s
+            for _part in _p.split("."):
+                if isinstance(_c, dict):
+                    _c = _c.get(_part)
+                else:
+                    return None
+                if _c is None:
+                    return None
+            return _c
+        _job = str(_rp(bot_state, "progression.job_name") or _rp(bot_state, "job_name") or _rp(bot_state, "job") or "").lower()
+        _jl = _rp(bot_state, "progression.job_level") or _rp(bot_state, "job_level") or 0
         try:
             _jl = int(_jl)
         except (TypeError, ValueError):

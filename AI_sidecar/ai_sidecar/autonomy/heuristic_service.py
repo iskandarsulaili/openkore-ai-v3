@@ -2136,9 +2136,20 @@ class HeuristicService:
                                         reason=f"Academy room ({_cm}): defer hunting until bot exits the room (exit guard handles it)",
                                     ))
                                 else:
-                                    _path = self._pathfinder.find_path(_cm, _target)
-                                    if _path:
-                                        _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
+                                    # JOB_CHANGE GATE (2026-09-02): when a job change
+                                    # is pending (novice job>=10 or first-class job>=50),
+                                    # do NOT route to the farm — the job-change move
+                                    # (to the guild) must win. This routing block runs
+                                    # for ALL states and was overriding the guild move
+                                    # with `navigate <farm>` every cycle.
+                                    _jc_r_job = str(signals.get("job_name", "novice") or "novice").lower()
+                                    _jc_r_jl = int(signals.get("job_level", 0) or 0)
+                                    _jc_r_first = {"swordman", "mage", "archer", "acolyte", "merchant", "thief"}
+                                    _jc_r_pending = (_jc_r_job == "novice" and _jc_r_jl >= 10) or (_jc_r_job in _jc_r_first and _jc_r_jl >= 50)
+                                    if not _jc_r_pending:
+                                        _path = self._pathfinder.find_path(_cm, _target)
+                                        if _path:
+                                            _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
                     if self._lifecycle:
                         _phase = self._lifecycle.get_phase(_bot_id)
                         if _phase:
