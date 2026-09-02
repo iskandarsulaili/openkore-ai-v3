@@ -3281,6 +3281,23 @@ class PDCALoop:
                             logger.info("macro_intelligence_initialized: %d patterns loaded", _pattern_count)
                         except Exception as e:
                             logger.warning("macro_intelligence_init_failed: %s", e)
+
+                    # ── NEW: Initialize Macro Agent (AI generates + verifies + self-improves) ──
+                    _macro_agent = getattr(self._runtime, "macro_agent", None)
+                    if _macro_agent is None:
+                        try:
+                            from ai_sidecar.autonomy.macro_agent import MacroAgent
+                            _mr = getattr(self._runtime, "model_router", None)
+                            _llm = getattr(_mr, "generate_text", None) if _mr is not None else None
+                            _macro_agent = MacroAgent(
+                                llm_generate=_llm,
+                                workspace_root=_PathModule(__file__).parent.parent.parent.parent,
+                            )
+                            self._runtime.macro_agent = _macro_agent
+                            logger.info("macro_agent_initialized: llm=%s registry=%d",
+                                        "wired" if _llm else "none", len(_macro_agent.registry()))
+                        except Exception as e:
+                            logger.warning("macro_agent_init_failed: %s", e)
                 
                     # ── NEW: Initialize Combat Optimizer ──
                     _combat_opt = getattr(self._runtime, "combat_optimizer", None)
@@ -6477,6 +6494,76 @@ class PDCALoop:
                                 self._record_domain_success( _bid, "heuristic")
                         except Exception:
                             pass
+                        # ── MACRO SKILL-SET EXECUTION (2026-09-02, un-dormant) ──
+                        # The MacroIntelligence engine's process_triggers (priority-
+                        # ordered, exclusive-blocked skill-set switch) was NEVER called —
+                        # only get_patterns_for_context (AI context feed). Wire the real
+                        # execution here: evaluate triggers against the bot snapshot,
+                        # get the single winning pattern, generate its action sequence,
+                        # and enqueue it. This is the "switchable skill-set" the user
+                        # asked for (job_change, vitals, combat, ...). The job_change
+                        # pattern is high-priority + exclusive so it WINS over hunting.
+                        try:
+                            _macro_ai = getattr(self._runtime, "macro_intelligence", None)
+                            if _macro_ai is not None:
+                                _m_snap = None
+                                _m_sc = getattr(self._runtime, "snapshot_cache", None)
+                                if _m_sc is not None and hasattr(_m_sc, 'get'):
+                                    _m_snap = _m_sc.get(_bid)
+                                    # bot_id key mismatch: the loop iterates the
+                                    # bot_registry id (e.g. TestBotA:testbot99) but
+                                    # snapshots are keyed by meta.bot_id (e.g.
+                                    # "Local rAthena AI World:testbot99"). Fall back
+                                    # to the latest snapshot so process_triggers
+                                    # actually sees live state.
+                                    if _m_snap is None and hasattr(_m_sc, 'latest'):
+                                        _m_snap = _m_sc.latest()
+                                _m_state = {}
+                                if _m_snap is not None:
+                                    if isinstance(_m_snap, dict):
+                                        _m_state = _m_snap
+                                    elif hasattr(_m_snap, 'model_dump'):
+                                        _m_state = _m_snap.model_dump(mode='json')
+                                if _m_state:
+                                    logger.info(
+                                        "macro_skill_set_state: bot=%s prog=%s",
+                                        _bid, str(_m_state.get("progression", {}))[:200],
+                                    )
+                                    _m_winner = _macro_ai.process_triggers(bot_state=_m_state, bot_id=_bid)
+                                    if _m_winner is not None:
+                                        _m_ctx = {}
+                                        # Inject job-change guild facts (agnostic, DB-backed)
+                                        if _m_winner.category == "job_change":
+                                            try:
+                                                from ai_sidecar.server_adaptation import get_server_solutions_store
+                                                _m_jc = get_server_solutions_store().get("job_change_target", None)
+                                                _m_tc = ""
+                                                if isinstance(_m_jc, dict):
+                                                    _m_tc = str(_m_jc.get("target_class", "") or "").strip().lower()
+                                                else:
+                                                    _m_tc = str(_m_jc or "").strip().lower()
+                                                from ai_sidecar.autonomy.heuristic_service import JOB_CHANGE_NPCS
+                                                _m_npc = JOB_CHANGE_NPCS.get(_m_tc) or JOB_CHANGE_NPCS.get("novice")
+                                                if _m_npc:
+                                                    _m_ctx["job_change_map"] = _m_npc[0]
+                                                    _m_ctx["job_change_x"] = _m_npc[1]
+                                                    _m_ctx["job_change_y"] = _m_npc[2]
+                                            except Exception:
+                                                pass
+                                        _m_seq = _macro_ai.generate_sequence(_m_winner, bot_id=_bid, context=_m_ctx)
+                                        _m_aq = getattr(self._runtime, "action_queue", None)
+                                        if _m_aq is not None and _m_seq:
+                                            for _m_item in _m_seq:
+                                                _m_prop = _m_item.get("action")
+                                                if _m_prop is not None:
+                                                    _m_aq.enqueue(_bid, _m_prop)
+                                            _total_actions += len(_m_seq)
+                                            logger.info(
+                                                "macro_skill_set: bot=%s pattern=%s category=%s steps=%d",
+                                                _bid, _m_winner.pattern_id, _m_winner.category, len(_m_seq),
+                                            )
+                        except Exception as _m_exc:
+                            logger.warning("macro_skill_set_error bot=%s err=%s", _bid, _m_exc)
                         # ── UNIFIED CONSCIOUSNESS: primary decision-maker (runs every cycle) ──
                         try:
                             _uc = getattr(self._runtime, "unified_consciousness", None)

@@ -183,7 +183,14 @@ class ModelRouter:
         
         # ── Cost gate ──────────────────────────────────────
         _ct = getattr(self, '_cost_tracker', None)
-        if _ct is not None:
+        # macro_generation is a RARE one-off (the AI macro-agent synthesizes a
+        # macro for a specific case, then it's committed + reused). It must NOT
+        # be starved by the per-cycle daily budget gate — a blocked generation
+        # silently leaves the bot without the skill-set it needs. Bypass the
+        # daily-budget gate for this workload only (per-call/hour limits still
+        # apply via the tracker's own accounting).
+        _is_macro_gen = str(request.task or "").lower() == "macro_generation"
+        if _ct is not None and not _is_macro_gen:
             _allowed, _reason = _ct.check(
                 daily_budget_tokens=getattr(self, '_daily_budget', 100000),
                 max_calls_per_hour=getattr(self, '_max_calls_per_hour', 30),

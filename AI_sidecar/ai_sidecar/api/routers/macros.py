@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ai_sidecar.api.deps import get_runtime
 from ai_sidecar.contracts.actions import ActionStatus
@@ -83,3 +83,108 @@ def publish_macros(
         reload_status=status_value,
         reload_reason=str(data.get("reload_reason") or ""),
     )
+
+
+# ── CRUD (2026-09-02): the macros router was publish-only. Add list/get/delete
+# ── so the macro-agent's shared registry is fully manageable (Create/Read/Update/
+# ── Delete). These operate on the MacroAgent registry (committed macros/ dir).
+
+
+@router.get("/registry")
+def list_registry(runtime: RuntimeState = Depends(get_runtime)) -> dict:
+    """List all macros in the shared registry (reusable by other users)."""
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    return {"ok": True, "macros": agent.registry()}
+
+
+@router.get("/registry/{name}")
+def get_registry_macro(name: str, runtime: RuntimeState = Depends(get_runtime)) -> dict:
+    """Get a single registry macro by name."""
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    for item in agent.registry():
+        if item["name"] == name:
+            return {"ok": True, "macro": item}
+    raise HTTPException(status_code=404, detail="macro_not_found")
+
+
+@router.delete("/registry/{name}")
+def delete_registry_macro(name: str, runtime: RuntimeState = Depends(get_runtime)) -> dict:
+    """Delete a macro from the registry (demote a repeatedly-failing one)."""
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    removed = agent.demote(name)
+    if not removed:
+        raise HTTPException(status_code=404, detail="macro_not_found")
+    return {"ok": True, "removed": name}
+
+
+@router.post("/generate")
+def generate_macro(
+    payload: dict,
+    runtime: RuntimeState = Depends(get_runtime),
+) -> dict:
+    """AI macro-agent: generate + verify a macro for a specific case.
+
+    Body: {"case": "...", "context": {...}, "bot_id": "..."}
+    The agent asks the LLM for a macro, verifies it (parse+security+dry-run+
+    outcome), and returns the result. If verified, it is registered as a
+    skill-set pattern in the MacroIntelligence engine.
+    """
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    case = str(payload.get("case") or "").strip()
+    if not case:
+        raise HTTPException(status_code=422, detail="case_required")
+    context = payload.get("context") or {}
+    bot_id = str(payload.get("bot_id") or "default")
+    macro = agent.generate(case=case, context=context, bot_id=bot_id)
+    if macro is None:
+        return {"ok": False, "message": "generation_failed", "case": case}
+    if macro.verified:
+        agent.register(macro, getattr(runtime, "macro_intelligence", None))
+    return {
+        "ok": True,
+        "verified": macro.verified,
+        "name": macro.name,
+        "case": macro.case,
+        "lines": macro.lines,
+        "errors": macro.verification.errors if macro.verification else [],
+        "warnings": macro.verification.warnings if macro.verification else [],
+        "registered": macro.verified,
+    }
+
+
+@router.post("/reward")
+def reward_macro(payload: dict, runtime: RuntimeState = Depends(get_runtime)) -> dict:
+    """Reward a macro for a successful outcome (self-improving)."""
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    name = str(payload.get("name") or "").strip()
+    bot_id = str(payload.get("bot_id") or "default")
+    detail = str(payload.get("detail") or "")
+    if not name:
+        raise HTTPException(status_code=422, detail="name_required")
+    agent.reward(name, bot_id=bot_id, detail=detail)
+    return {"ok": True, "rewarded": name}
+
+
+@router.post("/punish")
+def punish_macro(payload: dict, runtime: RuntimeState = Depends(get_runtime)) -> dict:
+    """Punish a macro for a failed outcome (self-improving)."""
+    agent = getattr(runtime, "macro_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="macro_agent_unavailable")
+    name = str(payload.get("name") or "").strip()
+    bot_id = str(payload.get("bot_id") or "default")
+    detail = str(payload.get("detail") or "")
+    if not name:
+        raise HTTPException(status_code=422, detail="name_required")
+    agent.punish(name, bot_id=bot_id, detail=detail)
+    return {"ok": True, "punished": name}

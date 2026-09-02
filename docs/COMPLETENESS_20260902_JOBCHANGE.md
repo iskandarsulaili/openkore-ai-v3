@@ -1,0 +1,52 @@
+# COMPLETENESS CHECKLIST — openkore-ai-v3 macro-agent + job-change 2026-09-02
+
+**Goal:** Build an AI macro-agent that generates + verifies OpenKore macros for specific
+cases (committed + reusable by other users, usable by openkore-ai-v3), starting with the
+job-change oscillation. Prove live with benchmarks.
+
+## Round A — Macro-agent (AI generates + verifies macros)
+- [x] AUDIT existing macro infra: ai_sidecar_generated_macros.txt, macro_file config, reflex_* macros
+- [x] AUDIT FINDINGS (2026-09-02):
+  - MacroCompiler + MacroPublisher (compile+write files) — COMPLETE
+  - MacroRepository (persistence) — COMPLETE
+  - api/routers/macros.py — ONLY /publish (Create). NO list/get/delete/update → CRUD INCOMPLETE
+  - MacroIntelligence engine — 50+ patterns + full in-memory CRUD, but process_triggers (execution) NEVER called — only get_patterns_for_context (AI context feed) → EXECUTION DORMANT
+  - MacroSynthesizer (plan→macro) — wired in planner/service.py
+  - MicroMacroGenerator (reflex fallback macros) — wired in action_emitter
+  - MacroDistillationEngine (ML episodes→macro, self-improve) — wired via /distill-macro
+  - macro_engineer_agent — REGISTERED but NEVER invoked in crew_manager/task_factory → DORMANT
+  - ModelRouter.generate_text — exists (was dead wiring, now provided)
+  - Security: validate_macro_policy blocks eval/shell/system/exec/wget/curl/perl
+  - VERIFICATION: NO parse-check harness, NO dry-run, NO outcome proof → MISSING
+- [x] DESIGN: agent generates macro -> parse-check -> harness dry-run -> live outcome proof -> commit
+- [x] IMPLEMENT: MacroVerifier (parse-check + dry-run + security + outcome proof)
+- [x] IMPLEMENT: MacroAgent (LLM generation for a specific case via generate_text)
+- [x] IMPLEMENT: shared macro registry (committed macros/ dir + manifest, reusable)
+- [x] IMPLEMENT: complete CRUD API (list/get/delete/update on /v1/macros)
+- [x] IMPLEMENT: wire process_triggers execution into pdca_loop (un-dormant)
+- [x] IMPLEMENT: wire macro_engineer agent into crew_manager (un-dormant)
+- [x] IMPLEMENT: reward/punish for macros (macro brain in BrainRewardLedger + outcome wiring)
+- [x] IMPLEMENT: job_change skill-set (MacroPattern that wins over hunting while eligible)
+- [x] FIXED: heuristic_service COLD_START NameError (_cm_farmable undefined) + lockMap-to-current-farm
+- [x] TESTS: 463 passed (14 new macro-agent tests + 9 transit tests)
+- [ ] PROVE: macro-agent generates + verifies a real macro (job-change case) live
+
+
+## Round B — Job-change oscillation (via macro-agent or direct)
+- [ ] DIAGNOSED: bot eligible (novice lv26/10) but oscillates move alberta_in <-> navigate prt_fild08
+- [ ] ROOT CAUSE: competing emitters (routing/hunting/exploration/combat/stuck)
+- [ ] FIXED: JOB_CHANGE wins over ALL competing emitters while eligible + not on guild map
+- [ ] PROVEN: bot routes to alberta_in and STAYS, reaches guild, completes job change
+
+## Round C — Post-job-change farming
+- [ ] Bot re-evaluates hunting map for merchant class (DB-backed)
+- [ ] Sustained farming + EXP gain (benchmark: EXP/hr, kills/min)
+- [ ] No death loop (novice low-HP deaths on prt_fild08 resolved)
+
+## Round D — Full-stack completeness sweep
+- [ ] Audit all emitters for competing-action races
+- [ ] Verify no dead/dormant code paths in job-change + hunting decision chain
+- [ ] Verify server_solutions DB-backed facts all consumed
+- [ ] Verify DQN/subconscious + reflex tiers still active (training_steps>0)
+- [ ] Final: bot self-sufficient, zero manual intervention, sustained progression
+

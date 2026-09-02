@@ -1281,6 +1281,60 @@ MACRO_PATTERNS["skill_rotation_burst"] = MacroPattern(
     cooldown_seconds=10.0, exclusive=True,
 )
 
+# ───────────────────────────────────────────────────────────────────────
+# JOB_CHANGE SKILL-SET (2026-09-02) — the case that was oscillating.
+# A Novice at base>=10 / job>=10 must route to the guild map and change job.
+# This pattern is HIGH priority + exclusive so it WINS over hunting/routing
+# emitters while the bot is eligible and NOT already on the guild map.
+# The guild map/coords are injected at generate_sequence time from the
+# server_solutions store (job_change_target) — agnostic, never hardcoded.
+# ───────────────────────────────────────────────────────────────────────
+MACRO_PATTERNS["job_change_novice"] = MacroPattern(
+    pattern_id="job_change_novice", category="job_change",
+    description="Novice at base>=10/job>=10 routes to the guild map and changes job (wins over hunting).",
+    priority=PriorityTier.NAVIGATION_WARP + 1,  # above navigation, below vitals/combat
+    triggers=[
+        # job_name may be empty/None when the bridge hasn't populated progression
+        # yet — treat empty as novice (matches the heuristic default). Gate on
+        # "not a known first-class" so empty/novice fires but a real first-class
+        # (swordman/mage/...) does NOT (those use job_change_2_1 at job>=40).
+        # _apply_op 'not_in' returns True for None (None not in list), so an
+        # unpopulated job_name still fires the novice route.
+        _make_trigger("progression.job_name", "not_in", ["swordman", "mage", "archer", "acolyte", "merchant", "thief"]),
+        _make_trigger("progression.base_level", "gte", 10),
+        _make_trigger("progression.job_level", "gte", 10),
+        _make_trigger("progression.job_changed", "neq", True),
+    ],
+    action_sequence=[
+        _make_action("move {job_change_map} {job_change_x} {job_change_y}",
+                     "Route to job-change guild", timeout=30.0),
+        _make_action("talknpc {job_change_x} {job_change_y} c",
+                     "Open job-change NPC dialog", timeout=5.0, confirm=True),
+    ],
+    cooldown_seconds=5.0, exclusive=True,
+    state_tracking_key="job_change_route",
+)
+
+# 2-1 job change (class -> 2nd class) — same skill-set, higher base level.
+MACRO_PATTERNS["job_change_2_1"] = MacroPattern(
+    pattern_id="job_change_2_1", category="job_change",
+    description="First-class at job>=40 routes to the 2-1 guild and changes job.",
+    priority=PriorityTier.NAVIGATION_WARP + 1,
+    triggers=[
+        _make_trigger("progression.job_name", "in", ["swordman", "mage", "archer", "acolyte", "merchant", "thief"]),
+        _make_trigger("progression.job_level", "gte", 40),
+        _make_trigger("progression.job_changed", "neq", True),
+    ],
+    action_sequence=[
+        _make_action("move {job_change_map} {job_change_x} {job_change_y}",
+                     "Route to 2-1 job-change guild", timeout=30.0),
+        _make_action("talknpc {job_change_x} {job_change_y} c",
+                     "Open 2-1 job-change NPC dialog", timeout=5.0, confirm=True),
+    ],
+    cooldown_seconds=5.0, exclusive=True,
+    state_tracking_key="job_change_route",
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 3. MACRO INTELLIGENCE ENGINE

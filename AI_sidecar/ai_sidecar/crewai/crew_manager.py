@@ -34,6 +34,9 @@ _AGENT_ROSTERS: dict[str, list[str]] = {
     "strategic_planning": [
         "strategic_planner", "resource_manager", "social_coordinator", "tactical_commander",
     ],
+    "macro_engineering": [
+        "macro_engineer", "command_emitter",
+    ],
 }
 
 

@@ -3448,6 +3448,14 @@ class HeuristicService:
                         confidence=0.99, domain="economy",
                         reason="Cold start step 1 - enable attack for farming",
                     ))
+                    # Lock the bot to its CURRENT farm map so it stays and farms
+                    # (not wandering). AGNOSTIC: the map is the bot's actual
+                    # current field, never hardcoded.
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"set lockMap {_cs_map}",
+                        confidence=0.99, domain="economy",
+                        reason=f"Cold start step 1 - lockMap to current farm {_cs_map}",
+                    ))
                     # On the academy farm the map's actual spawns can include Thief Bug and
                     # Pupa — on many servers these give real EXP (Thief Bug ~188, Pupa ~157)
                     # and are low-HP, so ignoring them starves the bot of kills (0 EXP).
@@ -3458,8 +3466,8 @@ class HeuristicService:
                     # spawn on the current map (loaded from the live server's
                     # spawn scripts) — never hardcoded mob names.
                     _cs_mobs = [
-                        m for m, _c, _r in self.map_spawns.get(_cm_farmable, [])
-                    ] or [m for m, _c, _r in self.map_spawns.get(_cm_map, [])]
+                        m for m, _c, _r in self.map_spawns.get(str(_cs_map).lower().replace(".gat", ""), [])
+                    ] or [m for m, _c, _r in self.map_spawns.get(_cs_map, [])]
                     for _cs_attack in _cs_mobs:
                         actions.append(HeuristicAction(
                             kind="command", command=f"mon_control {_cs_attack}	0 1 1",

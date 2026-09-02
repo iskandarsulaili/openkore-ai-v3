@@ -50,6 +50,7 @@ BRAINS = (
     "goal_decomposer",   # multi-horizon goal planning
     "memory",            # memory store/recall decisions
     "strategy",          # strategy optimizer A/B selection
+    "macro",             # macro-agent generated skill-sets (self-improving)
 )
 
 # Outcome event types that credit/punish brains
