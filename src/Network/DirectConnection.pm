@@ -282,6 +282,7 @@ sub serverDisconnect {
 			Plugins::callHook('serverDisconnect/success');
 		}
 	}
+	$mapLoginAcked = 0;  # 2026-09-03: clear the map-login-acked flag on disconnect so the 0x0B1C ping gate blocks on the next reconnect
 }
 
 sub getState {

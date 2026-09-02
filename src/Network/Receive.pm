@@ -1259,6 +1259,7 @@ sub connection_refused {
 sub map_loaded {
 	my ($self, $args) = @_;
 	$net->setState(Network::IN_GAME);
+	$mapLoginAcked = 1;  # 2026-09-03: map-login acked — now safe to reply to 0x0B1C pings
 	undef $conState_tries;
 	$char = $chars[$config{char}];
 	return unless changeToInGameState();
@@ -12647,7 +12648,12 @@ sub ping {
 	# RFIFOREST(fd) (25) against packet_db[0x0436].len (23) -> mismatch ->
 	# "unknown connect packet 0x0436(length:25)" -> reject. Defer the ping reply
 	# until the bot is in-game (map_loaded sets IN_GAME) so 0x0436 is sent alone.
-	return unless ($net && $net->getState() == Network::IN_GAME);
+	# 2026-09-03: gate on $mapLoginAcked (set in map_loaded, cleared on
+	# disconnect) NOT $net->getState()==IN_GAME — the state stays IN_GAME across
+	# a reconnect (serverDisconnect doesn't reset it before map-login), so the
+	# old gate passed on reconnect and 0x0B1C coalesced with 0x0436 again
+	# (wire-captured: 25-byte segment = 0x0436 + 0x0B1C).
+	return unless ($mapLoginAcked);
 	$messageSender->sendPing();
 }
 
