@@ -1282,6 +1282,28 @@ sub map_loaded {
 
 		$messageSender->sendMapLoaded();
 
+		# 0x05fc — client "server connection info" (PACKETVER 20250604). The real
+		# 2025-06-04 client sends this to the MAP-SERVER AFTER the map-login ack
+		# (map_loaded), NOT in the same TCP segment as 0x0436. The map-server's
+		# clif_parse_WantToConnection_sub checks RFIFOREST(fd) against the 0x0436
+		# length — if 0x05fc rides in the same segment, RFIFOREST = 23 + 0x05fc_len
+		# != 23 -> "unknown connect packet 0x0436(length:62)" -> reject. Sending it
+		# here (after the ack) keeps 0x0436 alone AND prevents the post-login stream
+		# desync (the server misreading a 19-byte packet as 0x05fc and kicking).
+		# Format: [u16 0x05fc][u8 ip_strlen][ip string][u16 port BE][3 bytes].
+		# AGNOSTIC (RULE.md): the IP string is the map-server's own address (the
+		# client echoes the server it connected to); port is the map port.
+		{
+			my $conn_ip = $masterServer->{mapServer_ip} || $config{forceMapIP} || $map_ip || "127.0.0.1";
+			my $conn_port = $masterServer->{mapServer_port} || $map_port || 5121;
+			my $ip_str = "$conn_ip";
+			my $slen = length($ip_str);
+			$slen = 64 if ($slen > 64);
+			my $conn_info = pack('v C', 0x05fc, $slen) . $ip_str . pack('n C3', $conn_port, 0, 0, 0);
+			$messageSender->sendToServer($conn_info);
+			debug "Sent 0x05fc conn-info (ip=$ip_str port=$conn_port)\n", 'sendPacket';
+		}
+
 		$messageSender->sendSync(1);
 
 		# Request for Guild Information
