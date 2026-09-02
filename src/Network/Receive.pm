@@ -12640,6 +12640,14 @@ sub item_preview {
 # 0B1D (PACKET_ZC_PING)
 sub ping {
 	return if ($config{XKore} eq 1 || $config{XKore} eq 3);
+	# MAP-LOGIN GATE (2026-09-02): the server sends 0x0B1D (ping probe) right
+	# after the TCP connect, BEFORE processing 0x0436. If the bot replies 0x0B1C
+	# immediately, it coalesces with the 0x0436 in ONE TCP segment (23+2=25
+	# bytes). The map-server's clif_parse_WantToConnection_sub checks
+	# RFIFOREST(fd) (25) against packet_db[0x0436].len (23) -> mismatch ->
+	# "unknown connect packet 0x0436(length:25)" -> reject. Defer the ping reply
+	# until the bot is in-game (map_loaded sets IN_GAME) so 0x0436 is sent alone.
+	return unless ($net && $net->getState() == Network::IN_GAME);
 	$messageSender->sendPing();
 }
 
