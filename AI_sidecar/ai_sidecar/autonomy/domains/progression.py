@@ -483,10 +483,32 @@ class ProgressionDomain(BaseDomain):
         _jc_is_2_1 = False
 
         if job_name == "novice":
-            _jc_target_class = "archer"
-            _jc_npc = JOB_CHANGE_NPCS.get("novice", ("prontera", 160, 191))
+            # AGNOSTIC (RULE.md): the CONSCIOUS tier (LLM) decides the target
+            # class and persists it to server_solutions (slot 'job_change_target').
+            # NEVER a hardcoded class literal. Fallback: DB-backed first-class
+            # from the knowledge table (universal game facts, not a literal).
+            _jc_target_class = ""
+            try:
+                from ai_sidecar.server_adaptation import get_server_solutions_store
+                _jc_tc_raw = get_server_solutions_store().get("job_change_target", None)
+                if isinstance(_jc_tc_raw, dict):
+                    _jc_target_class = str(_jc_tc_raw.get("target_class", "") or "").strip().lower()
+                elif isinstance(_jc_tc_raw, str) and _jc_tc_raw.strip():
+                    _jc_target_class = _jc_tc_raw.strip().lower()
+            except Exception:
+                _jc_target_class = ""
+            if not _jc_target_class:
+                try:
+                    import ai_sidecar.game_knowledge as _gk_mod
+                    _jc_locs = getattr(_gk_mod, "_JOB_CHANGE_LOCATIONS", {}) or {}
+                    _jc_first = [k for k in _jc_locs if k in (
+                        "swordman", "mage", "archer", "acolyte", "merchant", "thief")]
+                    _jc_target_class = _jc_first[0] if _jc_first else "swordman"
+                except Exception:
+                    _jc_target_class = "swordman"
+            _jc_npc = JOB_CHANGE_NPCS.get(_jc_target_class) or JOB_CHANGE_NPCS.get("novice") or ("prontera", 160, 191)
             _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc
-            _jc_talk_seq = JOB_CHANGE_TALK.get("archer", [
+            _jc_talk_seq = JOB_CHANGE_TALK.get(_jc_target_class, [
                 "talk continue", "talk resp 1", "talk resp 2", "talk resp 1",
             ])
             logger.info(

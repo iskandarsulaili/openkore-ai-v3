@@ -1422,7 +1422,7 @@ class HeuristicService:
         weight = _inv_data.get("weight_pressure", 0) or 0.0
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
-        job_name = signals.get("job_name", "novice").lower()
+        job_name = str(signals.get("job_name") or "novice").lower()
         stat_points = signals.get("stat_points", 0) or 0
         skill_points = signals.get("skill_points", 0) or 0
         in_party = signals.get("in_party", False)
@@ -3243,7 +3243,7 @@ class HeuristicService:
         weight = signals.get("weight_ratio", 0) or 0
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
-        job_name = signals.get("job_name", "novice").lower()
+        job_name = str(signals.get("job_name") or "novice").lower()
         self._adaptive._last_job = job_name  # Set for profit calculation delegate
         stat_points = signals.get("stat_points", 0) or 0
 
