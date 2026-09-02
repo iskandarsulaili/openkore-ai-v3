@@ -472,6 +472,13 @@ class ReflexRuleEngine:
         facts["state.skill_points_newly_pending"] = facts.get("event.numeric.skill_points_newly_pending", 0.0)
         facts["state.stat_points_newly_pending"] = facts.get("event.numeric.stat_points_newly_pending", 0.0)
         facts["state.job_name"] = facts.get("operational.job_name")
+        # JOB-CHANGE ELIGIBILITY (agnostic, RULE.md): a novice at job_level>=10
+        # must WALK to the guild, NOT fight. Reflex combat rules (mob_swarm,
+        # route_stuck) must NOT re-enable `ai auto` while the bot is walking to
+        # the job-change guild — that makes the low-HP novice die en route.
+        _jc_job = str(facts.get("state.job_name") or "").lower()
+        _jc_jlvl = int(facts.get("state.job_level") or 0)
+        facts["state.job_change_eligible"] = (_jc_job in ("", "novice")) and _jc_jlvl >= 10
 
         # --- Encounter shorthands ---
         facts["encounter.nearby_hostiles"] = facts.get("encounter.nearby_hostiles", 0)
@@ -833,7 +840,12 @@ class ReflexRuleEngine:
                         ReflexPredicate(fact="event.event_type", op="eq", value="navigation.stuck"),
                     ]
                 ),
-                guards=[],
+                guards=[
+                    # JOB-CHANGE GATE (2026-09-02): a job-change-eligible bot must
+                    # WALK to the guild, NOT fight — re-enabling `ai auto` here
+                    # makes the low-HP novice die en route.
+                    ReflexPredicate(fact="state.job_change_eligible", op="eq", value=False),
+                ],
                 action_template=ReflexActionTemplate(
                     kind="command",
                     command="ai auto",
@@ -999,7 +1011,12 @@ class ReflexRuleEngine:
                         ReflexPredicate(fact="combat.is_in_combat", op="eq", value=False),
                     ]
                 ),
-                guards=[],
+                guards=[
+                    # JOB-CHANGE GATE (2026-09-02): a job-change-eligible bot must
+                    # WALK to the guild, NOT fight — re-enabling `ai auto` here
+                    # makes the low-HP novice die en route (observed live).
+                    ReflexPredicate(fact="state.job_change_eligible", op="eq", value=False),
+                ],
                 action_template=ReflexActionTemplate(
                     kind="command",
                     command="ai auto",
