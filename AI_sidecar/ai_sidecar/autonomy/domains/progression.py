@@ -534,15 +534,17 @@ class ProgressionDomain(BaseDomain):
             confidence=0.95, domain="progression",
             reason="Stand up before walking to job change NPC",
         ))
-        # LATCH (2026-09-02): emit the guild move at most once per 10s per bot.
+        # LATCH (2026-09-02): emit the guild move at most once per 60s per bot.
         # Re-emitting every cycle resets the expensive route calc before the walk
-        # starts -> route-calc loop (observed live). The latch key includes the
-        # target map so a map change re-arms it.
+        # starts -> route-calc loop (observed live: searchStep 300+ never completes
+        # within a 10s latch). 60s gives the long multi-map route (e.g.
+        # prt_fild08 -> prontera -> alberta -> alberta_in) time to finish. The
+        # latch key includes the target map so a map change re-arms it.
         import time as _t
         _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"
         _jc_now = _t.time()
         _jc_last = self._job_change_route_emit.get(_jc_lk, 0.0)
-        if _jc_now - _jc_last >= 10.0:
+        if _jc_now - _jc_last >= 60.0:
             self._job_change_route_emit[_jc_lk] = _jc_now
             if map_name != _jc_npc_map:
                 actions.append(HeuristicAction(

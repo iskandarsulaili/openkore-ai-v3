@@ -3960,7 +3960,7 @@ class HeuristicService:
                 if _jc_h_npc:
                     _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
                     _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
-                    if _jc_now - _jc_last >= 10.0:
+                    if _jc_now - _jc_last >= 60.0:
                         self._job_change_route_emit[_jc_latch_key] = _jc_now
                         actions.append(HeuristicAction(
                             kind="command", command=_jc_h_cmd,
