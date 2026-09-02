@@ -99,8 +99,27 @@ class StatBreakpointPlanner:
         job: str,
         build_name: str | None = None,
     ) -> dict[str, int] | None:
-        """Get target stats for a job's first (or named) meta build."""
-        builds = self._by_job.get(job, [])
+        """Get target stats for a job's first (or named) meta build.
+
+        AGNOSTIC (RULE.md): the build-plan YAML is keyed by META job names
+        (Wizard/Knight/Hunter/Priest/Assassin/Blacksmith), but the bot lives as
+        a 1st-class job (mage/swordman/arch.../acolyte/thief/merchant before its
+        2-1 change). Resolve a 1st-class to the meta build that shares its kit so
+        a Mage at 1st-class still gets the INT-first build (NOT the DEX-heavy
+        hardcoded fallback). Case-insensitive on both sides.
+        """
+        job_l = str(job or "").lower()
+        # 1st-class -> meta build-job alias (universal RO class evolution).
+        _ALIAS = {
+            "swordman": "knight", "mage": "wizard", "archer": "hunter",
+            "acolyte": "priest", "thief": "assassin", "merchant": "blacksmith",
+        }
+        candidate = _ALIAS.get(job_l, job_l)
+        builds = self._by_job.get(candidate, []) or self._by_job.get(job_l, [])
+        if not builds:
+            # fall back to title-casing the job name (the YAML uses Title Case)
+            tc = candidate[:1].upper() + candidate[1:]
+            builds = self._by_job.get(tc, []) or self._by_job.get(job, [])
         if not builds:
             return None
         if build_name:
