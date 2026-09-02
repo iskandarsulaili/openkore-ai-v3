@@ -4490,16 +4490,13 @@ class HeuristicService:
             _audit_last2 = self._last_job_change_attempt.get(bot_id, 0)
             if _audit_now2 - _audit_last2 > 60:  # 1 min cooldown
                 self._last_job_change_attempt[bot_id] = _audit_now2
-                # Resolve the 2-1 target class (conscious decision first, else
-                # the universal first-class->2-1 mapping).
-                _jc2_target = ""
-                try:
-                    from ai_sidecar.server_adaptation import get_server_solutions_store
-                    _jc2_target = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
-                except Exception:
-                    _jc2_target = ""
-                if not _jc2_target:
-                    _jc2_target = JOB_2_1_CLASSES.get(_audit_job_name, _audit_job_name)
+                # Resolve the 2-1 target class. The store's job_change_target holds
+                # the NOVICE->1st-class decision (already consumed — the bot is now a
+                # first-class mage/swordman/etc). For 2-1, the target is the universal
+                # evolution of the bot's CURRENT first-class (mage->wizard, etc) —
+                # never the stale store value (that would send a Mage to a merchant
+                # 2-1 that doesn't exist).
+                _jc2_target = JOB_2_1_CLASSES.get(_audit_job_name, _audit_job_name)
                 _jc2_npcs = JOB_CHANGE_NPCS
                 _jc2_npc = (_jc2_npcs.get(_jc2_target)
                             or _jc2_npcs.get(_audit_job_name)
@@ -5897,25 +5894,43 @@ class HeuristicService:
                     self._last_assessment[bot_id] = assessment
                     return assessment
                 # STAT ALLOCATION: Use stat_points signal directly (most reliable)
+                # AGNOSTIC (RULE.md): the stat build comes from the data-driven
+                # _class_stat_allocation (stat-breakpoint planner, job-aware). The
+                # OLD hardcoded _stat_builds put DEX first for a Mage — wrong.
                 _stat_points = signals.get("stat_points", 0) or 0
-                _job_name = signals.get("job_name", "novice") or "novice"
+                _job_name_l = str(signals.get("job_name", "novice") or "novice").lower()
                 if _stat_points > 0:
-                    _stat_builds = {
-                        "novice": ["dex", "str", "agi", "vit"],
-                        "archer": ["dex", "agi", "str", "vit"],
-                        "thief": ["dex", "agi", "str", "vit"],
-                        "acolyte": ["dex", "int", "vit", "str"],
-                        "swordman": ["dex", "str", "vit", "agi"],
-                        "mage": ["dex", "int", "vit", "str"],
-                    }
-                    _build = _stat_builds.get(_job_name, ["dex", "str", "agi", "vit"])
-                    _pts_to_alloc = _stat_points
-                    for _stat_name in _build:
+                    try:
+                        _curr = {
+                            "str": int(signals.get("str", 1) or 1),
+                            "agi": int(signals.get("agi", 1) or 1),
+                            "vit": int(signals.get("vit", 1) or 1),
+                            "int": int(signals.get("int", 1) or 1),
+                            "dex": int(signals.get("dex", 1) or 1),
+                            "luk": int(signals.get("luk", 1) or 1),
+                        }
+                        _alloc = _class_stat_allocation(_job_name_l, _curr, _stat_points, self._adaptive, int(base_level or 1))
+                        _order = [s for s, _ in _alloc]
+                    except Exception:
+                        _order = []
+                    if not _order:
+                        # DB-backed fallback: recompute the first allocation stat from
+                        # base stats (agnostic, job-aware). Never a hardcoded DEX-first
+                        # literal.
+                        try:
+                            _order = [s for s, _ in _class_stat_allocation(
+                                _job_name_l,
+                                {"str": 1, "agi": 1, "vit": 1, "int": 1, "dex": 1, "luk": 1},
+                                1, self._adaptive, int(base_level or 1))]
+                        except Exception:
+                            _order = []
+                    _pts_to_alloc = int(_stat_points)
+                    for _stat_name in _order or ["str"]:
                         while _pts_to_alloc > 0:
                             actions.append(HeuristicAction(
                                 kind="command", command=f"stat_add {_stat_name}",
                                 confidence=0.99, domain="progression",
-                                reason=f"Allocate 1 {_stat_name.upper()} ({_job_name}, {_stat_points} pts available)",
+                                reason=f"Allocate 1 {_stat_name.upper()} ({_job_name_l}, {_stat_points} pts available, data-driven)",
                             ))
                             _pts_to_alloc -= 1
                             if _pts_to_alloc <= 0:

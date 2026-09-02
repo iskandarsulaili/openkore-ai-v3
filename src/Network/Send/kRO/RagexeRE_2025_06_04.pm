@@ -76,6 +76,16 @@ sub sendMapLogin {
 	# JSON::PP is core Perl (always present); JSON may not be installed.
 	$layout = eval { JSON::PP::decode_json($layout) } if ($layout && !ref($layout));
 	my $packet;
+	# AGNOSTIC (RULE.md): accountID/charID/sessionID arrive as RAW 4-byte binary
+	# strings (parsed via 'a4' from the receive buffer). pack('V', <binary>) treats
+	# them as non-numeric -> 0 (the auto-adapt fallback branches below were sending
+	# account/char/session = 0, guaranteeing a 0x006A map-login rejection every
+	# time the learned layout was cleared). Coerce each to its numeric value FIRST
+	# (unpack('V')), then pack('V') places the correct bytes. This fixes the
+	# ZERO-field fallback so ALL branches emit the real accountID.
+	my $acct_n = (defined($accountID) && length($accountID) >= 4) ? unpack('V', substr($accountID,0,4)) : (defined($accountID) && $accountID =~ /^\d+$/ ? $accountID : 0);
+	my $char_n = (defined($charID)   && length($charID)   >= 4) ? unpack('V', substr($charID,0,4))   : (defined($charID)   && $charID   =~ /^\d+$/ ? $charID   : 0);
+	my $sess_n = (defined($sessionID)&& length($sessionID)>= 4) ? unpack('V', substr($sessionID,0,4)): (defined($sessionID)&& $sessionID=~ /^\d+$/ ? $sessionID : 0);
 	if ($layout && ref($layout) eq 'HASH' && $layout->{length}) {
 		my $n = $layout->{length};
 		my $acc = $layout->{account_offset} // 2;
@@ -85,13 +95,10 @@ sub sendMapLogin {
 		my $tk  = $layout->{tick_offset} // ($acc + 16);
 		my $sx  = $layout->{sex_offset} // ($acc + 20);
 		# Build a zero-filled buffer of length $n, then place each field.
-		# accountID/charID/sessionID arrive as RAW 4-byte strings (parsed via
-		# 'a4'), so pack('V', $raw) treats them as non-numeric -> 0. unpack('V')
-		# first to get the numeric value, then pack('V') to place it.
 		$packet = pack('v', 0x0436) . ("\x00" x ($n - 2));
-		substr($packet, $acc, 4) = pack('V', unpack('V', $accountID));
-		substr($packet, $chr, 4) = pack('V', unpack('V', $charID));
-		substr($packet, $l1, 4)  = pack('V', unpack('V', $sessionID));
+		substr($packet, $acc, 4) = pack('V', $acct_n);
+		substr($packet, $chr, 4) = pack('V', $char_n);
+		substr($packet, $l1, 4)  = pack('V', $sess_n);
 		substr($packet, $l2, 4)  = pack('V', 0);  # loginID2 (unused by the server)
 		substr($packet, $tk, 4)  = pack('V', getTickCount());
 		substr($packet, $sx, 1)  = pack('C', $sex);
@@ -101,10 +108,10 @@ sub sendMapLogin {
 		$packet = pack(
 			'v V5 C a3',
 			0x0436,
-			$accountID,
-			$charID,
-			$sessionID,
-			time(),
+			$acct_n,
+			$char_n,
+			$sess_n,
+			getTickCount(),
 			0,
 			$sex,
 			'',
@@ -116,18 +123,14 @@ sub sendMapLogin {
 		# authoritative adaptation. This fallback is only a cold-start probe —
 		# it uses the standard rAthena field order (id + account + char +
 		# login1 + login2 + tick + sex) padded to 23 bytes. The learned layout
-		# overrides it once available.
-		# FIX (2026-09-01): the previous 'v V V V V C' emitted 19 bytes (the
-		# format had only 4 longs), which the live map-server rejects as
-		# "expected packet length 23, but only 21 bytes remaining". The 23-byte
-		# form needs FIVE longs: id + account + char + login1 + login2 + tick +
-		# sex = 2 + 4*5 + 1 = 23 bytes.
+		# overrides it once available. Numeric coercion ($acct_n/$char_n/$sess_n)
+		# fixes the account/char/session=0 rejection when the layout is absent.
 		$packet = pack(
 			'v V V V V V C',
 			0x0436,
-			$accountID,  # @2-5
-			$charID,     # @6-9
-			$sessionID,  # @10-13 (loginID1)
+			$acct_n,     # @2-5
+			$char_n,     # @6-9
+			$sess_n,     # @10-13 (loginID1)
 			0,           # @14-17 (loginID2, unused by the server)
 			getTickCount(),  # @18-21 (client tick)
 			$sex,        # @22
@@ -137,14 +140,23 @@ sub sendMapLogin {
 		$packet = pack(
 			'v V4 C',
 			0x0436,
-			$accountID,
-			$charID,
-			$sessionID,
-			time(),
+			$acct_n,
+			$char_n,
+			$sess_n,
+			getTickCount(),
 			$sex,
 		);
 	}
 	$msg = $packet;
+	# MAPLOGIN-DUMP (diagnostic): log the exact bytes so we can diff against
+	# the accepted layout. Kept behind a debug flag; harmless in prod.
+	# NOTE: TF/message are NOT imported in this module — use main:: fully-qualified.
+	if ($main::config{debugMapLogin}) {
+		main::message(main::TF("DEBUG sendMapLogin (0x0436, %d bytes, mlen=%s acct=%s char=%s sess=%s sex=%s):%s\n",
+			length($msg), defined($mlen)?$mlen:'-', defined($accountID)?unpack('V',$accountID):'?',
+			defined($charID)?unpack('V',$charID):'?', defined($sessionID)?unpack('V',$sessionID):'?',
+			$sex, unpack('H*', $msg)), "connection");
+	}
 	$self->sendToServer($msg);
 	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes, mapLoginLength=$mlen, accountID=$accountID, charID=$charID)\n", 'sendPacket';
 }

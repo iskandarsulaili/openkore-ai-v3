@@ -497,6 +497,16 @@ sub sendMapLogin {
 		pack("C", $sex) .
 		pack("a4", "");
 
+	# MAPLOGIN-DUMP (diagnostic): log exact bytes + field values.
+	if ($main::config{debugMapLogin}) {
+		message(TF("DEBUG sendMapLogin (0x0436, %d bytes, acct=%s char=%s sess=%s sex=%s):%s\n",
+			length($msg),
+			(defined($accountID) && length($accountID)==4) ? unpack('V',$accountID) : '?('.(defined($accountID)?length($accountID):0).'b)',
+			(defined($charID)   && length($charID)==4)   ? unpack('V',$charID)     : '?('.(defined($charID)?length($charID):0).'b)',
+			(defined($sessionID)&& length($sessionID)==4)? unpack('V',$sessionID)  : '?('.(defined($sessionID)?length($sessionID):0).'b)',
+			$sex, unpack('H*', $msg)), "connection");
+	}
+
 	$self->sendToServer($msg);
 	debug "Sent sendMapLogin\n", "sendPacket", 2;
 }
