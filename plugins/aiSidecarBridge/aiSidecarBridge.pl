@@ -8,7 +8,7 @@ use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender %jobs_lut);
 use IO::Socket::INET;
 use Log qw(debug message warning);
 use Network;
@@ -2457,7 +2457,7 @@ sub _build_charstatus_payload {
             account_id => $char ? _actor_id_from_any($char->{accountID}) : '',
             char_id    => $char ? _actor_id_from_any($char->{ID}) : '',
             name       => $char ? ($char->{name} // '') : '',
-            job        => $char ? (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) : '',
+            job        => $char ? ($jobs_lut{$char->{jobID}} // ($char->{jobName} // 'novice')) : '',
             job_id     => $char ? ($char->{jobID} // 0) : 0,
             base_level => $char ? ($char->{lv} // 0) : 0,
             base_exp   => $char ? ($char->{exp} // 0) : 0,
@@ -2639,7 +2639,7 @@ sub _build_snapshot_payload {
 		$::aiSidecar_cached_progression{$_ck}{job_exp}      = $char->{exp_job}  if defined $char->{exp_job};
 		$::aiSidecar_cached_progression{$_ck}{job_exp_max}  = $char->{exp_job_max} if defined $char->{exp_job_max};
 		$::aiSidecar_cached_progression{$_ck}{job_id}       = $char->{jobID}    if defined $char->{jobID};
-		$::aiSidecar_cached_progression{$_ck}{job_name}     = (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) if defined $char;
+		$::aiSidecar_cached_progression{$_ck}{job_name}     = (defined $char->{jobID} ? ($jobs_lut{$char->{jobID}} // 'novice') : (_state_get('assigned_job') || 'novice')) if defined $char;
 		$::aiSidecar_cached_progression{$_ck}{skill_points} = $char->{points_skill} if defined $char->{points_skill};
 		$::aiSidecar_cached_progression{$_ck}{stat_points}  = (defined $char->{status_points}) ? $char->{status_points}
 			: (defined $char->{points_free}) ? $char->{points_free}
@@ -2944,7 +2944,7 @@ sub _build_snapshot_payload {
 			elsif (defined $char->{points_free}) { $p{stat_points} = $char->{points_free}; }
 			elsif (defined $char->{stat_pts}) { $p{stat_points} = $char->{stat_pts}; }
 			else { $p{stat_points} = 0; }
-			$p{job_name}     = (defined $char->{jobName} ? $char->{jobName} : (_state_get('assigned_job') || 'novice')) if defined $char;
+			$p{job_name}     = (defined $char->{jobID} ? ($jobs_lut{$char->{jobID}} // 'novice') : (_state_get('assigned_job') || 'novice')) if defined $char;
 			# Party signals go into raw field (BotStateSnapshot ignores extra top-level fields)
 			# Party members are in $char->{party}{users}{$id}{'name'} (keys are numeric IDs, values are HASH refs)
 			# Cache party state to survive death/respawn
