@@ -96,7 +96,8 @@ rules:
         - { fact: "combat.is_in_combat", op: "eq", value: false }
         - { fact: "combat.aggro_count", op: "eq", value: 0 }
         - { fact: "ai.is_manual", op: "eq", value: true }
-    guards: []
+    guards:
+      - { fact: "state.job_change_eligible", op: "eq", value: false }
     action:
       kind: command
       command: "ai auto"
@@ -194,14 +195,15 @@ rules:
         - { fact: "combat.aggro_count", op: "lte", value: 3 }
         - { fact: "vitals.hp_ratio", op: "gte", value: 0.50 }
         - { fact: "ai.is_manual", op: "eq", value: false }
-    guards: []
+    guards:
+      - { fact: "state.job_change_eligible", op: "eq", value: false }
     action:
       kind: command
       command: "ai auto"
       priority_tier: reflex
       conflict_key: ""
     metadata:
-      note: "Aggro present — ai auto handles auto-attack."
+      note: "Aggro present — ai auto handles auto-attack. JOB-CHANGE GATE (2026-09-02): a job-change-eligible bot must WALK to the guild, NOT fight — re-enabling ai auto makes the low-HP novice die en route."
 
   - rule_id: mob_swarm_combat_stance
     enabled: true
