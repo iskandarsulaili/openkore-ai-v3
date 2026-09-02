@@ -148,15 +148,6 @@ sub sendMapLogin {
 		);
 	}
 	$msg = $packet;
-	# MAPLOGIN-DUMP (diagnostic): log the exact bytes so we can diff against
-	# the accepted layout. Kept behind a debug flag; harmless in prod.
-	# NOTE: TF/message are NOT imported in this module — use main:: fully-qualified.
-	if ($main::config{debugMapLogin}) {
-		main::message(main::TF("DEBUG sendMapLogin (0x0436, %d bytes, mlen=%s acct=%s char=%s sess=%s sex=%s):%s\n",
-			length($msg), defined($mlen)?$mlen:'-', defined($accountID)?unpack('V',$accountID):'?',
-			defined($charID)?unpack('V',$charID):'?', defined($sessionID)?unpack('V',$sessionID):'?',
-			$sex, unpack('H*', $msg)), "connection");
-	}
 	$self->sendToServer($msg);
 	debug "Sent sendMapLogin (0x0436, " . length($msg) . " bytes, mapLoginLength=$mlen, accountID=$accountID, charID=$charID)\n", 'sendPacket';
 }
