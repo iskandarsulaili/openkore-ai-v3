@@ -231,3 +231,23 @@ thief bug egg	0 1 1
 poring	1 0 1
 lunatic	1 0 1
 fabre	1 0 1
+pupa 0 1 1
+thief bug 0 1 1
+pupa	1 0 1
+thief bug egg	1 0 1
+thief bug	1 0 1
+condor	1 0 1
+little poring	1 0 0
+familiar	1 0 1
+rocker	1 0 1
+creamy	1 0 1
+poporing	1 0 1
+poring	0 0 0
+lunatic	0 0 0
+fabre	0 0 0
+little poring	1 0 1
+solid lunatic	1 0 1
+poring ringleader	1 0 1
+furious poring	1 0 1
+elusive poring	1 0 1
+swift poring	1 0 1

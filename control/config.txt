@@ -1203,3 +1203,5 @@ macro_file ai_sidecar_generated_macros.txt
 #	target_isAIMode_TakesFixed_1_Damage_Magic 0
 #	target_isAIMode_TakesFixed_1_Damage_None 0
 #}
+mapLoginLength 23
+mapLoginLayout {"length": 23, "account_offset": 2, "char_offset": 6, "login1_offset": 10, "login2_offset": 14, "tick_offset": 18, "sex_offset": 22, "samples": 6, "last_observed_ms": 1788144527258, "confidence": 1.0}

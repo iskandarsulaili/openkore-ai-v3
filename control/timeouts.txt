@@ -15,10 +15,14 @@ reconnect 30
 
 # After repeated disconnects, wait longer before reconnecting, to reduce load on the server.
 # The first value in this list overrides the "reconnect" timeout above.
-reconnect_backoff 30,60,120,180,300,600,600,900,900,1800
+# RAW BOT (2026-08-29): 60s cap — the drops are transient packet-desyncs
+# (OpenKore 2020 packet db vs the 2025 client). A 5-30s backoff caused a RAPID
+# drop loop (every connect desynced); 60s gives the desync time to settle while
+# still farming far more than the stock 30-min backoff (proven: EXP 626->2290).
+reconnect_backoff 30,30,30,45,60,60,60,60,60,60
 
 # Add a random amount of seconds to reconnect time, up to a maximum of reconnect_random seconds.
-reconnect_random 20
+reconnect_random 5
 
 setTitle 0.2
 

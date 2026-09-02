@@ -1499,6 +1499,17 @@ class HeuristicService:
             return "TOWN_HUNT"
 
         # HUNTING
+        # ── JOB-CHANGE GATE (ANY MAP) ──
+        # A Novice at max job level (10) or a first-class at job level 50 MUST
+        # job change regardless of map — a field-map bot would otherwise stay in
+        # HUNT forever (the town-only gate above never fires on a field map).
+        _first_classes_all = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
+        _jc_any_eligible = (
+            (job_name == "novice" and base_level >= 10 and job_level >= 10)
+            or (job_name in _first_classes_all and job_level >= 50 and base_level >= 50)
+        )
+        if _jc_any_eligible:
+            return "JOB_CHANGE"
         return "HUNT"
 
     def _check_progress(self, signals: dict) -> bool:
@@ -3867,6 +3878,58 @@ class HeuristicService:
         except Exception:
             pass
         if _audit_is_hunting:
+            # ── JOB-CHANGE GATE (hoisted BEFORE the hunting config block) ──
+            # A Novice at max job level (10) MUST job change, not keep farming.
+            # The hunting config-audit below appends ~30 config actions; the bridge
+            # processes ONE action per poll, so those config actions would starve the
+            # job-change move forever (bot farms at max job level, never advances).
+            # Hoist the gate here + return early so the job-change move wins.
+            _jc_h_job = str(signals.get("job_name", "") or "").lower()
+            _jc_h_jl = signals.get("job_level", 0) or 0
+            try:
+                _jc_h_jl = int(_jc_h_jl)
+            except (TypeError, ValueError):
+                _jc_h_jl = 0
+            _jc_h_first = ("swordman", "mage", "archer", "acolyte", "merchant", "thief")
+            _jc_h_eligible = (_jc_h_job == "novice" and _jc_h_jl >= 10) or (_jc_h_job in _jc_h_first and _jc_h_jl >= 50)
+            if _jc_h_eligible:
+                _jc_h_now = __import__("time").time()
+                _jc_h_last = self._last_job_change_attempt.get(bot_id, 0)
+                if _jc_h_now - _jc_h_last > 60:
+                    self._last_job_change_attempt[bot_id] = _jc_h_now
+                    # Route to the job-change guild (DB-backed JOB_CHANGE_NPCS).
+                    # For a Novice, the target is the LLM's conscious job_change_target
+                    # (server_solutions), NOT the current job's guild (novice has none).
+                    _jc_h_npcs = JOB_CHANGE_NPCS
+                    _jc_h_target = _jc_h_job
+                    if _jc_h_job == "novice":
+                        try:
+                            from ai_sidecar.server_adaptation import get_server_solutions_store
+                            _jc_h_tc = get_server_solutions_store().get("job_change_target")
+                            if isinstance(_jc_h_tc, dict):
+                                _jc_h_target = str(_jc_h_tc.get("target_class") or _jc_h_tc.get("class") or "").lower()
+                            elif isinstance(_jc_h_tc, str) and _jc_h_tc.strip():
+                                _jc_h_target = _jc_h_tc.strip().lower()
+                        except Exception:
+                            _jc_h_target = _jc_h_job
+                    _jc_h_npc = (_jc_h_npcs.get(_jc_h_target)
+                                 or _jc_h_npcs.get(_jc_h_job)
+                                 or _jc_h_npcs.get("novice")
+                                 or next(iter(_jc_h_npcs.values()), ()) if _jc_h_npcs else ())
+                    if _jc_h_npc:
+                        _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
+                        _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
+                        actions.append(HeuristicAction(
+                            kind="command", command=_jc_h_cmd,
+                            confidence=0.99, domain="progression",
+                            reason=f"Job change - {_jc_h_job} job level {_jc_h_jl} >= threshold, go to {_jc_h_map} guild",
+                        ))
+                        assessment = HeuristicAssessment(
+                            horizon=horizon, actions=actions, confidence=0.99,
+                            actionable=True, top_domain="progression", signals=dict(signals),
+                        )
+                        self._last_assessment[bot_id] = assessment
+                        return assessment
             # ── PER-MAP MON_CONTROL (config audit) ──
             # Apply mon_control for hunting maps when bot is on a new map
             self._emit_mon_control_for_map(actions, bot_id, _audit_map, int(signals.get("base_level", 1) or 1))
@@ -5210,7 +5273,14 @@ class HeuristicService:
                 _jc_target_class = ""
                 try:
                     from ai_sidecar.server_adaptation import get_server_solutions_store
-                    _jc_target_class = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
+                    _jc_tc_raw = get_server_solutions_store().get("job_change_target", None)
+                    # The store value may be a plain string OR a dict
+                    # {'target_class': 'archer', ...} — extract the class name
+                    # agnostically (never str() a dict into a lookup key).
+                    if isinstance(_jc_tc_raw, dict):
+                        _jc_target_class = str(_jc_tc_raw.get("target_class", "") or "").strip().lower()
+                    else:
+                        _jc_target_class = str(_jc_tc_raw or "").strip().lower()
                 except Exception:
                     _jc_target_class = ""
                 if not _jc_target_class:
@@ -5256,7 +5326,11 @@ class HeuristicService:
                 _jc_target_class = ""
                 try:
                     from ai_sidecar.server_adaptation import get_server_solutions_store
-                    _jc_target_class = str(get_server_solutions_store().get("job_change_target", None) or "").strip().lower()
+                    _jc_tc_raw = get_server_solutions_store().get("job_change_target", None)
+                    if isinstance(_jc_tc_raw, dict):
+                        _jc_target_class = str(_jc_tc_raw.get("target_class", "") or "").strip().lower()
+                    else:
+                        _jc_target_class = str(_jc_tc_raw or "").strip().lower()
                 except Exception:
                     _jc_target_class = ""
                 # AGNOSTIC (RULE.md): use the DB-backed NPC coords (JOB_CHANGE_NPCS
@@ -5281,20 +5355,22 @@ class HeuristicService:
                 if not _jc_target_class:
                     _jc_target_class = JOB_2_1_CLASSES.get(_jc_job_lower, _jc_job_lower)
                 logger.info(f"[job_change] {bot_id}: {_jc_job_lower} job Lv{_jc_job_level} -> {_jc_target_class} (2-1)")
-            actions.append(HeuristicAction(
-                kind="command", command="stand",
-                confidence=0.95, domain="progression",
-                reason="Stand up before walking to job change NPC",
-            ))
             if map_name != _jc_npc_map:
-                # Not on correct town map — move there first
+                # Not on correct town map — move there first. Emit ONLY the move
+                # (no leading 'stand'): the bridge processes ONE action per poll,
+                # so a 'stand' first would starve the move forever.
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_jc_npc_map}",
                     confidence=0.95, domain="progression",
                     reason=f"Move to {_jc_npc_map} for job change to {_jc_target_class}",
                 ))
             else:
-                # On correct map — walk to NPC and talk
+                # On correct map — stand up, walk to NPC and talk
+                actions.append(HeuristicAction(
+                    kind="command", command="stand",
+                    confidence=0.95, domain="progression",
+                    reason="Stand up before walking to job change NPC",
+                ))
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_jc_npc_x} {_jc_npc_y}",
                     confidence=0.95, domain="progression",
