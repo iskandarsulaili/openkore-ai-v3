@@ -5303,6 +5303,25 @@ class HeuristicService:
             _jc_job_lower = _jc_job.lower()
             _jc_base_level = signals.get("base_level", 1) or 1
             _jc_job_level = signals.get("job_level", 1) or 1
+            # LOW-HP ESCAPE (2026-09-03): a job-change bot crossing a monster
+            # field as a low-HP novice gets swarmed and dies (observed live:
+            # died on prt_fild08 crossing to alberta/payon). teleportAuto fires
+            # at HP<10 (too late) and the config rewrite strips teleportAuto_hp.
+            # Emit `use Fly Wing` at 40% HP so the bot teleports out BEFORE it
+            # is overwhelmed, then re-routes to the guild. Runtime command, not
+            # config-dependent.
+            _jc_hp_ratio = float(signals.get("hp_ratio", 1.0) or 1.0)
+            if _jc_hp_ratio <= 0.40:
+                _jc_fw_lk = f"job_change_flywing:{bot_id}"
+                _jc_fw_now = __import__("time").time()
+                _jc_fw_last = self._job_change_route_emit.get(_jc_fw_lk, 0.0)
+                if _jc_fw_now - _jc_fw_last >= 8.0:
+                    self._job_change_route_emit[_jc_fw_lk] = _jc_fw_now
+                    actions.append(HeuristicAction(
+                        kind="command", command="use Fly Wing",
+                        confidence=0.95, domain="survival",
+                        reason=f"Job change - low HP ({_jc_hp_ratio:.0%}) crossing field, teleport out before overwhelmed",
+                    ))
             # Find the target class for each type
             _jc_target_class = ""
             _jc_npc_map = "prontera"
