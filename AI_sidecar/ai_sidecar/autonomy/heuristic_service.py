@@ -3893,43 +3893,45 @@ class HeuristicService:
             _jc_h_first = ("swordman", "mage", "archer", "acolyte", "merchant", "thief")
             _jc_h_eligible = (_jc_h_job == "novice" and _jc_h_jl >= 10) or (_jc_h_job in _jc_h_first and _jc_h_jl >= 50)
             if _jc_h_eligible:
-                _jc_h_now = __import__("time").time()
-                _jc_h_last = self._last_job_change_attempt.get(bot_id, 0)
-                if _jc_h_now - _jc_h_last > 60:
-                    self._last_job_change_attempt[bot_id] = _jc_h_now
-                    # Route to the job-change guild (DB-backed JOB_CHANGE_NPCS).
-                    # For a Novice, the target is the LLM's conscious job_change_target
-                    # (server_solutions), NOT the current job's guild (novice has none).
-                    _jc_h_npcs = JOB_CHANGE_NPCS
-                    _jc_h_target = _jc_h_job
-                    if _jc_h_job == "novice":
-                        try:
-                            from ai_sidecar.server_adaptation import get_server_solutions_store
-                            _jc_h_tc = get_server_solutions_store().get("job_change_target")
-                            if isinstance(_jc_h_tc, dict):
-                                _jc_h_target = str(_jc_h_tc.get("target_class") or _jc_h_tc.get("class") or "").lower()
-                            elif isinstance(_jc_h_tc, str) and _jc_h_tc.strip():
-                                _jc_h_target = _jc_h_tc.strip().lower()
-                        except Exception:
-                            _jc_h_target = _jc_h_job
-                    _jc_h_npc = (_jc_h_npcs.get(_jc_h_target)
-                                 or _jc_h_npcs.get(_jc_h_job)
-                                 or _jc_h_npcs.get("novice")
-                                 or next(iter(_jc_h_npcs.values()), ()) if _jc_h_npcs else ())
-                    if _jc_h_npc:
-                        _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
-                        _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
-                        actions.append(HeuristicAction(
-                            kind="command", command=_jc_h_cmd,
-                            confidence=0.99, domain="progression",
-                            reason=f"Job change - {_jc_h_job} job level {_jc_h_jl} >= threshold, go to {_jc_h_map} guild",
-                        ))
-                        assessment = HeuristicAssessment(
-                            horizon=horizon, actions=actions, confidence=0.99,
-                            actionable=True, top_domain="progression", signals=dict(signals),
-                        )
-                        self._last_assessment[bot_id] = assessment
-                        return assessment
+                # Route to the job-change guild (DB-backed JOB_CHANGE_NPCS).
+                # For a Novice, the target is the LLM's conscious job_change_target
+                # (server_solutions), NOT the current job's guild (novice has none).
+                # NOTE: NO rate limit here — the bridge processes ONE action per
+                # poll, and the hunting config-audit below appends ~30 config
+                # actions. A 60s rate limit let hunting moves win between attempts,
+                # so the bot oscillated alberta_in <-> farm and never reached the
+                # guild. Fire the move EVERY cycle while eligible + not on the
+                # guild map so it wins over hunting.
+                _jc_h_npcs = JOB_CHANGE_NPCS
+                _jc_h_target = _jc_h_job
+                if _jc_h_job == "novice":
+                    try:
+                        from ai_sidecar.server_adaptation import get_server_solutions_store
+                        _jc_h_tc = get_server_solutions_store().get("job_change_target")
+                        if isinstance(_jc_h_tc, dict):
+                            _jc_h_target = str(_jc_h_tc.get("target_class") or _jc_h_tc.get("class") or "").lower()
+                        elif isinstance(_jc_h_tc, str) and _jc_h_tc.strip():
+                            _jc_h_target = _jc_h_tc.strip().lower()
+                    except Exception:
+                        _jc_h_target = _jc_h_job
+                _jc_h_npc = (_jc_h_npcs.get(_jc_h_target)
+                             or _jc_h_npcs.get(_jc_h_job)
+                             or _jc_h_npcs.get("novice")
+                             or next(iter(_jc_h_npcs.values()), ()) if _jc_h_npcs else ())
+                if _jc_h_npc:
+                    _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
+                    _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
+                    actions.append(HeuristicAction(
+                        kind="command", command=_jc_h_cmd,
+                        confidence=0.99, domain="progression",
+                        reason=f"Job change - {_jc_h_job} job level {_jc_h_jl} >= threshold, go to {_jc_h_map} guild",
+                    ))
+                    assessment = HeuristicAssessment(
+                        horizon=horizon, actions=actions, confidence=0.99,
+                        actionable=True, top_domain="progression", signals=dict(signals),
+                    )
+                    self._last_assessment[bot_id] = assessment
+                    return assessment
             # ── PER-MAP MON_CONTROL (config audit) ──
             # Apply mon_control for hunting maps when bot is on a new map
             self._emit_mon_control_for_map(actions, bot_id, _audit_map, int(signals.get("base_level", 1) or 1))
