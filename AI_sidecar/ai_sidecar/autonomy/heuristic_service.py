@@ -3609,8 +3609,12 @@ class HeuristicService:
                 # cycle (the bridge applies `set attackAuto 3` every ~20s) is config
                 # churn + poll waste (observed live). The key includes the map so
                 # leaving + returning to a hunting field re-arms it.
+                # JOB_CHANGE GATE (2026-09-02): a job-change-eligible bot must WALK
+                # to the guild, NOT fight on the field — re-enabling attackAuto here
+                # makes the low-HP novice die en route (observed live: died on
+                # prt_fild08 attacking Lunatic/Fabre while walking to alberta).
                 _aa_key = f"attack_enabled:{_cs_stable_key}:{_cs_map}"
-                if not self._cold_start_latches.get(_aa_key):
+                if not self._cold_start_latches.get(_aa_key) and state != "JOB_CHANGE":
                     self._cold_start_latches[_aa_key] = True
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto 3",
