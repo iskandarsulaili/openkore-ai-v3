@@ -1306,6 +1306,8 @@ MACRO_PATTERNS["job_change_novice"] = MacroPattern(
         _make_trigger("progression.job_changed", "neq", True),
     ],
     action_sequence=[
+        _make_action("set attackAuto 0",
+                     "Disable auto-attack so the bot walks to the guild uninterrupted", timeout=2.0),
         _make_action("move {job_change_map} {job_change_x} {job_change_y}",
                      "Route to job-change guild", timeout=30.0),
         _make_action("talknpc {job_change_x} {job_change_y} c",
@@ -1326,6 +1328,8 @@ MACRO_PATTERNS["job_change_2_1"] = MacroPattern(
         _make_trigger("progression.job_changed", "neq", True),
     ],
     action_sequence=[
+        _make_action("set attackAuto 0",
+                     "Disable auto-attack so the bot walks to the guild uninterrupted", timeout=2.0),
         _make_action("move {job_change_map} {job_change_x} {job_change_y}",
                      "Route to 2-1 job-change guild", timeout=30.0),
         _make_action("talknpc {job_change_x} {job_change_y} c",

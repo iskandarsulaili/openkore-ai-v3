@@ -1172,6 +1172,10 @@ class HeuristicService:
         # by bot+map — prevents re-emitting the same command every cycle
         # (config churn observed live: `set attackAuto 3` every ~20s).
         self._cold_start_latches: dict[str, bool] = {}
+        # Job-change route emit latch (bot_id -> last emit ts) — prevents
+        # re-emitting `move <guild>` every cycle (resets the expensive route
+        # calc before the walk starts -> route-calc loop).
+        self._job_change_route_emit: dict[str, float] = {}
         # Leader-decided team job assignments (persisted for crash recovery)
         self._team_levels: dict[str, int] = {}
         self._team_jobs_assigned: dict[str, bool] = {}
@@ -3813,17 +3817,23 @@ class HeuristicService:
                 # AGNOSTIC true last-resort: the first real spawn map (never hardcoded).
                 _hunt_map = sorted(self.map_spawns.keys())[0] if self.map_spawns else ""
             if _cs_in_hunting:
-                # On hunting map — farm
-                actions.append(HeuristicAction(
-                    kind="command", command="ai auto",
-                    confidence=0.99, domain="progression",
-                    reason=f"Step 8 - farm {_hunt_map} as {job_name}",
-                ))
-                actions.append(HeuristicAction(
-                    kind="command", command="set attackAuto 3",
-                    confidence=0.99, domain="progression",
-                    reason=f"Step 8 - enable attack on {_hunt_map}",
-                ))
+                # On hunting map — farm. BUT if the bot is in JOB_CHANGE state,
+                # emit NOTHING here — the JOB_CHANGE state handler (below) emits
+                # `move alberta_in` (the guild). Re-enabling combat or routing to
+                # a farm map here would override the job-change move every cycle.
+                if state == "JOB_CHANGE":
+                    pass
+                else:
+                    actions.append(HeuristicAction(
+                        kind="command", command="ai auto",
+                        confidence=0.99, domain="progression",
+                        reason=f"Step 8 - farm {_hunt_map} as {job_name}",
+                    ))
+                    actions.append(HeuristicAction(
+                        kind="command", command="set attackAuto 3",
+                        confidence=0.99, domain="progression",
+                        reason=f"Step 8 - enable attack on {_hunt_map}",
+                    ))
             else:
                 actions.append(HeuristicAction(
                     kind="command", command=f"move {_hunt_map}",
@@ -3892,7 +3902,7 @@ class HeuristicService:
             # processes ONE action per poll, so those config actions would starve the
             # job-change move forever (bot farms at max job level, never advances).
             # Hoist the gate here + return early so the job-change move wins.
-            _jc_h_job = str(signals.get("job_name", "") or "").lower()
+            _jc_h_job = str(signals.get("job_name", "novice") or "novice").lower()
             _jc_h_jl = signals.get("job_level", 0) or 0
             try:
                 _jc_h_jl = int(_jc_h_jl)
@@ -3910,6 +3920,16 @@ class HeuristicService:
                 # so the bot oscillated alberta_in <-> farm and never reached the
                 # guild. Fire the move EVERY cycle while eligible + not on the
                 # guild map so it wins over hunting.
+                # ROUTING LATCH (2026-09-02): re-emitting `move alberta_in` EVERY
+                # cycle resets the (expensive, ~900-step) route calc before the bot
+                # starts walking -> the bot never leaves the field (route-calc
+                # loop). Emit at most once per 10s per bot so the route calc has
+                # time to complete and the walk actually starts. The hunting audit
+                # is now gated (returns early in JOB_CHANGE), so a 10s latch cannot
+                # let hunting win between attempts.
+                _jc_latch_key = f"job_change_route:{bot_id}"
+                _jc_now = __import__("time").time()
+                _jc_last = self._job_change_route_emit.get(_jc_latch_key, 0.0)
                 _jc_h_npcs = JOB_CHANGE_NPCS
                 _jc_h_target = _jc_h_job
                 if _jc_h_job == "novice":
@@ -3929,11 +3949,13 @@ class HeuristicService:
                 if _jc_h_npc:
                     _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
                     _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
-                    actions.append(HeuristicAction(
-                        kind="command", command=_jc_h_cmd,
-                        confidence=0.99, domain="progression",
-                        reason=f"Job change - {_jc_h_job} job level {_jc_h_jl} >= threshold, go to {_jc_h_map} guild",
-                    ))
+                    if _jc_now - _jc_last >= 10.0:
+                        self._job_change_route_emit[_jc_latch_key] = _jc_now
+                        actions.append(HeuristicAction(
+                            kind="command", command=_jc_h_cmd,
+                            confidence=0.99, domain="progression",
+                            reason=f"Job change - {_jc_h_job} job level {_jc_h_jl} >= threshold, go to {_jc_h_map} guild",
+                        ))
                     assessment = HeuristicAssessment(
                         horizon=horizon, actions=actions, confidence=0.99,
                         actionable=True, top_domain="progression", signals=dict(signals),

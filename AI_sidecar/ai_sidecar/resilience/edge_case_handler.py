@@ -232,6 +232,22 @@ class EdgeCaseHandler:
 
     def handle_unstuck(self, bot_id: str, bot_state: dict[str, Any]) -> ActionProposal | None:
         """Detect bot hasn't moved in ``unstuck_timeout_s`` → issue random move."""
+        # JOB_CHANGE GATE (2026-09-02): when the bot is a Novice at max job level
+        # (job change pending), the job-change move (to the guild) is the ONLY
+        # destination that matters. edge_unstuck's random hunting move (reflex
+        # priority) overrides it every cycle -> the bot never reaches the guild
+        # (route-calc loop). Skip unstuck entirely while a job change is pending
+        # so the guild move wins. The snapshot carries `job`/`job_level` (not a
+        # `state` key), so gate on the eligibility condition directly.
+        _job = str(bot_state.get("job", bot_state.get("job_name", "")) or "").lower()
+        _jl = bot_state.get("job_level", 0) or 0
+        try:
+            _jl = int(_jl)
+        except (TypeError, ValueError):
+            _jl = 0
+        _first_classes = {"swordman", "mage", "archer", "acolyte", "merchant", "thief"}
+        if (_job == "novice" and _jl >= 10) or (_job in _first_classes and _jl >= 50):
+            return None
         pos = bot_state.get("position")
         if not pos:
             return None
