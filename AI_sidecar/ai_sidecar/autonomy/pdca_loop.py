@@ -2231,7 +2231,11 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     _farm = ""
                     try:
                         if _store is not None:
-                            _surv = str(_store.get("survival_strategy", None) or "").strip().lower()
+                            _surv_raw = _store.get("survival_strategy", None)
+                            if isinstance(_surv_raw, dict):
+                                _surv = str(_surv_raw.get("strategy", "") or "").strip().lower()
+                            elif isinstance(_surv_raw, str):
+                                _surv = _surv_raw.strip().lower()
                             _farm = str(_store.get("farm_map", None) or "").strip().lower()
                     except Exception:
                         pass
@@ -2259,17 +2263,23 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                                 _fw_id = str(_store.get("fly_wing_item_id", None) or "")
                         except Exception:
                             pass
-                        if _fw_id:
-                            aq.enqueue(_bid, ActionProposal(
-                                action_id=f"dl_flywing_{_bid}_{int(__import__('time').time()*1000)}",
-                                kind="command", command=f"use {_fw_id}",
-                                priority_tier=ActionPriorityTier.reflex, source="planner",
-                                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
-                                conflict_key=f"dl_flywing_{_bid}", idempotency_key=f"dl_flywing_{_bid}",
-                                metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape","bot_id":_bid},
-                            ))
-                            _dl[_bid]["count"] = 0
-                            return 2
+                        # Benign default: 601 is the standard rAthena Fly Wing (a
+                        # game constant per RULE.md §9). The store can override it
+                        # for a custom server (learned via observation). Without a
+                        # fallback this branch is dead — the LLM decided
+                        # fly_wing_escape but the reflex silently falls through.
+                        if not _fw_id:
+                            _fw_id = "601"
+                        aq.enqueue(_bid, ActionProposal(
+                            action_id=f"dl_flywing_{_bid}_{int(__import__('time').time()*1000)}",
+                            kind="command", command=f"use {_fw_id}",
+                            priority_tier=ActionPriorityTier.reflex, source="planner",
+                            created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                            conflict_key=f"dl_flywing_{_bid}", idempotency_key=f"dl_flywing_{_bid}",
+                            metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape","bot_id":_bid},
+                        ))
+                        _dl[_bid]["count"] = 0
+                        return 2
                     # Default / level_up_first: route to the DB-backed safe farm map.
                     # If no farm_map learned yet, fall back to the hunting-zone
                     # manager's recommendation (DB/agent-driven, never a literal).
