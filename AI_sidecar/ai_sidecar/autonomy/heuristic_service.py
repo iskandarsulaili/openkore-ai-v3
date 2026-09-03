@@ -5481,6 +5481,47 @@ class HeuristicService:
                 # observed live). attackAuto 1 = fight back when attacked, no
                 # chasing. This clears aggro while walking without diverting the
                 # route.
+                # MOB-DRIBBLE (2026-09-03, user directive "A* should be advanced
+                # enough to dribble the mobs for survival"): when hostiles are
+                # within dribble range while walking a field map, emit a short
+                # move AWAY from the nearest hostile to break aggro, then the
+                # guild move continues. This is the "dribble mobs + evade" half
+                # of the survival combination (potions are handled by the
+                # situational adapter; skills by the combat gate).
+                _jc_dribble = None
+                try:
+                    _jc_actors = signals.get("actors", []) or []
+                    _jc_px = int(signals.get("x", 0) or 0)
+                    _jc_py = int(signals.get("y", 0) or 0)
+                    _jc_nearest = None
+                    _jc_nearest_d = 1e9
+                    for _jc_a in _jc_actors:
+                        if not isinstance(_jc_a, dict):
+                            continue
+                        _jc_rel = str(_jc_a.get("relation", "") or "").lower()
+                        _jc_atype = str(_jc_a.get("actor_type", "") or "").lower()
+                        if _jc_rel not in ("hostile", "enemy", "monster") and _jc_atype != "monster":
+                            continue
+                        _jc_ax = _jc_a.get("x")
+                        _jc_ay = _jc_a.get("y")
+                        if _jc_ax is None or _jc_ay is None:
+                            continue
+                        _jc_d = ((_jc_ax - _jc_px) ** 2 + (_jc_ay - _jc_py) ** 2) ** 0.5
+                        if _jc_d < _jc_nearest_d:
+                            _jc_nearest_d = _jc_d
+                            _jc_nearest = (_jc_ax, _jc_ay)
+                    # Dribble when a hostile is within ~6 cells (aggro range).
+                    if _jc_nearest and _jc_nearest_d <= 6.0:
+                        _jc_dx = _jc_px - _jc_nearest[0]
+                        _jc_dy = _jc_py - _jc_nearest[1]
+                        _jc_len = (_jc_dx ** 2 + _jc_dy ** 2) ** 0.5 or 1.0
+                        # Step 3 cells away from the hostile (perpendicular-ish
+                        # to the route) to break aggro without losing the walk.
+                        _jc_dribble_x = int(_jc_px + (_jc_dx / _jc_len) * 3)
+                        _jc_dribble_y = int(_jc_py + (_jc_dy / _jc_len) * 3)
+                        _jc_dribble = f"move {_jc_dribble_x} {_jc_dribble_y}"
+                except Exception:
+                    _jc_dribble = None
                 _jc_s_lk = f"job_change_state:{bot_id}:{_jc_npc_map}"
                 _jc_s_now = __import__("time").time()
                 _jc_s_last = self._job_change_route_emit.get(_jc_s_lk, 0.0)
@@ -5491,6 +5532,12 @@ class HeuristicService:
                         confidence=0.95, domain="progression",
                         reason="Job change - defend-only combat while walking to guild",
                     ))
+                    if _jc_dribble:
+                        actions.append(HeuristicAction(
+                            kind="command", command=_jc_dribble,
+                            confidence=0.95, domain="progression",
+                            reason=f"Job change - dribble away from nearest hostile ({_jc_nearest_d:.0f} cells) to survive field crossing",
+                        ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_jc_npc_map}",
                         confidence=0.95, domain="progression",
