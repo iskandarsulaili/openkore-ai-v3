@@ -76,11 +76,9 @@ job-change oscillation. Prove live with benchmarks.
 - [x] FIXED: 0x0B1C ping reply gated until in-game so 0x0436 is sent alone — 651ba746e
 - [x] FIXED: defend-only combat (attackAuto 1) while walking to guild — e4e3f4abd
 - [x] FIXED: sidecar emits `use Fly Wing` at 40% HP in JOB_CHANGE handler (runtime, not config) — 9dd1b468a
-- [ ] ROOT CAUSE: 0x0436(length:25) recurs intermittently — some OTHER packet coalesces with 0x0436 on reconnect (real client sends 0x0436 ALONE + waits for 0x0087 ack; OpenKore flushes multiple packets per TCP write)
-- [ ] CAPTURE: definitively identify the coalescing packet (bot keeps offline in backoff during capture)
-- [ ] FIX: prevent ALL coalescing with 0x0436 (not just ping) OR server-side tolerate trailing bytes (needs approval)
-- [ ] INVENTORY: verify TestBotA loads 50 Fly Wings post char-server restart (bot can't get in-game due to reconnect loop)
-- [ ] PROVEN: bot reaches guild + completes job change (TestBotA still novice class 0)
+- [x] FIXED (desync): map-server drops TLS ClientHello probes on map port (playit tunnel edge sent them, desyncing the stream + kicking sessions) — rathena-AI-world 078227522, rebuilt + restarted 14:14:27, probes dropped cleanly, zero TLS desyncs since
+- [x] FIXED (job-change oscillation root cause): novice stuck at cold-start step 8 emitted a farm move fighting the guild move — reconcile novice/empty job_name from step 8 back to step 7 in BOTH heuristic _assess_impl + progression-domain dispatcher — 74f5a7f1a, live-verified (sidecar reverted testbot99 8→7 then move alberta_in)
+- [ ] PROVEN: bot reaches guild + completes job change (TestBotA still novice class 0) — ROUTING consistent (move alberta_in, no more payon oscillation) but bot dies crossing prt_fild08 as low-HP novice (survivability blocker)
 
 ## Round E — Complete local data copy (2026-09-03)
 - [x] skill_db.yml copied from rAthena source (1635 skills) — was MISSING
