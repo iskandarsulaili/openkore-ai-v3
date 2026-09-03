@@ -2186,8 +2186,24 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     _bot_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
                 
                 if _bot_level <= 5:
-                    # EXTREME CONSERVATIVE: portal-hug prt_fild05, shortest attack range, don't chase
-                    _log.warning("combat_monitor: bot=%s Lv%d extreme conservative -> portal-hugging prt_fild05", _bid, _bot_level)
+                    # EXTREME CONSERVATIVE: portal-hug the DB-backed safe farm map,
+                    # shortest attack range, don't chase. The safe map is LEARNED
+                    # (server_solutions farm_map), never a hardcoded literal.
+                    _store = getattr(runtime_state, "server_solutions_store", None)
+                    _safe_farm = ""
+                    try:
+                        if _store is not None:
+                            _safe_farm = str(_store.get("farm_map", None) or "").strip().lower()
+                    except Exception:
+                        pass
+                    if not _safe_farm:
+                        # No learned safe map — defer to the conscious tier (RULE.md
+                        # §19: a knowledge gap is a learning opportunity, not a
+                        # hardcoded fallback).
+                        _log.warning("combat_monitor: bot=%s Lv%d extreme conservative but no safe farm map learned -> deferring to conscious tier", _bid, _bot_level)
+                        _dl[_bid]["count"] = 0
+                        return 2
+                    _log.warning("combat_monitor: bot=%s Lv%d extreme conservative -> portal-hugging %s", _bid, _bot_level, _safe_farm)
                     aq = getattr(runtime_state, "action_queue", None)
                     if aq is not None:
                         from datetime import UTC, datetime, timedelta
@@ -2201,14 +2217,14 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                             conflict_key=f"dl_minimal_{_bid}", idempotency_key=f"dl_minimal_{_bid}",
                             metadata={"source":"death_loop","reason":"extreme_conservative_range","bot_id":_bid},
                         ))
-                        # Move to prt_fild05 portal — hug the prontera entrance
+                        # Move to the safe farm map portal — hug the town entrance
                         aq.enqueue(_bid, ActionProposal(
                             action_id=f"dl_hug_{_bid}_{int(__import__('time').time()*1000)}",
-                            kind="command", command="move prt_fild05",
+                            kind="command", command=f"move {_safe_farm}",
                             priority_tier=ActionPriorityTier.reflex, source="planner",
                             created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=120),
                             conflict_key=f"dl_hug_{_bid}", idempotency_key=f"dl_hug_{_bid}",
-                            metadata={"source":"death_loop","reason":"portal_hug_prt_fild05","bot_id":_bid},
+                            metadata={"source":"death_loop","reason":"portal_hug_safe_farm","bot_id":_bid},
                         ))
                         return 2
                 
