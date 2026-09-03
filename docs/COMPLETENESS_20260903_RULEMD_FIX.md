@@ -14,6 +14,10 @@ server-specific literals in *.py; gear/consumable decisions agent-driven.
       (level_up_first / job_change_now / fly_wing_escape) and only EXECUTES it.
       Added `_llm_survival_advisory` (conscious tier) that decides + persists the
       strategy. Committed `59f8994d1`.
+- [x] V1b: BOTH job-change emitters (heuristic JOB_CHANGE handler + progression
+      domain) now honor `survival_strategy=level_up_first` and defer the guild
+      move. VERIFIED LIVE: "survival_strategy=level_up_first -> deferring job
+      change" fires in both. Committed `b67a5dd39`.
 - [x] V2: heuristic_service.py:2002 hardcoded map-prefix gate
       (`prt_fild`/`pay_fild`/`gef_fild`) gating TacticsDispatcher. REPLACED with
       agnostic `not _is_city_map(_map)` — tactics run on any field map on any
