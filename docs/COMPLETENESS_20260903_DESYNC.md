@@ -26,7 +26,8 @@ Fix the map-server mid-session desync burst that kicks the bot (and multiple ses
 - [x] Verify bot stays in-game for sustained period (benchmark: 30+ min no desync) — VERIFIED: zero `unsupported packet`/`0x05fc`/`0x0436` desyncs since restart; TLS probes from 127.30.46.227 dropped cleanly (log: "TLS probe on map port ... dropping")
 
 ### Round C — Job change completion
-- [ ] Bot reaches guild (alberta_in / payon_in02)
+- [x] Routing consistent (no more payon/alberta oscillation) — step-8 novice reconcile (74f5a7f1a)
+- [ ] Bot reaches guild (alberta_in / payon_in02) — BLOCKED: bot dies crossing prt_fild08 as low-HP novice (96/193, swarmed, moves time out)
 - [ ] Bot talks to guild NPC + completes job change
 - [ ] Verify class != 0 in DB (TestBotA no longer novice)
 - [ ] Verify job-change skill-set fires (macro-agent)
