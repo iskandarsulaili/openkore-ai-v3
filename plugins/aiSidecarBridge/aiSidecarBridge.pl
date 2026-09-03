@@ -2749,7 +2749,14 @@ sub _build_snapshot_payload {
 	my $item_count;
 	my @inventory_items_digest;
 	my $has_weapon_in_inventory = 0;
-	if ($char) {
+	# Gate the inventory read on isReady(): on every map change OpenKore's
+	# InventoryList::onMapChange() CLEARS the inventory and sets state NOT_READY,
+	# then the server re-sends the full list (state -> READY). Reading in that
+	# clear->re-send window reports a FALSE EMPTY inventory (item_count=0) even
+	# though the character owns items — the real client never sees this because
+	# it renders from its own state, not a bridge snapshot. Skip the digest when
+	# not ready so the sidecar never acts on a phantom empty inventory.
+	if ($char && eval { $char->inventory() } && eval { $char->inventory()->isReady() }) {
 		my $_inv = _char_inventory($char);
 		$item_count = scalar @{$_inv};
 		# Build a compact inventory digest (id + name + qty + equipped + type) so
