@@ -539,6 +539,16 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         if not signals["characters"]:
                             _raw = getattr(latest, "raw", {}) or {}
                             signals["characters"] = _raw.get("characters", []) or []
+                        # ACTORS (2026-09-03): the bridge sends nearby actors
+                        # (mobs/players/NPCs with x/y/relation) via the snapshot.
+                        # The heuristic's mob-dribble reads signals["actors"] to
+                        # step away from the nearest hostile while walking to the
+                        # job-change guild — without this, the dribble never fires
+                        # (observed live: bot swarmed by Lunatic/Fabre on prt_fild08).
+                        signals["actors"] = getattr(latest, "actors", []) or []
+                        if not signals["actors"]:
+                            _raw_a = getattr(latest, "raw", {}) or {}
+                            signals["actors"] = _raw_a.get("actors", []) or []
                         pos = getattr(latest, "position", None) or {}
                         signals["map"] = str(getattr(pos, "map", "") or "")
                         # lockMap from raw bridge digest (object branch — the live
