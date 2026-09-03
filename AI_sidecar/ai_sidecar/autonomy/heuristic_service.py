@@ -3750,7 +3750,7 @@ class HeuristicService:
                 # If not leader, just wait
         if _cold_start_step == 7:
             # Step 7: Execute job change (walk to NPC, talk)
-            _is_novice = job_name == "novice"
+            _is_novice = str(job_name or "novice").lower() == "novice"
             # Check if we have an assigned job (from leader or manual)
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             # AGNOSTIC (RULE.md): prefer the CONSCIOUS-tier decision (server_solutions
@@ -3810,51 +3810,67 @@ class HeuristicService:
                         reason=f"Step 7 - go to town {_town7b}, waiting for job assignment",
                     ))
         if _cold_start_step == 8:
-            # Step 8: Post-job-change first hunt on appropriate map.
-            # AGNOSTIC: resolve from game_knowledge_db by job class hint, else the
-            # reachable_hunting_maps resolver — never a hardcoded job->map dict.
+            # ── RECONCILE (2026-09-03): if the bot is STILL a novice, step 8
+            #    (post-job-change hunting) was advanced prematurely — a novice
+            #    cannot be past job change. Revert to step 7 so the job-change
+            #    handler re-engages and walks to the guild. This closes the
+            #    oscillation where cold-start step 8 emitted a farm move
+            #    (`move payon`) that fought the job-change guild move
+            #    (`move alberta_in`), observed live (TestBotA class 0 yet
+            #    cold_start_step 8).
+            _step8_rc = str(job_name or "novice").lower() == "novice"
+            if _step8_rc:
+                self._cold_start_step[_cs_stable_key] = 7
+                logger.info(f"[cold_start] {bot_id}: still novice at step 8 — reverting to step 7 (job change pending)")
+            # Step 8: Post-job-change first hunt on appropriate map. (Skipped
+            # entirely for a reverted novice — the JOB_CHANGE state handler
+            # below owns that cycle and must NOT be overridden by a farm move.)
             _hunt_map = ""
-            try:
-                _gkd = GameKnowledgeDB()
-                _zone = _gkd.get_hunting_zone(int(base_level or 1), class_hint=str(job_name or "all"))
-                if _zone and _zone.get("map_name"):
-                    _hunt_map = str(_zone["map_name"])
-            except Exception:
+            if not _step8_rc:
+                # AGNOSTIC: resolve from game_knowledge_db by job class hint, else the
+                # reachable_hunting_maps resolver — never a hardcoded job->map dict.
                 _hunt_map = ""
-            if not _hunt_map:
                 try:
-                    _reach8 = _mk_reachable_hunting_maps(str(_cs_map or ""), int(base_level or 1))
-                    if _reach8:
-                        _hunt_map = _reach8[0][0]
+                    _gkd = GameKnowledgeDB()
+                    _zone = _gkd.get_hunting_zone(int(base_level or 1), class_hint=str(job_name or "all"))
+                    if _zone and _zone.get("map_name"):
+                        _hunt_map = str(_zone["map_name"])
                 except Exception:
                     _hunt_map = ""
-            if not _hunt_map:
-                # AGNOSTIC true last-resort: the first real spawn map (never hardcoded).
-                _hunt_map = sorted(self.map_spawns.keys())[0] if self.map_spawns else ""
-            if _cs_in_hunting:
-                # On hunting map — farm. BUT if the bot is in JOB_CHANGE state,
-                # emit NOTHING here — the JOB_CHANGE state handler (below) emits
-                # `move alberta_in` (the guild). Re-enabling combat or routing to
-                # a farm map here would override the job-change move every cycle.
-                if state == "JOB_CHANGE":
-                    pass
+                if not _hunt_map:
+                    try:
+                        _reach8 = _mk_reachable_hunting_maps(str(_cs_map or ""), int(base_level or 1))
+                        if _reach8:
+                            _hunt_map = _reach8[0][0]
+                    except Exception:
+                        _hunt_map = ""
+                if not _hunt_map:
+                    # AGNOSTIC true last-resort: the first real spawn map (never hardcoded).
+                    _hunt_map = sorted(self.map_spawns.keys())[0] if self.map_spawns else ""
+                if _cs_in_hunting:
+                    # On hunting map — farm. BUT if the bot is in JOB_CHANGE state,
+                    # emit NOTHING here — the JOB_CHANGE state handler (below) emits
+                    # `move alberta_in` (the guild). Re-enabling combat or routing to
+                    # a farm map here would override the job-change move every cycle.
+                    if state == "JOB_CHANGE":
+                        pass
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command="ai auto",
+                            confidence=0.99, domain="progression",
+                            reason=f"Step 8 - farm {_hunt_map} as {job_name}",
+                        ))
+                        actions.append(HeuristicAction(
+                            kind="command", command="set attackAuto 3",
+                            confidence=0.99, domain="progression",
+                            reason=f"Step 8 - enable attack on {_hunt_map}",
+                        ))
                 else:
                     actions.append(HeuristicAction(
-                        kind="command", command="ai auto",
+                        kind="command", command=f"move {_hunt_map}",
                         confidence=0.99, domain="progression",
-                        reason=f"Step 8 - farm {_hunt_map} as {job_name}",
+                        reason=f"Step 8 - move to {_hunt_map} for post-job farming",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 3",
-                        confidence=0.99, domain="progression",
-                        reason=f"Step 8 - enable attack on {_hunt_map}",
-                    ))
-            else:
-                actions.append(HeuristicAction(
-                    kind="command", command=f"move {_hunt_map}",
-                    confidence=0.99, domain="progression",
-                    reason=f"Step 8 - move to {_hunt_map} for post-job farming",
-                ))
         # ── ZERO POTIONS ON HUNTING MAP: force return to town ──
         # Runs every cycle for ALL bots, not just COLD_START or hunting maps
         # Fixes: attackMaxDistance, attackDistance, attackAuto, avoidList settings

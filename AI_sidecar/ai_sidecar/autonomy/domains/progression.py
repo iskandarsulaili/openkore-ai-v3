@@ -138,7 +138,24 @@ class ProgressionDomain(BaseDomain):
         elif _cs_step == 7:
             self._cold_step7(actions, signals, _cs_key, bot_id, _in_town, service)
         elif _cs_step == 8:
-            self._cold_step8(actions, signals, _cs_key, _in_hunting, service)
+            # ── RECONCILE (2026-09-03): if the bot is STILL a novice, step 8
+            #    (post-job-change hunting) was advanced prematurely — a novice
+            #    cannot be past job change. Revert to step 7 so the job-change
+            #    handler re-engages and walks to the guild instead of emitting a
+            #    farm move that fights the guild move (observed live: TestBotA
+            #    class 0 yet cold_start_step 8 -> `move payon` vs `move alberta_in`).
+            _cj = str(signals.get("job_name", "") or "").strip().lower()
+            if _cj == "" or _cj == "novice":
+                service._cold_start_step[_cs_key] = 7
+                _cs_step = 7
+                from ai_sidecar.autonomy.heuristic_service import logger as _cs_logger
+                _cs_logger.info(
+                    f"[cold_start] {bot_id}: still novice at step 8 (progression) — "
+                    f"reverting to step 7 (job change pending)"
+                )
+                self._cold_step7(actions, signals, _cs_key, bot_id, _in_town, service)
+            else:
+                self._cold_step8(actions, signals, _cs_key, _in_hunting, service)
 
     def _cold_step0(
         self, actions, _cs_key, _has_weapon, _has_potions,

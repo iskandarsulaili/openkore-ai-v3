@@ -154,3 +154,56 @@ def test_island_danger_without_progress_forces_fast_exit() -> None:
     assert "move 49 57" in first_cmds, f"danger+0-progress must fire the field exit: {first_cmds}"
     # The throttle flag is recorded so the fast-exit path is armed.
     assert h._last_island_escape.get("COLD_START", 0) > 0
+
+
+def test_novice_at_step8_reverts_to_step7_no_farm_move() -> None:
+    """A bot that is STILL a novice (class 0) must never be left at cold-start
+    step 8 (post-job-change hunting). Step 8 is advanced only after a successful
+    job change; a novice that somehow reached step 8 must revert to step 7 so the
+    JOB_CHANGE handler owns the cycle and no farm move (e.g. 'move payon') is
+    emitted to fight the guild move."""
+    from ai_sidecar.autonomy.heuristic_service import HeuristicService
+    h = HeuristicService()
+    h._init_new_domains()
+    # Set the bot at step 8 while it is STILL a novice.
+    h._cold_start_step["COLD_START"] = 8
+    sig = {
+        "bot_id": "bot:novice_step8",
+        "map": "izlude",
+        "lockMap": "izlude",
+        "base_level": 31,
+        "job_name": "novice",
+        "job_level": 10,
+        "map_known": True,
+    }
+    result = h.assess(sig, "COLD_START")
+    # The reconcile must have flipped the step back to 7. (assess resolves the
+    # stable key from bot_id_override "COLD_START".)
+    step = h._cold_start_step.get("COLD_START")
+    assert step == 7, f"novice must revert to step 7, got {step}"
+    # A reverted novice must NOT get a step-8 farm move.
+    reasons = [getattr(a, "reason", "") for a in result.actions]
+    assert not any("Step 8" in r for r in reasons), f"reverted novice must not emit step-8 farm: {reasons}"
+
+
+def test_empty_job_name_at_step8_reverts_to_step7() -> None:
+    """Same as above but job_name is empty (bridge doesn't populate it) — must
+    still be treated as novice and revert."""
+    from ai_sidecar.autonomy.heuristic_service import HeuristicService
+    h = HeuristicService()
+    h._init_new_domains()
+    h._cold_start_step["COLD_START"] = 8
+    sig = {
+        "bot_id": "bot:novice2",
+        "map": "izlude",
+        "lockMap": "izlude",
+        "base_level": 31,
+        "job_name": "",
+        "job_level": 10,
+        "map_known": True,
+    }
+    result = h.assess(sig, "COLD_START")
+    step = h._cold_start_step.get("COLD_START")
+    assert step == 7, f"empty job_name must revert to step 7, got {step}"
+    reasons = [getattr(a, "reason", "") for a in result.actions]
+    assert not any("Step 8" in r for r in reasons), f"reverted novice must not emit step-8 farm: {reasons}"
