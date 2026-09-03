@@ -558,6 +558,28 @@ class ProgressionDomain(BaseDomain):
         # prt_fild08 -> prontera -> alberta -> alberta_in) time to finish. The
         # latch key includes the target map so a map change re-arms it.
         import time as _t
+        # ── CONSCIOUS-DECIDED SURVIVAL STRATEGY GATE (RULE.md) ──
+        # The LLM/agent (conscious tier) may decide 'level_up_first' (farm a safe
+        # map until the bot can survive the crossing, THEN job change) when the
+        # bot keeps dying en route. The progression domain must NOT emit the
+        # job-change move while that decision is active — it would fight the
+        # conscious decision and the bot keeps dying. Read the DB-backed store.
+        _surv = ""
+        try:
+            from ai_sidecar.server_adaptation import get_server_solutions_store
+            _surv_raw = get_server_solutions_store().get("survival_strategy", None)
+            if isinstance(_surv_raw, dict):
+                _surv = str(_surv_raw.get("strategy", "") or "").strip().lower()
+            elif isinstance(_surv_raw, str):
+                _surv = _surv_raw.strip().lower()
+        except Exception:
+            _surv = ""
+        if _surv == "level_up_first":
+            logger.info(
+                "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
+                bot_id,
+            )
+            return
         _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"
         _jc_now = _t.time()
         _jc_last = self._job_change_route_emit.get(_jc_lk, 0.0)

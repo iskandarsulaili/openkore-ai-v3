@@ -5529,14 +5529,29 @@ class HeuristicService:
                 _jc_s_lk = f"job_change_state:{bot_id}:{_jc_npc_map}"
                 _jc_s_now = __import__("time").time()
                 _jc_s_last = self._job_change_route_emit.get(_jc_s_lk, 0.0)
-                # LATCH 60s (2026-09-03): the progression domain ALSO emits
-                # `move <guild>` on its own 60s latch — a 10s latch here made
-                # the two emitters fire every ~5s combined, resetting the
-                # ~900-step route calc before it completed (route-calc loop,
-                # observed live: "Calculating route to: Inside Alberta" repeats
-                # forever at prt_fild08 spawn). 60s matches the progression
-                # domain so the route calc has time to finish.
-                if _jc_s_now - _jc_s_last >= 60.0:
+                # ── CONSCIOUS-DECIDED SURVIVAL STRATEGY GATE (RULE.md) ──
+                # The LLM/agent (conscious tier) may decide 'level_up_first' (farm
+                # a safe map until the bot can survive the crossing, THEN job
+                # change) when the bot keeps dying en route. The heuristic's
+                # JOB_CHANGE handler must NOT emit the guild move while that
+                # decision is active — it would fight the conscious decision and
+                # the bot keeps dying. Read the DB-backed store.
+                _jc_surv = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _jc_surv_raw = get_server_solutions_store().get("survival_strategy", None)
+                    if isinstance(_jc_surv_raw, dict):
+                        _jc_surv = str(_jc_surv_raw.get("strategy", "") or "").strip().lower()
+                    elif isinstance(_jc_surv_raw, str):
+                        _jc_surv = _jc_surv_raw.strip().lower()
+                except Exception:
+                    _jc_surv = ""
+                if _jc_surv == "level_up_first":
+                    logger.info(
+                        "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
+                        bot_id,
+                    )
+                elif _jc_s_now - _jc_s_last >= 60.0:
                     self._job_change_route_emit[_jc_s_lk] = _jc_s_now
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto 0",
