@@ -3781,8 +3781,8 @@ class HeuristicService:
                         _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
                     else:
                         _jc_map, _jc_x, _jc_y = _jc_npc[0], _jc_npc[1], _jc_npc[2]
-                    if _cs_in_town:
-                        # Walk to NPC talk spot
+                    if _cs_in_town and str(_cs_map or "").lower() == str(_jc_map or "").lower():
+                        # Walk to NPC talk spot (only when ON the guild map)
                         _talk_area_x = _jc_x + 1
                         _talk_area_y = _jc_y + 1
                         actions.append(HeuristicAction(
@@ -3798,11 +3798,12 @@ class HeuristicService:
                             reason=f"Step 7 - talk to {_assigned_job} job change NPC",
                         ))
                     else:
-                        _town7 = self._resolve_safe_town()
+                        # Not on the guild map — move to it (never talk to a guild
+                        # NPC from a different town; the NPC is not there).
                         actions.append(HeuristicAction(
-                            kind="command", command=f"move {_town7}",
+                            kind="command", command=f"move {_jc_map}",
                             confidence=0.99, domain="progression",
-                            reason=f"Step 7 - go to {_town7} for job change",
+                            reason=f"Step 7 - go to {_jc_map} for {_assigned_job} job change",
                         ))
             else:
                 # No assigned job yet — go to town and wait
