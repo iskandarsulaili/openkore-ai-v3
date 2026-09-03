@@ -28,6 +28,10 @@ calc before it completes → never commits to a "Move You" → EXP frozen.
       "Move You (to 125 112) - done" repeatedly, position advancing.
 - [x] Verify bot walks off prt_fild08 toward alberta — bot on izlude heading to
       the ship/portal (route to alberta_in).
+- [x] Fix the "route attack" combat lock — JOB_CHANGE handler now emits
+      `set attackAuto 0` (no combat while walking; mob-dribble avoids monsters).
+      VERIFIED: bot MOVING (prt_fild08 367,212 → 236,26), "Move You ... done"
+      repeatedly. Committed `1d612141d`.
 - [ ] Verify bot reaches alberta_in and talks to the merchant guild NPC
 - [ ] Verify job change completes (class 0 → merchant)
 - [ ] Verify EXP resumes (farming or job-change path)
