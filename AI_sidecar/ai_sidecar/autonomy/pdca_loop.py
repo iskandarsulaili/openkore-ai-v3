@@ -2216,7 +2216,26 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 if aq is not None:
                     from datetime import UTC, datetime, timedelta
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
-                    _safe_map = "prt_fild01"
+                    # ── CONSCIOUS-DECIDED SURVIVAL STRATEGY (RULE.md) ──
+                    # The death-loop reflex must NOT decide where to go (that is a
+                    # strategic decision — RULE.md: reflex only ACTS on a conscious
+                    # decision). Read the LLM/agent-decided survival_strategy from
+                    # the DB-backed store; the reflex only executes it. Fallbacks:
+                    #   level_up_first  -> farm the DB-backed farm_map (safe low-level)
+                    #   job_change_now  -> do NOT override the job-change walk
+                    #   fly_wing_escape -> use a Fly Wing to skip the dangerous field
+                    # If the store has no decision yet, use the DB-backed farm_map as
+                    # a benign default (never a hardcoded map literal).
+                    _store = getattr(runtime_state, "server_solutions_store", None)
+                    _surv = ""
+                    _farm = ""
+                    try:
+                        if _store is not None:
+                            _surv = str(_store.get("survival_strategy", None) or "").strip().lower()
+                            _farm = str(_store.get("farm_map", None) or "").strip().lower()
+                    except Exception:
+                        pass
+                    _safe_map = _farm or ""
                     # Read actual bot level from snapshot for appropriate safe map
                     _bot_level = 1
                     if isinstance(latest, dict):
@@ -2224,19 +2243,58 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         _bot_level = int(_progress.get("base_level", _progress.get("level", 1)) or 1)
                     else:
                         _bot_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
-                    try:
-                        _hzm = getattr(runtime_state, "hunting_zone_manager", None)
-                        if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
-                            _zones = _hzm.recommend_zone(bot_level=max(1, _bot_level), bot_class="novice")
-                            if (not _zones or len(_zones) == 0) and hasattr(_hzm, '_fallback_zones'):
-                                _zones = _hzm._fallback_zones(max(1, _bot_level))
-                            if _zones and len(_zones) > 0:
-                                _z = _zones[0].map_name if hasattr(_zones[0], 'map_name') else str(_zones[0])
-                                if map_name and _z and _z != map_name.replace('.gat',''):
-                                    _safe_map = _z
-                    except Exception:
-                        pass
-                    _log.warning("combat_monitor: bot=%s death_loop (%d cycles, lv%d) -> routing to %s", _bid, _dl[_bid]["count"], _bot_level, _safe_map)
+                    # If the conscious tier decided job_change_now, do NOT override
+                    # the job-change walk with a farm move — the reflex must not
+                    # fight the conscious decision.
+                    if _surv == "job_change_now":
+                        _log.info("combat_monitor: bot=%s death_loop but survival_strategy=job_change_now -> NOT overriding job-change walk", _bid)
+                        _dl[_bid]["count"] = 0
+                        return 2
+                    # If the conscious tier decided fly_wing_escape, emit a Fly Wing
+                    # use (DB-resolved item id) to skip the dangerous field.
+                    if _surv == "fly_wing_escape":
+                        _fw_id = ""
+                        try:
+                            if _store is not None:
+                                _fw_id = str(_store.get("fly_wing_item_id", None) or "")
+                        except Exception:
+                            pass
+                        if _fw_id:
+                            aq.enqueue(_bid, ActionProposal(
+                                action_id=f"dl_flywing_{_bid}_{int(__import__('time').time()*1000)}",
+                                kind="command", command=f"use {_fw_id}",
+                                priority_tier=ActionPriorityTier.reflex, source="planner",
+                                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                                conflict_key=f"dl_flywing_{_bid}", idempotency_key=f"dl_flywing_{_bid}",
+                                metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape","bot_id":_bid},
+                            ))
+                            _dl[_bid]["count"] = 0
+                            return 2
+                    # Default / level_up_first: route to the DB-backed safe farm map.
+                    # If no farm_map learned yet, fall back to the hunting-zone
+                    # manager's recommendation (DB/agent-driven, never a literal).
+                    if not _safe_map:
+                        try:
+                            _hzm = getattr(runtime_state, "hunting_zone_manager", None)
+                            if _hzm is not None and hasattr(_hzm, 'recommend_zone'):
+                                _zones = _hzm.recommend_zone(bot_level=max(1, _bot_level), bot_class="novice")
+                                if (not _zones or len(_zones) == 0) and hasattr(_hzm, '_fallback_zones'):
+                                    _zones = _hzm._fallback_zones(max(1, _bot_level))
+                                if _zones and len(_zones) > 0:
+                                    _z = _zones[0].map_name if hasattr(_zones[0], 'map_name') else str(_zones[0])
+                                    if map_name and _z and _z != map_name.replace('.gat',''):
+                                        _safe_map = _z
+                        except Exception:
+                            pass
+                    if not _safe_map:
+                        # No learned safe map and no zone recommendation — do not
+                        # hardcode a map. Log the gap (RULE.md §19: a knowledge gap
+                        # is a learning opportunity, not a hardcoded fallback) and
+                        # let the conscious tier decide.
+                        _log.warning("combat_monitor: bot=%s death_loop but no safe map learned (survival_strategy=%r) -> deferring to conscious tier", _bid, _surv)
+                        _dl[_bid]["count"] = 0
+                        return 2
+                    _log.warning("combat_monitor: bot=%s death_loop (%d cycles, lv%d) -> routing to %s (survival_strategy=%r)", _bid, _dl[_bid]["count"], _bot_level, _safe_map, _surv)
                     aq.enqueue(_bid, ActionProposal(
                         action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
                         kind="command",
@@ -2943,6 +3001,25 @@ class PDCALoop:
                 self._spawn_advisory(
                     f"jobchange:{_cycle_bot_id}",
                     self._llm_job_change_advisory(_cycle_bot_id),
+                )
+            except Exception:
+                pass
+
+        # ── Conscious-tier: LLM SURVIVAL strategy decision (AGNOSTIC, RULE.md) ──
+        # The CONSCIOUS tier (LLM) decides the BEST survival strategy when a bot
+        # keeps dying (e.g. a low-HP novice crossing a monster field to job change):
+        #   level_up_first  -> farm a safe low-level map until it can survive the
+        #                      crossing, THEN job change
+        #   job_change_now  -> keep walking to the guild (current path is survivable)
+        #   fly_wing_escape -> use a Fly Wing / teleport to skip the dangerous field
+        # The decision is persisted to the DB-backed store (slot 'survival_strategy')
+        # so the reflex/heuristic EXECUTES it — never a hardcoded reflex routing to a
+        # fixed map, never a *.py literal. Consulted on a coarse cadence + cached.
+        if self._cycle_count % 20 == 0 and _cycle_bot_id:
+            try:
+                self._spawn_advisory(
+                    f"survival:{_cycle_bot_id}",
+                    self._llm_survival_advisory(_cycle_bot_id),
                 )
             except Exception:
                 pass
@@ -10918,6 +10995,126 @@ class PDCALoop:
             # LLM unavailable — the REFLEX/fallback layers in heuristic_service still run
             # (deterministic job-change execution as the safety floor). Never log as error.
             logger.debug("llm_job_change_skipped bot=%s: %s", bot_id, _lje)
+
+    async def _llm_survival_advisory(self, bot_id: str) -> None:
+        """CONSCIOUS-tier (LLM) survival-strategy decision — AGNOSTIC, RULE.md.
+
+        The CONSCIOUS tier (LLM) decides the BEST survival strategy when a bot
+        keeps dying (e.g. a low-HP novice crossing a monster field to job change):
+          level_up_first  -> farm a safe low-level map until it can survive the
+                             crossing, THEN job change
+          job_change_now  -> keep walking to the guild (current path is survivable)
+          fly_wing_escape -> use a Fly Wing / teleport to skip the dangerous field
+        The decision is persisted to the DB-backed store (slot 'survival_strategy')
+        so the reflex/heuristic EXECUTES it — never a hardcoded reflex routing to a
+        fixed map, never a *.py literal. Cached per bot per state bucket.
+        """
+        _rt = self._runtime
+        if _rt is None:
+            return
+        _llm = getattr(_rt, "llm_manager", None)
+        if _llm is None or not getattr(_llm, "is_available", lambda: False)():
+            return
+        _store = getattr(_rt, "server_solutions_store", None)
+        # Gather facts from the live snapshot.
+        _job = "novice"; _bl = 1; _jl = 1; _map = ""; _hp = 0; _hp_max = 1
+        _deaths = 0; _farm = ""; _target = ""
+        try:
+            _sc = getattr(_rt, "snapshot_cache", None)
+            _snap_obj = None
+            if _sc is not None:
+                _snap_obj = _sc.get(bot_id)
+                if _snap_obj is None:
+                    _suffix = bot_id.split(":", 1)[-1] if ":" in bot_id else bot_id
+                    for _bid in _sc.bot_ids():
+                        if _bid.split(":", 1)[-1] == _suffix:
+                            _snap_obj = _sc.get(_bid); break
+            if _snap_obj is not None:
+                _prog = getattr(_snap_obj, "progression", None) or {}
+                _job = str(getattr(_prog, "job_name", None) or "novice").lower()
+                _bl = int(getattr(_prog, "base_level", None) or 1)
+                _jl = int(getattr(_prog, "job_level", None) or 1)
+                _raw = dict(getattr(_snap_obj, "raw", None) or {})
+                _pos = getattr(_snap_obj, "position", None) or {}
+                _map = str(_raw.get("map") or getattr(_pos, "map", "") or "").lower().replace(".gat", "")
+                _hp = int(getattr(_snap_obj, "hp", None) or 0)
+                _hp_max = int(getattr(_snap_obj, "hp_max", None) or 1) or 1
+                _deaths = int(getattr(_snap_obj, "death_count", None) or 0)
+        except Exception:
+            pass
+        try:
+            if _store is not None:
+                _farm = str(_store.get("farm_map", None) or "").strip().lower()
+                _tgt = _store.get("job_change_target", None)
+                if isinstance(_tgt, dict):
+                    _target = str(_tgt.get("target_class", "") or "").strip().lower()
+                elif isinstance(_tgt, str):
+                    _target = _tgt.strip().lower()
+        except Exception:
+            pass
+        # Cache guard: consult the LLM once per (bot, state bucket).
+        _bucket = f"{_job}/{min(_bl // 5, 20)}/{_map}"
+        _ckey = f"surv:{bot_id}:{_bucket}"
+        import time as _time
+        _last = self._llm_job_change_cache.get(_ckey, 0)
+        if _time.time() - _last < 600:
+            return
+        _hp_pct = int((_hp * 100) / _hp_max) if _hp_max > 0 else 100
+        _prompt = (
+            f"Ragnarok bot {bot_id}: current_job='{_job}', base_level={_bl}, job_level={_jl}, "
+            f"on map '{_map}', HP {_hp}/{_hp_max} ({_hp_pct}%), death_count={_deaths}. "
+            f"Job-change target class='{_target}', safe farm map='{_farm}'. "
+            f"THINK LIKE A TOP PRO RO PLAYER and a SYSTEM ANALYST. The bot is trying to "
+            f"reach its job-change guild but keeps dying crossing a monster field as a "
+            f"low-HP novice. Decide the SINGLE best survival strategy from the WHOLE "
+            f"PICTURE: "
+            f"  'level_up_first'  -> farm the safe farm map until it can survive the crossing, THEN job change "
+            f"  'job_change_now'  -> keep walking to the guild (current path is survivable) "
+            f"  'fly_wing_escape' -> use a Fly Wing to skip the dangerous field "
+            f"Respond as JSON: {{'analysis': <2-4 sentence deep reasoning>, 'root_cause': <deepest reason>, "
+            f"'strategy': <one of level_up_first|job_change_now|fly_wing_escape>, 'reason': <short reason>}}. "
+            f"Pick ONLY from the given strategies. Never invent a strategy or map beyond the facts given."
+        )
+        try:
+            _res = await _llm.complete_json(
+                _prompt,
+                system_prompt=(
+                    "You are the CONSCIOUS tier of an autonomous RO farming bot. You decide "
+                    "survival strategy AGNOSTICALLY from FACTS (job/level/HP/deaths/map/farm). "
+                    "You do NOT hardcode server-specific names — you reason from the facts "
+                    "injected. Tool/disciplined: pick ONE strategy from the given options, "
+                    "output a valid JSON object."
+                ),
+                temperature=0.2,
+                max_tokens=500,
+            )
+            self._llm_job_change_cache[_ckey] = _time.time()
+            _strategy = str(_res.get("strategy", "") or "").strip().lower()
+            _reason = str(_res.get("reason", "") or "")
+            _analysis = str(_res.get("analysis", "") or "")
+            if _strategy not in ("level_up_first", "job_change_now", "fly_wing_escape"):
+                logger.info("llm_survival bot=%s invalid_strategy=%s", bot_id, _strategy)
+                return
+            if _store is not None:
+                try:
+                    _store.set(
+                        "survival_strategy",
+                        _strategy,
+                        origin="conscious",
+                        confidence=0.9,
+                        value_json=__import__("json").dumps({
+                            "strategy": _strategy, "from_job": _job,
+                            "base_level": _bl, "job_level": _jl,
+                            "hp_pct": _hp_pct, "death_count": _deaths,
+                            "reason": _reason,
+                        }),
+                    )
+                except Exception:
+                    pass
+            logger.info("llm_survival bot=%s strategy=%s reason=%s analysis=%r",
+                        bot_id, _strategy, _reason, _analysis[:160])
+        except Exception as _lse:
+            logger.debug("llm_survival_skipped bot=%s: %s", bot_id, _lse)
 
     async def _llm_npc_dialog_response(self, bot_id: str) -> None:
         """CONSCIOUS-tier (LLM) NPC-dialog responder — AGNOSTIC, SELF-LEARNING.

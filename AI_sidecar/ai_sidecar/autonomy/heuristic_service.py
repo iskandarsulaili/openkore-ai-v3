@@ -1999,7 +1999,11 @@ class HeuristicService:
                 try:
                     _gs = self._state_collector.collect(signals)
                     _map = _gs.map_state.name if _gs.map_state else ""
-                    if _map and ('prt_fild' in _map or 'pay_fild' in _map or 'gef_fild' in _map):
+                    # AGNOSTIC gate (RULE.md): run the tactics dispatcher on any
+                    # non-town (field) map — NOT a hardcoded server-specific map
+                    # prefix list. Tactics (swarm coordination, MVP handling) apply
+                    # on any field map on any server.
+                    if _map and not _is_city_map(_map):
                         try:
                             _disp = TacticsDispatcher()
                             _disp.assess(signals, _actions, _bot_id)
