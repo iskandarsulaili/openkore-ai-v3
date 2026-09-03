@@ -5525,7 +5525,14 @@ class HeuristicService:
                 _jc_s_lk = f"job_change_state:{bot_id}:{_jc_npc_map}"
                 _jc_s_now = __import__("time").time()
                 _jc_s_last = self._job_change_route_emit.get(_jc_s_lk, 0.0)
-                if _jc_s_now - _jc_s_last >= 10.0:
+                # LATCH 60s (2026-09-03): the progression domain ALSO emits
+                # `move <guild>` on its own 60s latch — a 10s latch here made
+                # the two emitters fire every ~5s combined, resetting the
+                # ~900-step route calc before it completed (route-calc loop,
+                # observed live: "Calculating route to: Inside Alberta" repeats
+                # forever at prt_fild08 spawn). 60s matches the progression
+                # domain so the route calc has time to finish.
+                if _jc_s_now - _jc_s_last >= 60.0:
                     self._job_change_route_emit[_jc_s_lk] = _jc_s_now
                     actions.append(HeuristicAction(
                         kind="command", command="set attackAuto 1",

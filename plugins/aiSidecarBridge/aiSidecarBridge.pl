@@ -322,6 +322,8 @@ my $next_config_ingest_at_ms = 0;
 my $next_keepalive_at_ms = 0;
 my $next_party_status_at_ms = 0;
 my $next_autoequip_at_ms = 0;
+my $_last_autoequip_fail = '';
+my $_autoequip_fail_until_ms = 0;
 
 # ── charstatus.json real-time state file (2026-08-27) ──
 # Monotonic snapshot sequence per bot (rejects stale/out-of-order reads).
@@ -919,6 +921,16 @@ sub on_mainLoop_post {
 	# Commands-only (per RULE.md): never touches config.
 	if ($char && $net && $net->getState() == Network::IN_GAME && $now >= ($next_autoequip_at_ms || 0)) {
 	    $next_autoequip_at_ms = $now + 10000;  # every 10s
+	    # NOVICE GATE (2026-09-03): a novice (jobID 0) can't equip a sword
+	    # ("You can't put on Sword [4] (23)") — retrying every 10s floods the
+	    # AI queue with `equip` and starves the move command (observed live:
+	    # bot stuck at prt_fild08 spawn, AI queue = 267x 'equip'). Skip
+	    # autoequip entirely while the bot is a novice (it's walking to the
+	    # job-change guild anyway).
+	    my $_ae_job = ($char->{jobID} // 0) + 0;
+	    if ($_ae_job == 0) {
+	        debug "[autoequip] skipping (novice jobID=0 — can't equip weapons yet)\n", 'aiSidecarBridge', 2;
+	    } else {
 	    my $_ae_map = $field ? lc($field->name()) : '';
 	    $_ae_map =~ s/\.gat$//;
 	    my $_ae_slot = undef;
@@ -937,11 +949,28 @@ sub on_mainLoop_post {
 	    }
 	    if ($_ae_item) {
 	        my $_ae_name = $_ae_item->{name} || '';
-	        # This fork's command is `eq` (NOT `equip` — Commands.pm registers
-	        # ['eq', ..., \&cmdEquip]; 'equip' → "Unknown command"). Verified live:
-	        # every `equip <name>` logged Unknown command → weapon never equipped.
-	        my $_ae_ok = eval { Commands::run("eq $_ae_name"); 1 };
-	        warning "[autoequip] equipping held weapon '$_ae_name' on $_ae_map (${\\($_ae_ok ? 'OK' : 'FAILED')})\n", 'aiSidecarBridge', 1;
+	        # FAILED-EQUIP LATCH (2026-09-03): a novice can't equip a sword
+	        # ("You can't put on Sword [4] (23)") — retrying the SAME weapon every
+	        # 10s floods the AI queue with `eq` and starves the move command
+	        # (observed live: bot stuck at izlude portal, AI queue = 66x 'equip').
+	        # Once an equip attempt FAILS, don't retry that weapon for 5 min.
+	        if (defined $_last_autoequip_fail && $_last_autoequip_fail eq $_ae_name
+	            && $now < ($_autoequip_fail_until_ms || 0)) {
+	            debug "[autoequip] skipping '${\\$_ae_name}' (failed equip latch active)\\n", 'aiSidecarBridge', 2;
+	        } else {
+	            # This fork's command is `eq` (NOT `equip` — Commands.pm registers
+	            # ['eq', ..., \&cmdEquip]; 'equip' → "Unknown command"). Verified live:
+	            # every `equip <name>` logged Unknown command → weapon never equipped.
+	            my $_ae_ok = eval { Commands::run("eq $_ae_name"); 1 };
+	            warning "[autoequip] equipping held weapon '$_ae_name' on $_ae_map (${\\($_ae_ok ? 'OK' : 'FAILED')})\\n", 'aiSidecarBridge', 1;
+	            # If the equip command itself failed (or the item is unequippable),
+	            # latch it so we don't retry the same weapon for 5 min.
+	            if (!$_ae_ok) {
+	                $_last_autoequip_fail = $_ae_name;
+	                $_autoequip_fail_until_ms = $now + 300000;
+	            }
+	        }
+	    }
 	    }
 	}
 
@@ -1178,6 +1207,28 @@ sub on_packet_hook {
 	return if !_cfg_bool('aiSidecar_packetEventsEnabled', 1);
 
 	my $normalized_type = _normalize_event_type($event_type || $hook || 'packet.unknown');
+
+	# ── EQUIP-REJECTION LATCH (2026-09-03) ──
+	# The game rejects an unequippable weapon ("You can't put on Sword [4] (23)")
+	# but OpenKore's `eq` command still returns OK, so the autoequip loop keeps
+	# retrying the SAME weapon every 10s, flooding the AI queue with `equip` and
+	# starving the move command (observed live: bot stuck at prt_fild08 spawn,
+	# AI queue = 267x 'equip'). Detect the rejection message and latch the weapon
+	# so autoequip skips it for 5 min.
+	if ($normalized_type =~ /system_chat|public_chat/ && ref($args) eq 'HASH') {
+		my $_rej_msg = '';
+		for my $_k (qw(msg message text)) {
+			my $_v = $args->{$_k};
+			$_rej_msg = _trim(_scalarize($_v), 200) if defined $_v;
+			last if $_rej_msg ne '';
+		}
+		if ($_rej_msg =~ /You can't put on (.+?)\s*\(\d+\)/i) {
+			my $_rej_item = $1;
+			$_last_autoequip_fail = $_rej_item;
+			$_autoequip_fail_until_ms = _now_ms() + 300000;
+			debug "[autoequip] equip rejected for '$_rej_item' — latching 5 min\n", 'aiSidecarBridge', 1;
+		}
+	}
 
 	my $payload = _extract_hook_payload($args);
 	my $text = _trim("captured $normalized_type", _cfg_int('aiSidecar_maxEventTextChars', 220));
