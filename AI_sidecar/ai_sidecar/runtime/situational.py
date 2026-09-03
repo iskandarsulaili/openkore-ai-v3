@@ -144,6 +144,13 @@ class SituationalAwareness:
             items = inventory
         else:
             items = []
+        # The bridge sends the item digest list under `inventory_items`
+        # (inventory is a dict of zeny/item_count/weight with NO `items` key).
+        # Merge it so the adapter sees REAL owned items (fixes the heal
+        # emitter always falling back to "use Red Potion" 501 even when the
+        # bot owns 298 Novice Potions 569 — verified live).
+        if not items:
+            items = signals.get("inventory_items", []) or []
         
         zeny = int(signals.get("zeny", 0) or 0)
         base_level = int(signals.get("base_level", 1) or 1)
@@ -163,7 +170,13 @@ class SituationalAwareness:
                 if name.lower() in iname or str(item_id) in iname:
                     qty = 0
                     if isinstance(item, dict):
-                        qty = int(item.get("quantity", item.get("amount", 1)) or 1)
+                        # `or 1` fallback is WRONG: a present-but-zero-quantity
+                        # item (e.g. Red Potion 501 with 0 owned) becomes qty=1
+                        # and wins the first pass over the real stock (Novice
+                        # Potion 569 x298). Only default to 1 when the key is
+                        # ABSENT, never when it is 0.
+                        _q = item.get("quantity", item.get("amount", None))
+                        qty = int(_q) if _q is not None else 1
                     if qty > 0:
                         return (item_id, name)
         
