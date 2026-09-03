@@ -3776,7 +3776,11 @@ class HeuristicService:
                 # the LLM dialog responder pick the menu option (per-class layouts differ).
                 _jc_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
                 if _jc_npc:
-                    _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
+                    # JOB_CHANGE_NPCS values are tuples (map, x, y) — unpack, not dict.
+                    if isinstance(_jc_npc, dict):
+                        _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
+                    else:
+                        _jc_map, _jc_x, _jc_y = _jc_npc[0], _jc_npc[1], _jc_npc[2]
                     if _cs_in_town:
                         # Walk to NPC talk spot
                         _talk_area_x = _jc_x + 1
@@ -5337,6 +5341,29 @@ class HeuristicService:
                         kind="command", command="use Fly Wing",
                         confidence=0.95, domain="survival",
                         reason=f"Job change - low HP ({_jc_hp_ratio:.0%}) crossing field, teleport out before overwhelmed",
+                    ))
+            # INVENTORY-AWARE HEAL (2026-09-03): a job-change bot crossing a
+            # monster field must heal with the potion it ACTUALLY carries. The
+            # situational validator (which rewrites "use Red Potion" -> best
+            # available) is keyed on the full bot_id and does NOT fire for the
+            # stable-key path, so a bot with 298 Novice Potions (569) but no
+            # Red Potion (501) kept emitting "use Red Potion" (on cooldown,
+            # never used) and died. Emit the best available potion directly.
+            _jc_heal_lk = f"job_change_heal:{bot_id}"
+            _jc_heal_now = __import__("time").time()
+            _jc_heal_last = self._job_change_route_emit.get(_jc_heal_lk, 0.0)
+            if _jc_hp_ratio <= 0.70 and _jc_heal_now - _jc_heal_last >= 3.0:
+                _jc_heal_item = ""
+                for _ji in ("White Potion", "Orange Potion", "Red Potion", "Novice Potion"):
+                    if any(_ji.lower() in str(_it).lower() for _it in inventory):
+                        _jc_heal_item = _ji
+                        break
+                if _jc_heal_item:
+                    self._job_change_route_emit[_jc_heal_lk] = _jc_heal_now
+                    actions.append(HeuristicAction(
+                        kind="command", command=f"use {_jc_heal_item}",
+                        confidence=0.95, domain="survival",
+                        reason=f"Job change - HP {_jc_hp_ratio:.0%}, heal with {_jc_heal_item} (best in inventory)",
                     ))
             # Find the target class for each type
             _jc_target_class = ""
