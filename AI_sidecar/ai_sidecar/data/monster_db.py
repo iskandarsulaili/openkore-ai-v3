@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _MOB_DB_PATH = os.path.join(
     _PROJECT_ROOT,
-    "knowledge", "rathena_db", "db", "pre-re", "mob_db.yml",
+    "knowledge", "rathena_db", "db", "re", "mob_db.yml",
 )
 _ATTR_FIX_PATH = os.path.join(
     _PROJECT_ROOT,
-    "knowledge", "rathena_db", "db", "pre-re", "attr_fix.yml",
+    "knowledge", "rathena_db", "db", "re", "attr_fix.yml",
 )
 
 

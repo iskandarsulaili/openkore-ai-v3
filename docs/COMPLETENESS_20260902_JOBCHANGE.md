@@ -69,3 +69,27 @@ job-change oscillation. Prove live with benchmarks.
 - [ ] Verify DQN/subconscious + reflex tiers still active (training_steps>0)
 - [ ] Final: bot self-sufficient, zero manual intervention, sustained progression
 
+
+
+## Round D — Reconnect loop (0x0436 coalescing) + survivability + inventory (2026-09-03)
+- [x] FIXED: 0x05fc conn-info sent AFTER map_loaded ack (not in 0x0436 segment) — 03d9f45ca
+- [x] FIXED: 0x0B1C ping reply gated until in-game so 0x0436 is sent alone — 651ba746e
+- [x] FIXED: defend-only combat (attackAuto 1) while walking to guild — e4e3f4abd
+- [x] FIXED: sidecar emits `use Fly Wing` at 40% HP in JOB_CHANGE handler (runtime, not config) — 9dd1b468a
+- [ ] ROOT CAUSE: 0x0436(length:25) recurs intermittently — some OTHER packet coalesces with 0x0436 on reconnect (real client sends 0x0436 ALONE + waits for 0x0087 ack; OpenKore flushes multiple packets per TCP write)
+- [ ] CAPTURE: definitively identify the coalescing packet (bot keeps offline in backoff during capture)
+- [ ] FIX: prevent ALL coalescing with 0x0436 (not just ping) OR server-side tolerate trailing bytes (needs approval)
+- [ ] INVENTORY: verify TestBotA loads 50 Fly Wings post char-server restart (bot can't get in-game due to reconnect loop)
+- [ ] PROVEN: bot reaches guild + completes job change (TestBotA still novice class 0)
+
+## Round E — Complete local data copy (2026-09-03)
+- [x] skill_db.yml copied from rAthena source (1635 skills) — was MISSING
+- [x] randomopt_db.yml copied (249 entries) — was MISSING (rAthena name: item_randomopt_db.yml)
+- [x] item_db.yml base + split files verified (usable 6415 / equip 12982 / etc 9959 = 29356, matches DB)
+- [x] mob_skill_db.txt copied (1279512 bytes) — was MISSING
+- [x] map_index.txt copied (13343 bytes) — was MISSING
+- [x] FIXED: monster_db.py loader pointed at pre-re (1004 monsters, WRONG for Renewal server) → re (2675 monsters, matches DB)
+- [x] mob_db.json generated from re/mob_db.yml (4401 entries) for ro_mechanics — was MISSING
+- [x] portals.txt verified present (tables/, 129034 bytes)
+- [x] Full test suite: 463 passed (1 flake in test_intelligence_integration, passes in isolation)
+
