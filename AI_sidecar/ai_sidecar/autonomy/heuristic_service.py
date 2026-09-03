@@ -5535,9 +5535,9 @@ class HeuristicService:
                 if _jc_s_now - _jc_s_last >= 60.0:
                     self._job_change_route_emit[_jc_s_lk] = _jc_s_now
                     actions.append(HeuristicAction(
-                        kind="command", command="set attackAuto 1",
+                        kind="command", command="set attackAuto 0",
                         confidence=0.95, domain="progression",
-                        reason="Job change - defend-only combat while walking to guild",
+                        reason="Job change - no combat while walking to guild (dribble avoids monsters)",
                     ))
                     if _jc_dribble:
                         actions.append(HeuristicAction(

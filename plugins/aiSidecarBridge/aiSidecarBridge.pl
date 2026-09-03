@@ -6105,19 +6105,25 @@ sub _rewrite_runtime_command {
 		}
 		# ── SAME-TARGET MOVE DEDUPE (agnostic, 2026-09-03) ──
 		# The sidecar re-emits `move <guild>` every cycle (heuristic JOB_CHANGE
-		# handler + progression domain, each on its own latch). Re-issuing a
-		# move while the bot is ALREADY in a route/move AI task cancels the
+		# handler + progression domain, each on its own latch that isn't holding).
+		# Re-issuing a move to a target the bot is ALREADY routing to cancels the
 		# in-progress route calc and re-starts it — for a long multi-map route
 		# (e.g. prt_fild08 -> prontera -> alberta -> alberta_in) the calc never
 		# completes and the bot sits at spawn forever ("Calculating route to:
-		# Inside Alberta" spam, EXP frozen). Suppress a `move <map>` when the
-		# bot is already routing (AI task is route/move), so the route completes.
-		# Keyed on the AI task state (not the emitter), so it works for ANY bot
-		# and ANY emitter regardless of which code issued the move. The bot
-		# re-issues the move naturally once it actually arrives (task ends).
-		if (_safe_ai_seq_top() =~ /^(?:route|move)/i) {
-			debug "[move_dedupe] already in a route/move AI task; suppressing re-issue so the route completes\n", 'aiSidecarBridge', 2;
-			return ('', 'same_target_move_deduped');
+		# Inside Alberta" spam, EXP frozen). Suppress a `move <map>` re-issue to
+		# the SAME target within the cooldown window (same pattern as the island
+		# escape dedupe below). Keyed on the target map (not the emitter), so it
+		# works for ANY bot and ANY emitter regardless of which code issued the
+		# move. The bot re-issues the move naturally once it actually arrives
+		# (map change / route completes).
+		{
+			my $_now_ms = _now_ms();
+			my $_key = "move_map:$_target";
+			if (exists $_committed_commands{$_key} && $_now_ms - $_committed_commands{$_key} <= $COMMITTED_ACTION_COOLDOWN_MS) {
+				debug "[move_dedupe] move to '$_target' already issued within cooldown; suppressing re-issue so the route completes\n", 'aiSidecarBridge', 2;
+				return ('', 'same_target_move_deduped');
+			}
+			$_committed_commands{$_key} = $_now_ms;
 		}
 		# Secluded Island sailor escape: dedupe so OpenKore routes to the
 		# (49,57) OnTouch warp ONCE and actually walks there. Without this,
