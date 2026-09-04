@@ -14,10 +14,17 @@ executable.
 - Death-loop reflex `fly_wing_escape` branch emits `use 601` but bot has none.
 
 ## Checklist
-- [ ] Verify snapshot carries inventory (fly wing count) + zeny
-- [ ] Death-loop reflex `fly_wing_escape` branch: if no Fly Wing AND no zeny to
-      buy one, fall back to `level_up_first` (farm for zeny)
-- [ ] If bot has zeny but no Fly Wing, emit `buy 601` then `use 601`
-- [ ] Verify the fallback is DB/agent-driven (no hardcoded map literal)
-- [ ] Full test suite passes
-- [ ] Commit + push
+- [x] Verify snapshot carries inventory (fly wing count) + zeny — BotStateSnapshot
+      has `inventory_items` (item_id/quantity) + `zeny`. VERIFIED.
+- [x] Death-loop reflex `fly_wing_escape` branch: if no Fly Wing AND no zeny to
+      buy one, fall back to `level_up_first` (farm for zeny). VERIFIED LIVE:
+      LLM decided fly_wing_escape → bot had 0x601 + 0 zeny → falls back to
+      level_up_first. Committed `4a4b8f9cc`.
+- [x] If bot has zeny but no Fly Wing, emit `buy 601` then `use 601` — added
+      `dl_buyfw` buy action when zeny>0. Committed `4a4b8f9cc`.
+- [x] Verify the fallback is DB/agent-driven (no hardcoded map literal) — uses
+      DB-backed farm_map, defers to conscious tier if none learned.
+- [x] Full test suite passes (463 passed, 3 pre-existing cold-start failures)
+- [x] Commit + push — `4a4b8f9cc`
+- [x] LIVE VERIFIED: bot farming (EXP 15766→15812, attacking Little Poring),
+      job change deferred (level_up_first)
