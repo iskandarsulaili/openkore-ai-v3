@@ -5537,16 +5537,30 @@ class HeuristicService:
                 # decision is active — it would fight the conscious decision and
                 # the bot keeps dying. Read the DB-backed store.
                 _jc_surv = ""
+                _jc_farm_goal = ""
                 try:
                     from ai_sidecar.server_adaptation import get_server_solutions_store
                     _jc_surv_raw = get_server_solutions_store().get("survival_strategy", None)
                     if isinstance(_jc_surv_raw, dict):
                         _jc_surv = str(_jc_surv_raw.get("strategy", "") or "").strip().lower()
+                        _jc_farm_goal = str(_jc_surv_raw.get("farm_goal", "") or "").strip().lower()
                     elif isinstance(_jc_surv_raw, str):
                         _jc_surv = _jc_surv_raw.strip().lower()
                 except Exception:
                     _jc_surv = ""
-                if _jc_surv == "level_up_first":
+                # ── EFFICIENCY (2026-09-04): if the LLM's farm_goal is
+                # 'afford_fly_wing', the farm is ONLY a brief zeny-farm to buy a
+                # Fly Wing — NOT a long novice grind. Once the bot has zeny to
+                # afford a Fly Wing, STOP deferring and job change.
+                _jc_zeny = 0
+                try:
+                    _jc_zeny = int(signals.get("zeny", 0) or 0)
+                except Exception:
+                    _jc_zeny = 0
+                _jc_defer = (_jc_surv == "level_up_first") and not (
+                    _jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0
+                )
+                if _jc_defer:
                     logger.info(
                         "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
                         bot_id,

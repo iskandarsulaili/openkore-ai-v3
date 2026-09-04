@@ -565,21 +565,40 @@ class ProgressionDomain(BaseDomain):
         # job-change move while that decision is active — it would fight the
         # conscious decision and the bot keeps dying. Read the DB-backed store.
         _surv = ""
+        _farm_goal = ""
         try:
             from ai_sidecar.server_adaptation import get_server_solutions_store
             _surv_raw = get_server_solutions_store().get("survival_strategy", None)
             if isinstance(_surv_raw, dict):
                 _surv = str(_surv_raw.get("strategy", "") or "").strip().lower()
+                _farm_goal = str(_surv_raw.get("farm_goal", "") or "").strip().lower()
             elif isinstance(_surv_raw, str):
                 _surv = _surv_raw.strip().lower()
         except Exception:
             _surv = ""
         if _surv == "level_up_first":
-            logger.info(
-                "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
-                bot_id,
-            )
-            return
+            # ── EFFICIENCY (2026-09-04): if the LLM's farm_goal is
+            # 'afford_fly_wing', the farm is ONLY a brief zeny-farm to buy a Fly
+            # Wing — NOT a long novice grind. Once the bot has enough zeny to
+            # afford a Fly Wing, STOP deferring and job change (job-changing ASAP
+            # is always more efficient: a novice's base-EXP doesn't build the new
+            # job's job level). Read the bot's real zeny from the snapshot.
+            _zeny = 0
+            try:
+                _zeny = int(signals.get("zeny", 0) or 0)
+            except Exception:
+                _zeny = 0
+            if _farm_goal == "afford_fly_wing" and _zeny > 0:
+                logger.info(
+                    "[job_change] %s: survival_strategy=level_up_first farm_goal=afford_fly_wing zeny=%d -> resuming job change (afforded the escape)",
+                    bot_id, _zeny,
+                )
+            else:
+                logger.info(
+                    "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
+                    bot_id,
+                )
+                return
         _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"
         _jc_now = _t.time()
         _jc_last = self._job_change_route_emit.get(_jc_lk, 0.0)

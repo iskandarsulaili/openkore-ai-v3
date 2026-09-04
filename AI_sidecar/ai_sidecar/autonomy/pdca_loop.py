@@ -11148,13 +11148,25 @@ class PDCALoop:
             f"Job-change target class='{_target}', safe farm map='{_farm}'. "
             f"THINK LIKE A TOP PRO RO PLAYER and a SYSTEM ANALYST. The bot is trying to "
             f"reach its job-change guild but keeps dying crossing a monster field as a "
-            f"low-HP novice. Decide the SINGLE best survival strategy from the WHOLE "
-            f"PICTURE: "
-            f"  'level_up_first'  -> farm the safe farm map until it can survive the crossing, THEN job change "
+            f"low-HP novice. "
+            f"CRITICAL EFFICIENCY PRINCIPLE: job-changing ASAP is ALWAYS the priority. "
+            f"A novice's base-EXP gains do NOT build the new job's job level — every kill "
+            f"as a novice is 'wasted' progression. Once job-changed, EVERY kill builds the "
+            f"new job's job level, which is strictly more efficient. So the bot should "
+            f"reach the guild as fast as possible; NEVER grind as a novice for its own sake. "
+            f"Decide the SINGLE best survival strategy from the WHOLE PICTURE: "
             f"  'job_change_now'  -> keep walking to the guild (current path is survivable) "
-            f"  'fly_wing_escape' -> use a Fly Wing to skip the dangerous field "
+            f"  'fly_wing_escape' -> use a Fly Wing to skip the dangerous field (PREFERRED "
+            f"                        if the bot has a Fly Wing or can afford one) "
+            f"  'level_up_first'  -> ONLY a BRIEF zeny-farm to afford the escape (Fly Wing), "
+            f"                        then job change. NEVER a long novice grind. "
+            f"                        Choose this ONLY if the bot is broke (no Fly Wing, no "
+            f"                        zeny) and the crossing is lethal. "
             f"Respond as JSON: {{'analysis': <2-4 sentence deep reasoning>, 'root_cause': <deepest reason>, "
-            f"'strategy': <one of level_up_first|job_change_now|fly_wing_escape>, 'reason': <short reason>}}. "
+            f"'strategy': <one of level_up_first|job_change_now|fly_wing_escape>, "
+            f"'farm_goal': <'afford_fly_wing' if level_up_first is a brief zeny-farm to buy a "
+            f"Fly Wing, 'level_up' only if the bot genuinely needs more HP to survive the "
+            f"crossing even WITH a Fly Wing>, 'reason': <short reason>}}. "
             f"Pick ONLY from the given strategies. Never invent a strategy or map beyond the facts given."
         )
         try:
@@ -11174,6 +11186,7 @@ class PDCALoop:
             _strategy = str(_res.get("strategy", "") or "").strip().lower()
             _reason = str(_res.get("reason", "") or "")
             _analysis = str(_res.get("analysis", "") or "")
+            _farm_goal = str(_res.get("farm_goal", "") or "").strip().lower()
             if _strategy not in ("level_up_first", "job_change_now", "fly_wing_escape"):
                 logger.info("llm_survival bot=%s invalid_strategy=%s", bot_id, _strategy)
                 return
@@ -11188,13 +11201,14 @@ class PDCALoop:
                             "strategy": _strategy, "from_job": _job,
                             "base_level": _bl, "job_level": _jl,
                             "hp_pct": _hp_pct, "death_count": _deaths,
+                            "farm_goal": _farm_goal,
                             "reason": _reason,
                         }),
                     )
                 except Exception:
                     pass
-            logger.info("llm_survival bot=%s strategy=%s reason=%s analysis=%r",
-                        bot_id, _strategy, _reason, _analysis[:160])
+            logger.info("llm_survival bot=%s strategy=%s farm_goal=%s reason=%s analysis=%r",
+                        bot_id, _strategy, _farm_goal, _reason, _analysis[:160])
         except Exception as _lse:
             logger.debug("llm_survival_skipped bot=%s: %s", bot_id, _lse)
 
