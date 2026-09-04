@@ -16,11 +16,15 @@ zeny-farm to afford the escape (Fly Wing), never a long novice grind.
   job-change ASAP is always better; the only question is how to afford the escape.
 
 ## Checklist
-- [ ] Update `_llm_survival_advisory` prompt: job-change ASAP is the priority;
-      `level_up_first` = brief zeny-farm to afford the escape, never a long grind
-- [ ] Add a `farm_goal` field to the decision (e.g. "afford_fly_wing" vs "level_up")
-      so the executor knows the farm is short-term
-- [ ] Verify the executor reads `farm_goal` (or the strategy) to farm briefly then
-      job change
-- [ ] Full test suite passes
-- [ ] Commit + push
+- [x] Update `_llm_survival_advisory` prompt: job-change ASAP is the priority;
+      `level_up_first` = brief zeny-farm to afford the escape, never a long grind.
+      VERIFIED LIVE: LLM decided `fly_wing_escape` with `farm_goal=afford_fly_wing`,
+      reason "job change ASAP maximizes efficiency; every novice kill is wasted
+      progression". Committed `862e12f4b`.
+- [x] Add a `farm_goal` field to the decision (e.g. "afford_fly_wing" vs "level_up")
+      so the executor knows the farm is short-term. Persisted to store.
+- [x] Verify the executor reads `farm_goal` (or the strategy) to farm briefly then
+      job change — BOTH emitters (heuristic JOB_CHANGE handler + progression
+      domain) now resume job change once zeny affords the escape.
+- [x] Full test suite passes (463 passed, 3 pre-existing cold-start failures)
+- [x] Commit + push — `862e12f4b`
