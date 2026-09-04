@@ -18,6 +18,15 @@ server-specific literals in *.py; gear/consumable decisions agent-driven.
       domain) now honor `survival_strategy=level_up_first` and defer the guild
       move. VERIFIED LIVE: "survival_strategy=level_up_first -> deferring job
       change" fires in both. Committed `b67a5dd39`.
+- [x] V1c: death-loop reflex dict-vs-string survival_strategy bug (the reflex
+      read the parsed dict, so job_change_now/fly_wing_escape never matched).
+      FIXED. Committed `a6fac5b6d`.
+- [x] V1d: fly_wing_escape branch was DEAD (read fly_wing_item_id from store,
+      nothing wrote it). Added benign default 601 (game constant §9, store
+      overridable). Committed `a6fac5b6d`.
+- [x] V1e: extreme-conservative death-loop branch hardcoded `move prt_fild05`.
+      Now uses DB-backed farm_map, defers to conscious tier if none learned.
+      Committed `cc50ad52a`.
 - [x] V2: heuristic_service.py:2002 hardcoded map-prefix gate
       (`prt_fild`/`pay_fild`/`gef_fild`) gating TacticsDispatcher. REPLACED with
       agnostic `not _is_city_map(_map)` — tactics run on any field map on any
