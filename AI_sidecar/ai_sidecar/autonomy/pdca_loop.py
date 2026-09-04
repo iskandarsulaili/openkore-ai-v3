@@ -2286,16 +2286,72 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         # fly_wing_escape but the reflex silently falls through.
                         if not _fw_id:
                             _fw_id = "601"
-                        aq.enqueue(_bid, ActionProposal(
-                            action_id=f"dl_flywing_{_bid}_{int(__import__('time').time()*1000)}",
-                            kind="command", command=f"use {_fw_id}",
-                            priority_tier=ActionPriorityTier.reflex, source="planner",
-                            created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
-                            conflict_key=f"dl_flywing_{_bid}", idempotency_key=f"dl_flywing_{_bid}",
-                            metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape","bot_id":_bid},
-                        ))
-                        _dl[_bid]["count"] = 0
-                        return 2
+                        # ── EXECUTABILITY CHECK (2026-09-04) ──
+                        # The LLM may decide fly_wing_escape but the bot may have
+                        # NO Fly Wing and NO zeny to buy one (verified live: bot
+                        # had 0x601 + 0 zeny, log "You don't have the Teleport
+                        # skill or a Fly Wing" repeatedly). An unexecutable
+                        # decision must NOT be emitted — fall back to
+                        # level_up_first (farm for zeny, then buy a Fly Wing, then
+                        # job change). Read the bot's real inventory + zeny from
+                        # the snapshot.
+                        _fw_qty = 0
+                        _zeny = 0
+                        try:
+                            if isinstance(latest, dict):
+                                _inv_items = latest.get("inventory_items", []) or []
+                                _zeny = int(latest.get("zeny", 0) or 0)
+                            else:
+                                _inv_items = getattr(latest, "inventory_items", None) or []
+                                _zeny = int(getattr(latest, "zeny", 0) or 0)
+                            for _it in _inv_items:
+                                _iid = ""
+                                if isinstance(_it, dict):
+                                    _iid = str(_it.get("item_id", "") or "")
+                                else:
+                                    _iid = str(getattr(_it, "item_id", "") or "")
+                                if _iid == _fw_id:
+                                    _q = 0
+                                    if isinstance(_it, dict):
+                                        _q = int(_it.get("quantity", 0) or 0)
+                                    else:
+                                        _q = int(getattr(_it, "quantity", 0) or 0)
+                                    _fw_qty += _q
+                        except Exception:
+                            pass
+                        if _fw_qty <= 0:
+                            # No Fly Wing in inventory. If the bot has zeny, buy
+                            # one first (the tool dealer sells it); else fall back
+                            # to level_up_first (farm for zeny).
+                            if _zeny > 0:
+                                aq.enqueue(_bid, ActionProposal(
+                                    action_id=f"dl_buyfw_{_bid}_{int(__import__('time').time()*1000)}",
+                                    kind="command", command=f"buy {_fw_id} 1",
+                                    priority_tier=ActionPriorityTier.reflex, source="planner",
+                                    created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                                    conflict_key=f"dl_buyfw_{_bid}", idempotency_key=f"dl_buyfw_{_bid}",
+                                    metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape_buy","bot_id":_bid},
+                                ))
+                                _log.info("combat_monitor: bot=%s fly_wing_escape but no Fly Wing -> buying %s (zeny=%d)", _bid, _fw_id, _zeny)
+                                _dl[_bid]["count"] = 0
+                                return 2
+                            # No Fly Wing AND no zeny — the decision is
+                            # unexecutable. Fall back to level_up_first (farm for
+                            # zeny, then buy a Fly Wing, then job change). This is
+                            # the DB-backed farm_map path below.
+                            _log.warning("combat_monitor: bot=%s fly_wing_escape unexecutable (no Fly Wing %s, zeny=%d) -> falling back to level_up_first", _bid, _fw_id, _zeny)
+                            _surv = "level_up_first"
+                        else:
+                            aq.enqueue(_bid, ActionProposal(
+                                action_id=f"dl_flywing_{_bid}_{int(__import__('time').time()*1000)}",
+                                kind="command", command=f"use {_fw_id}",
+                                priority_tier=ActionPriorityTier.reflex, source="planner",
+                                created_at=datetime.now(UTC), expires_at=datetime.now(UTC)+timedelta(seconds=300),
+                                conflict_key=f"dl_flywing_{_bid}", idempotency_key=f"dl_flywing_{_bid}",
+                                metadata={"source":"death_loop","reason":"survival_strategy_fly_wing_escape","bot_id":_bid},
+                            ))
+                            _dl[_bid]["count"] = 0
+                            return 2
                     # Default / level_up_first: route to the DB-backed safe farm map.
                     # If no farm_map learned yet, fall back to the hunting-zone
                     # manager's recommendation (DB/agent-driven, never a literal).
