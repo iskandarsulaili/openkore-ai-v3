@@ -373,6 +373,9 @@ my $_pro_ro_last_lock_ms = 0;
 my $_last_ai_mode = '';
 my $route_churn_count = 0;
 my $route_failure_count = 0;
+my $_route_stall_last_recover_ms = 0;   # last route-loop recovery action
+my $_route_stall_recover_count = 0;     # consecutive recoveries
+my $_route_stall_recalc_blocked_until = 0;  # backoff period during stall
 my $last_actor_source_probe_log_ms = 0;
 my $last_actor_post_parse_probe_log_ms = 0;
 my %actor_add_probe_count;
@@ -1930,6 +1933,49 @@ sub _track_lifecycle_transitions {
 				{ route_failure_count => 0 + $route_failure_count, route_churn_count => 0 + $route_churn_count },
 				'warning',
 			);
+		}
+
+		# ── ROUTE-STALL RECOVERY (2026-09-07) ──
+		# A bot wedged in `AI: route | 2` (repeated TOO_MUCH_TIME bails, no move
+		# ack, position-desynced from the server) re-fires the full pathfinding
+		# every cycle over the whole portal graph -> endless Field-object churn
+		# (fields_created climbs, ~5MB/Field per the leakdiag comment) that OOMs
+		# weak machines, and never actually walks. Break the loop: after a
+		# threshold of consecutive churn without position gain, (a) re-sync the
+		# char's pos_to to its real pos so the next route computes from the
+		# ACTUAL location, (b) force `ai auto` to reset the stuck route task,
+		# and (c) back off the expensive recalc for a cooldown so we stop
+		# memory-churning while the reset settles. All thresholds are config
+		# keys; recovery is rate-limited and self-resets on real progress.
+		if ($route_churn_count >= _cfg_int('aiSidecar_routeStallThreshold', 24)) {
+			my $_rs_now = _now_ms();
+			my $_rs_cooldown = _cfg_int('aiSidecar_routeStallRecoverCooldownMs', 30000);
+			if ($_rs_now - $_route_stall_last_recover_ms >= $_rs_cooldown) {
+				$_route_stall_last_recover_ms = $_rs_now;
+				$_route_stall_recover_count++;
+				# (a) re-sync pos_to -> real pos (agnostic; same guard as the
+				# coordinate-move resync)
+				if ($char && $char->{pos} && $char->{pos_to}
+					&& ref $char->{pos} eq 'HASH' && ref $char->{pos_to} eq 'HASH'
+					&& (($char->{pos}{x} || 0) != ($char->{pos_to}{x} || 0)
+						|| ($char->{pos}{y} || 0) != ($char->{pos_to}{y} || 0))) {
+					%{$char->{pos_to}} = %{$char->{pos}};
+					$char->{solution} = [];
+					debug "[route_stall] pos_to resynced to real pos ($char->{pos}{x},$char->{pos}{y}) after $route_churn_count churn ticks\n", 'aiSidecarBridge', 1;
+				}
+				# (b) reset the stuck route task via ai auto
+				my $_rs_reset_ok = eval { Commands::run("ai auto"); 1 };
+				debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (churn=$route_churn_count, failures=$route_failure_count) ai_auto=${\\$_rs_reset_ok ? 'ok' : 'failed'}\n", 'aiSidecarBridge', 1;
+				# (c) back off the expensive recalc for a cooldown so the reset
+				# settles without churning memory.
+				$_route_stall_recalc_blocked_until = $_rs_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
+			}
+		}
+		# Clear stall-recovery state once the bot actually starts moving again
+		# (route/move task left, or churn dropped) so a future stall re-arms.
+		if ($_route_stall_recover_count > 0
+			&& ($ai_top !~ /^(?:route|move)/i || $route_churn_count < _cfg_int('aiSidecar_routeStallThreshold', 24))) {
+			$_route_stall_recover_count = 0;
 		}
 	} else {
 		$route_churn_count = 0 if $ai_top !~ /^(?:route|move)/i;
