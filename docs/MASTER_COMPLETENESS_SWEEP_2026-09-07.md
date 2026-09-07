@@ -46,6 +46,28 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
 - [~] 0.3c REMAINING: intermittent disconnects (bot reconnects + resumes farming,
       but drops ~every 10-20 min). Not a routing/sustain bug — reconnect loop
       recovers and EXP keeps climbing. Track for stability.
+- [x] 0.3d ROUTE-STALL RECOVERY (2026-09-07, commits d712098a7 + 495000089):
+      bot wedged in `AI: route | 2` (repeated TOO_MUCH_TIME bails, no move ack,
+      position-desynced) re-fired full pathfinding over the 3224-portal graph
+      every cycle -> endless Field-object churn (OOM on weak machines) + never
+      walked. First fix gated on route_churn_count (which only grows when the
+      (map,x,y,ai_top) signature is UNCHANGED — random-route recalcs change the
+      target every cycle so it stayed ~0 and never fired). REWRITTEN to trigger
+      on POSITION stall: in a route/move task for >45s with no server position
+      change = stalled regardless of target -> pos_to re-sync + `ai auto` reset
+      + recalc backoff (20s). Config keys aiSidecar_routeStallDetectMs/
+      _routeStallRecoverCooldownMs/_routeStallBackoffMs.
+- [x] 0.3e COST-GATE RE-OPEN (2026-09-07, commit 5a374ce89): the CostModeManager
+      is created inside the _strategic_services_initialized init block, which may
+      already be True by the time the daily-budget gate runs -> _cost_mode stayed
+      None -> gate fell back to the raw llm_daily_budget_tokens (100000) and
+      hard-gated the conscious brain to 100k tokens/day even in cost_mode=max
+      (goal=cost_gated, actions=0). Now build the manager from settings at the
+      gate if absent so max mode (budget 0 = unlimited) is honored. ALSO fixed
+      bot_health_monitor ActionPriorityTier.TACTICAL -> .tactical (StrEnum
+      members are lowercase; the uppercase fallback raised AttributeError and
+      dropped the health_enqueue recovery action). PROVEN: goal=survival (not
+      cost_gated), CrewAI plan active, EXP 11550->13165 continuously.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
