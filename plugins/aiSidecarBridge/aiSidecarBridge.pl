@@ -1450,18 +1450,14 @@ no warnings 'redefine';
 		elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
 		# Only block on hunting maps (not in town)
 		if ($_ic_map =~ /_fild|_dun/i) {
-			# Check if we have any potions in inventory
-			my $_ic_has_potions = 0;
-			for my $item_name2 (@_heal_items) {
-				$item_name2 = _trim($item_name2);
-				next if !$item_name2;
-				my $item = eval { Actor::Item::get($item_name2) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					$_ic_has_potions = 1;
-					last;
-				}
-			}
-			if (!$_ic_has_potions) {
+			# Check if we have any potions in inventory — AGNOSTIC, not a
+			# hardcoded list. _best_available_heal_name scans the bot's REAL
+			# inventory for any potion/herb/berry (e.g. Novice Potion 569 in
+			# the academy kit); return '' only when NO heal item is owned.
+			# The old check only counted @_heal_items (hardcoded Red/Orange/
+			# White Potion) so a bot carrying only Novice Potion was judged
+			# "no potions" and ALL potion use was silently blocked → HP tanked.
+			if (!_best_available_heal_name($char)) {
 				# No potions — block silently
 				return;
 			}
@@ -1580,18 +1576,9 @@ sub on_command_intercept {
 		elsif ($char) { $_ic_map = lc($char->{map} || ''); $_ic_map =~ s/\.gat$//; }
 		# Only block on hunting maps (not in town)
 		if ($_ic_map =~ /_fild|_dun/i) {
-			# Check if we have any potions in inventory
-			my $_ic_has_potions = 0;
-			for my $item_name (@_heal_items) {
-				$item_name = _trim($item_name);
-				next if !$item_name;
-				my $item = eval { Actor::Item::get($item_name) };
-				if ($item && $item->{amount} && $item->{amount} > 0) {
-					$_ic_has_potions = 1;
-					last;
-				}
-			}
-			if (!$_ic_has_potions) {
+			# Block silently only when NO potion-type item is owned
+			# (agnostic scan of real inventory — not a hardcoded list).
+			if (!_best_available_heal_name($char)) {
 				# No potions — block the command silently
 				$args->{switch} = '';
 				$args->{args} = '';
@@ -6804,10 +6791,17 @@ sub _rewrite_runtime_command {
 			return ('', "use_item_cooldown_$item_name");
 		}
 		my $found = 0;
+		my $found_name = '';
 		if ($char && @{_char_inventory($char)}) {
 			for my $item (@{_char_inventory($char)}) {
 				if ($item && lc($item->{name}) eq lc($item_name)) {
 					$found = 1;
+					# Use the ACTUAL inventory name (correct case). Actor::Item::get
+					# does a case-SENSITIVE exact match ({name} eq $name), so emitting
+					# the lowercased $item_name here ("is novice potion") fails to
+					# resolve the item even though it's in inventory → "Inventory item
+					# does not exist" + no heal → HP tanks and the bot dies.
+					$found_name = $item->{name};
 					last;
 				}
 			}
@@ -6833,7 +6827,7 @@ sub _rewrite_runtime_command {
 			warning "[use] item '$item_name' not in inventory, skipping (cooldown ${\\(int($cooldown_ms/1000))}s)\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_not_found_$item_name");
 		}
-		my $ok = eval { Commands::run("is $item_name"); 1 };
+		my $ok = eval { Commands::run("is $found_name"); 1 };
 		return ('', $ok ? "use_item_$item_name" : "use_item_failed_$item_name");
 	}
 
