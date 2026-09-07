@@ -7177,6 +7177,17 @@ class PDCALoop:
                 # Mirror the max-mode-unlimited semantics.
                 if _ct is not None:
                     _cm = _cost_mode or getattr(self._runtime, 'cost_mode_manager', None)
+                    # 2026-09-07: if the manager was never created (the init block
+                    # is gated behind _strategic_services_initialized which may
+                    # already be True), build it from settings NOW so max mode is
+                    # honored instead of falling back to the raw 100000 field and
+                    # hard-gating the conscious brain.
+                    if _cm is None:
+                        try:
+                            _cm = CostModeManager(getattr(_settings, "cost_mode", "standard"))
+                            self._runtime.cost_mode_manager = _cm
+                        except Exception:
+                            _cm = None
                     _bg_budget = _cm.get_daily_budget_tokens() if _cm else getattr(_settings, "llm_daily_budget_tokens", 1000000)
                     _bg_hourly = _cm.get_llm_calls_per_hour_limit() if _cm else getattr(_settings, "llm_max_calls_per_hour", 30)
                     _allowed, _reason = _ct.check(

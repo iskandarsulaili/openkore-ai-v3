@@ -176,7 +176,7 @@ def run_health_checks(runtime_state, action_queue, bot_ids: list[str]) -> int:
                 try:
                     from ai_sidecar.contracts.actions import ActionProposal, ActionPriorityTier
                     tier = getattr(ActionPriorityTier, corr.get("priority_tier", "tactical").upper(), 
-                                  ActionPriorityTier.TACTICAL)
+                                  ActionPriorityTier.tactical)
                     proposal = ActionProposal(
                         action_id=corr["action_id"],
                         kind=corr["kind"],
