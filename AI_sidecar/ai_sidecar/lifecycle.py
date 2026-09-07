@@ -289,6 +289,22 @@ def _provider_registration_viability(provider_name: str) -> tuple[bool, str]:
             return False, "default_model_missing"
         return True, ""
 
+    # BYOK OpenAI-compatible providers (openrouter / turbollm / generic)
+    if provider_name in ("openrouter", "turbollm", "generic"):
+        _enabled = bool(getattr(settings, f"provider_{provider_name}_enabled", False))
+        if not _enabled:
+            return False, "provider_disabled"
+        _api_key = str(getattr(settings, f"provider_{provider_name}_api_key", "") or "").strip()
+        _base_url = str(getattr(settings, f"provider_{provider_name}_base_url", "") or "").strip()
+        _default_model = str(getattr(settings, f"provider_{provider_name}_default_model", "") or "").strip()
+        if not _api_key:
+            return False, "api_key_missing"
+        if not _base_url:
+            return False, "base_url_missing"
+        if not _default_model:
+            return False, "default_model_missing"
+        return True, ""
+
     return False, "unknown_provider"
 
 
@@ -306,6 +322,9 @@ def _sanitize_provider_policy_rules(
         "ollama": str(settings.provider_ollama_base_url),
         "openai": str(settings.provider_openai_base_url),
         "deepseek": str(settings.provider_deepseek_base_url),
+        "openrouter": str(settings.provider_openrouter_base_url),
+        "turbollm": str(settings.provider_turbollm_base_url),
+        "generic": str(settings.provider_generic_base_url),
     }
 
     for workload, config in rules.items():
@@ -383,43 +402,63 @@ def _sanitize_provider_policy_rules(
 
 
 def _build_provider_policy_rules() -> dict[str, dict[str, object]]:
+    # BYOK OpenAI-compatible providers auto-appended to workload provider order.
+    # They are placed AFTER openai/ollama (the configured chain) so the local or
+    # primary provider stays first; any registered BYOK provider that is enabled
+    # is added to the fallback chain for that workload. Users can pin a specific
+    # BYOK provider first via provider_policy_json.
+    _byok_names = [n for n in ("openrouter", "turbollm", "generic")
+                   if bool(getattr(settings, f"provider_{n}_enabled", False))]
+
+    def _chain(primary: list[str], models: dict[str, str], byok_field: str = "tactical_model") -> dict[str, object]:
+        providers = [p for p in primary if p not in _byok_names] + _byok_names
+        _models = dict(models)
+        for _n in _byok_names:
+            _m = str(getattr(settings, f"provider_{_n}_{byok_field}", "") or "").strip()
+            if not _m:
+                _m = str(getattr(settings, f"provider_{_n}_default_model", "") or "").strip()
+            if _m:
+                _models[_n] = _m
+        return {"providers": providers, "models": _models}
+
     return {
         "reflex_explain": {"providers": [], "models": {}},
-        "tactical_short_reasoning": {
-            "providers": ["openai", "ollama"],
-            "models": {
+        "tactical_short_reasoning": _chain(
+            ["openai", "ollama"],
+            {
                 "openai": settings.provider_openai_tactical_model,
                 "ollama": settings.provider_ollama_tactical_model,
             },
-        },
-        "strategic_planning": {
-            "providers": ["openai", "ollama"],
-            "models": {
+        ),
+        "strategic_planning": _chain(
+            ["openai", "ollama"],
+            {
                 "openai": settings.provider_openai_strategic_model,
                 "ollama": settings.provider_ollama_strategic_model,
             },
-        },
-        "autonomy_mission_decision": {
-            "providers": ["openai", "ollama"],
-            "models": {
+        ),
+        "autonomy_mission_decision": _chain(
+            ["openai", "ollama"],
+            {
                 "openai": settings.provider_openai_strategic_model,
                 "ollama": settings.provider_ollama_strategic_model,
             },
-        },
-        "long_reflection": {
-            "providers": ["openai", "ollama"],
-            "models": {
+        ),
+        "long_reflection": _chain(
+            ["openai", "ollama"],
+            {
                 "openai": settings.provider_openai_reflection_model,
                 "ollama": settings.provider_ollama_reflection_model,
             },
-        },
-        "embeddings": {
-            "providers": ["openai", "ollama"],
-            "models": {
+        ),
+        "embeddings": _chain(
+            ["openai", "ollama"],
+            {
                 "openai": settings.provider_openai_embedding_model,
                 "ollama": settings.provider_ollama_embedding_model,
             },
-        },
+            byok_field="embedding_model",
+        ),
     }
 
 
@@ -430,6 +469,8 @@ def _provider_embedding_model(provider_name: str) -> str:
         return settings.provider_openai_embedding_model
     if provider_name == "deepseek":
         return settings.provider_deepseek_embedding_model
+    if provider_name in ("openrouter", "turbollm", "generic"):
+        return str(getattr(settings, f"provider_{provider_name}_embedding_model", "") or "")
     return ""
 
 
@@ -442,6 +483,18 @@ def _provider_embedding_endpoint(provider_name: str) -> tuple[str, dict[str, str
             {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {settings.provider_openai_api_key}",
+            },
+            "openai",
+        )
+    # BYOK OpenAI-compatible providers use the OpenAI embeddings format
+    if provider_name in ("openrouter", "turbollm", "generic"):
+        _base = str(getattr(settings, f"provider_{provider_name}_base_url", "") or "").rstrip("/")
+        _key = str(getattr(settings, f"provider_{provider_name}_api_key", "") or "")
+        return (
+            _base + "/embeddings",
+            {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {_key}",
             },
             "openai",
         )
@@ -5987,6 +6040,72 @@ def create_runtime() -> RuntimeState:
                     "event": "provider_adapter_skipped_unusable_config",
                     "provider": "deepseek",
                     "reason": deepseek_reason,
+                },
+            )
+
+    # ── BYOK / OpenAI-compatible gateways (OpenRouter, TurboLLM, generic) ──
+    # Each block maps to a named OpenAI-compatible adapter registered under its
+    # own provider slot (openrouter / turbollm / generic). If the provider's
+    # enabled flag + api_key + base_url + default_model are all set, the adapter
+    # registers and becomes routable via provider_policy_json / WORKLOAD rules.
+    for _byok_spec in (
+        {
+            "name": "openrouter",
+            "enabled": settings.provider_openrouter_enabled,
+            "base_url": settings.provider_openrouter_base_url,
+            "api_key": settings.provider_openrouter_api_key,
+            "default_model": settings.provider_openrouter_default_model,
+            "embedding_model": settings.provider_openrouter_embedding_model,
+        },
+        {
+            "name": "turbollm",
+            "enabled": settings.provider_turbollm_enabled,
+            "base_url": settings.provider_turbollm_base_url,
+            "api_key": settings.provider_turbollm_api_key,
+            "default_model": settings.provider_turbollm_default_model,
+            "embedding_model": settings.provider_turbollm_embedding_model,
+        },
+        {
+            "name": "generic",
+            "enabled": settings.provider_generic_enabled,
+            "base_url": settings.provider_generic_base_url,
+            "api_key": settings.provider_generic_api_key,
+            "default_model": settings.provider_generic_default_model,
+            "embedding_model": settings.provider_generic_embedding_model,
+        },
+    ):
+        _byok = _byok_spec
+        if not _byok["enabled"]:
+            continue
+        _usable, _reason = _provider_registration_viability(_byok["name"])
+        if _usable:
+            provider_adapters[_byok["name"]] = OpenAIAdapter(
+                base_url=_byok["base_url"],
+                api_key=_byok["api_key"],
+                default_model=_byok["default_model"],
+                embedding_model=_byok["embedding_model"],
+                guard=guard,
+                breaker=provider_breaker,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_retries=settings.llm_max_retries,
+                telemetry_push=telemetry_push,
+                provider_name=_byok["name"],
+            )
+            logger.info(
+                "provider_adapter_registered_byok",
+                extra={
+                    "event": "provider_adapter_registered_byok",
+                    "provider": _byok["name"],
+                    "base_url": _byok["base_url"],
+                },
+            )
+        else:
+            logger.warning(
+                "provider_adapter_skipped_unusable_config",
+                extra={
+                    "event": "provider_adapter_skipped_unusable_config",
+                    "provider": _byok["name"],
+                    "reason": _reason,
                 },
             )
 

@@ -177,6 +177,51 @@ class SidecarSettings(BaseSettings):
     provider_openai_reflection_model: str = "gpt-4o-mini"
     provider_openai_embedding_model: str = "text-embedding-3-small"
 
+    # ── BYOK / OpenAI-compatible gateways ─────────────────────────────
+    # Any provider that speaks the OpenAI chat-completions format (OpenRouter,
+    # local TurboLLM-style proxies, Together/Groq/nanoGPT, etc.) slots into these
+    # generic blocks. Set *_enabled=1 + *_api_key + *_base_url + *_default_model
+    # and the adapter registers under that provider name for ModelRouter routing.
+    # The default/*/tactical/strategic/reflection model split lets the conscious
+    # brain use cheap models for reflex/tactical and stronger ones for strategy.
+
+    # OpenRouter (https://openrouter.ai). OpenAI-compatible gateway with many
+    # models (e.g. deepseek/deepseek-v4-flash). Base url typically
+    # https://openrouter.ai/api/v1.
+    provider_openrouter_enabled: bool = False
+    provider_openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    provider_openrouter_api_key: str = ""
+    provider_openrouter_default_model: str = "deepseek/deepseek-v4-flash"
+    provider_openrouter_tactical_model: str = "deepseek/deepseek-v4-flash"
+    provider_openrouter_strategic_model: str = "deepseek/deepseek-v4-flash"
+    provider_openrouter_reflection_model: str = "deepseek/deepseek-v4-flash"
+    provider_openrouter_embedding_model: str = "text-embedding-3-small"
+
+    # TurboLLM — generic name for ANY local OpenAI-compatible LLM proxy (e.g. a
+    # vLLM/Ollama-CLI/llama.cpp server behind http://127.0.0.1:6996/v1). Same
+    # format as the others. Set base_url to your proxy's OpenAI base.
+    provider_turbollm_enabled: bool = False
+    provider_turbollm_base_url: str = "http://127.0.0.1:6996/v1"
+    provider_turbollm_api_key: str = ""
+    provider_turbollm_default_model: str = "local-model"
+    provider_turbollm_tactical_model: str = "local-model"
+    provider_turbollm_strategic_model: str = "local-model"
+    provider_turbollm_reflection_model: str = "local-model"
+    provider_turbollm_embedding_model: str = "local-embed"
+
+    # Fully generic BYOK block — ONE extra arbitrary OpenAI-compatible provider.
+    # Useful for Together/Groq/nanoGPT/any other single extra provider without
+    # adding a new block. Register in the routing policy by the name "generic".
+    provider_generic_enabled: bool = False
+    provider_generic_name: str = "generic"
+    provider_generic_base_url: str = ""
+    provider_generic_api_key: str = ""
+    provider_generic_default_model: str = ""
+    provider_generic_tactical_model: str = ""
+    provider_generic_strategic_model: str = ""
+    provider_generic_reflection_model: str = ""
+    provider_generic_embedding_model: str = ""
+
     provider_policy_json: str = ""
 
     planner_tactical_budget_ms: int = Field(default=15000, ge=100, le=120000)

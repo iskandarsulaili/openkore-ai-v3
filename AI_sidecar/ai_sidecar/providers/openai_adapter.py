@@ -21,6 +21,7 @@ class OpenAIAdapter(LLMProvider):
         timeout_seconds: float,
         max_retries: int,
         telemetry_push=None,
+        provider_name: str | None = None,
     ) -> None:
         super().__init__(
             guard=guard,
@@ -33,6 +34,14 @@ class OpenAIAdapter(LLMProvider):
         self._api_key = api_key
         self._default_model = default_model
         self._embedding_model = embedding_model
+        # Registry name override for BYOK OpenAI-compatible providers
+        # (openrouter / turbollm / generic). Keeps routing/metrics/breaker key
+        # scoped to the actual provider instead of collapsing into "openai".
+        if provider_name:
+            self.provider_name = str(provider_name).strip().lower()
+        self._breaker_key = f"provider.{self.provider_name}"
+        self._breaker_key_embed = f"provider.{self.provider_name}.embed"
+        self._breaker_key_health = f"provider.{self.provider_name}.health"
 
     async def generate_structured(self, request: PlannerModelRequest) -> PlannerModelResponse:
         model = request.model or self._default_model
@@ -78,7 +87,7 @@ class OpenAIAdapter(LLMProvider):
         data, latency_ms, error = await self._post_json(
             bot_id=request.bot_id,
             trace_id=request.trace_id,
-            breaker_key="provider.openai",
+            breaker_key=self._breaker_key,
             url=f"{self._base_url}/chat/completions",
             headers={
                 "Content-Type": "application/json",
@@ -155,7 +164,7 @@ class OpenAIAdapter(LLMProvider):
         data, _, error = await self._post_json(
             bot_id=bot_id,
             trace_id=trace_id,
-            breaker_key="provider.openai.embed",
+            breaker_key=self._breaker_key_embed,
             url=f"{self._base_url}/embeddings",
             headers={
                 "Content-Type": "application/json",
@@ -198,7 +207,7 @@ class OpenAIAdapter(LLMProvider):
         data, latency_ms, error = await self._get_json(
             bot_id=bot_id,
             trace_id="health",
-            breaker_key="provider.openai.health",
+            breaker_key=self._breaker_key_health,
             url=f"{self._base_url}/models",
             headers={
                 "Content-Type": "application/json",

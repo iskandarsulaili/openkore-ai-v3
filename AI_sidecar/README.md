@@ -109,6 +109,33 @@ The bridge then loads its own control files:
 - [`control/ai_sidecar.txt`](../control/ai_sidecar.txt)
 - [`control/ai_sidecar_policy.txt`](../control/ai_sidecar_policy.txt)
 
+### 6. LLM providers (incl. BYOK)
+
+The sidecar's conscious brain routes reasoning through `ModelRouter` over a
+chain of named providers, each of which speaks the OpenAI chat-completions
+format. `.env.example` documents every provider variable with defaults.
+
+Bundled providers:
+
+- `openai` — OpenAI or any OpenAI-compatible endpoint
+- `deepseek` — DeepSeek API
+- `ollama` — local Ollama (native or `/v1` OpenAI-compatible)
+
+**BYOK (bring-your-own-key) providers** mirror the PlayRAW launcher catalog and
+slot into their own routing names:
+
+- `openrouter` — `OPENKORE_AI_PROVIDER_OPENROUTER_*` (e.g. `deepseek/deepseek-v4-flash`)
+- `turbollm` — `OPENKORE_AI_PROVIDER_TURBOLLM_*` (any local OpenAI-compatible proxy, e.g. `http://127.0.0.1:6996/v1`)
+- `generic` — `OPENKORE_AI_PROVIDER_GENERIC_*` (one extra arbitrary OpenAI-compatible endpoint)
+
+To activate a BYOK provider, set its `*_ENABLED=1` plus its `*_API_KEY`,
+`*_BASE_URL`, and the role model overrides (`*_DEFAULT/_TACTICAL/_STRATEGIC/
+_REFLECTION/_EMBEDDING_MODEL`). When enabled it is appended to the fallback
+chain for every workload; use `OPENKORE_AI_PROVIDER_POLICY_JSON` to pin a
+specific provider/model per workload (e.g. route strategy to a strong OpenRouter
+model while keeping tactical cheap).
+
+
 ## Documentation set
 
 - [Architecture and runtime flow](./docs/architecture.md)
