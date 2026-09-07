@@ -3774,41 +3774,65 @@ class HeuristicService:
                 self._cold_start_step[_cs_stable_key] = 8
                 logger.info(f"[cold_start] {bot_id}: job changed to {job_name}, step 7 -> 8")
             elif _assigned_job:
-                # Have an assigned job — look up NPC from the DB-backed table
-                # (JOB_CHANGE_NPCS from job_change_locations.txt), NOT the hardcoded
-                # JOB_CHANGE_2_1 (wrong coords for RAW). Open dialog with 'c' and let
-                # the LLM dialog responder pick the menu option (per-class layouts differ).
-                _jc_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
-                if _jc_npc:
-                    # JOB_CHANGE_NPCS values are tuples (map, x, y) — unpack, not dict.
-                    if isinstance(_jc_npc, dict):
-                        _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
-                    else:
-                        _jc_map, _jc_x, _jc_y = _jc_npc[0], _jc_npc[1], _jc_npc[2]
-                    if _cs_in_town and str(_cs_map or "").lower() == str(_jc_map or "").lower():
-                        # Walk to NPC talk spot (only when ON the guild map)
-                        _talk_area_x = _jc_x + 1
-                        _talk_area_y = _jc_y + 1
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"move {_talk_area_x} {_talk_area_y}",
-                            confidence=0.99, domain="progression",
-                            reason=f"Step 7 - walk to {_assigned_job} job change NPC at ({_jc_x},{_jc_y})",
-                        ))
-                        # After walking, talk to NPC (open dialog; LLM picks menu option)
-                        _talk_cmd = f"talknpc {_jc_x} {_jc_y} c"
-                        actions.append(HeuristicAction(
-                            kind="command", command=_talk_cmd,
-                            confidence=0.99, domain="progression",
-                            reason=f"Step 7 - talk to {_assigned_job} job change NPC",
-                        ))
-                    else:
-                        # Not on the guild map — move to it (never talk to a guild
-                        # NPC from a different town; the NPC is not there).
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"move {_jc_map}",
-                            confidence=0.99, domain="progression",
-                            reason=f"Step 7 - go to {_jc_map} for {_assigned_job} job change",
-                        ))
+                # ── CONSCIOUS-DECIDED SURVIVAL STRATEGY GATE (RULE.md) ──
+                # The LLM/agent (conscious tier) may decide 'level_up_first' (farm
+                # a safe map until the bot can survive the crossing, THEN job
+                # change). This cold-start step-7 emitter must NOT emit the guild
+                # move while that decision is active — it fought the conscious
+                # decision (bot oscillated alberta_in <-> farm, EXP froze). Mirror
+                # the gate used by the other job-change emitters.
+                _cs_surv = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _cs_surv_raw = get_server_solutions_store().get("survival_strategy", None)
+                    if isinstance(_cs_surv_raw, dict):
+                        _cs_surv = str(_cs_surv_raw.get("strategy", "") or "").strip().lower()
+                    elif isinstance(_cs_surv_raw, str):
+                        _cs_surv = _cs_surv_raw.strip().lower()
+                except Exception:
+                    _cs_surv = ""
+                if _cs_surv == "level_up_first":
+                    # Defer: do NOT emit the guild move; let the bot farm.
+                    logger.info(
+                        "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
+                        bot_id,
+                    )
+                else:
+                    # Have an assigned job — look up NPC from the DB-backed table
+                    # (JOB_CHANGE_NPCS from job_change_locations.txt), NOT the hardcoded
+                    # JOB_CHANGE_2_1 (wrong coords for RAW). Open dialog with 'c' and let
+                    # the LLM dialog responder pick the menu option (per-class layouts differ).
+                    _jc_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
+                    if _jc_npc:
+                        # JOB_CHANGE_NPCS values are tuples (map, x, y) — unpack, not dict.
+                        if isinstance(_jc_npc, dict):
+                            _jc_map, _jc_x, _jc_y = _jc_npc["map"], _jc_npc["x"], _jc_npc["y"]
+                        else:
+                            _jc_map, _jc_x, _jc_y = _jc_npc[0], _jc_npc[1], _jc_npc[2]
+                        if _cs_in_town and str(_cs_map or "").lower() == str(_jc_map or "").lower():
+                            # Walk to NPC talk spot (only when ON the guild map)
+                            _talk_area_x = _jc_x + 1
+                            _talk_area_y = _jc_y + 1
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"move {_talk_area_x} {_talk_area_y}",
+                                confidence=0.99, domain="progression",
+                                reason=f"Step 7 - walk to {_assigned_job} job change NPC at ({_jc_x},{_jc_y})",
+                            ))
+                            # After walking, talk to NPC (open dialog; LLM picks menu option)
+                            _talk_cmd = f"talknpc {_jc_x} {_jc_y} c"
+                            actions.append(HeuristicAction(
+                                kind="command", command=_talk_cmd,
+                                confidence=0.99, domain="progression",
+                                reason=f"Step 7 - talk to {_assigned_job} job change NPC",
+                            ))
+                        else:
+                            # Not on the guild map — move to it (never talk to a guild
+                            # NPC from a different town; the NPC is not there).
+                            actions.append(HeuristicAction(
+                                kind="command", command=f"move {_jc_map}",
+                                confidence=0.99, domain="progression",
+                                reason=f"Step 7 - go to {_jc_map} for {_assigned_job} job change",
+                            ))
             else:
                 # No assigned job yet — go to town and wait
                 if not _cs_in_town:
