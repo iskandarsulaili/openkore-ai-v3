@@ -376,6 +376,9 @@ my $route_failure_count = 0;
 my $_route_stall_last_recover_ms = 0;   # last route-loop recovery action
 my $_route_stall_recover_count = 0;     # consecutive recoveries
 my $_route_stall_recalc_blocked_until = 0;  # backoff period during stall
+my $route_stall_pos_x;                  # last-seen pos during a route/move task (stall detect)
+my $route_stall_pos_y;
+my $route_stall_since_ms;
 my $last_actor_source_probe_log_ms = 0;
 my $last_actor_post_parse_probe_log_ms = 0;
 my %actor_add_probe_count;
@@ -1947,35 +1950,60 @@ sub _track_lifecycle_transitions {
 		# and (c) back off the expensive recalc for a cooldown so we stop
 		# memory-churning while the reset settles. All thresholds are config
 		# keys; recovery is rate-limited and self-resets on real progress.
-		if ($route_churn_count >= _cfg_int('aiSidecar_routeStallThreshold', 24)) {
-			my $_rs_now = _now_ms();
-			my $_rs_cooldown = _cfg_int('aiSidecar_routeStallRecoverCooldownMs', 30000);
-			if ($_rs_now - $_route_stall_last_recover_ms >= $_rs_cooldown) {
-				$_route_stall_last_recover_ms = $_rs_now;
-				$_route_stall_recover_count++;
-				# (a) re-sync pos_to -> real pos (agnostic; same guard as the
-				# coordinate-move resync)
-				if ($char && $char->{pos} && $char->{pos_to}
-					&& ref $char->{pos} eq 'HASH' && ref $char->{pos_to} eq 'HASH'
-					&& (($char->{pos}{x} || 0) != ($char->{pos_to}{x} || 0)
-						|| ($char->{pos}{y} || 0) != ($char->{pos_to}{y} || 0))) {
-					%{$char->{pos_to}} = %{$char->{pos}};
-					$char->{solution} = [];
-					debug "[route_stall] pos_to resynced to real pos ($char->{pos}{x},$char->{pos}{y}) after $route_churn_count churn ticks\n", 'aiSidecarBridge', 1;
+		#
+		# NOTE: the route_churn_count below only increments when the (map,x,y,
+		# ai_top) signature is UNCHANGED between ticks. Random-route recalcs
+		# change the target coords every cycle, so route_churn_count stays ~0 and
+		# this recovery would NEVER fire. The robust stall signal is POSITION:
+		# if we've been in a route/move task for >N seconds AND the server has not
+		# moved us (pos unchanged), we are stalled regardless of target. Trigger
+		# on that instead.
+		{
+			my $_ps_now = _now_ms();
+			my $_ps_x = (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{x} || 0) : 0);
+			my $_ps_y = (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{y} || 0) : 0);
+			if ($ai_top =~ /^(?:route|move)/i) {
+				if (!defined $route_stall_pos_x) {
+					$route_stall_pos_x = $_ps_x;
+					$route_stall_pos_y = $_ps_y;
+					$route_stall_since_ms = $_ps_now;
 				}
-				# (b) reset the stuck route task via ai auto
-				my $_rs_reset_ok = eval { Commands::run("ai auto"); 1 };
-				debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (churn=$route_churn_count, failures=$route_failure_count) ai_auto=${\\$_rs_reset_ok ? 'ok' : 'failed'}\n", 'aiSidecarBridge', 1;
-				# (c) back off the expensive recalc for a cooldown so the reset
-				# settles without churning memory.
-				$_route_stall_recalc_blocked_until = $_rs_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
+				my $_moved = ($_ps_x != ($route_stall_pos_x || 0)) || ($_ps_y != ($route_stall_pos_y || 0));
+				if ($_moved) {
+					# Real progress — reset the stall window
+					$route_stall_pos_x = $_ps_x;
+					$route_stall_pos_y = $_ps_y;
+					$route_stall_since_ms = $_ps_now;
+					$_route_stall_recover_count = 0;
+				}
+				my $_ps_stalled_ms = $_ps_now - ($route_stall_since_ms || $_ps_now);
+				my $_ps_thresh_ms = _cfg_int('aiSidecar_routeStallDetectMs', 45000);
+				if ($_ps_stalled_ms >= $_ps_thresh_ms && $_ps_now - $_route_stall_last_recover_ms >= _cfg_int('aiSidecar_routeStallRecoverCooldownMs', 30000)) {
+					$_route_stall_last_recover_ms = $_ps_now;
+					$_route_stall_recover_count++;
+					if ($char && $char->{pos} && $char->{pos_to}
+						&& ref $char->{pos} eq 'HASH' && ref $char->{pos_to} eq 'HASH'
+						&& (($char->{pos}{x} || 0) != ($char->{pos_to}{x} || 0)
+							|| ($char->{pos}{y} || 0) != ($char->{pos_to}{y} || 0))) {
+						%{$char->{pos_to}} = %{$char->{pos}};
+						$char->{solution} = [];
+						debug "[route_stall] pos_to resynced to real pos ($char->{pos}{x},$char->{pos}{y}) after ${_ps_stalled_ms}ms stall\n", 'aiSidecarBridge', 1;
+					}
+					my $_rs_reset_ok = eval { Commands::run("ai auto"); 1 };
+					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=${\\$_rs_reset_ok ? 'ok' : 'failed'}\n", 'aiSidecarBridge', 1;
+					$_route_stall_recalc_blocked_until = $_ps_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
+					# Re-arm the window so we don't fire continuously until it moves
+					$route_stall_pos_x = $_ps_x;
+					$route_stall_pos_y = $_ps_y;
+					$route_stall_since_ms = $_ps_now;
+				}
+			} else {
+				# Not in a route/move task — clear the stall window
+				undef $route_stall_since_ms;
+				undef $route_stall_pos_x;
+				undef $route_stall_pos_y;
+				$_route_stall_recover_count = 0;
 			}
-		}
-		# Clear stall-recovery state once the bot actually starts moving again
-		# (route/move task left, or churn dropped) so a future stall re-arms.
-		if ($_route_stall_recover_count > 0
-			&& ($ai_top !~ /^(?:route|move)/i || $route_churn_count < _cfg_int('aiSidecar_routeStallThreshold', 24))) {
-			$_route_stall_recover_count = 0;
 		}
 	} else {
 		$route_churn_count = 0 if $ai_top !~ /^(?:route|move)/i;
