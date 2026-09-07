@@ -10,23 +10,25 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       map-login (23B) into a 25-byte segment; map-server (clif_shuffle.hpp expects
       exactly 23) rejected every attempt -> 3.5-day map-login rejection loop.
       FIX: gate keepalive on $mapLoginAcked (in-game only) + import $mapLoginAcked
-      into the bridge Globals. PROVEN: bot entered map (02EB Enter Map + combat
-      08C8) at 12:48 after restart. First successful map entry in days.
+      into the bridge Globals. PROVEN: bot entered map (02EB Enter Map + combat 08C8)
+      at 12:48 after restart. First successful map entry in days.
 - [x] 0.1b REVERTED a misdiagnosis: the 23-byte pack branch 'v V V V V V C' was
       CORRECT (I miscounted 6 longs); reverted my false fix immediately.
-- [~] 0.2 SECOND BUG (now exposed, root-causing): in-game session drops ~40-70s
-      after map entry. Evidence: after successful entry (12:48:28, Enter Map +
-      combat 08C8), the bot main loop went SILENT for ~43s (no CZ_SYNC 0x0360, no
-      0B1C, no actor sends from 12:48:56 to the manual Exit 018A at 12:49:39) ->
-      server idle-drops -> "Timeout on Map Server". Root-cause in progress:
-      profile sets aiSidecar_ioTimeoutMs 30000 — a slow sidecar POST blocks the
-      single-threaded OpenKore main loop (incl. the 12s CZ_SYNC keepalive) up to
-      30s -> idle drop. Also: "macro reflex_teleport_escape not found or error in
-      queue" (lethal-escape reflex macro undefined in profile) + sidecar emitted
-      reflex-lethal_escape_teleport while HP 11%. Fix candidates: (a) lower
-      ioTimeoutMs so no single HTTP blocks a whole keepalive window, (b) define
-      the reflex macro or make the escape execution non-blocking, (c) verify the
-      in-game keepalive fires during long sidecar polls.
+- [x] 0.2a SECOND BLOCKER (cost/budget) ROOT-CAUSED + FIXED + COMMITTED b6de64645:
+      cost_mode=max was configured but the conscious brain was hard-capped at
+      100k tokens/day — (a) pdca_loop gate (7173) used raw settings field not
+      cost-mode budget; (b) LLM manager _check_daily_budget used unprefixed env
+      (standard/100000); (c) lifecycle LLMManager built from LLMConfig.from_env()
+      (unprefixed) ignoring OPENKORE_AI_*=max. All three fixed to honor max=unlimited.
+      Sidecar restarted (PID 2548302) loading the fixes.
+- [x] 0.2b COMMITTED tables/portals.txt pre-existing fix (96072c4bc, user permission).
+      Pushed b6de64645..96072c4bc.
+- [~] 0.3 THIRD BLOCKER (in-game freeze, active): after map entry the bot main loop
+      went SILENT ~43s (12:48:56->12:49:39, no CZ_SYNC/ping) then Exit 018A ->
+      server idle-drop -> reconnect loop. Root-cause: a blocking call in the
+      single-threaded OpenKore loop (slow sidecar HTTP POST) starves the 12s
+      ai_sync keepalive. Profile sets aiSidecar_ioTimeoutMs 30000 (> ai_sync 12).
+      FIX in progress: cap in-loop HTTP timeouts < ai_sync; verify keepalive cadence.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
