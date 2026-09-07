@@ -576,7 +576,7 @@ class ProgressionDomain(BaseDomain):
                 _surv = _surv_raw.strip().lower()
         except Exception:
             _surv = ""
-        if _surv == "level_up_first":
+        if _surv in ("level_up_first", "fly_wing_escape"):
             # ── EFFICIENCY (2026-09-04): if the LLM's farm_goal is
             # 'afford_fly_wing', the farm is ONLY a brief zeny-farm to buy a Fly
             # Wing — NOT a long novice grind. Once the bot has enough zeny to
@@ -590,13 +590,13 @@ class ProgressionDomain(BaseDomain):
                 _zeny = 0
             if _farm_goal == "afford_fly_wing" and _zeny > 0:
                 logger.info(
-                    "[job_change] %s: survival_strategy=level_up_first farm_goal=afford_fly_wing zeny=%d -> resuming job change (afforded the escape)",
-                    bot_id, _zeny,
+                    "[job_change] %s: survival_strategy=%s farm_goal=afford_fly_wing zeny=%d -> resuming job change (afforded the escape)",
+                    bot_id, _surv, _zeny,
                 )
             else:
                 logger.info(
-                    "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
-                    bot_id,
+                    "[job_change] %s: survival_strategy=%s -> deferring job change (farm safe map first)",
+                    bot_id, _surv,
                 )
                 return
         _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"

@@ -3791,7 +3791,7 @@ class HeuristicService:
                         _cs_surv = _cs_surv_raw.strip().lower()
                 except Exception:
                     _cs_surv = ""
-                if _cs_surv == "level_up_first":
+                if _cs_surv in ("level_up_first", "fly_wing_escape"):
                     # Defer: do NOT emit the guild move; let the bot farm.
                     logger.info(
                         "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
@@ -3993,7 +3993,7 @@ class HeuristicService:
                         _jc_h_surv = _jc_h_surv_raw.strip().lower()
                 except Exception:
                     _jc_h_surv = ""
-                if _jc_h_surv == "level_up_first":
+                if _jc_h_surv in ("level_up_first", "fly_wing_escape"):
                     # Defer: do NOT emit the job-change move; let the bot farm.
                     # (progression.py logs the deferral; keep this emitter quiet.)
                     pass
@@ -5604,7 +5604,7 @@ class HeuristicService:
                     _jc_zeny = int(signals.get("zeny", 0) or 0)
                 except Exception:
                     _jc_zeny = 0
-                _jc_defer = (_jc_surv == "level_up_first") and not (
+                _jc_defer = (_jc_surv in ("level_up_first", "fly_wing_escape")) and not (
                     _jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0
                 )
                 if _jc_defer:
