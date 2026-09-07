@@ -7168,10 +7168,20 @@ class PDCALoop:
                                       replan_reasons=[], cycle_ms=0.0, error=None)
                 
                 # Check daily/hourly budget (for LLM path)
+                # 2026-09-07 FIX: use the COST-MODE-AWARE budget like the other
+                # gate (line ~6325) — cost_mode=max means get_daily_budget_tokens()
+                # returns 0 (unlimited). Using the raw settings field
+                # llm_daily_budget_tokens (default 100000) here IGNORED max mode
+                # and hard-capped the conscious brain to 100k tokens/day, gating
+                # the PDCA plan to actions=0 budget_gated by early afternoon.
+                # Mirror the max-mode-unlimited semantics.
                 if _ct is not None:
+                    _cm = _cost_mode or getattr(self._runtime, 'cost_mode_manager', None)
+                    _bg_budget = _cm.get_daily_budget_tokens() if _cm else getattr(_settings, "llm_daily_budget_tokens", 1000000)
+                    _bg_hourly = _cm.get_llm_calls_per_hour_limit() if _cm else getattr(_settings, "llm_max_calls_per_hour", 30)
                     _allowed, _reason = _ct.check(
-                        daily_budget_tokens=getattr(_settings, "llm_daily_budget_tokens", 100000),
-                        max_calls_per_hour=getattr(_settings, "llm_max_calls_per_hour", 30),
+                        daily_budget_tokens=_bg_budget,
+                        max_calls_per_hour=_bg_hourly,
                         tier=_tier, bot_id=_cycle_bot_id,
                     )
                     if not _allowed:

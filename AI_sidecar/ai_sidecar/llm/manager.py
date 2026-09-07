@@ -181,8 +181,15 @@ class LLMManager:
     def _check_daily_budget(self, estimated_tokens: int = 0) -> bool:
         """Check daily token budget. Returns False if budget exceeded."""
         self._rollover_daily()
+        # 2026-09-07 FIX: cost_tier=max means UNLIMITED for conscious-brain
+        # reasoning (the user mandate). The raw LLM_DAILY_BUDGET_TOKENS default
+        # (100000) hard-capped the LLM here even when max mode was configured,
+        # producing 'Daily token budget exceeded (99733/100000)' by early
+        # afternoon and starving the conscious brain. Treat max/off-budget as
+        # unlimited.
         budget = self._config.daily_budget_tokens
-        if budget <= 0:
+        _tier = getattr(self._config, "cost_tier", "standard")
+        if budget <= 0 or _tier == "max":
             return True
         if self._daily_tokens + estimated_tokens > budget:
             logger.warning(

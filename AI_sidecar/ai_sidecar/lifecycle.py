@@ -6038,6 +6038,28 @@ def create_runtime() -> RuntimeState:
         from ai_sidecar.llm import LLMConfig, LLMManager
 
         llm_config = LLMConfig.from_env()
+        # 2026-09-07 FIX: LLMConfig.from_env() reads UNPREFIXED env vars
+        # (LLM_COST_TIER / LLM_DAILY_BUDGET_TOKENS) which the fleet_supervisor
+        # does NOT set, so the manager silently defaulted to cost_tier=standard
+        # / daily_budget=100000 even though the sidecar runs OPENKORE_AI_LLM_
+        # COST_TIER=max. That hard-capped the conscious brain to 100k tokens/day
+        # ("Daily token budget exceeded (99733/100000)") and gated the PDCA plan
+        # to actions=0 budget_gated by early afternoon. Overlay the authoritative
+        # SidecarSettings values so max mode is honored.
+        _sc_tier = str(getattr(settings, "llm_cost_tier", "") or "").lower() or \
+                   str(getattr(settings, "cost_mode", "standard") or "standard").lower()
+        _sc_budget = int(getattr(settings, "llm_daily_budget_tokens", 0) or 0)
+        try:
+            llm_config.cost_tier = _sc_tier
+            if _sc_budget > 0:
+                llm_config.daily_budget_tokens = _sc_budget
+            # max tier => unlimited (budget<=0 disables the gate)
+            if _sc_tier == "max":
+                llm_config.daily_budget_tokens = 0
+            llm_config.max_calls_per_hour = int(getattr(settings, "llm_max_calls_per_hour", 0) or 0) or \
+                                            llm_config.max_calls_per_hour
+        except Exception:
+            logger.exception("llm_manager_cost_tier_overlay_failed")
         llm_manager = LLMManager(config=llm_config)
         if not llm_manager.is_available():
             logger.warning(

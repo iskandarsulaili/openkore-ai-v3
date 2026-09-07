@@ -14,8 +14,19 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       08C8) at 12:48 after restart. First successful map entry in days.
 - [x] 0.1b REVERTED a misdiagnosis: the 23-byte pack branch 'v V V V V V C' was
       CORRECT (I miscounted 6 longs); reverted my false fix immediately.
-- [~] 0.2 SECOND BUG (now exposed): in-game session drops ~70s after map entry
-      ("Timeout on Map Server") -> reconnect loop returns. Under investigation.
+- [~] 0.2 SECOND BUG (now exposed, root-causing): in-game session drops ~40-70s
+      after map entry. Evidence: after successful entry (12:48:28, Enter Map +
+      combat 08C8), the bot main loop went SILENT for ~43s (no CZ_SYNC 0x0360, no
+      0B1C, no actor sends from 12:48:56 to the manual Exit 018A at 12:49:39) ->
+      server idle-drops -> "Timeout on Map Server". Root-cause in progress:
+      profile sets aiSidecar_ioTimeoutMs 30000 — a slow sidecar POST blocks the
+      single-threaded OpenKore main loop (incl. the 12s CZ_SYNC keepalive) up to
+      30s -> idle drop. Also: "macro reflex_teleport_escape not found or error in
+      queue" (lethal-escape reflex macro undefined in profile) + sidecar emitted
+      reflex-lethal_escape_teleport while HP 11%. Fix candidates: (a) lower
+      ioTimeoutMs so no single HTTP blocks a whole keepalive window, (b) define
+      the reflex macro or make the escape execution non-blocking, (c) verify the
+      in-game keepalive fires during long sidecar polls.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
