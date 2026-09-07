@@ -228,6 +228,9 @@ route_randomWalk_inTown 0
 route_randomWalk_maxRouteTime 75
 route_maxWarpFee
 route_maxNpcTries 5
+# Max entries in the inter-map route open list before the search bails
+# (prevents "Out of memory!" on dense portal graphs). 0 = unbounded.
+route_maxOpenListEntries 20000
 route_teleport 0
 route_teleport_minDistance 75
 route_teleport_maxTries 8

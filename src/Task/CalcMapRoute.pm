@@ -116,6 +116,14 @@ sub new {
 
 	$self->{maxTime} = $args{maxTime} || $timeout{ai_route_calcRoute}{timeout};
 
+	# Bound the inter-map open list so a dense portal graph can never exhaust
+	# the Perl heap mid-expansion (OOM root cause, 2026-09-07). Configurable
+	# via route_maxOpenListEntries; 0 = unbounded (legacy behavior).
+	$self->{maxOpenListEntries} = $args{maxOpenListEntries};
+	if (!defined $self->{maxOpenListEntries} || $self->{maxOpenListEntries} < 0) {
+		$self->{maxOpenListEntries} = $config{route_maxOpenListEntries} // 20000;
+	}
+
 	my $tickets;
 	if ($char && eval { $char->inventory }) {
 		$tickets = $char->inventory->getByNameID(7060);
@@ -301,9 +309,16 @@ sub canAddOpenListEntry {
 	my ($self, $key, $walk) = @_;
 	return 0 if (exists $self->{closelist}{$key} && $self->{closelist}{$key}{walk} <= $walk);
 	return 0 if (exists $self->{openlist}{$key} && $self->{openlist}{$key}{walk} <= $walk);
-	# TODO: After fixing the current route-cost mismatch bug, add a stricter
-	# duplicate-state guard here so the same portal/path key is not re-added to
-	# the open list/heap over and over with alternate costs during expansion.
+	# ── BOUNDED OPENLIST (2026-09-07, OOM root cause) ──
+	# The route-state key embeds the blocked-portal-groups signature, so the
+	# SAME portal reached via different blocked-group paths creates DISTINCT
+	# keys. On a dense portal graph this openlist can grow without bound and
+	# Perl dies with "Out of memory!" mid-expansion (reported live by clarois
+	# on prt_fild06/field maps). Mirror the C A*'s hard bound: once the open
+	# list exceeds a sane ceiling, stop expanding and bail cleanly (no path
+	# found within the search budget) instead of exhausting the heap.
+	my $maxOpen = $self->{maxOpenListEntries} || 20000;
+	return 0 if (scalar(keys %{$self->{openlist}}) >= $maxOpen);
 	return 1;
 }
 
