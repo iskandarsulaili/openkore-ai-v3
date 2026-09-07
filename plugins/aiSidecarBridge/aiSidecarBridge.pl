@@ -8,13 +8,14 @@ use feature 'state';
 
 use Commands;
 use FileParsers qw(parseConfigFile);
-use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender %jobs_lut);
+use Globals qw(%config $char $field @ai_seq $net %monsters %players %npcs $monstersList $playersList $npcsList %timeout $messageSender %jobs_lut $mapLoginAcked);
 use IO::Socket::INET;
 use Log qw(debug message warning);
 use Network;
 use Plugins;
 use Scalar::Util qw(reftype);
 use Settings;
+use Skill;
 use Time::HiRes qw(alarm time usleep);
 use Cwd;
 use File::Basename;
@@ -896,10 +897,19 @@ sub on_mainLoop_post {
 		my $now = _now_ms();
 		_probe_actor_post_parse($now);
 
-		# Keepalive ping to prevent server timeout (every 5s)
+		# Keepalive ping to prevent server timeout (every 5s, IN-GAME only)
 		# rAthena drops idle connections after ~30-40s without packet activity
-		# 5s gives a safety margin before the 30s idle-drop threshold
-		if ($messageSender && $now >= ($next_keepalive_at_ms || 0)) {
+		# 5s gives a safety margin before the 30s idle-drop threshold.
+		# 2026-09-07 FIX: gate the keepalive on $mapLoginAcked (map-login
+		# ACKED, only true after a successful map entry) — the previous
+		# un-gated every-5s sendPing fired during the LOGIN/connect phase and
+		# COALESCED 0B1C (2B) with the 0x0436 map-login (23B) into a 25-byte
+		# TCP segment. The map-server's clif_parse_WantToConnection_sub checks
+		# RFIFOREST(fd) against packet_db[0x0436].len (23) -> 25 != 23 ->
+		# \"unknown connect packet 0x0436(length:25)\" -> rejects the login,
+		# which is the 3.5-day map-login rejection loop. During gameplay
+		# $mapLoginAcked is true so the keepalive still prevents idle drops.
+		if ($messageSender && $char && $mapLoginAcked && $now >= ($next_keepalive_at_ms || 0)) {
 		    $next_keepalive_at_ms = $now + 5000;  # Every 5 seconds
 		    $messageSender->sendPing();
 		}
@@ -2137,7 +2147,10 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_55 => 'storageprice',
 		aiSidecarPolicy_allow_56 => 'reparse',
 		aiSidecarPolicy_allow_57 => 'ss',
-		aiSidecarPolicy_allow_58 => '@go',
+		aiSidecarPolicy_allow_59 => 'sm',
+		aiSidecarPolicy_allow_60 => 'sl',
+		aiSidecarPolicy_allow_61 => 'sp',
+		aiSidecarPolicy_allow_62 => '@go',
 
 		aiSidecarPolicy_deny_0 => 'quit',
 		aiSidecarPolicy_deny_1 => 'plugin',
@@ -7004,10 +7017,89 @@ sub _rewrite_runtime_command {
 		return ($normalized, $rewrite_kind);
 	}
 
-	# Handle 'use_skill' commands
-	if ($normalized =~ /^use_skill\s+(.+)$/) {
-		$rewrite_kind = 'use_skill_rewritten';
-		return ($normalized, $rewrite_kind);
+	# Handle 'use_skill' / 'skill_cast' / 'skill_cast_aoe' commands
+	# ROOT CAUSE (2026-09-07): `use_skill` is NOT a native OpenKore command
+	# (native = ss/sm/sl/sp). The sidecar emits `use_skill <name>` and
+	# `skill_cast <id> <target>`; the old rewrite passed them through
+	# unchanged, so Commands::run hit "Unknown command 'use_skill'" and
+	# EVERY skill cast silently failed (346+ errors in the live log) — the
+	# archer "mostly missed" because Double Strafe / Arrow Shower never fired.
+	# FIX: resolve the skill name to the char's known handle and emit the
+	# native command — `ss <handle> <level>` for self-target buffs, `sm
+	# <handle> <target_id> <level>` for enemy-target skills.
+	if ($normalized =~ /^use_skill\s+(.+)$/i || $normalized =~ /^skill_cast(?:_aoe)?\s+(.+)$/i) {
+		my $_raw_skill = $1;
+		my $_target_id = 0;
+		# skill_cast <id> <target_id> / skill_cast_aoe <id> <target_id> <radius>
+		if ($normalized =~ /^skill_cast(?:_aoe)?\s+(\S+)\s+(\d+)/i) {
+			$_raw_skill = $1;
+			$_target_id = $2;
+		}
+		my $_skill_handle = '';
+		my $_skill_level = 0;
+		# Resolve the emitted name to the char's known skill handle (case-insensitive).
+		# $char->{skills} is keyed by handle (e.g. AC_DOUBLE); the sidecar may emit
+		# a handle (AC_DOUBLE), a lowercase handle (ac_double), or a display name.
+		if ($char && $char->{skills} && ref $char->{skills} eq 'HASH') {
+			my $_want = lc($_raw_skill);
+			$_want =~ s/[\s\-]+/_/g;
+			for my $_h (keys %{$char->{skills}}) {
+				my $_hl = lc($_h);
+				$_hl =~ s/[\s\-]+/_/g;
+				if ($_hl eq $_want) {
+					$_skill_handle = $_h;
+					$_skill_level = ($char->{skills}{$_h}{lv} || 0) + 0;
+					last;
+				}
+			}
+			# Fallback: match by display name
+			if (!$_skill_handle) {
+				for my $_h (keys %{$char->{skills}}) {
+					my $_dn = lc($char->{skills}{$_h}{name} || '');
+					if ($_dn eq lc($_raw_skill)) {
+						$_skill_handle = $_h;
+						$_skill_level = ($char->{skills}{$_h}{lv} || 0) + 0;
+						last;
+					}
+				}
+			}
+		}
+		if (!$_skill_handle) {
+			# Unknown skill — drop it (can't cast what we don't have). Log for diagnosis.
+			debug "[skill_rewrite] unknown skill '$_raw_skill' (not in char skills), dropping\n", 'aiSidecarBridge', 1;
+			return ('', 'use_skill_unknown_skill');
+		}
+		$_skill_level = ($metadata->{skill_level} || $_skill_level || 1) + 0;
+		# Determine target type: self-target buffs use `ss`, enemy-target use `sm`.
+		my $_is_self = 0;
+		eval {
+			my $_sk = new Skill(auto => $_skill_handle);
+			$_is_self = 1 if $_sk && $_sk->getTargetType() == Skill::TARGET_SELF();
+		};
+		if ($_is_self) {
+			my $_cmd = "ss $_skill_handle $_skill_level";
+			$rewrite_kind = 'use_skill_rewritten_self';
+			debug "[skill_rewrite] use_skill $_raw_skill -> $_cmd\n", 'aiSidecarBridge', 2;
+			return ($_cmd, $rewrite_kind);
+		}
+		# Enemy-target: resolve the current attack target if none given.
+		if (!$_target_id) {
+			eval {
+				my $_args = AI::args(0);
+				$_target_id = $_args->{attackID} if $_args && $_args->{attackID};
+			};
+		}
+		if (!$_target_id) {
+			# No target — fall back to self-cast (buffs) or drop (attack skills need a target).
+			my $_cmd = "ss $_skill_handle $_skill_level";
+			$rewrite_kind = 'use_skill_rewritten_no_target';
+			debug "[skill_rewrite] use_skill $_raw_skill (no target) -> $_cmd\n", 'aiSidecarBridge', 2;
+			return ($_cmd, $rewrite_kind);
+		}
+		my $_cmd = "sm $_skill_handle $_target_id $_skill_level";
+		$rewrite_kind = 'use_skill_rewritten_enemy';
+		debug "[skill_rewrite] use_skill $_raw_skill -> $_cmd\n", 'aiSidecarBridge', 2;
+		return ($_cmd, $rewrite_kind);
 	}
 
 	# Handle 'skills add' commands
