@@ -23,12 +23,29 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       Sidecar restarted (PID 2548302) loading the fixes.
 - [x] 0.2b COMMITTED tables/portals.txt pre-existing fix (96072c4bc, user permission).
       Pushed b6de64645..96072c4bc.
-- [~] 0.3 THIRD BLOCKER (in-game freeze, active): after map entry the bot main loop
-      went SILENT ~43s (12:48:56->12:49:39, no CZ_SYNC/ping) then Exit 018A ->
-      server idle-drop -> reconnect loop. Root-cause: a blocking call in the
-      single-threaded OpenKore loop (slow sidecar HTTP POST) starves the 12s
-      ai_sync keepalive. Profile sets aiSidecar_ioTimeoutMs 30000 (> ai_sync 12).
-      FIX in progress: cap in-loop HTTP timeouts < ai_sync; verify keepalive cadence.
+- [x] 0.3 THIRD BLOCKER (in-game sustain) ROOT-CAUSED + FIXED + COMMITTED 7138dafd2:
+      bot entered map + farmed but HP tanked to 16 with 296 Novice Potions unused.
+      (a) the 'no potions -> block' override counted ONLY hardcoded Red/Orange/White
+      Potion, so a bot carrying only Novice Potion (569) was judged 'no potions' and
+      ALL potion use was silently blocked on hunting maps -> now uses
+      _best_available_heal_name() (agnostic real-inventory scan). (b) the
+      'use <item>'->'is <item>' rewrite emitted the LOWERCASED name but
+      Actor::Item::get does case-SENSITIVE exact match -> 'is novice potion' failed
+      to resolve -> now emits the ACTUAL inventory name casing. PROVEN: HP holds
+      198/198 (was 16 & dying), EXP gained 886->1271, zero 'does not exist' errors.
+- [x] 0.3b FOURTH BLOCKER (farm-map routing loop) ROOT-CAUSED + FIXED + COMMITTED
+      e4d1a8961 + b04c49b13 + 2d98830c5: FOUR job-change emitters fought the
+      conscious survival_strategy decision. progression.py honored
+      level_up_first, but heuristic_service had 3 SEPARATE emitters (job-change
+      gate ~3992, cold-start step-7 ~3808, 2-1 ~5605) that re-emitted the guild
+      move WITHOUT the gate -> bot oscillated alberta_in/moc_prydb1 <-> farm, EXP
+      froze. All 4 gate sites now defer for BOTH 'level_up_first' AND
+      'fly_wing_escape' (the LLM's actual decision: farm until it can afford a
+      Fly Wing, THEN job change; with 0 zeny it keeps farming). PROVEN: EXP
+      1890->7176 continuously, 0 guild dispatches, HP full, in-map sustained.
+- [~] 0.3c REMAINING: intermittent disconnects (bot reconnects + resumes farming,
+      but drops ~every 10-20 min). Not a routing/sustain bug — reconnect loop
+      recovers and EXP keeps climbing. Track for stability.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
