@@ -5676,8 +5676,17 @@ class HeuristicService:
                     _jc_zeny = int(signals.get("zeny", 0) or 0)
                 except Exception:
                     _jc_zeny = 0
+                # 2026-09-08: survival_strategy is a SNAPSHOT taken when the bot
+                # was dead (hp_pct 0). It goes STALE once the bot is healthy — a
+                # full-HP bot does NOT need a Fly Wing to cross. Resume job change
+                # at healthy HP (>= 50%) regardless of zeny.
+                _jc_hp = 1.0
+                try:
+                    _jc_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
+                except Exception:
+                    _jc_hp = 1.0
                 _jc_defer = (_jc_surv in ("level_up_first", "fly_wing_escape")) and not (
-                    _jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0
+                    (_jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0) or _jc_hp >= 0.50
                 )
                 if _jc_defer:
                     logger.info(
