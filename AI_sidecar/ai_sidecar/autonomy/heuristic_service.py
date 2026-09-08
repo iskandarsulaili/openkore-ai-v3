@@ -4173,7 +4173,7 @@ class HeuristicService:
                 "Config audit - Tool Dealer in Prontera")
             self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
                 "Config audit - walk up to 25 cells to sell")
-            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "70", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "40", "hunting",
                 "Config audit - sell when weight > 70%")
             self._set_config_once(actions, bot_id, "sellAuto_minZen", "0", "hunting",
                 "Config audit - sell even with 0 zeny")
@@ -4218,7 +4218,7 @@ class HeuristicService:
                 "Config audit - Tool Dealer in Prontera")
             self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
                 "Config audit - walk up to 25 cells to sell")
-            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "70", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto_maxWeight", "40", "hunting",
                 "Config audit - sell when weight > 70%")
             self._set_config_once(actions, bot_id, "sellAuto_minZen", "0", "hunting",
                 "Config audit - sell even with 0 zeny")
