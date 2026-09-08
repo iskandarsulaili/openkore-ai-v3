@@ -5379,6 +5379,33 @@ class HeuristicService:
                     logger.info(f"[economy] {bot_id}: can't buy potions at level {base_level} — "
                                f"zeny={zeny}, cost={_potion_cost}, weight={weight:.0%}, "
                                f"weight_cap={_weight_cap}")
+                # ── FLY WING PURCHASE (2026-09-08, E2E chain) ──
+                # The conscious tier decided survival_strategy=fly_wing_escape —
+                # the bot must carry a Fly Wing (601) to cross the field to the
+                # job-change guild safely. It never BUYS it (only uses it at 40%
+                # HP), so when farming finally yields zeny, the BUY trip must
+                # also grab a wing. Tool Dealer (290,221) stocks 601 for 250z.
+                try:
+                    _fw_surv = ""
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _fw_raw = get_server_solutions_store().get("survival_strategy", None)
+                    if isinstance(_fw_raw, dict):
+                        _fw_surv = str(_fw_raw.get("strategy", "") or "").strip().lower()
+                    elif isinstance(_fw_raw, str):
+                        _fw_surv = _fw_raw.strip().lower()
+                except Exception:
+                    _fw_surv = ""
+                _inv_items_fw = signals.get("inventory_items", []) or []
+                _has_wing = any(
+                    "fly wing" in str(i).lower() or "wing of fly" in str(i).lower() or "601" in str(i)
+                    for i in _inv_items_fw
+                )
+                if _fw_surv == "fly_wing_escape" and not _has_wing and zeny >= 250:
+                    actions.append(HeuristicAction(
+                        kind="command", command="buy 601 1",
+                        confidence=0.95, domain="economy",
+                        reason=f"Buy 1 Fly Wing (601, 250z) for the safe job-change crossing (fly_wing_escape)",
+                    ))
                 actions.append(HeuristicAction(
                     kind="command", command="talk any",
                     confidence=0.80, domain="economy",
