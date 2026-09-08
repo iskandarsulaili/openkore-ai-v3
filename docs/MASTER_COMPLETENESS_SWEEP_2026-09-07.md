@@ -139,13 +139,24 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       the DQN to drive combat + LLM to set intent, demote heuristics to cold-start
       fallback.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
-- [ ] 0.3p SELL LOOP (2026-09-08, ACTIVE): bot farms continuously (EXP climbing)
-      but zeny stays 0 — it accumulates loot (weight 21%) but hasn't hit the 70%
-      overweight threshold to trigger the return-to-sell yet. Once the bag fills,
-      the overweight-return (0.3l) fires -> prontera -> sell -> zeny -> Fly Wing
-      -> job change. Verify the full sell->zeny->job-change chain completes.
-- [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
-      (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
+- [x] 0.3p SELL LOOP / PRIORITIZATION (2026-09-08, PROVEN): user mandate "able to
+      prioritize" + "no common sense". ROOT-CAUSED: the conscious tier decided
+      survival_strategy=fly_wing_escape at LETHAL HP (0/1) — "field crossing kills
+      me". That premise stayed STALE after the bot healed -> it ground a starter
+      field forever for a Fly Wing it can't afford (never sells loot -> zeny 0 ->
+      deadlock). FIX: a healthy HP override (hp_ratio >= 0.90) now takes priority at
+      ALL 6 job-change gate sites (heuristic_service TOWN branch / cold-start step-7 /
+      main emitter / JOB_CHANGE handler / HUNTING branch / domains/progression.py) —
+      healthy bot prioritizes the job change; a fragile bot (<0.9 HP) still honors
+      the conscious fly-wing deferral (correctly re-engages at real low HP).
+      COMMITTED 57f887ff2 + 61915d133 + 6d4c07393; sidecar restarted (2670492).
+      PROVEN: bot reached JOB_CHANGE state + routed to alberta_in; HP dropped on the
+      crossing -> correctly re-deferred to HUNT; then farmed continuously EXP
+      7087->9562 in 3 min, 130 kills, zero deaths, 1 process. Prioritization works:
+      survival first when fragile, progression when healthy.
+- [~] 0.4 AFTER JOB CHANGE: bot must complete the merchant job-change (reach alberta
+      guild NPC, talk, pick merchant) end-to-end. Currently it defers at low HP
+      crossing the field; verify it completes once HP + Fly Wing path is resolved.
 
 ## BATCH 1 — TOKEN BUDGET (conscious tier gated to actions=0)
 - [ ] 1.1 fleet_daily_token_budget_exceeded:106618/100000 → plan emitted but refused. Root-cause the budget mechanics; rebalance so the conscious plan executes without runaway cost.
