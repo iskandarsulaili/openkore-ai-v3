@@ -857,7 +857,20 @@ sub route {
 	);
 
 	if ($map && !$args{noMapRoute}) {
-		$task = new Task::MapRoute(map => $map, @params);
+		# 2026-09-08: SAME-MAP FAST PATH. When the target map is the CURRENT
+		# field, use Task::Route (fast .dist pathfinding) instead of
+		# Task::MapRoute (the full cross-map portal graph, 3224 portals).
+		# Random-walk on the lockMap was dispatching Task::MapRoute for a
+		# same-map target, which re-ran the expensive portal-graph calc every
+		# cycle, bailed TOO_MUCH_TIME before a walk was sent, and wedged the
+		# bot in `AI: route | 2` (endless route-recalc, never attacks, server
+		# drops it at stall_time). Same-map routing needs no portal graph.
+		my $_same_map = ($field && $map eq $field->baseName) ? 1 : 0;
+		if ($_same_map) {
+			$task = new Task::Route(field => $field, @params);
+		} else {
+			$task = new Task::MapRoute(map => $map, @params);
+		}
 	} else {
 		$task = new Task::Route(field => $field, @params);
 	}
