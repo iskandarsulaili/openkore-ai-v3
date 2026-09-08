@@ -164,9 +164,13 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       sell->zeny->buy-wing->cross->merchant chain wired; job-change still defers at
       low HP (correct while fragile) + the long alberta crossing still fails en
       route to deaths (execution robustness, NOT the coord bug anymore).
-- [~] 0.4 AFTER JOB CHANGE: bot must complete the merchant job-change (reach alberta
-      guild NPC, talk, pick merchant) end-to-end. Currently it defers at low HP
-      crossing the field; verify it completes once HP + Fly Wing path is resolved.
+- [~] 0.4 JOB-CHANGE E2E (2026-09-08): merchant NPC coords fixed (58,43) in BOTH
+      sources (tables/job_change_locations.txt + macros/macro_manifest.json);
+      bot now emits correct coord + attempts the alberta crossing. Alberta is an
+      ISLAND town — the overland route is 11 maps/~3377 steps and the bot dies or
+      wedges en route, reverting to the farm (safe, EXP still climbs). The crossing
+      needs an AIRSHIP/ferry shortcut or a Fly Wing to land on alberta directly; the
+      bot lacks airship knowledge. This is the remaining execution-robustness gap.
 
 ## BATCH 1 — TOKEN BUDGET (conscious tier gated to actions=0)
 - [ ] 1.1 fleet_daily_token_budget_exceeded:106618/100000 → plan emitted but refused. Root-cause the budget mechanics; rebalance so the conscious plan executes without runaway cost.
