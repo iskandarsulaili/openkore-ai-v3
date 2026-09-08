@@ -19,10 +19,15 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       ~2s at HP<=0.18 in-combat emitting `reflex_teleport_escape` — a NO-OP macro
       (log+stop). With 0 zeny / no Fly Wing, the bot cannot teleport/flee, so the
       reflex busy-loops the empty macro forever and BLOCKS all other commands/combat
-      (0 kills while alive + regenerating). The metadata note claims "bridge owns
-      escape" but the bridge has NO escape refactor (grep=0 escape teleport / Fly Wing
-      usage — earlier finding). IN PROGRESS: make the fallback macro actually flee/retreat
-      (walk away from aggro) or suppress the macro when no escape item exists.
+      (0 kills while alive + regenerating). IN PROGRESS: make the fallback macro
+      actually flee/retreat (walk away from aggro) or suppress when no escape item.
+- [!] 5.8 OPEN EXEC-BLOCKER (root of churn): bot relogs every ~90s while farming
+      (19:50:27 off → 19:51:00 in) + intermittently freezes at fixed pos with 0 visible
+      monsters. Map clean (BotDetection 0.26 Human, benign; AI-NPC active). The repeated
+      logout/login is the execution layer (bridge reconnect / char-map handshake), NOT
+      the AI decisions (which now farm correctly when connected). EXP climbed
+      18638→19811 this window proving decisions work. BLOCKED ON: bridge/execution
+      reconnect-loop diagnosis (separate from this sweep's decision-layer work).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
