@@ -589,11 +589,18 @@ class ProgressionDomain(BaseDomain):
                 _zeny = int(signals.get("zeny", 0) or 0)
             except Exception:
                 _zeny = 0
-            if _hp_now >= 0.90:
+            if _hp_now >= 0.90 and _zeny >= 500:
                 logger.info(
-                    "[job_change] %s: survival_strategy=%s but HEALTHY hp=%.2f -> prioritizing job change (%s)",
-                    bot_id, _surv, _hp_now, _farm_goal or "fly_wing_escape",
+                    "[job_change] %s: survival_strategy=%s but HEALTHY hp=%.2f zeny=%d -> prioritizing job change (%s)",
+                    bot_id, _surv, _hp_now, _zeny, _farm_goal or "fly_wing_escape",
                 )
+            # healthy but BROKE cannot cross an island guild (alberta) — farm to earn
+            elif _hp_now >= 0.90:
+                logger.info(
+                    "[job_change] %s: hp=%.2f zeny=%d<500 -> deferring (farm to afford crossing)",
+                    bot_id, _hp_now, _zeny,
+                )
+                return
             # fragile bot (<0.9 HP): hold the conscious safety decision
             elif _farm_goal == "afford_fly_wing" and _zeny > 0:
                 logger.info(

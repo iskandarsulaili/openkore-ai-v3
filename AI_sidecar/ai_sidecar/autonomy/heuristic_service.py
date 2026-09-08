@@ -5721,23 +5721,35 @@ class HeuristicService:
                     _jc_zeny = 0
                 _jc_defer = False
                 _jc_hp_now = float(signals.get("hp_ratio", 1.0) or 1.0)
-                # ── PRIORITIZATION + COMMON-SENSE (2026-09-08, mandate) ──
-                # survival_strategy=fly_wing_escape was decided when the bot was
-                # at LETHAL HP (0/1) — "field crossing kills me". That premise is
-                # STALE once the bot is healthy again. A healthy level-33 Novice
-                # must PRIORITIZE the job change (real progression) over an
-                # endless starter-field grind for an escape item it can never
-                # afford (it never sells loot -> zeny stays 0 -> deadlock).
-                # Only defer while HP is genuinely critical (<0.9): the fly-wing /
-                # farm-first safety decision applies to a fragile bot, not a full one.
+                # ── PRIORITIZATION + COMMON-SENSE + AFFORDABILITY (2026-09-08) ──
+                # healthy HP overrides a STALE fly_wing_escape decided at lethal HP.
+                # BUT: a healthy-but-BROKE bot still cannot cross to an island guild
+                # (alberta) — it would suicide-walk 11 maps and wedge. Job change is
+                # only prioritized when healthy AND (already near the guild OR
+                # enough zeny for a Kafra warp). Otherwise defer to farm so it
+                # actually earns the zeny. Char-agnostic: affordability = zeny >=
+                # crossing cost, or already on the guild town map.
+                _jc_map_cur = str(signals.get("map", "") or "").lower()
+                # guild map = the already-resolved job-change NPC map (_jc_npc_map)
+                _jc_guild_map = str(_jc_npc_map or "").lower()
+                _jc_near_guild = bool(_jc_guild_map) and _jc_map_cur == _jc_guild_map
+                _jc_cross_cost = 500  # Kafra/airship to any island town; conservative
+                # healthy + affordable -> prioritize job change
+                _jc_affordable = _jc_zeny >= _jc_cross_cost or _jc_near_guild
                 if _jc_surv not in ("level_up_first", "fly_wing_escape"):
                     _jc_defer = False           # conscious tier allows job change
-                elif _jc_hp_now >= 0.90:
-                    _jc_defer = False           # healthy -> job change is the priority
+                elif _jc_hp_now >= 0.90 and _jc_affordable:
+                    _jc_defer = False           # healthy + can cross -> job change now
                 else:
-                    # fragile bot: hold the conscious safety decision; allow the
-                    # brief fly-wing zeny-farm to resolve (it has earned zeny).
-                    _jc_defer = not (_jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0)
+                    # fragile OR broke: hold the conscious safety decision, farm.
+                    # A broke bot must farm (and sell) until it can afford the
+                    # crossing — NOT suicide-walk. Char-agnostic.
+                    _jc_defer = True
+                    if _jc_hp_now >= 0.90 and not _jc_affordable and _jc_zeny < _jc_cross_cost:
+                        logger.info(
+                            "[job_change] %s: hp=%.2f zeny=%d<cross %dz -> deferring (farm to afford crossing)",
+                            bot_id, _jc_hp_now, _jc_zeny, _jc_cross_cost,
+                        )
                 if _jc_defer:
                     logger.info(
                         "[job_change] %s: survival_strategy=%s hp=%.2f -> deferring job change (farm safe map first)",
