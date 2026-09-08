@@ -1481,7 +1481,22 @@ class HeuristicService:
                     return "WEAPON_BUY"
                 return "BUY"
             if base_level >= 10 and job_level >= 10 and job_name == "novice":
-                return "JOB_CHANGE"
+                # 2026-09-08: same survival-strategy fallthrough as the HUNTING
+                # branch — if the conscious tier defers job change (level_up_first /
+                # fly_wing_escape), don't sit in JOB_CHANGE doing nothing; farm.
+                _town_surv = ""
+                try:
+                    from ai_sidecar.server_adaptation import get_server_solutions_store
+                    _town_surv_raw = get_server_solutions_store().get("survival_strategy", None)
+                    if isinstance(_town_surv_raw, dict):
+                        _town_surv = str(_town_surv_raw.get("strategy", "") or "").strip().lower()
+                    elif isinstance(_town_surv_raw, str):
+                        _town_surv = _town_surv_raw.strip().lower()
+                except Exception:
+                    _town_surv = ""
+                if _town_surv not in ("level_up_first", "fly_wing_escape"):
+                    return "JOB_CHANGE"
+                return "TOWN_HUNT"
             # 2-1 JOB CHANGE: first class with job_level >= 50 => change to 2nd class
             _first_classes = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
             if job_name in _first_classes and job_level >= 50 and base_level >= 50:
