@@ -3853,7 +3853,23 @@ class HeuristicService:
                 # fly_wing_escape decided at lethal HP must not block the job
                 # change once the bot is healthy again.
                 _cs_hp_now = float(signals.get("hp_ratio", 1.0) or 1.0)
-                _cs_defer = (_cs_surv in ("level_up_first", "fly_wing_escape")) and _cs_hp_now < 0.90
+                # ── AFFORDABILITY (2026-09-08 reconcile): healthy-HP alone is NOT
+                # enough — a broke (zeny<500) bot cannot cross to the island guild
+                # (Kafra ~200z / airship ~1800z) and suicide-walks 11 maps overland
+                # (wedges, dies, churns). Defer job change unless healthy AND
+                # (can afford the crossing OR already standing on the guild map).
+                # This MUST mirror the affordability gate in the HUNTING-branch
+                # emitter + progression.py, or the two emitters fight (cold-start
+                # fires move alberta_in while progression defers zeny=0<500 ->
+                # oscillation froze EXP). Char-agnostic: no hardcoded cost/map.
+                _cs_zeny = int(signals.get("zeny", 0) or 0)
+                _cs_surv_tgt = JOB_CHANGE_NPCS.get("novice") or next(iter(JOB_CHANGE_NPCS.values()), None)
+                _cs_guild_map = ""
+                if _cs_surv_tgt:
+                    _cs_guild_map = str((_cs_surv_tgt[0] if isinstance(_cs_surv_tgt, (tuple, list)) else _cs_surv_tgt.get("map", "")) or "")
+                _cs_on_guild = bool(_cs_guild_map) and str(_cs_map or "").lower() == str(_cs_guild_map).lower()
+                _cs_can_cross = _cs_zeny >= 500 or _cs_on_guild
+                _cs_defer = ((_cs_surv in ("level_up_first", "fly_wing_escape")) and _cs_hp_now < 0.90) or not _cs_can_cross
                 if _cs_defer:
                     # Defer: do NOT emit the guild move; let the bot farm.
                     logger.info(
