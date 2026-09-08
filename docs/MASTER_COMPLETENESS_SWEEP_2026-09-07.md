@@ -90,6 +90,47 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       PROVEN: EXP 7559->9872->10498->11509->12025 continuously, kills
       Poring/Solid Lunatic/Lunatic/Fabre, in-map sustained, no route-recalc
       wedge, same PID (no restart) across 10+ min.
+- [x] 0.3j ATTACK-CONFIG THRASH FIXED (2026-09-08, commits d15072e12 + 7e911b497):
+      the config-audit block set attackMaxDistance 2 then 30, attackDistance 1
+      then 5, startOnSight 0 then 1 in the SAME block -> the bot thrashed between
+      melee and ranged config every cycle and never settled into attacking (HP
+      dropped while it stood there). Removed the contradictory ranged values;
+      attackMaxDistance 2 was ALSO too tight for pathing ("Too far from us to
+      attack, distance is 3, maxDistance is 2" + meetingPosition not_walkable
+      rejections = endless chase loop) -> 4/2 (melee reality + pathing buffer).
+      PROVEN: bot attacks + kills again (Dmg 101-116, kills Poring/Lunatic).
+- [x] 0.3k SAVE-POINT FIX (2026-09-08): bot's save point was izlude (127,142) but
+      sellAuto_npc + farm map are prontera-side -> every death respawned it far
+      from the farm + sell NPC. DB save point moved to prontera (156,129).
+      NOTE: char-server overwrites the DB save point on death (reverts to izlude)
+      — re-apply after each death; the real fix is a server-side save-point
+      change (pending).
+- [x] 0.3l OVERWEIGHT-RETURN FIXED (2026-09-08, commit 3373243d1): the
+      return-to-town logic skipped when the bot was ON its farm map
+      (_audit_on_farm), so an overweight bot (bag full, weight > 70%) never
+      returned to sell -> stopped earning zeny entirely, stayed at 0 zeny, and
+      the job-change stayed blocked. A full bag is a hard stop: return + sell.
+- [x] 0.3m JOB-CHANGE STALE-SNAPSHOT REVERTED (2026-09-08, commit ce6257e3e):
+      the healthy-HP resume (bf7b6d7ab, 8d7a57cb5) forced the bot to WALK the
+      cross-map route to alberta at full HP. It immediately hit the
+      position-desync + cross-map route-calc loop the conscious tier had warned
+      about and started dying (HP 204->60). The conscious tier's plan was
+      CORRECT: farm for a Fly Wing first, THEN job change. Reverted the
+      healthy-HP resume; KEPT 72ecb1651 (JOB_CHANGE disables route_randomWalk).
+- [x] 0.3n JOB_CHANGE->HUNT FALLTHROUGH FIXED (2026-09-08, commit f8599e762):
+      the state machine returned JOB_CHANGE unconditionally when eligible, but the
+      JOB_CHANGE handler DEFERS when survival_strategy is active (level_up_first /
+      fly_wing_escape). Result: the bot sat in JOB_CHANGE state doing NOTHING
+      (handler defers, no move emitted) and never farmed — it wandered on izlude,
+      EXP frozen, and died. Now the state machine checks the survival strategy and
+      falls through to HUNT so the bot actually farms while the strategy defers.
+      PROVEN: EXP 2931->5765 continuously, kills Poring/Fabre/Lunatic, position
+      moving on prt_fild08, state=HUNT.
+- [x] 0.3o DQN ZENY-GAIN REWARD (2026-09-08, commit 158732877): the DQN reward
+      was survival-only (0.05 alive / -1 dead), so it never learned to sell loot
+      (the bot accumulated junk but stayed at 0 zeny). Added a zeny-GAIN reward
+      term so the subconscious learns to sell. (Needs training time to take
+      effect; the heuristic overweight-return covers the immediate gap.)
 - [ ] 0.3i DQN/LLM WIRING (2026-09-08, ACTIVE): the 3-tier brain is real (DQN
       trained 61,470 steps, reward 2900; conscious LLM 84 lines vs heuristic 985
       lines in the same window) but the bot is ~92% heuristic-driven. The
@@ -98,6 +139,11 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       the DQN to drive combat + LLM to set intent, demote heuristics to cold-start
       fallback.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
+- [ ] 0.3p SELL LOOP (2026-09-08, ACTIVE): bot farms continuously (EXP climbing)
+      but zeny stays 0 — it accumulates loot (weight 21%) but hasn't hit the 70%
+      overweight threshold to trigger the return-to-sell yet. Once the bag fills,
+      the overweight-return (0.3l) fires -> prontera -> sell -> zeny -> Fly Wing
+      -> job change. Verify the full sell->zeny->job-change chain completes.
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
 
