@@ -68,6 +68,34 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       members are lowercase; the uppercase fallback raised AttributeError and
       dropped the health_enqueue recovery action). PROVEN: goal=survival (not
       cost_gated), CrewAI plan active, EXP 11550->13165 continuously.
+- [x] 0.3f RECONNECT-GRACE GUARD (2026-09-08, commit 8b25d92c4): the no-progress
+      self-heal fired map-change within 3 min of EVERY reconnect (a freshly-logged
+      bot has momentarily-frozen EXP + fresh snapshot), disconnecting the bot in a
+      vicious reconnect->heal->disconnect loop. Track last in-game transition +
+      suppress the no-progress heal for 90s after it (config
+      _stall_reconnect_grace_s). PROVEN: EXP 5462->7449 climbing, no self-heal
+      disconnects for testbot99.
+- [x] 0.3g HEALTH-MONITOR EMPTY-MAP GUARD (2026-09-08, commit b3458c248): an EMPTY
+      map_name (bot mid-reconnect, snapshot not yet populated) was treated as
+      "in town", so after 3 cycles health_monitor sent a FARMING bot to hunt a
+      different map (prt_fild05), disconnecting it. is_in_town now requires a
+      non-empty map_name.
+- [x] 0.3h ROUTE-RECALC LOOP FIXED (2026-09-08, commit 360df1644): ROOT CAUSE =
+      same-map random-walk dispatched Task::MapRoute (the 3224-portal cross-map
+      graph) for a SAME-MAP target (noMapRoute=0 when route_randomWalk==1),
+      re-running the expensive portal-graph calc every cycle, bailing
+      TOO_MUCH_TIME before a walk was sent, wedging the bot in `AI: route | 2`
+      (never attacks, server drops at stall_time 60). FIX: Actor::route now uses
+      fast Task::Route (.dist pathfinding) when the target map == current field.
+      PROVEN: EXP 7559->9872->10498 continuously, kills Poring/Solid
+      Lunatic/Lunatic/Fabre, in-map sustained, no route-recalc wedge.
+- [ ] 0.3i DQN/LLM WIRING (2026-09-08, ACTIVE): the 3-tier brain is real (DQN
+      trained 61,470 steps, reward 2900; conscious LLM 84 lines vs heuristic 985
+      lines in the same window) but the bot is ~92% heuristic-driven. The
+      execution layer (route-recalc + attack-config thrash) prevents the DQN from
+      driving combat and the LLM from setting intent. Fix 0.3h first, then wire
+      the DQN to drive combat + LLM to set intent, demote heuristics to cold-start
+      fallback.
 - [ ] 0.3 ROUTE-FAILURE STALL: 2386 route-calc fails on prt_fild08 (post-stability).
 - [ ] 0.4 After 0.1-0.3: one real bot -> continuous EXP farming -> benchmark
       (EXP/hour, kill-rate, deaths/hour, base_level) as definition-of-done.
