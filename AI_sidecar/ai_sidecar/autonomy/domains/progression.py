@@ -577,26 +577,33 @@ class ProgressionDomain(BaseDomain):
         except Exception:
             _surv = ""
         if _surv in ("level_up_first", "fly_wing_escape"):
-            # ── EFFICIENCY (2026-09-04): if the LLM's farm_goal is
-            # 'afford_fly_wing', the farm is ONLY a brief zeny-farm to buy a Fly
-            # Wing — NOT a long novice grind. Once the bot has enough zeny to
-            # afford a Fly Wing, STOP deferring and job change (job-changing ASAP
-            # is always more efficient: a novice's base-EXP doesn't build the new
-            # job's job level). Read the bot's real zeny from the snapshot.
+            # ── PRIORITIZATION + COMMON-SENSE (2026-09-08, mandate) ──
+            # survival_strategy=fly_wing_escape was decided at LETHAL HP ("field
+            # crossing kills me"). That premise is STALE once the bot is healthy.
+            # A healthy bot must PRIORITIZE the job change; only defer while HP
+            # is genuinely critical. Also honor the brief afford_fly_wing
+            # zeny-farm once it has earned enough.
+            _hp_now = float(signals.get("hp_ratio", 1.0) or 1.0)
             _zeny = 0
             try:
                 _zeny = int(signals.get("zeny", 0) or 0)
             except Exception:
                 _zeny = 0
-            if _farm_goal == "afford_fly_wing" and _zeny > 0:
+            if _hp_now >= 0.90:
+                logger.info(
+                    "[job_change] %s: survival_strategy=%s but HEALTHY hp=%.2f -> prioritizing job change (%s)",
+                    bot_id, _surv, _hp_now, _farm_goal or "fly_wing_escape",
+                )
+            # fragile bot (<0.9 HP): hold the conscious safety decision
+            elif _farm_goal == "afford_fly_wing" and _zeny > 0:
                 logger.info(
                     "[job_change] %s: survival_strategy=%s farm_goal=afford_fly_wing zeny=%d -> resuming job change (afforded the escape)",
                     bot_id, _surv, _zeny,
                 )
             else:
                 logger.info(
-                    "[job_change] %s: survival_strategy=%s -> deferring job change (farm safe map first)",
-                    bot_id, _surv,
+                    "[job_change] %s: survival_strategy=%s hp=%.2f -> deferring job change (farm safe map first)",
+                    bot_id, _surv, _hp_now,
                 )
                 return
         _jc_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"

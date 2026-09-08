@@ -1496,6 +1496,10 @@ class HeuristicService:
                     _town_surv = ""
                 if _town_surv not in ("level_up_first", "fly_wing_escape"):
                     return "JOB_CHANGE"
+                # 2026-09-08 mandate: healthy HP overrides the stale safety
+                # deferral (decided at lethal HP) — job change is the priority.
+                if float(signals.get("hp_ratio", 1.0) or 1.0) >= 0.90:
+                    return "JOB_CHANGE"
                 return "TOWN_HUNT"
             # 2-1 JOB CHANGE: first class with job_level >= 50 => change to 2nd class
             _first_classes = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
@@ -3825,11 +3829,21 @@ class HeuristicService:
                         _cs_surv = _cs_surv_raw.strip().lower()
                 except Exception:
                     _cs_surv = ""
-                if _cs_surv in ("level_up_first", "fly_wing_escape"):
+                # healthy-HP priority override (2026-09-08 mandate): a stale
+                # fly_wing_escape decided at lethal HP must not block the job
+                # change once the bot is healthy again.
+                _cs_hp_now = float(signals.get("hp_ratio", 1.0) or 1.0)
+                _cs_defer = (_cs_surv in ("level_up_first", "fly_wing_escape")) and _cs_hp_now < 0.90
+                if _cs_defer:
                     # Defer: do NOT emit the guild move; let the bot farm.
                     logger.info(
-                        "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
-                        bot_id,
+                        "[job_change] %s: survival_strategy=%s hp=%.2f -> deferring job change (cold-start, farm safe map first)",
+                        bot_id, _cs_surv, _cs_hp_now,
+                    )
+                elif _cs_surv in ("level_up_first", "fly_wing_escape"):
+                    logger.info(
+                        "[job_change] %s: HEALTHY hp=%.2f -> prioritizing job change (cold-start) over %s",
+                        bot_id, _cs_hp_now, _cs_surv,
                     )
                 else:
                     # Have an assigned job — look up NPC from the DB-backed table
@@ -4027,7 +4041,10 @@ class HeuristicService:
                         _jc_h_surv = _jc_h_surv_raw.strip().lower()
                 except Exception:
                     _jc_h_surv = ""
-                if _jc_h_surv in ("level_up_first", "fly_wing_escape"):
+                # healthy-HP priority override (2026-09-08 mandate)
+                _jc_h_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
+                _jc_h_defer = (_jc_h_surv in ("level_up_first", "fly_wing_escape")) and _jc_h_hp < 0.90
+                if _jc_h_defer:
                     # Defer: do NOT emit the job-change move; let the bot farm.
                     # (progression.py logs the deferral; keep this emitter quiet.)
                     pass
@@ -5671,13 +5688,34 @@ class HeuristicService:
                     _jc_zeny = int(signals.get("zeny", 0) or 0)
                 except Exception:
                     _jc_zeny = 0
-                _jc_defer = (_jc_surv in ("level_up_first", "fly_wing_escape")) and not (
-                    _jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0
-                )
+                _jc_defer = False
+                _jc_hp_now = float(signals.get("hp_ratio", 1.0) or 1.0)
+                # ── PRIORITIZATION + COMMON-SENSE (2026-09-08, mandate) ──
+                # survival_strategy=fly_wing_escape was decided when the bot was
+                # at LETHAL HP (0/1) — "field crossing kills me". That premise is
+                # STALE once the bot is healthy again. A healthy level-33 Novice
+                # must PRIORITIZE the job change (real progression) over an
+                # endless starter-field grind for an escape item it can never
+                # afford (it never sells loot -> zeny stays 0 -> deadlock).
+                # Only defer while HP is genuinely critical (<0.9): the fly-wing /
+                # farm-first safety decision applies to a fragile bot, not a full one.
+                if _jc_surv not in ("level_up_first", "fly_wing_escape"):
+                    _jc_defer = False           # conscious tier allows job change
+                elif _jc_hp_now >= 0.90:
+                    _jc_defer = False           # healthy -> job change is the priority
+                else:
+                    # fragile bot: hold the conscious safety decision; allow the
+                    # brief fly-wing zeny-farm to resolve (it has earned zeny).
+                    _jc_defer = not (_jc_farm_goal == "afford_fly_wing" and _jc_zeny > 0)
                 if _jc_defer:
                     logger.info(
-                        "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
-                        bot_id,
+                        "[job_change] %s: survival_strategy=%s hp=%.2f -> deferring job change (farm safe map first)",
+                        bot_id, _jc_surv, _jc_hp_now,
+                    )
+                elif _jc_hp_now >= 0.90 and _jc_surv in ("level_up_first", "fly_wing_escape"):
+                    logger.info(
+                        "[job_change] %s: HEALTHY hp=%.2f -> prioritizing job change over %s",
+                        bot_id, _jc_hp_now, _jc_surv,
                     )
                 elif _jc_s_now - _jc_s_last >= 60.0:
                     self._job_change_route_emit[_jc_s_lk] = _jc_s_now
