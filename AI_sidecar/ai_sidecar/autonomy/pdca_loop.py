@@ -10574,6 +10574,18 @@ class PDCALoop:
         _now_ts = _t.time()
         _snap_age_s = _now_ts - _ts_obs
         _in_game = _snap_age_s < 180  # fresh snapshot = connected + in-game
+        # RECONNECT-GRACE (2026-09-08): a bot that just logged in / reconnected
+        # has a momentarily-frozen EXP (it hasn't farmed yet) and a fresh
+        # snapshot. The no-progress heal would fire map-change within 3 min of
+        # EVERY reconnect, disconnecting the bot in a vicious reconnect->heal->
+        # disconnect loop. Track the last time the bot transitioned to in-game
+        # and suppress the no-progress heal for a grace window after it.
+        _rc_grace_s = float(getattr(self, "_stall_reconnect_grace_s", 90) or 90)
+        _last_in_game_ts = float(_prev.get("_in_game_ts", 0) or 0)
+        if _in_game and not _prev.get("_was_in_game"):
+            _prev["_in_game_ts"] = _now_ts  # just (re)connected
+        _prev["_was_in_game"] = bool(_in_game)
+        _in_reconnect_grace = _in_game and (_now_ts - _last_in_game_ts) < _rc_grace_s
         _exp_changed = _exp != _prev_exp
         _last_change = float(_prev.get("_exp_change_ts", 0) or 0)
         # F13: ROUTE-FAILURE STALL — the bot cannot path to its target (high
@@ -10602,7 +10614,7 @@ class PDCALoop:
             _prev["_exp_change_ts"] = _now_ts
         if _in_game and _exp_changed:
             _prev["_exp_change_ts"] = _now_ts
-        elif _in_game and not _exp_changed and _last_change > 0:
+        elif _in_game and not _exp_changed and _last_change > 0 and not _in_reconnect_grace:
             _stall_s = _now_ts - _last_change
             if _stall_s >= _stall_min * 60:
                 _prev["_exp_change_ts"] = _now_ts  # re-arm (one heal per window)
