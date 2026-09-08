@@ -56,8 +56,33 @@ A modified OpenKore that adds an **AI decision engine** (FastAPI + Python) along
 
 - **Python 3.11+** — For the AI sidecar
 - **Perl 5** — For the OpenKore client (bundled)
+- **C build toolchain** — For XSTools: `gcc`/`g++`, `make`, perl headers (`libperl-dev`), and `libcurl`/`libncurses` dev headers
 - **Ragnarok Online account** — On any server compatible with OpenKore
 - **LLM provider** (optional) — DeepSeek API key, OpenAI API key, or local Ollama instance
+
+On Debian/Ubuntu: `sudo apt install build-essential libperl-dev libcurl4-openssl-dev libncurses-dev`
+
+---
+
+## First-Time Build (required)
+
+`openkore.pl` hard-requires the compiled `XSTools` C library at startup. It is a **build artifact** (not committed), so build it once before launching any bot:
+
+```bash
+# Build via SCons. Uses python3 automatically.
+make
+```
+
+If `make` fails with `python: not found`, your distro lacks the `python` alias (Debian/Ubuntu >= 22.04). The Makefile now defaults to `python3`, but you can force it: `make PYTHON=python3`.
+
+Verify it built:
+
+```bash
+perl -I src -I src/deps -e 'use XSTools; print "XSTools OK\n"'
+# prints "XSTools OK"
+```
+
+`./start.sh` also auto-builds XSTools if it is missing before launching any bot.
 
 ---
 

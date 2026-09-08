@@ -9,16 +9,24 @@
 # If you experience any build problems, read this web page:
 # https://openkore.com/wiki/How_to_run_OpenKore
 
+# The SCons build is what actually compiles XSTools (libXSTools.so) which
+# openkore.pl requires at runtime. On modern distros (Debian/Ubuntu >= 22.04)
+# there is NO bare `python` binary — only `python3` — so calling `python`
+# makes `make` fail with "python: not found" and XSTools never builds, which
+# then aborts the bot at startup with "Can't locate loadable object for
+# module XSTools". Default to `python3` on non-Windows and let users override
+# with `make PYTHON=python` if they only have `python`.
 ifeq ($(OS),Windows_NT)
+PYTHON ?= python
 all:
-	@python src/scons-local-3.1.2/scons.py || echo -e "Compilation failed. Please read https://openkore.com/wiki/How_to_run_OpenKore for help."
+	@$(PYTHON) src/scons-local-3.1.2/scons.py || echo -e "Compilation failed. Please read https://openkore.com/wiki/How_to_run_OpenKore for help."
 
 doc:
 	cd src/doc/ && createdoc.pl
 else
-
+PYTHON ?= python3
 all:
-	@python src/scons-local-3.1.2/scons.py || echo -e "\e[1;31mCompilation failed. Please read https://openkore.com/wiki/How_to_run_OpenKore for help.\e[0m"
+	@$(PYTHON) src/scons-local-3.1.2/scons.py || echo -e "\e[1;31mCompilation failed. Please read https://openkore.com/wiki/How_to_run_OpenKore for help.\e[0m"
 
 doc:
 	cd src/doc/ && ./createdoc.pl
@@ -29,7 +37,7 @@ test:
 	cd src/test/ && perl unittests.pl
 
 clean:
-	python src/scons-local-3.1.2/scons.py -c
+	$(PYTHON) src/scons-local-3.1.2/scons.py -c
 
 dist:
 	bash makedist.sh

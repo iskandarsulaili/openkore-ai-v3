@@ -138,6 +138,27 @@ _load_env() {
     done
 }
 
+# Build the XSTools C library if it's missing. openkore.pl hard-`use`s
+# XSTools at startup; without libXSTools.so the bot aborts immediately with
+# "Can't locate loadable object for module XSTools". On fresh clones the .so is
+# a build artifact (not committed), so guarantee it exists before launching any
+# bot. Uses the make target so the same PYTHON/python3 handling applies.
+_ensure_xstools() {
+    if [ -f "$SCRIPT_DIR/src/auto/XSTools/XSTools.so" ] && [ -f "$SCRIPT_DIR/src/auto/XSTools/libXSTools.so" ]; then
+        return 0
+    fi
+    info "XSTools not built — running 'make' to build the C library..."
+    ( cd "$SCRIPT_DIR" && make ) || {
+        err "XSTools build failed. Install build deps (Python 3, libcurl, ncurses, perl headers) then re-run."
+        return 1
+    }
+    if [ ! -f "$SCRIPT_DIR/src/auto/XSTools/XSTools.so" ]; then
+        err "XSTools still missing after build."
+        return 1
+    fi
+    ok "XSTools built"
+}
+
 _setup_env() {
     if [ ! -d "$SIDECAR_DIR/venv" ]; then
         err "Virtual environment not found at $SIDECAR_DIR/venv"
@@ -204,6 +225,8 @@ EOF
 
     info "Starting bot: $name"
     cd "$SCRIPT_DIR"
+    # XSTools must be built before openkore.pl can load (it hard-`use`s it).
+    _ensure_xstools || return 1
     # stdin from /dev/null: if ErrorHandler::showError ever hits <STDIN>
     # (e.g. a die during shutdown), it returns EOF immediately and the
     # process exits cleanly instead of hanging forever on a tty.
