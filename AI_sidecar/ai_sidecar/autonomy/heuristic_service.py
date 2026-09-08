@@ -5700,6 +5700,17 @@ class HeuristicService:
                         confidence=0.95, domain="progression",
                         reason="Job change - no combat while walking to guild (dribble avoids monsters)",
                     ))
+                    # 2026-09-08: the hunting config-audit sets route_randomWalk 1
+                    # every cycle, which resets the alberta route calc before the
+                    # walk starts -> the bot oscillates random-walk <-> job-change
+                    # and never leaves the field. A job-change bot must walk
+                    # DETERMINISTICALLY to the guild, not wander. Disable randomWalk
+                    # so the guild move wins and the walk actually starts.
+                    actions.append(HeuristicAction(
+                        kind="command", command="set route_randomWalk 0",
+                        confidence=0.95, domain="progression",
+                        reason="Job change - deterministic walk to guild, not randomWalk",
+                    ))
                     if _jc_dribble:
                         actions.append(HeuristicAction(
                             kind="command", command=_jc_dribble,
