@@ -1513,7 +1513,26 @@ class HeuristicService:
             or (job_name in _first_classes_all and job_level >= 50 and base_level >= 50)
         )
         if _jc_any_eligible:
-            return "JOB_CHANGE"
+            # 2026-09-08: the JOB_CHANGE handler DEFERS when the conscious tier's
+            # survival_strategy is active (level_up_first / fly_wing_escape — farm
+            # for a Fly Wing before the lethal crossing). If we return JOB_CHANGE
+            # here anyway, the bot sits in JOB_CHANGE state doing NOTHING (the
+            # handler defers, no move emitted) and never farms. Fall through to
+            # HUNT so the bot actually farms while the strategy defers.
+            _jc_surv_state = ""
+            try:
+                from ai_sidecar.server_adaptation import get_server_solutions_store
+                _jc_surv_raw = get_server_solutions_store().get("survival_strategy", None)
+                if isinstance(_jc_surv_raw, dict):
+                    _jc_surv_state = str(_jc_surv_raw.get("strategy", "") or "").strip().lower()
+                elif isinstance(_jc_surv_raw, str):
+                    _jc_surv_state = _jc_surv_raw.strip().lower()
+            except Exception:
+                _jc_surv_state = ""
+            if _jc_surv_state not in ("level_up_first", "fly_wing_escape"):
+                return "JOB_CHANGE"
+            # survival strategy defers job change — farm instead
+            return "HUNT"
         return "HUNT"
 
     def _check_progress(self, signals: dict) -> bool:
