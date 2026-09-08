@@ -4680,6 +4680,24 @@ class HeuristicService:
         except (TypeError, ValueError):
             _audit_job_level = 0
         if _audit_job_name == "novice" and _audit_job_level >= 10:
+            # 2026-09-08: gate on the conscious survival_strategy — if it defers
+            # job change (level_up_first / fly_wing_escape), do NOT fire the
+            # guild move. This emitter previously fired `move 367 205` (prontera
+            # portal) unconditionally, which is OFF-MAP on the academy (iz_ac01)
+            # where a respawned bot sits -> the bot got stuck routing to an
+            # unreachable coordinate and never farmed.
+            _jc_em_surv = ""
+            try:
+                from ai_sidecar.server_adaptation import get_server_solutions_store
+                _jc_em_raw = get_server_solutions_store().get("survival_strategy", None)
+                if isinstance(_jc_em_raw, dict):
+                    _jc_em_surv = str(_jc_em_raw.get("strategy", "") or "").strip().lower()
+                elif isinstance(_jc_em_raw, str):
+                    _jc_em_surv = _jc_em_raw.strip().lower()
+            except Exception:
+                _jc_em_surv = ""
+            if _jc_em_surv in ("level_up_first", "fly_wing_escape"):
+                return None  # conscious tier defers job change — farm instead
             _audit_now = __import__("time").time()
             _audit_last_job_change = self._last_job_change_attempt.get(bot_id, 0)
             if _audit_now - _audit_last_job_change > 60:  # 1 min cooldown
