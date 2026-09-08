@@ -149,11 +149,15 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       61915d133/6d4c07393. (2) SELL: threshold 70%->40% (COMMIT 7164b2a1d) so bot
       sells loot sooner and accumulates zeny. (3) FLY WING BUY: BUY state now
       purchases 601 (250z) when fly_wing_escape active + not already holding one
-      (COMMIT 5ae2640f9). PROVEN: bot farms STABLY EXP 11672->14470 over ~7 min,
-      147 kills, 0 deaths, 1 process — sustained farming for the first time.
-      REMAINING: the sell->zeny->buy-wing->cross->merchant-job-change chain has not
-      completed once end-to-end yet (bot defers at low HP crossing the field;
-      correct behavior while fragile).
+      (COMMIT 5ae2640f9). (4) SUBCONSCIOUS-YIELDS-TO-CONSCIOUS (COMMIT 653678381):
+      the DQN was spamming 'buyAuto 1' (0-zeny no-op) and stealing the action slot
+      from the conscious 'move alberta_in' job-change intent, freezing the bot at
+      spawn. Now the DQN override is suppressed during conscious strategic activity
+      (level_up_first/fly_wing_escape) AND when it would emit buy_potions at 0 zeny.
+      PROVEN: bot farms STABLY EXP 11672->14470->18829 over ~7+ min, 152+ kills,
+      0 deaths, 1 process — sustained farming. Prior work: sell->zeny->buy-wing->
+      cross->merchant chain partially wired; job-change still defers at low HP
+      (correct while fragile).
 - [~] 0.4 AFTER JOB CHANGE: bot must complete the merchant job-change (reach alberta
       guild NPC, talk, pick merchant) end-to-end. Currently it defers at low HP
       crossing the field; verify it completes once HP + Fly Wing path is resolved.
