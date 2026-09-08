@@ -1550,6 +1550,10 @@ class HeuristicService:
                 _jc_surv_state = ""
             if _jc_surv_state not in ("level_up_first", "fly_wing_escape"):
                 return "JOB_CHANGE"
+            # 2026-09-08 mandate: healthy HP overrides the stale safety deferral
+            # (survival_strategy decided at lethal HP) — job change is priority.
+            if float(signals.get("hp_ratio", 1.0) or 1.0) >= 0.90:
+                return "JOB_CHANGE"
             # survival strategy defers job change — farm instead
             return "HUNT"
         return "HUNT"
