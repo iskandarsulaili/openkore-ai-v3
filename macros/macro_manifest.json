@@ -1,0 +1,66 @@
+{
+  "macros": [
+    {
+      "name": "novice_job_change_merchant",
+      "lines": [
+        "log handling novice job change to merchant",
+        "move alberta_in 58 43",
+        "talknpc 58 43 c r1",
+        "pause 1",
+        "talknpc 58 43 c r2",
+        "pause 1",
+        "talknpc 58 43 c r1",
+        "stop"
+      ],
+      "case": "novice job change to merchant",
+      "category": "job_change",
+      "priority": 20,
+      "triggers": [],
+      "exclusive": false,
+      "cooldown_seconds": 0.0,
+      "reward_score": 0.0,
+      "uses": 0,
+      "verified": true,
+      "published": false,
+      "source": "macro_agent"
+    },
+    {
+      "name": "job_change_route",
+      "lines": [
+        "log routing to job change",
+        "move alberta_in 58 43",
+        "talknpc 58 43 c",
+        "stop"
+      ],
+      "case": "novice job change",
+      "category": "job_change",
+      "priority": 20,
+      "triggers": [],
+      "exclusive": false,
+      "cooldown_seconds": 0.0,
+      "reward_score": 0.0,
+      "uses": 0,
+      "verified": true,
+      "published": false,
+      "source": "macro_agent"
+    },
+    {
+      "name": "x",
+      "lines": [
+        "log x",
+        "stop"
+      ],
+      "case": "test",
+      "category": "custom",
+      "priority": 50,
+      "triggers": [],
+      "exclusive": false,
+      "cooldown_seconds": 0.0,
+      "reward_score": 0.0,
+      "uses": 2,
+      "verified": true,
+      "published": false,
+      "source": "macro_agent"
+    }
+  ]
+}
