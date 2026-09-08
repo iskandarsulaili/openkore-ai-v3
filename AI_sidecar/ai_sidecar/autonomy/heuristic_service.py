@@ -4059,6 +4059,11 @@ class HeuristicService:
             # -> "in-range hit timeout" loop). Use the melee reality (1/2) —
             # the weapon's actual range comes from the game's own tables, not
             # a hardcoded chase distance.
+            # 2026-09-08: this block previously ALSO set attackMaxDistance 30 /
+            # attackDistance 5 / startOnSight 1 a few lines below, so the bot
+            # thrashed between melee (2/1) and ranged (30/5) config every cycle
+            # and never settled into attacking. Removed the contradictory
+            # ranged values — a Novice melee bot uses 2/1 consistently.
             self._set_config_once(actions, bot_id, "attackMaxDistance", "2", "hunting",
                 "Config audit - melee chase range (weapon range is 1 cell)")
             self._set_config_once(actions, bot_id, "attackDistance", "1", "hunting",
@@ -4074,8 +4079,8 @@ class HeuristicService:
                 "Config audit - only attack when no aggressive monsters nearby")
             self._set_config_once(actions, bot_id, "attackAuto_onlyInSearch", "1", "hunting",
                 "Config audit - only attack monsters in search area")
-            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "0", "hunting",
-                "Config audit - don't auto-start on sight (wait for search")
+            self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
+                "Config audit - attack monsters as soon as they appear on screen")
             # Ensure avoidList is disabled so we don't run from Porings
             self._set_config_once(actions, bot_id, "avoidList", "", "hunting",
                 "Config audit - disable avoidList (prevents running from farm targets)")
@@ -4084,10 +4089,6 @@ class HeuristicService:
             # Enable aggressive attack on monsters within distance
             self._set_config_once(actions, bot_id, "attackDistanceAuto", "1", "hunting",
                 "Config audit - auto-adjust attack distance")
-            self._set_config_once(actions, bot_id, "attackMaxDistance", "30", "hunting",
-                "Config audit - chase distance 30 cells")
-            self._set_config_once(actions, bot_id, "attackDistance", "5", "hunting",
-                "Config audit - start attacking from 5 cells away")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
                 "Config audit - don't give up mid-fight")
             # ── LOOTING CONFIG: auto-loot everything ──
