@@ -583,15 +583,26 @@ class ProgressionDomain(BaseDomain):
             # afford a Fly Wing, STOP deferring and job change (job-changing ASAP
             # is always more efficient: a novice's base-EXP doesn't build the new
             # job's job level). Read the bot's real zeny from the snapshot.
+            # ── 2026-09-08: the survival_strategy is a SNAPSHOT taken when the
+            # bot was dead (hp_pct 0, "field crossing is lethal"). It goes STALE
+            # the moment the bot is healthy again — a full-HP bot does NOT need a
+            # Fly Wing to cross a field. Deferring on a stale "lethal" premise
+            # wastes hours farming for an escape item it doesn't need. Resume job
+            # change when the bot is at healthy HP (>= 50%), regardless of zeny.
             _zeny = 0
+            _hp_ratio = 1.0
             try:
                 _zeny = int(signals.get("zeny", 0) or 0)
             except Exception:
                 _zeny = 0
-            if _farm_goal == "afford_fly_wing" and _zeny > 0:
+            try:
+                _hp_ratio = float(signals.get("hp_ratio", 1.0) or 1.0)
+            except Exception:
+                _hp_ratio = 1.0
+            if (_farm_goal == "afford_fly_wing" and _zeny > 0) or _hp_ratio >= 0.50:
                 logger.info(
-                    "[job_change] %s: survival_strategy=%s farm_goal=afford_fly_wing zeny=%d -> resuming job change (afforded the escape)",
-                    bot_id, _surv, _zeny,
+                    "[job_change] %s: survival_strategy=%s farm_goal=afford_fly_wing zeny=%d hp_ratio=%.2f -> resuming job change (afforded the escape OR healthy enough to cross)",
+                    bot_id, _surv, _zeny, _hp_ratio,
                 )
             else:
                 logger.info(

@@ -3793,10 +3793,39 @@ class HeuristicService:
                     _cs_surv = ""
                 if _cs_surv in ("level_up_first", "fly_wing_escape"):
                     # Defer: do NOT emit the guild move; let the bot farm.
-                    logger.info(
-                        "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
-                        bot_id,
-                    )
+                    # 2026-09-08: survival_strategy is a SNAPSHOT taken when the
+                    # bot was dead (hp_pct 0). It goes STALE once the bot is
+                    # healthy — a full-HP bot does NOT need a Fly Wing to cross.
+                    # Resume job change at healthy HP (>= 50%) regardless of zeny.
+                    _cs_hp = 1.0
+                    try:
+                        _cs_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
+                    except Exception:
+                        _cs_hp = 1.0
+                    if _cs_hp < 0.50:
+                        logger.info(
+                            "[job_change] %s: survival_strategy=level_up_first -> deferring job change (farm safe map first)",
+                            bot_id,
+                        )
+                    else:
+                        logger.info(
+                            "[job_change] %s: survival_strategy=level_up_first hp_ratio=%.2f -> resuming job change (healthy enough to cross)",
+                            bot_id, _cs_hp,
+                        )
+                        _jc_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
+                        if _jc_npc:
+                            # JOB_CHANGE_NPCS values are tuples (map, x, y) — unpack, not dict.
+                            _jc_npc_map, _jc_npc_x, _jc_npc_y = _jc_npc
+                            _jc_cs_lk = f"job_change_route:{bot_id}:{_jc_npc_map}"
+                            _jc_cs_now = __import__("time").time()
+                            _jc_cs_last = self._job_change_route_emit.get(_jc_cs_lk, 0.0)
+                            if _jc_cs_now - _jc_cs_last > 60:
+                                self._job_change_route_emit[_jc_cs_lk] = _jc_cs_now
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"move {_jc_npc_map}",
+                                    confidence=0.99, domain="progression",
+                                    reason=f"Job change to {_assigned_job} (healthy HP) — route to guild",
+                                ))
                 else:
                     # Have an assigned job — look up NPC from the DB-backed table
                     # (JOB_CHANGE_NPCS from job_change_locations.txt), NOT the hardcoded
@@ -3996,7 +4025,35 @@ class HeuristicService:
                 if _jc_h_surv in ("level_up_first", "fly_wing_escape"):
                     # Defer: do NOT emit the job-change move; let the bot farm.
                     # (progression.py logs the deferral; keep this emitter quiet.)
-                    pass
+                    # 2026-09-08: survival_strategy is a SNAPSHOT taken when the
+                    # bot was dead (hp_pct 0). It goes STALE once the bot is
+                    # healthy — a full-HP bot does NOT need a Fly Wing to cross.
+                    # Resume job change at healthy HP (>= 50%) regardless of zeny.
+                    _jc_h_hp = 1.0
+                    try:
+                        _jc_h_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
+                    except Exception:
+                        _jc_h_hp = 1.0
+                    if _jc_h_hp < 0.50:
+                        pass  # genuinely too weak to cross — keep farming
+                    else:
+                        logger.info(
+                            "[job_change] %s: survival_strategy=%s hp_ratio=%.2f -> resuming job change (healthy enough to cross)",
+                            bot_id, _jc_h_surv, _jc_h_hp,
+                        )
+                        _jc_h_npc = JOB_CHANGE_NPCS.get(_assigned_job) or JOB_CHANGE_NPCS.get("novice")
+                        if _jc_h_npc:
+                            _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
+                            _jc_h_lk = f"job_change_route:{bot_id}:{_jc_h_map}"
+                            _jc_h_now = __import__("time").time()
+                            _jc_h_last = self._job_change_route_emit.get(_jc_h_lk, 0.0)
+                            if _jc_h_now - _jc_h_last > 10:
+                                self._job_change_route_emit[_jc_h_lk] = _jc_h_now
+                                actions.append(HeuristicAction(
+                                    kind="command", command=f"move {_jc_h_map}",
+                                    confidence=0.99, domain="progression",
+                                    reason=f"Job change to {_assigned_job} (healthy HP) — route to guild",
+                                ))
                 else:
                     # Route to the job-change guild (DB-backed JOB_CHANGE_NPCS).
                     # For a Novice, the target is the LLM's conscious job_change_target
