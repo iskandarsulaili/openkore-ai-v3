@@ -121,7 +121,10 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
     # Agnostic: town = the learned safe_town (server_solutions store).
     _store_t = getattr(runtime_state, "server_solutions_store", None)
     _safe_t = str((_store_t.get("safe_town", None) if _store_t else None) or "")
-    is_in_town = _is_town_map(map_name, _safe_t) if _safe_t else bool(map_name)
+    # 2026-09-08: an EMPTY map_name (bot mid-reconnect, snapshot not yet
+    # populated) must NOT be treated as "in town" — that misfired the stuck
+    # detector and sent a farming bot to hunt a different map, disconnecting it.
+    is_in_town = bool(map_name) and (_is_town_map(map_name, _safe_t) if _safe_t else True)
     
     if is_in_town and weight_ratio < MAX_WEIGHT_RATIO:
         # Bot is in town and NOT overweight — should be hunting
