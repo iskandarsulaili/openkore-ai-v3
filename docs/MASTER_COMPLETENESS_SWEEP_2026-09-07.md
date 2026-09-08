@@ -87,8 +87,9 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       TOO_MUCH_TIME before a walk was sent, wedging the bot in `AI: route | 2`
       (never attacks, server drops at stall_time 60). FIX: Actor::route now uses
       fast Task::Route (.dist pathfinding) when the target map == current field.
-      PROVEN: EXP 7559->9872->10498 continuously, kills Poring/Solid
-      Lunatic/Lunatic/Fabre, in-map sustained, no route-recalc wedge.
+      PROVEN: EXP 7559->9872->10498->11509->12025 continuously, kills
+      Poring/Solid Lunatic/Lunatic/Fabre, in-map sustained, no route-recalc
+      wedge, same PID (no restart) across 10+ min.
 - [ ] 0.3i DQN/LLM WIRING (2026-09-08, ACTIVE): the 3-tier brain is real (DQN
       trained 61,470 steps, reward 2900; conscious LLM 84 lines vs heuristic 985
       lines in the same window) but the bot is ~92% heuristic-driven. The
