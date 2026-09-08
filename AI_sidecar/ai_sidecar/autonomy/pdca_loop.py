@@ -8447,40 +8447,67 @@ class PDCALoop:
                 except Exception:
                     pass
             # Subconscious behavior override (gated) — once trained, suggest a behavior.
+            # ── SUBCONSCIOUS-YIELDS-TO-CONSCIOUS GATE (2026-09-08, mandate) ──
+            # The subconscious must NOT fight a conscious strategic decision (e.g. a
+            # job change in progress). When the conscious survival_strategy is active
+            # OR the strategic tier is routing to the guild, suppress the DQN override
+            # so the conscious move wins the action slot. Also: 'buy_potions' at 0 zeny
+            # is a wasted emission — skip it. This makes the tiers work as ONE system:
+            # conscious sets intent, subconscious refines execution underneath, never
+            # countermands.
             try:
-                _rl_act = _rl.behavior_override(_st, min_experiences=40)
-                if _rl_act:
-                    _rl_cmd_map = {
-                        "farm": "attackAuto 3",
-                        "buy_potions": "buyAuto 1",
-                        "sell_items": "sellAuto 1",
-                        "level_skill": "stat_add 1 1",
-                        "rest": "sit",
-                        "socialize": "party 1",
-                        "upgrade_gear": "storageAuto 1",
-                    }
-                    _rl_cmd = _rl_cmd_map.get(_rl_act)
-                    if _rl_cmd and hasattr(self._runtime, "action_queue"):
-                        from datetime import UTC, datetime as _dt, timedelta
-                        from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
-                        self._runtime.action_queue.enqueue(
-                            bot_id,
-                            _AP(
-                                action_id=f"rl-{int(_dt.now(UTC).timestamp())}",
-                                kind="command",
-                                command=_rl_cmd,
-                                conflict_key="",
-                                priority_tier=_APT.strategic,
-                                source="subconscious_rl",
-                                created_at=_dt.now(UTC),
-                                expires_at=_dt.now(UTC) + timedelta(seconds=30),
-                                idempotency_key=f"rl-{_rl_act}",
-                            ),
-                        )
-                        logger.info("subconscious_behavior_override bot=%s action=%s cmd=%s",
-                                    bot_id, _rl_act, _rl_cmd)
-            except Exception as _rl_bo:
-                logger.debug("subconscious_behavior_override_skipped: %s", _rl_bo)
+                _rl_gate_surv = _st.get("survival_strategy", "") if isinstance(_st, dict) else ""
+                if isinstance(_rl_gate_surv, dict):
+                    _rl_gate_surv = str(_rl_gate_surv.get("strategy", "") or "")
+                _rl_gate_surv = str(_rl_gate_surv or "").lower()
+                _rl_gate_zeny = int(_st.get("zeny", 0) or 0) if isinstance(_st, dict) else 0
+                _rl_gate_map = str(_st.get("map", "") or "").lower() if isinstance(_st, dict) else ""
+            except Exception:
+                _rl_gate_surv, _rl_gate_zeny, _rl_gate_map = "", 0, ""
+            _rl_act = _rl.behavior_override(_st, min_experiences=40)
+            _rl_suppress = False
+            # conscious strategic intent active -> subconscious yields
+            if _rl_gate_surv in ("level_up_first", "fly_wing_escape"):
+                _rl_suppress = True
+            # wasted emission at 0 zeny
+            if _rl_act == "buy_potions" and _rl_gate_zeny <= 0:
+                _rl_suppress = True
+            if _rl_act and not _rl_suppress:
+                _rl_cmd_map = {
+                    "farm": "attackAuto 3",
+                    "buy_potions": "buyAuto 1",
+                    "sell_items": "sellAuto 1",
+                    "level_skill": "stat_add 1 1",
+                    "rest": "sit",
+                    "socialize": "party 1",
+                    "upgrade_gear": "storageAuto 1",
+                }
+                _rl_cmd = _rl_cmd_map.get(_rl_act)
+                if _rl_cmd and hasattr(self._runtime, "action_queue"):
+                    from datetime import UTC, datetime as _dt, timedelta
+                    from ai_sidecar.contracts.actions import ActionProposal as _AP, ActionPriorityTier as _APT
+                    self._runtime.action_queue.enqueue(
+                        bot_id,
+                        _AP(
+                            action_id=f"rl-{int(_dt.now(UTC).timestamp())}",
+                            kind="command",
+                            command=_rl_cmd,
+                            conflict_key="",
+                            priority_tier=_APT.strategic,
+                            source="subconscious_rl",
+                            created_at=_dt.now(UTC),
+                            expires_at=_dt.now(UTC) + timedelta(seconds=30),
+                            idempotency_key=f"rl-{_rl_act}",
+                        ),
+                    )
+                    logger.info("subconscious_behavior_override bot=%s action=%s cmd=%s",
+                                bot_id, _rl_act, _rl_cmd)
+                elif _rl_suppress:
+                    logger.debug("subconscious_behavior_override_suppressed bot=%s action=%s surv=%s zeny=%d",
+                                 bot_id, _rl_act, _rl_gate_surv, _rl_gate_zeny)
+            elif _rl_act and _rl_suppress:
+                logger.debug("subconscious_behavior_override_suppressed bot=%s action=%s surv=%s zeny=%d",
+                             bot_id, _rl_act, _rl_gate_surv, _rl_gate_zeny)
 
     async def _generate_plan(
         self,
