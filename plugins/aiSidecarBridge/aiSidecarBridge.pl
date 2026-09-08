@@ -6859,7 +6859,14 @@ sub _rewrite_runtime_command {
 				}
 			}
 		}
-		my $cooldown_ms = ($total_potions == 0) ? 300000 : 30000;
+		# Combat-rate heal cooldown. Previously a flat 30s (or 5min when 0 potions),
+		# but on a dense field the bot takes damage faster than one heal/30s can
+		# recover -> HP tanks 224->27 between heals -> sits -> monsters re-aggro ->
+		# dies with potions unused (verified live: lvl-38 novice on a 6-monster field,
+		# max_hp 224). Heals must land at a cadence that outpaces incoming DPS.
+		# 8s = a full combat round; each heal-name has its OWN key so red/orange/
+		# white/etc all share the burden without double-firing the same item.
+		my $cooldown_ms = ($total_potions == 0) ? 60000 : 8000;
 		if ($last_attempt > 0 && ($now_ms - $last_attempt) < $cooldown_ms) {
 			warning "[use] item '$item_name' on cooldown, skipping\n", 'aiSidecarBridge', 1;
 			return ('', "use_item_cooldown_$item_name");

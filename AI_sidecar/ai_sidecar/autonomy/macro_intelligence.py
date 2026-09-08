@@ -1305,6 +1305,12 @@ MACRO_PATTERNS["job_change_novice"] = MacroPattern(
         _make_trigger("progression.job_level", "gte", 10),
         _make_trigger("progression.job_changed", "neq", True),
     ],
+    # Affordability gate (2026-09-08 reconcile): a broke bot cannot cross to the
+    # guild (Kafra ~200z / airship ~1800z) — forcing `move {job_change_map}` +
+    # `set attackAuto 0` at 0 zeny sends it on an unwalkable 11-map overland trip
+    # AND DISABLES attack (0 kills, dies, wedges). Defer until the bot can pay.
+    # Mirrors progression.py/heuristic affordability so ALL emitters agree.
+    required_zeny=500,
     action_sequence=[
         _make_action("set attackAuto 0",
                      "Disable auto-attack so the bot walks to the guild uninterrupted", timeout=2.0),
@@ -1327,6 +1333,12 @@ MACRO_PATTERNS["job_change_2_1"] = MacroPattern(
         _make_trigger("progression.job_level", "gte", 40),
         _make_trigger("progression.job_changed", "neq", True),
     ],
+    # Affordability gate (2026-09-08 reconcile): a broke bot cannot cross to the
+    # guild (Kafra ~200z / airship ~1800z) — forcing `move {job_change_map}` +
+    # `set attackAuto 0` at 0 zeny sends it on an unwalkable 11-map overland trip
+    # AND DISABLES attack (0 kills, dies, wedges). Defer until the bot can pay.
+    # Mirrors progression.py/heuristic affordability so ALL emitters agree.
+    required_zeny=500,
     action_sequence=[
         _make_action("set attackAuto 0",
                      "Disable auto-attack so the bot walks to the guild uninterrupted", timeout=2.0),
