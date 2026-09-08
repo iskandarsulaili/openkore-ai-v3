@@ -5,10 +5,24 @@ MANDATE: implement/integrate/fix/wire/execute/verify EVERYTHING to completeness.
 ## BATCH 5 — JOB-CHANGE E2E (cross-map execution robustness)
 Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, become merchant) without dying/wedging. BLOCKER: alberta is an island; bot routes 11-map overland (~3377 steps) and dies/wedges. Portal graph HAS airship `#prontera → alberta` (cost ~1800), but bot isn't using it.
 
-- [ ] 5.1 ROOT-CAUSE why the airship `#`-warp isn't chosen over the overland walk (check #warp dialog execution support in bridge / cost weights / map routing).
-- [ ] 5.2 If airship needs dialog selection (`#alberta ... c r2 c r5`), wire the bridge/sidecar to execute it (char-agnostic: any `#`-warp to the guild map).
-- [ ] 5.3 Re-verify the merchant NPC coord (58,43) is the final target on alberta_in; confirm walkable.
-- [ ] 5.4 E2E: bot enters alberta_in, talks Merchant, selects job change, becomes Merchant (class != 0). BENCHMARK: completes in reasonable time, survives, no wedge.
+- [x] 5.1 ROOT-CAUSE found: job-change gate bypassed affordability. The healthy-HP
+      override (session-prior commit) forced a 0-zeny bot to suicide-walk 11 maps to
+      the island guild (alberta) and wedge. Reconcile: job-change prioritized ONLY
+      when healthy (>=0.9 HP) AND affordable (zeny>=500 for Kafra/airship OR already
+      on guild town). COMMIT d6c406b55 (heuristic + progression.py gates). VERIFIED:
+      broke bot now defers + farms.
+- [x] 5.5 SUSTAIN GAP (Basic Skill): Novice bot without Basic Skill cannot sit/regen
+      HP -> stuck at ~50% HP, 0 zeny, no potions -> can't heal -> can't farm. Granted
+      NV_BASIC (skill id 1) lv1->lv3 in DB (server requires lv3 to sit). VERIFIED: HP
+      recovers via sit.
+- [!] 5.7 OPEN WEDGE (real, confirmed): `lethal_escape_teleport` YAML reflex fires every
+      ~2s at HP<=0.18 in-combat emitting `reflex_teleport_escape` — a NO-OP macro
+      (log+stop). With 0 zeny / no Fly Wing, the bot cannot teleport/flee, so the
+      reflex busy-loops the empty macro forever and BLOCKS all other commands/combat
+      (0 kills while alive + regenerating). The metadata note claims "bridge owns
+      escape" but the bridge has NO escape refactor (grep=0 escape teleport / Fly Wing
+      usage — earlier finding). IN PROGRESS: make the fallback macro actually flee/retreat
+      (walk away from aggro) or suppress the macro when no escape item exists.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
