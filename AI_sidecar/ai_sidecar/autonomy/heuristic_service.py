@@ -1983,6 +1983,22 @@ class HeuristicService:
     def assess(self, signals: dict[str, Any], bot_id_override: str | None = None) -> HeuristicAssessment:
         try:
             assessment = self._assess_impl(signals, bot_id_override)
+            # ── DEFER-GUARD: _assess_impl returns None when a state branch decides
+            # "no action this cycle" (e.g. conscious tier defers job change to farm
+            # first). Every code path below derefs assessment.actions / assessment.*,
+            # so substitute an empty no-action assessment instead of crashing every
+            # tick (which lost ALL farming/supplementary actions and drove the relog
+            # churn). The bot simply stays on ai auto (keeps whatever it's doing).
+            if assessment is None:
+                assessment_object = HeuristicAssessment(
+                    horizon="immediate",
+                    actions=[],
+                    confidence=0.0,
+                    actionable=False,
+                    top_domain="none",
+                    signals=dict(signals),
+                )
+                return assessment_object
             # ── ACADEMY-ROOM EXIT GUARD (universal, sidecar decision) ──
             # iz_ac01_a is the academy tutorial ROOM with no portal to any field map,
             # so any farm-bound bot there spams "Cannot calculate a route". Regardless

@@ -28,6 +28,16 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       the AI decisions (which now farm correctly when connected). EXP climbed
       18638→19811 this window proving decisions work. BLOCKED ON: bridge/execution
       reconnect-loop diagnosis (separate from this sweep's decision-layer work).
+- [x] 5.9 ROOT-CAUSE of the churn FOUND+FIXED: `assess()` dereferenced `None`.
+      `_assess_impl` returns None when the conscious tier defers job change
+      (survival_strategy=level_up_first/fly_wing_escape, _assess_impl line 4721), then
+      assess() line 2026 `if not assessment.actions:` crashed EVERY tick —
+      AttributeError 'NoneType' has no attribute 'actions' — killing all
+      farming/supplementary actions + starving the action queue (drove the relog churn
+      + semi-half-emitting job-change macros). FIX: defer-guard in assess() substitutes
+      an empty no-action HeuristicAssessment when _assess_impl returns None (bot stays
+      on ai auto). VERIFIED: 0 assess crashes (was every tick), EXP continued climbing
+      19811→22755, sidecar correctly emits sit/potion/survival and defers job change.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
