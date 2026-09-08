@@ -38,6 +38,14 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       an empty no-action HeuristicAssessment when _assess_impl returns None (bot stays
       on ai auto). VERIFIED: 0 assess crashes (was every tick), EXP continued climbing
       19811→22755, sidecar correctly emits sit/potion/survival and defers job change.
+- [x] 5.10 EMITTER OSCILLATION FIXED: cold-start job-change emitter (~3863) only had the
+      healthy-HP gate, so when healthy-but-broke it fired `move alberta_in` while
+      progression.py correctly deferred (zeny=0<500) — the two emitters oscillated
+      alberta<->farm and froze EXP. FIX: added the SAME affordability gate to cold-start
+      (defer unless healthy AND (zeny>=500 OR on guild map)). Now ALL job-change emitters
+      (cold-start, HUNTING-branch, progression.py) share one affordability rule.
+      VERIFIED: logs show only "deferring" (no "prioritizing") when broke; emitter
+      conflict resolved. COMMIT e6738ac6f (+ affordability in cold-start, pushed).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
