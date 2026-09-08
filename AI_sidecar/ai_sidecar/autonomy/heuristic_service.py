@@ -4063,11 +4063,15 @@ class HeuristicService:
             # attackDistance 5 / startOnSight 1 a few lines below, so the bot
             # thrashed between melee (2/1) and ranged (30/5) config every cycle
             # and never settled into attacking. Removed the contradictory
-            # ranged values — a Novice melee bot uses 2/1 consistently.
-            self._set_config_once(actions, bot_id, "attackMaxDistance", "2", "hunting",
-                "Config audit - melee chase range (weapon range is 1 cell)")
-            self._set_config_once(actions, bot_id, "attackDistance", "1", "hunting",
-                "Config audit - melee attack distance (weapon range is 1 cell)")
+            # ranged values. attackMaxDistance 2 was TOO tight for pathing
+            # ("Too far from us to attack, distance is 3, maxDistance is 2" +
+            # meetingPosition not_walkable rejections = endless chase loop) —
+            # a melee bot needs a small chase buffer so it can actually close
+            # the last 1-2 cells around obstacles. 4/2 is the melee reality.
+            self._set_config_once(actions, bot_id, "attackMaxDistance", "4", "hunting",
+                "Config audit - melee chase range (weapon range is 1 cell, +3 pathing buffer)")
+            self._set_config_once(actions, bot_id, "attackDistance", "2", "hunting",
+                "Config audit - melee attack distance (weapon range is 1 cell, +1 buffer)")
             # Always enable attackAuto on hunting maps (includes cold start farming)
             _aa_val = "2" if base_level < 10 else "3"
             self._set_config_once(actions, bot_id, "attackAuto", _aa_val, "hunting",
