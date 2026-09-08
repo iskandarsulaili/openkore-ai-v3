@@ -4209,10 +4209,20 @@ class HeuristicService:
                 except Exception:
                     _learned_farm = ""
                 _audit_on_farm = bool(_learned_farm) and _learned_farm in _audit_map_low
+                # 2026-09-08: OVERWEIGHT must return to town EVEN on the farm map.
+                # A full bag (weight > 70%) can't pick up more loot, so the bot
+                # stops earning zeny entirely — it never sells, stays at 0 zeny,
+                # and the job-change the conscious tier decided on stays blocked
+                # (can't afford a Fly Wing). HP-critical stays farm-gated (a farm
+                # bot restocks in place via buyAuto), but a full bag is a hard
+                # stop: return + sell. sellAuto is already enabled by the config
+                # audit, so returning to town triggers the sell.
                 _real_emergency = (_audit_hp < 0.30) or (_audit_weight > 0.70)
-                if _real_emergency and not _audit_on_farm:
-                    # Only emergency-return when NOT on a farm map (a farm bot should restock
-                    # in place / via buyAuto, not abandon the field unless truly critical).
+                if _real_emergency and (not _audit_on_farm or _audit_weight > 0.70):
+                    # Return to town when: (a) critical HP off-farm, OR (b) bag
+                    # full (overweight) ANYWHERE — a full bag must sell to keep
+                    # earning. A farm bot with a full bag returns to sell, then
+                    # comes back to the farm.
                     _audit_now = __import__("time").time()
                     _audit_last_return = self._last_return_to_town.get(bot_id, 0)
                     if _audit_now - _audit_last_return > 60:
@@ -4220,7 +4230,7 @@ class HeuristicService:
                         actions.append(HeuristicAction(
                             kind="command", command="move prontera",
                             confidence=0.99, domain="economy",
-                            reason="Emergency: critical HP or bag full off-farm — return to town",
+                            reason="Emergency: critical HP off-farm or bag full (overweight) — return to town to sell",
                         ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF
