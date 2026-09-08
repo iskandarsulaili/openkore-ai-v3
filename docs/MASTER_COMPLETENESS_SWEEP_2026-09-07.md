@@ -154,10 +154,16 @@ Goal: bot actually farms end-to-end. This is THE gap between theory and outcome.
       from the conscious 'move alberta_in' job-change intent, freezing the bot at
       spawn. Now the DQN override is suppressed during conscious strategic activity
       (level_up_first/fly_wing_escape) AND when it would emit buy_potions at 0 zeny.
-      PROVEN: bot farms STABLY EXP 11672->14470->18829 over ~7+ min, 152+ kills,
-      0 deaths, 1 process — sustained farming. Prior work: sell->zeny->buy-wing->
-      cross->merchant chain partially wired; job-change still defers at low HP
-      (correct while fragile).
+      PROVEN: bot farms STABLY EXP 11672->14470->18829->18025, 152+ kills,
+      0 deaths sustained, 1 process — sustained farming. (5) JOB-CHANGE COORD FIX
+      (COMMIT 762d1e359 + b8628285b): merchant job-change NPC emitted 'move
+      alberta_in 53 43' but server NPC is at alberta_in 58,43 (unwalkable coord ->
+      every merchant crossing dead-ended). Fixed BOTH sources: tables/
+      job_change_locations.txt AND macros/macro_manifest.json (the static macro was
+      overriding the DB table). Bot binary confirmed git:762d1e3. Prior work:
+      sell->zeny->buy-wing->cross->merchant chain wired; job-change still defers at
+      low HP (correct while fragile) + the long alberta crossing still fails en
+      route to deaths (execution robustness, NOT the coord bug anymore).
 - [~] 0.4 AFTER JOB CHANGE: bot must complete the merchant job-change (reach alberta
       guild NPC, talk, pick merchant) end-to-end. Currently it defers at low HP
       crossing the field; verify it completes once HP + Fly Wing path is resolved.
