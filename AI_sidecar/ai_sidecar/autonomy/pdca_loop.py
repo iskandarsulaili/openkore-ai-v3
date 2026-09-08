@@ -8386,6 +8386,20 @@ class PDCALoop:
         })
         _reward = 0.0
         _died_now = bool(getattr(_snap, "raw", None) and getattr(_snap.raw, "respawn_state", "") == "dead")
+        # ZENY-GAIN REWARD (2026-09-08): the DQN reward was survival-only
+        # (0.05 alive / -1 dead), so it NEVER learned to sell loot — the bot
+        # accumulated 34 Jellopy + 50 Yellow Gemstone + 14 Clover etc. but
+        # stayed at 0 zeny, could never afford a Fly Wing, and the job-change
+        # the conscious tier decided on stayed blocked. Reward zeny GAIN so the
+        # DQN learns sell_items is the path to progress (not just survival).
+        _zeny_now = int(getattr(getattr(_snap, "inventory", None), "zeny", 0) or 0)
+        _rl_zeny_prev = getattr(self, "_rl_zeny_prev", None)
+        if _rl_zeny_prev is None:
+            _rl_zeny_prev = {}
+            self._rl_zeny_prev = _rl_zeny_prev
+        _zeny_prev = float(_rl_zeny_prev.get(bot_id, _zeny_now) or _zeny_now)
+        _zeny_delta = _zeny_now - _zeny_prev
+        _rl_zeny_prev[bot_id] = _zeny_now
         if _died_now:
             _reward = -1.0
         else:
@@ -8397,6 +8411,10 @@ class PDCALoop:
             # cycle) instead: alive now => small positive, regardless of past
             # deaths. This keeps the subconscious learning continuously.
             _reward = 0.05  # small positive for surviving this cycle
+            # + zeny gain (bounded, so selling loot is rewarded but not
+            # dominant over survival): +0.02 per 100 zeny gained, capped +0.2.
+            if _zeny_delta > 0:
+                _reward += min(0.2, (_zeny_delta / 100.0) * 0.02)
         logger.info("subconscious_observe_one: bot=%s died_now=%s reward=%s ever=%s",
                     bot_id, _died_now, _reward, getattr(self._runtime, "_rl_ever_observed", False))
         if _reward != 0.0 or not getattr(self._runtime, "_rl_ever_observed", False):
