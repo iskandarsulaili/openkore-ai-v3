@@ -97,6 +97,7 @@ class BotProcess:
             return False
 
         log_file = f"/tmp/bot_watchdog_{self.name}.log"
+        self.console_log = log_file
         cmd = self._get_start_command()
 
         try:
@@ -139,6 +140,29 @@ class BotProcess:
         except Exception:
             return False
 
+    # ── ZOMBIE-SESSION DETECTION (2026-09-11) ──
+    # A bot can be process-alive AND connected to the map-server yet receive
+    # ZERO game packets (the recurring "Enter Map ack lost" zombie: map-server
+    # logs the login, TCP stays ESTAB, but no 0x035F spawn / 0x0087 You Move /
+    # combat ever arrives). The old watchdog only restarted a DEAD process, so
+    # a zombie sat frozen indefinitely (EXP static, monsters=0, infinite route
+    # recalc). Detect by scanning the bot's own console log for a RECENT
+    # game-activity marker. A healthy bot writes move/combat/packet lines
+    # continuously; a zombie writes only leakdiag/heartbeat noise.
+    GAME_ACTIVITY_RE = None
+
+    @classmethod
+    def _game_activity_re(cls):
+        import re
+        if cls.GAME_ACTIVITY_RE is None:
+            cls.GAME_ACTIVITY_RE = re.compile(
+                r"(?:Sent packet: 0x?035F|You Move|Sent packet: 0x?0437|"
+                r"Target Monster|attack|Sent move to|Route to:\s*\d{2,3},)"
+                r".*2?0?2?6?\.\s?\d{2}\.\s?\d{2}",
+                re.IGNORECASE,
+            )
+        return cls.GAME_ACTIVITY_RE
+
     def is_stale(self, max_idle_seconds: int = 300) -> bool:
         """Check if bot has stopped writing to its console log.
 
@@ -147,6 +171,50 @@ class BotProcess:
         if not self.last_log_write:
             return False
         return (datetime.now() - self.last_log_write).total_seconds() > max_idle_seconds
+
+    def is_zombie(self, max_idle_seconds: int = 90) -> bool:
+        """Detect a LIVE process that has stopped producing game activity.
+
+        Tail the bot's console log (which the process writes to via
+        stdout=open(log_file,'w')) for the newest game-activity line. If a
+        line appears that carries move/combat/packet activity but its
+        timestamp is older than max_idle_seconds, the socket is a zombie
+        (connected but no live packets). Returns False if we cannot
+        tell (fresh process / missing log) so we never restart wrongly.
+        """
+        if not self.console_log or not os.path.exists(self.console_log):
+            return False
+        try:
+            import re
+            # Scan last N bytes for newest game-activity line; log lines carry
+            # a wall-clock timestamp 'YYYY.MM.DD HH:MM:SS' and the activity
+            # markers appear as '>> Sent packet: 035F' / 'You Move' / etc.
+            with open(self.console_log, 'rb') as fh:
+                fh.seek(0, 2)
+                size = fh.tell()
+                fh.seek(max(0, size - 131072))
+                tail = fh.read().decode("utf-8", "replace")
+            newest = None
+            for line in tail.splitlines():
+                if ("Sent packet:" in line or "You Move" in line or "Target Monster" in line
+                        or "Sent move to" in line or "route attack" in line
+                        or "Sent packet: 0B1C" in line or "Ping" in line):
+                    m = re.search(r"(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2})", line)
+                    if m:
+                        import datetime as _dt
+                        try:
+                            g = [int(x) for x in m.groups()]
+                            ts = _dt.datetime(g[0], g[1], g[2], g[3], g[4], g[5])
+                        except (ValueError, IndexError):
+                            continue
+                        if newest is None or ts > newest:
+                            newest = ts
+            if newest is None:
+                return False
+            idle = (datetime.now() - newest).total_seconds()
+            return idle > max_idle_seconds
+        except Exception:
+            return False
 
     def stop(self) -> None:
         """Stop the bot process."""
@@ -322,6 +390,30 @@ class WatchdogSupervisor:
 
             if bot_is_alive:
                 bot.last_log_write = now
+                # ── ZOMBIE-SESSION GUARD (2026-09-11): a live process that has
+                # stopped producing game activity (connected map socket, no
+                # packets) is a zombie — the recurring "Enter Map ack lost"
+                # wedge (map-server logs login, TCP ESTAB, but 0 spawn/move/
+                # combat ever arrives -> monsters=0 -> infinite route recalc).
+                # Only restart once the bot was given a chance to fully load
+                # (grace period since start), so we never kill a legitimately
+                # map-loading bot. Respects the same circuit breaker.
+                try:
+                    _grace_s = 300
+                    _fresh = bot.started_at and (now - bot.started_at).total_seconds() < _grace_s
+                    if (not _fresh) and bot.is_zombie(max_idle_seconds=120):
+                        logger.warning(
+                            f"[watchdog] {name}: ZOMBIE session detected (process alive, "
+                            f"no game activity for >120s, uptime >{_grace_s}s). Restarting."
+                        )
+                        bot.stop()
+                        if bot.can_restart():
+                            bot.start()
+                        else:
+                            logger.error(f"[watchdog] {name}: zombie restart blocked by circuit breaker")
+                        continue
+                except Exception:
+                    pass
                 continue
 
             # Bot process is dead — consult lifecycle state
