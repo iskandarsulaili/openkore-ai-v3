@@ -290,6 +290,14 @@ my $hooks = Plugins::addHooks(
 	# can detect a server-side freeze (local $char->{pos} interpolates forward even
 	# when the server never moved us -> the old stall check never fired on desync).
 	['packet/actor_movement_interrupted', \&on_server_position, undef],
+	# Actual walk-packet transmission (0x035F character_move). The route-stall
+	# detector's stall signal MUST reflect a real 0x035F send, NOT move-command
+	# issuance — the sidecar re-emits `move <map>` from many emitters, and a
+	# deduped/suppressed command still bumps the timer while the bot never
+	# walks (observed live: frozen 90min, 0 walk packets, recovery never fired
+	# because the timer kept refreshing). 0x035F fires only when a packet
+	# actually goes to the server.
+	['packet_send/035F', \&on_walk_packet_send, undef],
 	['packet_privMsg', \&on_chat_message, 'pm'],
 	['pre/npc_talk_responses', \&on_npc_menu, undef],
 	['packet_pubMsg', \&on_chat_message, 'publicchat'],
@@ -1249,6 +1257,14 @@ sub on_server_position {
 	$_server_pos_ms = _now_ms();
 }
 
+sub on_walk_packet_send {
+	my ($hook, $args) = @_;
+	# Fires ONLY when a 0x035F walk packet actually goes to the server.
+	# This is the ground-truth stall signal for route-stall recovery.
+	$_last_move_send_ms = _now_ms();
+	return;
+}
+
 sub on_packet_hook {
 	my ($hook, $args, $event_type) = @_;
 	return if !_bridge_enabled();
@@ -1760,7 +1776,9 @@ sub on_command_run_post {
 	# correct stall signal is "no move dispatched for >N seconds while in a
 	# route/move task". Track the last move-send here.
 	if ($switch eq 'move' || $switch eq 'route' || $switch eq 'maproute') {
-		$_last_move_send_ms = _now_ms();
+		# Do NOT bump _last_move_send_ms here — a suppressed/deduped command
+		# still indicates nothing moved. Only an actual 0x035F send (tracked
+		# in on_walk_packet_send) is the ground-truth stall signal.
 	}
 
 	my $arg_text = _scalarize($args->{args});
