@@ -82,6 +82,16 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       route-stall detector fires at a fixed 45s threshold, but a long cross-map walk
       (>45s) legitimately gets no server position confirmation until arrival — so any
       long crossing trips the false stall. NOT yet root-caused.
+- [x] 5.17 ROUTE-STALL FALSE-POSITIVE FIXED (the real 5.15/5.16 root cause): the
+      position-based stall detector false-fired 13-14x in a row on a HEALTHY walk —
+      ZC_STOPMOVE (0x0088) only fires on movement INTERRUPTION, so during a normal
+      continuous walk the server-confirmed pos stays frozen → detector thought the bot
+      was stalled → cleared the route mid-walk → re-routed → walked → false-fired again
+      = infinite loop (observed 917s/1614s wedges). FIX: stall signal is now "no move
+      dispatched for >45s while in a route/move task" (tracked via Commands::run/post
+      move/route/maproute), NOT frozen position. VERIFIED: bot farms continuously
+      (EXP 22332→23911, +2 kills/120s, alive), no false-stall loop. COMMIT (move-send
+      tracker).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
