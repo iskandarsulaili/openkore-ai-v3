@@ -285,6 +285,11 @@ my $hooks = Plugins::addHooks(
 	['packet/skill_use_no_damage', \&on_packet_hook, 'packet.skill_use_no_damage'],
 	['packet/area_spell', \&on_packet_hook, 'packet.area_spell'],
 	['packet/area_spell_disappears', \&on_packet_hook, 'packet.area_spell_disappears'],
+	# SERVER-CONFIRMED POSITION (2026-09-10): 0x0088 ZC_STOPMOVE snaps the client
+	# back to the server's authoritative coords. Track it so route-stall recovery
+	# can detect a server-side freeze (local $char->{pos} interpolates forward even
+	# when the server never moved us -> the old stall check never fired on desync).
+	['packet/actor_movement_interrupted', \&on_server_position, undef],
 	['packet_privMsg', \&on_chat_message, 'pm'],
 	['pre/npc_talk_responses', \&on_npc_menu, undef],
 	['packet_pubMsg', \&on_chat_message, 'publicchat'],
@@ -1216,12 +1221,38 @@ sub _actor_probe_sample {
 	return _trim("$id/$name", 96);
 }
 
+# ── SERVER-CONFIRMED POSITION TRACKER (2026-09-10) ──
+# 0x0088 ZC_STOPMOVE carries the server's authoritative coords for the char.
+# Local $char->{pos} interpolates forward while walking, so on a server-side
+# freeze (server never moves us) the local pos advances and the old route-stall
+# check (which compared local pos) never fired -> the bot walked into desync
+# forever. Track the last server-confirmed position here and let route-stall
+# recovery compare against IT.
+my $_server_pos_x = undef;
+my $_server_pos_y = undef;
+my $_server_pos_ms = 0;
+sub on_server_position {
+	my ($hook, $args) = @_;
+	return if !_bridge_enabled();
+	my $id = $args->{ID} || '';
+	# Only track the player's own char (ID == our char id). $char is the
+	# global Actor::You imported from Globals.
+	return if !$char;
+	my $self_id = $char->{ID} || '';
+	return if $self_id && $id && $id ne $self_id;
+	my $x = $args->{x};
+	my $y = $args->{y};
+	return if !defined $x || !defined $y;
+	$_server_pos_x = $x;
+	$_server_pos_y = $y;
+	$_server_pos_ms = _now_ms();
+}
+
 sub on_packet_hook {
 	my ($hook, $args, $event_type) = @_;
 	return if !_bridge_enabled();
 	return if !_cfg_bool('aiSidecar_v2Enabled', 1);
 	return if !_cfg_bool('aiSidecar_packetEventsEnabled', 1);
-
 	my $normalized_type = _normalize_event_type($event_type || $hook || 'packet.unknown');
 
 	# ── EQUIP-REJECTION LATCH (2026-09-03) ──
@@ -1960,8 +1991,13 @@ sub _track_lifecycle_transitions {
 		# on that instead.
 		{
 			my $_ps_now = _now_ms();
-			my $_ps_x = (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{x} || 0) : 0);
-			my $_ps_y = (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{y} || 0) : 0);
+			# Use the SERVER-CONFIRMED position (0x0088 ZC_STOPMOVE) when available.
+			# Local $char->{pos} interpolates forward while walking, so on a
+			# server-side freeze the local pos advances and the old check (which
+			# compared local pos) never fired -> the bot walked into desync forever.
+			# Fall back to local pos only if no server position has been seen yet.
+			my $_ps_x = (defined $_server_pos_x) ? $_server_pos_x : (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{x} || 0) : 0);
+			my $_ps_y = (defined $_server_pos_y) ? $_server_pos_y : (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{y} || 0) : 0);
 			if ($ai_top =~ /^(?:route|move)/i) {
 				if (!defined $route_stall_pos_x) {
 					$route_stall_pos_x = $_ps_x;
