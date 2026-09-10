@@ -1990,7 +1990,7 @@ sub _track_lifecycle_transitions {
 						debug "[route_stall] pos_to resynced to real pos ($char->{pos}{x},$char->{pos}{y}) after ${_ps_stalled_ms}ms stall\n", 'aiSidecarBridge', 1;
 					}
 					my $_rs_reset_ok = eval { Commands::run("ai auto"); 1 };
-					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=${\\$_rs_reset_ok ? 'ok' : 'failed'}\n", 'aiSidecarBridge', 1;
+					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=" . ($_rs_reset_ok ? 'ok' : 'failed') . "\n", 'aiSidecarBridge', 1;
 					$_route_stall_recalc_blocked_until = $_ps_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
 					# Re-arm the window so we don't fire continuously until it moves
 					$route_stall_pos_x = $_ps_x;
