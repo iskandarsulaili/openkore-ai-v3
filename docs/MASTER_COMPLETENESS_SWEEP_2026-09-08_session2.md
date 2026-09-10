@@ -92,6 +92,26 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       move/route/maproute), NOT frozen position. VERIFIED: bot farms continuously
       (EXP 22332→23911, +2 kills/120s, alive), no false-stall loop. COMMIT (move-send
       tracker).
+- [x] 5.18 BOT-AUTO-RESTART WATCHDOG LIVE: `start_watchdog.sh` was NOT running (stale
+      .watchdog_pid, dead process) -> a bot crash = permanent downtime (observed 1h+).
+      Started daemon (PID 1904725, 15s monitor). PROVEN: auto-respawned the bot on
+      restart (single-instance, no double-login). COMMIT n/a (runtime enable) + docs.
+- [x] 5.19 FREEZE FIXED + PROVEN (the 5.15/5.16 real wedge): bot froze ~90min in
+      `AI: route` with 0 walk packets. Root cause = TWO self-cancelling fixes:
+      (1) route-stall "alive" signal was move-COMMAND issuance — a deduped/suppressed
+      command bumped the timer so the detector never fired while the bot never walked;
+      (2) recovery `AI::clear`+`ai auto` cleared the route but `move_dedupe` swallowed
+      the re-issued `move <map>` (30s cooldown) -> re-wedge. FIX: stall signal = ACTUAL
+      `packet_send/035F` walk-packet send (ground truth, hook registered), recovery
+      clears `move_map:` dedupe keys + no longer re-arms the stall window. VERIFIED:
+      bot crossed town->prt_fild05 unaided (was impossible without 90min wedge), killed
+      17:31/17:45, EXP 1153->1559. COMMIT (packet_send/035F + dedupe-clear, pushed).
+- [!] 5.20 OPEN (post-5.19 residual): after reaching the hunt map the bot idles with
+      `monsters=0` in-view (EXP frozen, 0 kills). Monsters DO spawn on prt_fild05
+      (npc/re/mobs/fields/prontera.txt: Hornet 283 / Thief Bug). The bot parked on the
+      map sees 0 monsters client-side and sits spinning the route calc. DISTINCT from
+      the freeze (proven fixed); need the client-side monster-view / re-aggro recovery
+      root-caused (separate from this batch, next).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
