@@ -2034,10 +2034,25 @@ sub _track_lifecycle_transitions {
 					if (eval { AI::clear("route", "move"); 1 }) {
 						$_rs_clear_ok = 1;
 					}
+					# The move_dedupe (move_map:<target>) suppresses a re-issued
+					# `move <map>` for COMMITTED_ACTION_COOLDOWN_MS. If a prior
+					# dispatch wrote that key and recovery then cleared the
+					# route, the freshly-routed move is swallowed -> the bot
+					# stays frozen (observed live: 90min stall, EXP static,
+					# 0 walk packets, recovery re-arming the stall window with
+					# _last_move_send_ms=now so it never re-detects either).
+					# Drop every move_map key so the next dispatch walks.
+					if (ref %_committed_commands eq 'HASH') {
+						for my $_k (keys %_committed_commands) {
+							delete $_committed_commands{$_k} if $_k =~ /^move_map:/;
+						}
+					}
 					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=" . ($_rs_reset_ok ? 'ok' : 'failed') . " clear=" . ($_rs_clear_ok ? 'ok' : 'failed') . "\n", 'aiSidecarBridge', 1;
 					$_route_stall_recalc_blocked_until = $_ps_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
-					# Re-arm the window so we don't fire continuously until it moves
-					$_last_move_send_ms = $_ps_now;
+					# Do NOT re-arm _last_move_send_ms here — that hides the
+					# stall from re-detection. Keep it stale so recovery keeps
+					# firing (every cooldown) until the bot actually moves;
+					# genuine progress / leaving the route/move task resets it.
 				}
 			} else {
 				# Not in a route/move task — clear the stall window
