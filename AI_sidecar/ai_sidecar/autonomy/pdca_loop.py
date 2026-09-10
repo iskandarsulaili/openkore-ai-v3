@@ -1238,8 +1238,13 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
-        # Only act when near full (>95% weight) - prevents false positives from stale data
-        if weight_ratio < 0.95:
+        # Fire when there is accumulated loot to convert to zeny. A low-weight
+        # novice (Hornet/Thief Bug junk sits ~20-25%) would otherwise NEVER
+        # reach an 80-95% weight gate -> 0 zeny -> job-change / restock stalled
+        # forever. 0.25 keeps the agnostic discovered-vendor path reachable so
+        # junk converts to zeny and the economy loop (sell->zeny->buy/job) runs.
+        # Prevents constant town trips only when inventory is genuinely empty.
+        if weight_ratio < 0.25:
             return 0
         
         # Resolve bot_id
