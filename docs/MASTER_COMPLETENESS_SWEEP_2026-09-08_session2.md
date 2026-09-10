@@ -46,6 +46,30 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       (cold-start, HUNTING-branch, progression.py) share one affordability rule.
       VERIFIED: logs show only "deferring" (no "prioritizing") when broke; emitter
       conflict resolved. COMMIT e6738ac6f (+ affordability in cold-start, pushed).
+- [x] 5.11 HEAL COOLDOWN 30s->8s: bot died with 217 potions unused on a dense field
+      (lvl-38 novice, max_hp 224, 6-monster field) — one heal/30s couldn't outpace
+      incoming DPS. Lowered use-item cooldown to 8s (per-heal-name key). VERIFIED:
+      bot sustains combat, +28 kills/120s when connected. COMMIT (heal cooldown).
+- [x] 5.12 JOB-CHANGE MACRO AFFORDABILITY: static `job_change_novice`/`job_change_2_1`
+      macros fired whenever eligible, DISABLING attack (`set attackAuto 0`) + forcing
+      the unwalkable alberta crossing regardless of zeny — overriding all heuristic
+      gates. Added `required_zeny=500` to both. VERIFIED: macro no longer fires when
+      broke (auto-attack stays on). COMMIT.
+- [x] 5.13 attackAuto_onlyWhenSafe 1->0: cold-start config audit set onlyWhenSafe=1
+      (never attack when aggressive monsters nearby) — on a dense field the bot NEVER
+      attacked (never "safe"), sat at low HP, died with 0 kills. Reconcile to 0 to
+      match the HUNTING-branch audit. COMMIT.
+- [x] 5.14 BRIDGE CRASH FIXED: route-stall recovery debug line `${\\$_rs_reset_ok ? 'ok' : 'failed'}`
+      deref'd a string as SCALAR ref under strict refs -> killed the bot process
+      ("Can't use string (ok) as a SCALAR ref"). Fixed to string concat. VERIFIED:
+      bot no longer crashes. COMMIT.
+- [!] 5.15 OPEN EXEC-BLOCKER (recurring): bot alive + decision-tier complete, but stuck
+      in a route-stall loop on prt_fild08 — position desyncs (pos_to resynced after
+      74s/117s stalls), never reaches the farm, 0 kills. The cross-map position-desync
+      (server freezes while local advances; route-stall recovery uses LOCAL pos) is the
+      standing execution-layer blocker. NOT a decision bug — the bot correctly defers
+      job change, heals, allocates stats, routes. BLOCKED ON: bridge route-stall
+      recovery using SERVER-side position.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
