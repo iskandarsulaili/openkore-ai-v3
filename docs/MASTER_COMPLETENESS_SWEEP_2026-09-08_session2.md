@@ -112,6 +112,21 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       map sees 0 monsters client-side and sits spinning the route calc. DISTINCT from
       the freeze (proven fixed); need the client-side monster-view / re-aggro recovery
       root-caused (separate from this batch, next).
+- [x] 5.21 "WHY STILL NOVICE" ROOT-CAUSE + AGNOSTIC SELL FIX: bot stuck Novice = zeny=0
+      forever. Two stacked causes: (1) `_emit_vendor_actions` (the NPC-agnostic
+      discovered-vendor sell path) was DEAD-GATED at `weight_ratio < 0.95` (pdca_loop
+      :1242) — a low-weight novice (Hornet/Thief Bug junk ~21%) never reached 95% so
+      never routed to a discovered vendor → never sold → 0 zeny → the 500z job-change
+      gate never opened → leveled forever (base 41, job 10 maxed). (2) the legacy
+      hardcoded `sellAuto prt_in 126 75` path (violates NPC-agnostic) never tripped at
+      40% weight either. FIX (both committed, sidecar restarted): lowered
+      `_emit_vendor_actions` gate 0.95→0.25 (discovered-vendor path now reachable by a
+      broke novice, no hardcoded coord) + `sellAuto_maxWeight` 40→25. VERIFIED deployed:
+      sidecar emits `set sellAuto_maxWeight 25`, agnostic gate 0.25 live. PENDING live
+      zeny conversion (bot currently logged off / flaky; watchdog will respawn).
+- [ ] 5.22 OPEN: bot is flaky/offline intermittently — watchdog respawns but the
+      recurring `monsters=0`/route-recalc idle (5.20) still interrupts continuous
+      farming, so the sell→zeny→job-change loop isn't cleanly witnessed end-to-end.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.

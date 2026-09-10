@@ -1,4 +1,4 @@
-teleportAuto
+teleportAuto 1
 # Please Read the Users Manual
 # The Manual is located at https://openkore.com/wiki/Manual
 
@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword graugruh
+adminPassword rostesta
 callSign
 commandPrefix ;
 callSignGM 0
@@ -815,7 +815,7 @@ shoes
 arrow
 target
 weight 2000
-itemsTakeAuto 1
+itemsTakeAuto 2
 itemsTakeAuto_party
 itemsGatherAuto 2
 whileSitting 0
@@ -879,11 +879,11 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 1
+sellAuto 0
 sellAuto_npc prt_in 126 75
 sellAuto_npc_steps = c r1 n
 sellAuto_standpoint
-sellAuto_maxWeight 40
+sellAuto_maxWeight 25
 sellAuto_distance 25
 sellAuto_maxDistance 15
 sellAuto_npc prt_in 126 75
@@ -1208,11 +1208,11 @@ useSelf_item {
 
 # ── Auto-buy Healing Items ──
 
-lockMap prt_fild08c
+lockMap prt_fild05
 route_reAddMissingPortals 1
 
 # ── Auto loot ──
-itemsTakeAuto 1
+itemsTakeAuto 2
 itemsTakeAuto_party
 itemsGatherAuto 2
 itemsGatherAuto_bag 4
@@ -1230,10 +1230,10 @@ sitAuto_hp_thread_maxDmg 99999
 sitAuto_maxDmg 99999
 
 # ── Attack config ──
-attackAuto
+attackAuto 2
 attackAuto_inLockOnly 1
 attackAuto_followTarget 1
-attackAuto_onlyWhenSafe
+attackAuto_onlyWhenSafe 1
 attackAuto_noMove
 attackAuto_notWhileSitting 0
 
@@ -1263,10 +1263,10 @@ buyAuto_Red_Potion {
 	maxAmount = 10
 	price = 0
 }
-sellAuto 1
+sellAuto 0
 sellAuto_npc prt_in 126 75
 sellAuto_npc_steps = c r1 n
-sellAuto_maxWeight 40
+sellAuto_maxWeight 25
 sellAuto_distance 25
 teleportAuto_minAggressives 8
 teleportAuto_hp 10
