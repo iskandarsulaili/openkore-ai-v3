@@ -2026,7 +2026,15 @@ sub _track_lifecycle_transitions {
 						debug "[route_stall] pos_to resynced to real pos ($char->{pos}{x},$char->{pos}{y}) after ${_ps_stalled_ms}ms stall\n", 'aiSidecarBridge', 1;
 					}
 					my $_rs_reset_ok = eval { Commands::run("ai auto"); 1 };
-					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=" . ($_rs_reset_ok ? 'ok' : 'failed') . "\n", 'aiSidecarBridge', 1;
+					# `ai auto` only flips AI state to AUTO — it does NOT clear a
+					# stuck route/move task, so the bot re-wedges for minutes
+					# (observed 917s/1614s stalls). Force-clear the route/move
+					# task so the next dispatch starts fresh from the resynced pos.
+					my $_rs_clear_ok = 0;
+					if (eval { AI::clear("route", "move"); 1 }) {
+						$_rs_clear_ok = 1;
+					}
+					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=" . ($_rs_reset_ok ? 'ok' : 'failed') . " clear=" . ($_rs_clear_ok ? 'ok' : 'failed') . "\n", 'aiSidecarBridge', 1;
 					$_route_stall_recalc_blocked_until = $_ps_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
 					# Re-arm the window so we don't fire continuously until it moves
 					$route_stall_pos_x = $_ps_x;
