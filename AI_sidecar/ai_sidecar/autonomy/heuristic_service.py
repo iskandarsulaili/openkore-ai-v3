@@ -4163,11 +4163,15 @@ class HeuristicService:
             _aa_val = "2" if base_level < 10 else "3"
             self._set_config_once(actions, bot_id, "attackAuto", _aa_val, "hunting",
                 f"Config audit - attackAuto={_aa_val} (level {base_level})")
-            # Proper attack targeting: only attack in lockMap, only when safe
+            # Proper attack targeting: only attack in lockMap, but attack even when
+            # not "safe" — on a dense field (many monsters) attackAuto_onlyWhenSafe=1
+            # means the bot NEVER attacks (never "safe"), so it sits at low HP and
+            # dies with 0 kills. Reconcile to 0 (attack even if not safe) to match
+            # the HUNTING-branch config audit (line ~6115). Char-agnostic.
             self._set_config_once(actions, bot_id, "attackAuto_inLockOnly", "1", "hunting",
                 "Config audit - only attack monsters inside lockMap")
-            self._set_config_once(actions, bot_id, "attackAuto_onlyWhenSafe", "1", "hunting",
-                "Config audit - only attack when no aggressive monsters nearby")
+            self._set_config_once(actions, bot_id, "attackAuto_onlyWhenSafe", "0", "hunting",
+                "Config audit - attack even when not safe (dense-field farming)")
             self._set_config_once(actions, bot_id, "attackAuto_onlyInSearch", "1", "hunting",
                 "Config audit - only attack monsters in search area")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
