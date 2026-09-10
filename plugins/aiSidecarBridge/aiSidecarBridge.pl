@@ -1231,6 +1231,7 @@ sub _actor_probe_sample {
 my $_server_pos_x = undef;
 my $_server_pos_y = undef;
 my $_server_pos_ms = 0;
+my $_last_move_send_ms = 0;
 sub on_server_position {
 	my ($hook, $args) = @_;
 	return if !_bridge_enabled();
@@ -1750,6 +1751,18 @@ sub on_command_run_post {
 	my $switch = lc(_scalarize($args->{switch}));
 	return if $switch eq '';
 
+	# ── MOVE-SEND TRACKER (2026-09-10) ──
+	# The route-stall detector must NOT treat a healthy continuous walk as a
+	# stall. The server-confirmed position only updates on ZC_STOPMOVE
+	# (interruption), so during a normal long walk it stays frozen -> the old
+	# position-based check false-fired recovery 13x in a row (clearing the route
+	# mid-walk, re-routing, walking, false-firing again = infinite loop). The
+	# correct stall signal is "no move dispatched for >N seconds while in a
+	# route/move task". Track the last move-send here.
+	if ($switch eq 'move' || $switch eq 'route' || $switch eq 'maproute') {
+		$_last_move_send_ms = _now_ms();
+	}
+
 	my $arg_text = _scalarize($args->{args});
 	my $input = $switch;
 	$input .= ' ' . $arg_text if defined $arg_text && $arg_text ne '';
@@ -1991,28 +2004,15 @@ sub _track_lifecycle_transitions {
 		# on that instead.
 		{
 			my $_ps_now = _now_ms();
-			# Use the SERVER-CONFIRMED position (0x0088 ZC_STOPMOVE) when available.
-			# Local $char->{pos} interpolates forward while walking, so on a
-			# server-side freeze the local pos advances and the old check (which
-			# compared local pos) never fired -> the bot walked into desync forever.
-			# Fall back to local pos only if no server position has been seen yet.
-			my $_ps_x = (defined $_server_pos_x) ? $_server_pos_x : (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{x} || 0) : 0);
-			my $_ps_y = (defined $_server_pos_y) ? $_server_pos_y : (($char && $char->{pos} && ref $char->{pos} eq 'HASH') ? ($char->{pos}{y} || 0) : 0);
+			# STALL SIGNAL = no move dispatched for >N seconds while in a
+			# route/move task. The server-confirmed position (0x0088 ZC_STOPMOVE)
+			# only updates on movement INTERRUPTION, so during a healthy long
+			# walk it stays frozen — using it as the stall signal false-fired
+			# recovery 13x in a row (cleared the route mid-walk, re-routed,
+			# walked, false-fired again = infinite loop). A genuinely stuck bot
+			# stops dispatching moves; a walking bot keeps sending them.
+			my $_ps_stalled_ms = ($_last_move_send_ms > 0) ? ($_ps_now - $_last_move_send_ms) : 0;
 			if ($ai_top =~ /^(?:route|move)/i) {
-				if (!defined $route_stall_pos_x) {
-					$route_stall_pos_x = $_ps_x;
-					$route_stall_pos_y = $_ps_y;
-					$route_stall_since_ms = $_ps_now;
-				}
-				my $_moved = ($_ps_x != ($route_stall_pos_x || 0)) || ($_ps_y != ($route_stall_pos_y || 0));
-				if ($_moved) {
-					# Real progress — reset the stall window
-					$route_stall_pos_x = $_ps_x;
-					$route_stall_pos_y = $_ps_y;
-					$route_stall_since_ms = $_ps_now;
-					$_route_stall_recover_count = 0;
-				}
-				my $_ps_stalled_ms = $_ps_now - ($route_stall_since_ms || $_ps_now);
 				my $_ps_thresh_ms = _cfg_int('aiSidecar_routeStallDetectMs', 45000);
 				if ($_ps_stalled_ms >= $_ps_thresh_ms && $_ps_now - $_route_stall_last_recover_ms >= _cfg_int('aiSidecar_routeStallRecoverCooldownMs', 30000)) {
 					$_route_stall_last_recover_ms = $_ps_now;
@@ -2037,15 +2037,11 @@ sub _track_lifecycle_transitions {
 					debug "[route_stall] route-loop recovery #$_route_stall_recover_count on $map (stalled=${_ps_stalled_ms}ms, failures=$route_failure_count) ai_auto=" . ($_rs_reset_ok ? 'ok' : 'failed') . " clear=" . ($_rs_clear_ok ? 'ok' : 'failed') . "\n", 'aiSidecarBridge', 1;
 					$_route_stall_recalc_blocked_until = $_ps_now + _cfg_int('aiSidecar_routeStallBackoffMs', 20000);
 					# Re-arm the window so we don't fire continuously until it moves
-					$route_stall_pos_x = $_ps_x;
-					$route_stall_pos_y = $_ps_y;
-					$route_stall_since_ms = $_ps_now;
+					$_last_move_send_ms = $_ps_now;
 				}
 			} else {
 				# Not in a route/move task — clear the stall window
-				undef $route_stall_since_ms;
-				undef $route_stall_pos_x;
-				undef $route_stall_pos_y;
+				$_last_move_send_ms = 0;
 				$_route_stall_recover_count = 0;
 			}
 		}
