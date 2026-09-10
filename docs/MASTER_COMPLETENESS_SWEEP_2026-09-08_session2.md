@@ -70,6 +70,15 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       standing execution-layer blocker. NOT a decision bug — the bot correctly defers
       job change, heals, allocates stats, routes. BLOCKED ON: bridge route-stall
       recovery using SERVER-side position.
+- [x] 5.16 ROUTE-STALL SERVER-POSITION FIX (root cause of 5.15): route-stall recovery
+      compared LOCAL `$char->{pos}` which interpolates forward while walking — on a
+      server-side freeze the local pos advances so `$_moved` was always true and the
+      stall never fired, the bot walked into desync forever. FIX: hooked 0x0088
+      ZC_STOPMOVE (`packet/actor_movement_interrupted`) to track the SERVER-confirmed
+      position (`$_server_pos_x/y`), and route-stall recovery now compares against it
+      (falls back to local only if no server pos seen yet). VERIFIED: bot reached the
+      farm (prt_fild08), EXP climbing 11555→12000, +2 kills/150s, 0 deaths, HP full.
+      COMMIT (server-position tracker).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
