@@ -127,13 +127,18 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
 - [ ] 5.22 OPEN: bot is flaky/offline intermittently — watchdog respawns but the
       recurring `monsters=0`/route-recalc idle (5.20) still interrupts continuous
       farming, so the sell→zeny→job-change loop isn't cleanly witnessed end-to-end.
-- [~] 5.23 PERIODIC SELL (the last sell→zeny→job-change link): weight-gated selling
-      never fires for a Hornet/Thief Bug-farming Novice — its loot stays ~20-25%
-      weight (client reports 70% overweight but the sidecar SNAPSHOT is STALE:
-      `hp=0/1 weight=20%` while the client is at 70% — a stale-snapshot bug the
-      weight gate reads). The agnostic discovered-vendor path exists but only fires
-      on weight. FIX: add a TIME-BASED sell trigger (sell every N min regardless of
-      weight) so junk converts to zeny and the 500z job-change gate opens.
+- [~] 5.23 PERIODIC SELL + SELL CHAIN (committed): weight-gated sell NEVER fired because
+      (a) native sellAuto (AI.pm ai_sellAutoCheck) requires an items_control autosell=1 row
+      (the bot has none), and (b) _get_npc('sell')/'tool_dealer' was seeded EMPTY
+      (game_knowledge_db _seed_npc_interaction_facts had no vendor entry), and
+      (c) economy.py _handle_sell hardcoded '290 221' (wrong town/coords).
+      FIXES (pushed): seeded (tool_dealer,prt_in,126,76)+(sell,prt_in,126,76);
+      _handle_sell now resolves agnostic vendor via get_command_for_service; fallback
+      'ai sellAuto'. VERIFIED: sell fact seeded live (query returns Tool Dealer 126 76).
+      STILL-OPEN (live): periodic vendor_move fires (target=prontera) but the bot
+      wedges on prt_fild05 re-routing + sit-looping (committed cmds 'st'x13, EXP frozen)
+      instead of completing the town trip, and the sidecar SNAPSHOT is stale-garbage
+      (hp=0/1, weight=20%) on a healthy farming bot -> sidecar mis-decides.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
