@@ -264,6 +264,14 @@ class GameKnowledgeDB:
                 ("portal_to_town", "izlude", "Izlude dock", 128, 260),
                 ("kafra",         "prontera", "Kafra Employee", 145, 122),
                 ("healer",        "prontera", "Townsfolk", 154, 177),
+                # sell/tool_dealer: the vendor that BUYS junk from the player.
+                # Missing before meant _get_npc("sell")/("tool_dealer") always
+                # returned None -> the SELL state emitted no real command and the
+                # native sellAuto (gated on items_control autosell=1, also
+                # missing) never fired -> drops never converted to zeny. Data,
+                # server-agnostic baseline; observation layer can refine.
+                ("tool_dealer",  "prt_in",   "Tool Dealer",  126, 76),
+                ("sell",         "prt_in",   "Tool Dealer",  126, 76),
             ]
             for _task, _map, _name, _x, _y in _facts:
                 conn.execute(

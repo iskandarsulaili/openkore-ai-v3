@@ -50,7 +50,7 @@ class EconomyDomain(BaseDomain):
 
         # ── SELLING (in town with weight) ──
         if state == "SELL":
-            self._handle_sell(actions, bot_id, weight, inventory, service)
+            self._handle_sell(actions, bot_id, weight, inventory, service, map_name)
 
         # ── WEAPON BUY ──
         if state == "WEAPON_BUY":
@@ -128,6 +128,7 @@ class EconomyDomain(BaseDomain):
         weight: float,
         inventory: list,
         service: Any,
+        map_name: str = "",
     ) -> None:
         """Sell junk items when in town with inventory weight."""
         _now = __import__("time").time()
@@ -136,23 +137,45 @@ class EconomyDomain(BaseDomain):
             return  # Cooldown
         service._last_sell_time[bot_id] = _now
 
-        # Stand up
+        # ── AGNOSTIC VENDOR RESOLUTION (2026-09-11) ──
+        # Was hardcoded to Tool Dealer 290,221 in prontera — wrong town, wrong
+        # coords for this and any other server. Resolve the vendor NPC via
+        # npc_discovery (position from the live actor list) when the bot is in
+        # town; otherwise fall back to the data-driven town vendor from
+        # GameKnowledgeService so ANY server's town maps sell correctly with ZERO
+        # hardcoded per-town coordinates. Keeps sell fully NPC/server agnostic.
+        _npc_disc = getattr(service, "npc_discovery", None)
+        _vendor_cmd: str | None = None
+        if _npc_disc is not None and map_name:
+            try:
+                _vendor_cmd = _npc_disc.get_command_for_service(None, map_name, "vendor")
+            except Exception:
+                _vendor_cmd = None
+
+        # Stand up first
         actions.append(HeuristicAction(
             kind="command", command="stand",
             confidence=0.95, domain="economy",
-            reason="Stand up before walking to Tool Dealer",
+            reason="Stand up before walking to sell NPC",
         ))
-        # Walk to Tool Dealer
-        actions.append(HeuristicAction(
-            kind="command", command="move 290 221",
-            confidence=0.95, domain="economy",
-            reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
-        ))
-        actions.append(HeuristicAction(
-            kind="command", command="talknpc 290 221 c r1 n",
-            confidence=0.90, domain="economy",
-            reason="Open Tool Dealer and sell items (atomic dialog)",
-        ))
+
+        if _vendor_cmd:
+            # Vendor NPC discovered in the current map — move close then talk.
+            actions.append(HeuristicAction(
+                kind="command", command=_vendor_cmd,
+                confidence=0.95, domain="economy",
+                reason=f"Weight {weight:.0%} - {_vendor_cmd} to sell junk",
+            ))
+        else:
+            # No NPC in the live actor list (or no npc_discovery): let the
+            # native sellAuto trip handle routing via its configured
+            # sellAuto_npc (which is resolved by GameKnowledgeService into a
+            # real location). This avoids emitting a hardcoded coordinate.
+            actions.append(HeuristicAction(
+                kind="command", command="ai sellAuto",
+                confidence=0.85, domain="economy",
+                reason=f"Weight {weight:.0%} - route to configured sell NPC",
+            ))
         # Auto-sell known junk
         _junk_found = False
         for _item_entry in inventory:
