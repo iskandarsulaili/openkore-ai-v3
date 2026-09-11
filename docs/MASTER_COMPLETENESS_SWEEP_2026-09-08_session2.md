@@ -127,18 +127,25 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
 - [ ] 5.22 OPEN: bot is flaky/offline intermittently — watchdog respawns but the
       recurring `monsters=0`/route-recalc idle (5.20) still interrupts continuous
       farming, so the sell→zeny→job-change loop isn't cleanly witnessed end-to-end.
-- [~] 5.23 PERIODIC SELL + SELL CHAIN (committed): weight-gated sell NEVER fired because
-      (a) native sellAuto (AI.pm ai_sellAutoCheck) requires an items_control autosell=1 row
-      (the bot has none), and (b) _get_npc('sell')/'tool_dealer' was seeded EMPTY
-      (game_knowledge_db _seed_npc_interaction_facts had no vendor entry), and
-      (c) economy.py _handle_sell hardcoded '290 221' (wrong town/coords).
-      FIXES (pushed): seeded (tool_dealer,prt_in,126,76)+(sell,prt_in,126,76);
-      _handle_sell now resolves agnostic vendor via get_command_for_service; fallback
-      'ai sellAuto'. VERIFIED: sell fact seeded live (query returns Tool Dealer 126 76).
-      STILL-OPEN (live): periodic vendor_move fires (target=prontera) but the bot
-      wedges on prt_fild05 re-routing + sit-looping (committed cmds 'st'x13, EXP frozen)
-      instead of completing the town trip, and the sidecar SNAPSHOT is stale-garbage
-      (hp=0/1, weight=20%) on a healthy farming bot -> sidecar mis-decides.
+- [~] 5.23 PERIODIC SELL + SELL CHAIN (committed). ROOT-CAUSE CORRECTED (2026-09-11
+      late): the sidecar snapshot weight=20% is REAL (NOT stale) — OpenKore's
+      `overweight_percent` (0x0ADE) value 70 is the THRESHOLD at which overweight
+      begins, not the current load. VAR_WEIGHT (Receive.pm:1582) updates
+      $char->{weight}=current/10 on status; the bot genuinely carries ~20%. It is
+      NOT overweight, so a weight-gated sell never triggers (by design). The
+      hp=0/1 in the stuck_analysis line is a snapshot-lag artifact (DB hp 193/249).
+      Fixes landed: native sellAuto needs items_control autosell=1 (bot had none —
+      SELLABLE_JUNK db-derived `sell <id> 0` path is the agnostic alternative);
+      sell/tool_dealer NPC fact was EMPTY-seeded → now seeded (prt_in 126 76);
+      _handle_sell hardcoded 290 221 → agnostic get_command_for_service.
+      VERIFIED: sell fact seeded live; periodic vendor_move fires (target=prontera).
+      REMAINING: a low-weight novice farming hornet/thief-bug junk still never
+      accumulates weight, so the time-based periodic sell is the correct trigger;
+      bot recovered to farming (EXP 9729→9959+, base 42) after the town wedge.
+- [ ] 5.24 OPEN: when the periodic sell routes a low-weight bot to town, it wedges
+      mid-route (st-sit loop) instead of completing the trip + selling. Need the
+      trip to complete reliably (route to prt_in 126 76 Tool Dealer, open dialog,
+      sell db-junk, return).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
