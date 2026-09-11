@@ -1214,10 +1214,29 @@ def _emit_swarm_actions(runtime_state, horizon: str, bot_id: str | None = None) 
 
 def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None) -> int:
     """Emit vendor/storage actions when inventory is full.
-    
+
     Uses game engine's valuate_item() to determine what to sell vs keep.
     Routes bot to nearest town for selling/storage.
     """
+
+    # PERIODIC-SELL trigger (2026-09-11): weight-gated selling never fires for a
+    # low-weight novice (Hornet/Thief Bug junk stays ~20-25%; client can be at 70%
+    # overweight while the sidecar snapshot reports a STALE weight=20% and hp=0/1).
+    # A weight-based gate therefore never converts drops -> zeny, so the 500z
+    # job-change gate never opens. Fire a return-to-vendor sale every N minutes
+    # regardless of the (possibly stale) weight ratio, so junk -> zeny -> job change
+    # actually progresses. Module-local so it survives across horizons; keyed by bot.
+    _PERIODIC_SELL_SEC = getattr(runtime_state, "periodic_sell_sec", None) or 600  # 10 min
+    _periodic_last = getattr(runtime_state, "_vendor_last_sell_ts", None)
+    if _periodic_last is None:
+        import types
+        _periodic_last = {}
+        runtime_state._vendor_last_sell_ts = _periodic_last
+    _bidk = bot_id or "default"
+    _now_ts = time.time()
+    _periodic_due = (_now_ts - _periodic_last.get(_bidk, 0)) >= _PERIODIC_SELL_SEC
+    if _periodic_due:
+        _periodic_last[_bidk] = _now_ts
     import logging
     _log = logging.getLogger(__name__)
     try:
@@ -1260,13 +1279,13 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
-        # Fire when there is accumulated loot to convert to zeny. A low-weight
-        # novice (Hornet/Thief Bug junk sits ~20-25%) would otherwise NEVER
-        # reach an 80-95% weight gate -> 0 zeny -> job-change / restock stalled
-        # forever. 0.25 keeps the agnostic discovered-vendor path reachable so
-        # junk converts to zeny and the economy loop (sell->zeny->buy/job) runs.
-        # Prevents constant town trips only when inventory is genuinely empty.
-        if weight_ratio < 0.25:
+        # Fire when there is (a) accumulated loot above the weight gate, OR
+        # (b) the periodic timer elapsed. A low-weight novice (Hornet/Thief Bug
+        # junk ~20-25%, or a STALE sidecar snapshot reading 20%) would otherwise
+        # never trigger a weight-only sell -> 0 zeny -> job-change / restock
+        # stalled forever. The periodic trigger converts junk to zeny regardless
+        # of the (possibly stale) weight signal.
+        if weight_ratio < 0.25 and not _periodic_due:
             return 0
         
         # Resolve bot_id

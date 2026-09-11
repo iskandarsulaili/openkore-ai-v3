@@ -127,6 +127,13 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
 - [ ] 5.22 OPEN: bot is flaky/offline intermittently — watchdog respawns but the
       recurring `monsters=0`/route-recalc idle (5.20) still interrupts continuous
       farming, so the sell→zeny→job-change loop isn't cleanly witnessed end-to-end.
+- [~] 5.23 PERIODIC SELL (the last sell→zeny→job-change link): weight-gated selling
+      never fires for a Hornet/Thief Bug-farming Novice — its loot stays ~20-25%
+      weight (client reports 70% overweight but the sidecar SNAPSHOT is STALE:
+      `hp=0/1 weight=20%` while the client is at 70% — a stale-snapshot bug the
+      weight gate reads). The agnostic discovered-vendor path exists but only fires
+      on weight. FIX: add a TIME-BASED sell trigger (sell every N min regardless of
+      weight) so junk converts to zeny and the 500z job-change gate opens.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
