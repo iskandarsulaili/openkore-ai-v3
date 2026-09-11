@@ -421,13 +421,18 @@ class WatchdogSupervisor:
             if self._lifecycle:
                 lc = self._lifecycle._bots.get(name)
                 if lc and lc.is_operational:
-                    # Bot was ACTIVE but process died — server or network issue
-                    # Don't restart blindly; let the operator handle it
+                    # Bot was ACTIVE (farming/online) but its process died. The
+                    # supervisor is the only restart authority — if it is up, an
+                    # ACTIVE bot that died must be brought back (it was doing
+                    # real work). Restart it now; the circuit breaker
+                    # (max_restarts_per_hour) still bounds a tight crash-loop.
+                    # The old behavior refused to restart, leaving an ACTIVE bot
+                    # dead forever after any transient process death.
                     logger.warning(
-                        f"[watchdog] {name}: ACTIVE bot process died (exit={bot.exit_code}). "
-                        f"Server may be down. Not restarting."
+                        f"[watchdog] {name}: ACTIVE bot process died (exit={bot.exit_code}); "
+                        f"restarting (circuit breaker applies)"
                     )
-                    should_restart = False
+                    should_restart = True
                 elif lc and lc.failure_count >= 5:
                     logger.warning(
                         f"[watchdog] {name}: Too many onboarding failures ({lc.failure_count}). "
@@ -496,7 +501,17 @@ class WatchdogSupervisor:
         try:
             while self._running:
                 time.sleep(self._check_interval)
-                self._check_bots()
+                try:
+                    self._check_bots()
+                except Exception as exc:  # noqa: BLE001
+                    # A transient error in any single check must NEVER kill the
+                    # supervisor (previously an unguarded exception tore down the
+                    # daemon and SIGKILLed every managed bot via stop_all()). Log
+                    # and continue the loop so supervision stays alive.
+                    logger.exception(
+                        "[watchdog] check cycle raised (%s); supervision continues",
+                        exc,
+                    )
         except KeyboardInterrupt:
             logger.warning("[watchdog] Shutting down...")
         finally:
