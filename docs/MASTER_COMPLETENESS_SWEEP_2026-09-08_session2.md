@@ -170,6 +170,17 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       AI state 'dead'); watchdog auto-restarted it (PID 1533005); after re-login it
       re-entered the farm and is FARMING again (EXP 28423→28768+, HP regen, AI: attack route).
       The recurring corpse-freeze is broken.
+- [~] 5.27 SELL-COMPLETION STILL OPEN (honest): the periodic in-town vendor action now emits
+      `cmd=move 123 102` (a real live vendor actor, from discover_vendor_npc) instead of
+      `ai auto` — confirmed firing live 18:41. But the bot NEVER executes the full
+      move->talknpc->sell-junk->close sequence: no `talknpc 123/126`, no `sell 9..`, no
+      `Sell Items` ever in the bot log. Root: HUNT state on lockMap (prt_fild05) keeps the
+      bot farming; the strategic `move prontera` (vendor_move) is enqueued but HUNT's
+      re-emit overrides it, so the bot stays on the field and never reaches the vendor in
+      town to complete the sale -> zeny stays 0 -> 500z job-change gate stays closed.
+      The bot IS stable-farming (base 43, EXP climbing slowly) so the corpse-loop/watchdog/
+      portal/STATS fixes are holding; the remaining link is a SELL state that actually runs
+      when the bot is in town (or the periodic sell fully diverting it before HUNT re-emits).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
