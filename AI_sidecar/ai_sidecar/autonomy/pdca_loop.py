@@ -1314,7 +1314,28 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 npc_cmd = npc_disc.get_command_for_service(latest, map_name, "vendor")
                 if not npc_cmd:
                     npc_cmd = npc_disc.get_command_for_service(latest, map_name, "storage")
-            
+            # ── DB-FACT FALLBACK (2026-09-12) ──
+            # The live actor scan can miss the vendor (actor list doesn't always
+            # carry shop NPCs). Query the seeded GameKnowledgeDB fact so the sale
+            # actually happens instead of a no-op "ai auto". task 'sell' then
+            # 'tool_dealer' (both seeded at prt_in 126 76; tool_dealer is the one
+            # that BUYS from the player).
+            if not npc_cmd:
+                try:
+                    from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+                    _gk = GameKnowledgeDB()
+                    for _t in ("sell", "tool_dealer"):
+                        _f = _gk.find_npc_for_task(_t, map_name)
+                        if _f:
+                            _x = int(_f.get("x", 0) or 0)
+                            _y = int(_f.get("y", 0) or 0)
+                            if _x and _y:
+                                npc_cmd = f"talknpc {_x} {_y} c r1 n"
+                                _log.debug("vendor_db_fact: map=%s task=%s npc=%s -> %s",
+                                           map_name, _t, _f.get("npc_name", ""), npc_cmd)
+                                break
+                except Exception:
+                    pass
             # If NPC discovered, use talknpc; otherwise just ai auto
             cmd = npc_cmd if npc_cmd else "ai auto"
             
