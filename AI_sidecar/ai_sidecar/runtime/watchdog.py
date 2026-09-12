@@ -216,6 +216,39 @@ class BotProcess:
         except Exception:
             return False
 
+    # ── CORPSE-LOOP DETECTION (2026-09-12) ──
+    # The recurring "freeze" that masqueraded as portal-wedge / STATS-loop /
+    # sell-freeze: the bot DIES, the SERVER auto-respawns it (prontera, online=1,
+    # hp restored), but the OpenKore CLIENT gets stuck in `AI: dead | N` FOREVER
+    # ($char->{dead} never clears; "Sending respawn"/0x00B2 sent but never ACKed).
+    # is_zombie() does NOT catch it — a corpse-loop still emits 'Sent packet'
+    # lines (0437 attack, 09FD move, 0B1C ping), so the game-activity-recency
+    # check sees it as "alive". Detect by scanning the tail for the NEWEST AI
+    # state line — a healthy bot's current AI action is never 'dead' (processDead
+    # clears it), so a fresh `AI: dead` as the newest AI-state line = corpse-stuck.
+    def is_corpse_loop(self) -> bool:
+        if not self.console_log or not os.path.exists(self.console_log):
+            return False
+        try:
+            with open(self.console_log, 'rb') as fh:
+                fh.seek(0, 2)
+                size = fh.tell()
+                fh.seek(max(0, size - 262144))
+                tail = fh.read().decode("utf-8", "replace")
+            # Find the newest `AI: <state> | <id>` line. Strip ANSI color codes.
+            import re
+            _ansi = re.compile(r'\x1b\[[0-9;]*m')
+            _state = None
+            for line in tail.splitlines():
+                clean = _ansi.sub('', line)
+                m = re.search(r'\bAI:\s+([a-z_]+)\s+\|\s+', clean, re.IGNORECASE)
+                if m:
+                    _state = m.group(1).lower()
+            # Newest AI state is 'dead' => the state machine is stuck on a corpse.
+            return _state == 'dead'
+        except Exception:
+            return False
+
     def stop(self) -> None:
         """Stop the bot process."""
         if self.process and self.pid:
@@ -401,16 +434,20 @@ class WatchdogSupervisor:
                 try:
                     _grace_s = 300
                     _fresh = bot.started_at and (now - bot.started_at).total_seconds() < _grace_s
-                    if (not _fresh) and bot.is_zombie(max_idle_seconds=120):
+                    _zombie = (not _fresh) and bot.is_zombie(max_idle_seconds=120)
+                    _corpse = (not _fresh) and bot.is_corpse_loop()
+                    if _zombie or _corpse:
+                        _kind = "CORPSE-LOOP" if _corpse else "ZOMBIE session"
+                        _why = "AI stuck dead" if _corpse else "no game activity for >120s"
                         logger.warning(
-                            f"[watchdog] {name}: ZOMBIE session detected (process alive, "
-                            f"no game activity for >120s, uptime >{_grace_s}s). Restarting."
+                            "[watchdog] %s: %s detected (process alive, %s, uptime >%ss). Restarting.",
+                            name, _kind, _why, _grace_s,
                         )
                         bot.stop()
                         if bot.can_restart():
                             bot.start()
                         else:
-                            logger.error(f"[watchdog] {name}: zombie restart blocked by circuit breaker")
+                            logger.error("[watchdog] %s: %s restart blocked by circuit breaker", name, _kind)
                         continue
                 except Exception:
                     pass

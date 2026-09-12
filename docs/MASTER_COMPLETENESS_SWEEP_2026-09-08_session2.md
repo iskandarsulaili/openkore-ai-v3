@@ -153,6 +153,19 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       (b) STATS loop — sidecar thinks stat_points=5 (DB correct) but OpenKore in-memory
       points_free reads 0 -> every 'st add dex' errors 'Not enough status points' (13x),
       bot spams allocation that can't land. Blocks job change (needs zeny + clean progression).
+- [~] 5.26 CORPSE-LOOP root-caused (the recurring "freeze" disguise, 2026-09-12):
+      the bot DIES, the SERVER auto-respawns it (prontera 156,129, online=1, hp 124/249),
+      but the OpenKore CLIENT gets stuck in `AI: dead` FOREVER (208x, EXP frozen at 28423,
+      "Sending respawn"/0x00B2 sent 2x, $char->{dead} never clears). The watchdog
+      is_zombie() does NOT catch it — a corpse-loop still emits 'Sent packet' lines
+      (0437 attack, 09FD move, 0B1C ping) so the game-activity recency check sees it as
+      "alive". So the bot sits dead indefinitely (last manual un-stick via 13:35 zombie
+      restart after 27h). This has been masquerading as portal-wedge/STATS-loop/sell-freeze
+      all along.
+      FIX (in progress): watchdog must ALSO detect the corpse-loop — a live bot whose
+      NEWEST AI-state line is `AI: dead | <id>` (fresh timestamp) is corpse-stuck and must
+      be restarted (same grace + circuit breaker). Distinguishes "actively dead" from
+      "dead once but recovered".
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
