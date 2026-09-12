@@ -259,7 +259,7 @@ class GameKnowledgeDB:
                 # (task_type, map_name, npc_name, x, y)
                 ("weapon_shop",  "prontera", "Weapon Shop",  160, 133),
                 ("academy_receptionist", "iz_ac01", "Academy Receptionist", 100, 39),
-                ("portal_to_town", "prt_fild05", "Prontera gate", 22, 203),
+                ("portal_to_town", "prt_fild05", "Prontera gate", 367, 205),
                 ("portal_to_hunt", "prontera", "Prontera field gate", 156, 164),
                 ("portal_to_town", "izlude", "Izlude dock", 128, 260),
                 ("kafra",         "prontera", "Kafra Employee", 145, 122),
