@@ -1506,6 +1506,15 @@ class HeuristicService:
             if job_name in _first_classes and job_level >= 50 and base_level >= 50:
                 return "JOB_CHANGE"
             if stat_points > 0:
+                # STATS-DWELL GUARD (2026-09-12): if the bot dwells in STATS too
+                # long WITHOUT actually consuming a stat point, the client-side
+                # points_free is stale (server pushes 0x00BD once at login; level-up
+                # points never re-sync), so every `stat_add` errors and the bot
+                # loops forever freezing farming. Fall through to HUNT so it keeps
+                # farming — points spend next time the client re-syncs/reconnects.
+                _stats_dwell = __import__("time").time() - self._state_since.get(bot_id, 0)
+                if _prev_state == "STATS" and _stats_dwell > 45:
+                    return "TOWN_HUNT" if is_town else "HUNT"
                 return "STATS"
             # If no stat points, skip STATS entirely to avoid wasted cycles
             if skill_points > 0:
@@ -5867,10 +5876,22 @@ class HeuristicService:
         if state == "STATS":
             # Check stat_points from signals
             _current_stat_points = signals.get("stat_points", 0) or 0
-            if _current_stat_points <= 0:
-                # No stat points available - skip to next state
+            _now_ts_stats = __import__("time").time()
+            _stats_since = self._state_since.get(bot_id) or 0
+            # STATS DWELL GUARD (2026-09-12): if the bot sits in STATS longer than
+            # ~45s WITHOUT actually consuming a stat point, the client-side
+            # points_free is STALE (server only pushes 0x00BD once at login; level-up
+            # points never re-sync) — every `stat_add` errors "Not enough status
+            # points" and the bot would loop forever, freezing farming. Fall through
+            # to HUNT so the bot keeps farming (points get spent next time the client
+            # re-syncs / on reconnect). Char & server agnostic.
+            if _current_stat_points <= 0 or (
+                _stats_since and (_now_ts_stats - _stats_since) > 45
+            ):
+                # No spendable stat points (or stale-spend guard fired) — skip to
+                # HUNT so the bot never freezes on a point-alloc it can't land.
                 total_confidence = 0.50
-                top_domain = "progression"
+                top_domain = "hunting"
                 assessment = HeuristicAssessment(
                     horizon=horizon, actions=[], confidence=total_confidence,
                     actionable=False, top_domain=top_domain, signals=dict(signals),
