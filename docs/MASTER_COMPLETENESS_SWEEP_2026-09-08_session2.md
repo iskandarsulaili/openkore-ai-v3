@@ -144,8 +144,15 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       bot recovered to farming (EXP 9729→9959+, base 42) after the town wedge.
 - [ ] 5.24 OPEN: when the periodic sell routes a low-weight bot to town, it wedges
       mid-route (st-sit loop) instead of completing the trip + selling. Need the
-      trip to complete reliably (route to prt_in 126 76 Tool Dealer, open dialog,
-      sell db-junk, return).
+      trip to complete reliably. ROOT FOUND+FIXED (2026-09-12): the seeded
+      portal_to_town fact for prt_fild05 was 22,203 (TOWN-side coord, unreachable from
+      the fild map) -> infinite route-recalc + sit-loop -> frozen farming. CORRECTED to
+      field-side 367,205 (code + 76,453 live rows). PROVEN: bot routes + farms again
+      (EXP 25254→26307+).
+      REMAINING: (a) zeny 0 — periodic sell routes to town but the sale never completes;
+      (b) STATS loop — sidecar thinks stat_points=5 (DB correct) but OpenKore in-memory
+      points_free reads 0 -> every 'st add dex' errors 'Not enough status points' (13x),
+      bot spams allocation that can't land. Blocks job change (needs zeny + clean progression).
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
