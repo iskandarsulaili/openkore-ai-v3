@@ -166,6 +166,10 @@ Goal: bot completes merchant job-change end-to-end (reach alberta guild, talk, b
       NEWEST AI-state line is `AI: dead | <id>` (fresh timestamp) is corpse-stuck and must
       be restarted (same grace + circuit breaker). Distinguishes "actively dead" from
       "dead once but recovered".
+      VERIFIED LIVE (2026-09-12): is_corpse_loop() correctly detected the stuck bot (newest
+      AI state 'dead'); watchdog auto-restarted it (PID 1533005); after re-login it
+      re-entered the farm and is FARMING again (EXP 28423→28768+, HP regen, AI: attack route).
+      The recurring corpse-freeze is broken.
 
 ## BATCH 6 — DQN COMBAT-MICRO (god-tier gap, char-agnostic)
 - [ ] 6.1 ThreatTargeting NEVER instantiated — CombatLoop._threat_targeting stays None, _acquire_target no-ops. Wire real target selection.
