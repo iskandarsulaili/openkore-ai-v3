@@ -162,7 +162,29 @@ class DomainRegistry:
         for domain in self._domains:
             try:
                 before = len(actions)
+                # SNAPSHOT the config-owner's dedupe cache BEFORE an observe-only
+                # domain runs. The legacy domains call the SAME service helper
+                # _set_config_once(...) (e.g. EconomyDomain._apply_sell_config
+                # sets sellAuto_maxWeight=70), which mutates the shared
+                # _last_config_set cache as a side effect EVEN THOUGH the action
+                # is downgraded to a log intent below. That poisoning made the
+                # real config owner (heuristic_service) re-emit its value every
+                # cycle (70 vs 25 ping-pong -> perpetual sellAuto_maxWeight
+                # flood live, observed 19:10-19:16). Observe-only domains must
+                # NOT own config values: restore the cache they touched so the
+                # single owner's dedupe stays authoritative.
+                cache_owner = getattr(service, "_last_config_set", None)
+                _snap = None
+                if isinstance(cache_owner, dict):
+                    _snap = {k: dict(v) for k, v in cache_owner.items()}
                 domain.assess(signals, actions, service)
+                if isinstance(cache_owner, dict) and _snap is not None:
+                    # drop keys the observe-only domain introduced or changed
+                    for k in list(cache_owner.keys()):
+                        if k not in _snap or cache_owner[k] != _snap[k]:
+                            del cache_owner[k]
+                    for k, v in _snap.items():
+                        cache_owner.setdefault(k, v)
                 for _idx in range(before, len(actions)):
                     _a = actions[_idx]
                     if _a.kind == "command":

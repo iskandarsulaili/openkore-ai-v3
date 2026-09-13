@@ -44,6 +44,47 @@ def test_assess_all_emits_no_commands() -> None:
             f"party must never survive: {a}"
 
 
+def test_observe_only_domains_do_not_poison_config_dedupe_cache() -> None:
+    """Legacy observe-only domains must not mutate the shared _last_config_set
+    dedupe cache that the REAL config owner (heuristic_service) uses.
+
+    Regression (2026-09-13): EconomyDomain._apply_sell_config called
+    _set_config_once('sellAuto_maxWeight','70') on the shared cache, so the
+    heuristic hunting block's '25' read '70' as "changed" every cycle and
+    re-emitted sellAuto_maxWeight forever (live flood 19:10-19:16)."""
+
+    from ai_sidecar.autonomy import heuristic_service as hs
+
+    class _Svc:
+        _last_config_set: dict[str, dict[str, str]] = {}
+
+    svc = _Svc()
+    # The single owner already set sellAuto_maxWeight=25 (authoritative).
+    svc._last_config_set.setdefault("bot", {})["sellAuto_maxWeight"] = "25"
+
+    reg = DomainRegistry()
+    reg.load_all()
+    actions: list = []
+    signals = {
+        "map": "prt_fild05", "base_level": 20, "zeny": 5000,
+        "in_party": False, "party_members": [], "all_bots": ["bot:x"],
+        "inventory": [{"name": "Jellopy", "quantity": 30}],
+        "hp": 500, "hp_max": 1000, "weight": 3000, "weight_max": 8000,
+        "job_name": "novice", "weight_ratio": 0.4,
+        "state": "AGGRESSIVE", "bot_id": "bot:test",
+    }
+    reg.assess_all(signals, actions, service=svc)  # type: ignore[arg-type]
+
+    # The owner's value must be untouched by any observe-only domain.
+    assert svc._last_config_set["bot"]["sellAuto_maxWeight"] == "25", (
+        "observe-only domain poisoned the config-owner's dedupe cache -> "
+        "perpetual config re-emission flood"
+    )
+    # Any log intent is observe-only (never a live command).
+    for a in actions:
+        assert a.kind == "log"
+
+
 def test_no_party_or_ai_mode_commands_in_sources() -> None:
     import os
     import re
