@@ -1417,9 +1417,25 @@ class HeuristicService:
         if _cold_fired and _prev_state not in ("UNKNOWN", "COLD_START") and hp <= 0:
             return "DEATH"
         zeny = signals.get("zeny", 0) or 0
-        # Weight: use actual game weight ratio from snapshot
+        # Weight: the ACTUAL load ratio. Prefer the authoritative signal
+        # `weight_ratio` (populated live from vitals, e.g. 0.163). Do NOT use
+        # inventory.weight_pressure — that is an OVERWEIGHT-PRESSURE score that
+        # stays 0 until the bot is >50% loaded (world_state.py:243
+        # (ratio-0.5)/0.5), so a normal-weight bot carrying junk reads 0 and the
+        # SELL state never fires (the sell->zeny->job-change deadlock). Fall
+        # back to the raw weight/weight_max when weight_ratio is missing.
         _inv_data = signals.get("inventory", {}) or {}
-        weight = _inv_data.get("weight_pressure", 0) or 0.0
+        weight = float(signals.get("weight_ratio", 0) or 0)
+        if weight <= 0:
+            _w_sig = float(_inv_data.get("weight_ratio", 0) or 0)
+            if _w_sig > 0:
+                weight = _w_sig
+            else:
+                _w = float(_inv_data.get("weight", 0) or 0)
+                _wm = float(_inv_data.get("weight_max", 0) or 0)
+                if _wm > 0 and _w > 0:
+                    weight = _w / _wm
+        weight = max(0.0, min(1.0, weight))
         base_level = signals.get("base_level", 1) or 1
         job_level = signals.get("job_level", 1) or 1
         job_name = str(signals.get("job_name") or "novice").lower()
@@ -1458,6 +1474,18 @@ class HeuristicService:
                 or (_jc_job in _first_classes and _jc_jl >= 50 and _jc_bl >= 50)
             )
             if _jc_eligible:
+                # AFFORDABILITY GATE (2026-09-13): a broke eligible bot (zeny 0)
+                # must SELL junk to fund the job change FIRST. If we return
+                # JOB_CHANGE here, its handler emits `move <guild>` (can't afford
+                # the airship/crossing) and the bot never sells -> zeny stays 0
+                # -> the 500z gate never opens -> deadlock (sell->zeny->jobchange
+                # mutual block). Reuse the same 500z affordability rule as the
+                # cold-start + progression emitters (A4): job-change only when
+                # the bot can PAY (zeny>=500).
+                if weight > 0.05:
+                    return "SELL"  # carrying junk -> sell now to fund job change
+                if (zeny if zeny else 0) < 500:
+                    return "TOWN_HUNT"  # broke + empty -> farm to raise zeny/weight
                 return "JOB_CHANGE"
             # STUCK DETECTION: if in town > 120s with 0 kills, force hunting
             _town_start = self._town_entry_time.get(bot_id, 0)

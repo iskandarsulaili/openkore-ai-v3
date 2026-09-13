@@ -49,7 +49,24 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       (test_legacy_domains_observe_only.py). VERIFIED: after sidecar reconnect's one
       cold-cache push, 0 sellAuto_maxWeight re-emits in a sustained 30s window; 25
       domain tests pass. Committed.
-- [ ] A2. ROOT-CAUSE the never-completing vendor trip (5.27): HUNT on lockMap overrides the strategic vendor_move; bot reaches town but never does move→talknpc→sell-junk→close. Fix: deterministic SELL state (in-town → talknpc discovered-vendor → `sell <id> 0` loop via SELLABLE_JUNK → close) that HUNT cannot override; verify bot executes the full sequence in live log + zeny increments.
+- [~] A2. ROOT-CAUSE CONFIRMED + FIXED (2026-09-13, live-diagnosed): the vendor trip never
+      completes because the bot NEVER ENTERS the SELL state. Two stacked causes:
+      (1) _get_state read signals['inventory']['weight_pressure'] (heuristic_service.py:1422)
+          which is 0 until the bot is >50% overweight — a 16%-weight novice carrying junk read
+          weight=0, so `if weight > 0.05: return "SELL"` never fired; the SELL state was unreachable.
+      (2) STATE-ORDERING: town branch `return "JOB_CHANGE"` (eligible novice) fired BEFORE SELL.
+          A broke (zeny 0) eligible novice (base 46 / job 10 live) returned JOB_CHANGE; its handler
+          emits `move <guild>` it can't afford -> never sells -> zeny 0 -> deadlock.
+      FIXED both: (1) _get_state now reads the real weight_ratio (top-level -> inventory.weight_ratio
+      -> raw weight/weight_max fallback), so SELL fires at any non-trivial carry; (2) JOB_CHANGE now
+      gated on affordability (zeny>=500) with carry>5% -> SELL first, broke+empty -> TOWN_HUNT (farm).
+      Regression tests added (test_sell_before_job_change.py, 5 tests). VERIFIED: tests green.
+      PENDING: live deploy (restart sidecar) + bot sells junk -> zeny>0 -> reaches alberta -> merchant.
+- [ ] A2b. Identity drift: 4 stale registrations for the same char (testbot99 under masters
+      Local rAthena AI World / TestBotA / TestBotB / TestBotC) + testbotA/testbota. Active bot
+      `Local rAthena AI World:testbot99` held 125-128 pending actions dominated by emergency
+      potion reflexes (zeny-0 consequence). Verify single live identity per control folder;
+      reconcile stale registrations so the queue the bridge polls == where actions enqueue.
 - [ ] A3. Confirm the discovered-vendor talknpc sequence tokens are valid (talknpc <x> <y> c r1 n — NOT r/text/ form) and the vendor is a real buy-from-player (prt_in 126 76 Tool Dealer). Verify via live bot log line.
 - [ ] A4. Job-change gate: verify zeny>=500 logic across ALL job-change emitters (cold-start, HUNTING-branch, progression.py) is one shared affordability rule (5.10), and macro required_zeny=500 holds (5.12). PROVE: bot reaches alberta guild via airship/portal (NOT 11-map overland walk), talks, becomes merchant, gains job EXP.
 - [ ] A5. [P] Record full timestamped chain: login→enter→farm(EQP climb)→sell→zeny>500→job-change→new class farming. (Batch-8 benchmark, live outcome proof.)
