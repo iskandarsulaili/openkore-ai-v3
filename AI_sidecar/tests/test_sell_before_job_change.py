@@ -101,3 +101,28 @@ def test_weight_ratio_fallback_inventory() -> None:
     sig["inventory"]["weight_ratio"] = 0.16
     state = hs._get_state(sig, "bot:test")
     assert state == "SELL", state
+
+
+def test_junk_derived_from_buy_not_sell() -> None:
+    """The auto-sell junk scan must derive resale value from Buy/2 (the RO vendor
+    mechanic), NOT a non-existent `Sell` column that yields 0 and classifies NO
+    item as junk. Regression: the sell->zeny->job-change deadlock — Jellopy/Bee
+    Sting (the bot's actual drops) must classify as junk so `sell <id>` fires."""
+    _junk_ids = []
+    _junk_names = []
+    try:
+        from ai_sidecar.knowledge_loader import get_items
+        item_db = {str(_it.get("Id", "")): _it for _it in get_items()}
+    except Exception:
+        item_db = {}
+    for _it_id, _it in item_db.items():
+        _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "")).lower()
+        if _it_nm in ("jellopy", "sticky mucus", "bee sting"):
+            _buy = int(_it.get("Buy", 0) or 0)
+            _sell_val = _buy // 2
+            if 0 < _sell_val < 100:
+                _junk_ids.append(_it_id)
+                _junk_names.append(_it_nm)
+    assert "909" in _junk_ids, f"Jellopy should be junk (Buy/2), got {_junk_ids}"
+    assert "938" in _junk_ids, f"Sticky Mucus should be junk, got {_junk_ids}"
+    assert "939" in _junk_ids, f"Bee Sting should be junk, got {_junk_ids}"

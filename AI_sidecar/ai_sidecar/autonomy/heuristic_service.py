@@ -5272,8 +5272,17 @@ class HeuristicService:
                     for _it_id, _it in _item_db.items():
                         _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "")).lower()
                         if _it_nm and _it_nm in _item_str:
-                            _sell_val = int(_it.get("Sell", 0) or 0)
-                            # Junk = vendor value below 100z (low-value drops).
+                            # RO vendor mechanics: an item resells to a buying NPC
+                            # at half its Buy price. The knowledge item DB exposes
+                            # `Buy` only (no `Sell` column on this fork), so derive
+                            # the resale value as Buy/2 rather than reading a
+                            # non-existent `Sell` field that always yielded 0 (which
+                            # made NO item classify as junk -> `sell <id>` never
+                            # emitted -> the sell->zeny->job-change deadlock).
+                            _buy_val = int(_it.get("Buy", 0) or 0)
+                            _sell_val = _buy_val // 2
+                            # Junk = resale value below 100z (low-value drops;
+                            # a 0-Buy item is non-sellable, skip it).
                             if 0 < _sell_val < 100:
                                 _junk_id = _it_id
                                 _junk_name = _it_nm

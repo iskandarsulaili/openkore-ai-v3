@@ -50,18 +50,24 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       cold-cache push, 0 sellAuto_maxWeight re-emits in a sustained 30s window; 25
       domain tests pass. Committed.
 - [~] A2. ROOT-CAUSE CONFIRMED + FIXED (2026-09-13, live-diagnosed): the vendor trip never
-      completes because the bot NEVER ENTERS the SELL state. Two stacked causes:
+      completes because the bot NEVER ENTERS the SELL state. THREE stacked causes:
       (1) _get_state read signals['inventory']['weight_pressure'] (heuristic_service.py:1422)
           which is 0 until the bot is >50% overweight — a 16%-weight novice carrying junk read
           weight=0, so `if weight > 0.05: return "SELL"` never fired; the SELL state was unreachable.
       (2) STATE-ORDERING: town branch `return "JOB_CHANGE"` (eligible novice) fired BEFORE SELL.
           A broke (zeny 0) eligible novice (base 46 / job 10 live) returned JOB_CHANGE; its handler
           emits `move <guild>` it can't afford -> never sells -> zeny 0 -> deadlock.
-      FIXED both: (1) _get_state now reads the real weight_ratio (top-level -> inventory.weight_ratio
-      -> raw weight/weight_max fallback), so SELL fires at any non-trivial carry; (2) JOB_CHANGE now
-      gated on affordability (zeny>=500) with carry>5% -> SELL first, broke+empty -> TOWN_HUNT (farm).
-      Regression tests added (test_sell_before_job_change.py, 5 tests). VERIFIED: tests green.
-      PENDING: live deploy (restart sidecar) + bot sells junk -> zeny>0 -> reaches alberta -> merchant.
+      (3) JUNK-SCAN USED A NON-EXISTENT `Sell` COLUMN: the item DB on this fork exposes only
+          `Buy` (no `Sell`), so `_it.get("Sell",0)` always returned 0 -> NO item ever classified
+          as junk -> `sell <id>` never emitted (even when SELL state ran + talknpc opened the
+          vendor dialog). RO mechanic: resale = Buy/2. Now derived.
+      FIXED all three: (1) _get_state now reads the real weight_ratio; (2) JOB_CHANGE gated on
+      affordability (zeny>=500) with carry>5% -> SELL first, broke+empty -> TOWN_HUNT (farm);
+      (3) junk val = Buy//2, 0<val<100 = junk. Regression tests added
+      (test_sell_before_job_change.py, 6 tests). VERIFIED live: sidecar restarted with fix;
+      bot (base 46/job 10/zeny 0) now emits `talknpc 126 76 c` + `talk cont` (was only
+      move/stand before) = SELL state running. PENDING: bot routes to town on 600s periodic-sell
+      or bag-full -> junk converted -> zeny>0 -> reaches alberta -> merchant (longer live window).
 - [ ] A2b. Identity drift: 4 stale registrations for the same char (testbot99 under masters
       Local rAthena AI World / TestBotA / TestBotB / TestBotC) + testbotA/testbota. Active bot
       `Local rAthena AI World:testbot99` held 125-128 pending actions dominated by emergency
