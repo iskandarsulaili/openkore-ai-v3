@@ -1378,7 +1378,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             action_id=f"vendor_move_{horizon}_{_short_id}",
             kind="command",
             command=f"move {town_map}",
-            priority_tier=ActionPriorityTier.strategic,
+            priority_tier=ActionPriorityTier.tactical,
             source="planner",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(seconds=120),
