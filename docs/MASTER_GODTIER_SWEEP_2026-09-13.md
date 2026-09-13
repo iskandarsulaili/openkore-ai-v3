@@ -117,10 +117,14 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       positioning) was dormant while the bot fought on reflexes. FIX: normalize actors
       via model_dump + alias keys the dict-API consumers expect. VERIFIED: 3 new regression
       tests pass (test_combat_dispatcher_actordigest.py). PENDING: commit + sidecar restart.
-- [x] B3.3 SELL-TO-ZENY CHAIN root-caused + fixed (committed 8167b6c7e): cmdSell resolves by
-      BINID/item-name not item_db Id → bridge rewrites sell <db_id> → <owned binID>.
-      Bot restarted (#9/#10) to load it. PENDING: witness junk→zeny conversion live once the
-      dual-supervisor race is resolved (a single client, uninterrupted sell trip).
+- [x] B3.3 SELL-TO-ZENY CHAIN root-caused + fixed (committed 8167b6c7e + 5543bcdfa): cmdSell resolves by
+      BINID/item-name not item_db Id → bridge rewrites sell <db_id> → <owned binID>; AND the SELL
+      state added each junk item to the pending list ('Type sell done to sell everything in your
+      sell list') but NEVER emitted 'sell done' → the list never executed → zeny stayed 0. Fixed
+      both: binID rewrite + finalize 'sell done'. VERIFIED LIVE 2026-09-14 00:06: junk reaching the
+      sell list ("Added to sell list: Fluff x9 / Clover x21 / Sticky Mucus x2 / Feather x14 / Worm
+      Peeling x7 / Club [3] x1") with binIDs. PENDING: witness `sell done` → zeny converts (bot walked
+      off mid-sequence before the finalize in the earlier run; sell-done now forces the sale).
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 
