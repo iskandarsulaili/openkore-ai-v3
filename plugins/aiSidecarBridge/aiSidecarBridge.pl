@@ -6872,9 +6872,20 @@ sub _rewrite_runtime_command {
 		}
 		# HUNTING MAP GUARD: if bot is on a hunting map, block "move prontera"
 		# Heuristic handles all return-to-town logic - other modules should not override
-		# EXCEPTION: if bot has 0 potions, allow return to town to buy potions
+		# EXCEPTIONS: (1) 0 potions -> allow return to town to buy potions,
+		# (2) ECONOMIC SELL-TRIP (2026-09-12): the periodic-sell emitter
+		# (_emit_vendor_actions, metadata.needs_vendor=1) must be allowed to route
+		# to town to SELL junk -> zeny even when the bot still has potions. Without
+		# this, the hunting_guard swallowed 'move prontera' and a broke low-weight
+		# bot NEVER reached the vendor, so drops never converted to zeny and the
+		# 500z job-change gate stayed closed. The vendor trip is the bot's own
+		# economic decision, so it must override the guard.
 		my $_guard_has_potions = 0;
-		if ($_current_map =~ /^[a-z]+_fild/ && lc($target) eq 'prontera') {
+		my $_allow_econ_trip = 0;
+		if (ref($metadata) eq 'HASH' && ($metadata->{needs_vendor} || $metadata->{target_map} && lc($metadata->{target_map}) eq 'prontera')) {
+			$_allow_econ_trip = 1;
+		}
+		if ($_current_map =~ /^[a-z]+_fild/ && lc($target) eq 'prontera' && !$_allow_econ_trip) {
 		        # Check if bot has any potions
 		        $_guard_has_potions = 0;
 			if ($char && @{_char_inventory($char)}) {
@@ -6893,9 +6904,15 @@ sub _rewrite_runtime_command {
 			}
 			# No potions - allow return to town AND set lockMap so AI routes to town
 			$::config{'lockMap'} = 'prontera';
-			warning "[hunting_guard] allowing 'move prontera' - bot has 0 potions on $_current_map\\n", 'aiSidecarBridge', 1;
+			warning "[hunting_guard] allowing 'move prontera' - bot has 0 potions on $_current_map\\\\n", 'aiSidecarBridge', 1;
 			return ($trimmed, 'coordinate_move_raw');
 			}
+		# Economic sell-trip: allow the town move and set lockMap so the AI routes there.
+		if ($_allow_econ_trip) {
+			$::config{'lockMap'} = 'prontera';
+			warning "[hunting_guard] allowing economic sell-trip 'move prontera' (needs_vendor)\\n", 'aiSidecarBridge', 1;
+			return ($trimmed, 'econ_sell_trip');
+		}
 			# Set lockMap to target only for hunting maps (not towns)
 		# Heuristic handles town routing - bridge should not lock to town
 		my $_move_target_is_town = $target =~ /^(prontera|izlude|morocc|payon|geffen|aldebaran|comodo|umbala|niflheim|rachel|veins|einbroch|lighthalzen|juno|hugel|yuno|amatsu|gonryun|louyang|ayothaya)$/i;
