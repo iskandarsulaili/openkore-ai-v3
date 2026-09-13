@@ -1336,6 +1336,58 @@ class HeuristicService:
         except Exception as exc:
             logger.warning("HeuristicService._load_state failed: %s", exc)
 
+    def _sell_auto_is_armed(self, bot_id: str = "") -> bool:
+        """True when native OpenKore sellAuto is the sell owner: sellAuto config
+        =1 AND at least one junk item carries an autosell flag.
+
+        When armed, the manual economy SELL emitter must DEFER to native sellAuto
+        (single-routing-authority per RULE.md) — two Sell packets to different
+        dialogs would race and the server rejects the second with 00CB 'Sell
+        failed'. Data/AGNOSTIC: resolves the bot's `.bot_profiles/<stable>/control`
+        from the bot_id (stable key = profile name) and reads config.txt +
+        items_control.txt — never hardcoded items.
+        """
+        try:
+            from pathlib import Path as _Path
+            _stable = str(bot_id or "").split(":")[-1].split("/")[-1] or "default"
+            # Repo root = the sidecar package root's parent-of-parent-of-parent;
+            # HeuristicService lives at AI_sidecar/ai_sidecar/autonomy/heuristic_service.py
+            # -> repo root is 4 levels up from this file.
+            _repo = _Path(__file__).resolve().parents[3]
+            _ctrl = _repo / ".bot_profiles" / _stable / "control"
+            if not (_ctrl / "config.txt").exists():
+                # Fall back to a first-match control dir (profile name may differ).
+                _profiles = _repo / ".bot_profiles"
+                found = None
+                if _profiles.is_dir():
+                    for _pd in sorted(_profiles.iterdir()):
+                        if (_pd / "control" / "config.txt").exists():
+                            found = _pd / "control"
+                            break
+                if found is None:
+                    return False
+                _ctrl = found
+            cfg = _ctrl / "config.txt"
+            items = _ctrl / "items_control.txt"
+            sell_auto_on = False
+            if cfg.exists():
+                for ln in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = ln.strip()
+                    if s.startswith("sellAuto ") and s.split()[1] == "1":
+                        sell_auto_on = True
+                        break
+            if not sell_auto_on:
+                return False
+            if items.exists():
+                for ln in items.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = ln.strip()
+                    parts = s.split()
+                    if len(parts) >= 2 and parts[1] == "1":
+                        return True
+            return False
+        except Exception:
+            return False
+
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
         try:
@@ -5258,6 +5310,21 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
+            # ── SINGLE-OWNER GATE (2026-09-14) ──
+            # Native OpenKore sellAuto is the DESIGNED, reliable sell path: it
+            # routes the bot itself, opens the vendor buy/sell dialog, sells the
+            # autosell-marked junk, and closes. It is armed whenever sellAuto=1
+            # AND the junk classes carry 'sell 1' in items_control.txt. When it
+            # is armed, the manual economy emitter below (which sends `sell <id>`
+            # + `sell done` against a vendor IT selected) races the native AI and
+            # the two send Sell packets to DIFFERENT dialogs -> server rejects
+            # with 00CB 'Sell failed'. Per RULE.md single-routing-authority, the
+            # manual SELL emitter defers to native sellAuto when it is active.
+            try:
+                if self._sell_auto_is_armed(bot_id):
+                    return None  # native sellAuto owns the sale; manual defers
+            except Exception:
+                pass
             # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
