@@ -79,6 +79,18 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
 
 ## BATCH B — STATS / PROGRESSION LOOP (blocks clean progression)
 - [ ] B1. STATS loop (5.24b): sidecar thinks stat_points=5 (DB correct), OpenKore in-memory points_free=0 → every `st add dex` errors. Fix: reconcile points_free source (re-sync on level-up/relog; stop spamming when points_free=0). Verify no more 'Not enough status points' + points actually land.
+
+## BATCH B2 — CORPSE-LOOP ROOT CAUSE (the repeated death→AI:dead→watchdog-restart cycle cut off the sell→zeny proof)
+- [~] B2.1 ROOT-CAUSE FOUND+FIXED (2026-09-13, live log 739050-739070): a gearless bot
+      dies because the config audit sets `teleportAuto_deadly=1` → OpenKore built-in fires
+      "can kill You with the next N dmg → Teleporting", then Task::Teleport fails
+      NO_ITEM_OR_SKILL ("You don't have the Teleport skill or a Fly Wing") → bot FREEZES in
+      place → dies → corpse-loop. A Pro never arms an escape it cannot execute. FIX: both
+      hunting config-audit blocks now gate teleportAuto_deadly on ACTUAL Fly Wing ownership
+      (scanned from inventory_items, AGNOSTIC — never a hardcoded id). Gearless → deadly=0.
+      Regression test added (test_gearless_bot_disables_deadly_teleport). VERIFIED: 7 tests
+      pass. PENDING: live deploy + bot survives the field without freezing. This is the
+      blocker that kept cutting off the 600s periodic-sell / sell→zeny→job-change proof.
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 

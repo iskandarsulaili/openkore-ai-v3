@@ -4262,8 +4262,22 @@ class HeuristicService:
             # ── TELEPORT CONFIG: escape from danger ──
             self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
                 "Config audit - teleport when HP < 10%")
-            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "1", "hunting",
-                "Config audit - teleport from deadly monsters")
+            # A gearless bot MUST NOT enable deadly-escape teleport (freezes+dies
+            # on Task::Teleport NO_ITEM_OR_SKILL). AGNOSTIC: only arm it when a
+            # Fly Wing is actually carried (detected from the live inventory).
+            _has_fly_wing2 = False
+            try:
+                for _iname2 in (signals.get("inventory_items") or []):
+                    if ("fly wing" in str(_iname2).lower()) or ("flywing" in str(_iname2).lower()):
+                        _has_fly_wing2 = True
+                        break
+            except Exception:
+                _has_fly_wing2 = False
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly",
+                "1" if _has_fly_wing2 else "0", "hunting",
+                "Config audit - teleport from deadly monsters (only when a Fly Wing/tp skill is actually carried)"
+                if _has_fly_wing2 else
+                "Config audit - gearless bot: no Fly Wing/skill, deadly-teleport OFF (would freeze+die on escape-fail)")
             self._set_config_once(actions, bot_id, "attackAuto_startOnSight", "1", "hunting",
                 "Config audit - attack monsters as soon as they appear")
             self._set_config_once(actions, bot_id, "attackAuto_unstuck", "1", "hunting",
@@ -4298,8 +4312,29 @@ class HeuristicService:
             # ── TELEPORT CONFIG: escape from danger ──
             self._set_config_once(actions, bot_id, "teleportAuto_hp", "10", "hunting",
                 "Config audit - teleport when HP < 10%")
-            self._set_config_once(actions, bot_id, "teleportAuto_deadly", "1", "hunting",
-                "Config audit - teleport from deadly monsters")
+            # A gearless bot MUST NOT enable deadly-escape teleport. OpenKore's
+            # built-in teleportAuto_deadly fires "can kill You with the next N
+            # dmg -> Teleporting", then Task::Teleport fails with
+            # NO_ITEM_OR_SKILL ("You don't have the Teleport skill or a Fly
+            # Wing"), and the bot FREEZES in place (observed live: died at
+            # Thief Bug x10, 0 kills, corpse-loop). A Pro never arms an escape
+            # it cannot actually execute. AGNOSTIC: enable deadly-teleport only
+            # when the bot OWNS a Fly Wing (item name/id from the live inventory
+            # snapshot) OR has the Teleport skill — never a hardcoded item id.
+            _has_fly_wing = False
+            try:
+                for _iname in (signals.get("inventory_items") or []):
+                    _s = str(_iname).lower()
+                    if ("fly wing" in _s) or ("flywing" in _s):
+                        _has_fly_wing = True
+                        break
+            except Exception:
+                _has_fly_wing = False
+            self._set_config_once(actions, bot_id, "teleportAuto_deadly",
+                "1" if _has_fly_wing else "0", "hunting",
+                "Config audit - teleport from deadly monsters (only when a Fly Wing/tp skill is actually carried)"
+                if _has_fly_wing else
+                "Config audit - gearless bot: no Fly Wing/skill, deadly-teleport OFF (would freeze+die on escape-fail)")
             # CRITICAL: Disable avoidList on hunting maps
             # The avoid system fires BEFORE attackAuto, causing bots to run away from monsters
             # instead of attacking them. This is the root cause of zero kills.

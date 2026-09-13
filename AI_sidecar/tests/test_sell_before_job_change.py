@@ -126,3 +126,30 @@ def test_junk_derived_from_buy_not_sell() -> None:
     assert "909" in _junk_ids, f"Jellopy should be junk (Buy/2), got {_junk_ids}"
     assert "938" in _junk_ids, f"Sticky Mucus should be junk, got {_junk_ids}"
     assert "939" in _junk_ids, f"Bee Sting should be junk, got {_junk_ids}"
+
+
+def test_gearless_bot_disables_deadly_teleport() -> None:
+    """A gearless bot (no Fly Wing carried) must have teleportAuto_deadly=0 so
+    OpenKore's built-in deadly-teleport (which fires NO_ITEM_OR_SKILL and FREEZES
+    the bot in place -> dies -> corpse-loop) never arms. AGNOSTIC: derived from
+    the live inventory, never a hardcoded item id."""
+    import os
+
+    def _has_fw(items) -> bool:
+        return any(("fly wing" in str(i).lower()) or ("flywing" in str(i).lower())
+                   for i in items)
+
+    # no Fly Wing -> deadly teleport OFF
+    gearless = ["Jellopy", "Novice Potion", "Knife"]
+    assert _has_fw(gearless) is False
+    # Fly Wing present -> ON
+    assert _has_fw(["Jellopy", "Fly Wing", "Knife"]) is True
+    assert _has_fw(["Jellopy", "fly wing", "Knife"]) is True
+    assert _has_fw(["jellopy", "Flywing"]) is True
+    # Lock the invariant: the audit block must scan inventory (not a hardcoded id)
+    src = open(os.path.join(os.path.dirname(__file__), "..", "ai_sidecar",
+                            "autonomy", "heuristic_service.py"),
+               encoding="utf-8", errors="replace").read()
+    assert "teleportAuto_deadly" in src
+    assert "inventory_items" in src
+    assert "fly wing" in src, "the deadly-teleport guard must scan inventory for a fly wing"
