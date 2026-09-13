@@ -270,16 +270,22 @@ class GameKnowledgeDB:
                 # native sellAuto (gated on items_control autosell=1, also
                 # missing) never fired -> drops never converted to zeny. Data,
                 # server-agnostic baseline; observation layer can refine.
+                # ── COORDINATE FIX (2026-09-14) ── the outdoor `prontera` fact
+                # previously pointed at (126,76) — a coordinate where NO NPC
+                # exists on the OUTDOOR prontera map (the real Tool Dealer is at
+                # prt_in 126,76, an INDOOR map). The bot walked to an empty spot,
+                # no buy/sell dialog attached, and the 0x00C9 Sell packet was
+                # REJECTED ("Sell failed"). Any rAthena `shop` NPC opens a
+                # buy/sell dialog, so point the outdoor-prontera fact at a real
+                # plain shop NPC (Gift Merchant#prt prontera 105,87 is a loaded
+                # merchant/shops.txt spawn) so the SELL dialog actually opens.
                 ("tool_dealer",  "prt_in",   "Tool Dealer",  126, 76),
                 ("sell",         "prt_in",   "Tool Dealer",  126, 76),
                 # Seed on the TOWN map too (prontera) — the periodic-sell in-town
-                # branch passes the bot's town map string ('prontera'), while the
-                # NPC physically lives on prt_in. find_npc_for_task matches
-                # map_name exactly, so a fact on prt_in alone never resolved from
-                # 'prontera' -> the old `ai auto` no-op persisted. Both maps point
-                # to the same buy-from-player NPC.
-                ("tool_dealer",  "prontera", "Tool Dealer (prt_in)", 126, 76),
-                ("sell",         "prontera", "Tool Dealer (prt_in)", 126, 76),
+                # branch passes the bot's town map string ('prontera'). The NPC
+                # must be a REAL outdoor-prontera spawn (see coord fix above).
+                ("tool_dealer",  "prontera", "Gift Merchant#prt", 105, 87),
+                ("sell",         "prontera", "Gift Merchant#prt", 105, 87),
             ]
             for _task, _map, _name, _x, _y in _facts:
                 conn.execute(
