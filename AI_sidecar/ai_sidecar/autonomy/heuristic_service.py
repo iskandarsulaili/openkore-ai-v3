@@ -5310,6 +5310,27 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
+            # ── SINGLE-OWNER GATE (2026-09-14, re-applied) ──
+            # Native OpenKore sellAuto is the DESIGNED sell path and is now
+            # VERIFIED WORKING (config '= c r1 n' -> 'c r1 n' fixed the invalid
+            # TalkNPC token -> 'Auto-selling due to itemsMaxWeight' -> routes to
+            # Tool Dealer -> 'Added to sell list' -> completes the sale).
+            #
+            # When sellAuto is armed (sellAuto=1 AND autosell junk flagged in
+            # items_control.txt), BOTH native sellAuto AND this manual emitter
+            # called completeNpcSell -> 'Sent Sell/Buy Complete' was sent TWICE.
+            # The server clif_parse_NpcSellListSend clears sd->npc_shopid after
+            # the first complete; the second complete (native's, same tick)
+            # fails npc_checknear(sd, map_id2bl(0)) -> 'Sell failed' (00CB).
+            #
+            # Per RULE.md single-routing-authority, the manual SELL emitter must
+            # DEFER entirely to native sellAuto when it is armed — both routing
+            # and the sell-done finalize are native's job.
+            try:
+                if self._sell_auto_is_armed(bot_id):
+                    return None  # native sellAuto fully owns the sale
+            except Exception:
+                pass
             # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
