@@ -126,10 +126,27 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
           Sticky Mucus x2 / Feather x14 / Worm Peeling x7 / Club [3] x1")
         - `sell done` fires AND sends packet 0x00C9 [Sell] to the server (00:19:01) + 09D4
           Sell/Buy Complete
-        - residual 00CB [Sell Result]=0x01 "Sell failed" — the bot was mid-lockMap-flip to
-          prt_fild08 (progression agent kept setting lockMap) so the sell went out without a
-          buy-capable dialog attached. PENDING: single-owner sell (suspend lockMap during the
-          sell trip so the buy-dialog stays attached) → junk→zeny proof.
+        - residual 00CB [Sell Result]=0x01 "Sell failed" — ROOT-CAUSED (2026-09-14):
+          the seeded game_knowledge_db `sell`/`tool_dealer` FACT for outdoor `prontera`
+          pointed at coords (126,76) = a DEAD spot (real Tool Dealer is on prt_in 126,76
+          INDOOR). Bot walked to an empty coordinate, no buy/sell dialog attached, so the
+          0x00C9 sell was rejected. FIXED (committed 8e894f658): point the outdoor-prontera
+          fact at a REAL plain-shop spawn (Gift Merchant#prt, prontera 105,87 — loaded in
+          merchant/shops.txt); any rAthena `shop` NPC opens a buy/sell dialog. Also flushed
+          15,448 duplicate poisoned seed rows (every sidecar start re-inserts; seed uses
+          INSERT OR IGNORE — dedupe before trusting the DB).
+        - NATIVE sellAuto = the DESIGNED reliable sell path (AI.pm shouldStartAutoSell +
+          sellAuto_npc prt_in 126 75 routes + opens dialog + sells + closes). Root-caused:
+          it never fired because (a) junk items lacked `sell 1` in items_control.txt and
+          (b) its trigger is itemsMaxWeight_sellOrStore (was 49%, bot died before reaching).
+          FIXED (committed via runtime config + 002b0a694): junk field-drop classes now
+          `sell 1 keep 0`, itemsMaxWeight_sellOrStore lowered to 25. The manual SELL state
+          is a broken parallel (fires talknpc on the field / wrong coord + closes dialog
+          before sendSellBulk) — left but not preferred.
+      PENDING (single live E2E witness): a bot sustaining a full farm window reaches 25%
+        weight, native sellAuto routes to prt_in 126 75, converts junk → zeny > 0 → the
+        job-change gate opens. Prior proof attempts kept getting cut short by the test bot's
+        own low-HP fragility + the dual-supervisor restarts (B3.1) + dead vendor coord (this).
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 
