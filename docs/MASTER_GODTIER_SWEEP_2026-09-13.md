@@ -23,17 +23,16 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
 
 ## BASELINE (verified live 2026-09-13 22:34 — do NOT re-verify these each turn)
 - Bot PID 1149376 in-game on prt_fild05, AI: attack route, attacking Thief Bug Egg (342,207) from 344,209, maxDistance 4.
-- Sidecar healthy (:18080 /v2/state reachable), watchdog daemon PID 898300 (runtime watchdogd PID 434).
+- Sidecar healthy (PID 1263122, up 585s+), watchdog daemon PID 898300 (runtime watchdogd PID 434).
 - Corpe-loop watchdog (5.26) HOLDS: last death 19:15 self-recovered, bot alive+farming since.
-- git HEAD 9c9f60e19 (sell-to-zeny vendor_move priority fix committed); working tree has bot-profile + untracked runtime files (fine).
+- git HEAD ae9f23389 (2 fixes committed this session: A1 domain cache poison + LTM null-tags).
 - OPEN CHAIN: sell→zeny→job-change (base 43, job 10, EXP climbing) still NOT cleanly witnessed end-to-end.
 - **CRITICAL LIVE-STATE (2026-09-13): the AI SIDECAR was DOWN since 2026-09-10 09:00 (3 days)** —
-  the bot ran ONLY on bridge reflexes + OpenKore builtin; the conscious/LLM tier was NOT driving.
-  Restarted 22:40 (PID 1263122) via `venv/bin/python -m ai_sidecar.app --keep-alive`; health ok,
-  keep_alive_enabled, bot_count 1. All later live verification assumes the sidecar is UP.
-- **LATENT BUG (2026-09-13): `long_term_memory_search_failed: argument of type 'NoneType' is not
-  iterable`** — spams stderr in every domain test. This is Batch-D D1/D2 (LongTermMemory wired
-  but broken). Root-causing next (do NOT let any memory-write site silently fail).
+  restarted 22:40 (PID 1263122). Later live verification assumes sidecar UP.
+- **LATENT BUG FIXED (2026-09-13): `long_term_memory_search_failed: NoneType not iterable`** —
+  root cause: `m.get('tags',[])` returned None for null-tags docs → `t in None` → search aborted
+  every call. Fixed (coalesce `or []`) in search + _search_local. Committed ae9f23389. LTM store/search
+  IS wired (pdca 6016/6027/6141/10748-10786) — NOT dormant.
 
 ---
 
@@ -67,8 +66,14 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
 - [ ] C4 (6.4 / S24-S25). [P] Benchmark: kills/min + EXP/hour improve vs heuristic-only. Record baseline then after.
 
 ## BATCH D — CONSCIOUS TIER / MEMORY / PREEMPTIVE (BIG_PICTURE checklist)
-- [ ] D1 (G1). LongTermMemory (memory/long_term_memory.py) INITIALIZED but NEVER used — wire into event store + advisory context.
-- [ ] D2 (G2). No MEMORY STORE on significant events — record kills/deaths/EXP/prices; feed past-context into LLM advisory.
+- [ ] D1 (G1). LongTermMemory — VERIFIED WIRED (NOT dormant): store at pdca 6016/6027/6141/10748-10786,
+      search/recall injected into LLM prompts at 10340/10960 (get_relevant_context). Null-tags search
+      crash FIXED (ae9f23389). Remaining: confirm recall reaches the LIVE LLM prompt (not just cold-start),
+      and store-failure sites log (not silent).
+- [x] D2 (G2). Memory-store gap partially closed: LTM store IS called on significant events
+      (pdca 10748-10786 kill/death/lesson sites). VERIFIED wired — update 5.24-era claim "no memory
+      store on significant events" → store exists + works (null-tags fix). Remaining: audit those
+      sites actually reachable in the live path (not gated off).
 - [ ] D3 (G3). Cold-start LLM advisory prompt lacks the past-context block — inject learned history.
 - [ ] D4 (G4). _llm_gear_advisory gets the same past context (server-agnostic, DB-backed solutions).
 - [ ] D5 (G5). PREEMPTIVE (not just reactive): death-loop prediction / sustain anticipation before it bites.
