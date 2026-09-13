@@ -47,12 +47,30 @@ class TacticsDispatcher:
         status = signals.get("status", {})
         position = signals.get("position", {})
 
-        # Monsters from actors
-        monsters = [a for a in actors if a.get("type", "") == "monster" and a.get("hp", 0) > 0]
+        # Monsters from actors, normalized to plain dicts. Actors arrive as
+        # ActorDigest pydantic objects; every downstream consumer (TacticsContext,
+        # select_target, _to_target_info, _monster_in_pack) does dict .get(...)
+        # access. `model_dump` here so those keys exist and are plain values.
+        def _actor_dict(a):
+            if isinstance(a, dict):
+                return a
+            d = a.model_dump(exclude_none=True)
+            # Alias keys the tactics dict-API expects
+            if "type" not in d:
+                d["type"] = d.get("actor_type", "")
+            if "distance_to" not in d:
+                d["distance_to"] = d.get("distance", 99)
+            if "is_party" not in d:
+                d["is_party"] = (d.get("relation", "") == "party")
+            return d
+
+        _actors_norm = [_actor_dict(a) for a in actors]
+        monsters = [a for a in _actors_norm
+                    if a.get("type", "") == "monster" and a.get("hp", 0) > 0]
 
         # Party members from actors
-        party_members = [a for a in actors if a.get("type", "") == "player"
-                         and a.get("is_party", False)]
+        party_members = [a for a in _actors_norm
+                         if a.get("type", "") == "player" and a.get("is_party", False)]
 
         # Parse cooldowns
         cooldowns: dict[str, float] = {}

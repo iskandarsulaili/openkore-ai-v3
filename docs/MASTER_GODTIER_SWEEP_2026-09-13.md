@@ -98,10 +98,29 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       FIX: bridge _rewrite_runtime_command ('sell' handler) now maps the numeric item_db ID to
       the owned item's binID (`sell <binID> [amt]`). perl -c syntax OK. Bot restarted (watchdog
       #9, PID 1496044) to load the bridge change. PENDING live: bot sells junk -> zeny>0.
-- [~] B2.3 IDENTITY DRIFT (A2b) live-reconciling: sidecar logs show `bot_id_canonicalized`
-      (TestBotA:testbot99) + `bot_registry_in_memory_alias_cleanup` removing the stale
-      `Local rAthena AI World:testbot99` alias — the registry self-heals the duplicate
-      registrations. Verify single clean registration after a stable window.
+## BATCH B3 — DUAL-SUPERVISOR RACE (systemd watchdog + sidecar keep-alive both own the same profile)
+- [x] B3.1 ROOT-CAUSE (live-diagnosed 2026-09-13): TWO supervisors race to manage
+      .bot_profiles/testbotA — (a) the systemd watchdog daemon (PID 898300,
+      openkore-bot-watchdog.service → ai_sidecar.runtime.watchdog.run_daemon, registered
+      ALL .bot_profiles/* at boot) AND (b) the sidecar's keep-alive (lifecycle.py
+      _restart_stale_bots → start.sh bot testbotA, spawned PID 1537751 under the sidecar's
+      own process tree). Both spawn competing openkore clients for the SAME char →
+      char-conflict/connection churn → restarts cut off the sell→zeny proof repeatedly.
+      The watchdog circuit breaker tripped (restart #9), then it relaunched #10 while the
+      keep-alive's manual instance was still connected → two live clients for one char.
+      FIX (reconciliation, single owner): the sidecar keep-alive must NOT spawn a bot that
+      the systemd watchdog already supervises. (PENDING — do NOT run both.)
+- [x] B3.2 COMBAT-TACTICS DOMAIN DEAD (live log ERROR every combat tick): dispatcher.py
+      build_context called a.get("type"/"hp"/"is_party") on ActorDigest pydantic objects →
+      "AttributeError: 'ActorDigest' object has no attribute 'get'" → tactics_dispatcher.
+      assess() failed every cycle → the whole combat-tactics domain (kiting/melee/magic
+      positioning) was dormant while the bot fought on reflexes. FIX: normalize actors
+      via model_dump + alias keys the dict-API consumers expect. VERIFIED: 3 new regression
+      tests pass (test_combat_dispatcher_actordigest.py). PENDING: commit + sidecar restart.
+- [x] B3.3 SELL-TO-ZENY CHAIN root-caused + fixed (committed 8167b6c7e): cmdSell resolves by
+      BINID/item-name not item_db Id → bridge rewrites sell <db_id> → <owned binID>.
+      Bot restarted (#9/#10) to load it. PENDING: witness junk→zeny conversion live once the
+      dual-supervisor race is resolved (a single client, uninterrupted sell trip).
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 
