@@ -5331,6 +5331,17 @@ class HeuristicService:
                         _junk_found = True
                 if _junk_found:
                     logger.info(f"[auto_sell] {bot_id}: queued sell commands for junk items in inventory")
+                    # Finalize: `sell <binID>` only ADDS each item to OpenKore's
+                    # pending sell list ("Type 'sell done' to sell everything in your
+                    # sell list."). Without `sell done` the list never executes and
+                    # zeny stays 0. Must be emitted AFTER the items are added (the
+                    # bridge passes it through — "sell done" has no digit so the
+                    # binID rewrite skips it).
+                    actions.append(HeuristicAction(
+                        kind="command", command="sell done",
+                        confidence=0.85, domain="economy",
+                        reason="Execute the pending sell list (finalize sale)",
+                    ))
                 actions.append(HeuristicAction(
                     kind="command", command="talk cont",
                     confidence=0.80, domain="economy",
