@@ -121,10 +121,15 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       BINID/item-name not item_db Id → bridge rewrites sell <db_id> → <owned binID>; AND the SELL
       state added each junk item to the pending list ('Type sell done to sell everything in your
       sell list') but NEVER emitted 'sell done' → the list never executed → zeny stayed 0. Fixed
-      both: binID rewrite + finalize 'sell done'. VERIFIED LIVE 2026-09-14 00:06: junk reaching the
-      sell list ("Added to sell list: Fluff x9 / Clover x21 / Sticky Mucus x2 / Feather x14 / Worm
-      Peeling x7 / Club [3] x1") with binIDs. PENDING: witness `sell done` → zeny converts (bot walked
-      off mid-sequence before the finalize in the earlier run; sell-done now forces the sale).
+      both: binID rewrite + finalize 'sell done'. VERIFIED LIVE 2026-09-14 00:06-00:19:
+        - junk reaches the sell list with binIDs ("Added to sell list: Fluff x9 / Clover x21 /
+          Sticky Mucus x2 / Feather x14 / Worm Peeling x7 / Club [3] x1")
+        - `sell done` fires AND sends packet 0x00C9 [Sell] to the server (00:19:01) + 09D4
+          Sell/Buy Complete
+        - residual 00CB [Sell Result]=0x01 "Sell failed" — the bot was mid-lockMap-flip to
+          prt_fild08 (progression agent kept setting lockMap) so the sell went out without a
+          buy-capable dialog attached. PENDING: single-owner sell (suspend lockMap during the
+          sell trip so the buy-dialog stays attached) → junk→zeny proof.
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 
