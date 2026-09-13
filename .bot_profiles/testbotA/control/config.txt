@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword gukelami
+adminPassword romeyaig
 callSign
 commandPrefix ;
 callSignGM 0
@@ -879,7 +879,7 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 1
+sellAuto 0
 sellAuto_npc prt_in 126 75
 sellAuto_npc_steps c r1 n
 sellAuto_standpoint
@@ -1208,7 +1208,7 @@ useSelf_item {
 
 # ── Auto-buy Healing Items ──
 
-lockMap prt_fild08c
+lockMap new_1-3
 route_reAddMissingPortals 1
 
 # ── Auto loot ──
@@ -1263,7 +1263,7 @@ buyAuto_Red_Potion {
 	maxAmount = 10
 	price = 0
 }
-sellAuto 1
+sellAuto 0
 sellAuto_npc prt_in 126 75
 sellAuto_npc_steps c r1 n
 sellAuto_maxWeight 25

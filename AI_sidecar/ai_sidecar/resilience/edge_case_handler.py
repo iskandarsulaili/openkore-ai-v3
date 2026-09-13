@@ -334,7 +334,7 @@ class EdgeCaseHandler:
             _log.info("edge_inventory_full bot=%s weight=%.0f%%", bot_id, weight_ratio_val * 100)
             return self._build_proposal(
                 bot_id=bot_id,
-                command="set sellAuto 1",
+                command="set sellAuto 0",
                 priority_tier=ActionPriorityTier.tactical,
                 reason=f"Inventory {weight_ratio_val:.0%} > {self._weight_ratio:.0%}",
                 ttl_seconds=120,

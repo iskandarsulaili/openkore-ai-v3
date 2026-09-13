@@ -5188,7 +5188,7 @@ class PDCALoop:
                                             _rl_cmd_map = {
                                                 "farm": "attackAuto 3",
                                                 "buy_potions": "buyAuto 1",
-                                                "sell_items": "sellAuto 1",
+                                                "sell_items": "sellAuto 0",
                                                 "level_skill": "stat_add 1 1",
                                                 "rest": "sit",
                                                 "socialize": "party 1",
@@ -5247,7 +5247,7 @@ class PDCALoop:
                                     _rl_persist_cmd = {
                                         "farm": "attackAuto 3",
                                         "buy_potions": "buyAuto 1",
-                                        "sell_items": "sellAuto 1",
+                                        "sell_items": "sellAuto 0",
                                         "level_skill": "stat_add 1 1",
                                         "rest": "sit",
                                     }.get(_rl_persist)
@@ -6468,7 +6468,7 @@ class PDCALoop:
                                             _cycle_bot_id or "default",
                                             ActionProposal(
                                                 action_id=f"pro_cfg_{_pro_h.md5(f'cfg_{time.monotonic_ns()}'.encode()).hexdigest()[:8]}",
-                                                kind="command", command="set sellAuto 1",
+                                                kind="command", command="set sellAuto 0",
                                                 priority_tier=ActionPriorityTier.tactical, source="planner",
                                                 created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=120),
                                                 idempotency_key=f"pro_cfg_sell_{_cycle_bot_id or 'def'}",
@@ -8543,7 +8543,7 @@ class PDCALoop:
                 _rl_cmd_map = {
                     "farm": "attackAuto 3",
                     "buy_potions": "buyAuto 1",
-                    "sell_items": "sellAuto 1",
+                    "sell_items": "sellAuto 0",
                     "level_skill": "stat_add 1 1",
                     "rest": "sit",
                     "socialize": "party 1",

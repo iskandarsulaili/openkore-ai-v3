@@ -115,7 +115,7 @@ class FarmingLoopOptimizer:
             threshold = self.optimal_sell_threshold(current_map)
             actions.append(HeuristicAction(
                 kind="command",
-                command="sellAuto 1",
+                command="sellAuto 0",
                 confidence=0.9,
                 reason=f"Farming loop: weight {weight_pct:.0f}% > optimal {threshold:.0f}% — selling",
                 domain="economy",

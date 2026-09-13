@@ -103,7 +103,7 @@ class InventoryPolicies:
         if weight_pct >= policy.sell_at_weight:
             actions.append(HeuristicAction(
                 kind="command",
-                command="sellAuto 1",
+                command="sellAuto 0",
                 confidence=0.9,
                 reason=f"Inventory {weight_pct:.0f}% — selling per {current_map} policy",
                 domain="economy",

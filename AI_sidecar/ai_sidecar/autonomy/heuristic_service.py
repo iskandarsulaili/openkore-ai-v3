@@ -5310,27 +5310,18 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
-            # ── SINGLE-OWNER GATE (2026-09-14, re-applied) ──
-            # Native OpenKore sellAuto is the DESIGNED sell path and is now
-            # VERIFIED WORKING (config '= c r1 n' -> 'c r1 n' fixed the invalid
-            # TalkNPC token -> 'Auto-selling due to itemsMaxWeight' -> routes to
-            # Tool Dealer -> 'Added to sell list' -> completes the sale).
+            # ── MANUAL SELL IS THE SOLE OWNER (2026-09-14 FINAL) ──
+            # Native OpenKore sellAuto is ARCHITECTURALLY UNABLE to sell to this
+            # server's shop-type vendors. npc_store_begin (Receive.pm) sets
+            # $ai_v{'npc_talk'}{'talk'}='buy_or_sell' for shop-type NPCs, but
+            # native sellAuto (CoreLogic.pm:1978) requires talk EQ 'sell' — so it
+            # ALWAYS times out ("Npc did not respond") -> "Auto-sell sequence
+            # completed" with ZERO 00C9 packets -> zeny stays 0. The manual
+            # emitter here uses `sell <binID>` + `sell done` -> completeNpcSell ->
+            # sendSellBulk -> 00C9 unconditionally (the working, proven path).
             #
-            # When sellAuto is armed (sellAuto=1 AND autosell junk flagged in
-            # items_control.txt), BOTH native sellAuto AND this manual emitter
-            # called completeNpcSell -> 'Sent Sell/Buy Complete' was sent TWICE.
-            # The server clif_parse_NpcSellListSend clears sd->npc_shopid after
-            # the first complete; the second complete (native's, same tick)
-            # fails npc_checknear(sd, map_id2bl(0)) -> 'Sell failed' (00CB).
-            #
-            # Per RULE.md single-routing-authority, the manual SELL emitter must
-            # DEFER entirely to native sellAuto when it is armed — both routing
-            # and the sell-done finalize are native's job.
-            try:
-                if self._sell_auto_is_armed(bot_id):
-                    return None  # native sellAuto fully owns the sale
-            except Exception:
-                pass
+            # sellAuto is DISABLED in config (sellAuto 0) so shouldStartAutoSell
+            # never queues native; this manual SELL state is the single owner.
             # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
@@ -6754,7 +6745,7 @@ class HeuristicService:
                         ))
                 # ECONOMY CONFIG: Ensure sellAuto, itemsTakeAuto, buyAuto are set
                 actions.append(HeuristicAction(
-                    kind="command", command="set sellAuto 1",
+                    kind="command", command="set sellAuto 0",
                     confidence=0.99, domain="economy",
                     reason="Enable auto-sell",
                 ))

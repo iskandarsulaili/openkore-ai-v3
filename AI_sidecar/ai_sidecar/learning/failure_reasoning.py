@@ -587,7 +587,7 @@ class FailureReasoningEngine:
 
         if cat == "overweight":
             return [
-                "sellAuto 1",
+                "sellAuto 0",
                 "storageAuto 1",
             ]
 
