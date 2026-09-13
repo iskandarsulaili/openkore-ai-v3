@@ -5310,21 +5310,6 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
-            # ── SINGLE-OWNER GATE (2026-09-14) ──
-            # Native OpenKore sellAuto is the DESIGNED, reliable sell path: it
-            # routes the bot itself, opens the vendor buy/sell dialog, sells the
-            # autosell-marked junk, and closes. It is armed whenever sellAuto=1
-            # AND the junk classes carry 'sell 1' in items_control.txt. When it
-            # is armed, the manual economy emitter below (which sends `sell <id>`
-            # + `sell done` against a vendor IT selected) races the native AI and
-            # the two send Sell packets to DIFFERENT dialogs -> server rejects
-            # with 00CB 'Sell failed'. Per RULE.md single-routing-authority, the
-            # manual SELL emitter defers to native sellAuto when it is active.
-            try:
-                if self._sell_auto_is_armed(bot_id):
-                    return None  # native sellAuto owns the sale; manual defers
-            except Exception:
-                pass
             # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
