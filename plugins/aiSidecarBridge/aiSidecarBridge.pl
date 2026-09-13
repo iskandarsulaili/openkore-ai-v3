@@ -7172,6 +7172,31 @@ sub _rewrite_runtime_command {
 
 	# Handle 'sell' commands
 	if ($normalized =~ /^sell\s+(.+)$/) {
+		# OpenKore's cmdSell resolves its arg via Actor::Item::getMultiple,
+		# which matches by BINID (inventory index) or item NAME — NOT the
+		# item_db Id. The sidecar emits `sell <item_db_id>` (e.g. sell 909 0)
+		# which fails ("'909' is not a valid item index #; no item has been
+		# added to the sell list") because 909 is not an inventory slot.
+		# Rewrite the numeric Id to the owned item's binID so the sale lands.
+		my ($_sell_raw, $_sell_arg) = ($normalized, $1);
+		if ($_sell_arg =~ /^\s*(\d+)\s*(.*)$/ && $char) {
+			my $_want_db_id = ($1 + 0);
+			my $_sell_amt = $2 || '';
+			my $_bin = undef;
+			for my $_it (@{_char_inventory($char)}) {
+				next unless ref($_it);
+				if ((($_it->{nameID} // 0) + 0) == $_want_db_id) {
+					$_bin = $_it->{binID};
+					last;
+				}
+			}
+			if (defined $_bin) {
+				my $_sell_cmd = "sell $_bin" . ($_sell_amt ne '' ? " $_sell_amt" : '');
+				debug "[sell_rewrite] $normalized -> $_sell_cmd (db_id $_want_db_id -> binID $_bin)\n", 'aiSidecarBridge', 1;
+				return ($_sell_cmd, 'sell_binid_rewritten');
+			}
+			debug "[sell_rewrite] db_id $_want_db_id not owned; passing through\n", 'aiSidecarBridge', 1;
+		}
 		$rewrite_kind = 'sell_rewritten';
 		return ($normalized, $rewrite_kind);
 	}

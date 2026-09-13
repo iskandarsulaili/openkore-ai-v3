@@ -81,7 +81,7 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
 - [ ] B1. STATS loop (5.24b): sidecar thinks stat_points=5 (DB correct), OpenKore in-memory points_free=0 → every `st add dex` errors. Fix: reconcile points_free source (re-sync on level-up/relog; stop spamming when points_free=0). Verify no more 'Not enough status points' + points actually land.
 
 ## BATCH B2 — CORPSE-LOOP ROOT CAUSE (the repeated death→AI:dead→watchdog-restart cycle cut off the sell→zeny proof)
-- [~] B2.1 ROOT-CAUSE FOUND+FIXED (2026-09-13, live log 739050-739070): a gearless bot
+- [x] B2.1 ROOT-CAUSE FOUND+FIXED (2026-09-13, live log 739050-739070): a gearless bot
       dies because the config audit sets `teleportAuto_deadly=1` → OpenKore built-in fires
       "can kill You with the next N dmg → Teleporting", then Task::Teleport fails
       NO_ITEM_OR_SKILL ("You don't have the Teleport skill or a Fly Wing") → bot FREEZES in
@@ -89,8 +89,19 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       hunting config-audit blocks now gate teleportAuto_deadly on ACTUAL Fly Wing ownership
       (scanned from inventory_items, AGNOSTIC — never a hardcoded id). Gearless → deadly=0.
       Regression test added (test_gearless_bot_disables_deadly_teleport). VERIFIED: 7 tests
-      pass. PENDING: live deploy + bot survives the field without freezing. This is the
-      blocker that kept cutting off the 600s periodic-sell / sell→zeny→job-change proof.
+      pass. LIVE: bot no longer corpse-loops (2+ restarts were fatal-freeze teleport issues).
+- [~] B2.2 ROOT-CAUSE FOUND+FIXED (2026-09-13): the sell command was emitted but ALWAYS failed —
+      live log 803631-803632: `Error in function 'sell'`: "'909'/'7872' is not a valid item
+      index #". OpenKore's cmdSell (Commands.pm:5225) resolves its arg via
+      Actor::Item::getMultiple by BINID (inventory slot) or item NAME — NOT the item_db ID
+      the sidecar emits (`sell 909 0`). So every sell failed, junk stayed 63x Jellopy, zeny 0.
+      FIX: bridge _rewrite_runtime_command ('sell' handler) now maps the numeric item_db ID to
+      the owned item's binID (`sell <binID> [amt]`). perl -c syntax OK. Bot restarted (watchdog
+      #9, PID 1496044) to load the bridge change. PENDING live: bot sells junk -> zeny>0.
+- [~] B2.3 IDENTITY DRIFT (A2b) live-reconciling: sidecar logs show `bot_id_canonicalized`
+      (TestBotA:testbot99) + `bot_registry_in_memory_alias_cleanup` removing the stale
+      `Local rAthena AI World:testbot99` alias — the registry self-heals the duplicate
+      registrations. Verify single clean registration after a stable window.
 - [ ] B2. Level 1-10 academy/tutorial escape (D6): a level-1 bot landing in iz_int* academy room must deterministically exit (exit guard + academy-room gate hold, 5.24/S9-S10). Verify live for a fresh-spawn bot.
 - [ ] B3. Per-class config audit + stat allocation (RULE.md §6/§11): confirm allocation fires on level-up via DB (not stat_points signal), per-class order, no hardcoded class in conscious path (reflex floor only).
 
