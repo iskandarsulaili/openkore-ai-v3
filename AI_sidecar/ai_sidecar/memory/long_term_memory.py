@@ -200,7 +200,8 @@ class LongTermMemory:
                     if category and data.get("category") != category:
                         continue
                     # Filter by tags
-                    if tags and not all(t in data.get("tags", []) for t in tags):
+                    _tags = data.get("tags") or []
+                    if tags and not all(t in _tags for t in tags):
                         continue
                     # Filter by importance
                     if data.get("importance", 0) < min_importance:
@@ -351,7 +352,7 @@ class LongTermMemory:
             for m in memories:
                 if category and m.get("category") != category:
                     continue
-                if tags and not all(t in m.get("tags", []) for t in tags):
+                if tags and not all(t in (m.get("tags") or []) for t in tags):
                     continue
                 if int(m.get("importance", 0) or 0) < min_importance:
                     continue
