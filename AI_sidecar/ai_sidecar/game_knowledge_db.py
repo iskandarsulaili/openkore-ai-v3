@@ -272,6 +272,14 @@ class GameKnowledgeDB:
                 # server-agnostic baseline; observation layer can refine.
                 ("tool_dealer",  "prt_in",   "Tool Dealer",  126, 76),
                 ("sell",         "prt_in",   "Tool Dealer",  126, 76),
+                # Seed on the TOWN map too (prontera) — the periodic-sell in-town
+                # branch passes the bot's town map string ('prontera'), while the
+                # NPC physically lives on prt_in. find_npc_for_task matches
+                # map_name exactly, so a fact on prt_in alone never resolved from
+                # 'prontera' -> the old `ai auto` no-op persisted. Both maps point
+                # to the same buy-from-player NPC.
+                ("tool_dealer",  "prontera", "Tool Dealer (prt_in)", 126, 76),
+                ("sell",         "prontera", "Tool Dealer (prt_in)", 126, 76),
             ]
             for _task, _map, _name, _x, _y in _facts:
                 conn.execute(
