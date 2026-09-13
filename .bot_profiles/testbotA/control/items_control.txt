@@ -1,0 +1,21 @@
+# ── Auto-use Healing Items ──
+Red Potion 1 0 0
+Orange Potion 1 0 0
+White Potion 1 0 0
+602 0 0 0 # Butterfly Wing — explicitly disabled (AI system manages wings)
+# ── Auto-sell junk (native sellAuto) ──
+# Format: <item> <sell> <keep> <pickup>. sell=1 routes this item to OpenKore's
+# native sellAuto (sellAuto_npc prt_in 126 75), which RELIABLY walks to the
+# vendor, opens the buy/sell dialog, sells, and closes — unlike the manual SELL
+# state which fired talknpc on a field map / wrong coord and closed the dialog
+# before selling. keep=0 pickup=1. These are genuine low-value field drops that
+# should convert to zeny.
+Jellopy 1 0 1
+Fluff 1 0 1
+Clover 1 0 1
+Feather 1 0 1
+Sticky Mucus 1 0 1
+Worm Peeling 1 0 1
+Bee Sting 1 0 1
+Chrysalis 1 0 1
+Grasshopper's Leg 1 0 1
