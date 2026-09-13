@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword rostesta
+adminPassword creespoy
 callSign
 commandPrefix ;
 callSignGM 0
@@ -294,7 +294,7 @@ teleportAuto_search 0
 teleportAuto_onlyWhenSafe 0
 teleportAuto_maxDmg 2000
 teleportAuto_maxDmgInLock 0
-teleportAuto_deadly 1
+teleportAuto_deadly
 teleportAuto_useSkill 0
 teleportAuto_useChatCommand
 teleportAuto_allPlayers 0
@@ -1218,7 +1218,7 @@ itemsGatherAuto 2
 itemsGatherAuto_bag 4
 itemsMaxWeight 89
 itemsMaxWeight_buyOrSell 49
-itemsMaxWeight_sellOrStore 49
+itemsMaxWeight_sellOrStore 25
 
 # ── Auto sit regen ──
 sitAuto_hp_lower 20
@@ -1233,7 +1233,7 @@ sitAuto_maxDmg 99999
 attackAuto 2
 attackAuto_inLockOnly 1
 attackAuto_followTarget 1
-attackAuto_onlyWhenSafe 1
+attackAuto_onlyWhenSafe
 attackAuto_noMove
 attackAuto_notWhileSitting 0
 
