@@ -217,11 +217,32 @@ class HealingOptimizer:
         zeny: int,
         level: int,
         prefer_hp: bool = True,
+        inventory: list[dict] | list | None = None,
     ) -> str | None:
         """Select the best healing item and return the command to use it.
         
         Returns None if no suitable healing item is available.
+        `inventory` is the bot's carried items (dicts with name/quantity or
+        plain strings) — carried heal consumables are used even when the bot
+        is broke (zeny=0): a free in-hand item always beats a potion it can't
+        afford. AGNOSTIC — no hardcoded item names.
         """
+        # Build carried-name lookup (idempotent, cheap).
+        carried: set[str] = set()
+        carried_lower: set[str] = set()
+        if inventory:
+            for entry in (inventory if isinstance(inventory, list) else [inventory]):
+                nm = ""
+                if isinstance(entry, dict):
+                    nm = str(entry.get("name", "") or entry.get("Name", "") or "")
+                else:
+                    nm = str(entry)
+                nm = nm.strip()
+                if nm:
+                    carried.add(nm)
+                nl = nm.lower()
+                if nl:
+                    carried_lower.add(nl)
         with self._lock:
             if not self._loaded:
                 self.load()
@@ -236,8 +257,9 @@ class HealingOptimizer:
             hp_ratio = hp / max(max_hp, 1)
             sp_ratio = sp / max(max_sp, 1)
             
-            # Check cache first (same state = same recommendation)
-            cache_key = f"{hp_deficit // 50},{sp_deficit // 30},{zeny // 1000},{level}"
+            # Cache key now incorporates the carried count so an item arriving
+            # mid-window changes the recommendation.
+            cache_key = f"{hp_deficit // 50},{sp_deficit // 30},{zeny // 1000},{level},{len(carried)}"
             cached = self._cache.get(cache_key)
             if cached:
                 self._stats["cache_hits"] += 1
@@ -247,8 +269,17 @@ class HealingOptimizer:
             best_score = -1.0
             
             for item in self._healing_items:
-                # Skip items that are too expensive
-                if item.buy > 0 and item.buy > zeny * 0.3:
+                # A carried heal item is ALWAYS usable (free) regardless of zeny.
+                _in_hand = (item.name in carried) or (item.name.lower() in carried_lower) \
+                           or (item.aegis_name in carried) or (item.aegis_name.lower() in carried_lower)
+                # Skip items that are too expensive — UNLESS in hand (free).
+                if not _in_hand and item.buy > 0 and item.buy > zeny * 0.3:
+                    continue
+                # A NON-PURCHASABLE item (buy=0, e.g. a rare drop like Slim Pot)
+                # is unusable unless carried: a broke/free bot can't buy it and
+                # doesn't own it. Skipping it here is what keeps the recommendation
+                # to what the bot can ACTUALLY use (in-hand or affordable).
+                if not _in_hand and item.buy <= 0:
                     continue
                 
                 # Calculate effective heal
@@ -265,14 +296,19 @@ class HealingOptimizer:
                     # COMBAT MODE: HP is critical — prioritize effective heal amount
                     if total_hp_heal > 0:
                         effective_heal = min(total_hp_heal, hp_deficit * 1.5)
-                        cost_efficiency = total_hp_heal / max(item.buy, 1) if item.buy > 0 else total_hp_heal
+                        cost_efficiency = total_hp_heal / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else (total_hp_heal if _in_hand else 1.0)
                         score = effective_heal * 100 + cost_efficiency
                     else:
                         score = 0
                 elif sp_ratio < 0.3:
-                    score = total_sp_heal / max(item.buy, 1) if item.buy > 0 else total_sp_heal
+                    score = total_sp_heal / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else (total_sp_heal if _in_hand else 0.0)
                 else:
-                    score = (total_hp_heal + total_sp_heal) / max(item.buy, 1) if item.buy > 0 else (total_hp_heal + total_sp_heal)
+                    score = (total_hp_heal + total_sp_heal) / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else ((total_hp_heal + total_sp_heal) if _in_hand else 0.0)
+                
+                # Prefer in-hand items strongly (they're free + immediate) but
+                # let a much stronger heal win when HP deficit is large.
+                if _in_hand:
+                    score += 50.0
                 
                 if score > best_score:
                     best_score = score

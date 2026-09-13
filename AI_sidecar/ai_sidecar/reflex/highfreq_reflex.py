@@ -208,8 +208,25 @@ class HighFreqReflex:
                     current_map = str(snapshot.get("map", snapshot.get("position", {}).get("map", "")) or "")
                     inv_items = snapshot.get("inventory_items", snapshot.get("inventory", {}).get("items", []))
                     if isinstance(inv_items, list):
+                        _heal_names = self._heal_capable_names()
                         for item in inv_items:
-                            if isinstance(item, dict) and item.get("name", "") and "potion" in str(item.get("name", "")).lower():
+                            if isinstance(item, dict):
+                                name = str(item.get("name", "") or "")
+                                nid = str(item.get("id", item.get("item_id", item.get("nameID", ""))) or "")
+                            else:
+                                name = str(getattr(item, "name", "") or "")
+                                nid = str(getattr(item, "id", getattr(item, "nameID", "")) or "")
+                            if not name:
+                                continue
+                            nl = name.lower()
+                            # A consumable is a heal candidate if (a) its literal
+                            # name is a known heal, or (b) it is the carried item
+                            # the optimizer knows heals (data-driven), or (c) a
+                            # bare number (item id) the optimizer knows heals.
+                            if "potion" in nl or "herb" in nl or "apple" in nl or \
+                               "berry" in nl or "yggdrasil" in nl or "mastela" in nl or \
+                               "panacea" in nl or "royal jelly" in nl or \
+                               nl in _heal_names or nid in _heal_names:
                                 has_potions = True
                                 break
                 else:
@@ -224,9 +241,17 @@ class HighFreqReflex:
                     if prog:
                         level = int(getattr(prog, "base_level", 1) or 1)
                     inv_items = getattr(snapshot, "inventory_items", []) or []
+                    _heal_names = self._heal_capable_names()
                     for item in inv_items:
                         name = getattr(item, "name", "") if not isinstance(item, dict) else item.get("name", "")
-                        if name and "potion" in name.lower():
+                        nid = getattr(item, "id", getattr(item, "nameID", "")) if not isinstance(item, dict) else (item.get("id", item.get("nameID", "")) or "")
+                        if not name:
+                            continue
+                        nl = name.lower()
+                        if "potion" in nl or "herb" in nl or "apple" in nl or \
+                           "berry" in nl or "yggdrasil" in nl or "mastela" in nl or \
+                           "panacea" in nl or "royal jelly" in nl or \
+                           nl in _heal_names or str(nid) in _heal_names:
                             has_potions = True
                             break
                     pos = getattr(snapshot, "position", None) or {}
@@ -253,6 +278,7 @@ class HighFreqReflex:
                     current_map=current_map,
                     zeny=zeny, level=level,
                     reflex_pipeline=_rflx_pipe,
+                    inventory=inv_items,
                 )
                 
                 if action and _enqueue:
@@ -264,25 +290,65 @@ class HighFreqReflex:
             except Exception:
                 continue
     
+    def _heal_capable_names(self) -> set[str]:
+        """Data-driven set of item names/ids that heal, from the optimizer's
+        loaded healing-items table. Used to gate `has_potions` AGNOSTICALLY —
+        a broke novice carrying Apple / Green Herb / Red Herb (all itemheal
+        consumables) must count as heal-capable even though those names don't
+        contain the literal word 'potion'. Falls back to the literal keyword
+        set when the optimizer isn't loaded yet.
+        """
+        out: set[str] = set()
+        opt = self.healing_optimizer
+        items = getattr(opt, "_healing_items", None) if opt is not None else None
+        if items:
+            for it in items:
+                name = str(getattr(it, "name", "") or "").strip()
+                aegis = str(getattr(it, "aegis_name", "") or "").strip()
+                iid = str(getattr(it, "id", "") or "")
+                for s in (name, aegis):
+                    if s:
+                        out.add(s.lower())
+                if iid:
+                    out.add(iid)
+            if out:
+                return out
+        # Literal keyword fallback (never blocks a real carried heal).
+        for kw in ("potion", "herb", "apple", "berry", "yggdrasil", "mastela",
+                   "panacea", "royal jelly"):
+            out.add(kw)
+        return out
+
     def _get_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
-                          zeny: int, level: int) -> str | None:
+                          zeny: int, level: int,
+                          inventory: list | None = None) -> str | None:
         """Get the best healing command using the healing optimizer.
         
         Returns 'use <Item Name>' or None if no suitable heal found.
         Falls back to reasonable defaults if optimizer isn't loaded.
         Returns None when no potions are available — caller handles sit/return.
+        `inventory` lets the optimizer prefer carried (free) heal consumables.
         """
         if self.healing_optimizer is not None:
             try:
                 result = self.healing_optimizer.select_healing_command(
                     hp=hp, max_hp=max_hp, sp=sp, max_sp=max_sp,
                     zeny=zeny, level=level, prefer_hp=True,
+                    inventory=inventory,
                 )
                 if result:
                     return result
             except Exception as e:
                 logger.warning("highfreq_reflex_heal_opt_failed: %s", e)
         
+        # Inventory-aware fallback (AGNOSTIC): pick the carried heal that the
+        # bot actually owns, falling back to the level-appropriate defaults.
+        if inventory:
+            for nm in ("White Potion", "Orange Potion", "Red Potion",
+                       "Green Herb", "Red Herb", "Apple", "Novice Potion"):
+                if any(nm.lower() in str(i.get("name") if isinstance(i, dict) else i).lower()
+                       for i in inventory):
+                    return f"use {nm}"
         # Fallback: use level-appropriate defaults
         # COLD_START buys Red Potion (501) — align fallback with what we actually buy
         # NOTE: This returns a command even if the item isn't in inventory.
@@ -297,19 +363,28 @@ class HighFreqReflex:
             return "use White Potion"  # Best general-purpose heal
     
     def _get_emergency_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
-                                    zeny: int, level: int) -> str | None:
+                                    zeny: int, level: int,
+                                    inventory: list | None = None) -> str | None:
         """Get the best emergency heal command."""
         if self.healing_optimizer is not None:
             try:
                 result = self.healing_optimizer.select_healing_command(
                     hp=hp, max_hp=max_hp, sp=sp, max_sp=max_sp,
                     zeny=zeny, level=level, prefer_hp=True,
+                    inventory=inventory,
                 )
                 if result:
                     return result
             except Exception as e:
                 logger.warning("highfreq_reflex_emergency_opt_failed: %s", e)
         
+        # Emergency: prefer carried heal if available.
+        if inventory:
+            for nm in ("White Potion", "Orange Potion", "Red Potion",
+                       "Green Herb", "Red Herb", "Apple", "Novice Potion"):
+                if any(nm.lower() in str(i.get("name") if isinstance(i, dict) else i).lower()
+                       for i in inventory):
+                    return f"use {nm}"
         # Fallback: high-level emergency heal
         if level < 40:
             return "use Orange Potion"
@@ -322,7 +397,8 @@ class HighFreqReflex:
                       aggro_count: int, is_dead: bool, is_town: bool,
                       has_potions: bool, current_map: str,
                       zeny: int = 0, level: int = 1,
-                      reflex_pipeline: object | None = None) -> str | None:
+                      reflex_pipeline: object | None = None,
+                      inventory: list | None = None) -> str | None:
         """Check vitals and return an action command if needed.
         
         Called from PDCA loop's snapshot processing — NOT from the async task.
@@ -384,7 +460,7 @@ class HighFreqReflex:
         _critical_hp = hp_pct <= thresholds.get("critical_hp_pct", 0.15)
         _heal_cmd: str | None = None
         if has_potions and hp_pct <= thresholds.get("emergency_potion_hp_pct", 0.30) and not _critical_hp:
-            _heal_cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level)
+            _heal_cmd = self._get_emergency_heal_command(hp, max_hp, sp, max_sp, zeny, level, inventory=inventory)
             if _heal_cmd:
                 with self._lock:
                     self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
@@ -438,7 +514,7 @@ class HighFreqReflex:
                 with self._lock:
                     self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                     self._stats["actions"] += 1
-                cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level)
+                cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level, inventory=inventory)
                 logger.info("highfreq_reflex: bot=%s heal=%s hp=%.0f%%", bot_id, cmd, hp_pct * 100)
                 if reflex_pipeline is not None:
                     reflex_pipeline.emit_direct(bot_id, cmd)
@@ -474,7 +550,7 @@ class HighFreqReflex:
             with self._lock:
                 self._cooldown_until[bot_id] = now + self.POTION_COOLDOWN
                 self._stats["actions"] += 1
-            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level) or "sit"
+            cmd = self._get_heal_command(hp, max_hp, sp, max_sp, zeny, level, inventory=inventory) or "sit"
             logger.info("highfreq_reflex: bot=%s sp_heal=%s sp=%.0f%%", bot_id, cmd, sp_pct * 100)
             if reflex_pipeline is not None:
                 reflex_pipeline.emit_direct(bot_id, cmd)
