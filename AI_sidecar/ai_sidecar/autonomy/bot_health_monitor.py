@@ -107,6 +107,19 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
             "source": "health_monitor",
             "metadata": {"reason": "Setting sell NPC for overweight bot"},
         })
+        # Override a broken/misconfigured sell dialog sequence (e.g. the "= c r1 n"
+        # that OpenKore's space-split parser reads with a literal leading '=', which
+        # is NOT a valid TalkNPC token -> "Failed to add NPC talk sequence" and the
+        # sale never sends). Push the canonical c r1 n so a RUNNING bot self-heals
+        # without a process restart.
+        corrections.append({
+            "action_id": f"health_sellsteps_{bot_id}",
+            "kind": "command",
+            "command": "set sellAuto_npc_steps c r1 n",
+            "priority_tier": "tactical",
+            "source": "health_monitor",
+            "metadata": {"reason": "Normalizing sellAuto dialog sequence to valid tokens (c r1 n)"},
+        })
         # Set proper weight if still 0
         corrections.append({
             "action_id": f"health_weightcfg_{bot_id}",
