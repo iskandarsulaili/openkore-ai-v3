@@ -4490,6 +4490,17 @@ class HeuristicService:
             _aa_val_t = "2" if base_level < 10 else "3"
             self._set_config_once(actions, bot_id, "attackAuto", _aa_val_t, "hunting",
                 f"Config audit (town) - attackAuto={_aa_val_t} (level {base_level})")
+            # PIN randomWalk OFF in town (2026-09-14). The field branch leaves
+            # `route_randomWalk 1`; if a bot reaches the vendor to SELL while
+            # randomWalk is still on, OpenKore's own random-walk engine generates
+            # `move` steps that DRAG IT OFF the vendor during the sell burst, the
+            # shop dialog closes (npc_shopid=0), `sell done` fires with no open
+            # shop -> 00CB fail -> zeny 0 forever. My dispatched-move filter can't
+            # stop OpenKore's built-in random-walker — only turning the config off
+            # can. Emitted every town pass (deduped) so it re-arms whenever the
+            # bot returns to town.
+            self._set_config_once(actions, bot_id, "route_randomWalk", "0", "hunting",
+                "Config audit (town) - random walk OFF (deterministic movement in town, bot stays at vendors)")
             # Buy potions immediately if in town with 0 potions (no 30s wait)
             _audit_now = __import__("time").time()
             _audit_town_entry = self._town_entry_time.get(bot_id, _audit_now)
