@@ -1427,6 +1427,26 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             },
         )
         aq.enqueue(bot_id, proposal)
+        # DELIBERATE-TRIP LATCH (2026-09-14): suppress reflex-tier unstuck while the
+        # bot walks to town to sell, otherwise `edge_unstuck` emits a random
+        # `move <hunting zone>` that SUPERSEDES this vendering move (last-write-wins
+        # on the shared move conflict key) -> the bot never reaches the vendor ->
+        # zeny stays 0 forever (live-proven: vendor_move fired 15:59:20 but the
+        # dispatched command was `move prt_fild05` from edge unstuck).
+        try:
+            _edge_h = None
+            _bus_v = (
+                getattr(runtime_state, "integration_bus", None)
+                or getattr(runtime_state, "_integration_bus", None)
+                or getattr(getattr(runtime_state, "highfreq_reflex", None), "integration_bus", None)
+            )
+            if _bus_v is not None:
+                _edge_h = getattr(_bus_v, "_edges", None)
+            if _edge_h is not None and hasattr(_edge_h, "mark_trip"):
+                _edge_h.mark_trip(bot_id, 120.0)
+                _log.debug("vendor_trip_latch_set: bot=%s (120s)", bot_id)
+        except Exception:
+            pass
         _log.info("vendor_move: bot=%s target=%s weight=%.0f%%", bot_id, town_map, weight_ratio * 100)
         return 1
     except Exception:

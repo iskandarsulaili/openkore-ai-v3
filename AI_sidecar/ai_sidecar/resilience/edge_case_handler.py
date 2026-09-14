@@ -167,6 +167,12 @@ class EdgeCaseHandler:
         # Protected by self._lock
         self._last_position: dict[str, tuple[float, float]] = {}
         self._last_move_time: dict[str, datetime] = {}
+        # DELIBERATE-TRIP LATCH (2026-09-14): monotonic deadline per bot while an
+        # intentional trip (town-sell / job-change / cold-start) is in flight.
+        # While set, the reflex-tier unstuck handler must NOT emit a random
+        # `move <hunting zone>` (it supersedes the tactical trip move -> the bot
+        # never reaches the vendor -> zeny 0 forever).
+        self._trip_until: dict[str, float] = {}
         self._portal_attempts: dict[str, int] = {}
         self._death_count: dict[str, int] = {}
         # Rolling-window death tracking (2026-08-28): death timestamps per bot,
@@ -281,6 +287,25 @@ class EdgeCaseHandler:
                 elapsed = (now - prev_time).total_seconds()
                 if elapsed >= self._unstuck_timeout_s:
                     map_name = str(bot_state.get("map", bot_state.get("position", {}).get("map", "")))
+                    # DELIBERATE-TRIP GUARD (2026-09-14): never "unstuck" a bot that is
+                    # mid-waypoint of an intentional trip. This handler is REFLEX tier,
+                    # so its `move <random hunting zone>` SUPERSEDES the tactical
+                    # town-sell `move prontera` (live: vendor_move fired at 15:59:20 but
+                    # the dispatched command was `move prt_fild05` from edge unstuck ->
+                    # the bot never reached the vendor -> zeny 0 forever). A stuck
+                    # DURING a trip is just a slow waypoint; the trip owner re-issues.
+                    _trip_active = bool(
+                        bot_state.get("trip_active")
+                        or bot_state.get("deliberate_trip")
+                        or bot_state.get("vendor_trip")
+                        or str(bot_state.get("state", "")).upper() in ("SELL", "JOB_CHANGE", "COLD_START")
+                        or self.trip_in_progress(bot_id)
+                    )
+                    if _trip_active:
+                        self._last_move_time[bot_id] = now
+                        _log.info("edge_unstuck_skipped bot=%s (deliberate trip active, state=%s)",
+                                  bot_id, bot_state.get("state"))
+                        return None
                     # AI-driven: pick a destination near the current map
                     target = self._pick_random_destination(map_name, bot_state)
                     self._last_move_time[bot_id] = now  # reset timer
@@ -313,8 +338,34 @@ class EdgeCaseHandler:
             candidates.insert(0, current_map)  # try current map first
         return random.choice(candidates)
 
-    # ── Handler: INVENTORY_FULL ─────────────────────────────────────────────
+    # ── Deliberate-trip latch (2026-09-14) ──────────────────────────────────
 
+    def mark_trip(self, bot_id: str, seconds: float = 90.0) -> None:
+        """Mark an intentional trip (town-sell / job-change) as in flight.
+
+        While the latch is live the reflex-tier unstuck handler will not emit a
+        random hunting-zone move, so the tactical trip move survives the action
+        queue's move conflict (last-write-wins)."""
+        import time as _t
+        with self._lock:
+            self._trip_until[bot_id] = _t.monotonic() + max(1.0, float(seconds))
+
+    def clear_trip(self, bot_id: str) -> None:
+        with self._lock:
+            self._trip_until.pop(bot_id, None)
+
+    def trip_in_progress(self, bot_id: str) -> bool:
+        import time as _t
+        with self._lock:
+            until = self._trip_until.get(bot_id)
+            if until is None:
+                return False
+            if _t.monotonic() >= until:
+                self._trip_until.pop(bot_id, None)
+                return False
+            return True
+
+    # ── Handler: INVENTORY_FULL ─────────────────────────────────────────────
     def handle_inventory_full(self, bot_id: str, bot_state: dict[str, Any]) -> ActionProposal | None:
         """Detect weight > 85 % → queue return-to-town sell action."""
         inv = bot_state.get("inventory", bot_state.get("vitals", {}))
