@@ -6105,15 +6105,24 @@ class HeuristicService:
                 _jc_cross_cost = 500  # Kafra/airship to any island town; conservative
                 # healthy + affordable -> prioritize job change
                 _jc_affordable = _jc_zeny >= _jc_cross_cost or _jc_near_guild
+                # BROKE-AFFORDABILITY DEFER (2026-09-14): a broke bot (zeny<500)
+                # NOT already on the guild map must NEVER emit the guild move —
+                # the queue is last-write-wins on `move`, so `move geffen_in`
+                # supersedes the broke-sell `move prontera` and the bot never
+                # walks to town to sell (sell->zeny stays 0 -> job change deadlock,
+                # live-proven 13:00-13:06 on testbot99). This defer applies
+                # REGARDLESS of survival_strategy (which may be unset -> ""):
+                # broke + not at guild = defer, emit the SELL move instead.
+                _jc_broke_defer = (not _jc_affordable) and _jc_zeny < _jc_cross_cost and not _jc_near_guild
                 if _jc_surv not in ("level_up_first", "fly_wing_escape"):
-                    _jc_defer = False           # conscious tier allows job change
+                    _jc_defer = _jc_broke_defer   # conscious tier allows job change, but broke still can't cross
                 elif _jc_hp_now >= 0.90 and _jc_affordable:
                     _jc_defer = False           # healthy + can cross -> job change now
                 else:
                     # fragile OR broke: hold the conscious safety decision, farm.
                     # A broke bot must farm (and sell) until it can afford the
                     # crossing — NOT suicide-walk. Char-agnostic.
-                    _jc_defer = True
+                    _jc_defer = True or _jc_broke_defer
                     if _jc_hp_now >= 0.90 and not _jc_affordable and _jc_zeny < _jc_cross_cost:
                         logger.info(
                             "[job_change] %s: hp=%.2f zeny=%d<cross %dz -> deferring (farm to afford crossing)",
