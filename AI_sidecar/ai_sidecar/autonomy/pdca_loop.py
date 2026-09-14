@@ -365,11 +365,16 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["map_known"] = bool(latest.get("map_known", False))
                         inv = latest.get("inventory") or {}
                         v = latest.get("vitals") or {}
-                        signals["weight_ratio"] = float(
-                            inv.get("weight_ratio")
-                            or v.get("weight_ratio")
-                            or 0.0
-                        )
+                        # weight_ratio may be absent on the bridge snapshot;
+                        # compute it from weight/weight_max as an authoritative
+                        # fallback so a broke-novice sell trigger sees its REAL load.
+                        _wr = inv.get("weight_ratio") or v.get("weight_ratio") or 0.0
+                        if not _wr:
+                            _wm = inv.get("weight_max") or v.get("weight_max") or 0
+                            _w = inv.get("weight") or v.get("weight") or 0
+                            if _wm:
+                                _wr = _w / _wm
+                        signals["weight_ratio"] = float(_wr or 0.0)
                         prog = latest.get("progression") or {}
                         signals["skills"] = [s.get("skill_id", "") for s in (latest.get("skills", []) or []) if isinstance(s, dict)]
                         signals["base_level"] = int(prog.get("base_level", 1) or 1)
@@ -533,11 +538,13 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["map_known"] = bool(getattr(latest, "map_known", False))
                         inv = getattr(latest, "inventory", None) or {}
                         v = getattr(latest, "vitals", None) or {}
-                        signals["weight_ratio"] = float(
-                            getattr(inv, "weight_ratio", 0.0)
-                            or getattr(v, "weight_ratio", 0.0)
-                            or 0.0
-                        )
+                        _wr = getattr(inv, "weight_ratio", 0.0) or getattr(v, "weight_ratio", 0.0) or 0.0
+                        if not _wr:
+                            _wm = getattr(inv, "weight_max", 0) or getattr(v, "weight_max", 0) or 0
+                            _w = getattr(inv, "weight", 0) or getattr(v, "weight", 0) or 0
+                            if _wm:
+                                _wr = _w / _wm
+                        signals["weight_ratio"] = float(_wr or 0.0)
                         prog = getattr(latest, "progression", None) or {}
                         raw_skills = getattr(latest, "skills", []) or []
                         signals["skills"] = [s.get("skill_id", "") for s in raw_skills if isinstance(s, dict)]
@@ -1269,6 +1276,11 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 or vit.get("weight_ratio")
                 or 0.0
             )
+            if not weight_ratio:
+                _wm = inv.get("weight_max") or vit.get("weight_max") or 0
+                _w = inv.get("weight") or vit.get("weight") or 0
+                if _wm:
+                    weight_ratio = _w / _wm
             map_name = str(latest.get("map", latest.get("position", {}).get("map", "")) or "")
         else:
             inv = getattr(latest, "inventory", None) or {}
