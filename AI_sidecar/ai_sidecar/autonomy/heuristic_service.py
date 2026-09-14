@@ -5362,7 +5362,18 @@ class HeuristicService:
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_sell_x} {_sell_y}",
                         confidence=0.95, domain="economy",
-                        reason=f"Weight {weight:.0%} - walk to Tool Dealer to sell junk",
+                        reason="Weight {weight:.0%} - walk to Tool Dealer to sell junk",
+                    ))
+                    # PIN randomWalk OFF during the sell visit (2026-09-14).
+                    # The field branch sets `route_randomWalk 1`; if it stays on while
+                    # the bot is at the vendor, OpenKore random-walks AWAY mid-burst,
+                    # the shop dialog closes (npc_shopid=0), `sell done` fires with no
+                    # open shop -> 00CB fail -> zeny 0 forever. The bot must stand
+                    # still at the vendor until `sell done` finalizes the sale.
+                    actions.append(HeuristicAction(
+                        kind="command", command="set route_randomWalk 0",
+                        confidence=0.92, domain="economy",
+                        reason="Disable random walk during the sell visit so the bot stays at the vendor until the sale finalizes",
                     ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"talknpc {_sell_x} {_sell_y} c r1 n",
