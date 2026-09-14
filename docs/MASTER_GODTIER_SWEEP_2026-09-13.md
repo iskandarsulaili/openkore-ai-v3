@@ -245,4 +245,26 @@ Fixed + committed + verified live this session (each with a probe/log-verified r
 - [x] **cd9653ac6 broke job-eligible bot sells to fund crossing.** Hunting-branch job-change gate fired `move <guild>` for any eligible novice + EARLY-RETURNED before the broke-sell trigger → a broke eligible bot never sold. Added affordability defer (mirror macro required_zeny=500).
 - [x] **4e71629fb broke bot no longer emits competing guild move.** Probe showed heuristic emitted BOTH `move prontera` (broke-sell) AND `move geffen_in` (job-change) same assessment; move is LAST-WRITE-WINS so the guild move superseded the sell move → never walked to town. Root cause: affordability gate only deferred when survival_strategy in (level_up_first/fly_wing_escape), but it's unset("") → defer=False bypassed affordability. Added `_jc_broke_defer` regardless of survival_strategy. PROBE AFTER: only `[progression] move prontera (0.99)`.
 
-### RESIDUAL (next round, LIVE-seen 13:23-13:25): bot REACHES SELL state + opens vendor dialog (talknpc 105 87 c r1 n, `talk resp 0`), but a competing `move` (to 96,129, away from vendor 105,87) still drags it off BEFORE the sell burst finalizes → no 00C9 → zeny 0. Same immobilize-at-vendor class as 90925031d/b88781df1 but a move is still leaking through the SELL single-routing filter. Verify which move emitter survives the filter + suppress it (routing.py edge/farm move or pdca edge domain re-lock).
+### RESIDUAL 1 (FIXED 3a2aec4af): bridge snapshot has NO inventory_items/progression.
+The SELL pass `_inv_items` was [] (live snapshot has no `inventory_items` key;
+`progression` is None) -> dialog opened but ZERO `sell <id>` emitted. Fixed
+pdca signal builder: inventory_items falls back to inventory.items;
+base_level -> identity; zeny -> economy/inventory.zeny.
+
+### RESIDUAL 2 (FIXED f550b4211): reflex heal rules emitted unowned potions.
+Live HP=59/275 stall: rule_engine emergency_heal_potion/emergency_red_potion
+hardcode `use red_potion`/`use orange_potion`; a broke bot carrying only
+herbs/Apple got "Error in use item" every cycle -> never healed -> couldn't
+complete a sell. Fixed: `_resolve_reflex_heal_command` rewrites heal rules to
+the best CARRIED heal (or suppresses with no carry). Probe verified 4 cases.
+
+### RESIDUAL 3 (FIXED 0431b53b6) — THE REAL SURVIVAL ROOT CAUSE: HP/SP key-shape drift.
+`_vitals.get("max_hp")` but the snapshot emits `hp_max` -> `_max_hp=1` while
+`_hp=24` -> hp_ratio=2400% -> reflex believed FULL HP -> NEVER healed -> bot sat
+at HP 24/275 until death (live-proven). Fixed at 4 sites: both PDCA reflex blocks
++ signal builder + BotStateSnapshot branch (accept AND export BOTH spellings).
+LIVE-PROVEN AFTER FIX: reflex logs `sit_rest hp=100%` (real ratio) and the bot's
+HP recovered 24 -> 140 -> 145 -> 147 -> 150/275 (was frozen at 24 before).
+
+### RESIDUAL 4 (NEXT): with survival fixed + inventory/heal wired, re-observe the
+full sell -> 00C9 -> zeny>0 chain on a healthy bot.
