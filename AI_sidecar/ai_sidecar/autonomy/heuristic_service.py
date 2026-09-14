@@ -5413,9 +5413,37 @@ class HeuristicService:
                 ))
             total_confidence = 0.90
             top_domain = "economy"
+            # ── SELL SINGLE-ROUTING FILTER (2026-09-14) ──
+            # `actions` accumulates EVERY domain's emissions in this assess pass
+            # (cold-start/hunting/supplementary append `set lockMap <field>`,
+            # `navigate`, `mon_control`, `ai auto`, attack config BEFORE the state
+            # dispatch). When state==SELL, those field-routing commands are
+            # already in the list and get dispatched alongside the vendor
+            # sequence — the bot obeys the lockMap pull back to the field and
+            # never reaches the vendor (the sell->zeny deadlock). Drop the
+            # field-drag commands here so ONLY the sell sequence survives.
+            _sell_filtered: list[HeuristicAction] = []
+            for _sa in actions:
+                _sc = str(getattr(_sa, "command", "") or "").strip()
+                _low_sa = _sc.lower()
+                _mt = _low_sa.split()
+                # Keep the vendor walk (move <x> <y>, numeric coords); drop the rest.
+                if _low_sa.startswith("move ") and len(_mt) == 3 and _mt[1].isdigit():
+                    _sell_filtered.append(_sa)
+                    continue
+                if (
+                    _low_sa.startswith("set lockmap")
+                    or _low_sa.startswith("navigate ")
+                    or _low_sa.startswith("mon_control ")
+                    or _low_sa == "ai auto"
+                    or _low_sa.startswith("set attack")
+                    or _low_sa.startswith("move ")  # bare "move prt_fild05" field name
+                ):
+                    continue
+                _sell_filtered.append(_sa)
             assessment = HeuristicAssessment(
-                horizon=horizon, actions=actions, confidence=total_confidence,
-                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                horizon=horizon, actions=_sell_filtered, confidence=total_confidence,
+                actionable=len(_sell_filtered) > 0, top_domain=top_domain, signals=dict(signals),
             )
             self._last_assessment[bot_id] = assessment
             return assessment
