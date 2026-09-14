@@ -167,15 +167,24 @@ class EconomyDomain(BaseDomain):
                 reason=f"Weight {weight:.0%} - {_vendor_cmd} to sell junk",
             ))
         else:
-            # No NPC in the live actor list (or no npc_discovery): let the
-            # native sellAuto trip handle routing via its configured
-            # sellAuto_npc (which is resolved by GameKnowledgeService into a
-            # real location). This avoids emitting a hardcoded coordinate.
-            actions.append(HeuristicAction(
-                kind="command", command="ai sellAuto",
-                confidence=0.85, domain="economy",
-                reason=f"Weight {weight:.0%} - route to configured sell NPC",
-            ))
+            # No NPC in the live actor list (or no npc_discovery): route to the
+            # data-driven town vendor so the manual sell dialog can open. We do
+            # NOT use 'ai sellAuto' — native OpenKore sellAuto is unusable with
+            # shop-type vendors (needs $ai_v{npc_talk}{talk}='sell', which shop
+            # NPCs never set: Receive.pm sets 'buy_or_sell'), so it silently
+            # "completes" without sending a 00C9. Instead, walk to the vendor
+            # (resolved AGNOSTICALLY from the live actor list next cycle, or the
+            # knowledge-DB fact) and let the manual SELL emitter do the sale.
+            _vendor = service._get_npc("sell", map_name) or service._get_npc("tool_dealer", map_name)
+            _vx = int((_vendor or {}).get("x", 0) or 0)
+            _vy = int((_vendor or {}).get("y", 0) or 0)
+            if _vx and _vy:
+                actions.append(HeuristicAction(
+                    kind="command", command=f"move {_vx} {_vy}",
+                    confidence=0.85, domain="economy",
+                    reason=f"Weight {weight:.0%} - walk to sell NPC at {_vx},{_vy} (data-driven fact)",
+                ))
+            # else: no vendor known yet; next cycle retries discovery.
         # Auto-sell known junk
         _junk_found = False
         for _item_entry in inventory:
@@ -343,7 +352,7 @@ class EconomyDomain(BaseDomain):
     ) -> None:
         """Set auto-sell config on hunting maps."""
         service._set_config_once(
-            actions, bot_id, "sellAuto", "1", "economy",
+            actions, bot_id, "sellAuto", "0", "economy",
             "Auto-sell loot when inventory full",
         )
         service._set_config_once(

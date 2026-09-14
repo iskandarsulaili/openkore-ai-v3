@@ -4128,7 +4128,7 @@ class HeuristicService:
                     if _shop_npc:
                         self._set_config_once(actions, bot_id, "buyAuto_npc", _shop_npc, "economy",
                             f"Buy potions at {_safe_town_buy} town shop (learned shop_npc)");
-                    self._set_config_once(actions, bot_id, "sellAuto", "1", "economy",
+                    self._set_config_once(actions, bot_id, "sellAuto", "0", "economy",
                         "Cold-start: auto-sell loot to fund potions")
         except Exception:
             pass
@@ -4292,7 +4292,7 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
                 "Config audit - never sit idle")
             # ── SELL CONFIG: auto-sell when overweight ──
-            self._set_config_once(actions, bot_id, "sellAuto", "1", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto", "0", "hunting",
                 "Config audit - auto-sell loot when inventory full")
             self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
                 "Config audit - Tool Dealer in Prontera")
@@ -4351,7 +4351,7 @@ class HeuristicService:
             self._set_config_once(actions, bot_id, "sitAuto_idle", "0", "hunting",
                 "Config audit - never sit idle")
             # ── SELL CONFIG: auto-sell when overweight ──
-            self._set_config_once(actions, bot_id, "sellAuto", "1", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto", "0", "hunting",
                 "Config audit - auto-sell loot when inventory full")
             self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
                 "Config audit - Tool Dealer in Prontera")
