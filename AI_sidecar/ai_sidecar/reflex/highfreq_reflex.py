@@ -206,7 +206,9 @@ class HighFreqReflex:
                     level = int(snapshot.get("base_level", snapshot.get("progression", {}).get("base_level", 1)) or 1)
                     aggro_count = int(snapshot.get("combat", {}).get("aggro_count", snapshot.get("aggro_count", 0)))
                     current_map = str(snapshot.get("map", snapshot.get("position", {}).get("map", "")) or "")
-                    inv_items = snapshot.get("inventory_items", snapshot.get("inventory", {}).get("items", []))
+                    inv_items = snapshot.get("inventory_items")
+                    if not isinstance(inv_items, list):
+                        inv_items = snapshot.get("inventory", {}).get("items", [])
                     if isinstance(inv_items, list):
                         _heal_names = self._heal_capable_names()
                         for item in inv_items:
@@ -240,7 +242,10 @@ class HighFreqReflex:
                     prog = getattr(snapshot, "progression", None)
                     if prog:
                         level = int(getattr(prog, "base_level", 1) or 1)
-                    inv_items = getattr(snapshot, "inventory_items", []) or []
+                    inv_items = getattr(snapshot, "inventory_items", None)
+                    if not isinstance(inv_items, list):
+                        _inv_attr = getattr(snapshot, "inventory", None)
+                        inv_items = (getattr(_inv_attr, "items", None) or []) if _inv_attr is not None else []
                     _heal_names = self._heal_capable_names()
                     for item in inv_items:
                         name = getattr(item, "name", "") if not isinstance(item, dict) else item.get("name", "")

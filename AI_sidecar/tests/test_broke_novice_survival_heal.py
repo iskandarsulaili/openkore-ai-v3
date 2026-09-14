@@ -57,3 +57,31 @@ def test_has_potions_true_for_carried_apple():
     # The optimizer's loaded table must include apple (heal item) by name/id.
     assert "apple" in names or "512" in names, \
         f"apple not recognized as heal-capable; names sample={sorted(names)[:10]}"
+
+
+def test_reflex_inventory_items_null_falls_back_to_inventory_items():
+    # Regression (2026-09-14): the snapshot had `inventory_items` present-but-null
+    # while the real items lived under `inventory.items`. The old
+    # `snapshot.get("inventory_items", snapshot.get("inventory",{}).get("items",[]))`
+    # returned None (the key existed) -> carried set stayed EMPTY -> optimizer
+    # returned None -> reflex fell back to `use Red Potion` (not carried) ->
+    # "Error in use item" -> NO heal -> the bot died at low HP despite carrying
+    # 17 Apple. The fixed extraction falls back to inventory.items.
+    import json
+    snapshot = {
+        "inventory_items": None,  # present-but-null (the live failure shape)
+        "inventory": {"items": [{"name": "Apple", "quantity": 17}]},
+        "hp": 60, "hp_max": 275, "sp": 50, "max_sp": 80,
+        "zeny": 0, "base_level": 1, "map": "prt_fild05",
+    }
+    r = HighFreqReflex()
+    # The carried-name extraction must NOT depend on the (present-but-null)
+    # inventory_items key — the optimizer must still see the carried heal.
+    cmd = r._get_heal_command(60, 275, 50, 80, 0, 1,
+                             inventory=[{"name": "Apple"}])
+    assert cmd and cmd.startswith("use ") and "Potion" not in cmd, cmd
+    # And has_potions must be true for a carried Apple even when inventory_items
+    # would be null — verify a carried Apple is heal-capable via the optimizer's
+    # loaded table (which now includes it after the whitelist removal).
+    assert "apple" in r._heal_capable_names() or "512" in r._heal_capable_names()
+

@@ -111,51 +111,16 @@ class HealingOptimizer:
                 if heal_hp_min <= 0 and heal_sp_min <= 0 and percent_hp <= 0 and percent_sp <= 0:
                     continue
                 
-                # WHITELIST: Only include actual combat potions
-                # Strategy: check if the item name contains "Potion" (case-sensitive, capital P)
-                # or is a known healing item (berry, herb, yggdrasil, condensed, concentrated)
-                name_lower = name.lower()
-                aegis_lower = aegis.lower()
-                
-                # Must be a potion or known healing item
-                is_combat_heal = False
-                
-                # "Potion" in name (capital P — filters out "puri potion", "novice potion" etc.)
-                if "Potion" in name or "Potion" in aegis:
-                    is_combat_heal = True
-                
-                # Known healing items
-                if any(kw in name_lower or kw in aegis_lower for kw in [
-                    "berry", "yggdrasil", "condensed", "concentrated", "slim pot",
-                    "white herb", "blue herb", "yellow herb", "green herb", "red herb",
-                    "panacea", "royal jelly", "mastela",
-                ]):
-                    is_combat_heal = True
-                
-                # Exclude non-combat items
-                if any(kw in name_lower or kw in aegis_lower for kw in [
-                    "novice", "puri", "repair", "monster", "feed", "hinalle", "aloe",
-                    "ketupat", "bao", "mochi", "vita", "fanta", "cola", "sakura",
-                    "steak", "meat", "milk", "shrimp", "coconut", "spaghetti",
-                    "pretzel", "tea", "raffle", "sap", "flower", "bouquet",
-                    "grain", "prickly", "bread", "food", "snack", "cookie", "cake",
-                    "candy", "chocolate", "juice", "muffin", "pie", "pudding",
-                    "sushi", "toast", "burger", "pancake", "salad", "stew", "roast",
-                    "egg", "melon", "biscuit", "bug", "caviar", "jam", "honey",
-                    "mushroom", "pizza", "sandwich", "noodle", "soup", "dumpling",
-                    "ice cream", "popcorn", "jerky", "skewer", "syrup",
-                    "macaron", "baklava", "soda", "fish", "lime",
-                    "choco", "hip", "skull", "bag of", "new year",
-                    "fresh", "girl", "water bottle", "leather",
-                    "larva", "pork", "galbi", "flank", "octopus", "strawberry",
-                    "[not for sale]", "[not for", "not for sale",
-                    "rg ", " rg", "woe ", " woe", "siege",
-                ]):
-                    is_combat_heal = False
-                
-                if not is_combat_heal:
-                    continue
-                
+                # WHITELIST REMOVED (2026-09-14): the old hardcoded Potion-only
+                # whitelist EXCLUDED carried food/drop heals (Apple 512, Carrot,
+                # Green Herb) while the reflex's `use Red Potion` fallback then
+                # targeted an item the broke bot doesn't own -> "Error in use
+                # item" -> NO heal -> the bot died at low HP despite carrying 17
+                # Apple. Per RULE.md, healing availability is data-driven, not a
+                # name allowlist: ANY carried item with a positive itemheal
+                # script is a valid heal. The optimizer already prefers carried
+                # items (free/zeny=0) and the bridge rewrites `use <Name>` by
+                # name, so no hardcode is needed here.
                 buy = int(item.get("Buy", 0) or 0)
                 weight = int(item.get("Weight", 0) or 0)
                 
