@@ -1388,6 +1388,34 @@ class HeuristicService:
         except Exception:
             return False
 
+    def _deliberate_trip_active(self, bot_id: str) -> bool:
+        """True while an intentional trip (town-sell / job-change) is in flight.
+
+        Reads the shared deliberate-trip latch on the edge handler singleton (set
+        by the PDCA vendor-move emitter). While live, the per-cycle config audit
+        must NOT re-assert `lockMap <farm>` (it PINS the bot to the farm, making
+        the trip move unwinnable -> bot never sells -> zeny 0). Never raises.
+        """
+        try:
+            # prefer the process-wide edge-handler singleton (same instance the
+            # integration bus uses), then any bus/handler attribute on self.
+            _edges = None
+            try:
+                from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler
+                _edges = create_edge_case_handler()
+            except Exception:
+                _edges = None
+            if _edges is None:
+                _ib = getattr(self, "_integration_bus", None)
+                _edges = getattr(_ib, "_edges", None) if _ib is not None else None
+            if _edges is None:
+                _edges = getattr(self, "edge_handler", None)
+            if _edges is not None and hasattr(_edges, "trip_in_progress"):
+                return bool(_edges.trip_in_progress(bot_id))
+        except Exception:
+            pass
+        return False
+
     def _get_npc(self, task_type: str, map_name: str) -> dict | None:
         """Thread-safe NPC lookup - creates new DB connection per call."""
         try:
@@ -3645,11 +3673,25 @@ class HeuristicService:
                     # Lock the bot to its CURRENT farm map so it stays and farms
                     # (not wandering). AGNOSTIC: the map is the bot's actual
                     # current field, never hardcoded.
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"set lockMap {_cs_map}",
-                        confidence=0.99, domain="economy",
-                        reason=f"Cold start step 1 - lockMap to current farm {_cs_map}",
-                    ))
+                    # TRIP-AWARE (2026-09-14): OpenKore `lockMap <farm>` PINS the bot to
+                    # that map. Re-asserting it every cycle made the vendering
+                    # `move prontera` UNWINNABLE -> the bot never left the field ->
+                    # zeny 0 forever (live: only `heuristic_immediate_progression`
+                    # lockMap prt_fild05 dispatched for 5+ min while vendor_move sat in
+                    # the queue). While a deliberate trip (town-sell/job-change) is in
+                    # flight we must NOT re-pin; unlock instead so the trip can route.
+                    if self._deliberate_trip_active(bot_id):
+                        actions.append(HeuristicAction(
+                            kind="command", command="set lockMap 0",
+                            confidence=0.95, domain="economy",
+                            reason="Deliberate trip in flight (town sell) - unlock lockMap so the bot can route to the vendor",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"set lockMap {_cs_map}",
+                            confidence=0.99, domain="economy",
+                            reason=f"Cold start step 1 - lockMap to current farm {_cs_map}",
+                        ))
                     # On the academy farm the map's actual spawns can include Thief Bug and
                     # Pupa — on many servers these give real EXP (Thief Bug ~188, Pupa ~157)
                     # and are low-HP, so ignoring them starves the bot of kills (0 EXP).
