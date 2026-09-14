@@ -284,8 +284,29 @@ Live-verified, each with evidence:
 PROVEN WORKING NOW: bot reaches prontera in state=SELL, edge_unstuck_skipped
 fires, lockMap re-pin count 0, lethal spam 0.
 
-### RESIDUAL 5 (OPEN): `vendor_move target=prontera` is enqueued repeatedly but
-the dispatched move is the bot's own hunt route (`AI: attack route`), so it still
-does not walk to town. Next: the vendering move's priority/tier must beat the
-hunting attack route when a trip is latched (or hunting moves must be suppressed
-outright while the latch is live), then re-observe `sell <id>` -> 00C9 -> zeny>0.
+### RESIDUAL 5 (PROGRESS): trip-dominance + navigate gate shipped.
+Live now: the SELL burst DOES dispatch — `move 105 87` (vendor) +
+`set route_randomWalk 0` + `talknpc 105 87 c r1 n` + `talk cont` all fire, and
+the bot stays in prontera in state=SELL at healthy HP (164/280) instead of being
+dragged back to the farm. Survival also proven: HP 10 -> 140 -> 164 after the
+fallback-heal macro fix (was dying at HP 10 with 15 hostiles).
+
+### RESIDUAL 6 (MOSTLY FIXED): the wrong-vendor root cause was a SEED + READ defect.
+- game_knowledge_db seeded BOTH 'sell' and 'tool_dealer' on prontera at
+  'Gift Merchant#prt' (105,87) — a GIFT shop that cannot buy. Fixed at BOTH ends:
+  seed now uses Tool Dealer (126,76) and `find_npc_for_task` excludes '%gift%'
+  for sell/tool_dealer (the learner kept re-recording the gift merchant).
+- SELL filter dropped the cross-map vendor walk (map-name form) -> buyer on a
+  town interior was unreachable; now kept.
+- junk burst no longer sells the bot's own heal stock (herb/apple/carrot/potion/
+  berry/grape/banana/meat/jelly).
+VERIFIED LIVE: `sell@prontera` and `sell@prt_in` now resolve to Tool Dealer
+(126,76); the SELL burst dispatches `stand -> move 126 76 -> set route_randomWalk
+0 -> talknpc 126 76 c r1 n -> talk cont` (correct buyer, previously a giftshop).
+
+### RESIDUAL 7 (OPEN): `sell <id>` still not appended in the live pass.
+16 junk candidates ARE classified from the live snapshot (Jellopy/Bee Sting/…),
+so the scan works; the burst's `sell <id>` append is not reached on the cycles
+observed (state oscillates farm<->town and the 60s sell cooldown interleaves).
+NEXT: instrument the SELL branch once (log _junk_found + len(_inv_items)) and
+confirm `sell <id>` + `sell done` -> 00C9 -> 00CB=0 -> zeny>0.
