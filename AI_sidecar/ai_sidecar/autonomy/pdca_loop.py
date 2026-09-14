@@ -377,10 +377,27 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["weight_ratio"] = float(_wr or 0.0)
                         prog = latest.get("progression") or {}
                         signals["skills"] = [s.get("skill_id", "") for s in (latest.get("skills", []) or []) if isinstance(s, dict)]
-                        signals["base_level"] = int(prog.get("base_level", 1) or 1)
-                        signals["inventory_items"] = (latest.get("inventory_items", []) or []) or (prog.get("inventory_items", []) or [])
+                        # base_level: fall back to identity.block when progression is
+                        # empty (bridge emits levels under `identity`, progression is
+                        # often None at runtime — live-verified 2026-09-14).
+                        _identity = latest.get("identity") or {}
+                        signals["base_level"] = int(prog.get("base_level", _identity.get("base_level", 1)) or 1)
+                        # inventory_items: the bridge does NOT always emit a top-level
+                        # `inventory_items`; the authoritative carried set lives under
+                        # inventory.items (list of {item_id,name,qty}). Fall back to it so
+                        # the SELL emitter (and heal/gear consumers) see real ids — without
+                        # this, `_inv_items` was [] and the sell burst emitted ZERO
+                        # `sell <id>` even with 26 items carried (live-verified 13:25).
+                        _invn = latest.get("inventory_items", []) or []
+                        if not _invn:
+                            _invn2 = (latest.get("inventory") or {}).get("items", []) or []
+                            _invn = _invn2 if _invn2 else (prog.get("inventory_items", []) or [])
+                        signals["inventory_items"] = _invn
                         signals["has_weapon_in_inventory"] = bool(latest.get("has_weapon_in_inventory", False))
-                        signals["zeny"] = int(prog.get("zeny", 0) or 0)
+                        # zeny: bridge exposes it under economy.zeny / inventory.zeny, not
+                        # progression — fall back so broke-sell / job-change affordability
+                        # see the REAL value (was 0 -> bot never knew it was broke-afflicted).
+                        signals["zeny"] = int(prog.get("zeny") or (latest.get("economy") or {}).get("zeny") or (latest.get("inventory") or {}).get("zeny") or 0)
                         pos = latest.get("position") or {}
                         signals["map"] = str(pos.get("map", "") or "")
                         signals["job_name"] = str(prog.get("job_name", "novice") or "novice")
