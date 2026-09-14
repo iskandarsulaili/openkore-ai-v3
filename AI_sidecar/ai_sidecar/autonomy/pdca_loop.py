@@ -455,8 +455,12 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         # Absolute HP/SP values
                         signals["hp"] = int(v.get("hp", 100) or 100)
                         signals["sp"] = int(v.get("sp", 50) or 50)
-                        signals["max_sp"] = int(v.get("max_sp", 80) or 80)
-                        signals["hp_max"] = int(v.get("hp_max", 1) or 1)
+                        # Snapshot emits hp_max/sp_max (charstatus contract) — export BOTH
+                        # spellings so every consumer (reflex max_hp, domains max_sp) works.
+                        signals["max_sp"] = int(v.get("sp_max", v.get("max_sp", 80)) or 80)
+                        signals["sp_max"] = signals["max_sp"]
+                        signals["hp_max"] = int(v.get("hp_max", v.get("max_hp", 1)) or 1)
+                        signals["max_hp"] = signals["hp_max"]
                         # Job as flat string (domains check signals.get("job", ""))
                         signals["job"] = str(prog.get("job_name", "novice") or "novice")
                         # Level alias
@@ -636,6 +640,9 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["hp"] = int(getattr(v, "hp", 100) or 100)
                         signals["sp"] = int(getattr(v, "sp", 50) or 50)
                         signals["hp_max"] = int(getattr(v, "hp_max", 1) or 1)
+                        signals["max_hp"] = signals["hp_max"]
+                        signals["max_sp"] = int(getattr(v, "sp_max", getattr(v, "max_sp", 80)) or 80)
+                        signals["sp_max"] = signals["max_sp"]
                         signals["job"] = str(getattr(prog, "job_name", "novice") or "novice")
                         signals["level"] = int(getattr(prog, "base_level", 1) or 1)
             except Exception:
@@ -5858,9 +5865,15 @@ class PDCALoop:
                                 if _hf_reflex is not None:
                                     _vitals = _conscious_snap.get("vitals", {})
                                     _hp = int(_vitals.get("hp", 1) or 1)
-                                    _max_hp = int(_vitals.get("max_hp", 1) or 1)
+                                    # KEY-SHAPE FIX (2026-09-14): the runtime snapshot emits
+                                    # `hp_max`/`sp_max` (charstatus contract), NOT `max_hp`/
+                                    # `max_sp`. Reading the wrong key yielded _max_hp=1 ->
+                                    # hp_ratio=2400% -> the reflex believed the bot was at
+                                    # FULL HP -> NEVER healed (live: stuck at HP 24/275 until
+                                    # death). Fall back across BOTH spellings.
+                                    _max_hp = int(_vitals.get("hp_max", _vitals.get("max_hp", 1)) or 1)
                                     _sp = int(_vitals.get("sp", 0) or 0)
-                                    _max_sp = int(_vitals.get("max_sp", 1) or 1)
+                                    _max_sp = int(_vitals.get("sp_max", _vitals.get("max_sp", 1)) or 1)
                                     _aggro = int(_conscious_snap.get("combat", {}).get("aggro_count", 0) or 0)
                                     _is_dead = _hp <= 0
                                     _map = str(_conscious_snap.get("map", "") or "")
@@ -5923,9 +5936,9 @@ class PDCALoop:
                     if isinstance(_conscious_snap, dict) and _conscious_snap:
                         _vitals = _conscious_snap.get("vitals", {})
                         _hp = int(_vitals.get("hp", 1) or 1)
-                        _max_hp = int(_vitals.get("max_hp", 1) or 1)
+                        _max_hp = int(_vitals.get("hp_max", _vitals.get("max_hp", 1)) or 1)
                         _sp = int(_vitals.get("sp", 0) or 0)
-                        _max_sp = int(_vitals.get("max_sp", 1) or 1)
+                        _max_sp = int(_vitals.get("sp_max", _vitals.get("max_sp", 1)) or 1)
                         _map = str(_conscious_snap.get("map", "") or "")
                         _inv = _conscious_snap.get("inventory", {}) or {}
                         _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
