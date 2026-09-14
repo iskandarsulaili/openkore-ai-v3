@@ -4885,7 +4885,7 @@ class HeuristicService:
             # accumulated commands.
             _self_dispatching = str(state).upper() in (
                 "SELL", "WEAPON_BUY", "POTION_BUY", "JOB_CHANGE", "TOWN_HUNT",
-            )
+            ) or self._deliberate_trip_active(bot_id)
             _has_command = any(getattr(a, "kind", "") == "command" for a in actions)
             if _has_command or _self_dispatching:
                 pass
