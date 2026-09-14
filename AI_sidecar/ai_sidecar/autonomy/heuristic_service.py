@@ -2938,7 +2938,7 @@ class HeuristicService:
                                         # reconnected (reconnect_age_s < 15s) so it stabilizes
                                         # in-game first. Purely additive — no state mutation.
                                         _cs_reconn = float(signals.get("reconnect_age_s", 999.0) or 999.0)
-                                        if _cs_reconn >= 15.0:
+                                        if _cs_reconn >= 15.0 and not self._deliberate_trip_active(bot_id):
                                             _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_hunt_map}", confidence=0.85, reason=f"Cold start: academy farm (lvl {_bl}, hunt={_hunt_map}) (post-connect grace)", domain="progression"))
                                         # ── ROOT-CAUSE FIX (A2): inline mon_control re-emission ──
                                         # These `mon_control` commands were emitted EVERY cycle this
