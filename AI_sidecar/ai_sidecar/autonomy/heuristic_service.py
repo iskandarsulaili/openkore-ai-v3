@@ -5353,6 +5353,15 @@ class HeuristicService:
             # Cooldown: only sell every 60s to prevent tight loop
             _sell_now = __import__("time").time()
             _last_sell = self._last_sell_time.get(bot_id, 0)
+            # AGNOSTIC (RULE.md): resolve the sell NPC from the knowledge DB FACT
+            # store (seeded baseline + learned per server), NOT a hardcoded coord.
+            # Must be computed OUTSIDE the cooldown branch: the single-routing
+            # filter below also reads _sell_npc to immobilize at the vendor, and
+            # an unbound _sell_npc on cooldown crashed assess() every cycle
+            # (UnboundLocalError) -> SELL could never dispatch a sale.
+            _sell_npc = self._get_npc("sell", map_name) or self._get_npc("tool_dealer", map_name)
+            _sell_x = int((_sell_npc or {}).get("x", 0) or 0)
+            _sell_y = int((_sell_npc or {}).get("y", 0) or 0)
             if _sell_now - _last_sell < 60:
                 # Sell on cooldown - fall through to TOWN_HUNT
                 pass
@@ -5364,11 +5373,6 @@ class HeuristicService:
                     confidence=0.95, domain="economy",
                     reason="Stand up before walking to Tool Dealer",
                 ))
-                # AGNOSTIC (RULE.md): resolve the sell NPC from the knowledge DB FACT
-                # store (seeded baseline + learned per server), NOT a hardcoded coord.
-                _sell_npc = self._get_npc("sell", map_name) or self._get_npc("tool_dealer", map_name)
-                _sell_x = int((_sell_npc or {}).get("x", 0) or 0)
-                _sell_y = int((_sell_npc or {}).get("y", 0) or 0)
                 if _sell_x and _sell_y:
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_sell_x} {_sell_y}",
