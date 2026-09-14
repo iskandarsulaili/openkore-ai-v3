@@ -354,18 +354,17 @@ class HighFreqReflex:
                 if any(nm.lower() in str(i.get("name") if isinstance(i, dict) else i).lower()
                        for i in inventory):
                     return f"use {nm}"
-        # Fallback: use level-appropriate defaults
-        # COLD_START buys Red Potion (501) — align fallback with what we actually buy
-        # NOTE: This returns a command even if the item isn't in inventory.
-        # The caller (check_and_act) gates on has_potions before calling this.
-        if level < 30:
-            return "use Red Potion"
-        elif level < 60:
-            return "use Orange Potion"
-        elif level < 90:
-            return "use White Potion"
-        else:
-            return "use White Potion"  # Best general-purpose heal
+        # NO UNOWNED-POTION FALLBACK (2026-09-14): the old path here returned
+        # hardcoded "use Red Potion" (level<30) / "use Orange Potion" (<60) /
+        # "use White Potion" even when the bot does NOT own them. On a broke
+        # novice carrying only Apple/Green Herb/Red Herb, that emitted an
+        # "Error in use item" EVERY heal cycle (and its bridge fallback tried
+        # non-usable junk like Yellow Gemstone) — dead bot, no heal, log spam.
+        # Per RULE.md, healing must be data-driven: if NO carried heal matched
+        # above (either the bot owns nothing usable here, or inventory is
+        # empty/stale), return None so the caller's town-return / base-regen
+        # path handles survival instead of wasting a command on an unowned item.
+        return None
     
     def _get_emergency_heal_command(self, hp: int, max_hp: int, sp: int, max_sp: int,
                                     zeny: int, level: int,
@@ -390,13 +389,10 @@ class HighFreqReflex:
                 if any(nm.lower() in str(i.get("name") if isinstance(i, dict) else i).lower()
                        for i in inventory):
                     return f"use {nm}"
-        # Fallback: high-level emergency heal
-        if level < 40:
-            return "use Orange Potion"
-        elif level < 80:
-            return "use White Potion"
-        else:
-            return "use White Potion"
+        # NO UNOWNED-POTION FALLBACK (2026-09-14): same rule as _get_heal_command.
+        # Refuse to emit a potion the bot does not own — the caller's town-return
+        # / base-regen handles survival instead of an "Error in use item" loop.
+        return None
     
     def check_and_act(self, bot_id: str, hp: int, max_hp: int, sp: int, max_sp: int,
                       aggro_count: int, is_dead: bool, is_town: bool,

@@ -10260,7 +10260,8 @@ class PDCALoop:
                 for _it in _inv:
                     _n = str(getattr(_it, "name", "") or "").lower()
                     _i = str(getattr(_it, "id", "") or "")
-                    if "potion" in _n or _i == "569":
+                    if "potion" in _n or "herb" in _n or "apple" in _n or "berry" in _n \
+                       or "novice potion" in _n or _i in ("569", "501", "512", "511", "507", "505", "530", "538"):
                         _has_potions = True
                         # ── SELF-LEARN (agnostic): the bot's REAL potion is observed
                         # from its inventory — seed the server_solutions store so
@@ -10842,7 +10843,11 @@ class PDCALoop:
                     _inv_names.append(_n or _i)
                     if "knife" in _n or "sword" in _n or "weapon" in _n or "dagger" in _n or "mace" in _n or "bow" in _n or "rod" in _n:
                         _has_weapon = True
-                    if "potion" in _n or _i in ("569", "501"):
+                    # Data-driven heal check: carried item heals if it's a known
+                    # heal-capable item name (Potion/herb/food/berry) OR its id is a
+                    # heal item. Matches Apple(512)/Green Herb(511)/Red Herb(507)/etc.
+                    if "potion" in _n or "herb" in _n or "apple" in _n or "berry" in _n \
+                       or "novice potion" in _n or _i in ("569", "501", "512", "511", "507", "505", "530", "538"):
                         _has_potions = True
                 if getattr(_snap_obj, "has_weapon_in_inventory", False):
                     _has_weapon = True
