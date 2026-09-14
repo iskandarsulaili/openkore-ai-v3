@@ -3028,7 +3028,7 @@ class HeuristicService:
                                     _cs_field_map = ""
                                 if not _cs_field_map and self.map_spawns:
                                     _cs_field_map = sorted(self.map_spawns.keys())[0]
-                                if _cs_field_map:
+                                if _cs_field_map and not self._deliberate_trip_active(bot_id):
                                     _actions.append(HeuristicAction(kind="command", command=f"set lockMap {_cs_field_map}", confidence=0.75, reason=f"Cold start: field at lvl {_bl} ({_cs_field_map})", domain="progression"))
                                     for _fm, _fc, _fr in self.map_spawns.get(_cs_field_map, [])[:5]:
                                         _actions.append(HeuristicAction(kind="command", command=f"mon_control {_fm}\t0 1 1", confidence=0.6, reason=f"Farm {_fm} (real EXP)", domain="progression"))
