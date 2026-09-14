@@ -5533,11 +5533,6 @@ class HeuristicService:
                 # names/IDs — an item is junk if its vendor value is negligible.
                 _inv_items = signals.get("inventory_items", []) or []
                 _junk_found = False
-                # DIAGNOSTIC (2026-09-14): the SELL burst is emitted only when the
-                # junk scan finds candidates; log the inputs once per SELL visit so
-                # a silent empty-scan is visible in the sidecar log.
-                logger.info("[auto_sell_probe] bot=%s inv_items=%d map=%s",
-                            bot_id, len(_inv_items), map_name)
                 try:
                     from ai_sidecar.knowledge_loader import get_items
                     _item_db = {str(_it.get("Id", "")): _it for _it in get_items()}
@@ -5558,7 +5553,18 @@ class HeuristicService:
                         _carried_id = str(_item_entry.get("item_id") or _item_entry.get("id") or "").strip()
                         _carried_name = str(_item_entry.get("name") or "").strip()
                     else:
-                        _carried_name = str(_item_entry).strip()
+                        # ENTITY-SHAPE FIX (2026-09-14): the live snapshot carries
+                        # `InventoryItemDigest` PYDANTIC OBJECTS, not dicts. The old
+                        # `str(_item_entry)` produced the full model repr, so the
+                        # exact-name match never hit and NO item ever classified as
+                        # junk -> `sell <id>` was never emitted -> zeny 0 forever.
+                        _eid = getattr(_item_entry, "item_id", None)
+                        _enm = getattr(_item_entry, "name", None)
+                        if _eid is not None or _enm is not None:
+                            _carried_id = str(_eid or "").strip()
+                            _carried_name = str(_enm or "").strip()
+                        else:
+                            _carried_name = str(_item_entry).strip()
                     # 1) Exact item_id match (authoritative — the id the server uses).
                     _junk_id = None
                     _junk_name = ""
