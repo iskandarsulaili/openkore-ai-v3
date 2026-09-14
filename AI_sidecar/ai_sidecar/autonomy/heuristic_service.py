@@ -4874,14 +4874,20 @@ class HeuristicService:
             # DO NOT DISCARD MEANINGFUL ACTIONS (2026-09-14): this branch is
             # OBSERVABILITY ONLY (the fleet coordinator owns party actions) yet it
             # REPLACED the assessment with 4 `log`-kind actions, DISCARDING any real
-            # command actions already accumulated above (the broke-sell `move <town>`
-            # lives in the hunting branch, the whole SELL burst lives below). Live: a
-            # level-47 bot with joiner_wrong=True fired this every cycle -> the SELL
-            # burst / `sell done` NEVER ran -> zeny stayed 0 forever (and the
-            # broke-sell town-return was silently dropped too).
-            # Only short-circuit when there is nothing actionable to lose.
-            _has_command = any(a.kind == "command" for a in actions)
-            if _has_command:
+            # command actions already accumulated above AND (worse) suppressing the
+            # SELL burst that lives BELOW this point (state==SELL accumulates its
+            # actions later, so at this moment `actions` may hold NO commands while
+            # the bot is standing at the vendor). Live: a level-47 bot with
+            # joiner_wrong=True in state=SELL returned here every cycle -> zero
+            # `sell <id>` ever dispatched -> no 00C9 -> zeny 0 forever.
+            # So: never short-circuit for states that own their own dispatch
+            # (SELL / WEAPON_BUY / JOB_CHANGE / TO_buy etc.), and never discard
+            # accumulated commands.
+            _self_dispatching = str(state).upper() in (
+                "SELL", "WEAPON_BUY", "POTION_BUY", "JOB_CHANGE", "TOWN_HUNT",
+            )
+            _has_command = any(getattr(a, "kind", "") == "command" for a in actions)
+            if _has_command or _self_dispatching:
                 pass
             else:
                 assessment = HeuristicAssessment(
