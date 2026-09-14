@@ -527,9 +527,38 @@ class ReflexRuleEngine:
 
         hp = self._safe_float(facts.get("operational.hp"))
         hp_max = self._safe_float(facts.get("operational.hp_max"))
-        hp_ratio = (hp / hp_max) if hp_max > 0 else 1.0
+        # KEY-SHAPE FIX (2026-09-14): the runtime/ingest payload emits `hp_max`
+        # (charstatus contract) while this builder reads `max_hp`/`operational.hp_max`.
+        # A mismatch left hp_max=0 -> hp_ratio fell back to 1.0 or, worse, the
+        # event payload's own ratio won and the survival rules mis-fired (live: a
+        # bot at HP 153/280 IN TOWN spammed `lethal_escape_teleport` — which
+        # requires hp_ratio<=0.18 AND in_combat — flooding the action queue and
+        # starving the SELL burst). Prefer the authoritative charstatus ratio and
+        # accept BOTH hp_max spellings before falling back.
+        if hp <= 0 or hp_max <= 0:
+            hp = self._safe_float(facts.get("operational.hp")
+                                  or facts.get("state.vitals.hp")
+                                  or facts.get("vitals.hp"))
+            hp_max = self._safe_float(facts.get("operational.hp_max")
+                                      or facts.get("operational.max_hp")
+                                      or facts.get("state.vitals.hp_max")
+                                      or facts.get("state.vitals.max_hp")
+                                      or facts.get("vitals.hp_max")
+                                      or facts.get("vitals.max_hp"))
+        _cs_ratio = facts.get("charstatus.hp_ratio")
+        if isinstance(_cs_ratio, (int, float)) and 0.0 < float(_cs_ratio) <= 1.0:
+            # authoritative when the ingest supplied a sane ratio
+            hp_ratio = float(_cs_ratio)
+        else:
+            hp_ratio = (hp / hp_max) if hp_max > 0 else 1.0
         facts["vitals.hp_ratio"] = hp_ratio
-        facts["combat.is_in_combat"] = bool(facts.get("operational.in_combat"))
+        # combat must be real: in town / non-combat events must never gate the
+        # lethal-escape rule (its whole point is an IN-COMBAT emergency).
+        facts["combat.is_in_combat"] = bool(
+            facts.get("operational.in_combat")
+            or facts.get("charstatus.in_combat")
+            or facts.get("combat.in_combat")
+        )
         facts["inventory.overweight_ratio"] = facts.get("inventory.overweight_ratio")
         facts["social.private_messages_5m"] = facts.get("social.private_messages_5m", 0)
         facts["risk.death_risk_score"] = facts.get("risk.death_risk_score", 0.0)
