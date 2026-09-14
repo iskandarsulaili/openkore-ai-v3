@@ -5533,6 +5533,11 @@ class HeuristicService:
                 # names/IDs — an item is junk if its vendor value is negligible.
                 _inv_items = signals.get("inventory_items", []) or []
                 _junk_found = False
+                # DIAGNOSTIC (2026-09-14): the SELL burst is emitted only when the
+                # junk scan finds candidates; log the inputs once per SELL visit so
+                # a silent empty-scan is visible in the sidecar log.
+                logger.info("[auto_sell_probe] bot=%s inv_items=%d map=%s",
+                            bot_id, len(_inv_items), map_name)
                 try:
                     from ai_sidecar.knowledge_loader import get_items
                     _item_db = {str(_it.get("Id", "")): _it for _it in get_items()}
