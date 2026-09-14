@@ -4449,24 +4449,17 @@ class HeuristicService:
                             reason="Emergency: critical HP or bag full (overweight) — return to town to sell",
                         ))
 
-            # ── JOB-ELIGIBLE SELL TRIGGER (2026-09-14) ── (OUTSIDE the potion
-            # gate: the gate above is "don't abandon the farm on potion drought",
-            # but a job-eligible broke novice carrying junk MUST return to sell to
-            # fund the job change REGARDLESS of whether it has potions. If this
-            # were inside the gate, a bot carrying a Red Herb (matches "red") would
-            # skip it and farm forever at low weight, never selling — zeny 0,
-            # job-change deadlocked. The state machine already decides SELL when
-            # in town with weight>5%; this mirrors it on the farm side.)
-            _audit_bl = int(signals.get("base_level", 0) or 0)
-            _audit_jl = int(signals.get("job_level", 0) or 0)
-            _audit_job = str(signals.get("job_name", signals.get("job", "novice")) or "novice").lower()
+            # ── BROKE-SELL TRIGGER (2026-09-14) ── (OUTSIDE the potion gate)
+            # A BROKE bot (zeny<500) carrying salable junk (weight>5%) MUST return
+            # to town and sell to fund progression (job change / gear / potions).
+            # The 60s cooldown + the fact that selling drops weight below 5% prevent
+            # town-hopping (after a sale the trigger can't re-fire until the bot
+            # re-accumulates loot). Robust to the fragile job_level signal: we do NOT
+            # gate on eligibility here — converting junk to zeny is sound play for ANY
+            # broke bot, and the in-town state machine already decides SELL at weight>5%.
             _audit_zeny = int(signals.get("zeny", 0) or 0)
             _audit_weight2 = float(signals.get("weight_ratio", 0.0) or 0.0)
-            _audit_first = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
-            _jc_eligible_field = (
-                _audit_job == "novice" and _audit_bl >= 10 and _audit_jl >= 10
-            ) or (_audit_job in _audit_first and _audit_jl >= 50 and _audit_bl >= 50)
-            if _jc_eligible_field and (_audit_zeny < 500) and (_audit_weight2 > 0.05):
+            if (_audit_zeny < 500) and (_audit_weight2 > 0.05):
                 _audit_now2 = __import__("time").time()
                 _audit_last_return2 = self._last_return_to_town.get(bot_id, 0)
                 if _audit_now2 - _audit_last_return2 > 60:
@@ -4474,7 +4467,7 @@ class HeuristicService:
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",
-                        reason="Job-eligible + broke + carrying junk — return to town to sell and fund job change",
+                        reason="Broke (zeny<500) + carrying junk — return to town to sell and fund progression",
                     ))
             # Anti-detection: randomize movement and command pacing per bot
             _audit_seed = hash(bot_id) & 0xFFFFFFFF

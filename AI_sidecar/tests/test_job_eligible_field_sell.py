@@ -37,10 +37,12 @@ def test_job_eligible_broke_field_returns_to_town():
     )
 
 
-def test_non_eligible_low_level_stays_on_field():
-    # base 3 / job 1 -> NOT eligible. move prontera may fire legitimately from
-    # OTHER emitters (cold-start economy), so assert the job-change-specific
-    # reason is ABSENT (i.e. our new field-sell trigger did NOT fire).
+def test_broke_low_level_returns_to_sell():
+    # A broke (zeny<500) bot carrying junk (weight>5%) MUST return to sell — fund
+    # progression regardless of job-eligibility (the job_level signal is fragile/
+    # often defaulted to 1 in the live snapshot, so gating on eligibility would
+    # deadlock the sell->zeny->job-change chain forever). Sell-then-farm is sound
+    # play for ANY broke bot.
     signals = {
         "map": "prt_fild05", "hp": 200, "hp_max": 200, "hp_ratio": 1.0,
         "base_level": 3, "job_level": 1, "job_name": "novice",
@@ -49,7 +51,7 @@ def test_non_eligible_low_level_stays_on_field():
     }
     hs = HeuristicService()
     a = hs.assess(signals, bot_id_override="TestBotA:testbot99")
-    reasons = [act.reason for act in (a.actions or []) if getattr(act, "kind", "") == "command"]
-    assert not any("fund job change" in (r or "") for r in reasons), (
-        f"non-eligible bot must NOT get the job-change field-sell return; reasons={reasons}"
+    cmds = [act.command for act in (a.actions or []) if getattr(act, "kind", "") == "command"]
+    assert any("move prontera" in c for c in cmds), (
+        f"a broke bot carrying junk must return to town to sell; commands={cmds}"
     )
