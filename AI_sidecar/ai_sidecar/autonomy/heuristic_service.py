@@ -5572,6 +5572,13 @@ class HeuristicService:
                         # Junk = resale value below 100z (low-value drops;
                         # a 0-Buy item is non-sellable, skip it).
                         if 0 < _sell_val < 100:
+                            # NEVER sell the bot's own heal/consumable stock — the
+                            # junk burst was selling Green Herb/Red Herb/Apple/
+                            # Carrot (all heal-capable) and starving survival.
+                            if any(_hk in (_it_nm or "").lower() for _hk in
+                                   ("herb", "apple", "carrot", "potion", "berry",
+                                    "grape", "banana", "meat", "jelly")):
+                                continue
                             _junk_id = _carried_id
                             _junk_name = _it_nm or _carried_name
                     # 2) Fallback: EXACT name match (never substring — substring
@@ -5659,8 +5666,16 @@ class HeuristicService:
                     and int(_mt[1]) == _sx
                     and int(_mt[2]) == _sy
                 )
-                if _is_vendor_walk or _low_sa == "move" or _low_sa.startswith("move "):
-                    if _is_vendor_walk:
+                # CROSS-MAP VENDOR WALK (2026-09-14): `move <sell_map>` (a MAP-name
+                # move, e.g. "move prt_in") is part of the sell sequence when the
+                # buyer lives on a town interior — keep it, else the bot can never
+                # reach the shop and `sell <id>` has no open dialog.
+                _is_vendor_map_walk = (
+                    bool(_sell_map)
+                    and _low_sa == f"move {str(_sell_map).lower()}"
+                )
+                if _is_vendor_walk or _is_vendor_map_walk or _low_sa == "move" or _low_sa.startswith("move "):
+                    if _is_vendor_walk or _is_vendor_map_walk:
                         _sell_filtered.append(_sa)
                     # any other move (random-walk step, hunting reposition) drops
                     continue
