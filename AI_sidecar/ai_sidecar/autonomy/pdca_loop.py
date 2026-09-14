@@ -717,6 +717,30 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
             _now = datetime.now(UTC)
             # Cold start actions get reflex priority to avoid starvation by config audit
             _cs_priority = ActionPriorityTier.reflex if (ha.reason or "").startswith("Cold start") else ActionPriorityTier.tactical
+            # TRIP-DOMINANCE (2026-09-14): while a deliberate trip (town-sell /
+            # job-change) is latched, the trip's own commands must OUTRANK the
+            # per-cycle hunting/config churn, otherwise the bot's own hunt route
+            # (`AI: attack route`) keeps it on the farm and it never reaches the
+            # vendor (zeny 0 forever). Promote trip/SELL-domain commands to reflex
+            # tier and DEMOTE competing hunt moves to a low tier for the duration.
+            try:
+                from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler as _cech
+                _trip_live = bool(_cech().trip_in_progress(bot_id))
+            except Exception:
+                _trip_live = False
+            if _trip_live:
+                _low = str(_cmd or "").strip().lower()
+                _is_trip_cmd = (
+                    _low.startswith("move ")
+                    and str(getattr(ha, "domain", "") or "").lower() == "economy"
+                ) or _low.startswith("sell") or _low.startswith("talknpc") or _low.startswith("stand")
+                if _is_trip_cmd:
+                    _cs_priority = ActionPriorityTier.reflex
+                elif _low.startswith("move ") or _low.startswith("set lockmap"):
+                    # competing farm/hunt routing — drop it outright while the
+                    # trip is in flight so it cannot supersede the trip move.
+                    _log.debug("trip_dominance_dropped cmd=%s", _cmd)
+                    continue
             proposal = ActionProposal(
                 action_id=f"heuristic_{horizon}_{ha.domain}_{_t.monotonic_ns()}",
                 kind=ha.kind, command=ha.command or "ai auto",
