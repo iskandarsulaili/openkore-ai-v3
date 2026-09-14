@@ -2597,12 +2597,40 @@ class HeuristicService:
                                         domain="combat",
                                     ))
                                     if _hp_critical and not _died_recent:
-                                        _actions.append(HeuristicAction(
-                                            kind="command", command="use Red Potion",
-                                            confidence=0.90,
-                                            reason=f"Cold start: HP critically low ({_hp_frac:.0%}) — heal to survive the transit run",
-                                            domain="survival",
-                                        ))
+                                        # INVENTORY-AWARE COLD-START HEAL: never emit
+                                        # `use Red Potion` when the bot does NOT carry it
+                                        # (live-proven: gearless novice carrying only
+                                        # herbs spammed `use Red Potion` -> "Error in use
+                                        # item" -> never healed -> died on the transit
+                                        # field, watchdog corpse-loop restart #52 cut off
+                                        # every clean sell cycle). Resolve the best
+                                        # carried potion/herb by name/id, agnostic to
+                                        # server specifics. Independently re-derive the
+                                        # inventory here (do NOT rely on `_inv_items` from
+                                        # an unrelated buy branch that may not run on this
+                                        # path).
+                                        _cs_inv = signals.get("inventory_items") or signals.get("items") or (signals.get("inventory", {}).get("items", []) if isinstance(signals.get("inventory"), dict) else [])
+                                        _cs_heal_cmd = ""
+                                        _cs_heal_names = (
+                                            "White Potion", "Orange Potion", "Red Potion",
+                                            "Novice Potion", "Potion", "Apple", "Green Herb",
+                                            "Red Herb", "Herb",
+                                        )
+                                        for _hi in _cs_heal_names:
+                                            _hi_l = _hi.lower()
+                                            if any(
+                                                _hi_l in str(_e).lower()
+                                                for _e in (_cs_inv or [])
+                                            ):
+                                                _cs_heal_cmd = f"use {_hi}"
+                                                break
+                                        if _cs_heal_cmd:
+                                            _actions.append(HeuristicAction(
+                                                kind="command", command=_cs_heal_cmd,
+                                                confidence=0.90,
+                                                reason=f"Cold start: HP critically low ({_hp_frac:.0%}) — heal with carried item to survive the transit run",
+                                                domain="survival",
+                                            ))
                                         _actions.append(HeuristicAction(
                                             kind="command", command="sit",
                                             confidence=0.60,
