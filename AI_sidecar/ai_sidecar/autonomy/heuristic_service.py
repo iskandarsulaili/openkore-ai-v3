@@ -5470,9 +5470,21 @@ class HeuristicService:
             # filter below also reads _sell_npc to immobilize at the vendor, and
             # an unbound _sell_npc on cooldown crashed assess() every cycle
             # (UnboundLocalError) -> SELL could never dispatch a sale.
+            # CROSS-MAP SEARCH (2026-09-14): the real BUYER often lives in a town
+            # INTERIOR (e.g. prontera's Tool Dealer is on prt_in at 126,76), so a
+            # map-only lookup fell back to a gift shop (which cannot buy) and the
+            # sell burst never had a shop open. Search the town and its interiors.
             _sell_npc = self._get_npc("sell", map_name) or self._get_npc("tool_dealer", map_name)
+            if not _sell_npc:
+                _town = self._resolve_safe_town()
+                _cand = [f"{_town}_in", f"{_town}_in02", f"{_town}_in01", _town]
+                for _cm in _cand:
+                    _sell_npc = self._get_npc("sell", _cm) or self._get_npc("tool_dealer", _cm)
+                    if _sell_npc:
+                        break
             _sell_x = int((_sell_npc or {}).get("x", 0) or 0)
             _sell_y = int((_sell_npc or {}).get("y", 0) or 0)
+            _sell_map = str((_sell_npc or {}).get("map_name", "") or "").strip()
             if _sell_now - _last_sell < 60:
                 # Sell on cooldown - fall through to TOWN_HUNT
                 pass
@@ -5485,6 +5497,15 @@ class HeuristicService:
                     reason="Stand up before walking to Tool Dealer",
                 ))
                 if _sell_x and _sell_y:
+                    # If the buyer is on a DIFFERENT map (town interior such as
+                    # prt_in), walk to that map first — coord-only moves do not
+                    # cross maps, so the burst would otherwise never open a shop.
+                    if _sell_map and _sell_map.lower() != (map_name or "").lower():
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"move {_sell_map}",
+                            confidence=0.95, domain="economy",
+                            reason=f"Buyer ({_sell_npc.get('npc_name')}) is on {_sell_map} - walk there to sell",
+                        ))
                     actions.append(HeuristicAction(
                         kind="command", command=f"move {_sell_x} {_sell_y}",
                         confidence=0.95, domain="economy",
