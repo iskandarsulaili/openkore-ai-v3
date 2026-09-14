@@ -1438,14 +1438,22 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
         # zeny stays 0 forever (live-proven: vendor_move fired 15:59:20 but the
         # dispatched command was `move prt_fild05` from edge unstuck).
         try:
+            # Prefer the process-wide singleton — the SAME instance the edge
+            # handler / heuristic config audit use. A per-runtime bus handler
+            # would be a different object and the latch would be invisible.
             _edge_h = None
-            _bus_v = (
-                getattr(runtime_state, "integration_bus", None)
-                or getattr(runtime_state, "_integration_bus", None)
-                or getattr(getattr(runtime_state, "highfreq_reflex", None), "integration_bus", None)
-            )
-            if _bus_v is not None:
-                _edge_h = getattr(_bus_v, "_edges", None)
+            try:
+                from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler
+                _edge_h = create_edge_case_handler()
+            except Exception:
+                _edge_h = None
+            if _edge_h is None:
+                _bus_v = (
+                    getattr(runtime_state, "integration_bus", None)
+                    or getattr(runtime_state, "_integration_bus", None)
+                    or getattr(getattr(runtime_state, "highfreq_reflex", None), "integration_bus", None)
+                )
+                _edge_h = getattr(_bus_v, "_edges", None) if _bus_v is not None else None
             if _edge_h is not None and hasattr(_edge_h, "mark_trip"):
                 _edge_h.mark_trip(bot_id, 120.0)
                 _log.debug("vendor_trip_latch_set: bot=%s (120s)", bot_id)
@@ -4064,8 +4072,14 @@ class PDCALoop:
                     _edge = getattr(self._runtime, "edge_case_handler", None)
                     if _edge is None:
                         try:
-                            from ai_sidecar.resilience.edge_case_handler import EdgeCaseHandler
-                            _edge = EdgeCaseHandler()
+                            # Use the process-wide singleton so the deliberate-trip
+                            # latch is shared with the per-cycle config audit
+                            # (heuristic_service._deliberate_trip_active reads the
+                            # SAME instance). A bare EdgeCaseHandler() created a
+                            # SECOND object -> the latch was invisible -> lockMap
+                            # kept re-pinning during a trip (live 2026-09-14).
+                            from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler
+                            _edge = create_edge_case_handler()
                             _aq = getattr(self._runtime, "action_queue", None)
                             if _aq is not None:
                                 from datetime import UTC, datetime as _dt, timedelta
