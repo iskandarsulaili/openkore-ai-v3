@@ -246,6 +246,33 @@ class ReflexRuleEngine:
                     continue
 
                 trigger_id = f"rfx-{uuid4().hex[:20]}"
+                # INVENTORY-AWARE HEAL RESOLUTION (2026-09-14): the default heal
+                # rules (emergency_heal_potion / emergency_red_potion) hardcode
+                # `use red_potion` / `use orange_potion`. A broke bot carrying only
+                # herbs / Apple does NOT own those -> "Error in use item" every
+                # heal cycle -> HP stalls at critical -> never completes a sell /
+                # job-change cycle (live-proven 13:30-13:35 HP=59/275). Rewrite the
+                # rule's command to the best ACTUALLY-CARRIED heal before emitting
+                # (same order HighFreqReflex uses). No carried heal -> suppress the
+                # emit (caller's town-return / base-regen handles survival).
+                _rewritten = self._resolve_reflex_heal_command(rule, state)
+                if _rewritten is not Ellipsis:
+                    if _rewritten is None:
+                        # suppress: don't emit an unowned heal
+                        output.append(
+                            self._record_trigger(
+                                bot_id=bot_id, rule=rule, event=event,
+                                elapsed_ms=decision.elapsed_ms, suppressed=True,
+                                suppression_reason="no_carried_heal",
+                                emitted=False, execution_target=None,
+                                action_id=None, outcome="suppressed",
+                                detail="bot carries no healable item; deferring to town/base-regen",
+                            )
+                        )
+                        continue
+                    rule = rule.model_copy(update={"action_template": rule.action_template.model_copy(
+                        update={"command": _rewritten}
+                    )})
                 started_emit = perf_counter()
                 outcome = self._emitter.emit_chain(
                     bot_id=bot_id,
@@ -395,6 +422,53 @@ class ReflexRuleEngine:
                     if isinstance(item, str):
                         out.add(item)
         return out
+
+    def _resolve_reflex_heal_command(self, rule: ReflexRule,
+                                     state: "EnrichedWorldState") -> object:
+        """Inventory-aware heal command resolution for reflex heal rules.
+
+        Returns:
+          - the rewritten `use <carried-heal>` string when the rule is a heal
+            rule and the bot carries a matching healable item,
+          - None when the rule is a heal rule but NO healable item is carried
+            (suppress the emit),
+          - Ellipsis (...) when the rule is NOT a heal rule (leave unchanged).
+        """
+        cmd = str((rule.action_template.command or "")).strip().lower()
+        if not cmd.startswith("use "):
+            return Ellipsis
+        # Only rewrite potion-targeted heal rules (use red_potion / orange /
+        # white). Food / herb use rules that already target a specific carried
+        # item are fine as-is.
+        heal_rule = any(k in cmd for k in ("potion",))
+        if not heal_rule:
+            return Ellipsis  # not a generic potion heal — leave the explicit command
+        # carried healable items: prefer potions > herbs/apple (same rank order
+        # as HighFreqReflex) so a potion-carrying bot keeps using the potion.
+        carried_names: list[str] = []
+        try:
+            _cs = (state.inventory or {})
+            _consumables = getattr(_cs, "consumables", None) or {}
+            if isinstance(_consumables, dict):
+                carried_names = [str(k or "").lower() for k in _consumables.keys()]
+            # fall back to the raw inventory bag when consumables is empty
+            if not carried_names:
+                _raw = getattr(_cs, "raw", None) or {}
+                _items = _raw.get("items") or []
+                for it in _items:
+                    nm = str((it.get("name") if isinstance(it, dict) else it) or "").strip()
+                    if nm:
+                        carried_names.append(nm.lower())
+        except Exception:
+            carried_names = []
+        if not carried_names:
+            return None  # no inventory data — suppress rather than guess an unowned potion
+        for nm in ("white potion", "orange potion", "red potion", "novice potion",
+                   "apple", "green herb", "red herb", "herb",
+                   "white herb", "yellow herb", "blue herb"):
+            if any(nm in (c or "") for c in carried_names):
+                return f"use {nm.title()}"
+        return None
 
     def _build_fact_map(
         self,
