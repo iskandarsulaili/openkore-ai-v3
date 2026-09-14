@@ -5403,28 +5403,65 @@ class HeuristicService:
                 except Exception:
                     _item_db = {}
                 for _item_entry in _inv_items:
-                    _item_str = str(_item_entry).lower().strip()
-                    # Try to resolve the item's vendor value from the DB by name.
+                    # AGNOSTIC, ID-AUTHORITATIVE resolution (2026-09-14 FIX).
+                    # Each entry is a dict {item_id, name, quantity}. We resolve the
+                    # junk item by its EXACT item_id first — never by substring on
+                    # str(dict), which mis-matched e.g. "Green Herb" -> "Herb"(7872),
+                    # "Club [3]" -> "Club"(1501), "Sword [4]" -> "Sword"(1101),
+                    # "Tattered Novice Ninja Suit" -> "Ninja Suit"(2337). Those are
+                    # un-owned ids the bridge cannot map to a binID, so the whole
+                    # 00C9 sell batch was rejected (00CB fail, zeny 0 forever).
+                    _carried_id = None
+                    _carried_name = ""
+                    if isinstance(_item_entry, dict):
+                        _carried_id = str(_item_entry.get("item_id") or _item_entry.get("id") or "").strip()
+                        _carried_name = str(_item_entry.get("name") or "").strip()
+                    else:
+                        _carried_name = str(_item_entry).strip()
+                    # 1) Exact item_id match (authoritative — the id the server uses).
                     _junk_id = None
                     _junk_name = ""
-                    for _it_id, _it in _item_db.items():
-                        _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "")).lower()
-                        if _it_nm and _it_nm in _item_str:
-                            # RO vendor mechanics: an item resells to a buying NPC
-                            # at half its Buy price. The knowledge item DB exposes
-                            # `Buy` only (no `Sell` column on this fork), so derive
-                            # the resale value as Buy/2 rather than reading a
-                            # non-existent `Sell` field that always yielded 0 (which
-                            # made NO item classify as junk -> `sell <id>` never
-                            # emitted -> the sell->zeny->job-change deadlock).
-                            _buy_val = int(_it.get("Buy", 0) or 0)
-                            _sell_val = _buy_val // 2
-                            # Junk = resale value below 100z (low-value drops;
-                            # a 0-Buy item is non-sellable, skip it).
-                            if 0 < _sell_val < 100:
-                                _junk_id = _it_id
-                                _junk_name = _it_nm
-                            break
+                    if _carried_id and _carried_id in _item_db:
+                        _it = _item_db[_carried_id]
+                        _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "") or "").lower()
+                        # RO vendor mechanics: an item resells to a buying NPC
+                        # at half its Buy price. The knowledge item DB exposes
+                        # `Buy` only (no `Sell` column on this fork), so derive
+                        # the resale value as Buy/2 rather than reading a
+                        # non-existent `Sell` field that always yielded 0 (which
+                        # made NO item classify as junk -> `sell <id>` never
+                        # emitted -> the sell->zeny->job-change deadlock).
+                        _buy_val = int(_it.get("Buy", 0) or 0)
+                        _sell_val = _buy_val // 2
+                        # Junk = resale value below 100z (low-value drops;
+                        # a 0-Buy item is non-sellable, skip it).
+                        if 0 < _sell_val < 100:
+                            _junk_id = _carried_id
+                            _junk_name = _it_nm or _carried_name
+                    # 2) Fallback: EXACT name match (never substring — substring
+                    #    matched the wrong item and emitted un-owned ids).
+                    if not _junk_id and _carried_name:
+                        _cn = _carried_name.lower()
+                        for _it_id2, _it2 in _item_db.items():
+                            _it_nm2 = str(_it2.get("Name", "") or _it2.get("AegisName", "") or "").lower().strip()
+                            if _it_nm2 and _it_nm2 == _cn:
+                                _buy_val2 = int(_it2.get("Buy", 0) or 0)
+                                _sell_val2 = _buy_val2 // 2
+                                if 0 < _sell_val2 < 100:
+                                    _junk_id = _it_id2
+                                    _junk_name = _it_nm2
+                                break
+                            # also accept exact match of a "name [refine]" entry
+                            # against the base item name (e.g. "sword [4]" vs "sword")
+                            if _it_nm2 and _cn.startswith(_it_nm2):
+                                _rest = _cn[len(_it_nm2):].strip()
+                                if _rest.startswith("[") and _rest.endswith("]"):
+                                    _buy_val2 = int(_it2.get("Buy", 0) or 0)
+                                    _sell_val2 = _buy_val2 // 2
+                                    if 0 < _sell_val2 < 100:
+                                        _junk_id = _it_id2
+                                        _junk_name = _it_nm2
+                                    break
                     # ATOMIC SELL BURST (2026-09-14): queue EVERY owned junk item
                     # in THIS visit (no per-item 120s throttle). The state-level
                     # 60s cooldown already gates the whole SELL visit; the old
