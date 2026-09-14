@@ -2325,7 +2325,14 @@ class HeuristicService:
                                     _jc_r_jl = int(signals.get("job_level", 0) or 0)
                                     _jc_r_first = {"swordman", "mage", "archer", "acolyte", "merchant", "thief"}
                                     _jc_r_pending = (_jc_r_job == "novice" and _jc_r_jl >= 10) or (_jc_r_job in _jc_r_first and _jc_r_jl >= 50)
-                                    if not _jc_r_pending:
+                                    # TRIP GATE (2026-09-14): never route back to the
+                                    # farm while a deliberate trip (town-sell) is in
+                                    # flight — this block runs for ALL states and was
+                                    # pulling the bot OUT of prontera with
+                                    # `navigate prt_fild05` while it stood at the vendor
+                                    # in state=SELL (live: only navigate/anti_detection
+                                    # dispatched, zero sell commands -> zeny 0).
+                                    if not _jc_r_pending and not self._deliberate_trip_active(bot_id):
                                         _path = self._pathfinder.find_path(_cm, _target)
                                         if _path:
                                             _actions.append(HeuristicAction(kind="command", command=f"navigate {_target}", confidence=0.7, reason=f"Pathfinder: {_cm} -> {_target}", domain="routing"))
