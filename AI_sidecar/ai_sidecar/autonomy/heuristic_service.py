@@ -6819,7 +6819,10 @@ class HeuristicService:
                     _next_map = _optimal_map
                     _next_reason = _optimal_reason
                     # If current map is not the correct one for level, move
-                    if map_name != _next_map and _hunt_duration > 30:
+                    # TRIP-AWARE: never re-pin/move to a hunt map while a deliberate
+                    # trip (town-sell / job-change) is in flight — it would supersede
+                    # the vendering move and pin the bot to a farm (zeny 0 forever).
+                    if map_name != _next_map and _hunt_duration > 30 and not self._deliberate_trip_active(bot_id):
                         self._last_lockmap[bot_id] = _next_map
                         actions.append(HeuristicAction(
                             kind="command", command=f"set lockMap {_next_map}",
