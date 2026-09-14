@@ -1315,13 +1315,17 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             pos = getattr(latest, "position", None)
             map_name = str(getattr(pos, "map", "") if pos else "")
         
-        # Fire when there is (a) accumulated loot above the weight gate, OR
-        # (b) the periodic timer elapsed. A low-weight novice (Hornet/Thief Bug
-        # junk ~20-25%, or a STALE sidecar snapshot reading 20%) would otherwise
-        # never trigger a weight-only sell -> 0 zeny -> job-change / restock
-        # stalled forever. The periodic trigger converts junk to zeny regardless
-        # of the (possibly stale) weight signal.
-        if weight_ratio < 0.25 and not _periodic_due:
+        # Fire when (a) accumulated loot above the weight gate, OR
+        # (b) the periodic timer elapsed, OR (c) the bot is BROKE (zeny < the
+        # job-change crossing cost) with ANY junk to sell. (c) matters because a
+        # broke novice can sit at 16% weight forever waiting for the 25% gate /
+        # periodic tick -> the job-change is permanently starved of funding.
+        _prog = (latest.get("progression") or {}) if isinstance(latest, dict) else {}
+        _eco = (latest.get("economy") or {}) if isinstance(latest, dict) else {}
+        _inv_zeny = (latest.get("inventory") or {}).get("zeny") if isinstance(latest, dict) else None
+        _zeny = int(_prog.get("zeny") or _eco.get("zeny") or _inv_zeny or 0)
+        _broke_due = _zeny < 500 and weight_ratio > 0.05
+        if weight_ratio < 0.25 and not _periodic_due and not _broke_due:
             return 0
         
         # Resolve bot_id
