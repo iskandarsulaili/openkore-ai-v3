@@ -5457,13 +5457,35 @@ class HeuristicService:
             # never reaches the vendor (the sell->zeny deadlock). Drop the
             # field-drag commands here so ONLY the sell sequence survives.
             _sell_filtered: list[HeuristicAction] = []
+            # Immobilize at the vendor: the ONLY coordinate we may walk to during
+            # a sale is the vendor itself. Competing hunting/nav random-walk
+            # `move <x> <y>` steps would drag the bot off the shop before `sell
+            # done` -> dialog closes (npc_shopid=0) -> 00CB fail -> zeny 0.
+            _sx = int((_sell_npc or {}).get("x", 0) or 0)
+            _sy = int((_sell_npc or {}).get("y", 0) or 0)
             for _sa in actions:
                 _sc = str(getattr(_sa, "command", "") or "").strip()
                 _low_sa = _sc.lower()
                 _mt = _low_sa.split()
-                # Keep the vendor walk (move <x> <y>, numeric coords); drop the rest.
-                if _low_sa.startswith("move ") and len(_mt) == 3 and _mt[1].isdigit():
-                    _sell_filtered.append(_sa)
+                _is_vendor_walk = (
+                    _sx and _sy
+                    and _low_sa.startswith("move ")
+                    and len(_mt) == 3
+                    and _mt[1].isdigit()
+                    and int(_mt[1]) == _sx
+                    and int(_mt[2]) == _sy
+                )
+                if _is_vendor_walk or _low_sa == "move" or _low_sa.startswith("move "):
+                    if _is_vendor_walk:
+                        _sell_filtered.append(_sa)
+                    # any other move (random-walk step, hunting reposition) drops
+                    continue
+                # CRITICAL: drop the hunting branch's random-walk re-ENABLE
+                # (`set route_randomWalk 1`) so the bot does NOT wander off the
+                # vendor mid-sale; keep ONLY the sell pin (`set route_randomWalk 0`).
+                if _low_sa == "set route_randomwalk 1" or _low_sa.startswith("set route_randomwalk"):
+                    if " 0" in _low_sa or _low_sa.endswith(" 0"):
+                        _sell_filtered.append(_sa)
                     continue
                 if (
                     _low_sa.startswith("set lockmap")
@@ -5471,7 +5493,6 @@ class HeuristicService:
                     or _low_sa.startswith("mon_control ")
                     or _low_sa == "ai auto"
                     or _low_sa.startswith("set attack")
-                    or _low_sa.startswith("move ")  # bare "move prt_fild05" field name
                 ):
                     continue
                 _sell_filtered.append(_sa)

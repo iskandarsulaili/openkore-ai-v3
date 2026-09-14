@@ -153,3 +153,16 @@ def test_gearless_bot_disables_deadly_teleport() -> None:
     assert "teleportAuto_deadly" in src
     assert "inventory_items" in src
     assert "fly wing" in src, "the deadly-teleport guard must scan inventory for a fly wing"
+
+def test_sell_filter_immobilizes_at_vendor() -> None:
+    """The SELL single-routing filter (in heuristic_service) must keep ONLY the
+    vendor walk + the sell pin, and DROP competing random-walk/hunting moves and
+    the hunting random-walk re-enable. Without it the bot walks off the vendor
+    mid-burst -> dialog closes (npc_shopid=0) -> 00CB fail -> zeny 0 forever.
+    Verified by inspecting the deployed source (the assess SELL branch)."""
+    import pathlib
+    svc = pathlib.Path("/home/lot399/openkore-ai-v3/AI_sidecar/ai_sidecar/autonomy/heuristic_service.py").read_text()
+    assert "route_randomWalk 0" in svc, "sell random-walk pin missing"
+    assert "route_randomWalk 1" in svc, "hunting random-walk enable missing (co-located check)"
+    assert "_is_vendor_walk" in svc, "vendor-walk immobilize guard missing in SELL filter"
+    assert "set route_randomwalk 1" in svc.lower(), "filter must special-case the random-walk re-enable"
