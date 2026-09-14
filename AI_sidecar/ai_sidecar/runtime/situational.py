@@ -17,6 +17,7 @@ from typing import Any
 
 from ai_sidecar.actions import HeuristicAction
 from ai_sidecar.contracts.actions import ActionProposal
+from ai_sidecar.reflex.healing_optimizer import HealingOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class SituationalAwareness:
     
     def __init__(self):
         self._last_validated: dict[str, list[HeuristicAction]] = {}
+        self._optimizer = HealingOptimizer()
+        self._optimizer.load()
     
     def validate(self, actions: list[HeuristicAction], signals: dict[str, Any], bot_id: str) -> list[HeuristicAction]:
         """Validate and adapt actions to actual game state."""
@@ -133,69 +136,59 @@ class SituationalAwareness:
     
     def _get_best_heal_item(self, signals: dict[str, Any]) -> tuple[int, str] | None:
         """Find the best healing item available in inventory.
-        
-        Checks inventory for potions, returns best available match.
-        If none in inventory, returns the best affordable potion.
+
+        DATA-DRIVEN via HealingOptimizer (which is carried-item aware and
+        includes ANY itemheal consumable — Apple, herbs, etc.), NOT a hardcoded
+        HEALING_ITEMS list. The old hardcoded list (White/Orange/Red/Novice
+        Potion only) excluded Apple/Green Herb/Red Herb, so a broke bot that
+        carried those got NO match in the first pass and (zeny=0) the buy-pass
+        failed -> fell back to the hardcoded (501,"Red Potion") -> "use Red
+        Potion" for an item the bot doesn't own -> Error -> no heal -> death.
         """
+        # Build the real ownable-item digest exactly like the optimizer expects.
         inventory = signals.get("inventory", {})
+        items = []
         if isinstance(inventory, dict):
-            items = inventory.get("items", []) if "items" in inventory else []
+            items = inventory.get("items", []) or []
         elif isinstance(inventory, list):
             items = inventory
-        else:
-            items = []
-        # The bridge sends the item digest list under `inventory_items`
-        # (inventory is a dict of zeny/item_count/weight with NO `items` key).
-        # Merge it so the adapter sees REAL owned items (fixes the heal
-        # emitter always falling back to "use Red Potion" 501 even when the
-        # bot owns 298 Novice Potions 569 — verified live).
         if not items:
             items = signals.get("inventory_items", []) or []
-        
+
+        carried = []
+        for item in items:
+            if isinstance(item, dict):
+                carried.append({"name": str(item.get("name", item.get("identifiedDisplayName", ""))), "quantity": item.get("quantity", item.get("amount"))})
+            elif isinstance(item, str):
+                carried.append({"name": item, "quantity": 1})
+
+        hp = int(signals.get("hp", 100) or 100)
+        hp_max = int(signals.get("hp_max", 1) or 1) or 1
+        sp = int(signals.get("sp", 50) or 50)
+        sp_max = int(signals.get("max_sp", sp) or sp) or 1
         zeny = int(signals.get("zeny", 0) or 0)
-        base_level = int(signals.get("base_level", 1) or 1)
-        
-        # First pass: check what's in inventory
-        for item_id, name, heal, cost, min_lvl in self.HEALING_ITEMS:
-            if base_level < min_lvl:
-                continue
-            # Check inventory for this item
-            for item in items:
-                iname = ""
-                if isinstance(item, dict):
-                    iname = str(item.get("name", item.get("identifiedDisplayName", ""))).lower()
-                elif isinstance(item, str):
-                    iname = item.lower()
-                
-                if name.lower() in iname or str(item_id) in iname:
-                    qty = 0
-                    if isinstance(item, dict):
-                        # `or 1` fallback is WRONG: a present-but-zero-quantity
-                        # item (e.g. Red Potion 501 with 0 owned) becomes qty=1
-                        # and wins the first pass over the real stock (Novice
-                        # Potion 569 x298). Only default to 1 when the key is
-                        # ABSENT, never when it is 0.
-                        _q = item.get("quantity", item.get("amount", None))
-                        qty = int(_q) if _q is not None else 1
-                    if qty > 0:
-                        return (item_id, name)
-        
-        # Second pass: nothing in inventory, recommend buying the best affordable
-        for item_id, name, heal, cost, min_lvl in self.HEALING_ITEMS:
-            if base_level < min_lvl:
-                continue
-            if zeny >= cost:
-                return (item_id, name)
-        
-        # No potions at all — return cheapest
-        return (501, "Red Potion")
+        level = int(signals.get("base_level", 1) or 1)
+
+        cmd = self._optimizer.select_healing_command(
+            hp=hp, max_hp=hp_max, sp=sp, max_sp=sp_max,
+            zeny=zeny, level=level, prefer_hp=True, inventory=carried,
+        )
+        if cmd and cmd.startswith("use "):
+            name = cmd[4:].strip()
+            logger.info("[situational] %s: heal via optimizer -> use %s", signals.get("bot_id", "?"), name)
+            return (0, name)  # id unknown-by-name; bridge resolves by name
+
+        # optimizer found nothing carried/affordable. Fall back to buying a potion.
+        return None
     
     def _adapt_heal(self, action: HeuristicAction, signals: dict[str, Any], bot_id: str) -> HeuristicAction:
         """Adapt a heal command to use the best available potion."""
         best = self._get_best_heal_item(signals)
         if best:
-            item_id, name = best
-            new_cmd = f"use {item_id}"
+            _iid, name = best
+            # best is (_, name) from the optimizer — emit `use <Name>` so the
+            # bridge resolves by name (id is unknown-by-name, never 0).
+            new_cmd = f"use {name}"
             logger.info(f"[situational] {bot_id}: {action.command} → {new_cmd} (best available: {name})")
             return HeuristicAction(
                 kind="command", command=new_cmd,
@@ -294,10 +287,10 @@ class SituationalAwareness:
         if hp_pct < 40:
             best = self._get_best_heal_item(signals)
             if best:
-                item_id, name = best
+                _iid, name = best
                 logger.info(f"[situational] {bot_id}: Healing ({name}) before move (HP={hp_pct:.0f}%)")
                 return HeuristicAction(
-                    kind="command", command=f"use {item_id}",
+                    kind="command", command=f"use {name}",  # resolve by name
                     confidence=0.85,
                     reason=f"Heal before move: {name}",
                     domain="survival",
