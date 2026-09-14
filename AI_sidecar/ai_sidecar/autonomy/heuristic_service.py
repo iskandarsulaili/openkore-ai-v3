@@ -4829,12 +4829,25 @@ class HeuristicService:
             ))
             total_confidence = 0.95
             top_domain = "social"
-            assessment = HeuristicAssessment(
-                horizon=horizon, actions=actions, confidence=total_confidence,
-                actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
-            )
-            self._last_assessment[bot_id] = assessment
-            return assessment
+            # DO NOT DISCARD MEANINGFUL ACTIONS (2026-09-14): this branch is
+            # OBSERVABILITY ONLY (the fleet coordinator owns party actions) yet it
+            # REPLACED the assessment with 4 `log`-kind actions, DISCARDING any real
+            # command actions already accumulated above (the broke-sell `move <town>`
+            # lives in the hunting branch, the whole SELL burst lives below). Live: a
+            # level-47 bot with joiner_wrong=True fired this every cycle -> the SELL
+            # burst / `sell done` NEVER ran -> zeny stayed 0 forever (and the
+            # broke-sell town-return was silently dropped too).
+            # Only short-circuit when there is nothing actionable to lose.
+            _has_command = any(a.kind == "command" for a in actions)
+            if _has_command:
+                pass
+            else:
+                assessment = HeuristicAssessment(
+                    horizon=horizon, actions=actions, confidence=total_confidence,
+                    actionable=len(actions) > 0, top_domain=top_domain, signals=dict(signals),
+                )
+                self._last_assessment[bot_id] = assessment
+                return assessment
 
         # ── PARTY LEAVE: if in party but level < 40, leave party (solo is faster) ──
         # Force leave regardless of cached party state — the bridge may have stale data
