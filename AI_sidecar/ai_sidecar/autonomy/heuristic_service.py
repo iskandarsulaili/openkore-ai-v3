@@ -4196,7 +4196,35 @@ class HeuristicService:
                     _jc_h_surv = ""
                 # healthy-HP priority override (2026-09-08 mandate)
                 _jc_h_hp = float(signals.get("hp_ratio", 1.0) or 1.0)
-                _jc_h_defer = (_jc_h_surv in ("level_up_first", "fly_wing_escape")) and _jc_h_hp < 0.90
+                _jc_h_zeny = int(signals.get("zeny", 0) or 0)
+                # AFFORDABILITY DEFER (2026-09-14): mirror macro_intelligence's
+                # required_zeny=500 gate. Resolve the job-change target NPC FIRST
+                # (it is also needed below), then a broke eligible bot must SELL
+                # junk to fund the crossing — routing to the guild at 0 zeny sends
+                # it on an 11-map unwalkable overland trip + disables attack
+                # (0 kills, dies, wedges). Falling through lets the broke-sell
+                # trigger (return to town, sell, fund) run. If ON the guild map
+                # already, fire anyway.
+                _jc_h_npcs = JOB_CHANGE_NPCS
+                _jc_h_target = _jc_h_job
+                if _jc_h_job == "novice":
+                    try:
+                        from ai_sidecar.server_adaptation import get_server_solutions_store
+                        _jc_h_tc = get_server_solutions_store().get("job_change_target")
+                        if isinstance(_jc_h_tc, dict):
+                            _jc_h_target = str(_jc_h_tc.get("target_class") or _jc_h_tc.get("class") or "").lower()
+                        elif isinstance(_jc_h_tc, str) and _jc_h_tc.strip():
+                            _jc_h_target = _jc_h_tc.strip().lower()
+                    except Exception:
+                        _jc_h_target = _jc_h_job
+                _jc_h_npc = (_jc_h_npcs.get(_jc_h_target)
+                             or _jc_h_npcs.get(_jc_h_job)
+                             or _jc_h_npcs.get("novice")
+                             or next(iter(_jc_h_npcs.values()), ()) if _jc_h_npcs else ())
+                _jc_h_on_guild = bool(_jc_h_npc) and len(_jc_h_npc) == 3 \
+                    and _audit_map_norm == str(_jc_h_npc[0])
+                _jc_h_defer = ((_jc_h_surv in ("level_up_first", "fly_wing_escape")) and _jc_h_hp < 0.90) \
+                              or (_jc_h_zeny < 500 and not _jc_h_on_guild)
                 if _jc_h_defer:
                     # Defer: do NOT emit the job-change move; let the bot farm.
                     # (progression.py logs the deferral; keep this emitter quiet.)
@@ -4221,22 +4249,8 @@ class HeuristicService:
                     _jc_latch_key = f"job_change_route:{bot_id}"
                     _jc_now = __import__("time").time()
                     _jc_last = self._job_change_route_emit.get(_jc_latch_key, 0.0)
-                    _jc_h_npcs = JOB_CHANGE_NPCS
-                    _jc_h_target = _jc_h_job
-                    if _jc_h_job == "novice":
-                        try:
-                            from ai_sidecar.server_adaptation import get_server_solutions_store
-                            _jc_h_tc = get_server_solutions_store().get("job_change_target")
-                            if isinstance(_jc_h_tc, dict):
-                                _jc_h_target = str(_jc_h_tc.get("target_class") or _jc_h_tc.get("class") or "").lower()
-                            elif isinstance(_jc_h_tc, str) and _jc_h_tc.strip():
-                                _jc_h_target = _jc_h_tc.strip().lower()
-                        except Exception:
-                            _jc_h_target = _jc_h_job
-                    _jc_h_npc = (_jc_h_npcs.get(_jc_h_target)
-                                 or _jc_h_npcs.get(_jc_h_job)
-                                 or _jc_h_npcs.get("novice")
-                                 or next(iter(_jc_h_npcs.values()), ()) if _jc_h_npcs else ())
+                    # _jc_h_npc / _jc_h_target resolved above (affordability defer);
+                    # reuse them here.
                     if _jc_h_npc:
                         _jc_h_map, _jc_h_x, _jc_h_y = _jc_h_npc
                         _jc_h_cmd = f"move {_jc_h_map}" if _audit_map_norm != _jc_h_map else f"move {_jc_h_x} {_jc_h_y}"
