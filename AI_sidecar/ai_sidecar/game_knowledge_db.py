@@ -459,6 +459,21 @@ class GameKnowledgeDB:
         """Find an NPC that can fulfill a task (buy, sell, heal, storage, job_change, quest)."""
         conn = self._get_conn()
         cur = conn.cursor()
+        # BUY-CAPABILITY GUARD (2026-09-14): 'sell'/'tool_dealer' must resolve to a
+        # vendor that actually BUYS from the player. A gift/souvenir merchant
+        # (e.g. 'Gift Merchant#prt') opens a dialog with no sell list, so the whole
+        # 0x00C9 sell batch never happens (zeny 0 forever). The learner keeps
+        # re-recording whatever NPC the bot talked to, so filter at the READ site,
+        # not only at seed time.
+        if task_type in ("sell", "tool_dealer"):
+            cur.execute(
+                "SELECT * FROM npc_interactions WHERE task_type=? AND LOWER(map_name)=LOWER(?) "
+                "AND LOWER(npc_name) NOT LIKE '%gift%' LIMIT 1",
+                (task_type, map_name),
+            )
+            row = cur.fetchone()
+            if row:
+                return dict(row)
         cur.execute(
             "SELECT * FROM npc_interactions WHERE task_type=? AND LOWER(map_name)=LOWER(?) LIMIT 1",
             (task_type, map_name),
