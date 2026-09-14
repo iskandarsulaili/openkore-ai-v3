@@ -73,7 +73,7 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
       `Local rAthena AI World:testbot99` held 125-128 pending actions dominated by emergency
       potion reflexes (zeny-0 consequence). Verify single live identity per control folder;
       reconcile stale registrations so the queue the bridge polls == where actions enqueue.
-- [ ] A3. Confirm the discovered-vendor talknpc sequence tokens are valid (talknpc <x> <y> c r1 n — NOT r/text/ form) and the vendor is a real buy-from-player (prt_in 126 76 Tool Dealer). Verify via live bot log line.
+- [x] A3. (DONE 2026-09-14) talknpc sequence tokens validated: `= c r1 n` failed (OpenKore space-split parser made the leading `=` a literal token, invalid per TalkNPC::validateStep); corrected to `c r1 n` -> native sellAuto routed + sold (talknpc <x> <y> c r1 n — NOT r/text/ form) and the vendor is a real buy-from-player (prt_in 126 76 Tool Dealer). Verify via live bot log line.
 - [ ] A4. Job-change gate: verify zeny>=500 logic across ALL job-change emitters (cold-start, HUNTING-branch, progression.py) is one shared affordability rule (5.10), and macro required_zeny=500 holds (5.12). PROVE: bot reaches alberta guild via airship/portal (NOT 11-map overland walk), talks, becomes merchant, gains job EXP.
 - [ ] A5. [P] Record full timestamped chain: login→enter→farm(EQP climb)→sell→zeny>500→job-change→new class farming. (Batch-8 benchmark, live outcome proof.)
 
@@ -222,3 +222,27 @@ STATUS LEGEND: [ ] todo · [~] in progress · [x] done-verified · [!] blocked �
 NOTES / KNOWN SERVER-SIDE (not openkore-ai-v3, track only):
 - OPEN C3: char-server SIGSEGV at char-select (recurring disconnect). OPEN C4: mail wire-size mismatch (non-fatal). OPEN C5: 23-bot fleet concurrency hammering one endpoint. OPEN D10: gearless server starting-resource limit.
 These live in rathena-AI-world / RAW stack — openkore-ai-v3 must adapt/route around them, not fix server (RULE.md: never modify RAW to match the bot).
+
+
+## B-sell batch completion (2026-09-14, live-verified)
+Survival blocker RESOLVED + sell chain made clean end-to-end on the live bot:
+- B4 broke-novice survival: highfreq reflex (has_potions) + HealingOptimizer now inventory-aware — a gearless char carrying Apple/Green Herb/Red Herb heals at low HP instead of dying (was: heal emitted only for literal *potion* names). Live: bot no longer field-deaths (hp steady, Hornet/Thief Bug kills accumulating).
+- B2.2 sell binID rewrite (bridge `sell <db_id>` -> `<owned binID>`): live-verified "Added to sell list".
+- B2.3 `sell done` (completeNpcSell -> 00C9): live-verified.
+- SellAuto_npc_steps `= c r1 n` -> `c r1 n`: config parser fix (FileParsers.pm space-split). Native sellAuto now reaches the vendor.
+- Single-routing: MANUAL sell is sole owner (native sellAuto + `ai sellAuto` emitters disabled — shop-type vendors need $ai_v{npc_talk}{talk}='buy_or_sell', native requires 'sell' so it silently 'completed' without 00C9). All 9+ sidecar sellAuto pushes -> 0.
+- SELL single-routing filter: field-drag commands (set lockMap/navigate/move-field/mon_control/ai auto) stripped from the SELL assessment so the bot doesn't get yanked off the vendor.
+- Atomic sell burst: queue ALL junk + sell done in one visit (removed per-item 120s throttle that staggered the trip).
+Commits: ..., 7250b3980, a8dd33016, cecb0c6d8, 2658cc29c, 9ac37bcca.
+
+## B-sell batch — SESSION 2026-09-14 (restart-fresh round 2, live-proven)
+Fixed + committed + verified live this session (each with a probe/log-verified reason):
+- [x] **41f658384 SELL id-poisoning root cause.** The junk scan substring-matched carried entries against DB names, so "Green Herb"→Herb(7872), "Tattered Novice Ninja Suit"→Ninja Suit(2337), "Sword[4]"→Sword(1101), "Club[3]"→Club(1501) — all UNOWNED ids emitted → whole 00C9 batch invalid → 00CB fail → zeny 0. Now resolves each carried entry by its authoritative `item_id` (dict) or exact-name (string); substring id-pick eliminated. LIVE-PROVEN 12:24: burst resolved every junk to an owned binID (Jellopy→bin1, Bee Sting→bin2, Clover→bin7, Feather→bin13, ...), ZERO "not a valid item index".
+- [x] **2db683a2d combat_intel dormant crash.** ActorDigest `.get()` bug crashed the PVP domain every tick (module was dead). Normalize actors→dicts.
+- [x] **f90c1ef32 SELL assess UnboundLocalError `_sell_npc`.** Cooldown branch skipped → immobilize filter referenced unbound var → assess crashed every SELL cycle → sale never dispatched. Init _sell_npc outside the cooldown branch.
+- [x] **867f507f2 cold-start field-transit heal inventory-aware.** heuristic_service.py:2601 hardcoded `use Red Potion` for a bot carrying none → "Error in use item" → died on transit (watchdog corpse-loop #52). Now resolves best carried potion/herb, agnostic.
+- [x] **196efd93e reflex caller forwards inventory + derives has_potions.** PDCA hardcoded has_potions=True + never forwarded carried set → reflex emitted no heal (returned None → escape). Now derives from real items + forwards inventory.
+- [x] **cd9653ac6 broke job-eligible bot sells to fund crossing.** Hunting-branch job-change gate fired `move <guild>` for any eligible novice + EARLY-RETURNED before the broke-sell trigger → a broke eligible bot never sold. Added affordability defer (mirror macro required_zeny=500).
+- [x] **4e71629fb broke bot no longer emits competing guild move.** Probe showed heuristic emitted BOTH `move prontera` (broke-sell) AND `move geffen_in` (job-change) same assessment; move is LAST-WRITE-WINS so the guild move superseded the sell move → never walked to town. Root cause: affordability gate only deferred when survival_strategy in (level_up_first/fly_wing_escape), but it's unset("") → defer=False bypassed affordability. Added `_jc_broke_defer` regardless of survival_strategy. PROBE AFTER: only `[progression] move prontera (0.99)`.
+
+### RESIDUAL (next round, LIVE-seen 13:23-13:25): bot REACHES SELL state + opens vendor dialog (talknpc 105 87 c r1 n, `talk resp 0`), but a competing `move` (to 96,129, away from vendor 105,87) still drags it off BEFORE the sell burst finalizes → no 00C9 → zeny 0. Same immobilize-at-vendor class as 90925031d/b88781df1 but a move is still leaking through the SELL single-routing filter. Verify which move emitter survives the filter + suppress it (routing.py edge/farm move or pdca edge domain re-lock).
