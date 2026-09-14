@@ -4459,7 +4459,7 @@ class HeuristicService:
             # in town with weight>5%; this mirrors it on the farm side.)
             _audit_bl = int(signals.get("base_level", 0) or 0)
             _audit_jl = int(signals.get("job_level", 0) or 0)
-            _audit_job = str(signals.get("job", "novice") or "").lower()
+            _audit_job = str(signals.get("job_name", signals.get("job", "novice")) or "novice").lower()
             _audit_zeny = int(signals.get("zeny", 0) or 0)
             _audit_weight2 = float(signals.get("weight_ratio", 0.0) or 0.0)
             _audit_first = {"swordman", "mage", "archer", "acolyte", "merchant", "thief", "taekwon", "gunslinger", "ninja", "soul_linker"}
