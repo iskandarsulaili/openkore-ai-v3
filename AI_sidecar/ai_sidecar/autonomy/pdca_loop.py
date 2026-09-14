@@ -5855,13 +5855,27 @@ class PDCALoop:
                                         pass
                                     _inv = _conscious_snap.get("inventory", {}) or {}
                                     _items = _inv.get("items", []) or _inv.get("item_list", []) or []
-                                    _has_pots = True
+                                    # AGNOSTIC heal-capability: a bot that carries ANY
+                                    # itemheal consumable is heal-capable. Never assume
+                                    # has_potions=True blindly (caused the reflex to emit
+                                    # "use Red Potion"->"Error in use item" and then escape
+                                    # with attackAuto 0 instead of healing a carried herb).
+                                    _heal_kws = ("potion", "herb", "apple", "berry",
+                                                 "yggdrasil", "mastela", "panacea",
+                                                 "royal jelly", "novice")
+                                    _has_pots = bool(_items) and any(
+                                        (i.get("name") if isinstance(i, dict) else str(i)).lower()
+                                        in _heal_kws
+                                        or any(k in (i.get("name") if isinstance(i, dict) else str(i)).lower() for k in ("potion", "herb"))
+                                        for i in _items
+                                    )
                                     _zeny = int(_inv.get("zeny", _conscious_snap.get("zeny", 0)) or 0)
                                     _level = int(_vitals.get("base_level", _conscious_snap.get("base_level", 1)) or 1)
                                     _reflex_action = _hf_reflex.check_and_act(
                                         _reflex_bot_id, _hp, _max_hp, _sp, _max_sp,
                                         _aggro, _is_dead, _is_town, _has_pots, _map,
                                         zeny=_zeny, level=_level,
+                                        inventory=_items or None,
                                         reflex_pipeline=getattr(self._runtime, "reflex_pipeline", None),
                                     )
                                     if _reflex_action:

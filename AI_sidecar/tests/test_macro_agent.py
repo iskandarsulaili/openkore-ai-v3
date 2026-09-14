@@ -154,6 +154,7 @@ def test_job_change_pattern_wins_for_eligible_novice():
             "base_level": 26,
             "job_level": 10,
             "job_changed": False,
+            "zeny": 5000,  # affordability gate (required_zeny=500) must pass
         },
         "combat": {"is_in_combat": False},
     }
@@ -171,6 +172,7 @@ def test_job_change_pattern_not_for_non_eligible():
             "base_level": 5,
             "job_level": 3,
             "job_changed": False,
+            "zeny": 5000,
         },
         "combat": {"is_in_combat": False},
     }

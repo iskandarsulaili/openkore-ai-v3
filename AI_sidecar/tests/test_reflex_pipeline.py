@@ -37,16 +37,23 @@ class MockActionQueue:
 
 
 def test_reflex_fires_at_low_hp():
-    """HP ≤ 50% in combat → should return a heal command."""
+    """HP ≤ 50% in combat with a carried heal → should return a heal command.
+
+    The reflex is inventory-aware (2026-09-14): it only emits a heal the bot
+    actually carries, so a carried herb must be forwarded. Without inventory
+    it correctly refuses an unowned potion and escapes instead — this test
+    exercises the carried-heal path that the corrected PDCA caller wires up.
+    """
     reflex = HighFreqReflex()
     cmd = reflex.check_and_act(
         bot_id="test_bot", hp=300, max_hp=1000,
         sp=100, max_sp=500, aggro_count=3,
         is_dead=False, is_town=False, has_potions=True,
         current_map="gef_fild01", zeny=50000, level=50,
+        inventory=["Red Herb", "Green Herb"],
     )
     assert cmd is not None, "check_and_act should return a command at 30% HP"
-    assert "use" in cmd or "ai manual" in cmd, f"Expected heal/escape command, got: {cmd}"
+    assert "use" in cmd, f"Expected heal command, got: {cmd}"
     print(f"  PASS: low HP → '{cmd}'")
 
 
