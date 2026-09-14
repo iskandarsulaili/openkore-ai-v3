@@ -107,7 +107,12 @@ def _extract_current_target(signals: dict[str, Any]) -> dict[str, Any] | None:
 
     # Fallback: scan actors for a hostile player
     actors = signals.get("actors") or signals.get("monsters_around", [])
-    for actor in actors:
+    for _a in actors:
+        # Normalize ActorDigest (pydantic) -> plain dict; every consumer of
+        # signals["actors"] does dict .get(...). Without this, combat_intel
+        # crashed every tick (AttributeError: 'ActorDigest' object has no
+        # attribute 'get') and the whole PVP intel domain was dormant.
+        actor = _a.model_dump(exclude_none=True) if not isinstance(_a, dict) else _a
         if actor.get("type") == "player" and actor.get("hp", 0) > 0:
             name = actor.get("name", "")
             if name:
