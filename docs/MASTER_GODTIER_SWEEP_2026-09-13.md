@@ -266,5 +266,26 @@ at HP 24/275 until death (live-proven). Fixed at 4 sites: both PDCA reflex block
 LIVE-PROVEN AFTER FIX: reflex logs `sit_rest hp=100%` (real ratio) and the bot's
 HP recovered 24 -> 140 -> 145 -> 147 -> 150/275 (was frozen at 24 before).
 
-### RESIDUAL 4 (NEXT): with survival fixed + inventory/heal wired, re-observe the
-full sell -> 00C9 -> zeny>0 chain on a healthy bot.
+### RESIDUAL 4 (FIXED 0431b53b6..a1c1a2f): the SELL-routing starvation chain — 7 fixes.
+Live-verified, each with evidence:
+- 0431b53b6 HP/SP KEY-SHAPE: reflex read max_hp, snapshot emits hp_max -> bot
+  never healed (HP 24/275 frozen) -> PROVEN HP 24->153 recovery.
+- b3d632641/6833624d3 joiner_check: observability branch returned before the SELL
+  burst; now never short-circuits a self-dispatching state / trip.
+- 282e23ae4 deliberate-trip latch (edge_unstuck can't supersede the trip move).
+- fca6abb5c/0ee6033a0/... every per-cycle `set lockMap <farm>` re-pin now
+  gated by the trip latch (lockMap PINS the bot to the farm).
+- 8a0170f5c BROKE bypass: zeny<500 + weight>5% now emits the vendor move.
+- bcf984869 singleton: pdca built a SECOND EdgeCaseHandler so the latch was
+  invisible to the config audit.
+- (reflex) lethal_escape_teleport spam at 55% HP in TOWN (hp_ratio/combat facts
+  read the wrong keys) flooded the queue -> 0 after fix.
+- 4963 return-to-farm nudge gated during SELL/trip.
+PROVEN WORKING NOW: bot reaches prontera in state=SELL, edge_unstuck_skipped
+fires, lockMap re-pin count 0, lethal spam 0.
+
+### RESIDUAL 5 (OPEN): `vendor_move target=prontera` is enqueued repeatedly but
+the dispatched move is the bot's own hunt route (`AI: attack route`), so it still
+does not walk to town. Next: the vendering move's priority/tier must beat the
+hunting attack route when a trip is latched (or hunting moves must be suppressed
+outright while the latch is live), then re-observe `sell <id>` -> 00C9 -> zeny>0.
