@@ -5386,7 +5386,13 @@ class HeuristicService:
                                 _junk_id = _it_id
                                 _junk_name = _it_nm
                             break
-                    if _junk_id and self._sell_config_once(bot_id, _junk_id, cooldown=120.0):
+                    # ATOMIC SELL BURST (2026-09-14): queue EVERY owned junk item
+                    # in THIS visit (no per-item 120s throttle). The state-level
+                    # 60s cooldown already gates the whole SELL visit; the old
+                    # per-item cooldown spread the `sell` commands across cycles
+                    # so the bot walked off the vendor before `sell done`, and the
+                    # sale never finalized (zeny stayed 0 forever).
+                    if _junk_id:
                         actions.append(HeuristicAction(
                             kind="command", command=f"sell {_junk_id} 0",
                             confidence=0.85, domain="economy",
