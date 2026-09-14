@@ -282,10 +282,15 @@ class GameKnowledgeDB:
                 ("tool_dealer",  "prt_in",   "Tool Dealer",  126, 76),
                 ("sell",         "prt_in",   "Tool Dealer",  126, 76),
                 # Seed on the TOWN map too (prontera) — the periodic-sell in-town
-                # branch passes the bot's town map string ('prontera'). The NPC
-                # must be a REAL outdoor-prontera spawn (see coord fix above).
-                ("tool_dealer",  "prontera", "Gift Merchant#prt", 105, 87),
-                ("sell",         "prontera", "Gift Merchant#prt", 105, 87),
+                # branch passes the bot's town map string ('prontera').
+                # CORRECTED 2026-09-14: the previous seed pointed BOTH tasks at
+                # 'Gift Merchant#prt' (105,87) — a GIFT shop that CANNOT buy items.
+                # The SELL flow then opened a dialog with no sell list and the whole
+                # 0x00C9 batch never happened (zeny 0 forever). The only real
+                # buy-capable vendor here is the Tool Dealer; the SELL state walks to
+                # that vendor's map before the coord move.
+                ("tool_dealer",  "prontera", "Tool Dealer",  126, 76),
+                ("sell",         "prontera", "Tool Dealer",  126, 76),
             ]
             for _task, _map, _name, _x, _y in _facts:
                 conn.execute(
