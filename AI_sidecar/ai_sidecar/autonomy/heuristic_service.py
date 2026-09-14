@@ -4961,7 +4961,8 @@ class HeuristicService:
         _audit_cs_hunt = getattr(self, "_cold_start_hunt_map", {}).get(bot_id, "prt_fild08c") or "prt_fild08c"
         _audit_farm_for_return = _audit_cs_hunt
         if _audit_is_town and _audit_has_potions and _audit_has_weapon and \
-           _audit_map not in ("iz_ac01_a", "iz_ac01") and state != "DEAD":
+           _audit_map not in ("iz_ac01_a", "iz_ac01") and state != "DEAD" and \
+           str(state).upper() != "SELL" and not self._deliberate_trip_active(bot_id):
             _audit_now2 = __import__("time").time()
             _audit_last_return = self._last_return_to_farm.get(bot_id, 0)
             if _audit_now2 - _audit_last_return > 45:  # 45s cooldown, then keep nudging home
