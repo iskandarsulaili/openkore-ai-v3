@@ -5706,6 +5706,19 @@ class HeuristicService:
                 ):
                     continue
                 _sell_filtered.append(_sa)
+            # ── SELL PIN: stay at the vendor until the sale finalizes ──
+            # The stale hunting lockMap (e.g. prt_fild05) persists from the prior
+            # hunting dispatch, so the bot walks OFF the vendor (via the field-exit
+            # portal inside prt_in) mid-sale — the shop dialog closes before `sell
+            # done` finalizes and EVERY 00C9 batch is rejected (00CB, zeny stays 0).
+            # Pin lockMap to the SELLER's map so `ai auto` keeps the bot AT the
+            # vendor; the hunting lockMap re-applies on the next HUNT state.
+            if _sell_map:
+                _sell_filtered.insert(0, HeuristicAction(
+                    kind="command", command=f"set lockMap {_sell_map}",
+                    confidence=0.99, domain="economy",
+                    reason="Pin lockMap to the seller map so the bot stays at the vendor until the sale finalizes (00C9 -> zeny)",
+                ))
             assessment = HeuristicAssessment(
                 horizon=horizon, actions=_sell_filtered, confidence=total_confidence,
                 actionable=len(_sell_filtered) > 0, top_domain=top_domain, signals=dict(signals),
