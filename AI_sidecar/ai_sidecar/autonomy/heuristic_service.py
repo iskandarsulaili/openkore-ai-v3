@@ -5522,11 +5522,34 @@ class HeuristicService:
                         confidence=0.92, domain="economy",
                         reason="Disable random walk during the sell visit so the bot stays at the vendor until the sale finalizes",
                     ))
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"talknpc {_sell_x} {_sell_y} c r1 n",
-                        confidence=0.90, domain="economy",
-                        reason="Open Tool Dealer and sell items (atomic dialog)",
-                    ))
+                    # ── IN-RANGE GATE (2026-09-15) ──
+                    # Opening the buy/sell dialog REQUIRES the bot to be standing
+                    # within the NPC's reach (npc_checknear, ~AREA_SIZE+1 cells).
+                    # Emitting `talknpc <x> <y>` in the SAME burst as the `move`
+                    # makes OpenKore run the talk while still walking -> "Could not
+                    # find an NPC" -> dialog never opens -> 00C9 never sends -> the
+                    # sale never completes. Since `weight>5%` keeps SELL active
+                    # every cycle, the talk re-fires every cycle without ever
+                    # landing. Gate the talk on the char's CURRENT position being
+                    # within the vendor radius; until then only emit the move so the
+                    # bot actually arrives first. Position comes from the bridge
+                    # signal (map x/y), no hardcoded coord.
+                    _cx = int(signals.get("x", -1) or -1)
+                    _cy = int(signals.get("y", -1) or -1)
+                    _in_range = (_cx >= 0 and _cy >= 0 and _sell_x and _sell_y
+                                 and abs(_cx - _sell_x) <= 15 and abs(_cy - _sell_y) <= 15)
+                    if _in_range:
+                        actions.append(HeuristicAction(
+                            kind="command", command=f"talknpc {_sell_x} {_sell_y} c r1 n",
+                            confidence=0.90, domain="economy",
+                            reason=f"At Tool Dealer ({_sell_x},{_sell_y}) — open shop and sell items (atomic dialog)",
+                        ))
+                    else:
+                        actions.append(HeuristicAction(
+                            kind="log", command="sell_waiting_in_range",
+                            confidence=0.90, domain="economy",
+                            reason=f"Walking to seller ({_sell_x},{_sell_y}); char at ({_cx},{_cy}) — talk once in range",
+                        ))
                 # ── AUTO-SELL JUNK ITEMS (AGNOSTIC) ──
                 # Search inventory for low-value items (Sell price below a threshold
                 # from the knowledge DB) and queue sell commands. No hardcoded item
