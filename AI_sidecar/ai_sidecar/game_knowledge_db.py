@@ -282,15 +282,19 @@ class GameKnowledgeDB:
                 ("tool_dealer",  "prt_in",   "Tool Dealer",  126, 76),
                 ("sell",         "prt_in",   "Tool Dealer",  126, 76),
                 # Seed on the TOWN map too (prontera) — the periodic-sell in-town
-                # branch passes the bot's town map string ('prontera').
-                # CORRECTED 2026-09-14: the previous seed pointed BOTH tasks at
-                # 'Gift Merchant#prt' (105,87) — a GIFT shop that CANNOT buy items.
-                # The SELL flow then opened a dialog with no sell list and the whole
-                # 0x00C9 batch never happened (zeny 0 forever). The only real
-                # buy-capable vendor here is the Tool Dealer; the SELL state walks to
-                # that vendor's map before the coord move.
-                ("tool_dealer",  "prontera", "Tool Dealer",  126, 76),
-                ("sell",         "prontera", "Tool Dealer",  126, 76),
+                # branch passes the bot's town map string ('prontera'), so a
+                # prt_in-only fact never resolves from there (find_npc_for_task
+                # matches map_name exactly). CORRECTED 2026-09-14: the outdoor
+                # `prontera` map has NO shop NPC at (126,76) — that is the Tool
+                # Dealer's coordinate on the SEPARATE indoor `prt_in` map, so the
+                # bot walked to an empty spot on prontera with no dialog. Use the
+                # real outdoor Prontera SHOP NPC (Gift Merchant#prt, 105,87), a
+                # plain npc/re shop spawn. Server truth (npc.cpp npc_selllist:
+                # pc_can_sell_item checks the ITEM type, never the shop's stock),
+                # so ANY open `shop` dialog buys the bot's field junk; the shop
+                # needs only to be `NPCTYPE_SHOP` and in range.
+                ("tool_dealer",  "prontera", "Gift Merchant#prt", 105, 87),
+                ("sell",         "prontera", "Gift Merchant#prt", 105, 87),
             ]
             for _task, _map, _name, _x, _y in _facts:
                 conn.execute(
