@@ -2549,6 +2549,36 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                         _dl[_bid]["count"] = 0
                         return 2
                     _log.warning("combat_monitor: bot=%s death_loop (%d cycles, lv%d) -> routing to %s (survival_strategy=%r)", _bid, _dl[_bid]["count"], _bot_level, _safe_map, _surv)
+                    # ── RULE.md COMPLIANCE (2026-09-16): the death-loop reflex must
+                    #    NOT decide "where to go" — which map to farm is STRATEGY,
+                    #    reserved for the conscious tier (RULE.md: reflex only ACTS
+                    #    on a conscious decision with instant timing, never decides
+                    #    strategy). Exception: an instant emergency survival reflex
+                    #    (never-die/withdraw) is legitimate — but *routing back to a
+                    #    farm map while the bot is in town carrying sellable junk* is
+                    #    a strategic SELL decision, not an emergency. If the bot is
+                    #    in town AND the native SELL path is armed (carrying
+                    #    items_control-autosell junk / weight-heavy), defer: do NOT
+                    #    emit a farm move that overrides the conscious sell intent.
+                    _defer_to_sell = False
+                    if _in_town:
+                        try:
+                            _w_ratio = 0.0
+                            if isinstance(latest, dict):
+                                _w_ratio = float(latest.get("weight_ratio", 0.0) or 0.0)
+                            else:
+                                _w_ratio = float(getattr(getattr(latest, "vitals", None), "weight_ratio", 0.0) or 0.0)
+                            # weight >= the native sell trigger (itemsMaxWeight_sellOrStore
+                            # default 15%) => a sell is due; do not let the death-loop
+                            # reflex yank the bot back to the field.
+                            if _w_ratio >= 0.15:
+                                _defer_to_sell = True
+                        except Exception:
+                            _defer_to_sell = False
+                    if _defer_to_sell:
+                        _log.info("combat_monitor: bot=%s in town with sellable junk -> death-loop reflex DEFERRING to conscious SELL (no farm move emitted)", _bid)
+                        _dl[_bid]["count"] = 0
+                        return 2
                     aq.enqueue(_bid, ActionProposal(
                         action_id=f"death_loop_safe_{_bid}_{int(__import__('time').time()*1000)}",
                         kind="command",
