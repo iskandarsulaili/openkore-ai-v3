@@ -1975,7 +1975,7 @@ sub processAutoSell {
 
 				return;
 
-			} elsif (!defined $ai_v{'npc_talk'} || $ai_v{'npc_talk'}{'talk'} ne 'sell') {
+			} elsif (!defined $ai_v{'npc_talk'} || ($ai_v{'npc_talk'}{'talk'} ne 'sell' && $ai_v{'npc_talk'}{'talk'} ne 'buy_or_sell')) {
 				if (timeOut($args->{'sentNpcTalk_time'}, $timeout{ai_sellAuto_wait_giveup_npc}{timeout})) {
 					$args->{'error'} = 'Npc did not respond';
 					$args->{'done'} = 1;
