@@ -1374,32 +1374,45 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             # In town — discover NPC positions dynamically
             # Try to find vendor NPC, fall back to storage NPC
             npc_cmd = None
-            if npc_disc is not None:
-                npc_cmd = npc_disc.get_command_for_service(latest, map_name, "vendor")
-                if not npc_cmd:
-                    npc_cmd = npc_disc.get_command_for_service(latest, map_name, "storage")
-            # ── DB-FACT FALLBACK (2026-09-12) ──
-            # The live actor scan can miss the vendor (actor list doesn't always
-            # carry shop NPCs). Query the seeded GameKnowledgeDB fact so the sale
-            # actually happens instead of a no-op "ai auto". task 'sell' then
-            # 'tool_dealer' (both seeded at prt_in 126 76; tool_dealer is the one
-            # that BUYS from the player).
-            if not npc_cmd:
-                try:
-                    from ai_sidecar.game_knowledge_db import GameKnowledgeDB
-                    _gk = GameKnowledgeDB()
-                    for _t in ("sell", "tool_dealer"):
-                        _f = _gk.find_npc_for_task(_t, map_name)
-                        if _f:
-                            _x = int(_f.get("x", 0) or 0)
-                            _y = int(_f.get("y", 0) or 0)
-                            if _x and _y:
-                                npc_cmd = f"talknpc {_x} {_y} c r1 n"
-                                _log.debug("vendor_db_fact: map=%s task=%s npc=%s -> %s",
-                                           map_name, _t, _f.get("npc_name", ""), npc_cmd)
-                                break
-                except Exception:
-                    pass
+            # ── DB-FACT SHOP PRIORITY (2026-09-16) ──
+            # The actor-scan get_command_for_service("vendor") name-matches ANY
+            # NPC whose name contains "merchant" — including CHAT script NPCs
+            # (e.g. Merchant#pron 123,102 is a novice_exchange chat script, not a
+            # shop). Emitting talknpc to it opens a CHAT dialog ("talk cont")
+            # that freezes the bot and blocks the core native `autosell` (which
+            # routes to the REAL buy-capable Tool Dealer prt_in 126 75). Resolve
+            # the shop from the curated GameKnowledgeDB fact FIRST (real shop
+            # NPC), and when a real shop is known, drive the proven core path
+            # (`autosell`) instead of talking to any actor-scanned NPC.
+            try:
+                from ai_sidecar.game_knowledge_db import GameKnowledgeDB
+                _gk = GameKnowledgeDB()
+                _real_shop = None
+                for _t in ("sell", "tool_dealer"):
+                    _f = _gk.find_npc_for_task(_t, map_name)
+                    if _f:
+                        _x = int(_f.get("x", 0) or 0)
+                        _y = int(_f.get("y", 0) or 0)
+                        if _x and _y:
+                            _real_shop = (_f, _x, _y)
+                            _log.debug("vendor_db_fact: map=%s task=%s npc=%s -> (%d,%d)",
+                                       map_name, _t, _f.get("npc_name", ""), _x, _y)
+                            break
+            except Exception:
+                _real_shop = None
+            if _real_shop:
+                # Native core sell is the owner; let sellAuto_npc (config already =
+                # the real Tool Dealer prt_in 126 75) walk/talk/sell/close. Do NOT
+                # emit talknpc to the actor-scanned chat NPC -- that hijacks the
+                # dialog and freezes the bot.
+                npc_cmd = "autosell"
+            else:
+                # No curated shop fact: fall back to actor scan (may be a chat NPC,
+                # but it is the only candidate on an unfamiliar server).
+                if npc_disc is not None:
+                    npc_cmd = npc_disc.get_command_for_service(latest, map_name, "vendor")
+                    if not npc_cmd:
+                        npc_cmd = npc_disc.get_command_for_service(latest, map_name, "storage")
             # If NPC discovered, use talknpc; otherwise just ai auto
             cmd = npc_cmd if npc_cmd else "ai auto"
             
