@@ -1661,7 +1661,30 @@ sub on_command_intercept {
 	    }
 	} elsif ($_ic_map =~ /^[a-z]+_fild/ || $_ic_map =~ /_field/) {
 	    # On hunting map: block "move prontera" unless bot has 0 potions
-	    # (0 potions = need to return to town to buy)
+	    # (0 potions = need to return to town to buy) OR it is returning to
+	    # SELL JUNK (carrying items_control-autosell items / weight-heavy).
+	    # The sell path is driven by the sidecar SELL state -> native core
+	    # `autosell` (routes to sellAuto_npc); blocking the return-to-town
+	    # when the bot carries herbs (matched below as "potions") froze the
+	    # bot on the field forever (no sell -> no zeny -> job-change deadlock).
+	    my $_trip_is_sell = 0;
+	    if ($char && @{_char_inventory($char)}) {
+	        for my $_tj (@{_char_inventory($char)}) {
+	            next unless $_tj;
+	            my $_tctrl = Misc::items_control($_tj->{name}, $_tj->{nameID});
+	            if ($_tctrl->{sell} && ($_tj->{amount} || 0) > ($_tctrl->{keep} || 0)) {
+	                $_trip_is_sell = 1;
+	                last;
+	            }
+	        }
+	        if (!$_trip_is_sell) {
+	            # weight-heavy fallback (percent_weight >= itemsMaxWeight_sellOrStore)
+	            my $_wmax = $char->{weight_max} || 0;
+	            if ($_wmax > 0 && Misc::percent_weight($char) >= ($config{itemsMaxWeight_sellOrStore} || 15)) {
+	                $_trip_is_sell = 1;
+	            }
+	        }
+	    }
 	    my $_ic_has_potions = 0;
 	    if ($char && @{_char_inventory($char)}) {
 	        for my $_gi (@{_char_inventory($char)}) {
@@ -1674,9 +1697,13 @@ sub on_command_intercept {
 	        }
 	    }
 	    if ($_ic_has_potions) {
-	        warning "[command_intercept] blocking '$full_cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
-	        $args->{switch} = '';
-	        $args->{args} = '';
+		if ($_trip_is_sell) {
+		    warning "[command_intercept] allowing '$full_cmd' on hunting map $_ic_map (sell trip)\n", 'aiSidecarBridge', 1;
+		} else {
+		    warning "[command_intercept] blocking '$full_cmd' on hunting map $_ic_map\n", 'aiSidecarBridge', 1;
+		    $args->{switch} = '';
+		    $args->{args} = '';
+		}
 	    } else {
 	        warning "[command_intercept] allowing '$full_cmd' on hunting map $_ic_map (0 potions)\n", 'aiSidecarBridge', 1;
 	    }
