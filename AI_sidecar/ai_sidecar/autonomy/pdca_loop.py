@@ -2356,8 +2356,48 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     _bot_level = int(_progress.get("base_level", _progress.get("level", 1)) or 1)
                 else:
                     _bot_level = int(getattr(getattr(latest, "progression", None), "base_level", 1) or 1)
-                
-                if _bot_level <= 5:
+                # ── STALE-LEVEL GUARD (2026-09-16): the bridge snapshot's
+                #    `progression` is ALWAYS EMPTY (see aiSidecarBridge.pl
+                #    ~2852: the eval that filled it never runs). So
+                #    `_bot_level` defaults to 1 for EVERY bot, and a level-48
+                #    bot wrongly enters the `<=5` "extreme conservative"
+                #    portal-hug branch below -> yanked off the vendor to the
+                #    farm map every cycle. Resolve the REAL level from the
+                #    snapshot's raw level fields or DB, and if it is genuinely
+                #    unknown, do NOT portal-hug (defer to the conscious tier
+                #    rather than treating a missing number as level 1).
+                _lvl_known = (_bot_level > 1)
+                if not _lvl_known and isinstance(latest, dict):
+                    _lv_from_prog = latest.get("progression", {}) or {}
+                    _lvl_alt = _lv_from_prog.get("base_level") or _lv_from_prog.get("level") or latest.get("level") or latest.get("base_level")
+                    if _lvl_alt:
+                        _bot_level = int(_lvl_alt)
+                        _lvl_known = (_bot_level > 1)
+                if not _lvl_known:
+                    try:
+                        from ai_sidecar.combat.risk_manager import get_risk_manager as _get_rm2
+                        _lvl_db = _get_rm2().get_bot_level(_bid) if hasattr(_get_rm2(), "get_bot_level") else None
+                        if _lvl_db:
+                            _bot_level = int(_lvl_db)
+                            _lvl_known = (_bot_level > 1)
+                    except Exception:
+                        pass
+                # ── RULE.md: portal-hug must never decide strategy AND must not
+                #    fire while the bot is in town with sellable weight (a SELL
+                #    intent). Reflex = instant-timing only.
+                _dl_in_town_sell = False
+                if _in_town:
+                    try:
+                        _dw_ratio = 0.0
+                        if isinstance(latest, dict):
+                            _dw_ratio = float(latest.get("weight_ratio", 0.0) or 0.0)
+                        else:
+                            _dw_ratio = float(getattr(getattr(latest, "vitals", None), "weight_ratio", 0.0) or 0.0)
+                        if _dw_ratio >= 0.15:
+                            _dl_in_town_sell = True
+                    except Exception:
+                        _dl_in_town_sell = False
+                if _bot_level <= 5 and not _dl_in_town_sell:
                     # EXTREME CONSERVATIVE: portal-hug the DB-backed safe farm map,
                     # shortest attack range, don't chase. The safe map is LEARNED
                     # (server_solutions farm_map), never a hardcoded literal.
