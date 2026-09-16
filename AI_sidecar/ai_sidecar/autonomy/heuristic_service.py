@@ -5449,289 +5449,41 @@ class HeuristicService:
 
         # ── STATE: SELL ──
         if state == "SELL":
-            # ── MANUAL SELL IS THE SOLE OWNER (2026-09-14 FINAL) ──
-            # Native OpenKore sellAuto is ARCHITECTURALLY UNABLE to sell to this
-            # server's shop-type vendors. npc_store_begin (Receive.pm) sets
-            # $ai_v{'npc_talk'}{'talk'}='buy_or_sell' for shop-type NPCs, but
-            # native sellAuto (CoreLogic.pm:1978) requires talk EQ 'sell' — so it
-            # ALWAYS times out ("Npc did not respond") -> "Auto-sell sequence
-            # completed" with ZERO 00C9 packets -> zeny stays 0. The manual
-            # emitter here uses `sell <binID>` + `sell done` -> completeNpcSell ->
-            # sendSellBulk -> 00C9 unconditionally (the working, proven path).
+            # ── NATIVE OPENKORE SELL (2026-09-15 FINAL) ──
+            # The core already has a proven, self-contained sell path: `autosell`
+            # (Commands.pm cmdAutoSell) queues AI::queue("sellAuto"), which walks to
+            # sellAuto_npc, opens the dialog, sells every items_control-autosell item
+            # via completeNpcSell/sendSellBulk, and closes. The sidecar must DRIVE
+            # that core path, not reinvent it with a fragile multi-command burst.
             #
-            # sellAuto is DISABLED in config (sellAuto 0) so shouldStartAutoSell
-            # never queues native; this manual SELL state is the single owner.
-            # Cooldown: only sell every 60s to prevent tight loop
-            _sell_now = __import__("time").time()
-            _last_sell = self._last_sell_time.get(bot_id, 0)
-            # AGNOSTIC (RULE.md): resolve the sell NPC from the knowledge DB FACT
-            # store (seeded baseline + learned per server), NOT a hardcoded coord.
-            # Must be computed OUTSIDE the cooldown branch: the single-routing
-            # filter below also reads _sell_npc to immobilize at the vendor, and
-            # an unbound _sell_npc on cooldown crashed assess() every cycle
-            # (UnboundLocalError) -> SELL could never dispatch a sale.
-            # CROSS-MAP SEARCH (2026-09-14): the real BUYER often lives in a town
-            # INTERIOR (e.g. prontera's Tool Dealer is on prt_in at 126,76), so a
-            # map-only lookup fell back to a gift shop (which cannot buy) and the
-            # sell burst never had a shop open. Search the town and its interiors.
-            _sell_npc = self._get_npc("sell", map_name) or self._get_npc("tool_dealer", map_name)
-            if not _sell_npc:
-                _town = self._resolve_safe_town()
-                _cand = [f"{_town}_in", f"{_town}_in02", f"{_town}_in01", _town]
-                for _cm in _cand:
-                    _sell_npc = self._get_npc("sell", _cm) or self._get_npc("tool_dealer", _cm)
-                    if _sell_npc:
-                        break
-            _sell_x = int((_sell_npc or {}).get("x", 0) or 0)
-            _sell_y = int((_sell_npc or {}).get("y", 0) or 0)
-            _sell_map = str((_sell_npc or {}).get("map_name", "") or "").strip()
-            if _sell_now - _last_sell < 60:
-                # Sell on cooldown - fall through to TOWN_HUNT
+            # The only fork friction was the CoreLogic.pm:1978 gate requiring
+            # talk EQ 'sell' while this server's shop NPCs set 'buy_or_sell' —
+            # fixed in src/AI/CoreLogic.pm (accept buy_or_sell). Config already has
+            # sellAuto_npc prt_in 126 75 (the buy-capable Tool Dealer) + items_control
+            # autosell=1 rows, so ai_sellAutoCheck() (real $char->inventory, never a
+            # stale snapshot) picks the junk. Just emit `autosell` (cooldown-gated);
+            # the core walks/talks/sells/closes and the sale lands (00C9 -> zeny).
+            _sell_now2 = __import__("time").time()
+            _last_sell2 = self._last_sell_time.get(bot_id, 0)
+            if _sell_now2 - _last_sell2 < 60:
+                # On cooldown — fall through so the bot isn't stuck (returns to HUNT
+                # via the normal state machine).
                 pass
             else:
-                self._last_sell_time[bot_id] = _sell_now
-                # Stand up first
+                self._last_sell_time[bot_id] = _sell_now2
                 actions.append(HeuristicAction(
                     kind="command", command="stand",
                     confidence=0.95, domain="economy",
-                    reason="Stand up before walking to Tool Dealer",
+                    reason="Stand up before native auto-sell (walk to seller)",
                 ))
-                if _sell_x and _sell_y:
-                    # If the buyer is on a DIFFERENT map (town interior such as
-                    # prt_in), walk to that map first — coord-only moves do not
-                    # cross maps, so the burst would otherwise never open a shop.
-                    if _sell_map and _sell_map.lower() != (map_name or "").lower():
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"move {_sell_map}",
-                            confidence=0.95, domain="economy",
-                            reason=f"Buyer ({_sell_npc.get('npc_name')}) is on {_sell_map} - walk there to sell",
-                        ))
-                    actions.append(HeuristicAction(
-                        kind="command", command=f"move {_sell_x} {_sell_y}",
-                        confidence=0.95, domain="economy",
-                        reason="Weight {weight:.0%} - walk to Tool Dealer to sell junk",
-                    ))
-                    # PIN randomWalk OFF during the sell visit (2026-09-14).
-                    # The field branch sets `route_randomWalk 1`; if it stays on while
-                    # the bot is at the vendor, OpenKore random-walks AWAY mid-burst,
-                    # the shop dialog closes (npc_shopid=0), `sell done` fires with no
-                    # open shop -> 00CB fail -> zeny 0 forever. The bot must stand
-                    # still at the vendor until `sell done` finalizes the sale.
-                    actions.append(HeuristicAction(
-                        kind="command", command="set route_randomWalk 0",
-                        confidence=0.92, domain="economy",
-                        reason="Disable random walk during the sell visit so the bot stays at the vendor until the sale finalizes",
-                    ))
-                    # ── IN-RANGE GATE (2026-09-15) ──
-                    # Opening the buy/sell dialog REQUIRES the bot to be standing
-                    # within the NPC's reach (npc_checknear, ~AREA_SIZE+1 cells).
-                    # Emitting `talknpc <x> <y>` in the SAME burst as the `move`
-                    # makes OpenKore run the talk while still walking -> "Could not
-                    # find an NPC" -> dialog never opens -> 00C9 never sends -> the
-                    # sale never completes. Since `weight>5%` keeps SELL active
-                    # every cycle, the talk re-fires every cycle without ever
-                    # landing. Gate the talk on the char's CURRENT position being
-                    # within the vendor radius; until then only emit the move so the
-                    # bot actually arrives first. Position comes from the bridge
-                    # signal (map x/y), no hardcoded coord.
-                    _cx = int(signals.get("x", -1) or -1)
-                    _cy = int(signals.get("y", -1) or -1)
-                    _in_range = (_cx >= 0 and _cy >= 0 and _sell_x and _sell_y
-                                 and abs(_cx - _sell_x) <= 15 and abs(_cy - _sell_y) <= 15)
-                    if _in_range:
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"talknpc {_sell_x} {_sell_y} c r1 n",
-                            confidence=0.90, domain="economy",
-                            reason=f"At Tool Dealer ({_sell_x},{_sell_y}) — open shop and sell items (atomic dialog)",
-                        ))
-                    else:
-                        actions.append(HeuristicAction(
-                            kind="log", command="sell_waiting_in_range",
-                            confidence=0.90, domain="economy",
-                            reason=f"Walking to seller ({_sell_x},{_sell_y}); char at ({_cx},{_cy}) — talk once in range",
-                        ))
-                # ── AUTO-SELL JUNK ITEMS (AGNOSTIC) ──
-                # Search inventory for low-value items (Sell price below a threshold
-                # from the knowledge DB) and queue sell commands. No hardcoded item
-                # names/IDs — an item is junk if its vendor value is negligible.
-                _inv_items = signals.get("inventory_items", []) or []
-                _junk_found = False
-                try:
-                    from ai_sidecar.knowledge_loader import get_items
-                    _item_db = {str(_it.get("Id", "")): _it for _it in get_items()}
-                except Exception:
-                    _item_db = {}
-                for _item_entry in _inv_items:
-                    # AGNOSTIC, ID-AUTHORITATIVE resolution (2026-09-14 FIX).
-                    # Each entry is a dict {item_id, name, quantity}. We resolve the
-                    # junk item by its EXACT item_id first — never by substring on
-                    # str(dict), which mis-matched e.g. "Green Herb" -> "Herb"(7872),
-                    # "Club [3]" -> "Club"(1501), "Sword [4]" -> "Sword"(1101),
-                    # "Tattered Novice Ninja Suit" -> "Ninja Suit"(2337). Those are
-                    # un-owned ids the bridge cannot map to a binID, so the whole
-                    # 00C9 sell batch was rejected (00CB fail, zeny 0 forever).
-                    _carried_id = None
-                    _carried_name = ""
-                    if isinstance(_item_entry, dict):
-                        _carried_id = str(_item_entry.get("item_id") or _item_entry.get("id") or "").strip()
-                        _carried_name = str(_item_entry.get("name") or "").strip()
-                    else:
-                        # ENTITY-SHAPE FIX (2026-09-14): the live snapshot carries
-                        # `InventoryItemDigest` PYDANTIC OBJECTS, not dicts. The old
-                        # `str(_item_entry)` produced the full model repr, so the
-                        # exact-name match never hit and NO item ever classified as
-                        # junk -> `sell <id>` was never emitted -> zeny 0 forever.
-                        _eid = getattr(_item_entry, "item_id", None)
-                        _enm = getattr(_item_entry, "name", None)
-                        if _eid is not None or _enm is not None:
-                            _carried_id = str(_eid or "").strip()
-                            _carried_name = str(_enm or "").strip()
-                        else:
-                            _carried_name = str(_item_entry).strip()
-                    # 1) Exact item_id match (authoritative — the id the server uses).
-                    _junk_id = None
-                    _junk_name = ""
-                    if _carried_id and _carried_id in _item_db:
-                        _it = _item_db[_carried_id]
-                        _it_nm = str(_it.get("Name", "") or _it.get("AegisName", "") or "").lower()
-                        # RO vendor mechanics: an item resells to a buying NPC
-                        # at half its Buy price. The knowledge item DB exposes
-                        # `Buy` only (no `Sell` column on this fork), so derive
-                        # the resale value as Buy/2 rather than reading a
-                        # non-existent `Sell` field that always yielded 0 (which
-                        # made NO item classify as junk -> `sell <id>` never
-                        # emitted -> the sell->zeny->job-change deadlock).
-                        _buy_val = int(_it.get("Buy", 0) or 0)
-                        _sell_val = _buy_val // 2
-                        # Junk = resale value below 100z (low-value drops;
-                        # a 0-Buy item is non-sellable, skip it).
-                        if 0 < _sell_val < 100:
-                            # NEVER sell the bot's own heal/consumable stock — the
-                            # junk burst was selling Green Herb/Red Herb/Apple/
-                            # Carrot (all heal-capable) and starving survival.
-                            if any(_hk in (_it_nm or "").lower() for _hk in
-                                   ("herb", "apple", "carrot", "potion", "berry",
-                                    "grape", "banana", "meat", "jelly")):
-                                continue
-                            _junk_id = _carried_id
-                            _junk_name = _it_nm or _carried_name
-                    # 2) Fallback: EXACT name match (never substring — substring
-                    #    matched the wrong item and emitted un-owned ids).
-                    if not _junk_id and _carried_name:
-                        _cn = _carried_name.lower()
-                        for _it_id2, _it2 in _item_db.items():
-                            _it_nm2 = str(_it2.get("Name", "") or _it2.get("AegisName", "") or "").lower().strip()
-                            if _it_nm2 and _it_nm2 == _cn:
-                                _buy_val2 = int(_it2.get("Buy", 0) or 0)
-                                _sell_val2 = _buy_val2 // 2
-                                if 0 < _sell_val2 < 100:
-                                    _junk_id = _it_id2
-                                    _junk_name = _it_nm2
-                                break
-                            # also accept exact match of a "name [refine]" entry
-                            # against the base item name (e.g. "sword [4]" vs "sword")
-                            if _it_nm2 and _cn.startswith(_it_nm2):
-                                _rest = _cn[len(_it_nm2):].strip()
-                                if _rest.startswith("[") and _rest.endswith("]"):
-                                    _buy_val2 = int(_it2.get("Buy", 0) or 0)
-                                    _sell_val2 = _buy_val2 // 2
-                                    if 0 < _sell_val2 < 100:
-                                        _junk_id = _it_id2
-                                        _junk_name = _it_nm2
-                                    break
-                    # ATOMIC SELL BURST (2026-09-14): queue EVERY owned junk item
-                    # in THIS visit (no per-item 120s throttle). The state-level
-                    # 60s cooldown already gates the whole SELL visit; the old
-                    # per-item cooldown spread the `sell` commands across cycles
-                    # so the bot walked off the vendor before `sell done`, and the
-                    # sale never finalized (zeny stayed 0 forever).
-                    if _junk_id:
-                        actions.append(HeuristicAction(
-                            kind="command", command=f"sell {_junk_id} 0",
-                            confidence=0.85, domain="economy",
-                            reason=f"Sell {_junk_name} (item {_junk_id}) — low-value junk from inventory",
-                        ))
-                        _junk_found = True
-                if _junk_found:
-                    logger.info(f"[auto_sell] {bot_id}: queued sell commands for junk items in inventory")
-                    # Finalize: `sell <binID>` only ADDS each item to OpenKore's
-                    # pending sell list ("Type 'sell done' to sell everything in your
-                    # sell list."). Without `sell done` the list never executes and
-                    # zeny stays 0. Must be emitted AFTER the items are added (the
-                    # bridge passes it through — "sell done" has no digit so the
-                    # binID rewrite skips it).
-                    actions.append(HeuristicAction(
-                        kind="command", command="sell done",
-                        confidence=0.85, domain="economy",
-                        reason="Execute the pending sell list (finalize sale)",
-                    ))
                 actions.append(HeuristicAction(
-                    kind="command", command="talk cont",
-                    confidence=0.80, domain="economy",
-                    reason="Complete sell transaction",
+                    kind="command", command="autosell",
+                    confidence=0.95, domain="economy",
+                    reason="Invoke core native sellAuto: walk -> open dialog -> sell junk -> close (00C9 -> zeny)",
                 ))
-            total_confidence = 0.90
-            top_domain = "economy"
-            # ── SELL SINGLE-ROUTING FILTER (2026-09-14) ──
-            # `actions` accumulates EVERY domain's emissions in this assess pass
-            # (cold-start/hunting/supplementary append `set lockMap <field>`,
-            # `navigate`, `mon_control`, `ai auto`, attack config BEFORE the state
-            # dispatch). When state==SELL, those field-routing commands are
-            # already in the list and get dispatched alongside the vendor
-            # sequence — the bot obeys the lockMap pull back to the field and
-            # never reaches the vendor (the sell->zeny deadlock). Drop the
-            # field-drag commands here so ONLY the sell sequence survives.
-            _sell_filtered: list[HeuristicAction] = []
-            # Immobilize at the vendor: the ONLY coordinate we may walk to during
-            # a sale is the vendor itself. Competing hunting/nav random-walk
-            # `move <x> <y>` steps would drag the bot off the shop before `sell
-            # done` -> dialog closes (npc_shopid=0) -> 00CB fail -> zeny 0.
-            _sx = int((_sell_npc or {}).get("x", 0) or 0)
-            _sy = int((_sell_npc or {}).get("y", 0) or 0)
-            for _sa in actions:
-                _sc = str(getattr(_sa, "command", "") or "").strip()
-                _low_sa = _sc.lower()
-                _mt = _low_sa.split()
-                _is_vendor_walk = (
-                    _sx and _sy
-                    and _low_sa.startswith("move ")
-                    and len(_mt) == 3
-                    and _mt[1].isdigit()
-                    and int(_mt[1]) == _sx
-                    and int(_mt[2]) == _sy
-                )
-                # CROSS-MAP VENDOR WALK (2026-09-14): `move <sell_map>` (a MAP-name
-                # move, e.g. "move prt_in") is part of the sell sequence when the
-                # buyer lives on a town interior — keep it, else the bot can never
-                # reach the shop and `sell <id>` has no open dialog.
-                _is_vendor_map_walk = (
-                    bool(_sell_map)
-                    and _low_sa == f"move {str(_sell_map).lower()}"
-                )
-                if _is_vendor_walk or _is_vendor_map_walk or _low_sa == "move" or _low_sa.startswith("move "):
-                    if _is_vendor_walk or _is_vendor_map_walk:
-                        _sell_filtered.append(_sa)
-                    # any other move (random-walk step, hunting reposition) drops
-                    continue
-                # CRITICAL: drop the hunting branch's random-walk re-ENABLE
-                # (`set route_randomWalk 1`) so the bot does NOT wander off the
-                # vendor mid-sale; keep ONLY the sell pin (`set route_randomWalk 0`).
-                if _low_sa == "set route_randomwalk 1" or _low_sa.startswith("set route_randomwalk"):
-                    if " 0" in _low_sa or _low_sa.endswith(" 0"):
-                        _sell_filtered.append(_sa)
-                    continue
-                if (
-                    _low_sa.startswith("set lockmap")
-                    or _low_sa.startswith("navigate ")
-                    or _low_sa.startswith("mon_control ")
-                    or _low_sa == "ai auto"
-                    or _low_sa.startswith("set attack")
-                ):
-                    continue
-                _sell_filtered.append(_sa)
             assessment = HeuristicAssessment(
-                horizon=horizon, actions=_sell_filtered, confidence=total_confidence,
-                actionable=len(_sell_filtered) > 0, top_domain=top_domain, signals=dict(signals),
+                horizon=horizon, actions=actions, confidence=0.90,
+                actionable=len(actions) > 0, top_domain="economy", signals=dict(signals),
             )
             self._last_assessment[bot_id] = assessment
             return assessment
