@@ -2381,35 +2381,61 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                 _lvl_known = (_bot_level > 1)
                 if not _lvl_known and isinstance(latest, dict):
                     _lv_from_prog = latest.get("progression", {}) or {}
-                    _lvl_alt = _lv_from_prog.get("base_level") or _lv_from_prog.get("level") or latest.get("level") or latest.get("base_level")
+                    # REAL SNAPSHOT SOURCES: the bridge always populates
+                    # identity.base_level (aiSidecarBridge.pl ~2687) — the
+                    # progression block is built from a cache that is often
+                    # empty. Check identity first, then the alternates.
+                    _lv_from_id = latest.get("identity", {}) or {}
+                    _lvl_alt = (
+                        _lv_from_prog.get("base_level")
+                        or _lv_from_id.get("base_level")
+                        or latest.get("level")
+                        or latest.get("base_level")
+                    )
                     if _lvl_alt:
                         _bot_level = int(_lvl_alt)
                         _lvl_known = (_bot_level > 1)
                 if not _lvl_known:
                     try:
-                        from ai_sidecar.combat.risk_manager import get_risk_manager as _get_rm2
-                        _lvl_db = _get_rm2().get_bot_level(_bid) if hasattr(_get_rm2(), "get_bot_level") else None
-                        if _lvl_db:
-                            _bot_level = int(_lvl_db)
-                            _lvl_known = (_bot_level > 1)
+                        _vitals = latest.get("vitals", {}) if isinstance(latest, dict) else {}
+                        _ident = latest.get("identity", {}) if isinstance(latest, dict) else {}
+                        logger.debug("combat_monitor: level unresolved (progression=%r identity=%r)", _vitals, _ident)
                     except Exception:
                         pass
                 # ── RULE.md: portal-hug must never decide strategy AND must not
                 #    fire while the bot is in town with sellable weight (a SELL
-                #    intent). Reflex = instant-timing only.
+                #    intent). Reflex = instant-timing only. The gate ALSO requires
+                #    a KNOWN level: an unresolved level must NOT be treated as
+                #    level 1 (a missing number is not evidence of a low-level bot).
                 _dl_in_town_sell = False
                 if _in_town:
                     try:
+                        # weight_ratio lives under `vitals` (+ inventory fallback) on
+                        # the bridge snapshot — NOT top-level. Reading top-level
+                        # silently returned 0.0 and the gauge never engaged.
                         _dw_ratio = 0.0
                         if isinstance(latest, dict):
-                            _dw_ratio = float(latest.get("weight_ratio", 0.0) or 0.0)
+                            _dv = latest.get("vitals", {}) or {}
+                            _di = latest.get("inventory", {}) or {}
+                            _dw_ratio = float(_dv.get("weight_ratio") or _di.get("weight_ratio") or 0.0)
+                            if not _dw_ratio:
+                                _dwm = _dv.get("weight_max") or _di.get("weight_max") or 0
+                                _dwt = _dv.get("weight") or _di.get("weight") or 0
+                                if _dwm:
+                                    _dw_ratio = _dwt / _dwm
                         else:
-                            _dw_ratio = float(getattr(getattr(latest, "vitals", None), "weight_ratio", 0.0) or 0.0)
+                            _dvi = getattr(latest, "vitals", None)
+                            _din = getattr(latest, "inventory", None)
+                            _dw_ratio = float(
+                                (getattr(_dvi, "weight_ratio", 0.0) if _dvi else 0.0)
+                                or (getattr(_din, "weight_ratio", 0.0) if _din else 0.0)
+                                or 0.0
+                            )
                         if _dw_ratio >= 0.15:
                             _dl_in_town_sell = True
                     except Exception:
                         _dl_in_town_sell = False
-                if _bot_level <= 5 and not _dl_in_town_sell:
+                if _bot_level <= 5 and _lvl_known and not _dl_in_town_sell:
                     # EXTREME CONSERVATIVE: portal-hug the DB-backed safe farm map,
                     # shortest attack range, don't chase. The safe map is LEARNED
                     # (server_solutions farm_map), never a hardcoded literal.
@@ -2615,11 +2641,26 @@ def _emit_combat_monitor(runtime_state, horizon: str, bot_id: str | None = None)
                     _defer_to_sell = False
                     if _in_town:
                         try:
+                            # weight_ratio is under `vitals` (+ inventory fallback),
+                            # NOT top-level (top-level read = always 0.0 = never defers).
                             _w_ratio = 0.0
                             if isinstance(latest, dict):
-                                _w_ratio = float(latest.get("weight_ratio", 0.0) or 0.0)
+                                _wv = latest.get("vitals", {}) or {}
+                                _wi = latest.get("inventory", {}) or {}
+                                _w_ratio = float(_wv.get("weight_ratio") or _wi.get("weight_ratio") or 0.0)
+                                if not _w_ratio:
+                                    _wwm = _wv.get("weight_max") or _wi.get("weight_max") or 0
+                                    _wwt = _wv.get("weight") or _wi.get("weight") or 0
+                                    if _wwm:
+                                        _w_ratio = _wwt / _wwm
                             else:
-                                _w_ratio = float(getattr(getattr(latest, "vitals", None), "weight_ratio", 0.0) or 0.0)
+                                _wvi = getattr(latest, "vitals", None)
+                                _win = getattr(latest, "inventory", None)
+                                _w_ratio = float(
+                                    (getattr(_wvi, "weight_ratio", 0.0) if _wvi else 0.0)
+                                    or (getattr(_win, "weight_ratio", 0.0) if _win else 0.0)
+                                    or 0.0
+                                )
                             # weight >= the native sell trigger (itemsMaxWeight_sellOrStore
                             # default 15%) => a sell is due; do not let the death-loop
                             # reflex yank the bot back to the field.
