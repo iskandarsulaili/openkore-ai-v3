@@ -4555,6 +4555,16 @@ class HeuristicService:
                 _audit_last_return2 = self._last_return_to_town.get(bot_id, 0)
                 if _audit_now2 - _audit_last_return2 > 60:
                     self._last_return_to_town[bot_id] = _audit_now2
+                    # TRIP LATCH (2026-09-17): this field->town move is the sell
+                    # trip. Latch it so the reflex-tier edge_unstuck handler does
+                    # NOT supersede it with `move <hunting zone>` every ~30s
+                    # (live: prt_fild05 367,205 <-> prontera 26,203 oscillation,
+                    # zeny 0 forever). Latch long enough for the walk + sell.
+                    try:
+                        from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler as _cech_r
+                        _cech_r().mark_trip(bot_id, 240.0)
+                    except Exception:
+                        pass
                     actions.append(HeuristicAction(
                         kind="command", command="move prontera",
                         confidence=0.99, domain="economy",

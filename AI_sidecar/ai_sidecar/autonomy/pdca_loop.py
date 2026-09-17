@@ -1441,6 +1441,18 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             )
             aq.enqueue(bot_id, proposal)
             _log.info("vendor_action: bot=%s town=%s weight=%.0f%% cmd=%s", bot_id, town_map, weight_ratio * 100, cmd)
+            # ── TRIP LATCH (2026-09-17): the in-town autosell emitter OWNS the sell
+            #    trip. While it is live, the reflex-tier edge_unstuck handler must NOT
+            #    emit `move <hunting zone>` — that SUPERSEDES the tactical sell trip
+            #    (live: bot oscillated prt_fild05 367,205 <-> prontera 26,203 for
+            #    hours; edge_unstuck fired `move prt_fild08c` every ~30s, cancelling
+            #    the in-flight sell route -> never sold -> zeny 0). Latch it for the
+            #    full native sellAuto window (walk to prt_in + talk + sell + close).
+            try:
+                from ai_sidecar.resilience.edge_case_handler import create_edge_case_handler as _cech2
+                _cech2().mark_trip(bot_id, 180.0)
+            except Exception:
+                pass
             return 1
         
         # Not in town — route to nearest town
