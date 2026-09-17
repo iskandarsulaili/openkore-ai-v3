@@ -2312,6 +2312,9 @@ sub _load_bridge_policy {
 		aiSidecarPolicy_allow_60 => 'sl',
 		aiSidecarPolicy_allow_61 => 'sp',
 		aiSidecarPolicy_allow_62 => '@go',
+		# Native core auto-sell (queues OpenKore sellAuto). Without this the
+		# allowlist silently drops `autosell` and loot never converts to zeny.
+		aiSidecarPolicy_allow_63 => 'autosell',
 
 		aiSidecarPolicy_deny_0 => 'quit',
 		aiSidecarPolicy_deny_1 => 'plugin',

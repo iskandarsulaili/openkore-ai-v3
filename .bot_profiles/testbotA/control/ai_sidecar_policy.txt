@@ -47,6 +47,11 @@ aiSidecarPolicy_allow_34 sitAuto
 aiSidecarPolicy_allow_35 cart
 aiSidecarPolicy_allow_36 identify
 aiSidecarPolicy_allow_37 st
+# Native core auto-sell: queues OpenKore's sellAuto (walk -> sellAuto_npc ->
+# sell every items_control-autosell item -> 00C9 -> zeny). Without this entry
+# the allowlist silently DROPS every `autosell` (policy_rejected) and the bot
+# can never convert loot to zeny.
+aiSidecarPolicy_allow_38 autosell
 
 # Always blocked (even in denylist mode) for safety.
 aiSidecarPolicy_deny_0 quit
