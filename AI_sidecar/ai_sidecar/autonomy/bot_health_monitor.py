@@ -107,18 +107,19 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
             "source": "health_monitor",
             "metadata": {"reason": "Setting sell NPC for overweight bot"},
         })
-        # Override a broken/misconfigured sell dialog sequence (e.g. the "= c r1 n"
-        # that OpenKore's space-split parser reads with a literal leading '=', which
-        # is NOT a valid TalkNPC token -> "Failed to add NPC talk sequence" and the
-        # sale never sends). Push the canonical c r1 n so a RUNNING bot self-heals
-        # without a process restart.
+        # Restore the CANONICAL, proven sell dialog sequence. OpenKore's own
+        # default for sellAuto_npc_steps is 's' (Task::TalkNPC token `s` =
+        # "send NPC buy/sell list (sell side)") — it is what actually opens the
+        # shop's sell list. A hand-rolled 'c r1 n' never sends the sell-list
+        # request, so the dialog stalls and CoreLogic reports 'Npc did not
+        # respond' and the sale never happens.
         corrections.append({
             "action_id": f"health_sellsteps_{bot_id}",
             "kind": "command",
-            "command": "set sellAuto_npc_steps c r1 n",
+            "command": "set sellAuto_npc_steps s",
             "priority_tier": "tactical",
             "source": "health_monitor",
-            "metadata": {"reason": "Normalizing sellAuto dialog sequence to valid tokens (c r1 n)"},
+            "metadata": {"reason": "Restoring canonical sellAuto dialog sequence ('s' = send sell list)"},
         })
         # Set proper weight if still 0
         corrections.append({

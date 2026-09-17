@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword daipruhe
+adminPassword leeshigi
 callSign
 commandPrefix ;
 callSignGM 0
@@ -209,7 +209,7 @@ itemsCheckWeight 1
 route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
-route_randomWalk
+route_randomWalk 1
 route_randomWalk_inLockOnly 1
 route_randomWalk_inTown 1
 route_randomWalk_maxRouteTime 2
@@ -881,7 +881,7 @@ maxDistance
 
 sellAuto
 sellAuto_npc prt_in 126 76
-sellAuto_npc_steps c r1 n
+sellAuto_npc_steps s
 sellAuto_standpoint
 sellAuto_maxWeight 25
 sellAuto_distance 25
@@ -1208,7 +1208,7 @@ useSelf_item {
 
 # ── Auto-buy Healing Items ──
 
-lockMap prt_fild08c
+lockMap new_1-3
 route_reAddMissingPortals 1
 
 # ── Auto loot ──
@@ -1265,7 +1265,7 @@ buyAuto_Red_Potion {
 }
 sellAuto
 sellAuto_npc prt_in 126 76
-sellAuto_npc_steps c r1 n
+sellAuto_npc_steps s
 sellAuto_maxWeight 25
 sellAuto_distance 25
 teleportAuto_minAggressives 8
