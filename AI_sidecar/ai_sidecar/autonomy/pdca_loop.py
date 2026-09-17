@@ -1380,7 +1380,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
             # (e.g. Merchant#pron 123,102 is a novice_exchange chat script, not a
             # shop). Emitting talknpc to it opens a CHAT dialog ("talk cont")
             # that freezes the bot and blocks the core native `autosell` (which
-            # routes to the REAL buy-capable Tool Dealer prt_in 126 75). Resolve
+            # routes to the REAL buy-capable Tool Dealer prt_in 126 76). Resolve
             # the shop from the curated GameKnowledgeDB fact FIRST (real shop
             # NPC), and when a real shop is known, drive the proven core path
             # (`autosell`) instead of talking to any actor-scanned NPC.
@@ -1402,7 +1402,7 @@ def _emit_vendor_actions(runtime_state, horizon: str, bot_id: str | None = None)
                 _real_shop = None
             if _real_shop:
                 # Native core sell is the owner; let sellAuto_npc (config already =
-                # the real Tool Dealer prt_in 126 75) walk/talk/sell/close. Do NOT
+                # the real Tool Dealer prt_in 126 76) walk/talk/sell/close. Do NOT
                 # emit talknpc to the actor-scanned chat NPC -- that hijacks the
                 # dialog and freezes the bot.
                 npc_cmd = "autosell"

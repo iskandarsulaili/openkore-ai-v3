@@ -43,7 +43,7 @@ XKore_ID
 
 # It is not advised to set secureAdminPassword if you're using Xkore 2
 secureAdminPassword 1
-adminPassword romeyaig
+adminPassword daipruhe
 callSign
 commandPrefix ;
 callSignGM 0
@@ -209,7 +209,7 @@ itemsCheckWeight 1
 route_escape_reachedNoPortal 1
 route_escape_randomWalk 1
 route_escape_shout
-route_randomWalk 1
+route_randomWalk
 route_randomWalk_inLockOnly 1
 route_randomWalk_inTown 1
 route_randomWalk_maxRouteTime 2
@@ -294,7 +294,7 @@ teleportAuto_search 0
 teleportAuto_onlyWhenSafe 0
 teleportAuto_maxDmg 2000
 teleportAuto_maxDmgInLock 0
-teleportAuto_deadly
+teleportAuto_deadly 1
 teleportAuto_useSkill 0
 teleportAuto_useChatCommand
 teleportAuto_allPlayers 0
@@ -879,14 +879,14 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto 0
-sellAuto_npc prt_in 126 75
+sellAuto
+sellAuto_npc prt_in 126 76
 sellAuto_npc_steps c r1 n
 sellAuto_standpoint
 sellAuto_maxWeight 25
 sellAuto_distance 25
 sellAuto_maxDistance 15
-sellAuto_npc prt_in 126 75
+sellAuto_npc prt_in 126 76
 
 storageAuto 1
 storageAuto_onStart 0
@@ -1208,7 +1208,7 @@ useSelf_item {
 
 # ── Auto-buy Healing Items ──
 
-lockMap new_1-3
+lockMap prt_fild08c
 route_reAddMissingPortals 1
 
 # ── Auto loot ──
@@ -1222,7 +1222,7 @@ itemsMaxWeight_sellOrStore 15
 
 # ── Auto sit regen ──
 sitAuto_hp_lower 20
-sitAuto_hp_upper 0
+sitAuto_hp_upper 50
 sitAuto_sp_lower 0
 sitAuto_sp_upper 0
 sitAuto_hp_thread 0
@@ -1263,8 +1263,8 @@ buyAuto_Red_Potion {
 	maxAmount = 10
 	price = 0
 }
-sellAuto 0
-sellAuto_npc prt_in 126 75
+sellAuto
+sellAuto_npc prt_in 126 76
 sellAuto_npc_steps c r1 n
 sellAuto_maxWeight 25
 sellAuto_distance 25

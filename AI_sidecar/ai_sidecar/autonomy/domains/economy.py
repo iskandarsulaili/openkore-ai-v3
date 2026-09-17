@@ -356,7 +356,7 @@ class EconomyDomain(BaseDomain):
             "Auto-sell loot when inventory full",
         )
         service._set_config_once(
-            actions, bot_id, "sellAuto_npc", "prt_in 126 75", "economy",
+            actions, bot_id, "sellAuto_npc", "prt_in 126 76", "economy",
             "Tool Dealer in Prontera",
         )
         service._set_config_once(

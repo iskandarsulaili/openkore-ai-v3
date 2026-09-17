@@ -4385,7 +4385,7 @@ class HeuristicService:
             # ── SELL CONFIG: auto-sell when overweight ──
             self._set_config_once(actions, bot_id, "sellAuto", "0", "hunting",
                 "Config audit - auto-sell loot when inventory full")
-            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 76", "hunting",
                 "Config audit - Tool Dealer in Prontera")
             self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
                 "Config audit - walk up to 25 cells to sell")
@@ -4444,7 +4444,7 @@ class HeuristicService:
             # ── SELL CONFIG: auto-sell when overweight ──
             self._set_config_once(actions, bot_id, "sellAuto", "0", "hunting",
                 "Config audit - auto-sell loot when inventory full")
-            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 75", "hunting",
+            self._set_config_once(actions, bot_id, "sellAuto_npc", "prt_in 126 76", "hunting",
                 "Config audit - Tool Dealer in Prontera")
             self._set_config_once(actions, bot_id, "sellAuto_distance", "25", "hunting",
                 "Config audit - walk up to 25 cells to sell")
@@ -5469,7 +5469,7 @@ class HeuristicService:
             # The only fork friction was the CoreLogic.pm:1978 gate requiring
             # talk EQ 'sell' while this server's shop NPCs set 'buy_or_sell' —
             # fixed in src/AI/CoreLogic.pm (accept buy_or_sell). Config already has
-            # sellAuto_npc prt_in 126 75 (the buy-capable Tool Dealer) + items_control
+            # sellAuto_npc prt_in 126 76 (the buy-capable Tool Dealer) + items_control
             # autosell=1 rows, so ai_sellAutoCheck() (real $char->inventory, never a
             # stale snapshot) picks the junk. Just emit `autosell` (cooldown-gated);
             # the core walks/talks/sells/closes and the sale lands (00C9 -> zeny).
