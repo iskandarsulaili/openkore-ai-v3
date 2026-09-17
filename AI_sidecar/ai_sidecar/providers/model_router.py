@@ -41,19 +41,19 @@ DEFAULT_POLICY_RULES: dict[str, dict[str, Any]] = {
     },
     "autonomy_mission_decision": {
         "providers": ["openai"],
-        "models": {"openai": "opencode-go/deepseek-v4-flash"},
+        "models": {"openai": "combo/deepseek-v4.1-flash"},
     },
     "tactical_short_reasoning": {
         "providers": ["openai"],
-        "models": {"openai": "opencode-go/deepseek-v4-flash"},
+        "models": {"openai": "combo/deepseek-v4.1-flash"},
     },
     "strategic_planning": {
         "providers": ["openai"],
-        "models": {"openai": "opencode-go/deepseek-v4-flash"},
+        "models": {"openai": "combo/deepseek-v4.1-flash"},
     },
     "long_reflection": {
         "providers": ["openai"],
-        "models": {"openai": "opencode-go/deepseek-v4-flash"},
+        "models": {"openai": "combo/deepseek-v4.1-flash"},
     },
     "embeddings": {
         "providers": ["openai"],
