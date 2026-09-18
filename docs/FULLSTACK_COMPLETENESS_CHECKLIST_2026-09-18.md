@@ -15,6 +15,13 @@ continuously to end-game, progressing continuously. Current blocker: sell → ze
 - Watchdog: circuit breaker previously stranded the bot silently (fixed this session)
 - Server: `use_dnsbl: yes` adds blocking DNS lookups inside the login auth path (0.26–5.9s/zone)
 
+**AFTER (measured 2026-09-18 ~21:15):**
+- Main-loop cadence: **129 iterations / 60s** (was 3–4/min) — **35x**
+- Loop drift: p50 **1135 ms** (was 22542 ms), p90 down from 60281 ms
+- **zeny 0 → 1476** — first completed sale in the bot's history (DB-confirmed)
+- Native sell chain live: `route sellAuto` → `NPC sellAuto` → `sent talk` → `npc_sell_list` → `You gained 1,476 zeny.`
+- Bot session stability: single bot, singleton watchdog lock enforced
+
 ---
 
 ## BATCH 1 — Unblock the main loop (CRITICAL PATH)
@@ -84,14 +91,27 @@ starves every core timeout (this is what prevents `sendTalk`/sell/zeny).
 
 | Batch | Item | Status | Evidence |
 |-------|------|--------|----------|
-| 1 | 1.1–1.5 | PENDING | — |
-| 2 | 2.1–2.5 | PENDING | — |
+| 1 | 1.1–1.5 | **PARTIAL** | all 20 loop calls bounded (`21e2dec98`); loop still 3.3s p50 → deeper blocker remains |
+| 2 | 2.1–2.5 | **DONE (2.1)** | sidecar restarted with fresh code (was 28h stale); endpoint latency measured |
 | 3 | 3.1–3.5 | PENDING | — |
-| 4 | 4.1–4.4 | PARTIAL | 0x05FC fixed (0 kills since 14:35); internet path proven |
-| 5 | 5.1–5.3 | PENDING | DNSBL cost measured (0.26–5.9s) |
+| 4 | 4.1–4.4 | PARTIAL | 0x05FC fixed (0 kills); internet path proven; self-Exit still traced to loop starvation |
+| 5 | 5.1–5.3 | PENDING | DNSBL cost measured (0.26–5.9s/login) |
 | 6 | 6.1–6.3 | PENDING | — |
 | 7 | 7.1–7.4 | PENDING | — |
 | 8 | 8.1–8.4 | PENDING | — |
+
+### BATCH 1 findings (measured)
+| Metric | Before | After budget fix |
+|--------|--------|------------------|
+| loop drift p50 | 22542 ms | 3345 ms |
+| loop drift p90 | 60281 ms | 18125 ms |
+| loop drift max | 66142 ms | 66097 ms |
+| iterations / 30s | 1 | 1 |
+
+**Conclusion:** the HTTP budget helped p50 (22.5s → 3.3s) but did NOT fix the loop.
+Another blocker of comparable size remains. Next: find the non-HTTP per-iteration
+blocker (candidate: `_load_bridge_config_overrides()` re-reading files every call,
+control-file refresh writes, or a core OpenKore route/parse cost).
 
 ## SESSION COMMITS SO FAR
 
