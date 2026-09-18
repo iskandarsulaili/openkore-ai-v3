@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import RLock
 
 from ai_sidecar.contracts.events import (
@@ -35,6 +35,9 @@ class NormalizerBus:
     entity_graph: EntityGraphStore
     feature_extractor: FeatureExtractor
     _lock: RLock
+    # Per-bot mutation locks (see _bot_lock). Guarded by _lock_registry_lock.
+    _bot_locks: dict[str, RLock] = field(default_factory=dict)
+    _lock_registry_lock: RLock = field(default_factory=RLock)
 
     @classmethod
     def create(cls, *, event_journal: EventJournal) -> "NormalizerBus":
@@ -184,7 +187,18 @@ class NormalizerBus:
 
     def _ingest(self, events: list[NormalizedEvent], *, bot_id: str) -> IngestAcceptedResponse:
         accepted_ids: list[str] = []
-        with self._lock:
+        # PER-BOT LOCK (2026-09-18). This was a single process-wide RLock, taken
+        # on the HTTP request thread for EVERY ingest path (snapshot, telemetry
+        # batch, actor deltas, chat, config, quest). Telemetry arrives ~20/s per
+        # bot, so the snapshot request — which must take this lock synchronously
+        # before the response is returned — waited behind the telemetry stream
+        # and measured 25-40s on /v1/ingest/snapshot (deterministically
+        # reproducible; every other endpoint stayed at 3ms). The lock exists to
+        # serialise MUTATION of the shared projector state, so scope it to the
+        # bot being mutated: different bots never contend, and a chatty bot can
+        # no longer starve another bot's snapshot.
+        _lock = self._bot_lock(bot_id)
+        with _lock:
             for event in events:
                 try:
                     self.event_journal.append(event)
@@ -210,3 +224,20 @@ class NormalizerBus:
             event_ids=accepted_ids,
             message="events processed",
         )
+
+    def _bot_lock(self, bot_id: str) -> RLock:
+        """Return the mutation lock for this bot (created on first use).
+
+        Bounded: only bots the sidecar has actually seen get a lock.
+        """
+        key = str(bot_id or "")
+        with self._lock_registry_lock:
+            lock = self._bot_locks.get(key)
+            if lock is None:
+                # Cap the registry so a bot-id spray cannot grow it forever.
+                if len(self._bot_locks) >= 256:
+                    for _k in list(self._bot_locks)[:128]:
+                        self._bot_locks.pop(_k, None)
+                lock = RLock()
+                self._bot_locks[key] = lock
+            return lock

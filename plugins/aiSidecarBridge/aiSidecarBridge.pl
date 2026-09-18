@@ -3188,8 +3188,20 @@ sub _build_snapshot_payload {
 		$progression = eval {
 			my %p;
 			$p{job_id}       = $char->{jobID}     if defined $char->{jobID};
-			$p{base_level}   = $char->{level}      if defined $char->{level};
-			$p{job_level}    = $char->{level_job}  if defined $char->{level_job};
+			# OpenKore's Player fields are `lv` / `lv_job` (see src/Network/
+			# Receive.pm using $char->{lv} and $char->{lv_job}). The previous
+			# names here — `level` / `level_job` — DO NOT EXIST anywhere in the
+			# core, so they were always undef and the snapshot reported
+			# base_level/job_level as absent. The macro engine therefore saw a
+			# level-1 novice forever and the job-change pattern (which requires
+			# base_level >= 10) could never fire. Accept both spellings so a
+			# future core rename cannot silently zero this out again.
+			$p{base_level}   = (defined $char->{lv}     ? $char->{lv}
+			                  : defined $char->{level}      ? $char->{level}      : undef);
+			$p{base_level}   = undef if !defined $p{base_level};
+			$p{job_level}    = (defined $char->{lv_job} ? $char->{lv_job}
+			                  : defined $char->{level_job}  ? $char->{level_job}  : undef);
+			$p{job_level}    = undef if !defined $p{job_level};
 			$p{base_exp}     = $char->{exp}        if defined $char->{exp};
 			$p{base_exp_max} = $char->{exp_max}    if defined $char->{exp_max};
 			$p{job_exp}      = $char->{exp_job}    if defined $char->{exp_job};
@@ -3667,9 +3679,9 @@ sub _build_snapshot_payload {
 			weight     => $char ? $char->{weight}     : undef,
 			weight_max => $char ? $char->{weight_max} : undef,
 			weight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
-			level      => $char ? $char->{level}      : undef,
-			base_level => $char ? $char->{level}      : undef,
-			job_level  => $char ? $char->{level_job}  : undef,
+			level      => $char ? ($char->{lv} // $char->{level})      : undef,
+			base_level => $char ? ($char->{lv} // $char->{level})      : undef,
+			job_level  => $char ? ($char->{lv_job} // $char->{level_job})  : undef,
 			zeny       => $char ? $char->{zeny}       : undef,
 		},
 		combat => {
@@ -5186,7 +5198,7 @@ sub _send_party_status {
 		bot_id => _bot_id(),
 		char_name => $char->{name} || '',
 		base_level => $char->{lv} || $char->{level} || 0,
-		job_level => $char->{level_job} || 0,
+		job_level => $char->{lv_job} || $char->{level_job} || 0,
 		hp => $char->{hp} || 0,
 		hp_max => $char->{hp_max} || 1,
 		map => _safe_field_map() || '',
@@ -7662,9 +7674,13 @@ sub _now_ms {
 }
 
 sub _throttled_warning {
-	return;
-	# [SIDECAR] suppressed - noise reduction
+	# Previously reduced to a bare `return;` for "noise reduction", which
+	# silently discarded EVERY sidecar failure report (snapshot push failures,
+	# registration errors, event-ingest failures). Failures must be visible:
+	# restore the throttled warning (one line per key per 10s, so it cannot
+	# flood the log).
 	my ($key, $msg) = @_;
+	return if !defined $key || !defined $msg;
 	my $now = _now_ms();
 	my $interval = 10_000;
 	my $last = $last_warn_at_ms{$key} || 0;
