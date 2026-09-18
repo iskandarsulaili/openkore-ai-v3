@@ -173,9 +173,30 @@ sub serverConnect {
 	# REACHABILITY LADDER (2026-08-31): the success check must handle IPv6 —
 	# inet_aton returns undef for an IPv6 host, so compare the peerhost string
 	# directly for v6 (the socket is connected iff peerhost is non-empty).
+	# ROOT-CAUSE FIX (2026-09-18): the v4 comparison below must ALSO tolerate a
+	# DUAL-STACK result. When the configured host is a NAME that resolves to an
+	# IPv6 address first (e.g. ipv6-raw-server.openkore-ai.com ->
+	# 2602:fbaf:80c::10), `is_v6` is false (no colon in the NAME) yet
+	# peerhost() returns the IPv6 literal; inet_aton() then returns undef for
+	# the peer and the comparison failed, so a SUCCESSFUL connection was
+	# reported as "couldn't connect: ... (error code 22)" with a stale $!
+	# (EINVAL). That is what made the char-server leg fail on the internet path
+	# while the tunnel was demonstrably reachable. Only compare when BOTH sides
+	# are actually IPv4; otherwise trust that a non-empty peerhost means the
+	# socket is connected.
 	my $connected = $self->{remote_socket} && $self->{remote_socket}->peerhost();
 	if ($connected && !$is_v6) {
-		$connected = inet_aton($self->{remote_socket}->peerhost()) eq inet_aton($host);
+		my $peer_ip = $self->{remote_socket}->peerhost();
+		my $want = inet_aton($host);
+		my $got  = inet_aton($peer_ip);
+		if ($want && $got) {
+			$connected = ($got eq $want);
+		} elsif (!$want) {
+			# Host is a name that resolved to v6 (or a non-v4 form): a
+			# connected socket with a peer address IS success — do not
+			# downgrade it to a failure on a string/format mismatch.
+			$connected = 1;
+		}
 	}
 	$connected ?
 		message T("connected\n"), "connection" :
@@ -390,7 +411,14 @@ sub checkConnection {
 		if (defined $master->{OTP_ip} && defined $master->{OTP_port}) {
 			$self->serverConnect($master->{OTP_ip}, $master->{OTP_port});
 		} else {
-			$self->serverConnect($master->{ip}, $master->{port});
+			# LOCAL-PATH OVERRIDE (2026-09-18, agnostic): a bot running ON the
+			# server host should not hairpin out through a public tunnel to
+			# reach it — that path adds the tunnel's latency and drops the
+			# reply under load, which showed up as repeated
+			# 'Timeout on Account Server' login churn. `forceMasterIP` mirrors
+			# the existing `forceMapIP` convention so a profile can pin the
+			# account/login endpoint without editing the shared tables file.
+			$self->serverConnect($config{forceMasterIP} || $master->{ip}, $config{forceMasterPort} || $master->{port});
 		}
 		# call plugin's hook to determine if we can continue the work
 		if ($self->serverAlive) {
@@ -541,7 +569,11 @@ sub checkConnection {
 			$captcha_state = 0;
 
 			if ($master->{charServer_ip}) {
-				$self->serverConnect($master->{charServer_ip}, $master->{charServer_port});
+				# LOCAL-PATH OVERRIDE (2026-09-18, agnostic): mirror forceMasterIP
+				# so a same-host bot can reach the char server directly instead
+				# of hairpinning through the public tunnel (see the login site).
+				$self->serverConnect($config{forceCharIP} || $master->{charServer_ip},
+					$config{forceCharPort} || $master->{charServer_port});
 			} elsif ($servers[$config{'server'}]) {
 				message TF("Selected server: %s\n", $servers[$config{server}]->{name}), 'connection';
 				$self->serverConnect($servers[$config{'server'}]{'ip'}, $servers[$config{'server'}]{'port'});
@@ -643,10 +675,16 @@ sub checkConnection {
 			my ($ip, $port);
 			if ($master->{private}) {
 				$ip = $config{forceMapIP} || $master->{ip};
-				$port = $map_port;
+				$port = $config{forceMapPort} || $map_port;
 			} else {
-				$ip = $master->{mapServer_ip} || $config{forceMapIP} || $map_ip;
-				$port = $master->{mapServer_port} || $map_port;
+				# LOCAL-PATH OVERRIDE (2026-09-18): forceMapIP/Port must WIN over
+				# the shared tables entry — that is what "force" means, and it
+				# lets a same-host bot reach the map server directly (127.0.0.1)
+				# instead of hairpinning out through the public tunnel, which
+				# intermittently dropped the map session. Off-box bots leave
+				# these keys unset and keep using mapServer_ip/port unchanged.
+				$ip = $config{forceMapIP} || $master->{mapServer_ip} || $map_ip;
+				$port = $config{forceMapPort} || $master->{mapServer_port} || $map_port;
 			}
 			$self->serverConnect($ip, $port);
 
