@@ -8010,10 +8010,21 @@ sub _check_bridge_reflexes {
 	if ($new_partyAuto ne $_last_partyAuto) { $::config{'partyAuto'} = $new_partyAuto unless $::config{'_sidecar_set_partyAuto'}; $_last_partyAuto = $new_partyAuto; }
 	my $new_partyAutoShare = _cfg('aiSidecar_partyAutoShare', '1');
 	if ($new_partyAutoShare ne $_last_partyAutoShare) { $::config{'partyAutoShare'} = $new_partyAutoShare unless $::config{'_sidecar_set_partyAutoShare'}; $_last_partyAutoShare = $new_partyAutoShare; }
-	my $new_sellAuto = _cfg('aiSidecar_sellAuto', '0');
+	# ── NATIVE CORE FACILITIES (2026-09-18) ────────────────────────────────
+	# sellAuto/storageAuto are OpenKore's OWN proven facilities: they walk to
+	# the vendor NPC, open the buy/sell dialog, transact and close. We used to
+	# force them OFF ('0') from the bridge while reinventing a weaker sell path
+	# (which fired talknpc on the wrong map and closed the dialog before
+	# selling — documented in items_control.txt), so loot never became zeny.
+	# Default them ON; a profile overrides via aiSidecar_sellAuto /
+	# aiSidecar_storageAuto in ai_sidecar.txt.
+	my $new_sellAuto = _cfg('aiSidecar_sellAuto', '1');
 	if ($new_sellAuto ne $_last_sellAuto) { $::config{'sellAuto'} = $new_sellAuto unless $::config{'_sidecar_set_sellAuto'}; $_last_sellAuto = $new_sellAuto; }
 	$::config{'sellAuto_npc'} = $_sell_npc if $_sell_npc;
-		my $new_storageAuto = _cfg('aiSidecar_storageAuto', '0');
+		# storageAuto is likewise a native facility (walk to Kafra -> open storage ->
+	# deposit). The profile config already sets storageAuto 1 with a verified
+	# Kafra NPC (prontera 152 326), so the bridge default must not contradict it.
+	my $new_storageAuto = _cfg('aiSidecar_storageAuto', '1');
 	if ($new_storageAuto ne $_last_storageAuto) { $::config{'storageAuto'} = $new_storageAuto unless $::config{'_sidecar_set_storageAuto'}; $_last_storageAuto = $new_storageAuto; }
 	$::config{'storageAuto_npc'} = $_stor_npc if $_stor_npc;
 													    # Pro RO: disable auto-sit, let sidecar handle healing

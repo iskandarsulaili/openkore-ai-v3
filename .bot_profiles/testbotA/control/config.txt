@@ -879,7 +879,7 @@ maxDistance
 	# [checkSelfCondition]
 }
 
-sellAuto
+sellAuto 1
 sellAuto_npc prt_in 126 76
 sellAuto_npc_steps s
 sellAuto_standpoint
@@ -890,7 +890,7 @@ sellAuto_npc prt_in 126 76
 
 storageAuto 1
 storageAuto_onStart 0
-storageAuto_npc
+storageAuto_npc prontera 152 326
 storageAuto_standpoint
 storageAuto_distance 5
 storageAuto_maxDistance 15
@@ -1263,7 +1263,7 @@ buyAuto_Red_Potion {
 	maxAmount = 10
 	price = 0
 }
-sellAuto
+sellAuto 1
 sellAuto_npc prt_in 126 76
 sellAuto_npc_steps s
 sellAuto_maxWeight 25

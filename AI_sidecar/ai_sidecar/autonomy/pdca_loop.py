@@ -5422,7 +5422,7 @@ class PDCALoop:
                                             _rl_cmd_map = {
                                                 "farm": "attackAuto 3",
                                                 "buy_potions": "buyAuto 1",
-                                                "sell_items": "sellAuto 0",
+                                                "sell_items": "sellAuto 1",
                                                 "level_skill": "stat_add 1 1",
                                                 "rest": "sit",
                                                 "socialize": "party 1",
@@ -5481,7 +5481,7 @@ class PDCALoop:
                                     _rl_persist_cmd = {
                                         "farm": "attackAuto 3",
                                         "buy_potions": "buyAuto 1",
-                                        "sell_items": "sellAuto 0",
+                                        "sell_items": "sellAuto 1",
                                         "level_skill": "stat_add 1 1",
                                         "rest": "sit",
                                     }.get(_rl_persist)
@@ -6722,7 +6722,7 @@ class PDCALoop:
                                             _cycle_bot_id or "default",
                                             ActionProposal(
                                                 action_id=f"pro_cfg_{_pro_h.md5(f'cfg_{time.monotonic_ns()}'.encode()).hexdigest()[:8]}",
-                                                kind="command", command="set sellAuto 0",
+                                                kind="command", command="set sellAuto 1",
                                                 priority_tier=ActionPriorityTier.tactical, source="planner",
                                                 created_at=datetime.now(UTC), expires_at=datetime.now(UTC) + timedelta(seconds=120),
                                                 idempotency_key=f"pro_cfg_sell_{_cycle_bot_id or 'def'}",
@@ -8182,7 +8182,7 @@ class PDCALoop:
                                     _vloc = f"{_vmap} {_vx} {_vy}"
                                     _set_id_sell = _nh.md5(f"npc_cfg_{_bot_id}_sell_{time.monotonic_ns()}".encode()).hexdigest()[:8]
                                     _set_id_stor = _nh.md5(f"npc_cfg_{_bot_id}_stor_{time.monotonic_ns()}".encode()).hexdigest()[:8]
-                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_sell_{_set_id_sell}", kind="command", command=f"set sellAuto 0", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_sell_{_bot_id}", metadata={"source": "pro_ro_player", "reason": "Enable auto-sell", "bot_id": _bot_id}))
+                                    _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_sell_{_set_id_sell}", kind="command", command=f"set sellAuto 1", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_sell_{_bot_id}", metadata={"source": "pro_ro_player", "reason": "Enable auto-sell", "bot_id": _bot_id}))
                                     _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_sellnpc_{_set_id_sell}", kind="command", command=f"set sellAuto_npc {_vloc}", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_sellnpc_{_bot_id}", metadata={"source": "pro_ro_player", "reason": f"Set sell NPC to {_vname}", "bot_id": _bot_id}))
                                     _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_stor_{_set_id_stor}", kind="command", command=f"set storageAuto 1", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_stor_{_bot_id}", metadata={"source": "pro_ro_player", "reason": "Enable auto-storage", "bot_id": _bot_id}))
                                     _npc_aq.enqueue(_bot_id, ActionProposal(action_id=f"npc_cfg_stornpc_{_set_id_stor}", kind="command", command=f"set storageAuto_npc {_vloc}", priority_tier=ActionPriorityTier.tactical, source="planner", expires_at=datetime.now(UTC) + timedelta(seconds=120), idempotency_key=f"npc_cfg_stornpc_{_bot_id}", metadata={"source": "pro_ro_player", "reason": f"Set storage NPC to {_vname}", "bot_id": _bot_id}))
@@ -8797,7 +8797,7 @@ class PDCALoop:
                 _rl_cmd_map = {
                     "farm": "attackAuto 3",
                     "buy_potions": "buyAuto 1",
-                    "sell_items": "sellAuto 0",
+                    "sell_items": "sellAuto 1",
                     "level_skill": "stat_add 1 1",
                     "rest": "sit",
                     "socialize": "party 1",

@@ -91,7 +91,7 @@ def check_bot_health(runtime_state, action_queue, bot_id: str) -> list[dict]:
         corrections.append({
             "action_id": f"health_weight_{bot_id}",
             "kind": "command",
-            "command": "set sellAuto 0",
+            "command": "set sellAuto 1",
             "priority_tier": "tactical",
             "source": "health_monitor",
             "metadata": {"reason": f"Weight {weight_ratio:.0%} > {MAX_WEIGHT_RATIO:.0%}, enabling auto-sell"},

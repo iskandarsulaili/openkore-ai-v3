@@ -6835,7 +6835,7 @@ class HeuristicService:
                         ))
                 # ECONOMY CONFIG: Ensure sellAuto, itemsTakeAuto, buyAuto are set
                 actions.append(HeuristicAction(
-                    kind="command", command="set sellAuto 0",
+                    kind="command", command="set sellAuto 1",
                     confidence=0.99, domain="economy",
                     reason="Enable auto-sell",
                 ))
