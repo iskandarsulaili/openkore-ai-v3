@@ -66,6 +66,11 @@ class BotProcess:
         self.restart_count: int = 0
         self.restart_window: list[datetime] = []
         self.max_restarts_per_hour = 5
+        # Half-open circuit breaker (2026-09-18): cool-down before probing a
+        # restart once the breaker is OPEN. Configurable per profile.
+        self.breaker_cooldown_minutes = 15
+        self._breaker_tripped_at: datetime | None = None
+        self._breaker_last_log = None
         self.console_log: str = ""
         self.started_at: datetime | None = None
         self.last_log_write: datetime | None = None
@@ -73,13 +78,56 @@ class BotProcess:
         self._consecutive_crash_count: int = 0  # Crashes within 5min of start
 
     def can_restart(self) -> bool:
-        """Check if bot can be restarted (circuit breaker)."""
+        """Check if bot can be restarted (circuit breaker).
+
+        HALF-OPEN BREAKER (2026-09-18): the breaker previously had NO recovery
+        path — once `restart_window` reached max_restarts_per_hour, or
+        `_consecutive_crash_count` hit 3, can_restart() returned False forever.
+        The bot then stayed dead indefinitely (observed live: the watchdog
+        logged "Circuit breaker tripped — skipping restart" every 15s for
+        hours) and, because nothing alerted, the outage was SILENT. A breaker
+        must be able to close again.
+        """
         now = datetime.now()
         self.restart_window = [t for t in self.restart_window if now - t < timedelta(hours=1)]
-        # If we crashed 3+ times within 5 minutes of starting, increase backoff
-        if self._consecutive_crash_count >= 3:
-            return False  # Too many quick crashes — server may be down
-        return len(self.restart_window) < self.max_restarts_per_hour
+
+        tripped = (self._consecutive_crash_count >= 3
+                   or len(self.restart_window) >= self.max_restarts_per_hour)
+        if not tripped:
+            self._breaker_tripped_at = None
+            return True
+
+        # Half-open: after a cool-down, allow ONE probe attempt. If it survives
+        # long enough the window drains naturally; if it crash-loops again the
+        # breaker re-trips. Never leave the bot permanently dead.
+        if self._breaker_tripped_at is None:
+            self._breaker_tripped_at = now
+            self._breaker_last_log = None
+        cooldown = timedelta(minutes=self.breaker_cooldown_minutes)
+        if now - self._breaker_tripped_at >= cooldown:
+            logger.warning(
+                f"[watchdog] {self.name}: circuit breaker HALF-OPEN after "
+                f"{self.breaker_cooldown_minutes}m — probing one restart"
+            )
+            self._breaker_tripped_at = None
+            self._consecutive_crash_count = 0
+            # Free one slot so the probe is allowed, keeping the hour budget.
+            if len(self.restart_window) >= self.max_restarts_per_hour:
+                self.restart_window = self.restart_window[1:]
+            return True
+
+        # Log the block once per state change, not every poll.
+        key = (self._breaker_tripped_at, len(self.restart_window), self._consecutive_crash_count)
+        if getattr(self, "_breaker_last_log", None) != key:
+            self._breaker_last_log = key
+            remaining = cooldown - (now - self._breaker_tripped_at)
+            logger.error(
+                f"[watchdog] {self.name}: circuit breaker OPEN — bot is DOWN; "
+                f"will probe again in {remaining.total_seconds()/60:.1f}m "
+                f"(crashes_in_window={len(self.restart_window)}, "
+                f"consecutive_quick={self._consecutive_crash_count})"
+            )
+        return False
 
     def _get_start_command(self) -> list[str]:
         """Build the OpenKore command line."""
