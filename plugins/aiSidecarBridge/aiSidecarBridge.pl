@@ -1625,7 +1625,7 @@ sub on_command_intercept {
 				current_y => $cy,
 				target_x => $tx,
 				target_y => $ty,
-			});
+			}, { loop_budget_ms => 1200 });
 			# _http_post_json returns {status, error, json, raw}
 			# The actual response fields are in ->{json}
 			my $body = $resp ? $resp->{json} : undef;
@@ -2401,7 +2401,7 @@ sub _attempt_register {
 	};
 
 	# Profile->char mapping is hardcoded in the party request handler
-	my $resp = _http_post_json('/v1/ingest/register', $payload);
+	my $resp = _http_post_json('/v1/ingest/register', $payload, { loop_budget_ms => 1500 });
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 500) {
 		$registered = 1;
 		_load_profile_to_char();
@@ -8164,7 +8164,7 @@ sub _send_discovery_data {
 	    kind => 'discovery_all_tables',
 	    tables => $data,
 	    timestamp => _now_ms(),
-	});
+	}, { loop_budget_ms => 1200 });
 }
 
 # ── Apply ML overrides from source="ml" actions ──
@@ -9085,7 +9085,7 @@ sub _apply_ml_config_guard {
 	            map => $map,
 	            shops => \@shop_data,
 	            collected_at => $now,
-	        });
+	        }, { loop_budget_ms => 1200 });
 	        if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
 	            debug "[npc_shop_data] collected data for " . scalar(@shop_data) . " NPC shops on $map\n", 'aiSidecarBridge', 2;
 	        }
@@ -9165,7 +9165,7 @@ sub _apply_ml_config_guard {
 	            map => $map,
 	            vendors => \@vendor_data,
 	            collected_at => $now,
-	        });
+	        }, { loop_budget_ms => 1200 });
 	        if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
 	            debug "[vendor_data] collected data for " . scalar(@vendor_data) . " player vendors on $map\n", 'aiSidecarBridge', 2;
 	        }

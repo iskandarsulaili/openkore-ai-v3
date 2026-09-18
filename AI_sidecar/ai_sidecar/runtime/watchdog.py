@@ -179,8 +179,15 @@ class BotProcess:
             alive = self.process.poll() is None
             if not alive:
                 self.exit_code = self.process.returncode
-                # Track consecutive quick crashes
-                if self.started_at and (datetime.now() - self.started_at).total_seconds() < 300:
+                # Track consecutive quick crashes. A stop WE initiated (or a
+                # clean SIGTERM from outside, e.g. an operator restarting the
+                # bot) is NOT a crash — counting it tripped the breaker and left
+                # the bot dead for hours. Only a genuine abnormal exit counts.
+                _rc = self.exit_code
+                _intentional = getattr(self, "_stop_requested", False)
+                if _intentional or _rc is None or _rc == 0 or _rc < 0:
+                    self._consecutive_crash_count = 0
+                elif self.started_at and (datetime.now() - self.started_at).total_seconds() < 300:
                     self._consecutive_crash_count += 1
                 else:
                     self._consecutive_crash_count = 0
@@ -299,6 +306,10 @@ class BotProcess:
 
     def stop(self) -> None:
         """Stop the bot process."""
+        # Mark the stop as INTENTIONAL so is_alive() does not count it as a
+        # crash (a counted crash can trip the circuit breaker and leave the bot
+        # dead for hours).
+        self._stop_requested = True
         if self.process and self.pid:
             try:
                 os.kill(self.pid, signal.SIGTERM)
@@ -637,6 +648,32 @@ class WatchdogSupervisor:
         return status
 
 
+def _acquire_singleton_lock():
+    """Ensure only ONE watchdog daemon runs.
+
+    Two watchdogs each spawn their own bot for the same profile. With
+    `dcOnDualLogin 1` on the server, the second bot kicks the first, so the
+    pair fight over the same character forever and the bot never farms long
+    enough to sell. The lock is held for the lifetime of the process; a stale
+    lock from a dead PID is reclaimed automatically.
+    """
+    import fcntl
+    lock_path = os.path.join(PROJECT_ROOT, "logs", "watchdog.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        logging.error(
+            "Another watchdog instance already holds %s — refusing to start a "
+            "second one (two bots on one char = dual-login kick loop).", lock_path
+        )
+        return None
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh  # keep the reference alive; closing releases the lock
+
+
 def run_daemon():
     """Entry point for running as a background daemon."""
     logging.basicConfig(
@@ -647,6 +684,10 @@ def run_daemon():
             logging.FileHandler(f"{PROJECT_ROOT}/logs/watchdog.log"),
         ],
     )
+
+    _lock = _acquire_singleton_lock()
+    if _lock is None:
+        return
 
     supervisor = WatchdogSupervisor(check_interval=15)
 
