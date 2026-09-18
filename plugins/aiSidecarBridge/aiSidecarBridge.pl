@@ -2497,7 +2497,7 @@ sub _send_snapshot {
     # live loop and silently returns 0 (verified: 0 snapshot POSTs reach
     # the sidecar via that path, while telemetry via _http_post_json
     # delivers 100%).
-    my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot);
+    my $resp = _http_post_json('/v1/ingest/snapshot', $snapshot, { loop_budget_ms => 1200 });
     if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
         _throttled_warning('snapshot_failed', '[aiSidecarBridge] snapshot push failed, fail-open retained.');
         _emit_telemetry('warning', 'bridge', 'snapshot_failed', 'snapshot push failed');
@@ -2509,7 +2509,7 @@ sub _send_snapshot {
         if ($_http_client) {
             $_http_client->send_json('/v1/state/builders', $states);
         } else {
-            _http_post_json('/v1/state/builders', $states);
+            _http_post_json('/v1/state/builders', $states, { loop_budget_ms => 1200 });
         }
     }
 
@@ -3814,7 +3814,7 @@ sub _send_actor_delta_from_snapshot {
 		removed_actor_ids => \@removed_actor_ids,
 	};
 
-	my $resp = _http_post_json('/v2/ingest/actors', $payload);
+	my $resp = _http_post_json('/v2/ingest/actors', $payload, { loop_budget_ms => 1200 });
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
 		my $status = _http_status_code($resp);
 		my $err = _http_error_text($resp);
@@ -4030,11 +4030,15 @@ sub _poll_next_action {
 		return;
 	}
 
+	# LOOP BUDGET (2026-09-18): _poll_next_action runs inside on_mainLoop_post,
+	# so its io timeout IS the worst-case main-loop stall. Keep it tight so a
+	# slow/loaded sidecar degrades to "no action this tick" instead of freezing
+	# the bot (which starved TalkNPC's 5s NPC wait and killed the sell).
 	my $resp = _http_post_json('/v1/actions/next', {
 		meta => _meta(_bot_id()),
 		poll_id => $poll_id,
 		max_actions => $MAX_ACTIONS_PER_POLL,
-	});
+	}, { loop_budget_ms => _cfg_int('aiSidecar_pollBudgetMs', 900) });
 
 	my $status = _http_status_code($resp);
 	if ($status < 200 || $status >= 300) {
@@ -4668,7 +4672,7 @@ sub _flush_completed_batches {
 			action_count => $_cb->{action_count},
 			completed_at => $_cb->{completed_at},
 			actions => $_cb->{actions},
-		});
+		}, { loop_budget_ms => 900 });
 		if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
 			delete $_completed_batches{$_cb_id};
 			debug "[ai_batch] reported batch=$_cb_id complete to sidecar\n", 'aiSidecarBridge', 2;
@@ -4696,7 +4700,7 @@ sub _send_party_buff_request {
 		buff_name => $buff_name,
 		target_bot => $target_bot || '',
 		requested_at => $now,
-	});
+	}, { loop_budget_ms => 900 });
 	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
 		debug "[party_buff] buff request sent: $buff_name -> $target_bot\n", 'aiSidecarBridge', 2;
 	} else {
@@ -4718,7 +4722,7 @@ sub _send_target_coordination {
 		target_hp_pct => $target_hp_pct || 0,
 		map => _safe_field_map() || '',
 		timestamp => _now_ms(),
-	});
+	}, { loop_budget_ms => 900 });
 	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
 		debug "[party_target] shared target: $target_name (ID=$target_id, HP=$target_hp_pct%)\n", 'aiSidecarBridge', 2;
 	}
@@ -4747,7 +4751,7 @@ sub _send_position_update {
 		y => $y + 0,
 		map => _safe_field_map() || '',
 		timestamp => _now_ms(),
-	});
+	}, { loop_budget_ms => 900 });
 	if ($_resp && $_resp->{status} >= 200 && $_resp->{status} < 300) {
 		debug "[party_position] sent position: ($x, $y) on $_resp->{map}\n", 'aiSidecarBridge', 3;
 	}
@@ -5214,7 +5218,7 @@ sub _send_party_status {
 	}
 
 	# POST to sidecar
-	my $resp = _http_post_json('/v2/party/status', $_party_status);
+	my $resp = _http_post_json('/v2/party/status', $_party_status, { loop_budget_ms => 900 });
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
 		debug "[party_status] failed to send party status (reason=$reason)\n", 'aiSidecarBridge', 1;
 	} else {
@@ -5462,7 +5466,7 @@ sub _flush_ack_queue {
 		observed_latency_ms => int($ack->{observed_latency_ms} || 0),
 	};
 
-	my $resp = _http_post_json('/v1/acknowledgements/action', $payload);
+	my $resp = _http_post_json('/v1/acknowledgements/action', $payload, { loop_budget_ms => 900 });
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
 		shift @ack_queue;
 		return;
@@ -5510,7 +5514,7 @@ sub _post_event {
 		meta => _meta(_bot_id()),
 		events => [$normalized],
 	};
-	my $resp = _http_post_json('/v2/ingest/event', $payload);
+	my $resp = _http_post_json('/v2/ingest/event', $payload, { loop_budget_ms => 1200 });
 	return $resp;
 }
 
@@ -5547,7 +5551,7 @@ sub _flush_telemetry_queue {
 		events => \@batch,
 	};
 
-	my $resp = _http_post_json('/v1/telemetry/ingest', $payload);
+	my $resp = _http_post_json('/v1/telemetry/ingest', $payload, { loop_budget_ms => 900 });
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
 		unshift @telemetry_queue, @batch;
 		splice @telemetry_queue, 0, @telemetry_queue - 200 if @telemetry_queue > 200;
@@ -5619,7 +5623,7 @@ sub _flush_event_queue {
 		events => \@normalized,
 	};
 
-	my $resp = _http_post_json('/v2/ingest/event', $payload);
+	my $resp = _http_post_json('/v2/ingest/event', $payload, { loop_budget_ms => 1200 });
 	my $status = _http_status_code($resp);
 	if ($status < 200 || $status >= 300) {
 		if ($status >= 400 && $status < 500) {
@@ -5691,7 +5695,7 @@ sub _flush_chat_queue {
 		},
 	};
 
-	my $resp = _http_post_json('/v2/ingest/chat', $payload);
+	my $resp = _http_post_json('/v2/ingest/chat', $payload, { loop_budget_ms => 900 });
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
 		unshift @chat_queue, @batch;
 		my $max_queue = _cfg_int('aiSidecar_maxChatQueue', 200);
@@ -5728,7 +5732,7 @@ sub _flush_config_updates {
 		source_files => ['config.txt', 'ai_sidecar.txt', 'ai_sidecar_policy.txt', _active_control_folder()],
 	};
 
-	my $resp = _http_post_json('/v2/ingest/config', $payload);
+	my $resp = _http_post_json('/v2/ingest/config', $payload, { loop_budget_ms => 900 });
 	if (!$resp || $resp->{status} < 200 || $resp->{status} >= 300) {
 		if ($resp && $resp->{status} >= 400 && $resp->{status} < 500) {
 			# Client error — discard pending keys, won't fix on retry
@@ -6020,7 +6024,8 @@ sub _http_get_json {
 	return { status=>$status, error=>'', json=>$json, raw=>$body };
 }
 sub _http_post_json {
-	my ($path, $payload) = @_;
+	my ($path, $payload, $opts) = @_;
+	$opts = {} if ref($opts) ne 'HASH';
 	return undef if !$json_available;
 	_load_bridge_config_overrides();
 
@@ -6055,9 +6060,20 @@ sub _http_post_json {
 	}
 
 	my $connect_timeout = _cfg_int('aiSidecar_connectTimeoutMs', 2000) / 1000;
+	# MAIN-LOOP BUDGET (2026-09-18): on_mainLoop_post runs these calls
+	# SYNCHRONOUSLY, so the io timeout IS the worst-case main-loop stall. The
+	# previous default (30s) produced a measured iteration drift of p50=22.5s /
+	# p90=60s, which starved every core timeout (TalkNPC's 5s NPC wait, the map
+	# keepalive, the sell trip) — the bot could not complete a single shop
+	# interaction. Callers on the main loop pass a tight budget via
+	# $opts{loop_budget_ms}; heavier/deferred work keeps the full timeout.
 	my $io_timeout = _cfg_int('aiSidecar_ioTimeoutMs', 5000) / 1000;
-	$connect_timeout = 0.001 if $connect_timeout <= 0;
-	$io_timeout = 0.001 if $io_timeout <= 0;
+	if (defined $opts->{loop_budget_ms}) {
+		$io_timeout = $opts->{loop_budget_ms} / 1000;
+	}
+	$io_timeout = 0.05 if $io_timeout < 0.05;
+	$connect_timeout = 0.05 if $connect_timeout > $io_timeout;
+	if ($connect_timeout <= 0) { $connect_timeout = 0.05; }
 
 	# ── Connection ──
 	my $sock = IO::Socket::INET->new(
@@ -8153,7 +8169,7 @@ sub _check_ml_outcome {
 		bot_id => $bot_id,
 		family => $pending->{family},
 		success => ($success ? "yes" : "no"),
-	});
+	}, { loop_budget_ms => 1200 });
 	if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
 		delete $ml_pending_outcome{$bot_id};
 		warning("[aiSidecarBridge] ml_outcome reported: family=$pending->{family} success=$success");
@@ -8363,7 +8379,7 @@ sub _apply_ml_config_guard {
 	        y => $y + 0,
 	        map => $map,
 	        timestamp => $now,
-	    });
+	    }, { loop_budget_ms => 900 });
 	    if ($resp && $resp->{status} >= 200 && $resp->{status} < 300) {
 	        debug "[party_position] reported position ($x,$y) on $map\n", 'aiSidecarBridge', 3;
 	    }
