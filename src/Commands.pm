@@ -1348,8 +1348,18 @@ sub cmdAutoSell {
 		message ($msg, "list");
 	} elsif (!$arg) {
 		message T("Initiating auto-sell.\n");
-		AI::queue("sellAuto");
-		Plugins::callHook('AI_sell_auto_queued');
+		# ROOT-CAUSE FIX (2026-09-18): the bridge re-issues `autosell` every
+		# poll, and AI::queue() has no dedupe, so @ai_seq grew to
+		# "sellAuto sellAuto sellAuto sellAuto". Each duplicate re-drove the
+		# TalkNPC path (extra talk-cancels, extra route churn) and starved the
+		# main loop. Queue only when a sell sequence is not already pending —
+		# same guard the core already uses for teleport/storageAuto/buyAuto.
+		if (AI::inQueue("sellAuto", "storageAuto")) {
+			debug "auto-sell already queued, ignoring duplicate request\n", "ai";
+		} else {
+			AI::queue("sellAuto");
+			Plugins::callHook('AI_sell_auto_queued');
+		}
 	}
 }
 

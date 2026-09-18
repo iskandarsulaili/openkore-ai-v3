@@ -395,6 +395,10 @@ sub iterate {
 			if ($target || %talk) {
 				$self->{stage} = TALKING_TO_NPC;
 				$self->{time} = time;
+				# ROOT-CAUSE FIX (2026-09-18): arm the absolute no-response
+				# bound from the moment we commit to talking (see the timeout
+				# branch above, which now requires talk_dispatched OR this).
+				$self->{talk_start_time} = time;
 			
 			} else {
 				
@@ -427,7 +431,17 @@ sub iterate {
 		}
 
 	# This is where things may bug in npcs which have no chat (private healers)
-	} elsif (!$ai_v{'npc_talk'}{'time'} && timeOut($self->{time}, $timeResponse)) {
+	# ROOT-CAUSE FIX (2026-09-18): this timeout branch sits BEFORE the
+	# TALKING_TO_NPC dispatch branch below, so `timeOut()` used to preempt the
+	# very first `x` (sendTalk) step whenever the main loop took longer than
+	# npcTimeResponse between iterations. Result: sendTalk (0x0090) was NEVER
+	# dispatched for shop NPCs — the bot sent talk-cancel instead, the shop
+	# dialog (0x00C4) never opened, the sell list (0x00C9) never arrived and
+	# zeny stayed 0 forever. Gate the no-response timeout on the talk having
+	# actually been dispatched, with an absolute bound so a genuinely
+	# unreachable NPC still fails (private-healer semantics preserved).
+	} elsif (!$ai_v{'npc_talk'}{'time'} && timeOut($self->{time}, $timeResponse)
+		&& ($self->{talk_dispatched} || timeOut($self->{talk_start_time} || $self->{time}, $timeResponse * 6))) {
 		# If NPC does not respond before timing out, then by default, it's
 		# a failure.
 		$messageSender->sendTalkCancel($self->{ID});
@@ -564,6 +578,11 @@ sub iterate {
 			}
 
 			$self->{target}->sendTalk;
+			# ROOT-CAUSE FIX (2026-09-18): record that the talk actually went
+			# out, so the no-response timeout above cannot preempt it on a
+			# slow main loop. Also (re)arm the absolute bound from here.
+			$self->{talk_dispatched} = 1;
+			$self->{talk_start_time} = time;
 
 		# Select an answer
 		} elsif ($current_talk_step eq 'select') {
