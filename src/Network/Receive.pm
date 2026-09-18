@@ -1294,31 +1294,29 @@ sub map_loaded {
 		# Format: [u16 0x05fc][u8 ip_strlen][ip string][u16 port BE][3 bytes].
 		# AGNOSTIC (RULE.md): the IP string is the map-server's own address (the
 		# client echoes the server it connected to); port is the map port.
-		{
+		# ROOT-CAUSE FIX (2026-09-18): the map-server REGISTERS 0x05fc with no
+		# handler — `packet(0x05fc,2)` in clif_packetdb.hpp — so its content is
+		# parsed and DISCARDED; no server code ever reads it. Yet rAthena's
+		# generic short-packet path (stock, PR #4944) calls set_eof() when a TCP
+		# segment delivers the packet incompletely, which KILLED the bot's
+		# session repeatedly:
+		#   clif_parse: Received packet 0x05fc with expected packet length 21,
+		#   but only 19 bytes remaining, disconnecting session #N
+		# Sending a packet the server never reads, whose split delivery is fatal,
+		# is pure downside. It is therefore opt-in: enable only with
+		# `sendConnInfo 1` if a future server build actually requires it.
+		if ($config{'sendConnInfo'}) {
 			my $conn_ip = $masterServer->{mapServer_ip} || $config{forceMapIP} || $map_ip || "127.0.0.1";
 			my $conn_port = $masterServer->{mapServer_port} || $map_port || 5121;
-			# ROOT-CAUSE FIX (2026-09-18): real 2025 clients send a NUMERIC
-			# address in this packet (<=15 chars). Sending the configured
-			# HOSTNAME (31 chars here) produced a 39-byte packet that the
-			# map-server repeatedly mis-parsed — its special case reads the
-			# length byte at offset 2 and logged
-			#   "Received packet 0x05fc with expected packet length 21, but
-			#    only 19 bytes remaining, disconnecting session #N"
-			# (21 = 8 + 13, i.e. it read a 13-char address such as
-			# 209.25.142.16) and KILLED the session mid-farm. Resolve the
-			# host to its numeric form so the packet matches what the real
-			# client sends and stays short (agnostic: whatever mapServer_ip
-			# is configured, we echo its literal address).
+			# Real 2025 clients send a NUMERIC address (<=15 chars -> 21-byte
+			# packet per the server's 2+1+slen+5 formula). Resolve the host so
+			# the packet matches, falling back to loopback for a same-host bot.
 			my $ip_str = "$conn_ip";
 			if ($ip_str =~ /[A-Za-z]/) {
 				my $packed = gethostbyname($ip_str);
 				if ($packed) {
 					$ip_str = join('.', unpack('C4', $packed));
-				} elsif ($ip_str =~ /^127\./) {
-					# unresolvable but explicitly loopback — keep as-is
-				} else {
-					# Fall back to loopback for a same-host bot rather than
-					# sending an unresolvable name.
+				} elsif ($ip_str !~ /^127\./) {
 					$ip_str = "127.0.0.1";
 				}
 			}
