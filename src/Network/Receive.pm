@@ -1297,12 +1297,36 @@ sub map_loaded {
 		{
 			my $conn_ip = $masterServer->{mapServer_ip} || $config{forceMapIP} || $map_ip || "127.0.0.1";
 			my $conn_port = $masterServer->{mapServer_port} || $map_port || 5121;
+			# ROOT-CAUSE FIX (2026-09-18): real 2025 clients send a NUMERIC
+			# address in this packet (<=15 chars). Sending the configured
+			# HOSTNAME (31 chars here) produced a 39-byte packet that the
+			# map-server repeatedly mis-parsed — its special case reads the
+			# length byte at offset 2 and logged
+			#   "Received packet 0x05fc with expected packet length 21, but
+			#    only 19 bytes remaining, disconnecting session #N"
+			# (21 = 8 + 13, i.e. it read a 13-char address such as
+			# 209.25.142.16) and KILLED the session mid-farm. Resolve the
+			# host to its numeric form so the packet matches what the real
+			# client sends and stays short (agnostic: whatever mapServer_ip
+			# is configured, we echo its literal address).
 			my $ip_str = "$conn_ip";
+			if ($ip_str =~ /[A-Za-z]/) {
+				my $packed = gethostbyname($ip_str);
+				if ($packed) {
+					$ip_str = join('.', unpack('C4', $packed));
+				} elsif ($ip_str =~ /^127\./) {
+					# unresolvable but explicitly loopback — keep as-is
+				} else {
+					# Fall back to loopback for a same-host bot rather than
+					# sending an unresolvable name.
+					$ip_str = "127.0.0.1";
+				}
+			}
 			my $slen = length($ip_str);
 			$slen = 64 if ($slen > 64);
 			my $conn_info = pack('v C', 0x05fc, $slen) . $ip_str . pack('n C3', $conn_port, 0, 0, 0);
 			$messageSender->sendToServer($conn_info);
-			debug "Sent 0x05fc conn-info (ip=$ip_str port=$conn_port)\n", 'sendPacket';
+			debug "Sent 0x05fc conn-info (ip=$ip_str port=$conn_port len=".length($conn_info).")\n", 'sendPacket';
 		}
 
 		$messageSender->sendSync(1);
