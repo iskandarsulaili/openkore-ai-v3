@@ -1003,7 +1003,27 @@ sub on_mainLoop_post {
 	    }
 	}
 
-	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms) {
+	# ── PER-ITERATION BUDGET (2026-09-18) ──────────────────────────────────
+	# Every flush below is SYNCHRONOUS HTTP. With independent gates they can
+	# all come due in the SAME iteration (exactly what happens when the loop
+	# runs slowly and each gate's next_at passes), so one iteration could issue
+	# 5+ calls of 1-3s each = 5-15s, which starves the core timeouts and makes
+	# the loop even slower (a feedback loop). Track the time actually consumed
+	# by loop-critical HTTP this iteration and DEFER the rest to the next
+	# iteration. Deferred work is not lost — its next_at is left untouched so it
+	# fires as soon as there is budget. A budget of 0 disables the cap.
+	my $loop_budget_ms = _cfg_int('aiSidecar_iterationBudgetMs', 1500);
+	$loop_budget_ms = 0 if $loop_budget_ms < 0;
+	my $loop_spent_ms = 0;
+	my $_iter_start = _now_ms();
+	# helper: may we start another loop-critical HTTP call this iteration?
+	my $_loop_has_budget = sub {
+		return 1 if $loop_budget_ms == 0;
+		$loop_spent_ms = _now_ms() - $_iter_start;
+		return $loop_spent_ms < $loop_budget_ms;
+	};
+
+	if (_cfg_bool('aiSidecar_actionPollEnabled', 1) && $now >= $next_poll_at_ms && $_loop_has_budget->()) {
 		debug "[on_mainLoop_post] polling (now=$now next=$next_poll_at_ms)\n", 'aiSidecarBridge', 1;
 	    my $poll_ok = _poll_next_action();
 	    my $base_delay_ms = _cfg_int('aiSidecar_pollIntervalMs', 100);
@@ -1014,27 +1034,27 @@ sub on_mainLoop_post {
 	    $next_poll_at_ms = $now + $next_delay_ms;
 	}
 
-	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms) {
+	if (_cfg_bool('aiSidecar_ackEnabled', 1) && $now >= $next_ack_at_ms && $_loop_has_budget->()) {
 		$next_ack_at_ms = $now + _cfg_int('aiSidecar_ackRetryMs', 500);
 		_flush_ack_queue();
 	}
 
-	if (_cfg_bool('aiSidecar_telemetryEnabled', 1) && $now >= $next_telemetry_at_ms) {
+	if (_cfg_bool('aiSidecar_telemetryEnabled', 1) && $now >= $next_telemetry_at_ms && $_loop_has_budget->()) {
 		$next_telemetry_at_ms = $now + _cfg_int('aiSidecar_telemetryIntervalMs', 1000);
 		_flush_telemetry_queue();
 	}
 
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_configIngestEnabled', 1) && $now >= $next_config_ingest_at_ms) {
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_configIngestEnabled', 1) && $now >= $next_config_ingest_at_ms && $_loop_has_budget->()) {
 		$next_config_ingest_at_ms = $now + _cfg_int('aiSidecar_configIngestIntervalMs', 2000);
 		_flush_config_updates();
 	}
 
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_chatIngestEnabled', 1) && $now >= $next_chat_ingest_at_ms) {
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_chatIngestEnabled', 1) && $now >= $next_chat_ingest_at_ms && $_loop_has_budget->()) {
 		$next_chat_ingest_at_ms = $now + _cfg_int('aiSidecar_chatIngestIntervalMs', 700);
 		_flush_chat_queue();
 	}
 
-	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_eventIngestEnabled', 1) && $now >= $next_event_ingest_at_ms) {
+	if (_cfg_bool('aiSidecar_v2Enabled', 1) && _cfg_bool('aiSidecar_eventIngestEnabled', 1) && $now >= $next_event_ingest_at_ms && $_loop_has_budget->()) {
 		my $event_ok = _flush_event_queue();
 		my $next_delay_ms = $event_ok ? _cfg_int('aiSidecar_eventIngestIntervalMs', 500) : _event_ingest_failure_delay_ms();
 		$next_event_ingest_at_ms = $now + $next_delay_ms;
