@@ -2077,7 +2077,17 @@ sub _track_lifecycle_transitions {
 			# walked, false-fired again = infinite loop). A genuinely stuck bot
 			# stops dispatching moves; a walking bot keeps sending them.
 			my $_ps_stalled_ms = ($_last_move_send_ms > 0) ? ($_ps_now - $_last_move_send_ms) : 0;
-			if ($ai_top =~ /^(?:route|move)/i) {
+			# ROUTE-FAMILY DETECTION (2026-09-19). This was anchored:
+			#   $ai_top =~ /^(?:route|move)/i
+			# but the AI sequence string is COMPOUND — the live states observed
+			# on a stuck bot were "attack route", "items_take route" and
+			# "teleport route", NONE of which match an anchored /^(route|move)/.
+			# Every such tick fell to the else-branch below, which resets
+			# $_last_move_send_ms to 0, so the 45s threshold could never
+			# accumulate and the recovery fired exactly ONCE while the bot sat
+			# frozen for 57 minutes (measured: stalled=3424467ms). Match the
+			# route/move task ANYWHERE in the sequence, not only at the start.
+			if ($ai_top =~ /(?:^|\s)(?:route|move)(?:\s|$)/i) {
 				my $_ps_thresh_ms = _cfg_int('aiSidecar_routeStallDetectMs', 45000);
 				if ($_ps_stalled_ms >= $_ps_thresh_ms && $_ps_now - $_route_stall_last_recover_ms >= _cfg_int('aiSidecar_routeStallRecoverCooldownMs', 30000)) {
 					$_route_stall_last_recover_ms = $_ps_now;
