@@ -2747,7 +2747,17 @@ sub _build_charstatus_payload {
             item_count => $snapshot->{inventory}{item_count} || 0,
             weight     => $char ? ($char->{weight} // 0) : 0,
             weight_max => $char ? ($char->{weight_max} // 0) : 0,
-            items      => $snapshot->{inventory_items} || [],
+            # NOTE (2026-09-18): the item list is populated by
+            # _build_snapshot_payload into $progression{inventory_items}
+            # (~line 3273, `$p{inventory_items}`) and $progression is attached
+            # at the TOP level (`progression => $progression`, line ~3705).
+            # Reading `$snapshot->{inventory_items}` therefore never matched and
+            # `items` was ALWAYS empty — the sidecar could not see the bot's
+            # potions, so its heal logic (which picks "the best potion actually
+            # in inventory") could never fire and the bot farmed at 17% HP
+            # forever. Read BOTH locations so either layout works.
+            items      => ($snapshot->{progression}{inventory_items}
+                           || $snapshot->{inventory_items} || []),
             equipment  => $snapshot->{progression}{equipment} || {},
         },
         # ── 5. Stats & Skills ──
@@ -3699,6 +3709,12 @@ sub _build_snapshot_payload {
 			weight_max => $char ? $char->{weight_max} : undef,
 			weight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
 			overweight_ratio => ($char && $char->{weight_max} > 0) ? ($char->{weight} || 0) / $char->{weight_max} : 0,
+			# The NAME list of carried items. It was only published top-level
+			# (inventory_items below), so anything reading the nested
+			# inventory.items — including the sidecar's heal logic, which picks
+			# "the best potion actually in inventory" — saw an empty list and
+			# never healed. The bot then farmed at 17% HP indefinitely.
+			item_names => \@inventory_items_digest,
 		},
 		inventory_items => \@inventory_items_digest,
 		has_weapon_in_inventory => $has_weapon_in_inventory,

@@ -232,52 +232,58 @@ class HealingOptimizer:
             
             best_item = None
             best_score = -1.0
-            
+            # PASS 1: carried items only. A "use <item>" command REQUIRES the
+            # item to be in the backpack — recommending something the bot does
+            # not own produces "Error in use item" and NO heal (observed live:
+            # the selector returned "use Steak" for a bot carrying only Apple /
+            # Carrot / Red Herb, because the score is a heal-per-zeny RATIO and
+            # a cheap uncarried item can outscore a carried one). Carried items
+            # are always the correct answer for an immediate heal, so they are
+            # chosen first; only if NOTHING carried heals do we fall through to
+            # an affordable purchase suggestion.
             for item in self._healing_items:
-                # A carried heal item is ALWAYS usable (free) regardless of zeny.
                 _in_hand = (item.name in carried) or (item.name.lower() in carried_lower) \
                            or (item.aegis_name in carried) or (item.aegis_name.lower() in carried_lower)
-                # Skip items that are too expensive — UNLESS in hand (free).
-                if not _in_hand and item.buy > 0 and item.buy > zeny * 0.3:
+                if not _in_hand:
                     continue
-                # A NON-PURCHASABLE item (buy=0, e.g. a rare drop like Slim Pot)
-                # is unusable unless carried: a broke/free bot can't buy it and
-                # doesn't own it. Skipping it here is what keeps the recommendation
-                # to what the bot can ACTUALLY use (in-hand or affordable).
-                if not _in_hand and item.buy <= 0:
-                    continue
-                
+
                 # Calculate effective heal
                 avg_hp_heal = (item.heal_hp_min + item.heal_hp_max) / 2
                 avg_sp_heal = (item.heal_sp_min + item.heal_sp_max) / 2
                 pct_hp_heal = item.heal_percent_hp * max_hp
                 pct_sp_heal = item.heal_percent_sp * max_sp
-                
                 total_hp_heal = avg_hp_heal + pct_hp_heal
                 total_sp_heal = avg_sp_heal + pct_sp_heal
-                
-                # Score based on what we need
+
                 if prefer_hp and hp_ratio < 0.5:
-                    # COMBAT MODE: HP is critical — prioritize effective heal amount
-                    if total_hp_heal > 0:
-                        effective_heal = min(total_hp_heal, hp_deficit * 1.5)
-                        cost_efficiency = total_hp_heal / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else (total_hp_heal if _in_hand else 1.0)
-                        score = effective_heal * 100 + cost_efficiency
-                    else:
-                        score = 0
+                    score = min(total_hp_heal, hp_deficit * 1.5) * 100 if total_hp_heal > 0 else 0.0
                 elif sp_ratio < 0.3:
-                    score = total_sp_heal / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else (total_sp_heal if _in_hand else 0.0)
+                    score = total_sp_heal
                 else:
-                    score = (total_hp_heal + total_sp_heal) / max(item.buy, 1) if (item.buy > 0 and not _in_hand) else ((total_hp_heal + total_sp_heal) if _in_hand else 0.0)
-                
-                # Prefer in-hand items strongly (they're free + immediate) but
-                # let a much stronger heal win when HP deficit is large.
-                if _in_hand:
-                    score += 50.0
-                
+                    score = total_hp_heal + total_sp_heal
+
                 if score > best_score:
                     best_score = score
                     best_item = item
+
+            # PASS 2: nothing carried heals — allow an AFFORDABLE purchase.
+            if best_item is None:
+                for item in self._healing_items:
+                    if item.buy <= 0 or item.buy > zeny * 0.3:
+                        continue
+                    avg_hp_heal = (item.heal_hp_min + item.heal_hp_max) / 2
+                    avg_sp_heal = (item.heal_sp_min + item.heal_sp_max) / 2
+                    total_hp_heal = avg_hp_heal + item.heal_percent_hp * max_hp
+                    total_sp_heal = avg_sp_heal + item.heal_percent_sp * max_sp
+                    if prefer_hp and hp_ratio < 0.5:
+                        score = min(total_hp_heal, hp_deficit * 1.5) * 100 if total_hp_heal > 0 else 0.0
+                    elif sp_ratio < 0.3:
+                        score = total_sp_heal
+                    else:
+                        score = total_hp_heal + total_sp_heal
+                    if score > best_score:
+                        best_score = score
+                        best_item = item
             
             if best_item is None:
                 return None

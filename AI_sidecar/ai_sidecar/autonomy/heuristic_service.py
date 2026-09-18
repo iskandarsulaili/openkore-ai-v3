@@ -5790,17 +5790,48 @@ class HeuristicService:
             _jc_heal_now = __import__("time").time()
             _jc_heal_last = self._job_change_route_emit.get(_jc_heal_lk, 0.0)
             if _jc_hp_ratio <= 0.70 and _jc_heal_now - _jc_heal_last >= 3.0:
-                _jc_heal_item = ""
-                for _ji in ("White Potion", "Orange Potion", "Red Potion", "Novice Potion"):
-                    if any(_ji.lower() in str(_it).lower() for _it in inventory):
-                        _jc_heal_item = _ji
-                        break
-                if _jc_heal_item:
+                # DB-DRIVEN HEAL SELECTION (2026-09-19). This used to loop over a
+                # hardcoded potion-name tuple ("White/Orange/Red/Novice Potion").
+                # That whitelist EXCLUDED every other real healing item the bot
+                # actually carries, so the bot emitted nothing, teleported away
+                # with Fly Wing instead, and sat at 17-25% HP indefinitely —
+                # which in turn blocked the job change (its gate needs HP >= 90%).
+                # Verified live: the bot carried Apple x30 (itemheal 16-22), Red
+                # Herb x8 (18-28), Carrot x11 (18-20) and Green Herb x8 — all
+                # type "Healing" in the server's item DB — yet NO potion.
+                # Use the existing carried-item-aware, DB-driven selector
+                # (reflex/healing_optimizer.py), which parses `itemheal` from the
+                # real item DB. RULE.md: healing availability is DATA-driven, not
+                # a name allowlist.
+                _jc_heal_cmd = ""
+                try:
+                    from ai_sidecar.reflex.healing_optimizer import HealingOptimizer as _HO
+                    _jc_ho = getattr(self, "_healing_optimizer", None)
+                    if _jc_ho is None:
+                        _jc_ho = _HO()
+                        try:
+                            _jc_ho.load()
+                        except Exception:
+                            pass
+                        self._healing_optimizer = _jc_ho
+                    _jc_heal_cmd = _jc_ho.select_healing_command(
+                        hp=int(signals.get("hp", 0) or 0),
+                        max_hp=int(signals.get("hp_max", 1) or 1),
+                        sp=int(signals.get("sp", 0) or 0),
+                        max_sp=int(signals.get("sp_max", 1) or 1),
+                        zeny=int(signals.get("zeny", 0) or 0),
+                        level=int(signals.get("base_level", 1) or 1),
+                        inventory=inventory or [],
+                    ) or ""
+                except Exception as _jc_he:
+                    logger.debug("jc_heal_optimizer_failed: %s", _jc_he)
+                    _jc_heal_cmd = ""
+                if _jc_heal_cmd:
                     self._job_change_route_emit[_jc_heal_lk] = _jc_heal_now
                     actions.append(HeuristicAction(
-                        kind="command", command=f"use {_jc_heal_item}",
+                        kind="command", command=_jc_heal_cmd,
                         confidence=0.95, domain="survival",
-                        reason=f"Job change - HP {_jc_hp_ratio:.0%}, heal with {_jc_heal_item} (best in inventory)",
+                        reason=f"Job change - HP {_jc_hp_ratio:.0%}, {_jc_heal_cmd} (best carried heal)",
                     ))
             # Find the target class for each type
             _jc_target_class = ""
