@@ -201,13 +201,28 @@ class HealingOptimizer:
                 if isinstance(entry, dict):
                     nm = str(entry.get("name", "") or entry.get("Name", "") or "")
                 else:
-                    nm = str(entry)
-                nm = nm.strip()
+                    # NOT a dict: the callers pass pydantic digests
+                    # (InventoryItemDigest has .name / .aegis_name) or plain
+                    # strings. str(entry) yields the REPR
+                    # ("InventoryItemDigest(item_id='6593', name='Apple')"),
+                    # which never equals an item name — so a carried heal was
+                    # never recognised and the bot could not heal at all.
+                    nm = str(
+                        getattr(entry, "name", "")
+                        or getattr(entry, "aegis_name", "")
+                        or entry
+                        or ""
+                    )
+                    # Guard the repr case explicitly: if the object has no
+                    # usable name, try to pull it out of the repr rather than
+                    # matching against the whole string.
+                    if nm.startswith("InventoryItem") or "item_id=" in nm:
+                        _m = __import__("re").search(r"name='([^']+)'", nm)
+                        nm = _m.group(1) if _m else ""
+                nm = str(nm).strip()
                 if nm:
                     carried.add(nm)
-                nl = nm.lower()
-                if nl:
-                    carried_lower.add(nl)
+                    carried_lower.add(nm.lower())
         with self._lock:
             if not self._loaded:
                 self.load()
