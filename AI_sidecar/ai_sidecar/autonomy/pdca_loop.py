@@ -572,7 +572,19 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         signals["base_level"] = int(getattr(prog, "base_level", 1) or 1)
                         signals["inventory_items"] = getattr(latest, "inventory_items", []) or []
                         signals["has_weapon_in_inventory"] = bool(getattr(latest, "has_weapon_in_inventory", False))
-                        signals["zeny"] = int(getattr(prog, "zeny", 0) or 0)
+                        # zeny: the bridge publishes it under inventory.zeny, NOT
+                        # progression.zeny (ProgressionDigest has the field, but
+                        # nothing fills it). Reading only progression made the
+                        # object path yield 0, so job-change affordability saw a
+                        # broke bot forever and deferred ("farm safe map first")
+                        # even with 1476 zeny in the bank. Mirror the dict path's
+                        # full fallback chain.
+                        signals["zeny"] = int(
+                            getattr(prog, "zeny", 0)
+                            or getattr(inv, "zeny", 0)
+                            or getattr(getattr(latest, "economy", None), "zeny", 0)
+                            or 0
+                        )
                         signals["characters"] = getattr(latest, "characters", []) or []
                         if not signals["characters"]:
                             _raw = getattr(latest, "raw", {}) or {}
