@@ -198,7 +198,23 @@ class NormalizerBus:
         # bot being mutated: different bots never contend, and a chatty bot can
         # no longer starve another bot's snapshot.
         _lock = self._bot_lock(bot_id)
-        with _lock:
+        # NON-BLOCKING ACQUIRE (2026-09-19). The PDCA loop emits runtime events
+        # through this same per-bot lock from its background thread; when it holds
+        # the lock, the HTTP /v1/actions/next request (which lands here via
+        # autonomy_decide -> _emit_runtime_event -> ingest_batch) blocked behind
+        # it. Measured live: p50 poll 2.41s, p90 25.0s (full timeout) — every
+        # poll exceeded the bridge's budget, the action was discarded, and the
+        # bot received nothing (0 `[ai_action]` entries over hours). Journaling a
+        # decision event is not worth stalling the action poll, so try the lock
+        # briefly and DROP the event if it is busy (the journal is diagnostic).
+        _acquired = _lock.acquire(timeout=0.15)
+        if not _acquired:
+            logger.debug(
+                "normalizer_bus_ingest_skipped_lock_busy",
+                extra={"event": "normalizer_bus_ingest_skipped_lock_busy", "bot_id": bot_id},
+            )
+            return IngestAcceptedResponse(accepted=0, bot_id=bot_id, message="lock_busy_dropped")
+        try:
             for event in events:
                 try:
                     self.event_journal.append(event)
@@ -216,6 +232,8 @@ class NormalizerBus:
                             "event_type": event.event_type,
                         },
                     )
+        finally:
+            _lock.release()
         return IngestAcceptedResponse(
             ok=True,
             accepted=len(accepted_ids),

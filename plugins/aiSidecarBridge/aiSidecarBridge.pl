@@ -6065,10 +6065,15 @@ sub _http_get_json {
 	# (e.g. keep-alive race), the while loop blocks forever.
 	my $io_timeout = _cfg_int('aiSidecar_ioTimeoutMs', 5000) / 1000;
 	$io_timeout = 0.001 if $io_timeout <= 0;
+	# Perl's builtin alarm() truncates fractional seconds (alarm(0.9) -> alarm(0)
+	# disables the alarm entirely); use Time::HiRes for real sub-second timeouts.
+	my $_hires_get = 0;
+	if (eval { require Time::HiRes; 1 }) { $_hires_get = 1; }
+	my $_get_alarm = $_hires_get ? $io_timeout : (int($io_timeout) + 1);
 	my $resp = '';
 	eval {
 		local $SIG{ALRM} = sub { die "bridge_http_get_timeout\n"; };
-		alarm($io_timeout);
+		$_hires_get ? Time::HiRes::alarm($_get_alarm) : alarm($_get_alarm);
 		while (<$sock>) { $resp .= $_; }
 		alarm(0);
 		1;
@@ -6133,6 +6138,23 @@ sub _http_post_json {
 	$connect_timeout = 0.05 if $connect_timeout > $io_timeout;
 	if ($connect_timeout <= 0) { $connect_timeout = 0.05; }
 
+	# ALARM RESOLUTION (2026-09-19) — CRITICAL.
+	# Perl's builtin alarm() TRUNCATES fractional seconds to an integer:
+	#     alarm(0.90) -> alarm(0)   => alarm DISABLED (no timeout at all)
+	#     alarm(1.20) -> alarm(1)   => fires at 1.00s, not 1.20s
+	# Every main-loop call site here passes a SUB-SECOND budget (900/1200ms),
+	# so the 900ms sites had NO protection (a slow/loaded sidecar ran unbounded
+	# and stalled the main loop — measured 4 iterations/30s, down from 57) while
+	# the 1200ms sites were cut to 1.00s and fired spurious
+	# "bridge_http_timeout" (1809 logged, status=0) even though the sidecar
+	# answered in ~5ms. Time::HiRes::alarm takes real fractional seconds, so use
+	# it when available and fall back to a ceil()ed integer alarm otherwise.
+	my $_use_hires_alarm = 0;
+	if (eval { require Time::HiRes; 1 }) {
+	    $_use_hires_alarm = 1;
+	}
+	my $_alarm_secs = $_use_hires_alarm ? $io_timeout : (int($io_timeout) + 1);
+
 	# ── Connection ──
 	my $sock = IO::Socket::INET->new(
 	    PeerHost => $host,
@@ -6166,7 +6188,7 @@ sub _http_post_json {
 		my $io_error = '';
 		my $ok = eval {
 		    local $SIG{ALRM} = sub { die "bridge_http_timeout\n"; };
-		    alarm($io_timeout);
+		    $_use_hires_alarm ? Time::HiRes::alarm($_alarm_secs) : alarm($_alarm_secs);
 		    print {$sock} $request;
 		    # Read headers first (stop at double CRLF)
 		    my $header_buf = '';

@@ -589,6 +589,18 @@ def _emit_heuristic_actions(runtime_state, horizon: str, bot_id: str | None = No
                         if not signals["characters"]:
                             _raw = getattr(latest, "raw", {}) or {}
                             signals["characters"] = _raw.get("characters", []) or []
+                        # RAW DIGEST (2026-09-19): the object path read `latest.raw`
+                        # into LOCAL variables only (for characters/actors/all_bots
+                        # fallbacks) and NEVER published it to signals. The DICT
+                        # path below does set signals["raw"], so every downstream
+                        # consumer of the raw digest worked for dict snapshots but
+                        # silently got an empty {} for live pydantic ones — which
+                        # broke character-name resolution (raw.char_name) and with
+                        # it fleet-leader detection, the cold-start job assignment,
+                        # and the whole job change. Publish it once, unconditionally.
+                        _raw_all_digest = getattr(latest, "raw", {}) or {}
+                        if _raw_all_digest:
+                            signals["raw"] = _raw_all_digest
                         # ACTORS (2026-09-03): the bridge sends nearby actors
                         # (mobs/players/NPCs with x/y/relation) via the snapshot.
                         # The heuristic's mob-dribble reads signals["actors"] to

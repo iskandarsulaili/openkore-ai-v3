@@ -205,6 +205,64 @@ except Exception:
     _CITY_MAPS = []
 
 
+def _resolve_fleet_leader(
+    bot_id: str,
+    all_bots,
+    *,
+    char_name: str = "",
+    profile_to_char: dict | None = None,
+) -> tuple[bool, list[str], set[str]]:
+    """Decide whether THIS bot is the fleet leader. Returns (is_leader, fleet_lc, self_names).
+
+    IDENTITY-DOMAIN FIX (2026-09-19). The fleet roster (`all_bots`) is built from
+    the `.bot_profiles/<dir>` names (e.g. "testbotA"), while `bot_id` yields the
+    ACCOUNT/username part (e.g. "...:testbot99"). The original code compared them
+    directly:
+
+        _bot_profile = bot_id.split(":")[-1]          # "testbot99"
+        _sorted_bots = sorted(all_bots)               # ["testbotA"]
+        _is_leader   = _bot_profile == _sorted_bots[0]   # False, ALWAYS
+
+    That silently pinned is_leader to False on every site, which blocked the
+    cold-start team-synergy job assignment (step 6 -> 7) and therefore the whole
+    job change: the bot farmed forever and never emitted `move <job_change_map>`.
+
+    Self-identification now accepts EITHER the username or the char name, the
+    roster is folded to lowercase, and a single-bot fleet is trivially leader.
+    """
+    self_names: set[str] = set()
+    for cand in (
+        bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id,
+        char_name,
+    ):
+        _c = str(cand or "").strip().lower()
+        if _c:
+            self_names.add(_c)
+
+    # The char name for the roster's leader entry (profile dir -> char name).
+    _p2c = profile_to_char or {}
+
+    fleet_lc: list[str] = []
+    for b in (all_bots or []):
+        _s = str(b or "").strip().lower()
+        if _s:
+            fleet_lc.append(_s)
+            # Also accept the mapped char name as a self-alias.
+            _mapped = str(_p2c.get(b, "") or "").strip().lower()
+            if _mapped:
+                self_names.add(_mapped)
+
+    if not self_names:
+        return False, fleet_lc, self_names
+    if not fleet_lc:
+        # No roster data (flicker/solo) — treat self as leader.
+        return True, fleet_lc, self_names
+    if not (self_names & set(fleet_lc)):
+        # Roster present but self is not listed — not the leader.
+        return False, fleet_lc, self_names
+    return min(fleet_lc) in self_names, fleet_lc, self_names
+
+
 def _is_city_map(map_name: str) -> bool:
     """Agnostic city check: the map IS one of the core's tables/cities.txt
     entries (game fact, same on every RO server) or a city prefix variant
@@ -3901,8 +3959,39 @@ class HeuristicService:
                 # AGNOSTIC: derive fleet + leader from signals (never assume scope).
                 _cs_all_bots = signals.get("all_bots", []) or []
                 _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
-                _cs_sorted = sorted(_cs_all_bots)
-                _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
+                # IDENTITY-DOMAIN FIX (2026-09-19): the fleet roster (all_bots)
+                # carries CHARACTER names ("testbotA") while bot_id yields the
+                # PROFILE/username ("testbot99"). Comparing them directly made
+                # _cs_is_leader False forever (proved live: bot_id=...:testbot99,
+                # all_bots=['testbotA'], is_leader=False), so the team-synergy
+                # job assignment below never ran, _team_jobs_assigned stayed
+                # unset, _cold_start_step stayed 6, and Step 7 ("move
+                # <job_change_map>") was NEVER emitted. The bot therefore could
+                # not change job no matter how long it farmed.
+                #
+                # The bridge also reports the char name, so accept EITHER form
+                # for self-identification and fold the fleet to lowercase
+                # (the identity parts are case-insensitive in practice).
+                _cs_self_names = {
+                    str(_cs_bot_profile or "").strip().lower(),
+                    # The in-game character name rides the raw digest
+                    # (signals["raw"]["char_name"]); the bridge does NOT mirror it
+                    # to a top-level "char_name" signal, so reading that alone left
+                    # this set holding only the ACCOUNT username and the leader
+                    # check below could never match the profile-named roster.
+                    str((signals.get("raw", {}) or {}).get("char_name", "") or "").strip().lower(),
+                    str(signals.get("char_name", "") or "").strip().lower(),
+                }
+                _cs_self_names.discard("")
+                _cs_fleet_lc = [str(b).strip().lower() for b in _cs_all_bots if str(b).strip()]
+                # Leader = the lexicographically-first fleet member, when self
+                # is part of the roster. A single-bot fleet is trivially leader.
+                _cs_is_leader = False
+                if _cs_self_names:
+                    if not _cs_fleet_lc:
+                        _cs_is_leader = True
+                    elif _cs_self_names & set(_cs_fleet_lc):
+                        _cs_is_leader = min(_cs_fleet_lc) in _cs_self_names
                 # Check if we're in town (must be in town for job change NPC access)
                 if not _cs_in_town:
                     actions.append(HeuristicAction(
@@ -3912,12 +4001,20 @@ class HeuristicService:
                     ))
                 elif _cs_is_leader:
                     # Leader: check if ALL bots are level >= 10
-                    # We need all bot levels. Use the shared _team_levels dict.
+                    # We need all bot levels. Use the shared _team_levels dict,
+                    # which is keyed by the PROFILE/username stable key. The fleet
+                    # roster carries CHARACTER names, so exclude self by matching
+                    # the normalized self-name set rather than comparing a char
+                    # name against a profile name (that comparison never matched,
+                    # leaving the other-bot level lookups empty).
                     _all_ready = all(
                         self._team_levels.get(p, 0) >= 10
-                        for p in _cs_all_bots if p != _cs_bot_profile
-                    ) if _cs_all_bots else False
+                        for p in _cs_fleet_lc if p not in _cs_self_names
+                    ) if _cs_fleet_lc else False
                     _self_ready = base_level >= 10
+                    logger.info("[synergydiag] fleet=%s self=%s team_levels=%s all_ready=%s self_ready=%s base=%s in_town=%s",
+                                _cs_fleet_lc, sorted(_cs_self_names), dict(self._team_levels),
+                                _all_ready, _self_ready, base_level, _cs_in_town)
                     if _all_ready and _self_ready:
                         # All bots ready — call team synergy API
                         try:
@@ -4758,8 +4855,15 @@ class HeuristicService:
             self._last_party_members[bot_id] = _party_members
             self._all_bots_cache[bot_id] = _all_bots
         _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
+        _jc_raw_cn = str((signals.get("raw", {}) or {}).get("char_name", "") or "")
+        _is_leader, _fleet_lc, _self_names = _resolve_fleet_leader(
+            bot_id, _all_bots,
+            char_name=_jc_raw_cn,
+            profile_to_char=getattr(self, "_profile_to_char", {}) or {},
+        )
+        logger.info("[leaderdiag] bot_id=%s all_bots=%s raw_char_name=%r self=%s fleet=%s -> is_leader=%s",
+                    bot_id, _all_bots, _jc_raw_cn, sorted(_self_names), _fleet_lc, _is_leader)
         _sorted_bots = sorted(_all_bots)
-        _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
         # Compare by COUNT not by name (party_members has char names, all_bots has profile names)
         # party_members does NOT include the leader (OpenKore quirk)
         _expected_count = len(_all_bots)
@@ -5264,8 +5368,15 @@ class HeuristicService:
             # Party creation for leader — only at level 40+ (solo before 40 is faster)
             _cs_bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
             _cs_all_bots = signals.get("all_bots", []) or list(self._bot_roles.keys()) if hasattr(self, '_bot_roles') else []
+            _cs_is_leader, _cs_fleet_lc, _cs_self_names = _resolve_fleet_leader(
+                bot_id, _cs_all_bots,
+                char_name=str(
+                    (signals.get("raw", {}) or {}).get("char_name", "")
+                    or signals.get("char_name", "") or ""
+                ),
+                profile_to_char=getattr(self, "_profile_to_char", {}) or {},
+            )
             _cs_sorted = sorted(_cs_all_bots)
-            _cs_is_leader = len(_cs_sorted) > 0 and _cs_bot_profile == _cs_sorted[0]
             _cs_base_level = signals.get("base_level", 1) or 1
             if _cs_is_leader and _cs_base_level >= 40:
                 actions.append(HeuristicAction(
@@ -6255,7 +6366,14 @@ class HeuristicService:
             # Dynamic leader detection: first bot alphabetically is leader
             _all_bots = signals.get("all_bots", []) or []
             _sorted_bots = sorted(_all_bots)
-            _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
+            _is_leader, _fleet_lc, _self_names = _resolve_fleet_leader(
+                bot_id, _all_bots,
+                char_name=str(
+                    (signals.get("raw", {}) or {}).get("char_name", "")
+                    or signals.get("char_name", "") or ""
+                ),
+                profile_to_char=getattr(self, "_profile_to_char", {}) or {},
+            )
             if _party_in_town:
                 # In town — safe to do party operations
                 if _is_leader:
@@ -6799,7 +6917,14 @@ class HeuristicService:
                     _all_bots = signals.get("all_bots", []) or []
                     _bot_profile = bot_id.split(":")[-1].split("/")[-1] if ":" in bot_id else bot_id
                     _sorted_bots = sorted(_all_bots)
-                    _is_leader = len(_sorted_bots) > 0 and _bot_profile == _sorted_bots[0]
+                    _is_leader, _fleet_lc, _self_names = _resolve_fleet_leader(
+                        bot_id, _all_bots,
+                        char_name=str(
+                    (signals.get("raw", {}) or {}).get("char_name", "")
+                    or signals.get("char_name", "") or ""
+                ),
+                        profile_to_char=getattr(self, "_profile_to_char", {}) or {},
+                    )
                     _party_incomplete = _party_in and len(_party_members) + 1 < len(_all_bots)
                     if not _party_in or _party_incomplete:
                         if _is_leader:

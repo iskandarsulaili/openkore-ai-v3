@@ -442,6 +442,14 @@ class ServerAdaptationEngine:
             }
 
 
+def _now_mono_safe() -> float:
+    """Monotonic seconds, tolerant of odd platform clocks (never negative)."""
+    try:
+        return time.monotonic()
+    except Exception:
+        return 0.0
+
+
 class ServerSolutionsStore:
     """DB-backed store of server SPECIFIC solution knowledge (never hardcoded in *.py).
 
@@ -461,12 +469,20 @@ class ServerSolutionsStore:
         self._lock = RLock()
         # In-memory fallback so degenerate reads don't hit a closed DB.
         self._fallback: dict[str, dict[str, Any]] = {}
+        # Short-lived read cache for get(): the hot heuristic path calls get()
+        # per event, and every miss took the lock + issued a synchronous SELECT.
+        self._read_cache: dict[str, tuple[float, Any]] = {}
 
     def set(self, slot: str, value: Any, *, origin: str = "learned", confidence: float = 0.8, value_json: str | None = None) -> None:
         """Persist a server-specific solution fact."""
         slot = str(slot or "").strip()
         if not slot:
             return
+        # Invalidate the read cache so a set() is visible to the next get().
+        try:
+            self._read_cache.pop(slot, None)
+        except Exception:
+            pass
         _now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         # If no explicit JSON string was supplied but value is dict/list, serialize it as JSON
         # so a later get_json round-trips correctly (str(dict) would NOT be valid JSON).
@@ -495,6 +511,19 @@ class ServerSolutionsStore:
     def get(self, slot: str, default: Any = None) -> Any:
         """Read a server-specific solution fact (DB first, then in-memory fallback)."""
         slot = str(slot or "").strip()
+        # READ CACHE (2026-09-19): this is called per-event inside the heuristic
+        # assessment (progression.assess -> _get_state), and each call took
+        # self._lock + issued a synchronous SQLite SELECT. On the live bot the
+        # PDCA thread sat in db.fetchone here (py-spy: heuristic_service.py:1719
+        # -> server_adaptation.py:501 -> db.py:277) while /v1/actions/next waited,
+        # pushing the poll to p50 2.4s / p90 25s. Every poll then blew the bridge's
+        # loop budget, the action was DISCARDED, and the bot received nothing
+        # (0 [ai_action] over hours). These facts change only on set(), so cache
+        # them briefly: it is a rare write path vs a per-event read path.
+        _cache = self._read_cache
+        _hit = _cache.get(slot)
+        if _hit is not None and (_hit[0] > _now_mono_safe()):
+            return _hit[1] if _hit[1] is not None else default
         with self._lock:
             if self._db is not None:
                 try:
@@ -510,15 +539,20 @@ class ServerSolutionsStore:
                         except Exception:
                             _parsed = None
                         if _parsed is not None and _parsed != {}:
+                            _cache[slot] = (_now_mono_safe() + 15.0, _parsed)
                             return _parsed
                         if _vt:
+                            _cache[slot] = (_now_mono_safe() + 15.0, _vt)
                             return _vt
+                        _cache[slot] = (_now_mono_safe() + 15.0, None)
                         return default
+                    _cache[slot] = (_now_mono_safe() + 15.0, None)
                     return default
                 except Exception as _e:
                     logger.debug("server_solutions_get_db_failed slot=%s: %s", slot, _e)
             if slot in self._fallback:
                 _v = self._fallback[slot].get("value")
+                _cache[slot] = (_now_mono_safe() + 15.0, _v)
                 return default if _v is None else _v
             return default
 

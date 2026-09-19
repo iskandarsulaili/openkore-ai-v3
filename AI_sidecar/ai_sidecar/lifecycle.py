@@ -5,11 +5,12 @@ import time as _lifecycle_time
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, RLock, Thread
-from typing import Awaitable, Callable, TypeVar
+from typing import Awaitable, Callable, ClassVar, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -725,6 +726,11 @@ class RuntimeState:
     _fleet_roles: dict[str, RoleManager] = field(default_factory=dict)
     _counter_lock: RLock = field(default_factory=RLock)
     counters: dict[str, int] = field(default_factory=dict)
+    # Throttle bookkeeping for per-poll persistence (2026-09-19). Plain dicts
+    # guarded by the counter lock so they work whether or not the runtime
+    # instance is a slots dataclass.
+    _last_bot_touch: dict[str, float] = field(default_factory=dict)
+    _last_incr_flush: dict[str, float] = field(default_factory=dict)
     _action_kind_index: dict[str, str] = field(default_factory=dict)
     _bot_plan_family: dict[str, str] = field(default_factory=dict)
     _actor_state_lock: RLock = field(default_factory=RLock)
@@ -773,6 +779,20 @@ class RuntimeState:
     def incr(self, key: str, n: int = 1, *, bot_id: str | None = None) -> None:
         with self._counter_lock:
             self.counters[key] = self.counters.get(key, 0) + n
+            # COUNTER PERSIST THROTTLE (2026-09-19): this issued a SYNCHRONOUS
+            # DB write on EVERY call (the bridge polls /v1/actions/next every
+            # ~300ms and each poll calls incr). `_safe_persist` runs the callable
+            # inline on the request thread, so the poll waited on SQLite while the
+            # PDCA thread and the telemetry ingester held the same per-bot lock —
+            # measured p50 3.0-3.5s / p90 7.2s against a 900ms budget, so every
+            # poll DISCARDED its action and the bot received nothing. The
+            # in-memory counter is already authoritative for the process; flushing
+            # it at most every 30s keeps the DB fresh without stalling the loop.
+            _ck = f"incr:{bot_id or 'fleet'}"
+            _cn = _lifecycle_time.monotonic()
+            if (_cn - self._last_incr_flush.get(_ck, 0.0)) < 30.0:
+                return
+            self._last_incr_flush[_ck] = _cn
         self._safe_persist(
             "increment_counter",
             lambda: self.repositories.telemetry.increment_counter(bot_id=bot_id or "fleet", name=key, delta=n),
@@ -2871,6 +2891,7 @@ class RuntimeState:
                 metadata={"phase": "queue", "idempotency_key": proposal.idempotency_key},
             ),
             bot_id=bot_id,
+                background=True,
         )
         self._audit(
             level="info",
@@ -2908,13 +2929,25 @@ class RuntimeState:
     def next_action(self, bot_id: str, poll_id: str | None = None) -> ActionProposal | None:
         self.bot_registry.upsert(bot_id)
         self.incr("actions_polled", bot_id=bot_id)
-        self._safe_persist(
-            "touch_bot_poll",
-            lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=None, liveness_state="online")
-            if self.repositories
-            else None,
-            bot_id=bot_id,
-        )
+        # PER-POLL DB WRITE THROTTLE (2026-09-19): this ran a SYNCHRONOUS
+        # `bots.touch()` write on every poll (the bridge polls every ~300ms).
+        # `_safe_persist` executes the callable inline, so the poll thread
+        # waited on SQLite (whose per-bot lock is also taken by the PDCA thread
+        # and the telemetry ingester). Measured p50 3.0-3.5s / p90 7.2s against
+        # the bridge's 900ms budget, so EVERY poll discarded its action and the
+        # bot received nothing. Liveness only needs to be approximately fresh,
+        # so touch at most once per 30s per bot.
+        _touch_key = f"touch:{bot_id}"
+        _touch_now = _lifecycle_time.monotonic()
+        if (_touch_now - self._last_bot_touch.get(_touch_key, 0.0)) >= 30.0:
+            self._last_bot_touch[_touch_key] = _touch_now
+            self._safe_persist(
+                "touch_bot_poll",
+                lambda: self.repositories.bots.touch(bot_id=bot_id, tick_id=None, liveness_state="online")
+                if self.repositories
+                else None,
+                bot_id=bot_id,
+            )
 
         proposal = self.action_queue.fetch_next(bot_id)
         if proposal is not None:
@@ -2979,6 +3012,7 @@ class RuntimeState:
                     metadata={"phase": "dispatch", "poll_id": poll_id},
                 ),
                 bot_id=bot_id,
+                background=True,
             )
             self._emit_runtime_event(
                 bot_id=bot_id,
@@ -3057,6 +3091,7 @@ class RuntimeState:
                     metadata={"phase": "ack", "poll_id": ack.poll_id},
                 ),
                 bot_id=ack.meta.bot_id,
+                background=True,
             )
 
         self._audit(
@@ -3553,6 +3588,7 @@ class RuntimeState:
                     },
                 ),
                 bot_id=target_bot_id,
+                background=True,
             )
 
             self._audit(
@@ -3695,6 +3731,7 @@ class RuntimeState:
                 },
             ),
             bot_id=target_bot_id,
+            background=True,
         )
 
         if request.enqueue_reload:
@@ -3862,7 +3899,28 @@ class RuntimeState:
             latest_snapshot = self.snapshot_cache.get(bot_id)
             rec["pending_actions"] = self.action_queue.count(bot_id)
             rec["latest_snapshot_at"] = latest_snapshot.observed_at if latest_snapshot else None
-            rec["telemetry_events"] = self.telemetry_store.count(bot_id=bot_id)
+            # TELEMETRY COUNT (2026-09-19): this ran an UNBOUNDED COUNT(*) over the
+            # telemetry table for every bot on EVERY PDCA cycle. With a 782MB
+            # store that scan contended with /v1/actions/next and pushed the poll
+            # to p50 2.4s / p90 25s (full timeout) — every poll then exceeded the
+            # bridge's loop budget and the ACTION WAS DISCARDED, so the bot
+            # received nothing for hours (0 [ai_action] entries). The count is
+            # informational only, so cache it briefly per bot: it changes no
+            # decision and the DB stays quiet on the hot path.
+            _tel_cache = getattr(self, "_telemetry_count_cache", None)
+            if _tel_cache is None:
+                _tel_cache = {}
+                self._telemetry_count_cache = _tel_cache
+            _now_mono = _lifecycle_time.monotonic()
+            _cached = _tel_cache.get(bot_id)
+            if _cached is None or (_now_mono - _cached[0]) > 30.0:
+                try:
+                    _n = self.telemetry_store.count(bot_id=bot_id)
+                except Exception:
+                    _n = _cached[1] if _cached else 0
+                _tel_cache[bot_id] = (_now_mono, _n)
+                _cached = _tel_cache[bot_id]
+            rec["telemetry_events"] = _cached[1]
             result.append(rec)
 
         result.sort(key=lambda row: row.get("last_seen_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
@@ -3893,6 +3951,7 @@ class RuntimeState:
                 attributes=attributes,
             ),
             bot_id=bot_id,
+                background=True,
         )
         if updated is None:
             return None
@@ -4606,6 +4665,7 @@ class RuntimeState:
                 metadata={"episode_id": captured.episode_id, "decision_source": captured.decision_source.value},
             ),
             bot_id=captured.bot_id,
+            background=True,
         )
 
         return MLObserveResponse(
@@ -5714,6 +5774,32 @@ class RuntimeState:
             )
             return default
 
+    # Background memory executor (2026-09-19). Memory capture was executed
+    # INLINE on the caller thread and every capture calls the embedding provider
+    # over the network (`_embed_texts`) plus two SQLite writes -- measured at
+    # 20-30 SECONDS per call under contention, once per poll (~300ms cadence).
+    # The thread dump showed ~240 live threads parked in
+    # `_add_semantic_impl`/`capture_action`, the HTTP poll thread waited behind
+    # them, and /v1/actions/next returned after 10-55s while the bridge budget
+    # is 900ms -- so EVERY action was discarded. Memory is bookkeeping: it must
+    # never block an action decision. Submit to ONE bounded background worker
+    # (ordered, no thread pile-up) and return immediately.
+    _MEMORY_EXECUTOR: ClassVar[ThreadPoolExecutor | None] = None
+
+    def _memory_executor(self) -> "ThreadPoolExecutor | None":
+        ex = RuntimeState._MEMORY_EXECUTOR
+        if ex is None:
+            try:
+                ex = ThreadPoolExecutor(
+                    max_workers=1,
+                    thread_name_prefix="ai-memory",
+                )
+                RuntimeState._MEMORY_EXECUTOR = ex
+            except Exception:
+                logger.exception("memory_executor_init_failed")
+                return None
+        return ex
+
     def _safe_memory(
         self,
         operation: str,
@@ -5721,7 +5807,29 @@ class RuntimeState:
         *,
         default: T | None = None,
         bot_id: str | None,
+        background: bool = False,
     ) -> T | None:
+        def _run() -> None:
+            try:
+                fn()
+            except Exception:
+                logger.exception(
+                    "memory_operation_failed",
+                    extra={"event": "memory_operation_failed", "operation": operation, "bot_id": bot_id},
+                )
+
+        if background:
+            ex = self._memory_executor()
+            if ex is not None:
+                try:
+                    ex.submit(_run)
+                    return default
+                except Exception:
+                    logger.exception(
+                        "memory_executor_submit_failed",
+                        extra={"event": "memory_executor_submit_failed", "operation": operation, "bot_id": bot_id},
+                    )
+        # Fall back to inline execution (tests / shutdown paths).
         try:
             return fn()
         except Exception:

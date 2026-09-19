@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import inspect
@@ -812,7 +813,20 @@ class DecisionService:
         # than once per call.
         loop = self._ensure_helper_loop()
         future = asyncio.run_coroutine_threadsafe(value, loop)
-        return future.result()
+        # BOUNDED WAIT (2026-09-19): this blocked UNBOUNDED on the shared helper
+        # loop. py-spy caught the /v1/actions/next thread parked here
+        # (decision_service.py:815 <- _apply_mission_decision <- decide <-
+        # autonomy_decide) for the whole request, producing a p90 of 7.2s against
+        # a 900ms bridge budget — every slow poll then DISCARDED its action
+        # (bridge `return 1 if !$json->{has_action}`) and the bot received
+        # nothing. The mission decision is advisory: if it cannot finish in
+        # time, let the poll return its already-computed action instead of
+        # stalling the main loop.
+        try:
+            return future.result(timeout=1.0)
+        except FuturesTimeout:
+            # Let the coroutine finish in the background; do not block the poll.
+            return None
 
     _helper_loop = None
     _helper_lock = threading.Lock()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time as _time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -286,6 +287,8 @@ class SnapshotRepository:
     def __init__(self, db: SQLiteDB, max_history_per_bot: int) -> None:
         self._db = db
         self._max_history_per_bot = max_history_per_bot
+        # Trim throttle: housekeeping must not run on the per-event hot path.
+        self._trim_last: dict[str, float] = {}
 
     def save_snapshot(self, snapshot: BotStateSnapshot) -> None:
         now = utc_now()
@@ -363,6 +366,8 @@ class ActionRepository:
     def __init__(self, db: SQLiteDB, max_history_per_bot: int = 1000) -> None:
         self._db = db
         self._max_history_per_bot = max_history_per_bot
+        # Trim throttle: housekeeping must not run on the per-event hot path.
+        self._trim_last: dict[str, float] = {}
 
     def upsert_action(
         self,
@@ -933,11 +938,29 @@ class TelemetryRepository:
         }
 
     def count(self, bot_id: str | None = None) -> int:
+        # TTL CACHE (2026-09-19): list_bots() calls this per bot and list_bots()
+        # runs EVERY PDCA cycle; each call was an unbounded COUNT(*) over
+        # telemetry_events (a large table). py-spy caught the PDCA thread parked
+        # in this fetchone while /v1/actions/next waited, pushing the poll past
+        # the bridge's loop budget so the ACTION WAS DISCARDED. The value is
+        # informational (dashboard/diagnostics) and changes no decision, so cache
+        # it briefly.
+        _c = getattr(self, "_count_cache", None)
+        if _c is None:
+            _c = {}
+            self._count_cache = _c
+        _key = bot_id or "__all__"
+        _now = _time.monotonic()
+        _hit = _c.get(_key)
+        if _hit is not None and (_now - _hit[0]) < 60.0:
+            return _hit[1]
         if bot_id:
             row = self._db.fetchone("SELECT COUNT(*) AS c FROM telemetry_events WHERE bot_id=?", (bot_id,))
         else:
             row = self._db.fetchone("SELECT COUNT(*) AS c FROM telemetry_events")
-        return int(row["c"]) if row else 0
+        _n = int(row["c"]) if row else 0
+        _c[_key] = (_now, _n)
+        return _n
 
     def _trim_bot_telemetry(self, bot_id: str) -> int:
         before = self._db.fetchone("SELECT COUNT(*) AS c FROM telemetry_events WHERE bot_id=?", (bot_id,))
@@ -1313,6 +1336,8 @@ class EventJournalRepository:
     def __init__(self, db: SQLiteDB, max_history_per_bot: int) -> None:
         self._db = db
         self._max_history_per_bot = max_history_per_bot
+        # Trim throttle: housekeeping must not run on the per-event hot path.
+        self._trim_last: dict[str, float] = {}
 
     def append(self, event: NormalizedEvent) -> None:
         now = utc_now()
@@ -1360,6 +1385,20 @@ class EventJournalRepository:
         return int(row["c"]) if row else 0
 
     def _trim_history(self, bot_id: str) -> None:
+        # THROTTLE (2026-09-19): this DELETE-with-subquery ran on EVERY append.
+        # Telemetry lands ~20 events/s per bot, so the hot path issued ~20
+        # unbounded scans+deletes per second. py-spy caught the PDCA thread and
+        # the background ingest worker parked in `_trim_history` -> db.execute
+        # while /v1/actions/next waited, which pushed the poll past the bridge's
+        # loop budget (p50 2.4s / p90 25s). Every poll then DISCARDED its action
+        # and the bot received nothing for hours (0 [ai_action] entries).
+        # Trimming is housekeeping, not correctness: run it at most once per
+        # interval per bot (and the retention cron still bounds the table).
+        _now = _time.monotonic()
+        _last = self._trim_last.get(bot_id, 0.0)
+        if (_now - _last) < 60.0:
+            return
+        self._trim_last[bot_id] = _now
         self._db.execute(
             """
             DELETE FROM ingest_events
